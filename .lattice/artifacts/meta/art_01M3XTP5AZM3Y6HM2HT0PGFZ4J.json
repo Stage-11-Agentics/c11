@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:11:28Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XTP5AZM3Y6HM2HT0PGFZ4J",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XTP5AZM3Y6HM2HT0PGFZ4J.json",
+    "size_bytes": 6113
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-298 real Quit Cancel survival and confirmed save exit",
+  "token_usage": null,
+  "type": "file"
+}

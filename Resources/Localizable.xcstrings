@@ -2,6 +2,26 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "statusMenu.attention.none": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No flags · no open asks" } } }
+    },
+    "statusMenu.attention.flags.one": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "1 flag" } } }
+    },
+    "statusMenu.attention.flags.other": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%lld flags" } } }
+    },
+    "statusMenu.attention.asks.one": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "1 open ask" } } }
+    },
+    "statusMenu.attention.asks.other": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%lld open asks" } } }
+    },
     "shortcut.focusHistoryBack.label": {
       "extractionState": "manual",
       "localizations": {

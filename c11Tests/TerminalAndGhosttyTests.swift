@@ -3888,6 +3888,86 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
 
 @MainActor
 final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
+    func testDeferredLayoutCountsTheImmediatelyConvergedFlush() async throws {
+        let workspace = Workspace(title: "Deferred flush fixture", workingDirectory: nil, portOrdinal: 0)
+        workspace.teardownAllPanels()
+        let before = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        // Model a structural begin inside the current layout callback. Its
+        // all-window flush must wait until this main-thread callback returns.
+        workspace.debugBeginDeferredLayoutFollowUpForTesting()
+        XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before)
+        XCTAssertTrue(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertGreaterThan(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before)
+        XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+    }
+
+    func testDetachedGeometryRetriesExpireWithoutWindowUpdates() async throws {
+        let workspace = Workspace(title: "Unavailable bounds fixture", workingDirectory: nil, portOrdinal: 0)
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        terminal.hostedView.removeFromSuperview()
+        terminal.hostedView.frame = .zero
+        let before = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        workspace.debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: true)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertGreaterThan(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before + 1,
+                             "A stalled episode must retry without a window-update notification")
+        try await Task.sleep(nanoseconds: 2_100_000_000)
+        XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        let expired = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, expired)
+    }
+
+    func testClearedDeferredAttemptCannotFlushAfterRearmConverges() async throws {
+        let workspace = Workspace(title: "Rearm fixture", workingDirectory: nil, portOrdinal: 0)
+        workspace.teardownAllPanels()
+        workspace.debugBeginDeferredLayoutFollowUpForTesting()
+        workspace.debugClearLayoutFollowUpForTesting()
+        let before = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        workspace.debugBeginDeferredLayoutFollowUpForTesting()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before + 1,
+                       "Only the rearmed episode may execute an all-window flush")
+        XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before + 1)
+    }
+
+    func testDelayedUsableGeometryConvergesBeforeEpisodeExpires() async throws {
+        let workspace = Workspace(title: "Delayed attach fixture", workingDirectory: nil, portOrdinal: 0)
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        terminal.hostedView.removeFromSuperview()
+        terminal.hostedView.frame = .zero
+        workspace.debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: true)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertTrue(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        let stalled = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        XCTAssertGreaterThan(stalled, 1)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer {
+            terminal.hostedView.removeFromSuperview()
+            window.close()
+        }
+        terminal.hostedView.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+        try XCTUnwrap(window.contentView).addSubview(terminal.hostedView)
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertNotNil(terminal.surface.surface)
+        XCTAssertTrue(terminal.surface.isViewInWindow)
+        XCTAssertGreaterThan(terminal.hostedView.bounds.width, 1)
+        XCTAssertGreaterThan(terminal.hostedView.bounds.height, 1)
+        XCTAssertGreaterThan(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, stalled)
+        XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        let settled = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, settled)
+    }
+
     func testBackgroundLayoutKeepsPortalInactiveAndPreservesFieldEditor() throws {
         let manager = WorkspaceManager()
         defer { manager.workspaces.forEach { $0.teardownAllPanels() } }

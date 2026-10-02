@@ -2303,6 +2303,9 @@ class TerminalController {
         "workspace.group.set_icon",
         "workspace.group.focus",
         "history.list",
+        // Resize dimensions are validated on the worker; live window resolution
+        // and the bounded AppKit frame operation share one main-actor hop.
+        "window.resize",
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",
@@ -2342,6 +2345,13 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        "browser.profiles.list",
+        "browser.profiles.add",
+        "browser.profiles.rename",
+        "browser.profiles.clear",
+        "browser.profiles.delete",
+        "browser.cookies.clear",
+        "browser.state.load",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

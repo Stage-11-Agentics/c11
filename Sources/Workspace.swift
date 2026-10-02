@@ -6266,7 +6266,11 @@ final class Workspace: Identifiable, ObservableObject {
     private var layoutFollowUpBrowserExitFocusTabId: UUID?
     private var layoutFollowUpNeedsGeometryPass = false
     private var layoutFollowUpAttemptScheduled = false
+    private var layoutFollowUpAttemptVersion: Int = 0
     private var layoutFollowUpStalledAttemptCount = 0
+#if DEBUG
+    private var debugLayoutFlushCount: UInt64 = 0
+#endif
     private var isAttemptingLayoutFollowUp = false
     private var isNormalizingPinnedTabOrder = false
     private var pendingNonFocusSplitFocusReassert: PendingNonFocusSplitFocusReassert?
@@ -6414,7 +6418,9 @@ final class Workspace: Identifiable, ObservableObject {
             )
         }
         tabSubscriptions[browserTab.id] = subscription
-        setPreferredBrowserProfileID(browserTab.profileID)
+        if browserTab.sticksAsPreferred {
+            setPreferredBrowserProfileID(browserTab.profileID)
+        }
     }
 
     func setPreferredBrowserProfileID(_ profileID: UUID?) {
@@ -6430,20 +6436,27 @@ final class Workspace: Identifiable, ObservableObject {
         preferredProfileID: UUID? = nil,
         sourcePanelId: UUID? = nil
     ) -> UUID {
-        if let preferredProfileID,
-           BrowserProfileStore.shared.profileDefinition(id: preferredProfileID) != nil {
-            return preferredProfileID
+        func available(_ profileID: UUID?) -> UUID? {
+            guard let profileID,
+                  BrowserProfileStore.shared.profileDefinition(id: profileID) != nil,
+                  !BrowserProfileStore.shared.isReserved(profileID) else { return nil }
+            return profileID
+        }
+
+        if let profileID = available(preferredProfileID) {
+            return profileID
         }
         if let sourcePanelId,
            let sourceBrowserPanel = browserPanel(for: sourcePanelId),
-           BrowserProfileStore.shared.profileDefinition(id: sourceBrowserPanel.profileID) != nil {
-            return sourceBrowserPanel.profileID
+           sourceBrowserPanel.sticksAsPreferred,
+           let profileID = available(sourceBrowserPanel.profileID) {
+            return profileID
         }
-        if let preferredBrowserProfileID,
-           BrowserProfileStore.shared.profileDefinition(id: preferredBrowserProfileID) != nil {
-            return preferredBrowserProfileID
+        if let profileID = available(preferredBrowserProfileID) {
+            return profileID
         }
-        return BrowserProfileStore.shared.effectiveLastUsedProfileID
+        return available(BrowserProfileStore.shared.effectiveLastUsedProfileID)
+            ?? BrowserProfileStore.shared.builtInDefaultProfileID
     }
 
     private func declareMarkdownTitleFromTab(_ markdownTab: MarkdownTab) {
@@ -8887,6 +8900,7 @@ final class Workspace: Identifiable, ObservableObject {
         insertFirst: Bool = false,
         url: URL? = nil,
         preferredProfileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         focus: Bool = true,
         bypassInsecureHTTPHostOnce: String? = nil,
         pendingHibernate: Bool = false
@@ -8900,6 +8914,7 @@ final class Workspace: Identifiable, ObservableObject {
                 preferredProfileID: preferredProfileID,
                 sourcePanelId: panelId
             ),
+            sticksAsPreferred: sticksAsPreferred,
             initialURL: url,
             bypassInsecureHTTPHostOnce: bypassInsecureHTTPHostOnce,
             proxyEndpoint: remoteProxyEndpoint,
@@ -8933,7 +8948,9 @@ final class Workspace: Identifiable, ObservableObject {
             tabTitles.removeValue(forKey: browserTab.id)
             return nil
         }
-        setPreferredBrowserProfileID(browserTab.profileID)
+        if browserTab.sticksAsPreferred {
+            setPreferredBrowserProfileID(browserTab.profileID)
+        }
 
         // See newTerminalSplit: suppress old view's becomeFirstResponder during reparenting.
         let previousHostedView = focusedTerminalTab?.hostedView
@@ -8972,6 +8989,7 @@ final class Workspace: Identifiable, ObservableObject {
         focus: Bool? = nil,
         insertAtEnd: Bool = false,
         preferredProfileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         bypassInsecureHTTPHostOnce: String? = nil,
         panelId: UUID? = nil,
         pendingHibernate: Bool = false,
@@ -8990,6 +9008,7 @@ final class Workspace: Identifiable, ObservableObject {
                 preferredProfileID: preferredProfileID,
                 sourcePanelId: sourcePanelId
             ),
+            sticksAsPreferred: sticksAsPreferred,
             initialURL: url,
             bypassInsecureHTTPHostOnce: bypassInsecureHTTPHostOnce,
             proxyEndpoint: remoteProxyEndpoint,
@@ -9016,7 +9035,9 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         bonsplitTabIdToTabId[newBonsplitTabId] = browserTab.id
-        setPreferredBrowserProfileID(browserTab.profileID)
+        if browserTab.sticksAsPreferred {
+            setPreferredBrowserProfileID(browserTab.profileID)
+        }
 
         // Keyboard/browser-open paths want "new tab at end" regardless of global new-tab placement.
         if insertAtEnd {
@@ -10501,28 +10522,33 @@ final class Workspace: Identifiable, ObservableObject {
         }
         layoutFollowUpNeedsGeometryPass = layoutFollowUpNeedsGeometryPass || includeGeometry
         layoutFollowUpStalledAttemptCount = 0
+        // Invalidate any pending retry whose delay was computed from a stale stall count.
+        // Incrementing the version causes old closures to exit early; clearing the flag
+        // allows scheduleLayoutFollowUpAttempt() below to enqueue a fresh asyncAfter(0).
+        layoutFollowUpAttemptVersion &+= 1
+        layoutFollowUpAttemptScheduled = false
 
         if layoutFollowUpTimeoutWorkItem == nil {
             installLayoutFollowUpObservers()
         }
         refreshLayoutFollowUpTimeout()
-        attemptEventDrivenLayoutFollowUp()
+        // Defer the full-window layout flush until the current layout pass unwinds.
+        // Structural callers can arrive from SwiftUI geometry updates, where a
+        // synchronous displayIfNeeded() re-enters AppKit layout.
+        scheduleLayoutFollowUpAttempt()
     }
 
     private func installLayoutFollowUpObservers() {
         guard layoutFollowUpTimeoutWorkItem == nil else { return }
 
         let enqueueAttempt: () -> Void = { [weak self] in
-            self?.scheduleLayoutFollowUpAttempt()
+            self?.wakeLayoutFollowUpForStructuralEvent()
         }
 
-        layoutFollowUpObservers.append(NotificationCenter.default.addObserver(
-            forName: NSWindow.didUpdateNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            enqueueAttempt()
-        })
+        // Do not observe NSWindow.didUpdateNotification: AppKit posts it on
+        // every tracking tick (including terminal scroll), which previously
+        // pumped the all-window flush for each tick. Structural observers below
+        // plus the bounded retry loop provide convergence without that firehose.
         layoutFollowUpObservers.append(NotificationCenter.default.addObserver(
             forName: .terminalSurfaceDidBecomeReady,
             object: nil,
@@ -10593,8 +10619,20 @@ final class Workspace: Identifiable, ObservableObject {
         layoutFollowUpBrowserTabId = nil
         layoutFollowUpBrowserExitFocusTabId = nil
         layoutFollowUpNeedsGeometryPass = false
+        layoutFollowUpAttemptVersion &+= 1
         layoutFollowUpAttemptScheduled = false
         layoutFollowUpStalledAttemptCount = 0
+    }
+
+    /// Structural events are edge-triggered, so reset a pending stall backoff
+    /// and run the next attempt promptly instead of letting the old delayed
+    /// closure hold the follow-up open near its timeout.
+    private func wakeLayoutFollowUpForStructuralEvent() {
+        guard layoutFollowUpTimeoutWorkItem != nil else { return }
+        layoutFollowUpStalledAttemptCount = 0
+        layoutFollowUpAttemptVersion &+= 1
+        layoutFollowUpAttemptScheduled = false
+        scheduleLayoutFollowUpAttempt()
     }
 
     private func scheduleLayoutFollowUpAttempt() {
@@ -10603,8 +10641,10 @@ final class Workspace: Identifiable, ObservableObject {
 
         layoutFollowUpAttemptScheduled = true
         let delay = layoutFollowUpBackoffDelay()
+        let version = layoutFollowUpAttemptVersion
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
+            guard self.layoutFollowUpAttemptVersion == version else { return }
             self.layoutFollowUpAttemptScheduled = false
             self.attemptEventDrivenLayoutFollowUp()
         }
@@ -10618,6 +10658,23 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func flushWorkspaceWindowLayouts() {
+#if DEBUG
+        let flushStart = CACurrentMediaTime()
+        debugLayoutFlushCount &+= 1
+        let flushCount = debugLayoutFlushCount
+        let flushReason = layoutFollowUpReason ?? "nil"
+        let windowCount = NSApp.windows.count
+        // Measure at the actual flush boundary, including attempts that return
+        // immediately after convergence. Attempt-only logs miss those flushes.
+        defer {
+            let flushMs = (CACurrentMediaTime() - flushStart) * 1000
+            dlog(
+                "ws.layoutFollowUp.flush workspace=\(id.uuidString) " +
+                "count=\(flushCount) windows=\(windowCount) " +
+                "flushMs=\(String(format: "%.3f", flushMs)) reason=\(flushReason)"
+            )
+        }
+#endif
         for window in NSApp.windows {
             window.contentView?.layoutSubtreeIfNeeded()
             window.contentView?.displayIfNeeded()
@@ -10780,10 +10837,13 @@ final class Workspace: Identifiable, ObservableObject {
 
         if didMakeProgress {
             layoutFollowUpStalledAttemptCount = 0
-            scheduleLayoutFollowUpAttempt()
         } else {
             layoutFollowUpStalledAttemptCount += 1
         }
+        // Keep retrying while work remains, including on stall. The delay is
+        // exponentially backed off to 250 ms and bounded by the two-second
+        // follow-up timeout. Structural events preempt that backoff above.
+        scheduleLayoutFollowUpAttempt()
 #if DEBUG
         let totalMs = (CACurrentMediaTime() - attemptStart) * 1000
         dlog(
@@ -10878,11 +10938,30 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
 #if DEBUG
+    var debugLayoutFollowUpSnapshotForTesting: (flushCount: UInt64, active: Bool) {
+        (debugLayoutFlushCount, layoutFollowUpTimeoutWorkItem != nil)
+    }
+
+    func debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: Bool = false) {
+        beginEventDrivenLayoutFollowUp(reason: "test.deferred.layout", includeGeometry: includeGeometry)
+    }
+
+    func debugClearLayoutFollowUpForTesting() {
+        clearLayoutFollowUp()
+    }
+
     func debugRunLayoutFollowUpForTesting(terminalFocusPanelId: UUID? = nil) {
         beginEventDrivenLayoutFollowUp(
             reason: "test.workspace.layout",
             terminalFocusPanelId: terminalFocusPanelId
         )
+        // Production callers observe the deferred attempt on the next run-loop
+        // turn. This DEBUG-only seam intentionally drains one attempt directly
+        // so its synchronous focus/visibility assertions keep their existing
+        // contract without making the production begin path re-entrant again.
+        layoutFollowUpAttemptVersion &+= 1
+        layoutFollowUpAttemptScheduled = false
+        attemptEventDrivenLayoutFollowUp()
         reconcileFocusState()
     }
 #endif

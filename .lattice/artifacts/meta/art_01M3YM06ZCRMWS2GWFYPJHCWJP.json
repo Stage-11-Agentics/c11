@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:33:52Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3YM06ZCRMWS2GWFYPJHCWJP",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3YM06ZCRMWS2GWFYPJHCWJP.json",
+    "size_bytes": 1640
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-280 fresh-object Atlas host-test evidence",
+  "token_usage": null,
+  "type": "file"
+}

@@ -337,6 +337,28 @@ struct BrowserProfileDefinition: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+enum BrowserProfileLookup {
+    case found(BrowserProfileDefinition)
+    case notFound
+    case ambiguous
+}
+
+enum BrowserProfileOperationError: Error {
+    case notFound
+    case ambiguous
+    case invalidName
+    case alreadyExists
+    case builtIn
+    case inUse
+    case busy
+    case operationFailed
+}
+
+enum BrowserProfileOperationStart {
+    case started
+    case failed(BrowserProfileOperationError)
+}
+
 @MainActor
 final class BrowserProfileStore: ObservableObject {
     static let shared = BrowserProfileStore()
@@ -351,6 +373,12 @@ final class BrowserProfileStore: ObservableObject {
     private let defaults: UserDefaults
     private var dataStores: [UUID: WKWebsiteDataStore] = [:]
     private var historyStores: [UUID: BrowserHistoryStore] = [:]
+    private var reservedProfileIDs: Set<UUID> = []
+
+    /// Runtime seam for deterministic lifecycle tests. Production uses the
+    /// WebKit removal API directly; tests can hold and release the completion
+    /// to exercise reservation, timeout, and late-completion behavior.
+    var websiteDataRemovalHandler: ((WKWebsiteDataStore, Set<String>, @escaping (Error?) -> Void) -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -374,7 +402,7 @@ final class BrowserProfileStore: ObservableObject {
         ?? String(localized: "browser.profile.default", defaultValue: "Default")
     }
 
-    func createProfile(named rawName: String) -> BrowserProfileDefinition? {
+    func createProfile(named rawName: String, recordsLastUsed: Bool = true) -> BrowserProfileDefinition? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         let profile = BrowserProfileDefinition(
@@ -391,7 +419,9 @@ final class BrowserProfileStore: ObservableObject {
             return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
         persist()
-        noteUsed(profile.id)
+        if recordsLastUsed {
+            noteUsed(profile.id)
+        }
         return profile
     }
 
@@ -399,7 +429,10 @@ final class BrowserProfileStore: ObservableObject {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty,
               let index = profiles.firstIndex(where: { $0.id == id }),
-              !profiles[index].isBuiltInDefault else {
+              !profiles[index].isBuiltInDefault,
+              !profiles.contains(where: {
+                  $0.id != id && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
+              }) else {
             return false
         }
         profiles[index].displayName = name
@@ -416,6 +449,102 @@ final class BrowserProfileStore: ObservableObject {
     func canRenameProfile(id: UUID) -> Bool {
         guard let profile = profileDefinition(id: id) else { return false }
         return !profile.isBuiltInDefault
+    }
+
+    func resolveProfile(_ rawValue: String) -> BrowserProfileLookup {
+        let raw = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return .notFound }
+
+        if let id = UUID(uuidString: raw) {
+            if let profile = profileDefinition(id: id) {
+                return .found(profile)
+            }
+            return .notFound
+        }
+
+        let matches = profiles.filter {
+            $0.displayName.caseInsensitiveCompare(raw) == .orderedSame
+        }
+        switch matches.count {
+        case 0: return .notFound
+        case 1: return .found(matches[0])
+        default: return .ambiguous
+        }
+    }
+
+    func isReserved(_ id: UUID) -> Bool {
+        reservedProfileIDs.contains(id)
+    }
+
+    @discardableResult
+    func reserve(_ id: UUID) -> Bool {
+        guard !reservedProfileIDs.contains(id) else { return false }
+        reservedProfileIDs.insert(id)
+        return true
+    }
+
+    func release(_ id: UUID) {
+        reservedProfileIDs.remove(id)
+    }
+
+    func removeProfileDefinition(id: UUID) -> Bool {
+        guard let profile = profileDefinition(id: id), !profile.isBuiltInDefault else {
+            return false
+        }
+
+        profiles.removeAll { $0.id == id }
+        dataStores.removeValue(forKey: id)
+        historyStores.removeValue(forKey: id)
+        if lastUsedProfileID == id {
+            lastUsedProfileID = Self.builtInDefaultProfileID
+            defaults.set(lastUsedProfileID.uuidString, forKey: Self.lastUsedProfileDefaultsKey)
+        }
+        persist()
+        return true
+    }
+
+    func beginClear(
+        id: UUID,
+        inUse: Bool,
+        completion: @escaping (Result<Void, BrowserProfileOperationError>) -> Void
+    ) -> BrowserProfileOperationStart {
+        guard let profile = profileDefinition(id: id) else {
+            return .failed(.notFound)
+        }
+        guard !profile.isBuiltInDefault else {
+            return .failed(.builtIn)
+        }
+        guard !inUse else {
+            return .failed(.inUse)
+        }
+        guard reserve(id) else {
+            return .failed(.busy)
+        }
+
+        beginWebsiteDataRemoval(for: id, deleteProfile: false, completion: completion)
+        return .started
+    }
+
+    func beginDelete(
+        id: UUID,
+        inUse: Bool,
+        completion: @escaping (Result<Void, BrowserProfileOperationError>) -> Void
+    ) -> BrowserProfileOperationStart {
+        guard let profile = profileDefinition(id: id) else {
+            return .failed(.notFound)
+        }
+        guard !profile.isBuiltInDefault else {
+            return .failed(.builtIn)
+        }
+        guard !inUse else {
+            return .failed(.inUse)
+        }
+        guard reserve(id) else {
+            return .failed(.busy)
+        }
+
+        beginWebsiteDataRemoval(for: id, deleteProfile: true, completion: completion)
+        return .started
     }
 
     func noteUsed(_ id: UUID) {
@@ -472,6 +601,55 @@ final class BrowserProfileStore: ObservableObject {
         BrowserHistoryStore.shared.flushPendingSaves()
         for store in historyStores.values {
             store.flushPendingSaves()
+        }
+    }
+
+    private func beginWebsiteDataRemoval(
+        for id: UUID,
+        deleteProfile: Bool,
+        completion: @escaping (Result<Void, BrowserProfileOperationError>) -> Void
+    ) {
+        let dataStore = websiteDataStore(for: id)
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        var didComplete = false
+
+        let finish: (Result<Void, BrowserProfileOperationError>) -> Void = { [weak self] result in
+            guard let self, !didComplete else { return }
+            didComplete = true
+            if case .success = result {
+                self.historyStores[id]?.clearHistory()
+                if let historyURL = self.historyFileURL(for: id) {
+                    try? FileManager.default.removeItem(at: historyURL)
+                }
+                if deleteProfile {
+                    _ = self.removeProfileDefinition(id: id)
+                }
+            }
+            self.release(id)
+            completion(result)
+        }
+
+        let remove: (@escaping (Error?) -> Void) -> Void = { [weak self] done in
+            guard let self else {
+                done(nil)
+                return
+            }
+            if let handler = self.websiteDataRemovalHandler {
+                handler(dataStore, dataTypes, done)
+            } else {
+                dataStore.removeData(ofTypes: dataTypes, modifiedSince: .distantPast) { @MainActor in
+                    done(nil)
+                }
+            }
+        }
+        remove { error in
+            Task { @MainActor in
+                if error == nil {
+                    finish(.success(()))
+                } else {
+                    finish(.failure(.operationFailed))
+                }
+            }
         }
     }
 
@@ -891,6 +1069,39 @@ enum BrowserNavigationDisposition: Equatable {
     case prompting(host: String)
     /// The navigation was refused without prompting.
     case blocked(host: String, reason: BrowserInsecureHTTPBlockReason)
+}
+
+/// The origin used by browser state restore to decide whether a navigation
+/// settled on the document that the saved storage belongs to. Paths may
+/// redirect within an origin; scheme, host and effective port may not.
+func browserNavigationOrigin(_ url: URL) -> String? {
+    guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return nil }
+
+    let host = url.host?.lowercased() ?? ""
+    if (scheme == "http" || scheme == "https") && host.isEmpty { return nil }
+    let effectivePort: Int?
+    if let port = url.port {
+        effectivePort = port
+    } else {
+        switch scheme {
+        case "http":
+            effectivePort = 80
+        case "https":
+            effectivePort = 443
+        default:
+            effectivePort = nil
+        }
+    }
+
+    if let effectivePort {
+        return "\(scheme)://\(host):\(effectivePort)"
+    }
+    return "\(scheme)://\(host)"
+}
+
+enum BrowserStateLoadNavigationResult {
+    case success(URL)
+    case failure(String)
 }
 
 /// The advice appended to every blocked/pending insecure-HTTP report. Socket
@@ -2132,6 +2343,11 @@ final class BrowserTab: TabContent, ObservableObject {
     @Published private(set) var profileID: UUID
     @Published private(set) var historyStore: BrowserHistoryStore
 
+    /// Explicit profile selection is one-shot. When false, this tab must not
+    /// rewrite workspace or global browser-profile preference for a later
+    /// unscoped browser creation.
+    let sticksAsPreferred: Bool
+
     /// The underlying web view
     private(set) var webView: WKWebView
     private var websiteDataStore: WKWebsiteDataStore
@@ -2491,6 +2707,15 @@ final class BrowserTab: TabContent, ObservableObject {
     private var webViewObservers: [NSKeyValueObservation] = []
     private var activeDownloadCount: Int = 0
 
+    private struct PendingStateLoadNavigation {
+        let token: UUID
+        let webView: WKWebView
+        let webViewInstanceID: UUID
+        let expectedOrigin: String
+        let completion: (BrowserStateLoadNavigationResult) -> Void
+    }
+    private var pendingStateLoadNavigation: PendingStateLoadNavigation?
+
     // Avoid flickering the loading indicator for very fast navigations.
     private let minLoadingIndicatorDuration: TimeInterval = 0.35
     private var loadingStartedAt: Date?
@@ -2848,6 +3073,12 @@ final class BrowserTab: TabContent, ObservableObject {
                 // sampler. didFinish lands after the WebContent process is
                 // alive, and process-per-origin reloads can change the pid.
                 self.refreshCachedWebContentPid()
+                self.finishPendingStateLoadNavigation(
+                    webView: webView,
+                    webViewInstanceID: boundWebViewInstanceID,
+                    settledURL: webView.url,
+                    failure: nil
+                )
             }
         }
         navigationDelegate.didFailNavigation = { [weak self] failedWebView, failedURL in
@@ -2860,6 +3091,12 @@ final class BrowserTab: TabContent, ObservableObject {
                 self.lastFaviconURLString = nil
                 // Keep find-in-page open and clear stale counters on failed loads.
                 self.restoreFindStateAfterNavigation(replaySearch: false)
+                self.finishPendingStateLoadNavigation(
+                    webView: failedWebView,
+                    webViewInstanceID: boundWebViewInstanceID,
+                    settledURL: nil,
+                    failure: failedURL.isEmpty ? "Navigation failed" : "Navigation failed: \(failedURL)"
+                )
             }
         }
     }
@@ -2886,6 +3123,7 @@ final class BrowserTab: TabContent, ObservableObject {
         createdAt: Date? = Date(),
         workspaceId: UUID,
         profileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         initialURL: URL? = nil,
         bypassInsecureHTTPHostOnce: String? = nil,
         proxyEndpoint: BrowserProxyEndpoint? = nil,
@@ -2900,11 +3138,13 @@ final class BrowserTab: TabContent, ObservableObject {
         self.skipNextLoadStamp = pendingHibernate
             || (createdAt.map { Date().timeIntervalSince($0) > 5 } ?? true)
         self.workspaceId = workspaceId
+        self.sticksAsPreferred = sticksAsPreferred
         self.messagesPageURL = initialURL.flatMap {
             MessagesPageLayout.isMessagesPageURL($0) ? $0.standardizedFileURL : nil
         }
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
+            && !BrowserProfileStore.shared.isReserved(requestedProfileID)
             ? requestedProfileID
             : BrowserProfileStore.shared.builtInDefaultProfileID
         self.profileID = resolvedProfileID
@@ -2924,7 +3164,9 @@ final class BrowserTab: TabContent, ObservableObject {
         self.webView = webView
         self.insecureHTTPAlertFactory = { NSAlert() }
         applyRemoteProxyConfigurationIfAvailable()
-        BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        if sticksAsPreferred {
+            BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        }
 
         // Set up navigation delegate
         let navDelegate = BrowserNavigationDelegate()
@@ -3327,11 +3569,16 @@ final class BrowserTab: TabContent, ObservableObject {
 
     @discardableResult
     func switchToProfile(_ requestedProfileID: UUID) -> Bool {
+        guard !BrowserProfileStore.shared.isReserved(requestedProfileID) else {
+            return false
+        }
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
             ? requestedProfileID
             : BrowserProfileStore.shared.builtInDefaultProfileID
         guard resolvedProfileID != profileID else {
-            BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+            if sticksAsPreferred {
+                BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+            }
             return false
         }
 
@@ -3366,7 +3613,9 @@ final class BrowserTab: TabContent, ObservableObject {
 
         profileID = resolvedProfileID
         historyStore = BrowserProfileStore.shared.historyStore(for: resolvedProfileID)
-        BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        if sticksAsPreferred {
+            BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        }
 
         if !usesRemoteWorkspaceProxy {
             websiteDataStore = BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID)
@@ -4167,6 +4416,78 @@ final class BrowserTab: TabContent, ObservableObject {
         }
         navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: recordTypedNavigation)
         return record(disposition: .proceeded)
+    }
+
+    /// Start a navigation for browser state restore and notify the caller only
+    /// after WebKit finishes a same-origin document or reports a real failure.
+    /// The callback is always delivered from the main actor. A caller waiting
+    /// on a socket worker must own the timeout; this method never blocks main.
+    @discardableResult
+    func navigateForStateLoad(
+        to url: URL,
+        completion: @escaping (BrowserStateLoadNavigationResult) -> Void
+    ) -> UUID {
+        let token = UUID()
+        let pending = PendingStateLoadNavigation(
+            token: token,
+            webView: webView,
+            webViewInstanceID: webViewInstanceID,
+            expectedOrigin: browserNavigationOrigin(url) ?? "",
+            completion: completion
+        )
+
+        pendingStateLoadNavigation?.completion(.failure("Navigation superseded"))
+        pendingStateLoadNavigation = pending
+
+        let disposition = navigate(to: url)
+        guard disposition == .proceeded else {
+            pendingStateLoadNavigation = nil
+            let message: String
+            switch disposition {
+            case .prompting:
+                message = "Navigation requires operator approval"
+            case .blocked:
+                message = "Navigation was blocked"
+            case .proceeded:
+                message = "Navigation did not start"
+            }
+            completion(.failure(message))
+            return token
+        }
+        return token
+    }
+
+    func cancelStateLoadNavigation(token: UUID) {
+        guard pendingStateLoadNavigation?.token == token else { return }
+        pendingStateLoadNavigation = nil
+    }
+
+    private func finishPendingStateLoadNavigation(
+        webView: WKWebView,
+        webViewInstanceID: UUID,
+        settledURL: URL?,
+        failure: String?
+    ) {
+        guard let pending = pendingStateLoadNavigation,
+              pending.webView === webView,
+              pending.webViewInstanceID == webViewInstanceID else {
+            return
+        }
+
+        pendingStateLoadNavigation = nil
+        if let failure {
+            pending.completion(.failure(failure))
+            return
+        }
+
+        guard let settledURL,
+              let settledOrigin = browserNavigationOrigin(settledURL),
+              settledOrigin == pending.expectedOrigin else {
+            let settled = settledURL?.absoluteString ?? "(missing URL)"
+            pending.completion(.failure("Navigation settled on unexpected origin: \(settled)"))
+            return
+        }
+        pending.completion(.success(settledURL))
     }
 
     private func navigateWithoutInsecureHTTPPrompt(

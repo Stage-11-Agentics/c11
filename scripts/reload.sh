@@ -376,6 +376,14 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
       || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$INFO_PLIST" 2>/dev/null \
       || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$INFO_PLIST"
+    # xcodebuild may process the source Info.plist after target shell phases,
+    # so stamp the final tagged bundle immediately before signing. The CLI and
+    # socket server use this shared identity to prove they are the same build.
+    C11_COMMIT="$(git -C "$PWD" rev-parse --short=9 HEAD 2>/dev/null || true)"
+    if [[ -n "$C11_COMMIT" ]]; then
+      /usr/libexec/PlistBuddy -c "Set :C11Commit $C11_COMMIT" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :C11Commit string $C11_COMMIT" "$INFO_PLIST"
+    fi
     if [[ -n "${TAG_SLUG:-}" ]]; then
       APP_SUPPORT_DIR="$HOME/Library/Application Support/c11"
       CMUXD_SOCKET="${APP_SUPPORT_DIR}/c11d-dev-${TAG_SLUG}.sock"

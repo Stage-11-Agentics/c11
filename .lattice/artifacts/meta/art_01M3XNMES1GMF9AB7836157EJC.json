@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-10-02T06:43:09Z",
+  "created_by": "agent:codex-fixtures",
+  "custom_fields": {
+    "disclosure_sanitized": true,
+    "original_public_payload_removed": true
+  },
+  "id": "art_01M3XNMES1GMF9AB7836157EJC",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XNMES1GMF9AB7836157EJC-sanitized.json",
+    "size_bytes": 3102
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-263 matched remote build host notification churn with both orders and loads",
+  "token_usage": null,
+  "type": "file"
+}

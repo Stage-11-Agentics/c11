@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:43:24Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XWGM5N02DHMVTWTF5Z6NWB",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3XWGM5N02DHMVTWTF5Z6NWB.png",
+    "size_bytes": 29616
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Privacy replacement for art_01M3XTP5DDDWYNP211ERYV92PV. Exact screenshot crop shows only the existing Quit confirmation; terminal content is excluded.",
+  "tags": [],
+  "title": "C11-298 Quit confirmation, cropped to dialog controls",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,85 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-289",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-289-browser-profiles",
+      "linked_at": "2026-10-02T09:20:22Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    }
+  ],
+  "comment_count": 11,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAn agent that needs a clean login currently shares the operator's browser profile, or asks for a click through the profile UI. A CLI that can list, add, and select a profile makes that a socket call. Backlog item: B3.\n\n## Evidence\n- c11: `BrowserProfileStore` on origin/main (0ff8887e5e) is `Sources/Tabs/BrowserTab.swift:341`. It persists to UserDefaults `browserProfiles.v1` (`:344`). `createProfile(named:)` is `:377`. `renameProfile(id:to:)` is `:398`. `websiteDataStore(for:)` is `:429` and uses `WKWebsiteDataStore(forIdentifier:)`. There is no `clear` and no `delete`.\n- c11: `c11 browser --help` (`CLI/c11.swift:10181-10239`) has no `profiles` subcommand and no `--profile` on `open`. `new-tab` and `new-area` take `--type` and `--url` (`:2352-2362`, `:2603-2615`) and do not take a profile.\n- Upstream: cmux #318, with a profile CLI in #3770 and #8874.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a75 Profiles row. Fable and Astra both mark it if-time. Astra row 4.15: list, add, and explicit selection first. clear and delete of an in-use profile need a lifecycle rule. `c11-1.0.html` agrees if-time. The backlog keeps the full verb list at P2.\n\n## Scope\nIn: `c11 browser profiles list|add|rename|clear|delete`, and `--profile <name|id>` on `c11 browser open` and on `new-tab` / `new-area` when `--type browser`. `list` and `add` and `rename` and `--profile` are the part that must work. `clear` and `delete` ship in the same PR only with the refusal rules below. Teach both in the c11-browser skill.\nOut: non-interactive import (parked 4.16b). URL allowlist. Passkeys. Sharing a profile with Chrome. A modal confirmation. `NSAlert.runModal()` on any path an agent can hit wedges the app (C11-204). Destructive verbs take `--yes` on the CLI and otherwise exit with a message. They never open a dialog.\n\n## Approach\nSocket methods under `browser.profiles.*`, off the main-actor hot path except the small UserDefaults write, which is already how the store persists. `list` returns id, name, and whether any live tab uses it. `add` calls `createProfile`. `rename` calls `renameProfile` and refuses the built-in profile when `canRenameProfile` is false (`:76` in the store section). `delete` and `clear` refuse when a live tab uses the profile, and refuse the built-in default. `clear` removes website data for that store only. `delete` also removes the definition. `--profile` on open resolves a name or id and passes the UUID into the existing browser-tab constructor (`BrowserTab.swift` around `:2900-2908`, which already takes a profile id). Missing profile is `not_found`, not a silent fallback to the default. Update `skills/c11-browser` and sync that installed skill.\n\n## Acceptance criteria\n1. `c11 browser profiles add smoke-b3` creates a profile, and `list --json` shows it. `rename smoke-b3 smoke-b3b` changes the name. A second `add` of the same name returns a clear error and does not create a duplicate.\n2. `c11 browser open https://example.com --profile smoke-b3b` opens a tab whose profile id is that profile. A second open without `--profile` does not use smoke-b3b. Confirm with `list` showing which profile the new tab uses, or with the tab's metadata if the open response includes `profile_id`.\n3. `c11 browser profiles delete smoke-b3b` while that tab is open exits non-zero and leaves the profile. After the tab is closed, `delete --yes smoke-b3b` removes it. Without `--yes`, delete does not remove it.\n4. `clear --yes` on a profile that holds a cookie removes that cookie from a later navigation in that profile, and leaves another profile's cookies in place.\n5. None of these commands changes the key window or opens a dialog.\n\n## Validation\n`tests_v2` against a tagged build for criteria 1, 2, 3, and 5. Criterion 4 needs a real web view. One computer-use or browser-skill check is enough. No soak. P2: if this misses the week-3 admission the backlog describes, it does not land in 1.0. Do not keep a half-finished clear/delete.\n\n## Dependencies\nNone. B2's wizard smoke does not depend on this. Related only because both touch profiles. Feature flag `browser.profiles` if C6's list exists.\n\n## Risks\nTyping latency: none. Main thread: a profile-store write is small. Do not rebuild every web view on `list`. Doctrine: profiles are c11's own `WKWebsiteDataStore` identifiers. Do not write Chrome's, Arc's, or Safari's files, and do not write tenant config. Localization: new CLI errors and any new menu copy use `String(localized:)`. Six-locale fill is X1. Public repo: nothing sensitive. `clear` and `delete` are destructive. The in-use refusal is the guard.\n\nSize: S\u2013M. Tier: P2. Doctrine check: a profile is a c11 data store the caller names. Destructive verbs do not guess, and they do not modal.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YR9HTFEHG3494G61STD2FH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YRJBVV4YVX4N11FZWSNB5E",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YVEW5WHNEWJJSA7C28JEZ8",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YVT738E1D92P37VS24WMJY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YXJG3RCNK1MEXVWJ3MYY1W",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YY109NAQ7DEG1W9JSW6S8M",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FNYP6P18GXT6BSEEJTS9",
+  "last_event_id": "ev_01M3YY2V99F431BDDZP2C8JPY1",
+  "last_status_changed_at": "2026-10-02T18:30:04Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNVHGZM65ZAT15QJTF12",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-289",
+  "status": "in_validation",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p2"
+  ],
+  "title": "Add browser profile list, add, rename, clear, delete, and --profile",
+  "type": "task",
+  "updated_at": "2026-10-02T18:30:04Z",
+  "urgency": null
+}

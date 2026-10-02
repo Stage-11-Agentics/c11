@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:03:08Z",
+  "created_by": "agent:codex-merge-captain",
+  "custom_fields": {},
+  "id": "art_01M3Y12MF26B51G801ARQFJYC7",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Y12MF26B51G801ARQFJYC7.md",
+    "size_bytes": 4465
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED; reviewed runtime/validation evidence accepted\nC11-302 / PR #526: https://github.com/Stage-11-Agentics/c11/pull/526\nLanding head: 2f63e9b3c88265aa61879ceca70fc345fc610b7b\nSquash merge: 3786513d",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

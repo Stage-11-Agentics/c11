@@ -1955,16 +1955,34 @@ struct CMUXCLI {
         let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
         let (createCommandText, createArgs) = isTerminalCreate
             ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
         if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
             if createArgs.contains("--command"), createCommandText == nil {
                 throw CLIError(message: String(localized: "cli.create.command.requiresValue", defaultValue: "--command requires text"))
+            }
+            if command == "new-tab" || command == "new-area" {
+                validatedCreateProfile = try validatedBrowserProfileOption(createArgs)
+                if validatedCreateProfile != nil,
+                   optionValue(createArgs, name: "--type")?.lowercased() != "browser" {
+                    throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
+                }
             }
             _ = try resolvedCreateInput(
                 raw: createCommandText,
                 panelType: command == "new-workspace" || command == "new-split" ? "terminal" : optionValue(createArgs, name: "--type"),
                 hasLayout: command == "new-workspace" && createArgs.contains("--layout")
             )
+        }
+
+        // Resize has a command-local target and validates before discovery,
+        // connection, authentication or the legacy global-window focus prelude.
+        let resizeArguments: (window: String, width: Double?, height: Double?)?
+        if command == "resize-window", !commandArgs.contains("--help"), !commandArgs.contains("-h") {
+            guard windowId == nil else { throw resizeWindowUsageError() }
+            resizeArguments = try parseResizeWindowArguments(commandArgs)
+        } else {
+            resizeArguments = nil
         }
 
         let cliTelemetry = CLISocketSentryTelemetry(
@@ -2367,6 +2385,17 @@ struct CMUXCLI {
             let response = try sendV1Command("close_window \(target)", client: client)
             print(response)
 
+        case "resize-window":
+            guard let arguments = resizeArguments else { throw resizeWindowUsageError() }
+            var params: [String: Any] = [:]
+            params["window_id"] = try normalizeWindowHandle(arguments.window, client: client)
+            if let width = arguments.width { params["width"] = width }
+            if let height = arguments.height { params["height"] = height }
+            let response = try CapabilityFeatures.current.dispatch(.windowResize) {
+                try client.sendV2(method: "window.resize", params: params)
+            }
+            print(jsonString(formatIDs(response, mode: idFormat)))
+
         case "move-workspace-to-window":
             guard let workspaceRaw = optionValue(commandArgs, name: "--workspace") else {
                 throw CLIError(message: "move-workspace-to-window requires --workspace")
@@ -2681,6 +2710,10 @@ struct CMUXCLI {
             let file = optionValue(createArgs, name: "--file")
             let title = optionValue(createArgs, name: "--title")
             let cwd = optionValue(createArgs, name: "--cwd")
+            let profile = validatedCreateProfile
+            if profile != nil, type?.lowercased() != "browser" {
+                throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
+            }
             var params: [String: Any] = ["direction": direction]
             if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -2689,6 +2722,7 @@ struct CMUXCLI {
             if let url { params["url"] = url }
             if let file { params["file"] = file }
             if let title, !title.isEmpty { params["title"] = title }
+            if let profile { params["profile"] = profile }
             // --cwd <path> sets the new terminal's working directory. `inherit`
             // (or omitting the flag) keeps the default: the workspace root,
             // else the parent surface's cwd. Resolved relative to the CLI's
@@ -2941,6 +2975,10 @@ struct CMUXCLI {
             let url = optionValue(createArgs, name: "--url")
             let file = optionValue(createArgs, name: "--file")
             let cwd = optionValue(createArgs, name: "--cwd")
+            let profile = validatedCreateProfile
+            if profile != nil, type?.lowercased() != "browser" {
+                throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
+            }
             let noFocus = createArgs.contains("--no-focus")
             var params: [String: Any] = [:]
             if let initialInput { params["initial_input"] = initialInput }
@@ -2951,6 +2989,7 @@ struct CMUXCLI {
             if let type { params["type"] = type }
             if let url { params["url"] = url }
             if let file { params["file"] = file }
+            if let profile { params["profile"] = profile }
             // --cwd <path> wins over the workspace root for a terminal surface.
             // Resolved relative to the CLI's cwd; validated server-side.
             if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
@@ -7708,7 +7747,7 @@ struct CMUXCLI {
         var surfaceRaw = surfaceOpt
         var args = argsWithoutSurfaceFlag
 
-        let verbsWithoutSurface: Set<String> = ["open", "open-split", "new", "identify"]
+        let verbsWithoutSurface: Set<String> = ["open", "open-split", "new", "identify", "profiles"]
         if surfaceRaw == nil, let first = args.first {
             if !first.hasPrefix("-") && !verbsWithoutSurface.contains(first.lowercased()) {
                 surfaceRaw = first
@@ -7861,11 +7900,104 @@ struct CMUXCLI {
             return
         }
 
+        if subcommand == "profiles" {
+            guard surfaceRaw == nil else {
+                throw CLIError(message: String(localized: "browser.profile.cli.tabHandle", defaultValue: "browser profiles does not take a tab handle"))
+            }
+            guard let profileCommand = subArgs.first?.lowercased() else {
+                throw CLIError(message: String(localized: "browser.profile.cli.commandRequired", defaultValue: "browser profiles requires list, add, rename, clear, or delete"))
+            }
+            let profileArgs = Array(subArgs.dropFirst())
+
+            if profileCommand == "list" {
+                let payload = try client.sendV2(method: "browser.profiles.list", params: [:])
+                if effectiveJSONOutput {
+                    print(jsonString(formatIDs(payload, mode: effectiveIDFormat)))
+                } else {
+                    let profiles = payload["profiles"] as? [[String: Any]] ?? []
+                    for profile in profiles {
+                        let name = (profile["name"] as? String) ?? ""
+                        let id = (profile["id"] as? String) ?? ""
+                        let builtIn = (profile["built_in"] as? Bool) == true ? " built-in" : ""
+                        let inUse = (profile["in_use"] as? Bool) == true ? " in-use" : ""
+                        print("\(id)  \(name)\(builtIn)\(inUse)")
+                    }
+                }
+                return
+            }
+
+            guard ["add", "rename", "clear", "delete"].contains(profileCommand) else {
+                throw CLIError(message: String(localized: "browser.profile.cli.unknownCommand", defaultValue: "Unknown browser profiles command \(profileCommand)"))
+            }
+
+            if profileCommand == "clear" || profileCommand == "delete" {
+                let (profile, confirmed) = try parseBrowserProfileDestructiveArguments(
+                    profileArgs,
+                    command: profileCommand
+                )
+                let payload = try client.sendV2(
+                    method: "browser.profiles.\(profileCommand)",
+                    params: ["profile": profile, "confirm": confirmed]
+                )
+                output(
+                    payload,
+                    fallback: profileCommand == "delete"
+                        ? String(localized: "browser.profile.cli.deleted", defaultValue: "Deleted browser profile")
+                        : String(localized: "browser.profile.cli.cleared", defaultValue: "Cleared browser profile")
+                )
+                return
+            }
+
+            var params: [String: Any] = [:]
+            let (profileOpt, argsAfterProfile) = parseOption(profileArgs, name: "--profile")
+            let (nameOpt, remaining) = parseOption(argsAfterProfile, name: "--name")
+            let (withoutYes, _) = parseFlag(remaining, name: "--yes")
+            let positionals = withoutYes.filter { !$0.hasPrefix("-") }
+
+            switch profileCommand {
+            case "add":
+                let name = nameOpt ?? positionals.joined(separator: " ")
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: String(localized: "browser.profile.cli.addRequiresName", defaultValue: "browser profiles add requires a name"))
+                }
+                params["name"] = name
+            case "rename":
+                let profile = profileOpt ?? positionals.first
+                let name = nameOpt ?? (positionals.count > 1 ? positionals.dropFirst().joined(separator: " ") : nil)
+                guard let profile, let name,
+                      !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: String(localized: "browser.profile.cli.renameRequiresArgs", defaultValue: "browser profiles rename requires <profile> <name>"))
+                }
+                params["profile"] = profile
+                params["name"] = name
+            default:
+                break
+            }
+
+            let method = "browser.profiles.\(profileCommand)"
+            let payload = try client.sendV2(method: method, params: params)
+            output(
+                payload,
+                fallback: profileCommand == "delete"
+                    ? String(localized: "browser.profile.cli.deleted", defaultValue: "Deleted browser profile")
+                    : profileCommand == "clear"
+                        ? String(localized: "browser.profile.cli.cleared", defaultValue: "Cleared browser profile")
+                        : "OK"
+            )
+            return
+        }
+
         if subcommand == "open" || subcommand == "open-split" || subcommand == "new" {
+            let validatedProfile = try validatedBrowserProfileOption(subArgs)
             // Parse routing flags before URL assembly so they never leak into the URL string.
             let (workspaceOpt, argsAfterWorkspace) = parseOption(subArgs, name: "--workspace")
             let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
-            let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterWindow, name: "--allow-insecure-http")
+            let (profileOpt, argsAfterProfile) = parseOption(argsAfterWindow, name: "--profile")
+            guard profileOpt == validatedProfile else {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterProfile, name: "--allow-insecure-http")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let respectExternalOpenRules: Bool = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_RESPECT_EXTERNAL_OPEN_RULES"] else {
@@ -7881,6 +8013,9 @@ struct CMUXCLI {
 
             if surfaceRaw != nil, subcommand == "open" {
                 // Treat `browser <surface> open <url>` as navigate for agent-browser ergonomics.
+                guard profileOpt == nil else {
+                    throw CLIError(message: String(localized: "browser.profile.error.creationOnly", defaultValue: "--profile is only valid when creating a browser tab"))
+                }
                 let sid = try requireSurface()
                 guard !url.isEmpty else {
                     throw CLIError(message: "browser <tab> open requires a URL")
@@ -7912,6 +8047,9 @@ struct CMUXCLI {
             }
             if allowInsecureHTTP {
                 params["allow_insecure_http"] = true
+            }
+            if let profileOpt {
+                params["profile"] = profileOpt
             }
             if let windowRaw = windowOpt {
                 if let window = try normalizeWindowHandle(windowRaw, client: client) {
@@ -9479,6 +9617,16 @@ struct CMUXCLI {
               c11 focus-window --window 0
               c11 focus-window --window window:1
             """
+        case "resize-window":
+            return """
+            Usage: c11 resize-window --window <id|ref|index> <width> <height>
+
+            Set a window's frame while preserving its top-left, without focusing it.
+            Use - to keep one edge, or - - to read the current frame.
+            Sizes clamp to the window minimum and its screen's visible size.
+            Fullscreen windows are refused. The result is JSON.
+            """
+
         case "close-window":
             return """
             Usage: c11 close-window --window <id|ref|index>
@@ -10006,6 +10154,7 @@ struct CMUXCLI {
               --direction <left|right|up|down>    Split direction (default: right)
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser areas
+              --profile <name|id>                 Browser profile for browser areas (one-shot)
               --file <path>                       File path for markdown areas
               --title <text>                      Seed the new area's title metadata atomically with creation
               --cwd <path|inherit>                Working directory for the new terminal. A path
@@ -10108,6 +10257,7 @@ struct CMUXCLI {
               --area <id|ref>                     Target area
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser tabs
+              --profile <name|id>                 Browser profile for browser tabs (one-shot)
               --file <path>                       File path for markdown tabs
               --cwd <path|inherit>                Working directory for a terminal tab. A path
                                                   (absolute or relative to the CLI's cwd) is
@@ -11064,8 +11214,15 @@ struct CMUXCLI {
             `open`/`open-split`/`new`/`identify` can run without an explicit tab.
 
             Subcommands:
-              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--allow-insecure-http]
+              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--profile <name|id>] [--allow-insecure-http]
                 open/open-split/new default to $CMUX_WORKSPACE_ID when --workspace is omitted and --window is not set
+                --profile selects one browser profile for this creation only
+              profiles list
+              profiles add <name>
+              profiles rename <profile> <name>
+              profiles clear <profile> --yes
+              profiles delete <profile> --yes
+                clear/delete never prompt; they refuse without --yes and refuse built-in or in-use profiles
               goto|navigate <url> [--snapshot-after] [--allow-insecure-http]
                 --allow-insecure-http consents to one plain-http navigation to that host without
                 prompting a human (loopback hosts are already allowed by default)
@@ -12797,10 +12954,123 @@ struct CMUXCLI {
         return (values, remaining)
     }
 
+    private func resizeWindowUsageError() -> CLIError {
+        CLIError(message: String(localized: "cli.resize_window.usage", defaultValue: "resize-window requires --window <id> <width> <height>. Use - to keep an edge."))
+    }
+
+    private func parseResizeWindowArguments(_ args: [String]) throws -> (window: String, width: Double?, height: Double?) {
+        try rejectEmptyTargetFlags(args)
+        let (window, rest) = parseOption(args, name: "--window")
+        var dimensions = rest
+        if dimensions.first == "--" { dimensions.removeFirst() }
+        guard args.filter({ $0 == "--window" }).count == 1,
+              let window, !window.hasPrefix("--"), dimensions.count == 2 else {
+            throw resizeWindowUsageError()
+        }
+        func number(_ token: String) throws -> Double? {
+            if token == "-" { return nil }
+            guard let value = Double(token), value.isFinite else {
+                throw CLIError(message: String(format: String(localized: "cli.resize_window.bad_size", defaultValue: "'%@' is not a width or height. Pass a number or -."), token))
+            }
+            return value
+        }
+        return (window, try number(dimensions[0]), try number(dimensions[1]))
+    }
+
     private func optionValue(_ args: [String], name: String) -> String? {
         let spellings = Self.flagSpellings(name)
         guard let index = args.firstIndex(where: { spellings.contains($0) }), index + 1 < args.count else { return nil }
         return args[index + 1]
+    }
+
+    /// Read an explicit profile selector without collapsing malformed or
+    /// empty values into the omitted/default-profile case.
+    private func validatedBrowserProfileOption(_ args: [String]) throws -> String? {
+        var value: String?
+        var index = 0
+        while index < args.count, args[index] != "--" {
+            let argument = args[index]
+            if argument.hasPrefix("--profile=") {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            guard argument == "--profile" else {
+                index += 1
+                continue
+            }
+            guard value == nil,
+                  index + 1 < args.count,
+                  args[index + 1] != "--",
+                  !args[index + 1].hasPrefix("-") else {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            let candidate = args[index + 1]
+            guard !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            value = candidate
+            index += 2
+        }
+        return value
+    }
+
+    /// Destructive profile commands accept one selector and `--yes` only.
+    /// Rejecting every unrecognized token here prevents a typo such as
+    /// `--dry-run` from being discarded before a destructive socket request.
+    private func parseBrowserProfileDestructiveArguments(
+        _ args: [String],
+        command: String
+    ) throws -> (profile: String, confirmed: Bool) {
+        var optionProfile: String?
+        var positionals: [String] = []
+        var confirmed = false
+        var index = 0
+
+        func invalidArguments() -> CLIError {
+            CLIError(message: String(
+                localized: "browser.profile.cli.invalidDestructiveArguments",
+                defaultValue: "browser profiles \(command) requires exactly one profile target; only --profile and --yes are accepted"
+            ))
+        }
+
+        while index < args.count {
+            let argument = args[index]
+            switch argument {
+            case "--yes":
+                guard !confirmed else { throw invalidArguments() }
+                confirmed = true
+                index += 1
+            case "--profile":
+                guard optionProfile == nil,
+                      index + 1 < args.count,
+                      !args[index + 1].hasPrefix("-") else {
+                    throw invalidArguments()
+                }
+                let candidate = args[index + 1]
+                guard !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw invalidArguments()
+                }
+                optionProfile = candidate
+                index += 2
+            default:
+                guard !argument.hasPrefix("-") else { throw invalidArguments() }
+                positionals.append(argument)
+                index += 1
+            }
+        }
+
+        guard optionProfile == nil || positionals.isEmpty else { throw invalidArguments() }
+        let target: String
+        if let optionProfile {
+            target = optionProfile
+        } else if positionals.count == 1 {
+            target = positionals[0]
+        } else {
+            throw invalidArguments()
+        }
+        guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw invalidArguments()
+        }
+        return (target, confirmed)
     }
 
     /// Destructive commands refuse an explicitly empty target flag (almost
@@ -19139,6 +19409,7 @@ struct CMUXCLI {
           new-window
           focus-window --window <id>
           close-window --window <id>
+          resize-window --window <id> <width|-> <height|->
           move-workspace-to-window --workspace <id|ref> --window <id|ref>
           reorder-workspace --workspace <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>) [--window <id|ref|index>]
           workspace-group <verb> [--window <id|ref>] [--json]   (folders; see --help)

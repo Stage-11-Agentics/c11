@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T11:28:52Z",
+  "created_by": "agent:codex-merge-captain",
+  "custom_fields": {},
+  "id": "art_01M3Y5ZKXFD6CYZR21927A1P26",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Y5ZKXFD6CYZR21927A1P26.md",
+    "size_bytes": 3751
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged compile passed at b33; append/replay and Claude attention pass. Restart stops on not_ready before its assertion. One run, owned guest deleted.",
+  "tags": [],
+  "title": "Exact-head guest gate: two scripts pass, restart readiness failure",
+  "token_usage": null,
+  "type": "file"
+}

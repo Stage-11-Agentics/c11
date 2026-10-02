@@ -1,0 +1,49 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:c11-247-grok",
+  "branch_links": [
+    {
+      "branch": "c11-247-smoke-ready",
+      "linked_at": "2026-10-01T05:23:02Z",
+      "linked_by": "agent:c11-247-grok",
+      "repo": null
+    }
+  ],
+  "comment_count": 4,
+  "complexity": "low",
+  "created_at": "2026-09-30T23:18:01Z",
+  "created_by": "agent:cairn-tab-bar",
+  "custom_fields": {},
+  "description": "scripts/smoke-test-ci.sh sends the v1 socket command 'send time\\n' about 2.5s after launch with a 5s recv timeout. On the macOS virtual-display runner the initial terminal can take up to 3.0s to attach ('Welcome quad: initial terminal not ready after 3.0s'), and the send handler waits up to 2.0s for a surface, so the test has ~zero margin. Seen once on #463 (run 36786196112 attempt 1); attempt 2 on the same head passed, and local repro under load answered in 0.03s. Fix: wait for a ready, focused terminal (poll a readiness command) before sending, or retry the send once; don't touch app code.",
+  "done_at": "2026-10-01T05:49:35Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3V05MJ8W8NFMZRYTVH98DHJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3V05MJ7TQZD9TYXEQGAHT9C",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3T9RNQG4MTPSCNAT0VZPRCM",
+  "last_event_id": "ev_01M3V05MJ8W8NFMZRYTVH98DHM",
+  "last_status_changed_at": "2026-10-01T05:49:35Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-247",
+  "status": "done",
+  "tags": [
+    "ci",
+    "flake"
+  ],
+  "title": "Smoke test: 'send time' can time out on a slow CI launch",
+  "type": "bug",
+  "updated_at": "2026-10-01T05:49:35Z",
+  "urgency": null
+}

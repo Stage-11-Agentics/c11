@@ -1,0 +1,135 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-browser",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-287-webview-crash",
+      "linked_at": "2026-10-02T04:16:21Z",
+      "linked_by": "agent:codex-browser",
+      "repo": null
+    }
+  ],
+  "comment_count": 17,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nA WebContent crash that runs inside WebKit's callback, or a forced layout from that path, takes down the process. Every terminal in the app goes with it. cmux saw that crash about 1,900 times in one release on macOS 26. Backlog item: B1.\n\n## Evidence\n- c11: `Sources/Tabs/BrowserTab.swift:6451-6455` on origin/main (0ff8887e5e). `webViewWebContentProcessDidTerminate` calls `didTerminateWebContentProcess`. The navigation delegate sets that to `replaceWebViewAfterContentProcessTermination` at `:2935-2936`.\n- c11: `replaceWebViewAfterContentProcessTermination` (`:3515-3520`) calls `replaceWebViewPreservingState` (`:3523-3603`) immediately. That builds a new `WKWebView` (`:3562-3568`), detaches the portal, and restores the URL on the same stack as the callback. There is no deferral to the next turn.\n- c11: forced synchronous layout is still in the portal refresh. `Sources/BrowserWindowPortal.swift:3300-3312` calls `layoutSubtreeIfNeeded` and `displayIfNeeded`, including `(webView.window ?? hostView.window)?.displayIfNeeded()`. `Sources/Tabs/BrowserTabView.swift:6171-6173` does the same on the web view, the slot, and the host.\n- Upstream: cmux #9773 and #9774 (forced layout) and #12519 (in-callback swap). #4987 is the older process-pool plus recovery PR. The pool half is not the fix. Report 06 says `WKProcessPool` is believed deprecated for process assignment. Do not verify that by shipping a pool.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a75 \"Process isolation\", and `05-bug-sweep.md` top-10 item 10 and ranked rows 10 and 11. Astra row 4.18: recovery already exists. Harden it. Do not port a second stack. `c11-1.0.html` marks it core. Bug track H-E is browser automation correctness (cookies, state load, fill, eval, screenshots). It is a neighbor in `BrowserTab.swift`, not this fix.\n\n## Scope\nIn: the termination callback returns without creating a web view. The replacement runs on a later main-queue turn, still on the main actor, and only if that web view is still current. Loading and focus state reset as the existing `replaceWebViewPreservingState` already does. Remove the forced `layoutSubtreeIfNeeded` and `displayIfNeeded` from the portal refresh path that runs during SwiftUI updates (`BrowserWindowPortal.swift:3300-3312` and the matching block in `BrowserTabView.swift:6171-6173`). A second crash while a replacement is pending does not start a second replacement.\nOut: a new `WKProcessPool` per tab. Passkeys. The URL allowlist. H-E automation bugs (whole-profile cookie clear, `state load` into the old document, React fill, CSP eval, stale screenshots). Popup management as a new subsystem. If this tab already tracks child popups, close those that belong to the terminated view. Do not build a popup manager to find them. C11-197, C11-202, and C11-205 (main-thread hangs elsewhere).\n\n## Approach\nSet a flag in `webViewWebContentProcessDidTerminate` and `DispatchQueue.main.async` the existing replace function. Guard on `isCurrentWebView` the way `:3491` already does. Keep `debugSimulateWebContentProcessTermination` (`:3607`) as the test hook, and point it at the deferred path so tests do not bypass the fix. For the layout sites, delete the synchronous layout and display calls that exist only to flush a portal update. Leave ordinary AppKit layout alone. If a page stays blank without one of those calls, restore a single layout on the next run-loop turn and record why, rather than putting `displayIfNeeded` back inside the SwiftUI update. Coordinate with whoever picks up H-E so two PRs do not rewrite `replaceWebViewPreservingState` at once.\n\n## Acceptance criteria\n1. `debugSimulateWebContentProcessTermination` on a tagged build reloads the same URL, and the terminal tabs in that window still accept input afterwards. The ghostty log shows no crash.\n2. A unit or harness test observes that `webViewWebContentProcessDidTerminate` returns before `makeWebView` runs. The replacement happens on a later turn. A second terminate before that turn produces one replacement, not two.\n3. The portal refresh path no longer calls `displayIfNeeded` on the window. A browser tab beside a terminal still paints after a split resize and after the simulated crash. Check both with a screenshot or computer use.\n4. A page that crashes twice in a row ends on the existing error or restored URL, not in a loop that pins a core. Cap or coalesce. Document the cap in the PR.\n5. An H-E behavior this PR does not claim to change still works: `c11 browser snapshot` on a live page returns a tree. One check is enough.\n\n## Validation\nA harness test for the deferral (criterion 2) that does not need a host app if the callback can be invoked on a test double. Otherwise `c11-unit` is host-bound. Run that only with a granted slot, or leave it for CI. Computer-use pass on a tagged build for criteria 1, 3, and 5. No soak. This path is not the keystroke path. Do not add an app-level display link or a `ghostty_surface_draw` loop.\n\n## Dependencies\nBug track H-E is not ticketed from this workstream. Name it in the PR and do not absorb it. No backlog id inside cli-browser-release blocks this. X1 translates any new visible string, such as a crashed-page line if one is added. Prefer the existing error page over a new string.\n\n## Risks\nTyping latency: `displayIfNeeded` on the window during a SwiftUI update is the regression to remove, not to add. Main thread: the replacement stays on main, off the WebKit callback stack. Do not call it via `DispatchQueue.main.sync`. Doctrine: no tenant config. The web view's data store stays the one the tab already had. Localization: any new string uses `String(localized:)`. Six-locale fill is X1. Public repo: describe the crash as a lifecycle bug. Do not include a crash-trigger recipe beyond the existing debug hook.\n\nSize: S\u2013M. Tier: P1. Doctrine check: a dead web view is replaced later, on the same profile. Terminals keep running.\n\n## Ledger ids (bug harvest, 2026-10-01)\nThis ticket is ledger B074 (replace the web view outside the termination callback) and ledger B014 (the forced layout and display in the portal refresh). Both are already the scope above. Do not open a second ticket for them.\n\nRide-alongs in the same browser files, fix in this PR when the code is still there:\n- B113. Closing a browser pane, window, or the app while the Web Inspector is open can crash the host. Close inspectors before host teardown.\n- B120. A download URL whose query repeats a key hits a unique-key dictionary and aborts the app. Uniquing the keys is the fix. Do not add a longer trigger recipe.\n- B162. A popup navigation delegate can return without calling the WebKit decision handler when its controller is gone. Call the handler exactly once, including the cancel path.\n\nStill out: B078 and B080 (a url-scoped cookie clear, and state load into the already-committed document). Those are on the tier-2 sweep, C11-311. That sweep must not edit `replaceWebViewPreservingState`. Parked B324 stays out.\n",
+  "done_at": "2026-10-02T07:53:56Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XDTZT11PWGPZZ2VQ2PGWTJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XE0D8C55BS3QSWD53XB98T",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XEF14RYHHEEC0DSCHSE8ST",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XG23MTFEST312GX3T4PZQQ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XH2YAQTA2JXSP7GZH9S29J",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XHTQ5FN8J03XZR42WAQEAD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJGWHHFKCASZT1GCYFWAAD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJJNMTYKBTVSBEQ9V5TC9R",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJVPZTQPEJ5T8SY9F82739",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XK59KDKR2VXP30TAY1XZB2",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XKZH9WH1KDK8R6NJCA81A6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XM38SN7FN8C60N06H9VMP1",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XSP1Z7F3PWM0YKC0VY46JF",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XSP21SCPTREW04AKB0Y3EG",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XSP244FCTQR6X224PKNQS5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XSP2419G8Z3AQY1Z6DXTC9",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM6V29RNVYPFMWRXNPX22",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM8D91ZCGZ3H5FJJYSAK5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWPWHHY95QBQQPESXHK0B4",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FNR43RVWK5EDEGFBRQYF",
+  "last_event_id": "ev_01M3XX99105Q4284DCW9D480CG",
+  "last_status_changed_at": "2026-10-02T07:53:56Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-287",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Replace a crashed web view on the next turn and stop forced layout",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:56:52Z",
+  "urgency": null
+}

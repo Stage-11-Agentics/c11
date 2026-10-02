@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:54:51Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XSQR497SYBPMGNSSR1SC8M",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XSQR497SYBPMGNSSR1SC8M.json",
+    "size_bytes": 123419
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-298 tagged duplicate launch and helper runtime evidence",
+  "token_usage": null,
+  "type": "file"
+}

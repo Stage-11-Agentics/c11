@@ -1,0 +1,291 @@
+<!doctype html><meta charset="utf-8"><title>C11-283: routing passes; native key proof pending</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto;padding:0 24px;color:#1e293b}h1{font-size:32px}p{line-height:1.65}table{border-collapse:collapse;width:100%}th,td{padding:12px;border-bottom:1px solid #cbd5e1;text-align:left;vertical-align:top}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f5f9;padding:18px;font-size:12px}details{margin:18px 0}summary{cursor:pointer;font-weight:600}</style><h1>C11-283: routing passes; native key proof pending</h1><p>Needs you: nothing during the UI hold. All deterministic routing checks passed. Overall ticket validation remains pending actual native key-window proof.</p><p>The corrected run passed11 actual packaged-app case rows and128 packaged-CLI synthetic-peer cases. Both windows and caller-A environment were real. Scoped B commands preserved A’s graph and the observed empty key flags; this does not establish A as the native key window.</p><p>Three actual raw TTY readers received exact27/26/30 synthetic bytes and matching digests, without a second caller Return. A synthetic saved recipe used the supported codex harness with a printf command override; the guest config library was restored.</p><p>The earlier tree and config failures were ignored-driver argument mistakes, corrected against pinned CLI source. The product source and installed skills were untouched. Guest cleanup used the recorded owned SIGKILL fallback; native Quit and visible focus remain pending.</p><table><tr><th>Owner step</th><th>Actual evidence</th><th>Remaining limit</th></tr><tr><td>1-2</td><td>Exact manifest/hash/socket; capability version1; two real windows; active manager A</td><td>Native key flags remain empty; actual A key unproven</td></tr><tr><td>3</td><td>Scoped B reads/create/status and missing/foreign/empty/unknown selectors rejected; A graph unchanged</td><td>Native key preservation pending</td></tr><tr><td>4</td><td>B drag split, exact6-terminal refresh, actual synthetic default-agent receipt</td><td>Native visible focus pending</td></tr><tr><td>5</td><td>Unscoped caller-A controls preserved B</td><td>Native A key pending</td></tr><tr><td>6</td><td>Scoped tree all/window/workspace UUID+ref; stale B handle rejected</td><td>128 actual CLI fake-peer cases also cover modern scoped, scope-ignoring and method-not-found fallback</td></tr><tr><td>7</td><td>Saved config default/newworkspace in B; index source routing; explicit cross-window destination and focus manager</td><td>Guest config file restored byte-for-byte; no real provider</td></tr><tr><td>8 / extension</td><td>Raw paste27, raw send26, raw send-tab30 bytes; each exact SHA receipt without caller Return</td><td>No native focus claim</td></tr></table><details><summary>fake-peer.json</summary><pre>{
+  &quot;shipping_fixture&quot;: &quot;tests/test_cli_window_scope.py&quot;,
+  &quot;fixture_sha256&quot;: &quot;62608305dd6fbbb0a99e0c813a806c747394bbd32e84a47434797a7aeff4e427&quot;,
+  &quot;app_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+  &quot;packaged_cli_sha256&quot;: &quot;4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e&quot;,
+  &quot;adaptation&quot;: [],
+  &quot;exit_status&quot;: 0,
+  &quot;cases_passed&quot;: 128,
+  &quot;stdout&quot;: &quot;PASS: 128 CLI fake-socket window-scope cases using the supplied CLI&quot;,
+  &quot;receipt_provenance&quot;: &quot;actual isolated guest stdout; standalone synthetic peer; no app launch&quot;
+}
+</pre></details><details><summary>identity.json</summary><pre>{
+  &quot;head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+  &quot;debug_invocation&quot;: &quot;dc3b9a7120b34a03a050f42551f5809c&quot;,
+  &quot;canonical_debug_sha256&quot;: &quot;1115fd376391d35eb824abe7a10d2a0e88b8441030350125db89dd95f9b69d67&quot;,
+  &quot;guest_debug_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+  &quot;packaged_cli_sha256&quot;: &quot;4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e&quot;,
+  &quot;release_invocation&quot;: &quot;3f7e03add1da4c958ec3ae5bdca69934&quot;,
+  &quot;release_sha256&quot;: &quot;f31f8be83544f2a8f2c4d2414daef2a759ae17dfb73d6690ea539e640f6fba00&quot;,
+  &quot;verified_display&quot;: [
+    0,
+    0,
+    1024,
+    768
+  ]
+}
+</pre></details><details><summary>result.json</summary><pre>{
+  &quot;ticket&quot;: &quot;C11-283&quot;,
+  &quot;result&quot;: &quot;NON_UI_SCOPE_PASS; native key-window proof pending&quot;,
+  &quot;identity&quot;: {
+    &quot;head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+    &quot;debug_invocation&quot;: &quot;dc3b9a7120b34a03a050f42551f5809c&quot;,
+    &quot;canonical_debug_sha256&quot;: &quot;1115fd376391d35eb824abe7a10d2a0e88b8441030350125db89dd95f9b69d67&quot;,
+    &quot;guest_debug_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+    &quot;packaged_cli_sha256&quot;: &quot;4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e&quot;,
+    &quot;release_invocation&quot;: &quot;3f7e03add1da4c958ec3ae5bdca69934&quot;,
+    &quot;release_sha256&quot;: &quot;f31f8be83544f2a8f2c4d2414daef2a759ae17dfb73d6690ea539e640f6fba00&quot;,
+    &quot;verified_display&quot;: [
+      0,
+      0,
+      1024,
+      768
+    ]
+  },
+  &quot;case_rows_passed&quot;: 11,
+  &quot;fake_peer_cases_passed&quot;: 128,
+  &quot;observed_native_key_windows&quot;: [],
+  &quot;actual_active_manager_A&quot;: true,
+  &quot;owned_pid_gone&quot;: true,
+  &quot;native_quit&quot;: false,
+  &quot;cleanup&quot;: &quot;owned SIGKILL after recorded guest native Quit gate&quot;,
+  &quot;guest_config_library_restored&quot;: true,
+  &quot;native_pending&quot;: &quot;establish actual native key window A and readable visible two-window evidence; scoped B nonfocus operations must preserve actual native A focus&quot;,
+  &quot;fixture_corrections&quot;: [
+    &quot;tree command-local --window is a boolean; global --window is the source selector&quot;,
+    &quot;saved config uses supported codex harness with synthetic command override, not unsupported custom harness&quot;
+  ],
+  &quot;product_source_changes&quot;: false
+}
+</pre></details><details><summary>routing-original.json</summary><pre>{
+  &quot;ticket&quot;: &quot;C11-283&quot;,
+  &quot;head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+  &quot;executable_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+  &quot;cases&quot;: [
+    {
+      &quot;name&quot;: &quot;owner 1-2 capability / two real windows / observed key control&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;feature_version&quot;: 1,
+        &quot;A_key&quot;: [],
+        &quot;A&quot;: [
+          [
+            &quot;2ED1F720-5BA9-40CF-9F04-60F909BD5DB5&quot;,
+            [
+              [
+                &quot;6D39BAFD-91E9-4C61-8475-3D3132B2C444&quot;,
+                [
+                  &quot;28652535-82C0-4A47-9236-FC11F62DAA6C&quot;
+                ]
+              ],
+              [
+                &quot;B1A522A7-FFB9-47E3-9508-D76B16E3F562&quot;,
+                [
+                  &quot;434B9ADA-E4F9-4063-B21E-4F92792BBA62&quot;
+                ]
+              ],
+              [
+                &quot;FD66137C-EFAE-4A0E-98BA-429435B1A3D9&quot;,
+                [
+                  &quot;9F225ABB-99D1-4824-BB3D-A266D0F88628&quot;
+                ]
+              ],
+              [
+                &quot;5A6B0D66-C452-48CF-A090-4CC3B789A23F&quot;,
+                [
+                  &quot;D28388C0-7ED1-440B-9AFC-54520452089A&quot;
+                ]
+              ]
+            ]
+          ]
+        ],
+        &quot;B&quot;: [
+          [
+            &quot;9DA38840-8C86-4FB6-9843-2224FF08CD19&quot;,
+            [
+              [
+                &quot;976F4287-C3AF-4404-99B3-88FD6A0B3123&quot;,
+                [
+                  &quot;AE8EB3C9-6BBD-4CAA-B215-50D34FD45267&quot;,
+                  &quot;BF405FC4-03B6-4FDF-B267-26723CFEB383&quot;
+                ]
+              ],
+              [
+                &quot;61DDF0B6-189E-4359-982B-1CB0C3F7057E&quot;,
+                [
+                  &quot;8800E805-1226-40DA-A6B2-AE3A067F88E9&quot;
+                ]
+              ],
+              [
+                &quot;B607EDE3-CF31-4D91-B251-A25A50243CC7&quot;,
+                [
+                  &quot;C556CDA8-FD3C-40ED-900D-D5D54CD82FF4&quot;
+                ]
+              ],
+              [
+                &quot;51C535ED-CD36-4C38-A15E-EF55C99EE892&quot;,
+                [
+                  &quot;99D0E251-65AD-40A1-A356-D061C98D6D72&quot;
+                ]
+              ]
+            ]
+          ],
+          [
+            &quot;D5AD0115-D1CE-42DE-A9BF-44E7A1041966&quot;,
+            [
+              [
+                &quot;8EEF8C61-D143-499B-BF53-F831AEC25C93&quot;,
+                [
+                  &quot;89F94E91-4E78-4352-A413-5A2A66DA4A06&quot;
+                ]
+              ]
+            ]
+          ]
+        ]
+      },
+      &quot;elapsed_seconds&quot;: 0.014
+    },
+    {
+      &quot;name&quot;: &quot;owner 3 scoped routing / rejection&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;created&quot;: {
+          &quot;window_id&quot;: &quot;8BB2A3DA-280E-459D-BBA3-392120A29E1B&quot;,
+          &quot;area_id&quot;: &quot;976F4287-C3AF-4404-99B3-88FD6A0B3123&quot;,
+          &quot;surface_id&quot;: &quot;95696837-B520-46CC-9F03-2673187E97A3&quot;,
+          &quot;pane_id&quot;: &quot;976F4287-C3AF-4404-99B3-88FD6A0B3123&quot;,
+          &quot;tab_id&quot;: &quot;95696837-B520-46CC-9F03-2673187E97A3&quot;,
+          &quot;workspace_id&quot;: &quot;9DA38840-8C86-4FB6-9843-2224FF08CD19&quot;,
+          &quot;type&quot;: &quot;terminal&quot;
+        },
+        &quot;missing_foreign_unknown_empty_rejected&quot;: true,
+        &quot;A_key&quot;: []
+      },
+      &quot;elapsed_seconds&quot;: 5.674
+    },
+    {
+      &quot;name&quot;: &quot;owner extension exact bytes paste&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;bytes&quot;: 27,
+        &quot;sha256&quot;: &quot;b0d139ca7c9c1dfdff001d05177f18f61202757325c83b8283a85e9c168ba955&quot;
+      },
+      &quot;elapsed_seconds&quot;: 1.185
+    },
+    {
+      &quot;name&quot;: &quot;owner extension exact bytes send&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;bytes&quot;: 26,
+        &quot;sha256&quot;: &quot;b18940ab35e9ab3877f5bd078084c49976c5e8246226ef79c55a58b4f10dd3cb&quot;
+      },
+      &quot;elapsed_seconds&quot;: 1.203
+    },
+    {
+      &quot;name&quot;: &quot;owner extension exact bytes send-tab&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;bytes&quot;: 30,
+        &quot;sha256&quot;: &quot;33493a3fcbaf1bd6f6a717fa4ed88e1cb6c5d45317867a59bf27160e56882fb0&quot;
+      },
+      &quot;elapsed_seconds&quot;: 1.199
+    },
+    {
+      &quot;name&quot;: &quot;owner 4 B legacy routing&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;new_area_in_B&quot;: true,
+        &quot;refresh_stdout&quot;: &quot;OK Refreshed 6 surfaces\n&quot;,
+        &quot;agent_launch_stdout&quot;: &quot;OK\n&quot;,
+        &quot;exact_refresh_terminal_count&quot;: 6,
+        &quot;B_actual_agent_receipt&quot;: true
+      },
+      &quot;elapsed_seconds&quot;: 3.133
+    },
+    {
+      &quot;name&quot;: &quot;owner 5 unscoped A controls&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;legacy_unscoped_B_unchanged&quot;: true
+      },
+      &quot;elapsed_seconds&quot;: 0.924
+    },
+    {
+      &quot;name&quot;: &quot;owner 6-7 scoped tree&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;nonselected_uuid_ref_exact_one&quot;: true,
+        &quot;foreign_workspace_rejected&quot;: true
+      },
+      &quot;elapsed_seconds&quot;: 4.576
+    },
+    {
+      &quot;name&quot;: &quot;owner 7 config default / new-workspace&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;new_workspace_in_B&quot;: true,
+        &quot;launch&quot;: {
+          &quot;workspace_id&quot;: &quot;F7AC6E56-0025-4087-A1A9-9612BE486591&quot;,
+          &quot;prompt_file&quot;: null,
+          &quot;window_id&quot;: &quot;8BB2A3DA-280E-459D-BBA3-392120A29E1B&quot;,
+          &quot;area_id&quot;: &quot;F033223F-EDF6-4C26-A528-A3A7481A2977&quot;,
+          &quot;warnings&quot;: [],
+          &quot;startup_process&quot;: null,
+          &quot;config_source&quot;: &quot;/tmp/c11-sandbox-283-socket-v3/project/.c11/agents.json&quot;,
+          &quot;agent&quot;: {
+            &quot;type&quot;: &quot;codex&quot;,
+            &quot;flag&quot;: null,
+            &quot;effort&quot;: null,
+            &quot;task&quot;: null,
+            &quot;suppressed&quot;: false,
+            &quot;model&quot;: null
+          },
+          &quot;tab_id&quot;: &quot;46F858F1-DE18-44A7-907E-4234F21CED73&quot;,
+          &quot;warning_details&quot;: [],
+          &quot;cwd&quot;: &quot;/tmp/c11-sandbox-283-socket-v3/project&quot;,
+          &quot;cwd_source&quot;: &quot;explicit&quot;,
+          &quot;surface_id&quot;: &quot;46F858F1-DE18-44A7-907E-4234F21CED73&quot;,
+          &quot;startup&quot;: &quot;pending&quot;,
+          &quot;command&quot;: &quot;printf &#x27;C11_283_%s\\n&#x27; &#x27;configured&#x27;&quot;,
+          &quot;pane_id&quot;: &quot;F033223F-EDF6-4C26-A528-A3A7481A2977&quot;
+        }
+      },
+      &quot;elapsed_seconds&quot;: 6.024
+    },
+    {
+      &quot;name&quot;: &quot;owner 7 index / cross-window move / explicit focus&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;source_scope_and_destination_preserved&quot;: true,
+        &quot;explicit_focus_manager_B&quot;: true
+      },
+      &quot;elapsed_seconds&quot;: 2.499
+    },
+    {
+      &quot;name&quot;: &quot;owner 6 stale B handle&quot;,
+      &quot;result&quot;: &quot;PASS&quot;,
+      &quot;evidence&quot;: {
+        &quot;closed_window_rejected&quot;: true,
+        &quot;key_context_preserved&quot;: true
+      },
+      &quot;elapsed_seconds&quot;: 0.313
+    }
+  ],
+  &quot;setup_observed&quot;: {
+    &quot;window_A&quot;: &quot;2E7B1229-9C00-4233-8A2C-2E6EDD346E6B&quot;,
+    &quot;window_B&quot;: &quot;8BB2A3DA-280E-459D-BBA3-392120A29E1B&quot;,
+    &quot;key_windows&quot;: [],
+    &quot;active_window&quot;: &quot;2E7B1229-9C00-4233-8A2C-2E6EDD346E6B&quot;
+  },
+  &quot;native_key_gate&quot;: &quot;socket-only control preserves observed key flags; actual key A remains unproven&quot;,
+  &quot;owned_pid_gone&quot;: true,
+  &quot;dismissal&quot;: {
+    &quot;native_quit&quot;: false,
+    &quot;fallback&quot;: &quot;owned PID SIGKILL&quot;,
+    &quot;native_gate&quot;: &quot;Gate&quot;,
+    &quot;pid_gone&quot;: true,
+    &quot;observations&quot;: []
+  },
+  &quot;original_guest_config_library_restored&quot;: true
+}
+</pre></details>

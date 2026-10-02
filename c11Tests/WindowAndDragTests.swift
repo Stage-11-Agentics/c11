@@ -1135,6 +1135,17 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
 
 @MainActor
 final class ContentViewWindowObservationTests: XCTestCase {
+    @MainActor
+    private final class WindowLifetimeReferences {
+        weak var window: NSWindow?
+        weak var hostingContent: NSView?
+
+        init(window: NSWindow) {
+            self.window = window
+            hostingContent = window.contentView
+        }
+    }
+
     private func makeWindowWithContentView() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
@@ -1156,6 +1167,18 @@ final class ContentViewWindowObservationTests: XCTestCase {
         return window
     }
 
+    private func makePlainWindowForLifetimeControl() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800))
+        return window
+    }
+
     private func drainMainQueue() async {
         let drained = expectation(description: "main queue barrier")
         DispatchQueue.main.async {
@@ -1164,35 +1187,96 @@ final class ContentViewWindowObservationTests: XCTestCase {
         await fulfillment(of: [drained], timeout: 2)
     }
 
+    private func waitForWindowAndContentRelease(_ references: WindowLifetimeReferences) async -> Bool {
+        for _ in 0..<40 {
+            await drainMainQueue()
+            if references.window == nil && references.hostingContent == nil {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        return references.window == nil && references.hostingContent == nil
+    }
+
+    private func observeLiveWindowNotifications(
+        for window: NSWindow,
+        accessory: NSTitlebarAccessoryViewController
+    ) async -> Bool {
+        for _ in 0..<8 {
+            window.displayIfNeeded()
+            window.contentView?.layoutSubtreeIfNeeded()
+            await drainMainQueue()
+
+            accessory.isHidden = false
+            accessory.view.alphaValue = 1
+            NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
+            await drainMainQueue()
+
+            if accessory.isHidden && accessory.view.alphaValue == 0 {
+                return true
+            }
+        }
+        return false
+    }
+
     func testWindowCloseClearsObservationBeforeLaterWindowNotifications() async {
         _ = NSApplication.shared
 
         var contentWindow: NSWindow? = makeWindowWithContentView()
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        accessory.view.identifier = NSUserInterfaceItemIdentifier("cmux.titlebarControls")
-        contentWindow?.addTitlebarAccessoryViewController(accessory)
-        contentWindow?.makeKeyAndOrderFront(nil)
-        contentWindow?.displayIfNeeded()
-        contentWindow?.contentView?.layoutSubtreeIfNeeded()
-        await drainMainQueue()
+        var contentReferences: WindowLifetimeReferences?
 
-        XCTAssertTrue(contentWindow?.isVisible == true, "The live ContentView window should remain available")
-        XCTAssertTrue(contentWindow?.contentView?.window === contentWindow, "The live ContentView must resolve its owning window")
+        do {
+            let accessory = NSTitlebarAccessoryViewController()
+            accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
+            accessory.view.identifier = NSUserInterfaceItemIdentifier("cmux.titlebarControls")
+            contentWindow?.addTitlebarAccessoryViewController(accessory)
+            contentWindow?.makeKeyAndOrderFront(nil)
+            contentWindow?.displayIfNeeded()
+            contentWindow?.contentView?.layoutSubtreeIfNeeded()
+            await drainMainQueue()
 
-        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: contentWindow)
-        XCTAssertTrue(accessory.isHidden, "A notification for the live window should reach ContentView")
-        XCTAssertEqual(accessory.view.alphaValue, 0)
-        accessory.isHidden = false
-        accessory.view.alphaValue = 1
+            XCTAssertTrue(contentWindow?.isVisible == true, "The live ContentView window should remain available")
+            XCTAssertTrue(contentWindow?.contentView?.window === contentWindow, "The live ContentView must resolve its owning window")
 
-        contentWindow?.close()
-        await drainMainQueue()
-        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: contentWindow)
-        XCTAssertFalse(accessory.isHidden, "A closed window should no longer be observed by ContentView")
-        XCTAssertEqual(accessory.view.alphaValue, 1)
-        contentWindow = nil
-        await drainMainQueue()
+            let observedLiveWindow = await observeLiveWindowNotifications(for: contentWindow!, accessory: accessory)
+            XCTAssertTrue(observedLiveWindow, "A notification for the live window should reach ContentView")
+            XCTAssertTrue(accessory.isHidden, "A notification for the live window should reach ContentView")
+            XCTAssertEqual(accessory.view.alphaValue, 0)
+            contentReferences = WindowLifetimeReferences(window: contentWindow!)
+            XCTAssertNotNil(contentReferences?.hostingContent, "The live window should retain its hosting content")
+            accessory.isHidden = false
+            accessory.view.alphaValue = 1
+
+            contentWindow?.close()
+            await drainMainQueue()
+            NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: contentWindow)
+            XCTAssertFalse(accessory.isHidden, "A closed window should no longer be observed by ContentView")
+            XCTAssertEqual(accessory.view.alphaValue, 1)
+        }
+
+        guard let contentReferences else {
+            XCTFail("The live ContentView window should have lifetime references before close")
+            return
+        }
+        autoreleasepool {
+            contentWindow = nil
+        }
+        let contentWindowReleased = await waitForWindowAndContentRelease(contentReferences)
+        XCTAssertTrue(contentWindowReleased, "The closed ContentView window and its hosting content must be released")
+        XCTAssertNil(contentReferences.window)
+        XCTAssertNil(contentReferences.hostingContent)
+
+        var plainWindow: NSWindow? = makePlainWindowForLifetimeControl()
+        let plainReferences = WindowLifetimeReferences(window: plainWindow!)
+        autoreleasepool {
+            plainWindow?.close()
+            plainWindow = nil
+        }
+
+        let plainWindowReleased = await waitForWindowAndContentRelease(plainReferences)
+        XCTAssertTrue(plainWindowReleased, "The plain-window control must release its window and content view after close")
+        XCTAssertNil(plainReferences.window)
+        XCTAssertNil(plainReferences.hostingContent)
     }
 }
 #endif

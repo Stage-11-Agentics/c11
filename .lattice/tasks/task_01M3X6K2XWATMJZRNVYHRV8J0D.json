@@ -1,0 +1,88 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-fixtures",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-308-control-keys",
+      "linked_at": "2026-10-02T06:56:59Z",
+      "linked_by": "agent:codex-fixtures",
+      "repo": null
+    }
+  ],
+  "comment_count": 6,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:16Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\n`c11 send-key ctrl-c` does not interrupt Claude Code or Codex. The event is a keycode plus Ctrl, with codepoint 0 and no release, and those TUIs speak the Kitty keyboard protocol. Backlog item: B002.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `Sources/TerminalController.swift:6584` `sendKeyEvent` sets `action` to press and `unshifted_codepoint` to 0 at `:6595`. It sends one event. There is no release.\n- `namedKeyEvent` (about `:6819`) maps `ctrl-c`, `ctrl-d`, `ctrl-z`, and `ctrl-\\\\` to a keycode plus `GHOSTTY_MODS_CTRL` and no text. `space` is the exception that carries text. C11-173 fixed space and left ctrl on the keycode path.\n- The CLI keeps only the first key: `CLI/c11.swift:2992-2993` takes `keyArgs.first`. Extra keys are dropped (ride-along B266, upstream #15980).\n- Upstream cmux #15928 (`ca92cbbe2e`) sets canonical letter text, an unshifted codepoint, and a release, with a generation check so a stale release is not delivered.\n- Research: Fable cluster C6, wave 4. Astra \u00a72 held the press-only claim and did not claim every TUI drops every chord. The operator-facing failure is ctrl-c against Claude Code and Codex.\n\n## Scope\nIn:\n- `send-key` for ctrl+letter sends the text and the unshifted codepoint Kitty expects, then a release. ctrl-c interrupts a Kitty-protocol TUI.\n- Extra key arguments are either delivered in order or rejected with an error. They are not dropped silently (B266). Prefer reject-with-usage if delivering a sequence is ambiguous. Document the choice in the skill reference `skills/c11/references/api.md`, and sync the installed skill with `scripts/sync-installed-skills.sh c11`.\n\nOut:\n- `c11 send` delivery words, `--raw`, and stdin. C11-281 owns that contract. Do not redefine `delivered` or `submitted` here.\n- Bracketed paste atomicity (B013). That is the Ghostty ticket. A send that loses Enter because a reply landed inside the paste is not this bug.\n- Operator keys that arrive before the Ghostty runtime exists (B148). Tier-2 sweep. Different path (`keyDown` \u2192 `super`).\n- IME, non-US layouts, and clipboard parked rows. Do not port them. Re-check only if a ctrl+letter fix would break a composed character, and then stop: B008, B040, B048, B112, B115, B118, B119, B143, B153, B197, B203, B295, B305, B309.\n- Changing human key equivalents or the menu shortcuts.\n\n## Approach\nFollow upstream's event shape: letter text, unshifted codepoint, press, then release. Guard the release so it is not applied to a surface that has already been replaced. Keep `send` prose on the paste path. This ticket is `send-key` only.\n\nFor extra arguments, rejecting is the smaller change and matches upstream #15980. A caller who needs two keys sends twice. Say that in the skill in one sentence.\n\n## Acceptance criteria\n1. On a tagged build, `c11 send-key ctrl-c` in a Claude Code tab and in a Codex tab interrupts the running turn. The TUI shows the interrupt. A following `send` still works.\n2. `c11 send-key enter` still submits. `c11 send-key space` still inserts a space.\n3. `c11 send-key ctrl-c enter` either presses both, in order, or exits with an error that names the extra argument. It does not press only ctrl-c and succeed.\n4. A key event is not delivered to a tab that closed between press and release.\n\n## Validation\n`tests_v2` against a tagged socket for the error or the two-key behavior, plus a computer-use or `read-screen` check that Claude Code and Codex actually interrupted. The interrupt check needs a real TUI, so it is a tagged build on Atlas after C11-216. No soak. No source-grep test. Update the skill in the same PR and run the sync script.\n\n## Dependencies\nNone inside ws:bugs. Neighbor C11-281. Do not block on the Ghostty bump. Cross-workstream: F1 is C11-216. The lead links it.\n\n## Risks\nTyping latency: this is socket key encoding, not the human `keyDown` path. Do not change `hitTest` or `forceRefresh`. A release delivered to the wrong generation can leak a key into the next tab. Keep the generation check. Doctrine: skill text only, no tenant config. No new UI strings. If the CLI error is new, it is English in the CLI. Match the existing `CLIError` style. Public repo: describe the missing codepoint and release, not a key-injection recipe.\n\nSize: S. Tier: P1. Doctrine check: socket key events and one skill sentence. No tenant config.\n",
+  "done_at": "2026-10-02T17:01:46Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XXCA5FH49X16MSRA8XKW1R",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XXJJ4VYDTAP05276GCMYPZ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXW9B0E6SS0S69G2PN6TX4",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYC3Q1E9REARD3RN8PXGV6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YS0BTCM9X3T531J6P5CT7W",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YS0JTBYS3DFBJKMF1E1V8B",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YS15846NKVJYSPVZMV04D2",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YS1582BMME1TF9FXXZWMGM",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K2XWATMJZRNVYHRV8J0D",
+  "last_event_id": "ev_01M3YS15846NKVJYSPVZMV04D5",
+  "last_status_changed_at": "2026-10-02T17:01:46Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-308",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Encode send-key ctrl+letter so agents can interrupt a TUI",
+  "type": "bug",
+  "updated_at": "2026-10-02T17:01:46Z",
+  "urgency": null
+}

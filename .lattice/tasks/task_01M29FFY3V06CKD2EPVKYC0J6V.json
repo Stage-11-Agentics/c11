@@ -1,8 +1,15 @@
 {
   "acceptance_criteria": [],
-  "assigned_to": null,
-  "branch_links": [],
-  "comment_count": 2,
+  "assigned_to": "agent:codex-atlas",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-216-atlas-builds",
+      "linked_at": "2026-10-02T03:56:48Z",
+      "linked_by": "agent:codex-atlas",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
   "complexity": "high",
   "created_at": "2026-09-12T00:15:19Z",
   "created_by": {
@@ -15,26 +22,81 @@
     "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
   },
   "custom_fields": {},
-  "description": "Operator direction 2026-09-11: push all c11 builds to Atlas (Mac Studio, M2 Ultra, 24 cores, 128 GB, always-on at Fractal-Office, tailnet host 'atlas') and stop building on Hyperion at all. Readiness probe 2026-09-11 20:14 (Atlas local): macOS 26.5.2; repo checkout exists at /Users/atinwoodard/Projects/Stage11/code/c11; NO Xcode (xcode-select points at /Library/Developer/CommandLineTools; xcodebuild refuses to run); no zig; gh token cannot read private repos (c11 is public, ghostty fork is public, fine). PREREQUISITES (operator): install Xcode 26 on Atlas (App Store or 'xcodes install' with Apple ID), xcode-select -s to it, accept the license, install zig at the version ghostty's build.zig requires (or rely on scripts/download-prebuilt-ghosttykit.sh for GhosttyKit), and decide whether Release/notarized builds also move (needs Developer ID cert + notary keychain profile on Atlas). DESIGN OPTIONS to evaluate in the plan: (1) 'remote reload': scripts/reload.sh --host atlas rsyncs the worktree to atlas:~/c11-builds/<tag>/, runs the build there under the same build lock, and rsyncs the .app back and launches it locally (dev builds are launched on the laptop; the binary is arch-identical arm64); (2) a small build daemon/queue on Atlas fed over ssh (atlas-jobs pattern) with an artifact drop; (3) Xcode remote build via 'xcodebuild -destination' is not viable for macOS app targets. Also cover: DerivedData per tag on Atlas, GhosttyKit.xcframework cache there, per-worktree submodule provisioning, and the delegator boot prompts / c11-hotload skill switching the default to the remote path so no delegator ever runs xcodebuild on Hyperion. Depends on the local build lock ticket landing first (same lock semantics on Atlas).",
-  "done_at": null,
-  "evidence_refs": [],
+  "description": "## Why\nA delegator must obtain a tagged artifact without tying up Hyperion or competing with the operator for its one-build lock. The six-week 1.0 delivery clock starts when this route lands. Backlog item: F1.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `scripts/reload.sh:282` builds locally and `scripts/reload.sh:302` invokes xcodebuild under the host lock; `scripts/reloads.sh:233` does the same for staging. `scripts/test-unit.sh:17` is the locked test entry point; `scripts/with-build-lock.sh:42` serializes the machine.\n- Existing C11-216 description and 2026-09-12 comments record a remote-build draft and an Xcode prerequisite; these are historical observations, not current Atlas readiness proof.\n- Research: BACKLOG.md F1/D26; feature-audit-fable.md \u00a73 and \u00a77; feature-audit-astra.md \u00a73; c11-1.0.html \u00a706 Six weeks. No upstream PR is required for this infrastructure task.\n\n## Scope\nIn: remote tagged, test and release-build routes, artifact/log retrieval, exact source identity, cache provisioning and delegator instructions. Out: F2 fleet soak implementation, remote-agent federation/PTY holders, production publishing and unrelated CI cleanup.\n\n## Approach\nRefresh Atlas readiness before relying on the September probe. Inspect, do not assume completed, the prior `c11-216-remote-build` worktree draft (`scripts/remote-build.sh`, reloads no-launch work). Prefer a thin SSH remote entry around existing build/test scripts. Transfer the selected worktree and submodule identities into an isolated tag directory, provision SHA-keyed GhosttyKit and DerivedData, retain the one-build-per-machine lock, and return attributable artifacts and logs. Preserve the prior requirement to update c11-hotload/delegator guidance and sync installed skill copies. Signing/notarization prerequisites must be explicit; do not copy credentials into logs or the repository.\n\n## Acceptance criteria\n1. From a delegator checkout on Hyperion, request a tagged build and receive its .app, build result and source/submodule identity from Atlas; process evidence shows no Hyperion xcodebuild for that invocation.\n2. Two simultaneous build requests serialize through Atlas\u2019s host lock and keep their tag outputs separate; an Atlas build failure returns nonzero and cannot launch a stale local artifact.\n3. The same remote route runs a selected test and a release build; report assertion results separately from compilation. Document and exercise the intended signing/notarization route on Atlas before claiming release-build migration complete; publishing still requires named approval.\n4. Launch the returned tagged artifact using launch-tagged-automation.sh with QA startup dialogs suppressed and verify its CLI/socket identity and one terminal workflow. A delegator following the updated installed skill can repeat this without undocumented local build steps.\n\n## Validation\nImplementers run build/test jobs on Atlas under scripts/with-build-lock.sh. Capture an exact-source tagged artifact transfer and one real packaged-app smoke launch on the machine whose UI is being checked; use verified display, bounded timer and proven dismissal for computer use. Record remote failures as failures. No build or probe is being performed by this ticket-writing task.\n\n## Dependencies\nF1 is the foundation for F2 and F3. C11-215 (host build lock) is already done; reuse it. Retain C11-216 as the sole ticket for this scope.\n\n## Risks\nCurrent Xcode/signing readiness is unverified; refresh it. Avoid stale artifact provenance, simultaneous native builds, submodule cache mismatch and secrets in public logs. No UI strings expected; localize any introduced. Preserve operator availability on Hyperion.\n\nSize: M. Tier: P0. Doctrine check: remote build infrastructure stays in project-owned paths; no tenant agent configuration edits or implicit production release.\n",
+  "done_at": "2026-10-02T05:26:29Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XE6Q5DKY6N23S2NT9ASR02",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XE6Q8Q3MP27QHJ66AKV8NB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XE853HSS5A301MMAGJVVVN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XEJ1GFSCATSQ635HK343B2",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XF1KKSKX847JV5PMX4TT35",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XF3HTFKF6AZVQE6V6YWY1Z",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XF5Y2N8YZ3VVDW3ZCM543S",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XH81WRGACQ8MA72B1ZWEYB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XH81WPAXKW20D1KF8FC8J2",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XX96YYZW8KCER86PT62XCE",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
-  "last_event_id": "ev_01M29R73MGRVAVMCZX7E4TV6CH",
-  "last_status_changed_at": "2026-09-12T00:15:19Z",
+  "last_event_id": "ev_01M3XX97W2SRZNZB3TGW0YJ9FP",
+  "last_status_changed_at": "2026-10-02T05:26:29Z",
   "linked_files": [],
-  "priority": "high",
+  "needs_human": null,
+  "priority": "critical",
   "relationships_out": [],
-  "reopened_count": 0,
+  "reopened_count": 1,
   "schema_version": 1,
   "short_id": "C11-216",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "build",
     "atlas",
-    "infra"
+    "infra",
+    "c11-1.0",
+    "ws:journal",
+    "tier:p0"
   ],
-  "title": "Move c11 builds off the laptop onto Atlas",
+  "title": "Move c11 tagged builds, tests and release builds onto Atlas",
   "type": "task",
-  "updated_at": "2026-09-12T02:47:47Z",
+  "updated_at": "2026-10-02T08:56:50Z",
   "urgency": null
 }

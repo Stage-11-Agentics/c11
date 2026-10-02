@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:44:21Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3XWJCB7KZAKK9TQE56XGH5T",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3XWJCB7KZAKK9TQE56XGH5T.png",
+    "size_bytes": 12921
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Signed B reports no updates available (sanitized crop)",
+  "token_usage": null,
+  "type": "file"
+}

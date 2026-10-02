@@ -11,7 +11,7 @@ enum JournalError: String, Error {
     case unsupportedVersion = "unsupported_version"
 }
 
-enum JournalKind: String, Codable, CaseIterable {
+enum JournalKind: String, Codable, CaseIterable, Sendable {
     case sessionStarted = "agent.session.started", sessionEnded = "agent.session.ended"
     case turnStarted = "agent.turn.started", turnCompleted = "agent.turn.completed"
     case turnInterrupted = "agent.turn.interrupted"
@@ -22,7 +22,7 @@ enum JournalKind: String, Codable, CaseIterable {
     case attentionResolved = "agent.attention.resolved", messagePublished = "agent.message.published"
 }
 
-enum JournalSource: String, Codable {
+enum JournalSource: String, Codable, Sendable {
     case hook, plugin, transcript, screen, shell, keypress, selfReport = "self_report", c11
     var rank: Int {
         switch self {
@@ -37,7 +37,7 @@ enum JournalSource: String, Codable {
     }
 }
 
-enum JournalAdapter: String, Codable {
+enum JournalAdapter: String, Codable, Sendable {
     case claudeHook = "claude_hook", opencodePlugin = "opencode_plugin", piPlugin = "pi_plugin"
     case codexNotify = "codex_notify", codexTranscript = "codex_transcript", grokTranscript = "grok_transcript"
     case shell, keypress, selfReport = "self_report", c11
@@ -57,14 +57,15 @@ enum JournalAdapter: String, Codable {
         case .claudeHook: return ["session", "turn", "blocked", "error"]
         case .opencodePlugin: return ["session", "turn", "blocked", "error"]
         case .piPlugin, .codexNotify: return ["turn"]
-        case .codexTranscript, .grokTranscript: return ["turn", "interrupt"]
+        case .codexTranscript: return ["turn", "interrupt"]
+        case .grokTranscript: return ["turn"]
         case .c11: return ["control"]
         default: return []
         }
     }
 }
 
-enum JournalTimeQuality: String, Codable { case nativeLocal = "native_local", observed, missing }
+enum JournalTimeQuality: String, Codable, Sendable { case nativeLocal = "native_local", observed, missing }
 enum JournalToolClass: String, Codable { case askUserQuestion = "ask_user_question", exitPlanMode = "exit_plan_mode", other }
 enum JournalSignal: String, Codable {
     case toolActivity = "tool_activity", operatorResponse = "operator_response", connectionLost = "connection_lost"
@@ -137,7 +138,7 @@ struct JournalDraft: Codable, Equatable {
             guard let s else { return true }
             return !s.isEmpty && s.utf8.count <= limit && s.utf8.allSatisfy { $0 >= 33 && $0 <= 126 && $0 != 47 && $0 != 92 }
         }
-        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "StopFailure", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "adapter_gap", "adapter_recovered", "connection_lost", "operator_response"]
+        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "StopFailure", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "connection_lost", "operator_response", "adapter_gap", "adapter_recovered"]
         guard schemaVersion == 1 else { throw JournalError.unsupportedVersion }
         guard source == adapter.source, emittedAtMs >= 0, occurredAtMs.map({ $0 >= 0 }) ?? true,
               (occurredAtMs == nil) == (timeQuality == .missing),
@@ -155,6 +156,45 @@ struct JournalDraft: Codable, Equatable {
         var object = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         for key in CodingKeys.allCases where object[key.rawValue] == nil { object[key.rawValue] = NSNull() }
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+}
+
+/// Versioned parser evidence for comparing a provider's own timestamps within
+/// one adapter/session clock. The version is persisted with each transcript
+/// draft so a future parser or clock-format change cannot inherit this clock.
+enum JournalNativeClockEvidence {
+    static let codexTranscriptVersion = "codex-rollout-clock-v1"
+    static let grokTranscriptVersion = "grok-events-clock-v1"
+
+    static func adapterVersion(for adapter: JournalAdapter) -> String? {
+        switch adapter {
+        case .codexTranscript: return codexTranscriptVersion
+        case .grokTranscript: return grokTranscriptVersion
+        default: return nil
+        }
+    }
+
+    static func verifies(_ draft: JournalDraft) -> Bool {
+        guard draft.source == .transcript, draft.timeQuality == .nativeLocal,
+              draft.occurredAtMs != nil, draft.turnID != nil, !draft.isChild,
+              adapterVersion(for: draft.adapter) == draft.adapterVersion else {
+            return false
+        }
+        switch (draft.agentKind, draft.adapter, draft.nativeEvent, draft.kind) {
+        case ("codex", .codexTranscript, "turn.started", .turnStarted),
+             ("codex", .codexTranscript, "turn.completed", .turnCompleted),
+             ("codex", .codexTranscript, "turn.interrupted", .turnInterrupted),
+             ("grok", .grokTranscript, "turn.started", .turnStarted),
+             ("grok", .grokTranscript, "turn.completed", .turnCompleted):
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func watermarkKey(for draft: JournalDraft) -> String? {
+        guard verifies(draft) else { return nil }
+        return "\(draft.adapter.rawValue):\(draft.adapterVersion)"
     }
 }
 
@@ -199,8 +239,34 @@ struct JournalContext {
     var eligible: Bool
     var historical = false
     var modelID: String? = nil
-    // Set by a registered adapter only after its fixture verifies the clock.
+    // Set only by the bounded transcript append route after its versioned
+    // parser evidence validates.
     var verifiedNativeClock = false
+
+    /// Shared by the live coordinator and executable append-path tests. A
+    /// provider clock is enabled only by the registered adapter/version pair.
+    static func forAppend(
+        draft: JournalDraft,
+        eligible: Bool,
+        historical: Bool = false,
+        modelID: String? = nil
+    ) -> Self {
+        Self(eligible: eligible, historical: historical, modelID: modelID,
+             verifiedNativeClock: false)
+    }
+
+    /// Only the bounded transcript producer can register its parsed provider
+    /// timestamp. Generic socket and spool appends cannot opt in by supplying
+    /// draft fields alone.
+    static func forTranscriptAppend(
+        draft: JournalDraft,
+        eligible: Bool,
+        historical: Bool = false,
+        modelID: String? = nil
+    ) -> Self {
+        Self(eligible: eligible, historical: historical, modelID: modelID,
+             verifiedNativeClock: JournalNativeClockEvidence.verifies(draft))
+    }
 }
 
 struct JournalEvent: Codable {

@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-10-02T07:39:45Z",
+  "created_by": "agent:codex-fixtures",
+  "custom_fields": {
+    "disclosure_sanitized": true,
+    "original_public_payload_removed": true
+  },
+  "id": "art_01M3XRW36N13EB4PQDDCVVXMYT",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XRW36N13EB4PQDDCVVXMYT-sanitized.json",
+    "size_bytes": 1102
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-263 repaired exact-head remote build host gate",
+  "token_usage": null,
+  "type": "file"
+}

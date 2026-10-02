@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T04:33:19Z",
+  "created_by": "agent:codex-atlas",
+  "custom_fields": {},
+  "id": "art_01M3XE6Q8Q3MP27QHJ66AKV8NB",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XE6Q8Q3MP27QHJ66AKV8NB.json",
+    "size_bytes": 1960
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-216 exact-source result manifests",
+  "token_usage": null,
+  "type": "file"
+}

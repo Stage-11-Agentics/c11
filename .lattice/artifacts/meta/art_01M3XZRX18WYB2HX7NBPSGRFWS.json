@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:40:21Z",
+  "created_by": "agent:astra-ghostty",
+  "custom_fields": {},
+  "id": "art_01M3XZRX18WYB2HX7NBPSGRFWS",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3XZRX18WYB2HX7NBPSGRFWS.zip",
+    "size_bytes": 930651
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Nine focused tests pass, paired 30-stream/100-input sample passes, visual callbacks recorded. Earlier failures retained. Scrollbar pointer proof remains pending; no review-ready claim.",
+  "tags": [],
+  "title": "C11-302 focused tests and paired runtime evidence; scrollbar gate pending",
+  "token_usage": null,
+  "type": "file"
+}

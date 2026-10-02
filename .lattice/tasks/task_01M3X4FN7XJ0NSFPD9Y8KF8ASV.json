@@ -1,0 +1,135 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-cli",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-282-read-selection",
+      "linked_at": "2026-10-02T09:24:44Z",
+      "linked_by": "agent:codex-cli",
+      "repo": null
+    }
+  ],
+  "comment_count": 15,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:43:26Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nThe operator highlights a range in a terminal and tells an agent to look at it. Today the agent has to ask for a copy, or read the whole screen and guess. Backlog item: C4.\n\n## Evidence\n- c11: no `read-selection` command and no `tab.read_selection` method on origin/main (0ff8887e5e). `git grep read_selection` hits only the Ghostty call below.\n- c11: `Sources/GhosttyTerminalView.swift:5029-5031` calls `ghostty_surface_read_selection` and frees the result with `ghostty_surface_free_text` on the next line. The same pair is in `readSelectionSnapshot` at `:5267-5271`. Both are internal to keyboard copy mode.\n- Upstream: cmux #10022 (`436fc1f62e`). Worker-lane method `surface.read_selection` returns `has_selection`, `kind`, `text`, and `base64`, plus `file_path`, `line_range`, or `url` for non-terminal kinds. `ControlCommandExecutionPolicy` marks it `mainThreadCallable: false` (`Packages/macOS/CmuxControlSocket/.../ControlCommandExecutionPolicy+ReadPlane.swift` and the test at `ControlCommandExecutionPolicyTests.swift:229`). CLI is `CLI/CMUXCLI+SurfaceSelection.swift`.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71e. Fable marked terminal selection if-time. Astra row 4.5 and `c11-1.0.html` revised it to core for terminals only. Browser and markdown selection are 1.x (Astra 4.5b).\n\n## Scope\nIn: `c11 read-selection` for a terminal tab, and socket method `tab.read_selection`. Response for a terminal: `has_selection`, `kind` (`terminal`), `text`, `base64`. Off the main-actor dispatch. Empty selection is a successful response with `has_selection: false`, not an error. Targeting matches `read-screen`: explicit `--workspace` and `--tab`, or the caller's own tab.\nOut: browser selection, markdown `NSTextView` selection, file preview, `file_path`, `line_range`, and `url`. A document-start script injected into pages. Password-field tracking. Reading the selection on a timer.\n\n## Approach\nRegister `tab.read_selection` on the socket-worker policy, next to `tab.read_text` (`Sources/SocketHandlers/SocketDispatch.swift:68-69`). One short main hop may copy the Ghostty text if the surface API requires it. Build the JSON off main. Free the `ghostty_text_s` exactly once with `ghostty_surface_free_text`, on the same path as `:5031`. Do not add a second free helper. `LegacyWireAliases.canonicalMethod` already maps `surface.read_selection` to `tab.read_selection`. Accept the legacy method name that way. Do not format scrollback. Cap the copied text at a documented size and set a `truncated` boolean rather than allocating without bound. Update the c11 skill. Register feature flag `read_selection.terminal` if C6's list exists.\n\n## Acceptance criteria\n1. On a tagged build, select a known word in a terminal with the mouse, then `c11 read-selection --workspace <ws> --tab <t> --json`. The JSON has `has_selection: true`, `kind: terminal`, and `text` equal to that word. `base64` decodes to the same text.\n2. With no selection, the same command exits 0 and returns `has_selection: false` and an empty `text`. The terminal is unchanged.\n3. A browser tab returns a clear `not a terminal` error and does not inject script. Confirm with the browser's console or by checking that no selection script was added.\n4. A logic or dispatch test asserts the method's execution policy is the socket worker. A DEBUG log from a live call shows `isMain=false` at `socketWorkerV2Response`, aside from the single copy hop if one is required. The response body is built off that hop.\n5. Twenty repetitions of select, read, and clear on a tagged build leave the process up, with no malloc or double-free diagnostic in the ghostty log.\n\n## Validation\nPolicy assertion in `c11-logic` or the existing dispatch tests. `tests_v2` against a tagged build for criteria 1 through 3. Criterion 5 is a short computer-use pass. No soak. This is not on the keystroke path. Do not call it from `forceRefresh` or `hitTest`.\n\n## Dependencies\nNone. C11-248's method alias is already on origin/main. Feature flag name lives with C6.\n\n## Risks\nTyping latency: a read must not mark the surface dirty or call `forceRefresh`. Main thread: do not park this in `processV2Command`. The `invalid_dispatch` guard at `SocketDispatch.swift:957-969` will catch a worker method that lands there. Ghostty pointer: free once. A large selection is truncated, not copied without a cap. Doctrine: this reads what the operator selected in c11. It does not observe other apps. Localization: the no-selection and not-a-terminal strings use `String(localized:)`. Six-locale fill is X1. Public repo: nothing sensitive.\n\nSize: S. Tier: P1. Doctrine check: the primitive is \"read the selection in this terminal.\" It is not a screen classifier.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3Y3JKQMCM59MTBM0C81KBCN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y3QQXY4R2FKSJNS49R5ZKB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y3QR0B3BAX5V52WS7AVT8P",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y3QR2NZQQYZXN3EKYCAR8P",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y3QR4XYWT2B256AT1VFKSK",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y49VSTDRRYTJC2TSPRDYGG",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4SC6WW8KTD3161RYVYJNF",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4YNKJA5MXGWS9GPKRZE5W",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y5G2Q3KDP6J0254DT9P2XB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y64E2M0J3XZMDVJ738DSZ8",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y6AGQ2JS4DD416C1FWT0W8",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YNWAN9TGXANQAYQYDQXPX7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YPG6AMW6AHDMFS940FAPS0",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YVAE9H2KM07Y4TCVJ5BCWF",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YVAV19W2V6T7Q6ACRA54X2",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FN7XJ0NSFPD9Y8KF8ASV",
+  "last_event_id": "ev_01M3YVAV19W2V6T7Q6ACRA54X2",
+  "last_status_changed_at": "2026-10-02T15:09:21Z",
+  "linked_files": [],
+  "needs_human": {
+    "flagged_by": "agent:codex-validator",
+    "reason": "C11-282 native selection check needs a short quiet foreground window. Guest focus reverts. On the interactive validation display, repeated bounded exact-tagged-PID activation/checks were followed by external foreground activity (browser or production terminal app), so the safety gate refused further native input. No foreign app was driven. The tagged app and its UI lock are absent; the validator reservation is retained. Native ABI held-lock/allocation checks passed, but twenty drag/read/clear cycles and native over-1-MiB clipping remain unproven. Earlier empty drag results are retained as unresolved harness/product evidence, not a regression verdict.\n\nRecommended: reserve a five-minute quiet UI interval with no report opening or operator focus changes, then run the remaining tagged selection checks under the existing 20-minute cap. C11-269 actual Notification Command authorization/receipt and the small pending C11-280 initial-input visible scene use the same own-app UI lane afterward. All guest-only infrastructure work continues independently.",
+    "since": "2026-10-02T16:17:33Z"
+  },
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T03:46:36Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K1QPK3S6ZW46E38NG432",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-282",
+  "status": "in_validation",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Read a terminal selection off the main thread",
+  "type": "task",
+  "updated_at": "2026-10-02T17:42:00Z",
+  "urgency": null
+}

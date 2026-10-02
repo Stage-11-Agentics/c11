@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:01:46Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YS1582BMME1TF9FXXZWMGM",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YS1582BMME1TF9FXXZWMGM.md",
+    "size_bytes": 497
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-308 owner scope PASS at12d4f21a8822a3a7763d3a26b5295d8f6213c60a:35 packaged PTY cases, actual Claude/Codex interrupt and follow-up, both-order40samples/build under admission. Exact identities, loa",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

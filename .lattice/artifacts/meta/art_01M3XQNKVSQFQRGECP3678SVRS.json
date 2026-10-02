@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:18:44Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XQNKVSQFQRGECP3678SVRS",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XQNKVSQFQRGECP3678SVRS.json",
+    "size_bytes": 1958
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Exact integrated-head Atlas installer and built CLI/wrapper proof",
+  "token_usage": null,
+  "type": "file"
+}

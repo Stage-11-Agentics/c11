@@ -99,6 +99,8 @@ extension TerminalController {
         switch request.method {
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
+        case "window.resize":
+            return v2WindowResizeWorker(id: request.id, params: request.params)
         case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":
@@ -144,6 +146,16 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            return v2Result(
+                id: request.id,
+                v2BrowserProfileCommand(method: request.method, params: request.params)
+            )
+        case "browser.cookies.clear":
+            return v2Result(id: request.id, v2BrowserCookiesClearOffMain(params: request.params))
+        case "browser.state.load":
+            return v2Result(id: request.id, v2BrowserStateLoadOffMain(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:58:52Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3XXCYVTDD9K5AHYCWP7NCH6",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3XXCYVTDD9K5AHYCWP7NCH6.gz",
+    "size_bytes": 3927
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "CLI/socket, process continuity, event counts, PID-targeted UI focus and real restart evidence; isolated c11-259 app closed and UI lock released. Public derivative omits all images and binary test results; original embedded hashes are historical identifiers. See PUBLIC-OMISSIONS-MANIFEST.json.",
+  "tags": [],
+  "title": "C11-259 tagged runtime evidence (public sanitized derivative)",
+  "token_usage": null,
+  "type": "file"
+}

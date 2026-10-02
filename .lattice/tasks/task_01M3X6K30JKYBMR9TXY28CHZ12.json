@@ -1,0 +1,75 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-cli",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-309-tab-ref-restart",
+      "linked_at": "2026-10-02T05:18:22Z",
+      "linked_by": "agent:codex-cli",
+      "repo": null
+    }
+  ],
+  "comment_count": 8,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:16Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAgents cache `tab:292` and reuse it after a restart. The number now belongs to a different tab, so a send or a close hits the wrong agent. Ruling D15 keeps numbers resetting. The fix is the skill, not stable numbers. Backlog item: B058.\n\n## Evidence\norigin/main `0ff8887e5e`.\n\n- Ordinal counters start over at launch. Fable cited `Sources/TerminalController.swift:2504-2516` on this SHA. A `tab:N` ref has no generation. Stable tab UUIDs already exist and are what `tree` prints.\n- `skills/c11/SKILL.md:17` tells agents to target `tab:N` and does not say the number dies with the process.\n- The installed copy under `~/.claude/skills/c11/` is a one-time snapshot. Editing the repo file does nothing until `scripts/sync-installed-skills.sh c11`.\n- Research: Fable \u00a73 B058, and the correction in this brief. `05-bug-reconciled.md` and `upstream-triage/c11-1.0/README.md` round 5: D15 stands. `BACKLOG.md` lists D15 under Out.\n\n## Scope\nIn: the c11 skill states that `tab:N`, `area:N`, and `workspace:N` ordinals are process-local. They do not survive a restart. An agent that must find the same tab after a restart stores the tab UUID and uses that. The sentence sits next to the existing `tab:N` paragraph so the ordinal form is still how you target a live tab.\n\nSync the installed skill with `scripts/sync-installed-skills.sh c11`. If a peer skill repeats the ordinal rule without the restart caveat, fix that sentence too. Do not rewrite the skill.\n\nOut:\n- Stable tab numbers, generation-stamped ordinals, and any change to how refs are allocated. D15 forbids that fix. Do not \"also\" land it.\n- Persisting ordinals in the session snapshot.\n- The duplicate-id restore crash (B024). Separate ticket.\n- Fail-closed stale refs (B066). That rides the app read ticket.\n\n## Approach\nOne short paragraph in `skills/c11/SKILL.md`. Keep the current vocabulary (`tab`, not `surface`). Say what to store (the UUID from `tree` or from the environment) and what not to store across a restart (the ordinal). Then run the sync script and confirm the installed file matches.\n\n## Acceptance criteria\n1. A reader of the repo skill and of the installed `~/.claude/skills/c11/SKILL.md` can answer: a `tab:N` ref from before the restart is not safe, and the UUID is.\n2. Ordinals still work inside one process. The skill still shows the `tab:N` form for a live tab. Nothing in `TerminalController` ref allocation changed in the PR diff.\n3. The sync script was run. The installed copy's `.c11-skill.json` marker is still there.\n\n## Validation\nThe reviewer reads both files. No unit test that greps the skill. No build. No soak. Doctrine check is the diff itself: no Swift, no tenant config.\n\n## Dependencies\nNone. D15 is the ruling, not a ticket. Cross-workstream: none.\n\n## Risks\nA wording change that makes agents stop using `tab:N` even inside one process, which would break the current CLI examples. Keep ordinals for the live process. Public repo: this text ships in the skill. Write it as operator guidance, not as a warning about attacking another tab.\n\nSize: S. Tier: P1. Doctrine check: skill text only. Numbers keep resetting.\n",
+  "done_at": "2026-10-02T05:44:29Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XGZD35Z9D3K69BZ8J11SBR",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XH7FCQX8W06QDTRMH2Q7QQ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XHDXDW097GGTXXEJ11FHD5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJ90W8K76Z7KPBX8B49GEQ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJ90YPWH04DE4WQXXFDPA9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XJ90YMAFR9K9DCANSQ7WSD",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWP13XGS6P8TYKNT7R9NGQ",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X6K30JKYBMR9TXY28CHZ12",
+  "last_event_id": "ev_01M3XWP16CFGD0T30XHB2ZHFB9",
+  "last_status_changed_at": "2026-10-02T05:44:29Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-309",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Tell agents that tab numbers do not survive a restart",
+  "type": "chore",
+  "updated_at": "2026-10-02T08:46:21Z",
+  "urgency": null
+}

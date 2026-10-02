@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:15:45Z",
+  "created_by": "agent:astra-ghostty",
+  "custom_fields": {},
+  "id": "art_01M3XM29FXCMEK9WTTVFYV22R1",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3XM29FXCMEK9WTTVFYV22R1.zip",
+    "size_bytes": 606503
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Supersedes art_01M3XJZDS8YEQ2ZT6XQJ15FX0T for publication. Existing artifact is immutable through CLI; exclude old untracked payload from board commit.",
+  "tags": [],
+  "title": "C11-294 historical validation with home paths redacted (N2)",
+  "token_usage": null,
+  "type": "file"
+}

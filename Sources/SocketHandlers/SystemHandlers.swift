@@ -177,6 +177,11 @@ extension TerminalController {
             "markdown.get_content",
             "sidebar.state",
             "browser.open_split",
+            "browser.profiles.list",
+            "browser.profiles.add",
+            "browser.profiles.rename",
+            "browser.profiles.clear",
+            "browser.profiles.delete",
             "browser.navigate",
             "browser.back",
             "browser.forward",
@@ -261,6 +266,9 @@ extension TerminalController {
             "browser.input_keyboard",
             "browser.input_touch",
         ]
+        if CapabilityFeatures.current.supports(.windowResize) {
+            methods.append("window.resize")
+        }
 #if DEBUG
         methods.append(contentsOf: [
             "debug.shortcut.set",

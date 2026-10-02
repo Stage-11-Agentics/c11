@@ -1,0 +1,834 @@
+{
+  "schema_version": 1,
+  "ticket": "C11-308",
+  "head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+  "base": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+  "branch": "c11-1.0/C11-308-control-keys",
+  "working_tree_clean": true,
+  "remote_test": {
+    "invocation": "5de4a80ad55245d6829fd31ca7a04243",
+    "head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+    "parent_head": "a2770430bb2e2091feffb7d1b8d34fb315770bf9",
+    "branch": "c11-1.0/C11-308-control-keys",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-308",
+    "slug": "c11-308",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/SendKeyVocabularyTests",
+      "-only-testing:c11LogicTests/SocketSendDeliveryTests",
+      "-resultBundlePath",
+      "tests.xcresult"
+    ],
+    "release_options": [],
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "remote_build": {
+    "invocation": "f8e39bdf6d864087bd1c3dd703dc7b0d",
+    "head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+    "parent_head": "a2770430bb2e2091feffb7d1b8d34fb315770bf9",
+    "branch": "c11-1.0/C11-308-control-keys",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-308",
+    "slug": "c11-308",
+    "mode": "debug",
+    "extra": [],
+    "release_options": [],
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "app": "c11 DEV c11-308.app",
+    "executable_sha256": "c75917107bc189c0fb915f3268cb2f5f1cbf46735795c8fb10743b0de9ff2d2a",
+    "ok": true,
+    "local_executable_sha256": "3094220a5eb747451ed04b7fc11d32289414c66d071eecb278d0b73a4698a52c"
+  },
+  "remote_main_control": {
+    "invocation": "7f25583f9c2843dd971e9e7ade5b29e8",
+    "head": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+    "parent_head": "6926fa05cf2679e4cad2e76977c094a77f69962e",
+    "branch": "",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-308-main",
+    "slug": "c11-308-main",
+    "mode": "debug",
+    "extra": [],
+    "release_options": [],
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "app": "c11 DEV c11-308-main.app",
+    "executable_sha256": "30f01522eebb0732102886ebf397c70f49df401dd6e3fc83b2d3bacba825060f",
+    "ok": true,
+    "local_executable_sha256": "cc17a3f2fcc0022a6e5f605542457168800796953bb1bc9d0fa0a7b6d1c15582"
+  },
+  "unit_tests": {
+    "executed": 26,
+    "failures": 0,
+    "skips": 0,
+    "SendKeyVocabularyTests": 21,
+    "SocketSendDeliveryTests": 5
+  },
+  "executable_hashes": {
+    "packaged_cli_sha256": "2e2876ae77d3d55f4e7e28f86b91c4323ae3db1c979e0ab9b1151b82d47aabd9",
+    "native_provider_sha256": {
+      "claude": "6eab8333fe2121553100d8f40bfada384a3e989b94f947e18ba6677a6fcb41ea",
+      "codex": "4d210f7c5a18fd0386434df23b5bdbb8c0e7257d3e8a2b30b0769c8bbe99a878",
+      "codex-code-mode-host": "9a4f2a846c9f509ca2a9f68ace6f0df2f73c7ed21835e8b186ee52bfccdfa8f3"
+    }
+  },
+  "native_artifact": {
+    "executable_sha256": "c75917107bc189c0fb915f3268cb2f5f1cbf46735795c8fb10743b0de9ff2d2a"
+  },
+  "native": {
+    "claude": {
+      "provider": "claude",
+      "source_head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+      "execution_host": "disposable-macos-guest",
+      "native_provider": true,
+      "computer_use": false,
+      "startup": [
+        {
+          "dialog": "trust",
+          "yes_selected_before_enter": true
+        },
+        {
+          "dialog": "bypass",
+          "yes_selected_before_enter": true
+        }
+      ],
+      "cleanup": {
+        "owned_descendants_alive": 0,
+        "provider_alive": false,
+        "original_selection_restored": true,
+        "workspace_removed": true,
+        "private_runtime_removed": true
+      },
+      "focus_setup": {
+        "original_selection_saved": true
+      },
+      "foreground_reads": [
+        {
+          "label": "before-owned-selection",
+          "application": "other"
+        },
+        {
+          "label": "after-original-selection-restored",
+          "application": "other"
+        }
+      ],
+      "running_tool_observed": true,
+      "read_screen_interrupted": true,
+      "following_native_reply": true,
+      "bundle_identifier": "com.stage11.c11.debug.c11.308",
+      "packaged_cli_version": "0.67.0",
+      "provider_version": "2.1.287",
+      "model": "sonnet",
+      "phase": "following-send",
+      "tty": {
+        "stdin_isatty": true,
+        "stdout_isatty": true
+      },
+      "before_interrupt_screen": {
+        "tool_visible": true,
+        "working_visible": true,
+        "prompt_visible": true
+      },
+      "read_screen_excerpt": "Interrupted",
+      "interrupt_observed_ms": 269.158,
+      "sleep_stopped_within_three_seconds": true,
+      "following_read_screen_excerpt": "RECOVERED",
+      "passed": true
+    },
+    "codex": {
+      "provider": "codex",
+      "source_head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+      "execution_host": "disposable-macos-guest",
+      "native_provider": true,
+      "computer_use": false,
+      "startup": [
+        {
+          "dialog": "trust",
+          "yes_selected_before_enter": true
+        }
+      ],
+      "cleanup": {
+        "owned_descendants_alive": 0,
+        "provider_alive": false,
+        "original_selection_restored": true,
+        "workspace_removed": true,
+        "private_runtime_removed": true
+      },
+      "focus_setup": {
+        "original_selection_saved": true
+      },
+      "foreground_reads": [
+        {
+          "label": "before-owned-selection",
+          "application": "other"
+        },
+        {
+          "label": "after-original-selection-restored",
+          "application": "other"
+        }
+      ],
+      "running_tool_observed": true,
+      "read_screen_interrupted": true,
+      "following_native_reply": true,
+      "bundle_identifier": "com.stage11.c11.debug.c11.308",
+      "packaged_cli_version": "0.67.0",
+      "provider_version": "0.159.3",
+      "model": "gpt-5.6-luna",
+      "provider_helper_present": true,
+      "phase": "following-send",
+      "tty": {
+        "stdin_isatty": true,
+        "stdout_isatty": true
+      },
+      "before_interrupt_screen": {
+        "tool_visible": true,
+        "working_visible": true,
+        "prompt_visible": true
+      },
+      "read_screen_excerpt": "Interrupted",
+      "interrupt_observed_ms": 266.066,
+      "sleep_stopped_within_three_seconds": false,
+      "following_read_screen_excerpt": "RECOVERED",
+      "passed": true
+    }
+  },
+  "native_limits": {
+    "screen_oracle": "actual read-screen content, whitelisted Interrupted and RECOVERED excerpts only",
+    "ui_actions": "packaged CLI input in owned native PTYs; no computer use",
+    "codex_observation": "Native busy turn visibly interrupted and following CLI send executed. Its sleep subprocess remained at the three-second observation; all owned processes were terminated during cleanup. No claim of tool-process cancellation timing.",
+    "provider_packaging": "Codex 0.159.3 and its matching native codex-code-mode-host were used. Initial earlier-head missing-helper setup attempts are excluded.",
+    "cleanup": "Both providers: zero remaining descendants; original selection restored; owned workspaces and private configurations removed. Native guest deleted immediately after the PTY run."
+  },
+  "pty": {
+    "baseline_comparison": "not-performed",
+    "cases": [
+      {
+        "case": "dead-socket-send-key",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": false,
+        "window_option": false
+      },
+      {
+        "case": "dead-socket-send-key",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": false,
+        "window_option": true
+      },
+      {
+        "case": "dead-socket-send-key",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": true,
+        "window_option": false
+      },
+      {
+        "case": "dead-socket-send-key",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": true,
+        "window_option": true
+      },
+      {
+        "case": "dead-socket-send-key-tab",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": false,
+        "window_option": false
+      },
+      {
+        "case": "dead-socket-send-key-tab",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": false,
+        "window_option": true
+      },
+      {
+        "case": "dead-socket-send-key-tab",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": true,
+        "window_option": false
+      },
+      {
+        "case": "dead-socket-send-key-tab",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": true,
+        "window_option": true
+      },
+      {
+        "case": "dead-socket-send-key-panel",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": false,
+        "window_option": false
+      },
+      {
+        "case": "dead-socket-send-key-panel",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": false,
+        "window_option": true
+      },
+      {
+        "case": "dead-socket-send-key-panel",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": true,
+        "window_option": false
+      },
+      {
+        "case": "dead-socket-send-key-panel",
+        "extra_named": true,
+        "passed": true,
+        "rejected_before_connection": true,
+        "return_code": 1,
+        "separator": true,
+        "window_option": true
+      },
+      {
+        "case": "kitty-ctrl-c",
+        "command_to_pty_ms": 145.769,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39393b35751b5b39393b353a3375"
+      },
+      {
+        "case": "kitty-enter",
+        "command_to_pty_ms": 140.436,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b3133751b5b31333b313a3375"
+      },
+      {
+        "case": "kitty-tab",
+        "command_to_pty_ms": 140.634,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39751b5b393b313a3375"
+      },
+      {
+        "case": "kitty-space",
+        "command_to_pty_ms": 139.793,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b3332751b5b33323b313a3375"
+      },
+      {
+        "case": "kitty-prose-no-duplicate",
+        "command_to_pty_ms": 143.392,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "53796e7468657469632070726f7365206f6e63652e"
+      },
+      {
+        "case": "send-key-extra",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": false
+      },
+      {
+        "case": "send-key-extra",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": true
+      },
+      {
+        "case": "send-key-separator",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": false
+      },
+      {
+        "case": "send-key-separator",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": true
+      },
+      {
+        "case": "send-key-tab-extra",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": false
+      },
+      {
+        "case": "send-key-tab-extra",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": true
+      },
+      {
+        "case": "send-key-tab-separator",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": false
+      },
+      {
+        "case": "send-key-tab-separator",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": true
+      },
+      {
+        "case": "send-key-panel-extra",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": false
+      },
+      {
+        "case": "send-key-panel-extra",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": true
+      },
+      {
+        "case": "send-key-panel-separator",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": false
+      },
+      {
+        "case": "send-key-panel-separator",
+        "extra_named": true,
+        "in_app_selection_preserved": true,
+        "input_events": 0,
+        "passed": true,
+        "pty_byte_count": 0,
+        "return_code": 1,
+        "window_option": true
+      },
+      {
+        "case": "latency-ctrl-c-1",
+        "command_to_pty_ms": 141.311,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39393b35751b5b39393b353a3375"
+      },
+      {
+        "case": "latency-ctrl-c-2",
+        "command_to_pty_ms": 142.806,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39393b35751b5b39393b353a3375"
+      },
+      {
+        "case": "latency-ctrl-c-3",
+        "command_to_pty_ms": 139.864,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39393b35751b5b39393b353a3375"
+      },
+      {
+        "case": "latency-ctrl-c-4",
+        "command_to_pty_ms": 138.339,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39393b35751b5b39393b353a3375"
+      },
+      {
+        "case": "latency-ctrl-c-5",
+        "command_to_pty_ms": 138.227,
+        "input_events": 1,
+        "passed": true,
+        "pty_hex": "1b5b39393b35751b5b39393b353a3375"
+      },
+      {
+        "case": "legacy-sigint-and-following-send",
+        "command_to_signal_ms": 138.915,
+        "following_send_executed": true,
+        "input_events": 1,
+        "passed": true,
+        "signal": "SIGINT"
+      }
+    ],
+    "cleanup": {
+      "original_selection_restored": true,
+      "workspace_removed": true
+    },
+    "computer_use": false,
+    "mode": "full",
+    "native_provider_proof": "not-performed",
+    "passed": true,
+    "source_head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+    "suite": "C11-308-tagged-PTY"
+  },
+  "latency": {
+    "scenario": "same owned guest; two orders; 5 warmups and 20 measured raw-space inputs per build per order; both remote build slots reserved",
+    "metric": "CLI start to first PTY byte, same guest wall-clock nanoseconds",
+    "main_control_head": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+    "candidate_head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+    "rows": [
+      {
+        "order": "A",
+        "case": "main",
+        "source_head": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+        "executable_sha256": "30f01522eebb0732102886ebf397c70f49df401dd6e3fc83b2d3bacba825060f",
+        "latency": {
+          "clock": "same-guest-wall-time-ns",
+          "key": "space",
+          "keyboard_mode": "legacy-raw",
+          "maximum_ms": 177.126,
+          "median_ms": 140.483,
+          "metric": "CLI-start-to-first-PTY-byte-ms",
+          "p95_nearest_rank_ms": 146.145,
+          "p99_nearest_rank_ms": 177.126,
+          "sample_count": 20,
+          "samples_ms": [
+            142.537,
+            145.181,
+            137.969,
+            137.26,
+            140.859,
+            143.518,
+            142.686,
+            146.145,
+            137.429,
+            140.107,
+            143.13,
+            139.494,
+            139.408,
+            177.126,
+            141.907,
+            137.54,
+            138.155,
+            139.928,
+            143.774,
+            138.261
+          ],
+          "warmups": 5
+        },
+        "host_load_before": [
+          6.5283203125,
+          12.69189453125,
+          18.3603515625
+        ],
+        "host_load_after": [
+          6.9453125,
+          12.39990234375,
+          18.12353515625
+        ],
+        "guest_load_before": [
+          108.84130859375,
+          27.72900390625,
+          10.12646484375
+        ],
+        "guest_load_after": [
+          85.16796875,
+          26.4677734375,
+          9.98388671875
+        ],
+        "cleanup": {
+          "original_selection_restored": true,
+          "workspace_removed": true
+        }
+      },
+      {
+        "order": "A",
+        "case": "candidate",
+        "source_head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+        "executable_sha256": "c75917107bc189c0fb915f3268cb2f5f1cbf46735795c8fb10743b0de9ff2d2a",
+        "latency": {
+          "clock": "same-guest-wall-time-ns",
+          "key": "space",
+          "keyboard_mode": "legacy-raw",
+          "maximum_ms": 148.385,
+          "median_ms": 140.219,
+          "metric": "CLI-start-to-first-PTY-byte-ms",
+          "p95_nearest_rank_ms": 145.824,
+          "p99_nearest_rank_ms": 148.385,
+          "sample_count": 20,
+          "samples_ms": [
+            137.58,
+            138.927,
+            136.339,
+            138.758,
+            139.877,
+            140.746,
+            144.053,
+            148.385,
+            145.824,
+            139.906,
+            141.045,
+            141.04,
+            140.581,
+            139.58,
+            139.313,
+            140.455,
+            140.832,
+            143.171,
+            139.429,
+            139.983
+          ],
+          "warmups": 5
+        },
+        "host_load_before": [
+          6.9453125,
+          12.39990234375,
+          18.12353515625
+        ],
+        "host_load_after": [
+          6.74853515625,
+          12.0009765625,
+          17.8466796875
+        ],
+        "guest_load_before": [
+          78.587890625,
+          26.078125,
+          9.94287109375
+        ],
+        "guest_load_after": [
+          61.75732421875,
+          24.93017578125,
+          9.81494140625
+        ],
+        "cleanup": {
+          "original_selection_restored": true,
+          "workspace_removed": true
+        }
+      },
+      {
+        "order": "B",
+        "case": "candidate",
+        "source_head": "b09a7a697aca74dd5541b7664438e5a558af14c9",
+        "executable_sha256": "c75917107bc189c0fb915f3268cb2f5f1cbf46735795c8fb10743b0de9ff2d2a",
+        "latency": {
+          "clock": "same-guest-wall-time-ns",
+          "key": "space",
+          "keyboard_mode": "legacy-raw",
+          "maximum_ms": 145.232,
+          "median_ms": 143.118,
+          "metric": "CLI-start-to-first-PTY-byte-ms",
+          "p95_nearest_rank_ms": 144.833,
+          "p99_nearest_rank_ms": 145.232,
+          "sample_count": 20,
+          "samples_ms": [
+            143.842,
+            143.445,
+            145.232,
+            142.98,
+            143.694,
+            141.859,
+            143.385,
+            141.216,
+            142.911,
+            143.257,
+            142.154,
+            141.091,
+            140.09,
+            141.924,
+            143.802,
+            139.298,
+            143.716,
+            142.896,
+            144.216,
+            144.833
+          ],
+          "warmups": 5
+        },
+        "host_load_before": [
+          6.74853515625,
+          12.0009765625,
+          17.8466796875
+        ],
+        "host_load_after": [
+          7.19189453125,
+          11.77001953125,
+          17.62841796875
+        ],
+        "guest_load_before": [
+          53.29638671875,
+          24.32421875,
+          9.77587890625
+        ],
+        "guest_load_after": [
+          45.32958984375,
+          23.57177734375,
+          9.6787109375
+        ],
+        "cleanup": {
+          "original_selection_restored": true,
+          "workspace_removed": true
+        }
+      },
+      {
+        "order": "B",
+        "case": "main",
+        "source_head": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+        "executable_sha256": "30f01522eebb0732102886ebf397c70f49df401dd6e3fc83b2d3bacba825060f",
+        "latency": {
+          "clock": "same-guest-wall-time-ns",
+          "key": "space",
+          "keyboard_mode": "legacy-raw",
+          "maximum_ms": 194.112,
+          "median_ms": 144.978,
+          "metric": "CLI-start-to-first-PTY-byte-ms",
+          "p95_nearest_rank_ms": 148.899,
+          "p99_nearest_rank_ms": 194.112,
+          "sample_count": 20,
+          "samples_ms": [
+            145.913,
+            143.376,
+            138.393,
+            139.137,
+            139.45,
+            146.365,
+            146.959,
+            146.447,
+            146.409,
+            145.312,
+            143.937,
+            194.112,
+            145.773,
+            146.933,
+            140.924,
+            143.062,
+            148.899,
+            144.645,
+            139.608,
+            142.7
+          ],
+          "warmups": 5
+        },
+        "host_load_before": [
+          7.01611328125,
+          11.6572265625,
+          17.55419921875
+        ],
+        "host_load_after": [
+          5.82275390625,
+          11.09326171875,
+          17.21533203125
+        ],
+        "guest_load_before": [
+          38.82080078125,
+          22.89404296875,
+          9.60009765625
+        ],
+        "guest_load_after": [
+          30.72509765625,
+          21.88525390625,
+          9.47216796875
+        ],
+        "cleanup": {
+          "original_selection_restored": true,
+          "workspace_removed": true
+        }
+      }
+    ],
+    "pooled": {
+      "main": {
+        "sample_count": 40,
+        "p50_ms": 142.881,
+        "p95_ms": 148.899
+      },
+      "candidate": {
+        "sample_count": 40,
+        "p50_ms": 141.538,
+        "p95_ms": 145.232
+      }
+    },
+    "limits": "Small Debug CLI/socket/PTy comparison; startup overhead included. No fleet soak, human-keyboard, UI paint or broad performance claim."
+  },
+  "static_review": "PASS static integration review at b09a7a697aca74dd5541b7664438e5a558af14c9 against main 43529df178a9cd8817fc092896efd2f3fcd63df5. Single CLI conflict preserves C308 cardinality rejection and main feature admission before SocketClient construction. Encoding, release guards, draft handling, event attribution, refresh, helper membership and documentation remain intact. Imported Ghostty encoder remains compatible. No reviewer runtime execution.",
+  "cleanup": {
+    "owned_guests_deleted": true,
+    "private_provider_configuration_removed": true,
+    "credential_carriers_removed": true,
+    "both_build_slot_locks_released": true,
+    "owned_remote_tag_directories_removed": true
+  },
+  "proof_limits": "Debug packaged CLI/socket/PTY proof. Native TUI interruption and following turn verified through read-screen; no visual computer-use or fleet soak claim. Stale/replaced release tested through executable production writer seam, not a live interleaved close."
+}

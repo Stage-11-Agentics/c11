@@ -3,6 +3,7 @@
 
 import base64
 import http.server
+import json
 import os
 import socketserver
 import sys
@@ -72,8 +73,19 @@ def _wait_function(c: cmux, surface_id: str, expression: str, timeout_s: float =
     raise cmuxError(f"Timed out waiting for function: {expression}")
 
 
+def _open_browser_when_ready(c: cmux) -> dict:
+    deadline = time.monotonic() + 30.0
+    while True:
+        try:
+            return c._call("browser.open_split", {"url": "about:blank"}) or {}
+        except cmuxError as exc:
+            if "not_ready" not in str(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
 @contextmanager
-def _local_test_server() -> str:
+def _local_test_server():
     with tempfile.TemporaryDirectory(prefix="cmux-browser-ext-") as root:
         root_path = Path(root)
 
@@ -102,6 +114,16 @@ def _local_test_server() -> str:
     <div id="second">second-page</div>
     <div id="style-target">style-target-second</div>
   </body>
+</html>
+""".strip(),
+            encoding="utf-8",
+        )
+
+        (root_path / "state-target.html").write_text(
+            """<!doctype html>
+<html>
+  <head><title>cmux-state-target</title></head>
+  <body><div id="state-target">state-target</div></body>
 </html>
 """.strip(),
             encoding="utf-8",
@@ -160,6 +182,23 @@ def _local_test_server() -> str:
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=root, **kwargs)
 
+            def do_GET(self) -> None:  # noqa: N802
+                request_path = self.path.split("?", 1)[0]
+                if request_path == "/state-target.html":
+                    self.server.state_target_cookie_headers.append(self.headers.get("Cookie", ""))
+                    # A delayed response makes an incorrect "navigate then
+                    # immediately write the old document" implementation
+                    # observable to the caller. Also leave time to observe
+                    # that the restored cookie is sent with the target request.
+                    time.sleep(0.35)
+                if request_path == "/state-redirect":
+                    port = int(self.server.server_address[1])
+                    self.send_response(302)
+                    self.send_header("Location", f"http://localhost:{port}/state-target.html")
+                    self.end_headers()
+                    return
+                super().do_GET()
+
             def log_message(self, format: str, *args) -> None:  # noqa: A003
                 return
 
@@ -168,10 +207,11 @@ def _local_test_server() -> str:
             daemon_threads = True
 
         server = ThreadedTCPServer(("127.0.0.1", 0), Handler)
+        server.state_target_cookie_headers = []
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{server.server_address[1]}"
+            yield f"http://127.0.0.1:{server.server_address[1]}", server
         finally:
             server.shutdown()
             server.server_close()
@@ -179,12 +219,12 @@ def _local_test_server() -> str:
 
 
 def main() -> int:
-    with _local_test_server() as base_url:
+    with _local_test_server() as (base_url, server):
         index_url = f"{base_url}/index.html"
         second_url = f"{base_url}/second.html"
 
         with cmux(SOCKET_PATH) as c:
-            opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
+            opened = _open_browser_when_ready(c)
             sid = str(opened.get("tab_id") or "")
             _must(bool(sid), f"browser.open_split returned no tab_id: {opened}")
 
@@ -226,7 +266,15 @@ def main() -> int:
             _must(int(frame_clicks.get("value") or 0) >= 1, f"Expected frame click count >= 1: {frame_clicks}")
 
             c._call("browser.console.list", {"tab_id": sid})
-            c._call("browser.addscript", {"tab_id": sid, "script": "window.triggerDialogs(); true;"})
+            _expect_error_contains(
+                "dialog bootstrap on empty queue",
+                lambda: c._call("browser.dialog.dismiss", {"tab_id": sid}),
+                "not_found",
+            )
+            c._call(
+                "browser.addscript",
+                {"tab_id": sid, "script": "window.triggerDialogs(); true;"},
+            )
             d1 = c._call("browser.dialog.accept", {"tab_id": sid, "text": "agent-text"}) or {}
             d2 = c._call("browser.dialog.dismiss", {"tab_id": sid}) or {}
             d3 = c._call("browser.dialog.accept", {"tab_id": sid}) or {}
@@ -266,6 +314,79 @@ def main() -> int:
             c._call("browser.cookies.clear", {"tab_id": sid, "name": "cmux_cookie"})
             got_after_clear = c._call("browser.cookies.get", {"tab_id": sid, "name": "cmux_cookie"}) or {}
             _must(len(got_after_clear.get("cookies") or []) == 0, f"Expected cookie cleared: {got_after_clear}")
+
+            target_origin_url = index_url
+            other_origin_url = index_url.replace("127.0.0.1", "localhost")
+            c._call(
+                "browser.cookies.set",
+                {"tab_id": sid, "name": "scoped_target", "value": "target", "url": target_origin_url},
+            )
+            c._call(
+                "browser.cookies.set",
+                {
+                    "tab_id": sid,
+                    "name": "scoped_other",
+                    "value": "other",
+                    "url": other_origin_url,
+                    "domain": "localhost",
+                },
+            )
+            target_cookie_before = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}
+            ) or {}
+            other_cookie_before = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+            ) or {}
+            target_rows_before = target_cookie_before.get("cookies") or []
+            other_rows_before = other_cookie_before.get("cookies") or []
+            _must(
+                len(target_rows_before) == 1
+                and str(target_rows_before[0].get("domain", "")).lstrip(".").lower() == "127.0.0.1",
+                f"Expected scoped_target to belong to 127.0.0.1: {target_cookie_before}",
+            )
+            _must(
+                len(other_rows_before) == 1
+                and str(other_rows_before[0].get("domain", "")).lstrip(".").lower() == "localhost",
+                f"Expected scoped_other to belong to localhost: {other_cookie_before}",
+            )
+            _expect_error_contains(
+                "unscoped cookie clear",
+                lambda: c._call("browser.cookies.clear", {"tab_id": sid}),
+                "invalid_params",
+            )
+            target_cookie_after_rejected_clear = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}
+            ) or {}
+            other_cookie_after_rejected_clear = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+            ) or {}
+            _must(
+                bool(target_cookie_after_rejected_clear.get("cookies") or []),
+                f"Rejected unscoped clear deleted target cookie: {target_cookie_after_rejected_clear}",
+            )
+            _must(
+                bool(other_cookie_after_rejected_clear.get("cookies") or []),
+                f"Rejected unscoped clear deleted other-origin cookie: {other_cookie_after_rejected_clear}",
+            )
+            c._call("browser.cookies.clear", {"tab_id": sid, "url": target_origin_url})
+            target_cookie_after = c._call("browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}) or {}
+            other_cookie_after = c._call("browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}) or {}
+            _must(
+                not (target_cookie_after.get("cookies") or []),
+                f"URL-scoped clear left target cookie: {target_cookie_after}",
+            )
+            _must(
+                bool(other_cookie_after.get("cookies") or []),
+                f"URL-scoped clear touched another origin: {other_cookie_after}",
+            )
+            c._call("browser.cookies.clear", {"tab_id": sid, "all": True})
+            other_cookie_after_all_clear = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+            ) or {}
+            _must(
+                not (other_cookie_after_all_clear.get("cookies") or []),
+                f"Explicit all:true did not clear the other-origin cookie: {other_cookie_after_all_clear}",
+            )
 
             c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "alpha", "value": "one"})
             c._call("browser.storage.set", {"tab_id": sid, "type": "session", "key": "beta", "value": "two"})
@@ -324,6 +445,81 @@ def main() -> int:
             c._call("browser.state.load", {"tab_id": sid, "path": state_path})
             persisted = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "persist"}) or {}
             _must(str(persisted.get("value") or "") == "yes", f"Expected state.load to restore storage key: {persisted}")
+
+            # B080: loading a state file for a different origin must wait for
+            # that navigation to finish before applying storage. The old
+            # document is intentionally left with a different origin and the
+            # target response is delayed to expose an early write.
+            state_target_url = other_origin_url.replace("/index.html", "/state-target.html")
+            delayed_state_path = tempfile.NamedTemporaryFile(delete=False, prefix="cmux-delayed-state-", suffix=".json").name
+            Path(delayed_state_path).write_text(
+                json.dumps(
+                    {
+                        "url": state_target_url,
+                        "cookies": [
+                            {"name": "state_cookie", "value": "state", "url": state_target_url, "path": "/"}
+                        ],
+                        "storage": {
+                            "local": {"state-key": "state-value"},
+                            "session": {"state-session": "session-value"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
+            c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "old-only", "value": "old"})
+            c._call("browser.state.load", {"tab_id": sid, "path": delayed_state_path})
+            loaded_url = c._call("browser.url.get", {"tab_id": sid}) or {}
+            _must(str(loaded_url.get("url") or "").startswith(state_target_url), f"State load returned before target navigation: {loaded_url}")
+            state_value = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "state-key"}) or {}
+            old_value = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "old-only"}) or {}
+            session_value = c._call("browser.storage.get", {"tab_id": sid, "type": "session", "key": "state-session"}) or {}
+            _must(str(state_value.get("value") or "") == "state-value", f"Expected delayed state storage on target origin: {state_value}")
+            _must(old_value.get("value") is None, f"Old-origin storage leaked into target state: {old_value}")
+            _must(str(session_value.get("value") or "") == "session-value", f"Expected delayed session storage: {session_value}")
+            state_cookie = c._call("browser.cookies.get", {"tab_id": sid, "name": "state_cookie"}) or {}
+            _must(bool(state_cookie.get("cookies") or []), f"Expected state cookie on target origin: {state_cookie}")
+            _must(
+                any("state_cookie=state" in header for header in server.state_target_cookie_headers),
+                f"Expected target request to receive restored state cookie: {server.state_target_cookie_headers}",
+            )
+
+            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
+            old_origin_value = c._call(
+                "browser.storage.get", {"tab_id": sid, "type": "local", "key": "old-only"}
+            ) or {}
+            target_value_on_old_origin = c._call(
+                "browser.storage.get", {"tab_id": sid, "type": "local", "key": "state-key"}
+            ) or {}
+            _must(
+                str(old_origin_value.get("value") or "") == "old",
+                f"State load changed old-origin local storage: {old_origin_value}",
+            )
+            _must(
+                target_value_on_old_origin.get("value") is None,
+                f"Target state appeared on the old origin: {target_value_on_old_origin}",
+            )
+
+            redirect_state_path = tempfile.NamedTemporaryFile(delete=False, prefix="cmux-redirect-state-", suffix=".json").name
+            Path(redirect_state_path).write_text(
+                json.dumps(
+                    {
+                        "url": index_url.replace("/index.html", "/state-redirect"),
+                        "storage": {"local": {"must-not-apply": "wrong-origin"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _expect_error_contains(
+                "wrong-origin state redirect",
+                lambda: c._call("browser.state.load", {"tab_id": sid, "path": redirect_state_path}),
+                "navigation_failed",
+            )
+            rejected_value = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "must-not-apply"}) or {}
+            _must(rejected_value.get("value") is None, f"Wrong-origin state load wrote storage: {rejected_value}")
 
     print("PASS: extended browser parity families are green")
     return 0

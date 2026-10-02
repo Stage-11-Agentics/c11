@@ -1,0 +1,157 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-ghostty",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-294-ghostty-patchset",
+      "linked_at": "2026-10-02T04:37:32Z",
+      "linked_by": "agent:astra-ghostty",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "high",
+  "created_at": "2026-10-02T02:20:14Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nA streaming fleet freezes when teardown joins a reader blocked on a full Ghostty mailbox, and large sends arrive truncated or with a reply inside the paste. One submodule patch set closes those doors. Backlog items: B065, B010 (Ghostty half), B031, B013, B047, B072, B204, B062, B022, plus the 2026-08-25 freeze.\n\n## Evidence\nCitations are origin/main `0ff8887e5e` and Ghostty `26c3e499e`. Re-find every line before editing. C11-248 renamed panel/surface to tab, and the ledger's lines are stale.\n\n- B065: `ghostty/src/App.zig:239` drains with `while (self.mailbox.pop())` and does not bound the turn or re-wake.\n- B010, corrected by Astra: `ghostty/src/termio/stream_handler.zig:131-134` unlocks `renderer_state.mutex` before the blocking app-mailbox push. The autosave mutex cycle as first filed is not the deadlock. The recorded cycle is main freeing a surface while a reader is parked on that mailbox. App free sites: `Sources/GhosttyTerminalView.swift` (the `Task { @MainActor in ghostty_surface_free(...) }` paths near 3287 and 4328). Writeup: `notes/2026-08-25-freeze-surface-deinit-deadlock.md`. The Ghostty half is teardown-abortable producer pushes, not a bigger queue and not an autosave lock dance.\n- B031: `ghostty/src/Surface.zig:3336` and `:3352` push visibility and focus with `.forever`. The renderer queue is not the app queue. Display-id already uses a nonblocking push (C11-200). Do not revert it.\n- Fable: eighteen `.forever` pushes in `Surface.zig` (927, 944, 1449, 1467, 1482, 1506, 1510, 1800, 2471, 3336, 3352, 5394, 5406, 5971, and the app-mailbox sites). Change the push policy. Patching two call sites leaves the other doors.\n- B013: `completeClipboardPaste` queues one IO message per vector, so the bracket fence, the payload, and the closing fence are three messages. A terminal reply can land between them. Upstream Ghostty `f27772d10`.\n- B047: `ghostty/src/datastruct/segmented_pool.zig` advances availability without recording which slot returned. Wrong-order reuse can corrupt an outstanding write. Astra: `put()` does not literally refuse an out-of-order return. No c11 byte-loss count was measured. Upstream `e0ef934f7` pools the request and the buffer together.\n- B072, probable: the pinned libxev stream watcher drops a queued write on every error, including WouldBlock. Establish that this backend actually surfaces WouldBlock before changing it. An explicit disproof retires the row.\n- B204: `ghostty/src/Surface.zig` `setSelection` saves the previous selection, calls `select`, then compares with `sel.eql(prev)` after `select` has released those pins. Upstream `ab82b8ab7`. Describe it as a lifetime bug. Do not add a gesture recipe.\n- B062: `ghostty/src/termio/Exec.zig` loops `killpg(SIGHUP)` then `waitpid(WNOHANG)` and sleeps 10 ms, with no deadline and no escalation.\n- B022: shutdown treats the direct child exiting as done and does not track the foreground group, so descendants survive. Port with the later safety constraints (`bc7e9f746`), not the stale cached-PGID design.\n- Research: `upstream-triage/c11-1.0/05-bug-sweep-data/audit-fable.md` \u00a73\u2013\u00a75 cluster C1 and C3, wave 2. `audit-astra.md` \u00a72 (B010 overturn) and \u00a74 cluster 1. Tiers approved in `05-bug-reconciled.md` on 2026-10-01.\n\n## Scope\nIn: one Ghostty patch set on the current c11 fork (`26c3e499e`), pushed to `Stage-11-Agentics/ghostty` before the parent pointer moves.\n- Bound the app-mailbox drain and re-wake so a leftover message still runs (B065). Upstream `2258bea96`, renderer `188d31a97`.\n- Producer waits that teardown joins become abortable, including the renderer-first teardown path (B010 Ghostty half, the 08-25 root). A larger mailbox alone does not break the cycle.\n- Focus and visibility publish the latest value without parking. Never drop the final visible or focused state (B031). Upstream `ca21db1bb`. Do not use a push that can discard the last update.\n- One owned paste message (B013).\n- Write-pool ownership that survives out-of-order completion (B047).\n- WouldBlock only if the trigger is real on this backend (B072).\n- Selection comparison that does not read a released pin (B204).\n- Bounded child shutdown, then escalation, without killing a process the operator meant to keep (B062, B022).\n\nRide-alongs, same bump, fix in this PR when the cherry-pick is clean: B021 (dead PTY spin and reaping), B015 (row-boundary column), B020 (zero-capacity compact loop), B034 (grapheme widen at the right edge), B036 (hyperlink reflow shape), B037 (preedit glyph bounds), B045 (null font name), B166 (shaped-cell index). Skip a ride-along that does not apply, and say so in the PR.\n\nOut:\n- The app half of B010, screen-read formatting, and cold-start adoption. Those are the app ticket, which depends on this bump.\n- C11-227, the full rebase onto cmux's Ghostty base. Do not wait for it. If it lands first, drop any commit already in the new base.\n- C11-200's display-id push.\n- An upstream Ghostty PR as a merge gate. D23 is out of 1.0. Leave the operator a one-line note. Do not block.\n- Parked engine rows, re-check only while you are in the file: B026, B039, B041, B052, B053, B054, B055, B057, B063, B121, B139, B171.\n- IME, clipboard, and non-US input rows. They are named on the send-key ticket.\n\n## Approach\nOne fork branch, one checksum cycle. Cherry-pick the named commits where they apply. Where c11 has diverged, port the invariant, not the diff. Push the submodule to `stage11` before updating the parent gitlink. `scripts/ghosttykit-checksums.txt` is filled by `build-ghosttykit`, not by hand. Run 1 of that workflow goes red until the Zig build finishes. That red is expected. `GHOSTTY_RELEASE_TOKEN` is not set on this fork. Publish any xcframework with `--prerelease --latest=false` so it cannot take Sparkle's latest slot.\n\nKeep tick behavior boring: a bounded drain must still wake again, or input stalls until the next unrelated message. Latest-value publication stores the newest focus and visibility and the renderer applies that value. It does not drop updates on the floor.\n\nChild shutdown gets a deadline, then a stronger signal, and it must not reap a process group the operator kept on purpose. The prompt-escalation note in the B062 ledger row is the guidance.\n\nB033 (off-main scrollbar and color callbacks in `GhosttyTerminalView.swift`) is the app coalescing ticket. If this bump moves those callbacks off the app mailbox, say so in the PR so that ticket still hops to main.\n\n## Acceptance criteria\n1. A fixture or Ghostty test fills the app mailbox and frees the surface from the app side. The free returns. The process stays up. This is the 2026-08-25 shape, not a new hang class.\n2. With 30 panes printing continuously, a keystroke still reaches the focused terminal. The app tick does not run until the mailbox is empty when producers keep filling it. A message left after the bound is still processed.\n3. Focus and occlusion of a background workspace still settle on the last requested state. Hiding and then showing a workspace ends visible. A full renderer mailbox does not park main.\n4. `c11 send` of a multi-line brief into a Claude Code or Codex tab arrives as one bracketed paste. A terminal reply does not sit between the fences. A large send is not missing a chunk. If B072 is disproved, the PR says why WouldBlock is not reachable.\n5. Copy-on-select in a terminal does not crash the app across a few seconds of selection changes.\n6. Closing a tab whose child ignores SIGHUP returns within the deadline. A descendant the shutdown is supposed to reap is gone. A process the operator kept is still running. State the keep rule in the PR.\n\n## Validation\nGhostty unit tests for the commits that have them. Then a tagged c11 build. Builds and the soak run on Atlas once C11-216 lands. The soak is C11-270: 30 streaming panes, surface create and close every few seconds, autosave on, and one child that ignores SIGHUP. Record typing latency before and after. Do not run `xcodebuild` on Hyperion. No app-level display link and no manual `ghostty_surface_draw` loop.\n\n## Dependencies\nBlocks the app-half ticket (B010 app half, B086, B003). Coordinate with the wakeup-coalescing ticket so tick changes are not stacked blind. Cross-workstream: F1 is C11-216 (builds), F2 is C11-270 (soak). The lead links those. C11-227 is related, not a prerequisite.\n\n## Risks\nTyping latency: a bounded drain changes tick cadence. Measure it. Deadlock: an abort that loses the last visibility update, or a shutdown that escalates too wide, is a new incident. Submodule: never commit the parent pointer before the fork push. Checksum: do not hand-edit the pin. Public repo: lifetime and shutdown bugs, no trigger recipe beyond the fixture above. No new UI strings. Doctrine: Ghostty-only. No tenant config writes.\n\nSize: L. Tier: P0. Doctrine check: the patch set stays inside the Ghostty fork and the parent gitlink.\n",
+  "done_at": "2026-10-02T07:49:51Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XFM2Q58SD7WF7WM9XXFC2Q",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XG2A26KM8D15871N0RJ7RQ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XH8HQNKGQ2WBZCWX4HGEPD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJYD8NDH2TZRVN9NJEYXWH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XJZDS8YEQ2ZT6XQJ15FX0T",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XK34VAP77BDXBSDEQVMZA6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XKQRSM0AA6RD1X3ACTPNTG",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XM29FXCMEK9WTTVFYV22R1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XM48NERE9VQB0YXGJQF3B2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XN96KZB20HK1Q8FRHGWPEJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XN96PCE34CBQ3ZGEW57NTR",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XNFHNGCTFTJ36ZAY421VNH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XQF7JZV7CDA7CGQMDBNAKZ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XS81NXXBB7WV97EW7EDDHJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XSEJFKT1SXEP54EV8P9N43",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XSEJFGB7R1WBGBXXZ4MNS5",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWSFD794CGX8747ATEX03M",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWSR8H9B3T793MFPJGSMEH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XX96WGTVDEBFCMMPKXZ2ZD",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K1QPK3S6ZW46E38NG432",
+  "last_event_id": "ev_01M3XX97SQPRKTP285KCQY61RR",
+  "last_status_changed_at": "2026-10-02T07:49:51Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:21:24Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M2E2CDZCEEMDX492C36X2KSA",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:50Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-294",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p0"
+  ],
+  "title": "Make Ghostty mailbox waits abortable and ship the 1.0 terminal patch set",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:56:50Z",
+  "urgency": null
+}

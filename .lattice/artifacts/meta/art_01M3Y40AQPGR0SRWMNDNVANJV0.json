@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:54:18Z",
+  "created_by": "agent:astra-hangs",
+  "custom_fields": {},
+  "id": "art_01M3Y40AQPGR0SRWMNDNVANJV0",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Y40AQPGR0SRWMNDNVANJV0.tgz",
+    "size_bytes": 31326
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "d3fa43c1c8: clean tagged build, two focus tests, 40 streaming terminals with 100 keyboard observations and zero misses; cropped neutral UI proof and Validator scenario. Earlier-head evidence remains separately attributed.",
+  "tags": [],
+  "title": "C11-295 final-head keyboard proof and targeted tests",
+  "token_usage": null,
+  "type": "file"
+}

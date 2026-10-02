@@ -1,0 +1,98 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-crashes",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-300-close-ownership",
+      "linked_at": "2026-10-02T04:47:36Z",
+      "linked_by": "agent:astra-crashes",
+      "repo": null
+    }
+  ],
+  "comment_count": 7,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nClosing a workspace through the wrong window's manager tears down live terminals that belong to another window. Backlog item: B019.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `Sources/WorkspaceManager.swift:2624` `closeWorkspace` clears notifications and calls `teardownAllPanels()` before `workspaces.firstIndex` checks that this manager owns the workspace. A stale caller from another window kills agents that are not its own.\n- Upstream cmux #8753 checks membership first (`a76deb63e0` on their `TabManager`, which is `WorkspaceManager` on this SHA).\n- Research: Fable cluster C4. Move and close across windows is a normal operator action.\n\n## Scope\nIn: `closeWorkspace` returns without tearing anything down when the workspace is not in this manager's list. The owner manager is the one that closes it. The detach path (`detachWorkspace`) already looks up membership first. Match that order.\n\nOut:\n- Close shortcuts aimed at an old event window (parked B017). Re-check only if you are in the shortcut path. Do not expand.\n- The close-tab fallback that could close an unrelated tab (parked B081) is already fixed on this SHA (`closeTab` requires the target to be the focused panel or first responder, `Workspace.swift` near 8829). Do not reopen.\n- Focus moving to a sibling when an unfocused pane closes (B114). That is bonsplit, on the tier-2 sweep.\n- Closed windows that retain their SwiftUI content (B018, B069). Tier-2 sweep. Do not take those on here.\n\n## Approach\nMembership test first, then teardown. Add a regression that builds two managers, puts a workspace on one, and closes it through the other. The panels stay. If two real windows are hard in a logic test, a manager-level test with a fake workspace list is enough when the guard is in `closeWorkspace` before any panel call.\n\n## Acceptance criteria\n1. Closing workspace A through window 2's manager, when A lives on window 1, leaves A's terminals running. The socket `tree` still shows them.\n2. Closing a workspace through its own manager still closes it, still refuses to close the last workspace, and still shows the existing confirmation when that path is `closeWorkspaceWithConfirmation`.\n3. A cross-window move still detaches without tearing the panels down.\n\n## Validation\nLogic test if `WorkspaceManager` can be constructed without `NSApp`. If it cannot, `tests_v2` on a tagged build: two windows, close the wrong id, read `tree`. Builds on Atlas after C11-216. No soak. Computer use only if you need to see the confirmation sheet. No source-grep test.\n\n## Dependencies\nNone inside ws:bugs. Cross-workstream: F1 is C11-216 for the tagged check. The lead links it.\n\n## Risks\nA guard that also blocks a legitimate close when the id is present. Test both. Doctrine: no tenant config. No new strings. Public repo: a membership check, not a teardown recipe.\n\nSize: S. Tier: P1. Doctrine check: one order change in `closeWorkspace`.\n",
+  "done_at": "2026-10-02T06:35:07Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XFPKCV1WETF473ZEM6DSD6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XFYGYTN63K3HVV7ZA6A8CF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJVRVHAGKGKX76NC1J4C2E",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XN59TZWAK67GWT1RFXY8TP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XN5QH91QXN049SJV5RKH7Z",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XN5QKPWRVN3XW0JPA5VNF8",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XN5QKM6AXK9DZ6BP4YNYBE",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM75G6XDPABVFMFECHTXX",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM7C9KRFDP7C5X3GVFQ8Z",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWPWPA5D9T4MNDCGGETDHA",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X6K27F339MM9F9WPCCZEEA",
+  "last_event_id": "ev_01M3XX987MSYBPX2C0WR206D3K",
+  "last_status_changed_at": "2026-10-02T06:35:07Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-300",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Refuse to close a workspace from the wrong window",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:56:51Z",
+  "urgency": null
+}

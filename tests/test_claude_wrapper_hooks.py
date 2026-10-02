@@ -165,20 +165,29 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
         "StopFailure", "PermissionRequest", "SubagentStart", "SubagentStop", "PreCompact",
     }
     expect(set(hooks.keys()) == expected_hooks, f"unexpected hook keys: {sorted(hooks.keys())}, expected {sorted(expected_hooks)}", failures)
-    # PreToolUse should be async to avoid blocking tool execution
+    # PreToolUse should be async to avoid blocking tool execution.
     pre_tool_use_hooks = hooks.get("PreToolUse", [{}])[0].get("hooks", [{}])
     expect(
         any(h.get("async") is True for h in pre_tool_use_hooks),
         f"PreToolUse hook should have async:true, got {pre_tool_use_hooks}",
         failures,
     )
-    post = hooks.get("PostToolUse", [{}])[0]
-    post_hook = post.get("hooks", [{}])[0]
-    expect(post.get("matcher") == "", "PostToolUse must observe every tool", failures)
-    expect(post_hook.get("command") == "c11 claude-hook post-tool-use",
-           "PostToolUse must deliver the tool callback", failures)
-    expect(post_hook.get("async") is True, f"PostToolUse must be async, got {post_hook}", failures)
-    expect(post_hook.get("timeout") == 5, f"PostToolUse timeout must be 5, got {post_hook}", failures)
+    post = hooks.get("PostToolUse", [])
+    expect(len(post) == 2, f"PostToolUse must have blocking and ordinary matchers, got {post}", failures)
+    blocking = next((entry for entry in post if entry.get("matcher") == "AskUserQuestion|ExitPlanMode"), {})
+    ordinary = next((entry for entry in post if entry.get("matcher") != "AskUserQuestion|ExitPlanMode"), {})
+    blocking_hook = blocking.get("hooks", [{}])[0]
+    ordinary_hook = ordinary.get("hooks", [{}])[0]
+    expect(blocking_hook.get("command") == "c11 claude-hook post-tool-use",
+           "blocking PostToolUse must deliver the tool callback", failures)
+    expect("async" not in blocking_hook, f"Ask/plan PostToolUse must be synchronous, got {blocking_hook}", failures)
+    expect(blocking_hook.get("timeout") == 5, f"blocking PostToolUse timeout must be 5, got {blocking_hook}", failures)
+    expect(ordinary.get("matcher") == "^(?!(AskUserQuestion|ExitPlanMode)$).*",
+           f"ordinary PostToolUse matcher must exclude blocking tools, got {ordinary}", failures)
+    expect(ordinary_hook.get("command") == "c11 claude-hook post-tool-use",
+           "ordinary PostToolUse must deliver the tool callback", failures)
+    expect(ordinary_hook.get("async") is True, f"ordinary PostToolUse must be async, got {ordinary_hook}", failures)
+    expect(ordinary_hook.get("timeout") == 5, f"ordinary PostToolUse timeout must be 5, got {ordinary_hook}", failures)
     permission = hooks.get("PermissionRequest", [{}])[0].get("hooks", [{}])[0]
     expect(permission.get("command") == "c11 claude-hook permission-request",
            f"PermissionRequest command mismatch: {permission}", failures)

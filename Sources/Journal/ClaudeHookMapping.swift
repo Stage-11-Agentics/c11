@@ -39,9 +39,8 @@ enum ClaudeHookMapping {
             kind = (object["notification_type"] as? String) == "permission_prompt" ? .approvalRequested : .stateChanged
             native = "Notification"
         case "stop-failure":
-            // Not an allowlisted native name, and not the Stop alias. Reason stays null.
             kind = .errorReported
-            native = "other"
+            native = "StopFailure"
         case "permission-request":
             if tool == "AskUserQuestion" || tool == "ExitPlanMode" { return nil }
             kind = .approvalRequested
@@ -71,6 +70,7 @@ enum ClaudeHookMapping {
         draft.turnID = opaque(object["prompt_id"] as? String)
         draft.requestID = request
         if kind == .attentionResolved { draft.resolution = .resumed }
+        if kind == .errorReported { draft.reasonCode = .sessionFailure }
         if kind == .stateChanged {
             draft.signal = native == "PreToolUse" || native == "PostToolUse" ? .toolActivity : .observation
         }

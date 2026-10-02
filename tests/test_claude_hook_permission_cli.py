@@ -4,6 +4,7 @@
 Run on the build host with C11_CLI_BIN pointing at this branch's built CLI.
 """
 import json
+import fcntl
 import os
 from pathlib import Path
 import socketserver
@@ -30,12 +31,15 @@ def env_for(root: Path) -> dict:
     return env
 
 
-def run_hook(cli: str, root: Path, socket_path: str, payload: dict) -> subprocess.CompletedProcess:
+def run_hook(cli: str, root: Path, socket_path: str, payload: dict, password: str | None = None) -> subprocess.CompletedProcess:
     started = time.monotonic()
+    environment = env_for(root)
+    if password is not None:
+        environment["CMUX_SOCKET_PASSWORD"] = password
     result = subprocess.run(
         [cli, "--socket", socket_path, "claude-hook", "permission-request",
          "--workspace", WORKSPACE, "--tab", TAB],
-        env=env_for(root),
+        env=environment,
         text=True,
         capture_output=True,
         input=json.dumps(payload),
@@ -69,6 +73,11 @@ def main() -> None:
         "tool_input": {"command": "SENTINEL-INPUT"},
         "tool_response": "SENTINEL-RESPONSE",
     }
+
+    class SilentHandler(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            time.sleep(1)
+
     with tempfile.TemporaryDirectory(prefix="c11-permission-", dir="/tmp") as temporary:
         root = Path(temporary)
         missing = str(root / "missing.sock")
@@ -95,6 +104,45 @@ def main() -> None:
             "source", "adapter", "adapter_version", "native_event", "turn_id", "request_id",
             "tool_class", "reason_code", "signal", "resolution",
         }
+
+        silent_root = root / "silent"
+        silent_root.mkdir()
+        silent_address = str(silent_root / "peer.sock")
+        silent_listener = socketserver.ThreadingUnixStreamServer(silent_address, SilentHandler)
+        silent_listener.daemon_threads = True
+        silent_worker = threading.Thread(target=silent_listener.serve_forever, daemon=True)
+        silent_worker.start()
+        try:
+            silent = run_hook(cli, silent_root, silent_address, payload, password="held-secret")
+            assert silent.returncode == 0, silent.stderr
+            assert silent.elapsed < 0.75, silent.elapsed
+            assert_empty_object(silent.stdout)
+            assert len(spool_files(silent_root)) == 1, spool_files(silent_root)
+        finally:
+            silent_listener.shutdown()
+            silent_listener.server_close()
+            silent_worker.join(timeout=3)
+
+        locked_root = root / "locked"
+        locked_root.mkdir()
+        lock_path = locked_root / "state.json.lock"
+        with lock_path.open("a+") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            locked_address = str(locked_root / "peer.sock")
+            locked_listener = socketserver.ThreadingUnixStreamServer(locked_address, SilentHandler)
+            locked_listener.daemon_threads = True
+            locked_worker = threading.Thread(target=locked_listener.serve_forever, daemon=True)
+            locked_worker.start()
+            try:
+                locked = run_hook(cli, locked_root, locked_address, payload)
+                assert locked.returncode == 0, locked.stderr
+                assert locked.elapsed < 0.75, locked.elapsed
+                assert_empty_object(locked.stdout)
+                assert len(spool_files(locked_root)) == 1, spool_files(locked_root)
+            finally:
+                locked_listener.shutdown()
+                locked_listener.server_close()
+                locked_worker.join(timeout=3)
 
         ask_root = root / "ask"
         ask_root.mkdir()

@@ -59,6 +59,27 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertEqual(planWorking.phase, .working)
     }
 
+    func testAnswerArrivalCannotBePassedByStopForAskAndPlan() throws {
+        for (tool, request, expectedReason) in [
+            ("AskUserQuestion", "request-ask", JournalReason.question),
+            ("ExitPlanMode", "request-plan", JournalReason.planReview),
+        ] {
+            let ask = try owned("pre-tool-use", base(tool: tool, request: request), tab: tabA)
+            XCTAssertEqual(ask.kind, expectedReason == .question ? .questionRequested : .planReviewRequested)
+            let blocked = try XCTUnwrap(JournalTestData.fold(nil, ask, seq: 1).snapshot)
+            XCTAssertEqual(blocked.reason, expectedReason)
+
+            let stop = JournalTestData.fold(blocked, try owned("stop", base(), tab: tabA), seq: 2)
+            XCTAssertEqual(stop.snapshot, blocked, "Stop must not pass the unresolved blocking request for \(tool)")
+            XCTAssertNotEqual(stop.effect, .applied)
+
+            let resolved = try owned("post-tool-use", base(tool: tool, request: request), tab: tabA)
+            let working = try XCTUnwrap(JournalTestData.fold(blocked, resolved, seq: 3).snapshot)
+            XCTAssertEqual(working.phase, .working)
+            XCTAssertEqual(working.reason, nil)
+        }
+    }
+
     func testStopFailureChildAndPreCompactDoNotInventParentTransitions() throws {
         let working = try XCTUnwrap(JournalTestData.fold(nil, try owned("prompt-submit", base(), tab: tabA), seq: 1).snapshot)
         var failure = try XCTUnwrap(ClaudeHookMapping.map(subcommand: "stop-failure", object: [
@@ -67,13 +88,14 @@ final class ClaudeHookMappingTests: XCTestCase {
         failure.tabID = tabA
         failure.workspaceID = JournalTestData.workspace
         XCTAssertEqual(failure.kind, .errorReported)
-        XCTAssertNil(failure.reasonCode)
-        XCTAssertEqual(failure.nativeEvent, "other")
+        XCTAssertEqual(failure.reasonCode, .sessionFailure)
+        XCTAssertEqual(failure.nativeEvent, "StopFailure")
         XCTAssertFalse(failure.isChild)
         let folded = JournalTestData.fold(working, failure, seq: 2)
-        // C11-272: an unknown native name has no parent lifecycle effect. The row is still error.reported.
-        XCTAssertEqual(folded.effect, .observation)
-        XCTAssertEqual(folded.snapshot?.phase, .working)
+        XCTAssertEqual(folded.effect, .applied)
+        XCTAssertEqual(folded.snapshot?.phase, .error)
+        XCTAssertEqual(folded.snapshot?.reason, .sessionFailure)
+        XCTAssertEqual(folded.snapshot?.terminalBarrier, true)
 
         var child = try XCTUnwrap(ClaudeHookMapping.map(subcommand: "subagent-start", object: [
             "session_id": "sess-1", "agent_id": "child-1", "last_assistant_message": "SENTINEL-ASSISTANT"
@@ -160,30 +182,128 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertNotEqual(first.eventID, try owned("pre-tool-use", base(tool: "Bash", request: "tool-1"), tab: tabA).eventID)
     }
 
-    func testSharedFixtureCorpusKeepsProvenance() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/lifecycle/normalized")
+    func testSharedFixtureCorpusReplaysValidatorCasesAndKeepsProvenance() throws {
+        let fixtureRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/lifecycle")
+        let normalizedRoot = fixtureRoot.appendingPathComponent("normalized")
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: fixtureRoot.appendingPathComponent("manifest.json"))) as? [String: Any])
+        let manifestCases = try XCTUnwrap(manifest["cases"] as? [[String: Any]])
+        let manifestByID = Dictionary(uniqueKeysWithValues: manifestCases.compactMap { item in
+            guard let id = item["id"] as? String else { return nil }
+            return (id, item)
+        })
+        let providers = try XCTUnwrap((manifest["provenance"] as? [String: Any])?["providers"] as? [String: Any])
+        XCTAssertEqual(providers["claude-code"] as? String, "2.1.287 (Claude Code)")
+
         let subcommands = [
             "SessionStart": "session-start", "UserPromptSubmit": "prompt-submit", "Stop": "stop",
             "PreToolUse": "pre-tool-use", "PostToolUse": "post-tool-use", "PermissionRequest": "permission-request",
             "Notification": "notification"
         ]
-        for (name, expected) in [("claude-bypass-ask", JournalPhase.blocked), ("claude-bypass-ask-answered", .idle), ("derived-late-pretool-after-stop", .idle)] {
-            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(name + ".json"))) as? [String: Any])
-            let events = try XCTUnwrap(object["events"] as? [[String: Any]])
-            var state: JournalSnapshot?
-            for (index, event) in events.enumerated() where event["source"] as? String == "claude-hook" {
-                let native = try XCTUnwrap(event["name"] as? String)
-                let attrs = event["attrs"] as? [String: Any] ?? [:]
-                guard let draft = ClaudeHookMapping.map(subcommand: try XCTUnwrap(subcommands[native]), object: attrs) else {
-                    XCTAssertEqual(native, "PermissionRequest", name)
+        let validatorCases = [
+            "claude-bypass-ask", "claude-bypass-ask-answered", "claude-bypass-exit-plan",
+            "claude-normal-tool-stop", "claude-sibling-tool-while-waiting", "derived-late-pretool-after-stop"
+        ]
+
+        for (number, name) in validatorCases.enumerated() {
+            let label = "Validator case \(number + 1): \(name)"
+            let descriptor = try XCTUnwrap(manifestByID[name], label)
+            XCTAssertEqual(descriptor["provider"] as? String, "claude-code", label)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: Data(contentsOf: normalizedRoot.appendingPathComponent(name + ".json"))) as? [String: Any], label)
+            let events = try XCTUnwrap(object["events"] as? [[String: Any]], label)
+            XCTAssertEqual(object["origin"] as? String, descriptor["origin"] as? String, label)
+
+            if descriptor["origin"] as? String == "gap" {
+                XCTAssertEqual(descriptor["recapture_required"] as? String, "tagged-build", label)
+                XCTAssertTrue(events.isEmpty, label)
+                XCTAssertTrue((descriptor["missing_native_signals"] as? [String] ?? []).contains("ExitPlanMode"), label)
+                continue
+            }
+
+            var states: [JournalOwner: JournalSnapshot] = [:]
+            if name == "claude-sibling-tool-while-waiting" {
+                let seed = try owned(
+                    "pre-tool-use",
+                    base(tool: "AskUserQuestion", request: "tool-1", session: "sess-1"),
+                    tab: tabA
+                )
+                let blocked = try XCTUnwrap(JournalTestData.fold(nil, seed, seq: 1).snapshot, label)
+                states[try XCTUnwrap(seed.owner, label)] = blocked
+            }
+
+            var observedOracleCount = 0
+            var observedEventOrigins = Set<String>()
+            for (index, event) in events.enumerated() {
+                if let eventOrigin = event["origin"] as? String {
+                    observedEventOrigins.insert(eventOrigin)
+                    XCTAssertFalse(eventOrigin.isEmpty, label)
+                }
+                if let attrs = event["attrs"] as? [String: Any], attrs["provenance"] != nil {
+                    XCTAssertEqual(attrs["provenance"] as? String, "derived-reorder", label)
+                }
+                if event["source"] as? String == "oracle" {
+                    let oracle = try XCTUnwrap(event["oracle"] as? [String: Any], label)
+                    XCTAssertNotNil(oracle["mark"], label)
+                    XCTAssertNotNil(oracle["activity"], label)
+                    observedOracleCount += 1
+                    if name == "claude-normal-tool-stop" {
+                        // The captured oracle is the old working symptom. The executable
+                        // projection below is the intended idle completion.
+                        XCTAssertEqual(oracle["mark"] as? String, "working", label)
+                    }
                     continue
                 }
-                var owned = draft
-                owned.tabID = tabA
-                owned.workspaceID = JournalTestData.workspace
-                state = JournalTestData.fold(state, owned, seq: Int64(index + 1)).snapshot
+                guard event["source"] as? String == "claude-hook" else { continue }
+                let native = try XCTUnwrap(event["name"] as? String, label)
+                let attrs = event["attrs"] as? [String: Any] ?? [:]
+                guard let subcommand = subcommands[native] else {
+                    XCTFail("\(label): unknown native hook \(native)")
+                    continue
+                }
+                guard var draft = ClaudeHookMapping.map(subcommand: subcommand, object: attrs) else {
+                    XCTAssertEqual(native, "PermissionRequest", label)
+                    continue
+                }
+                let captureTab = try XCTUnwrap(event["tab"] as? String, label)
+                draft.tabID = captureTab == "tab-sibling" ? tabB : tabA
+                draft.workspaceID = JournalTestData.workspace
+                try draft.validate()
+                let owner = try XCTUnwrap(draft.owner, label)
+                states[owner] = JournalTestData.fold(
+                    states[owner], draft, seq: Int64(event["seq"] as? Int ?? index + 1)
+                ).snapshot
+
+                if name == "claude-bypass-ask", native == "PreToolUse" {
+                    XCTAssertEqual(states[owner]?.phase, .blocked, label)
+                }
+                if name == "claude-bypass-ask-answered", native == "PostToolUse" {
+                    XCTAssertEqual(states[owner]?.phase, .working, label)
+                    XCTAssertEqual(event["origin"] as? String, "synthetic-extension", label)
+                }
             }
-            XCTAssertEqual(state?.phase, expected, name)
+
+            XCTAssertFalse(observedEventOrigins.contains(""), label)
+            if name != "derived-late-pretool-after-stop" {
+                XCTAssertGreaterThan(observedOracleCount, 0, label)
+            }
+            let tabAStates = states.values.filter { $0.owner.tabID == tabA }
+            let tabBStates = states.values.filter { $0.owner.tabID == tabB }
+            switch name {
+            case "claude-bypass-ask":
+                XCTAssertTrue(tabAStates.contains { $0.phase == .blocked }, label)
+            case "claude-bypass-ask-answered":
+                XCTAssertTrue(tabAStates.contains { $0.phase == .idle && $0.terminalBarrier }, label)
+            case "claude-normal-tool-stop", "derived-late-pretool-after-stop":
+                XCTAssertTrue(tabAStates.contains { $0.phase == .idle && $0.terminalBarrier }, label)
+            case "claude-sibling-tool-while-waiting":
+                XCTAssertTrue(tabAStates.contains { $0.phase == .blocked }, label)
+                XCTAssertTrue(tabBStates.contains { $0.phase == .working }, label)
+            default:
+                XCTFail("\(label): unhandled validator case")
+            }
         }
     }
 

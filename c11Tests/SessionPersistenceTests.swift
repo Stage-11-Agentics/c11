@@ -1016,6 +1016,10 @@ final class SessionPersistenceTests: XCTestCase {
         )
     }
 
+    func testResigningActiveDoesNotSaveSessionSnapshot() {
+        XCTAssertFalse(AppDelegate.shouldSaveSessionSnapshotOnResign())
+    }
+
     func testSessionAutosaveTickPolicySkipsWhenTerminating() {
         XCTAssertTrue(
             AppDelegate.shouldRunSessionAutosaveTick(isTerminatingApp: false)

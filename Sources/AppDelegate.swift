@@ -3269,7 +3269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sentryBreadcrumb("app.willResignActive", category: "lifecycle", data: [
             "tabCount": workspaceManager?.workspaces.count ?? 0
         ])
-        _ = saveSessionSnapshot(includeScrollback: false)
+        if Self.shouldSaveSessionSnapshotOnResign() {
+            _ = saveSessionSnapshot(includeScrollback: false)
+        }
     }
 
     func persistSessionForUpdateRelaunch() {
@@ -4753,6 +4755,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     nonisolated static func shouldRunSessionAutosaveTick(isTerminatingApp: Bool) -> Bool {
         !isTerminatingApp
+    }
+
+    nonisolated static func shouldSaveSessionSnapshotOnResign() -> Bool {
+        true
     }
 
     private func remainingSessionAutosaveTypingQuietPeriod(

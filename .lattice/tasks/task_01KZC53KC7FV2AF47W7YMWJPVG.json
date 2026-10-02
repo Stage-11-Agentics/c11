@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KZC53KC7FV2AF47W7YMWJPVG",
-  "last_event_id": "ev_01KZC53ZJS7NGW12832SSQDE98",
-  "last_status_changed_at": "2026-08-06T18:24:27Z",
+  "last_event_id": "ev_01M3YXXZ6BQ0XRAPQ4VS91JWEG",
+  "last_status_changed_at": "2026-10-02T18:27:24Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [
@@ -33,10 +34,10 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-201",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": null,
   "title": "A button: resolverCwdForAgentLaunch ignores workspace.rootDirectory (diverges from CLI after C11-194)",
   "type": "bug",
-  "updated_at": "2026-08-06T18:24:40Z",
+  "updated_at": "2026-10-02T18:27:24Z",
   "urgency": null
 }

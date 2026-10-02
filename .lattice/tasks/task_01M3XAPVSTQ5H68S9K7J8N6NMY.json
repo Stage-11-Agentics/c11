@@ -1,0 +1,65 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-signing",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-312-artifact-signing",
+      "linked_at": "2026-10-02T04:16:25Z",
+      "linked_by": "agent:codex-signing",
+      "repo": null
+    }
+  ],
+  "comment_count": 6,
+  "complexity": null,
+  "created_at": "2026-10-02T03:32:14Z",
+  "created_by": "agent:c11-1.0-orchestrator",
+  "custom_fields": {},
+  "description": "## Why\nUnder option A (Atin, 2026-10-01) signing and notarization stay in GitHub Actions, and no credentials go to Atlas. Three 1.0 proofs need real signed builds before release: C11-307 (Sparkle update installs on macOS 26), C11-298 (a second copy does not kill the running app, across an update/relaunch), and C11-292/293 (Atin approves the exact signed bytes before they are published). Today `.github/workflows/release.yml` signs, notarizes and publishes in one job (lines ~254-341), so there is no way to get signed bytes without publishing. Astra plan audit must-fix 7 (`upstream-triage/c11-1.0/plan-audit-astra.md`); split out of C11-293 to break the C11-307 \u2192 C11-292 \u2192 C11-293 cycle.\n\n## Scope\nIn: a GitHub Actions path that builds, signs and notarizes a c11 app/DMG from a named ref and uploads it only as a workflow artifact (never a GitHub release, never `latest`, never the appcast), with SHA-256 hashes in the run summary; an optional Sparkle-signed test appcast pointing at that artifact for update proofs, kept off the production feed; retrieval instructions for Atlas. Out: publishing, changes to the production release job's behavior, any credential on Atlas or in the repo.\n\n## Acceptance criteria\n1. A workflow_dispatch run on a branch head produces a notarized, stapled DMG as a workflow artifact plus its SHA-256, and creates no release, tag or appcast change (`gh api repos/Stage-11-Agentics/c11/releases/latest` unchanged before/after).\n2. Atlas downloads that artifact and `spctl -a -vv` / `stapler validate` accept it; C11-307's update proof and C11-298's relaunch proof consume it.\n3. The final 1.0 candidate is produced by the same path, and its hashes are what Atin approves; C11-293 publishes those exact bytes (or a byte-identical re-staple is proven).\n4. Secrets are read only inside the existing GitHub environment; nothing is echoed to logs.\n\nSize: S-M. Tier: P1. Owner seat: atlas (owns C11-292/293). Doctrine: CI-only, no tenant config, no credentials leave GitHub.",
+  "done_at": "2026-10-02T06:22:50Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XJ0D41ZNGC9P6RGPK0YN7Z",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XK9WN8T2F809SF3E264WFS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XKKSZ8VCRSANPNRY0KGZ0M",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XMF821AEK3JVB1KPE5WF17",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XMF81ZK5GVKMYH5G9M7VEH",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3XAPVSTQ5H68S9K7J8N6NMY",
+  "last_event_id": "ev_01M3XMF822GJWR4M6GG4B1RFQ7",
+  "last_status_changed_at": "2026-10-02T06:22:50Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-312",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Artifact-only signing: signed, notarized test builds from GitHub Actions without publishing",
+  "type": "task",
+  "updated_at": "2026-10-02T06:22:50Z",
+  "urgency": null
+}

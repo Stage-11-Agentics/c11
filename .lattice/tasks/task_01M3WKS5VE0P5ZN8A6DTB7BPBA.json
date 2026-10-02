@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": "low",
+  "created_at": "2026-10-01T20:51:32Z",
+  "created_by": "agent:claude-opus-5.5",
+  "custom_fields": {},
+  "description": "c11 resumes Codex with `codex resume --yolo <id>` (since #384), but Resources/bin/codex read the expected resume id only from $2. Every c11-driven resume was claimed as a plain launch; the store replaced the exact ref with a placeholder and the next restart skipped the tab. Codex resumed only on alternate restarts. Found 2026-10-01 after the 0.67.0 update restart: `c11 state verify --mode clean` showed the resumed Codex tab as [skip] wrapper-claim placeholder.",
+  "done_at": "2026-10-01T20:51:33Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3WKS60B2N7M0X77Z49SSEP3",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3WKS60AFMR6VGKQS9CV321K",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3WKS5VE0P5ZN8A6DTB7BPBA",
+  "last_event_id": "ev_01M3WKS60B2N7M0X77Z49SSEP6",
+  "last_status_changed_at": "2026-10-01T20:51:33Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-255",
+  "status": "done",
+  "tags": null,
+  "title": "Codex resume drops its exact ref on every c11-driven resume",
+  "type": "bug",
+  "updated_at": "2026-10-01T20:51:33Z",
+  "urgency": null
+}

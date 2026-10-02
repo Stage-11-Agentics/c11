@@ -1,0 +1,9 @@
+# Review: C11-260 (workspace groups: sidebar folders, drag/drop, visible attention), cycle 1 — Fable
+
+Follow `/Users/atin/Projects/Stage11/code/c11/.lattice/orchestration/c11-1.0/briefs/reviewer-common.md`; it is your contract. You are Claude Fable in Claude Code: **read-only**, no subagents of any kind, no edits, no builds or tests on this Mac.
+
+- Ticket **C11-260** (risk list; Atin rates groups the most careful testing of the release). PR https://github.com/Stage-11-Agentics/c11/pull/528, head `f41a6790a57f58e8d0f896c3f50e8b5a30c61888`, base = merge-base with origin/main (C11-259's model and C11-301's mount cap are on main).
+- Title `C11-260 Review Fable`. Actor `agent:fable-review-260`. Owner was Codex Astra.
+- Plan: the ticket's plan file. Evidence `art_01M3Y2F2X0793NJ45NR5FTGJZW`, `art_01M3Y2MCFD2GRTS48JRT9754CS`. Orchestrator ruling on the ticket: the strict perf gate moved to C11-261 as a release blocker; do not fail this review for its absence, but do name any code that would plausibly regress scroll/typing at 60 workspaces.
+- Focus: (1) typing-latency hot paths per CLAUDE.md: `TabItemView` equality and `.equatable()`, no new `@EnvironmentObject`/`@ObservedObject` or `tabManager` reads in row bodies, sidebar body work bounded and not recomputed per keystroke; folder projection memoized; (2) drag/drop: correct UTType declared in Info.plist, drop into/out of/between folders, reorder atomic via C11-259's batch API, no lost or duplicated workspace; (3) folder attention rollup (flags, waiting, unread) matches member state and respects suppression; collapsed folders still surface flags; (4) C11-301 mount-cap behavior preserved; (5) the selective-resume group fix folded in here (LaunchResumePicker forwards workspaceGroups, with a regression); (6) strings localized; tests behavioral.
+- When done, send VERDICT and wait.

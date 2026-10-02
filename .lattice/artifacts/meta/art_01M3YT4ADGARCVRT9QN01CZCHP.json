@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:20:58Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YT4ADGARCVRT9QN01CZCHP",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YT4ADGARCVRT9QN01CZCHP.html",
+    "size_bytes": 5336671
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-297 Batch 4 readiness evidence; native workflow gates pending",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:50:44Z",
+  "created_by": "agent:astra-ghostty",
+  "custom_fields": {},
+  "id": "art_01M3Y0BXQ292814QFQA76YK51V",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3Y0BXQ292814QFQA76YK51V.zip",
+    "size_bytes": 298534
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Guarded pointer attempts yielded no visible scrolling; scrollbar drag remains unproven. Owned app closed and UI lease released. Validator pointer path is the next recoverable action.",
+  "tags": [],
+  "title": "C11-302 remaining scrollbar pointer proof gap",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,117 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-303",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-303-scroll-layout",
+      "linked_at": "2026-10-02T14:50:29Z",
+      "linked_by": "agent:luna-303",
+      "repo": null
+    }
+  ],
+  "comment_count": 6,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nOne scroll tick lays out every window. c11 re-arms a full-window layout flush on every AppKit window update, and upstream measured 254 to 512 ms hangs on that path. Backlog item: B056.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `Sources/Workspace.swift:10138` observes `NSWindow.didUpdateNotification`.\n- `flushWorkspaceWindowLayouts` at `:10238` lays out every `NSApp` window. The follow-up stays armed for about two seconds, and each update can schedule another flush.\n- Upstream cmux #6801 (`8850142b8e`) removes that observer and keeps bounded stall retries and backoff. Deleting the observer alone strands repairs.\n- Ride-along B067, probable: the follow-up calls `displayIfNeeded` on every window before the current display pass finishes (`Workspace.swift` near 10569 and the flush). Re-find. Upstream #2305 defers it.\n- Research: Fable cluster C5. Memory of this workspace matches the observer. No c11 timing was measured. The upstream numbers are the evidence. C11-197, C11-202, and C11-205 are the hang records.\n\n## Scope\nIn: scrolling does not schedule a layout of every window. Structural changes still converge: a split, a workspace switch, and a resize settle without a stuck divider. Port the bounded retry and the backoff reset with the observer removal.\n\nRide-along: B067. The follow-up must not call `displayIfNeeded` on every window from inside a display pass. Defer that flush to the next turn. If the probable trigger is gone on this SHA, say so and skip the code.\n\nOut:\n- Browser portal `layoutSubtreeIfNeeded` / `displayIfNeeded`. C11-287 owns that (ledger B014).\n- Terminal portal `bind` doing the same inside a SwiftUI turn (B049). Tier-2 sweep.\n- Sidebar bodies (B059).\n- The mount cap (B012).\n- Parked B038 (initial split ratios). Re-check only if a ratio is lost while you are in this flush. Do not expand.\n\n## Approach\nRemove the window-update observer. Keep a bounded retry that is armed by structural events (split, workspace change, resize), with backoff, as upstream did. Do not replace it with a timer that flushes all windows forever. Do not add a display link.\n\n## Acceptance criteria\n1. Scrolling a terminal in one window does not call the all-window flush on each scroll tick. A counter or a signpost in a debug build is enough, removed or compiled out before merge if it is not already behind `#if DEBUG`.\n2. After a split and after a workspace switch, dividers sit where they were dropped, and a terminal is not stuck at the placeholder size. Retry is bounded. It stops.\n3. Typing in the focused terminal during a scroll in another pane still lands. No new multi-hundred-millisecond main stall on the scroll path in a local sample.\n\n## Validation\nTagged build on Atlas after C11-216. Computer use: scroll, split, switch workspace, and confirm the layout settled. A logic test only if the retry policy is a pure type. The C11-270 soak covers the hang budget. Do not claim the upstream 254 ms number as a c11 measurement. No source-grep test. No Hyperion build.\n\n## Dependencies\nNone inside ws:bugs. Measure against a post-bump build if the Ghostty ticket has landed. Do not block on it. Cross-workstream: F1 is C11-216, F2 is C11-270. The lead links those.\n\n## Risks\nDeleting the observer without the retry leaves a split that never settles. That is the bug upstream hit. Deadlock-lite: `displayIfNeeded` inside an in-progress display pass. Defer it. Typing latency: this path is main-thread layout. Do not add work. Doctrine: no tenant config. No new strings. `dlog` stays inside `#if DEBUG`.\n\nSize: S. Tier: P1. Doctrine check: layout follow-up only.\n",
+  "done_at": "2026-10-02T18:13:38Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YS5P9FDH6R0FYVQFEVCTVQ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YSES0GVKGGY3940H236JQ5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YW4PXB3YE3QJTRMVDJG6YB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YW4Q0KDY9A9JCPREDCTE7A",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YW6F64PZNBA0YQQGZ6Q4Z7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YWK5VYMKCG610MVBK6BZM2",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YWM7SP5SQJJFT5KY4E8GH7",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YWM7W1SZ3YA4RWX3WQ9563",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YX4BZ1TN3N7VDDQN2XGTJ9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YX4RWPWQY8CAG55NGD8MBD",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YX4RWM5EPBQN6S0A1RH03C",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K2FGXRQEB8C1JDPQT4YQ",
+  "last_event_id": "ev_01M3YX4RWPWQY8CAG55NGD8MBF",
+  "last_status_changed_at": "2026-10-02T18:13:38Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:21:24Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01KZF332EFFVN656Q6ZSSW9RZQ",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:52Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-303",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Stop scroll updates from laying out every window",
+  "type": "bug",
+  "updated_at": "2026-10-02T18:13:38Z",
+  "urgency": null
+}

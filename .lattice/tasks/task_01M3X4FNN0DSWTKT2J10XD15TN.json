@@ -1,0 +1,74 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-286",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-286-resize-window",
+      "linked_at": "2026-10-02T09:09:35Z",
+      "linked_by": "agent:codex-fixtures",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-286-resize-window-luna",
+      "linked_at": "2026-10-02T14:50:23Z",
+      "linked_by": "agent:luna-286",
+      "repo": null
+    }
+  ],
+  "comment_count": 4,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nComputer-use validation needs the same window size every run. Today someone resizes by hand, and a later run is not comparable. Backlog item: C7. This is one of two tickets for C7. `resize-window` is AppKit frame math. `c11 rpc` is a CLI transport. They do not belong in one PR.\n\n## Evidence\n- c11: `Sources/SocketHandlers/WindowHandlers.swift:17-26` on origin/main (0ff8887e5e) dispatches `window.list`, `window.current`, `window.focus`, `window.create`, and `window.close`. There is no resize. `v2Capabilities` lists those five and no resize (`Sources/SocketHandlers/SystemHandlers.swift:61-65`).\n- c11: `window.focus` is focus-intent. A resize must not be.\n- Upstream: cmux #9826 (`2fd3c403cb`). v1 `resize_window <uuid> <w|-> <h|->` keeps the top-left corner fixed, clamps to `minSize`, and `- -` reads the frame without changing it.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71f. `c11-1.0.html` marks it if-time. Astra row 4.6 agrees: a harness primitive, not a release gate. The backlog puts it on C7 at P2.\n\n## Scope\nIn: `c11 resize-window --window <id> <width> <height>` and socket `window.resize`. `width` or `height` of `-` keeps that edge. `- -` returns the current frame and writes nothing. The top-left stays put. The size clamps to the window's `minSize` and to the visible frame of its screen. The response reports the requested size, the applied size, and `clamped: true` when they differ.\nOut: `c11 rpc` (the other C7 ticket). Moving the window between screens. Fullscreen enter or exit. Changing the key window. Per-area layout. A computer-use runner of its own. This ticket only gives that runner a command.\n\n## Approach\nAdd `window.resize` beside the other window methods. It is not in `focusIntentV2Methods`. Apply the frame on main with one `setFrame` that preserves the top-left, then return. Do not call `NSApp.activate` or `window.focus`. Parse `-` in the CLI before the socket call so a non-numeric token is a usage error. Update the c11 skill in the computer-use section, not as a daily operator command. Register feature flag `window.resize` if C6's list exists.\n\n## Acceptance criteria\n1. On a tagged build, record a window's top-left, then `c11 resize-window --window <id> 1200 800`. The top-left is unchanged. The frame is 1200 by 800, or the JSON says `clamped: true` and the frame matches `applied`.\n2. `c11 resize-window --window <id> - -` prints the current width and height and leaves the frame bytes identical. Compare the frame before and after.\n3. A request smaller than `minSize` clamps, returns `clamped: true`, and does not throw.\n4. During the resize the key window stays the window that was key before, unless it was already this window. Confirm with the frontmost id.\n5. An unknown window id is `not_found`. The focused window's frame is unchanged.\n\n## Validation\nA `tests_v2` script against a tagged build if the test app can open a window off the operator's key window. Otherwise a computer-use pass for criteria 1, 2, and 4 on a tagged build, then close or restore the window so the operator's layout returns. No soak.\n\n## Dependencies\nNone. The other C7 ticket is independent. Useful to the computer-use pass in X2, and not required for it. A human can resize until this exists.\n\n## Risks\nTyping latency: none. Main thread: one `setFrame` on an explicit command. Do not observe `NSWindow.didResizeNotification` in a loop. Doctrine: no tenant config. Localization: usage errors use `String(localized:)`. Six-locale fill is X1. Public repo: nothing sensitive. Restore the operator's window size at the end of validation.\n\nSize: S. Tier: P2. Doctrine check: resize changes a frame the caller named. It does not raise the app.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XZB2ESJQ35WVCQCJ49DAK2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XZS87WWDYEW7HGD5P472A6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YW81FG4TPNS8SVH39XRBNN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YWFWET95PW38GRAEGQ2QQZ",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FNN0DSWTKT2J10XD15TN",
+  "last_event_id": "ev_01M3YWX08S830WKX386DS42NFZ",
+  "last_status_changed_at": "2026-10-02T18:09:24Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-286",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p2"
+  ],
+  "title": "Add resize-window that keeps the top-left and does not focus",
+  "type": "task",
+  "updated_at": "2026-10-02T18:09:24Z",
+  "urgency": null
+}

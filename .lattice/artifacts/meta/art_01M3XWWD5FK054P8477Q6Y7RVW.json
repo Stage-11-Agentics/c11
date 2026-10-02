@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:49:50Z",
+  "created_by": "agent:codex-history",
+  "custom_fields": {},
+  "id": "art_01M3XWWD5FK054P8477Q6Y7RVW",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XWWD5FK054P8477Q6Y7RVW.json",
+    "size_bytes": 2848
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Loopback-only remote listener, failed direct request, successful proxied GET and cleanup; identifying labels normalized.",
+  "tags": [],
+  "title": "SSH proxy proof, sanitized",
+  "token_usage": null,
+  "type": "file"
+}

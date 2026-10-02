@@ -1,0 +1,57 @@
+{
+  "debug": {
+    "invocation": "21e16118a0cd4a9ba3b637fcc2fa47ff",
+    "head": "2adc5758157c0707f474b65b1654f80ba323cbfb",
+    "compile": "ok",
+    "tests": "na",
+    "ok": true,
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "executable_sha256": "311dafc1c368c9ef11c9f802410a821a75347d00b6389504843824cdfd2dd50a",
+    "local_executable_sha256": "9f50cdb50d660522adaf69823cae25a3abef1166d8c84185ebac2372f9caa1ea"
+  },
+  "pair": {
+    "invocation": "01cc172ffa8a466da82c9b59065d8202",
+    "head": "2adc5758157c0707f474b65b1654f80ba323cbfb",
+    "compile": "ok",
+    "tests": "na",
+    "ok": true,
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "executable_sha256": "40736dab2cb59b32ef7adfbeac56a65c5d99a3c66d29e8623132ed774f0e7281",
+    "local_executable_sha256": "dc48f166b91d1e0070c010c7f0ae9a1bf5d7c90bf49a5ac8aed95358b2e02da7"
+  },
+  "test": {
+    "invocation": "fa41f21026404670bd9e09e672a77fc7",
+    "head": "2adc5758157c0707f474b65b1654f80ba323cbfb",
+    "compile": "ok",
+    "tests": "ok",
+    "ok": true,
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "executable_sha256": null,
+    "local_executable_sha256": null
+  },
+  "release": {
+    "invocation": "52ded218124e46acb7bad64b7daad4fc",
+    "head": "2adc5758157c0707f474b65b1654f80ba323cbfb",
+    "compile": "ok",
+    "tests": "na",
+    "ok": true,
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "executable_sha256": "6de0ffe37a09f1dc50360225f6776a1765c18c9cd75d9a2d8b9e5aa5833cdeff",
+    "local_executable_sha256": "6de0ffe37a09f1dc50360225f6776a1765c18c9cd75d9a2d8b9e5aa5833cdeff"
+  },
+  "forced_failure": {
+    "invocation": "3a3550f41cd147de985708eddcebc24e",
+    "head": "2adc5758157c0707f474b65b1654f80ba323cbfb",
+    "compile": "failed",
+    "tests": "na",
+    "ok": false,
+    "xcode": null,
+    "zig": null,
+    "executable_sha256": null,
+    "local_executable_sha256": null
+  }
+}

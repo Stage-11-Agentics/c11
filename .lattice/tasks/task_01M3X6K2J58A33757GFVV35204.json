@@ -1,0 +1,84 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-browser",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-304-spinner-titles",
+      "linked_at": "2026-10-02T05:56:24Z",
+      "linked_by": "agent:codex-browser",
+      "repo": null
+    }
+  ],
+  "comment_count": 7,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nSpinner-only titles from agent TUIs are published as real title changes. Forty agents means a steady stream of metadata writes and sidebar wakes for a glyph that is not a name. Backlog item: B061.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `GHOSTTY_ACTION_SET_TITLE` in `Sources/GhosttyTerminalView.swift` (the case just above `GHOSTTY_ACTION_PWD`, about 2218) posts `.ghosttyDidSetTitle` for every string, including a spinner frame.\n- `Sources/WorkspaceManager.swift:1065` coalesces those notifications at 30 Hz (`NotificationBurstCoalescer`, observer at `:1141`). The coalesce still applies each distinct string, including the metadata write and the window title. There is no spinner filter.\n- Upstream cmux #10351 (`bd1288e5dc`) strips a standalone spinner glyph before publish (`TerminalTitleChurnFilter`).\n- Research: Fable cluster C5, wave 1. Round 1 already deduped window titles. This is the missing filter.\n\n## Scope\nIn: a title that is only a spinner glyph, or only a spinner plus the previous title, does not write `SurfaceMetadataStore` and does not set `window.title`. A real title change still does, including a title that contains a spinner plus words.\n\nOut:\n- Wakeup and scrollbar coalescing (B030). Same file, different case in the action switch. Do not change tick behavior.\n- PWD routing through the key window (B137). That is the next case in the same switch. Leave it. It is on the tier-2 sweep.\n- Portal views that subscribe to every title (B160). Tier-2 sweep. Filtering the producer is this ticket. Unsubscribing is not.\n- Event-log title dedupe (C11-232). Neighbor. Do not take it over.\n- Sidebar snapshot work (B059).\n\n## Approach\nA small pure filter: if the new title's meaningful text equals the last published title once spinner glyphs are removed, drop it. Publish the first real title and any later real change. Keep the 30 Hz coalescer. Do not slow it down to hide the spinner. The filter runs before the metadata write.\n\nUse the glyph set upstream uses, adapted if c11's agents emit a different spinner. Name the glyphs in the PR. A title that is empty stays empty. Do not invent a fallback name.\n\n## Acceptance criteria\n1. A terminal whose program emits a spinner frame several times a second does not update the tab subtitle or the window title on those frames. A following real title, such as the command name, still appears.\n2. Two different real titles in a row both appear. The filter does not freeze the first title forever.\n3. The focused window's title still tracks the focused tab's real title.\n\n## Validation\nA pure test of the filter: spinner-only in, no change out. Real title in, change out. No `NSApp`. A tagged build glance is enough for the window title, on Atlas after C11-216. No soak. No source-grep test.\n\n## Dependencies\nNone inside ws:bugs. Cross-workstream: F1 is C11-216 only for the glance. The lead links it.\n\n## Risks\nA filter that drops real titles which happen to use a braille or block glyph as content. Limit it to a standalone spinner, or spinner characters wrapping an unchanged title. Doctrine: no tenant config. No new strings. Public repo: a title filter, not a list of agent control sequences.\n\nSize: S. Tier: P1. Doctrine check: drop spinner frames before the metadata write.\n",
+  "done_at": "2026-10-02T09:00:53Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XMEW9FRC1QV9XMPXYEGRBD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XMPFBDCAR2MCT4X9SXD6PZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XX6X6Z3C1KNWBTYPV7EN9P",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XXGMZKMWSQ4X78HP62G77W",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XXGN22ZBHVRWEG690PD2P0",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXGN4EB4DEFTGSWE743M84",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XXGN4CSFQRTZS70ADXVFGX",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K2J58A33757GFVV35204",
+  "last_event_id": "ev_01M3XXGN4EB4DEFTGSWE743M86",
+  "last_status_changed_at": "2026-10-02T09:00:53Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-304",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Ignore spinner-only terminal titles",
+  "type": "bug",
+  "updated_at": "2026-10-02T09:00:53Z",
+  "urgency": null
+}

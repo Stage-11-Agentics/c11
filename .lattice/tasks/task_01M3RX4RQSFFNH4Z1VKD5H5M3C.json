@@ -1,0 +1,54 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:c11-245-grok",
+  "branch_links": [
+    {
+      "branch": "c11-245-rail-tip",
+      "linked_at": "2026-10-01T05:20:11Z",
+      "linked_by": "agent:c11-245-grok",
+      "repo": null
+    }
+  ],
+  "comment_count": 2,
+  "complexity": "medium",
+  "created_at": "2026-09-30T10:18:12Z",
+  "created_by": "agent:cairn-tab-bar",
+  "custom_fields": {},
+  "description": "When an operator regularly has more tabs in an area than the tab bar can show (the strip scrolls or collapses often, across sessions), occasionally offer a teaching tip: the tab list (count cell) and the vertical rail setting, with a small preview of what the rail looks like. Rare, dismissible, never repeated after dismissal. Needs a light usage signal (how often an area overflows) that is recorded locally and never leaves the machine. Depends on the rail setting from the tab bar redesign (round five). Requested by Atin 2026-09-30.",
+  "done_at": "2026-10-01T08:21:37Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3TZJ9ECSQ2016A4H67HPC1N",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3V8W12SJQ7NHC3XB3JFCXEW",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3V8W12P3Z5BR6RPMPG91FD6",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3RX4RQSFFNH4Z1VKD5H5M3C",
+  "last_event_id": "ev_01M3V8W12SJQ7NHC3XB3JFCXEZ",
+  "last_status_changed_at": "2026-10-01T08:21:37Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-245",
+  "status": "done",
+  "tags": [
+    "tab-bar",
+    "onboarding"
+  ],
+  "title": "Teach the tab rail to operators who regularly overflow their tab bar",
+  "type": "task",
+  "updated_at": "2026-10-01T08:21:37Z",
+  "urgency": null
+}

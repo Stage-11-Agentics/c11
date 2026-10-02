@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-249",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-249-rail-tip",
+      "linked_at": "2026-10-02T18:31:53Z",
+      "linked_by": "agent:luna-249",
+      "repo": null
+    }
+  ],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-10-01T08:28:25Z",
+  "created_by": "agent:c11-sweep-orch",
+  "custom_fields": {},
+  "description": "From the post-merge review of C11-245 (#474, merge dde263f1f). Four small rail-tip defects, none release-blocking: (1) Sources/TabRailTipCenter.swift ~:619: the Undo text says every area keeps its tab list on the left, but performTryRail (~:150) only opens the rail in the front area; other areas get Rail with the rail closed. Fix the copy (re-translate) or open each area's rail. (2) ~:220: the tip tells the operator to tap the number, but clicking the count cell closes the popover via endOffer, which records the offer (30-day wait) and never shows the 'that list is the number' return. Treat a count-cell click like Show tab list. (3) Undo leaves the pane in railOpenPaneIds, which session autosave keeps, so if the operator picks Rail later in Settings that area opens with its rail out. Clear it on Undo. (4) bonsplit TabBarView: an old bar's onDisappear nil anchor can clear the live anchor reported by the new bar until the next redraw (a delay only). Guard noteCountCellAnchor so a disappearing reader only clears its own view.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3V98FXP451QRW3QQV002EVE",
+  "last_event_id": "ev_01M3YY65PKZF78F4MWGQM68ATC",
+  "last_status_changed_at": "2026-10-02T18:31:53Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-249",
+  "status": "in_planning",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p2"
+  ],
+  "title": "Rail tip follow-ups: Undo copy, count-cell tap, rail-open state after Undo, anchor clear",
+  "type": "bug",
+  "updated_at": "2026-10-02T18:31:53Z",
+  "urgency": null
+}

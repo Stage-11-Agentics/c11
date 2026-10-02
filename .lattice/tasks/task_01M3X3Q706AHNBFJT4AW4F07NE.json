@@ -1,0 +1,156 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-groups",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-259-workspace-groups",
+      "linked_at": "2026-10-02T04:37:44Z",
+      "linked_by": "agent:astra-groups",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "high",
+  "created_at": "2026-10-02T01:30:05Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nAn operator or orchestrator needs to collect a run's workspaces into named folders and rearrange the fleet in one predictable operation. Backlog item: W1.\n\n## Evidence\n- c11: `Sources/Workspace.swift:245-262` on origin/main (0ff8887e5e) snapshots color, pin state and metadata; `Sources/SessionPersistence.swift:490-522` has workspace and manager snapshots without groups.\n- c11: `Sources/WorkspaceManager.swift:2354-2409` has pin-aware individual moves; `Sources/SocketHandlers/WorkspaceHandlers.swift:27-28` routes the singular reorder. `Sources/WorkspaceManager.swift:5687-5703` restores workspace UUIDs.\n- Upstream: cmux #4815/#5018 groups and CLI, #4507 batch reorder. At upstream/main (920ff39ff7), inspect `Packages/macOS/CmuxWorkspaces/Sources/CmuxWorkspaces/Values/WorkspaceGroup.swift`, `Reorder/WorkspaceReorderPlanner.swift` under that package, and `Packages/macOS/CmuxControlSocket/Sources/CmuxControlSocket/Coordinator/WorkspaceGroup/`. Its anchor-workspace machinery is reference material, not c11's model.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md`, What cmux built \u00a71h/\u00a73 and proposal \u00a73; `feature-audit-astra.md` Grab list rows 4.8/4.12/4.12b; `feature-audit-fable.md` row 4.12. BACKLOG.md D17/W1 supersedes the older timing recommendation in `c11-1.0.html` \u00a74 and folds batch reorder 4.8 into this item. Auto-filing by root remains cut.\n\n## Scope\nIn: folder model `WorkspaceGroup {id, name, color, icon, isCollapsed, isPinned}`, `Workspace.groupId`, group/member ordering, backward-compatible session persistence, CLI/socket verbs, tree projection and skill documentation. CLI: `c11 workspace-group list|create|rename|delete|ungroup|add|remove|move|collapse|expand|pin|unpin|set-color|set-icon|focus`, all with `--json`; `reorder-workspaces --order --dry-run` and actual apply.\nOut: W2 sidebar, W3 integrated validation, W4 history; anchor workspaces, automatic membership by root, automatic naming, stable short numbers across restart (D15), sidebar/AppKit rewrite, remote federation and account restore. Group removal does not implicitly close member workspaces.\n\n## Approach\nUse a folder record owned alongside the workspace collection, with member order derived from that collection. Reuse c11's color/icon and UUID-resolution seams. Specify group pin/member pin precedence and window scope before implementation; do not inherit anchor promotion or generate hidden terminals. Decode older snapshots as ungrouped. Factor a pure reorder plan that validates the whole request, then apply one model mutation; dry-run uses exactly the same planner. Preserve selected workspace and tab for non-focus verbs; only group focus may select, without activating or raising the app. Update `skills/c11/SKILL.md` and the applicable API reference, sync the installed skill, and verify its live contents.\n\n## Acceptance criteria\n1. A tagged-build CLI scenario creates an empty folder, adds two existing workspaces, exercises every listed verb and reads equivalent identities, member order and properties through list/tree JSON. Removing the final member leaves a valid empty folder; no generated workspace or PTY appears.\n2. Delete/ungroup fixtures preserve member workspaces, their terminal processes and selection. Duplicate membership, unknown group/workspace and wrong-window targets return specific errors without a partial mutation.\n3. A mixed pinned/unpinned fixture tests individual and batch moves. Dry-run changes no order or focus; applying it from unchanged input yields the reported order, preserving the documented pinned segments and unaffected member order. Duplicate/unknown batch IDs leave the complete original order intact. Emit `workspace.reordered` only on a real apply change.\n4. Save/restart/restore preserves group UUIDs, membership, order, name, color, icon, collapse and pin state. A pre-group snapshot restores ungrouped; an orphaned membership fixture has a documented recovery without losing its workspace.\n5. Run the non-focus verbs with another workspace selected and with c11 backgrounded: selection and macOS focus stay unchanged. Explicit group focus selects its documented live member or reports an empty group without manufacturing one.\n6. Bundled and installed skill examples accurately exercise the shipped CLI and JSON shape; no persistent tab/group ordinal guarantee is introduced.\n\n## Validation\nBehavioral tests for the group/reorder planner and old/new snapshot fixtures; tests_v2 CLI/socket scenarios against a tagged socket; tagged-app inspection of unchanged terminals/selection and one restore. W2/W3 own full sidebar computer-use coverage. Measure reorder/group churn under typing against F2's preregistered baseline. Builds and soaks run on Atlas after F1/C11-216, through build-lock entry points; launch tagged QA builds only. No source-text assertion tests.\n\n## Dependencies\nF1 (C11-216) for build/soak execution; F2 for comparative performance evidence. Batch reorder 4.8 is included here, not a separate ticket. W2 (C11-260) consumes this model and API; W3 (C11-261) validates the integrated result. Cross-workstream links are for the lead.\n\n## Risks\nExtra collection publications can affect typing latency; keep disk I/O/planning off typing paths and minimize main-thread mutation. Snapshot migration and pin normalization must not drop workspaces. No tenant configuration writes. Localize any new user-facing strings in English plus ja/uk/ko/zh-Hans/zh-Hant/ru, preserving format tokens. Public tickets, fixtures and captures must use synthetic paths/names and contain no private fleet/session data.\n\nSize: L. Tier: P1. Doctrine check: explicit operator/agent-composed folders, with no inference about agent work or tenant configuration changes.\n",
+  "done_at": "2026-10-02T07:56:14Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XFPM8P78G2S0GGH5308G7M",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XFRQFY52DF3MJ0HQHP6NJH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XGEZSK50N39M2QA5WBRH4C",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XGMZMCGN380J1G7N5NQPWY",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XN948YZ69CQ135GVRM9XE2",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XNDJ6MK2W4XYYJBWYNS0HH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XQBMMKPTCPA6AVXTS3AJ9H",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XQD31JY7FR7NBPP6BM5BT4",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XQJDM8AMHJBH6KNFWR85M6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XR9A8CRBVYD131831EVJ4Z",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XRB2Z2CS426JE65S4DY4GA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XRMTFCKFW53CCFSRRV0X7H",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XST8PCC4YQDSMZ1ENZ9GVP",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XST8NXMT25BX6Q0ZTMWT2A",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XSV5N5TQXDA4380HPH6N5V",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XX971DBQ960AFMEPKR9VWP",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XXCYVTDD9K5AHYCWP7NCH6",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XXCYYR627D0J8ZE62FV95H",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XXCZ2226BAZ1WXW1P2S393",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XXCZ4QSBZNZSG6B5B13KT3",
+      "role": "validation",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3Q706AHNBFJT4AW4F07NE",
+  "last_event_id": "ev_01M3XXJJ0SXNCFFX5GBGTJ7G51",
+  "last_status_changed_at": "2026-10-02T07:56:14Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:46:31Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:47Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 3,
+  "schema_version": 1,
+  "short_id": "C11-259",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:workspaces",
+    "tier:p1"
+  ],
+  "title": "Workspace groups: folder model, persistence, CLI and atomic batch reorder",
+  "type": "task",
+  "updated_at": "2026-10-02T09:01:56Z",
+  "urgency": null
+}

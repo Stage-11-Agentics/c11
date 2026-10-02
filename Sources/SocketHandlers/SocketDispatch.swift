@@ -99,6 +99,8 @@ extension TerminalController {
         switch request.method {
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
+        case "window.resize":
+            return v2WindowResizeWorker(id: request.id, params: request.params)
         case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":

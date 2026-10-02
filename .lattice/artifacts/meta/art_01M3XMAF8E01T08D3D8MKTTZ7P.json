@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:20:13Z",
+  "created_by": "C11-257-Orchestrator-1",
+  "custom_fields": {},
+  "id": "art_01M3XMAF8E01T08D3D8MKTTZ7P",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XMAF8E01T08D3D8MKTTZ7P.md",
+    "size_bytes": 1665
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-257 complete. All five lanes merged to origin/main and verified (squash merges):\n- A #492 3a38d8a23b: every send/send-key recorded as tab.input_sent with full text; mailbox events carry bodies and",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

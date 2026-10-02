@@ -1,0 +1,145 @@
+<!doctype html><meta charset="utf-8"><title>C11-274 validation progress</title><style>body{font:17px system-ui;max-width:1080px;margin:40px auto;padding:24px;color:#1e293b}p{line-height:1.6}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f5f9;padding:16px}</style><h1>C11-274: transport checks pass; native scenarios pending</h1><p>Needs you: nothing during the UI hold. C11-274 remains in validation. This records passed executable logic and controlled-peer transport checks; it is not an overall PASS.</p><p>Exact merged head 3b2a92860e0e8cb0094ab3913c3adddaf58eeb7d. Debug invocation 8375162bc29c41ec9909f68cf3772ae9, tag c11-274, Xcode 26.3 build 17C529 and Zig 0.15.2. Canonical executable 69bbf5db5aac3c1aa7bd3c1408dc8e1c3d40e9077ce2ee81206a193ca3a6ccd3; retrieved re-signed local copy 9d12d35f63a257dbb14c0e940a34846a0023b68c8bc7edf1fc9c4afa434e330f. The guest copy was independently verified against the canonical executable. No local build ran.</p><p>Logic invocation d9e858000b7443639f4bd17af027fc8f: 2,383 tests, three existing test-level skips, zero failures. SocketControlPasswordStoreTests was the sole explicit suite exclusion because the login Keychain is unavailable over SSH. Both retained WorkspaceRemoteConnectionTests ran and passed. All six ClaudeHookMappingTests ran and passed, exercising async-answer ordering through the actual mapping/reducer, late ordinary and sibling tools, observe-only permission data, StopFailure/child/PreCompact and the historical fixture corpus. Historical answered continuation remains synthetic and native ExitPlanMode evidence remains absent.</p><p>Owner step 6 PASS: actual packaged CLI and wrapper executed all three unchanged behavior fixtures with controlled peers and disposable runtime state. Silent authenticated PermissionRequest returned neutral {} with a recoverable structural draft in 271.6 ms; held state lock took 53.3 ms. Responsive Ask/Plan resolutions took 11.9/11.6 ms; ordinary Bash 12.1 ms. Stalled pre-append clear took 272.9/285.2 ms, with one committed resolution or recoverable draft and exit zero. These are whole-process timings: the configured socket budget is 250 ms, warmed stalled process ceiling 350 ms, and the separate intentional ask-skip case retains its 750 ms ceiling. The wrapper fixture selected the verified packaged wrapper without changing its five behavior assertions, including settings merge and outside-context pass-through.</p><p>Owner steps 1–5 remain partially or wholly pending native proof. No current provider version was inherited from historical captures. Normal Bash permission staying visible without c11 answering, all normal/bypass Ask/Plan combinations, real request/continuation identities, real child/compaction/error events and two-tab native isolation have not passed. Logic and fake peers do not prove those provider paths.</p><p>Owner step 7 NOT RUN to measurement. The first supervisor stopped at a bounded socket-startup harness error; a shared-file staging attempt was found incomplete and replaced by a hash-verified immutable archive on guest-local disk. A queued attempt lost its retired runtime source before execution. The final independent attempt acquired admission but argparse rejected a duplicate helper argument before app launch or any glyph/hook sample. No product regression or performance verdict follows. The earlier startup receipt was retrieved, the queued process ended, and the disposable guest was deleted within its lease. No synthesized dismissal claim is made for this failed setup. Corrected helper preparation and the next shared artifact will carry separate actual build and historical fixture heads.</p><p>The registered burst still requires actual hook success, at least 114/120 glyphs within 500 ms, observed typing target/readable topology, measured p95/p99/RSS/load and dismissal proof. It is distinct from the C11-270 fleet workload. the interactive host native checks remain held until QUIET WINDOW START. No operator agent configuration or installed skill was written.</p><details><summary>debug-result.json</summary><pre>{
+  &quot;invocation&quot;: &quot;8375162bc29c41ec9909f68cf3772ae9&quot;,
+  &quot;head&quot;: &quot;3b2a92860e0e8cb0094ab3913c3adddaf58eeb7d&quot;,
+  &quot;parent_head&quot;: &quot;d3ef3c14cf7d6970e727a102db825d93c5e9ce2a&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;5830d1976eecca0d7dee202aef8fb2338d99ed6d&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;c11-274&quot;,
+  &quot;slug&quot;: &quot;c11-274&quot;,
+  &quot;mode&quot;: &quot;debug&quot;,
+  &quot;extra&quot;: [],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;na&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;app&quot;: &quot;c11 DEV c11-274.app&quot;,
+  &quot;executable_sha256&quot;: &quot;69bbf5db5aac3c1aa7bd3c1408dc8e1c3d40e9077ce2ee81206a193ca3a6ccd3&quot;,
+  &quot;ok&quot;: true,
+  &quot;local_executable_sha256&quot;: &quot;9d12d35f63a257dbb14c0e940a34846a0023b68c8bc7edf1fc9c4afa434e330f&quot;
+}
+</pre></details><details><summary>logic-result.json</summary><pre>{
+  &quot;invocation&quot;: &quot;d9e858000b7443639f4bd17af027fc8f&quot;,
+  &quot;head&quot;: &quot;3b2a92860e0e8cb0094ab3913c3adddaf58eeb7d&quot;,
+  &quot;parent_head&quot;: &quot;d3ef3c14cf7d6970e727a102db825d93c5e9ce2a&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;5830d1976eecca0d7dee202aef8fb2338d99ed6d&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;c11-274&quot;,
+  &quot;slug&quot;: &quot;c11-274&quot;,
+  &quot;mode&quot;: &quot;test&quot;,
+  &quot;extra&quot;: [
+    &quot;-only-testing:c11LogicTests&quot;,
+    &quot;-skip-testing:c11LogicTests/SocketControlPasswordStoreTests&quot;,
+    &quot;-resultBundlePath&quot;,
+    &quot;validator-274.xcresult&quot;
+  ],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;ok&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;ok&quot;: true
+}
+</pre></details><details><summary>logic-selected.log</summary><pre>Test Suite &#x27;ClaudeHookMappingTests&#x27; started at 2026-10-02 13:49:08.090.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testAnswerArrivalCannotBePassedByStopForAskAndPlan]&#x27; started.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testAnswerArrivalCannotBePassedByStopForAskAndPlan]&#x27; passed (0.003 seconds).
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testBypassAskStaysBlockedUntilMatchingResume]&#x27; started.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testBypassAskStaysBlockedUntilMatchingResume]&#x27; passed (0.002 seconds).
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testLateToolAndSiblingToolLeaveTheOtherState]&#x27; started.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testLateToolAndSiblingToolLeaveTheOtherState]&#x27; passed (0.001 seconds).
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testPermissionRequestObservesWithoutADecisionAndDropsBodies]&#x27; started.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testPermissionRequestObservesWithoutADecisionAndDropsBodies]&#x27; passed (0.002 seconds).
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testSharedFixtureCorpusReplaysValidatorCasesAndKeepsProvenance]&#x27; started.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testSharedFixtureCorpusReplaysValidatorCasesAndKeepsProvenance]&#x27; passed (0.009 seconds).
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testStopFailureChildAndPreCompactDoNotInventParentTransitions]&#x27; started.
+Test Case &#x27;-[c11LogicTests.ClaudeHookMappingTests testStopFailureChildAndPreCompactDoNotInventParentTransitions]&#x27; passed (0.001 seconds).
+Test Suite &#x27;ClaudeHookMappingTests&#x27; passed at 2026-10-02 13:49:08.110.
+Test Suite &#x27;WorkspaceRemoteConnectionTests&#x27; started at 2026-10-02 13:50:19.244.
+Test Case &#x27;-[c11LogicTests.WorkspaceRemoteConnectionTests testRemoteCommandRelayDoesNotStartListener]&#x27; started.
+Test Case &#x27;-[c11LogicTests.WorkspaceRemoteConnectionTests testRemoteCommandRelayDoesNotStartListener]&#x27; passed (0.001 seconds).
+Test Case &#x27;-[c11LogicTests.WorkspaceRemoteConnectionTests testSSHAgentEnvVarsPropagateToSpawnedProcess]&#x27; started.
+Test Case &#x27;-[c11LogicTests.WorkspaceRemoteConnectionTests testSSHAgentEnvVarsPropagateToSpawnedProcess]&#x27; passed (0.010 seconds).
+Test Suite &#x27;WorkspaceRemoteConnectionTests&#x27; passed at 2026-10-02 13:50:19.255.
+	 Executed 2383 tests, with 3 tests skipped and 0 failures (0 unexpected) in 76.001 (76.933) seconds
+	 Executed 2383 tests, with 3 tests skipped and 0 failures (0 unexpected) in 76.001 (76.935) seconds
+** TEST SUCCEEDED **
+</pre></details><details><summary>report.json</summary><pre>{
+  &quot;head&quot;: &quot;3b2a92860e0e8cb0094ab3913c3adddaf58eeb7d&quot;,
+  &quot;build_invocation&quot;: &quot;8375162bc29c41ec9909f68cf3772ae9&quot;,
+  &quot;identity_field&quot;: &quot;executable_sha256&quot;,
+  &quot;app_executable_sha256&quot;: &quot;69bbf5db5aac3c1aa7bd3c1408dc8e1c3d40e9077ce2ee81206a193ca3a6ccd3&quot;,
+  &quot;cli_sha256&quot;: &quot;ca2cc07ce891b9378a36075979554ac662d2cd5f3e5ff14fc19d273d805de99c&quot;,
+  &quot;wrapper_sha256&quot;: &quot;4200ed4f388a76c6e4a38f6633d27a5ff8f957b3773b08d4fe40d4752998fed5&quot;,
+  &quot;fixture_head&quot;: &quot;3b2a92860e0e8cb0094ab3913c3adddaf58eeb7d&quot;,
+  &quot;scope&quot;: &quot;real packaged CLI/wrapper, controlled fake peers; no app or native provider launch&quot;,
+  &quot;socket_budget_ms&quot;: 250,
+  &quot;stalled_process_ceiling_ms&quot;: 350,
+  &quot;warm_executable_admission&quot;: true,
+  &quot;host_load_before&quot;: [
+    14.8173828125,
+    27.8564453125,
+    26.8095703125
+  ],
+  &quot;fixtures&quot;: [
+    {
+      &quot;exit_status&quot;: 0,
+      &quot;timed_out&quot;: false,
+      &quot;outer_deadline_seconds&quot;: 30,
+      &quot;whole_fixture_wall_seconds&quot;: 3.054649,
+      &quot;log_sha256&quot;: &quot;e716e6ea0362bb4db9866a181f8672ac5d57aac82e33d274b202cf1b5be3e914&quot;,
+      &quot;fixture&quot;: &quot;test_claude_hook_permission_cli.py&quot;,
+      &quot;source_sha256&quot;: &quot;457b510aaa4e06ce162ad1ca277cc67905c135e022a18b5beff8c405f19392ad&quot;
+    },
+    {
+      &quot;exit_status&quot;: 0,
+      &quot;timed_out&quot;: false,
+      &quot;outer_deadline_seconds&quot;: 30,
+      &quot;whole_fixture_wall_seconds&quot;: 0.913756,
+      &quot;log_sha256&quot;: &quot;e91c173133847bf9abd6123f8d4e92b6897e738b1386c5ee6ae67efa35d414b0&quot;,
+      &quot;fixture&quot;: &quot;test_journal_claude_resolution_cli.py&quot;,
+      &quot;source_sha256&quot;: &quot;97f4c7c6c2b8b0a18439193ee563713ede695aa711ff60e35ce9557df5578b88&quot;
+    },
+    {
+      &quot;exit_status&quot;: 0,
+      &quot;timed_out&quot;: false,
+      &quot;outer_deadline_seconds&quot;: 30,
+      &quot;whole_fixture_wall_seconds&quot;: 2.868738,
+      &quot;log_sha256&quot;: &quot;56d2413056a403e5547a4919c965d5b081a05e4664a2fc9de62bd6b3a41d51dc&quot;,
+      &quot;fixture&quot;: &quot;test_claude_wrapper_hooks.py&quot;,
+      &quot;source_sha256&quot;: &quot;481351c340007fec1fd3eb2ad1ef33aec455f9441780ead7ae1faf5a0d48aeba&quot;,
+      &quot;adaptation&quot;: &quot;SOURCE_WRAPPER selects verified packaged wrapper; test logic unchanged&quot;,
+      &quot;behavioral_checks&quot;: 5
+    }
+  ],
+  &quot;host_load_after&quot;: [
+    14.27099609375,
+    27.5263671875,
+    26.69921875
+  ],
+  &quot;result&quot;: &quot;PASS&quot;
+}
+</pre></details><details><summary>test_claude_hook_permission_cli.py.log</summary><pre>PASS silent authenticated peer: wall_ms=271.6 socket_budget_ms=250
+PASS held state lock: wall_ms=53.3 socket_budget_ms=250
+PASS permission-request stdout, spool, and non-answering append
+</pre></details><details><summary>test_claude_wrapper_hooks.py.log</summary><pre>PASS: claude wrapper hooks handle missing/stale sockets and inject only supported hooks
+</pre></details><details><summary>test_journal_claude_resolution_cli.py.log</summary><pre>PASS authenticated responsive post-tool-use/AskUserQuestion: wall_ms=11.9 budget_ms=250
+PASS authenticated responsive post-tool-use/ExitPlanMode: wall_ms=11.6 budget_ms=250
+PASS authenticated responsive pre-tool-use/Bash: wall_ms=12.1 budget_ms=250
+PASS authenticated stalled clear/AskUserQuestion: wall_ms=272.9 socket_budget_ms=250 retained=1
+PASS authenticated stalled clear/ExitPlanMode: wall_ms=285.2 socket_budget_ms=250 retained=1
+PASS correlated ask/plan resolution and status writes after successful journal append
+</pre></details>

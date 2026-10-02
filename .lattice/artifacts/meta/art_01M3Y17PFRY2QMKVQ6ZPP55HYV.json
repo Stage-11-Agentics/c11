@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:05:54Z",
+  "created_by": "agent:codex-history",
+  "custom_fields": {},
+  "id": "art_01M3Y17PFRY2QMKVQ6ZPP55HYV",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Y17PFRY2QMKVQ6ZPP55HYV.json",
+    "size_bytes": 775
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Clean merged head compiled; 128 window-scope CLI cases passed; no app launch or other tests.",
+  "tags": [],
+  "title": "Merged raw-send/window-scope compile and CLI proof",
+  "token_usage": null,
+  "type": "file"
+}

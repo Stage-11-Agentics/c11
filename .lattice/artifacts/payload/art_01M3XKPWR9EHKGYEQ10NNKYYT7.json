@@ -1,0 +1,395 @@
+{
+  "head": "0541d26b1d1505afc736d25028008c22e8b0caf2",
+  "atlas_test": {
+    "invocation": "831fa71c6c1a4fe284ae559d5703fea2",
+    "head": "0541d26b1d1505afc736d25028008c22e8b0caf2",
+    "parent_head": "ca5113df769352d4c47d3ec46d98962ea473712b",
+    "branch": "c11-1.0/C11-258-launch-runtime-file",
+    "submodules": {
+      "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-258-launch",
+    "slug": "c11-258-launch",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/LaunchPromptStoreTests",
+      "-only-testing:c11LogicTests/AgentStartupProbeTests",
+      "-only-testing:c11LogicTests/LaunchPromptDeliveryTests",
+      "-only-testing:c11LogicTests/AgentLaunchPlannerTests",
+      "-only-testing:c11LogicTests/DefaultAgentResolverTests",
+      "-only-testing:c11LogicTests/DefaultAgentLaunchCompositionTests",
+      "-only-testing:c11LogicTests/AgentLaunchOverlayCompositionTests",
+      "-only-testing:c11LogicTests/ConfigCommandCoreTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "atlas_tagged_build": {
+    "invocation": "d0cbce2429e743c791116d6f445d6a56",
+    "head": "0541d26b1d1505afc736d25028008c22e8b0caf2",
+    "parent_head": "ca5113df769352d4c47d3ec46d98962ea473712b",
+    "branch": "c11-1.0/C11-258-launch-runtime-file",
+    "submodules": {
+      "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-258-launch",
+    "slug": "c11-258-launch",
+    "mode": "debug",
+    "extra": [],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "app": "c11 DEV c11-258-launch.app",
+    "executable_sha256": "f0a4f5b3105f677fe6672b7d21bef77362790de73b180045ff8a4c5ef9a035b4",
+    "ok": true,
+    "local_executable_sha256": "678f341084e599dba4fa6aeaaa16ffd8b2f26864982a821340df2cb2a7e3c781"
+  },
+  "tagged_fixture": [
+    {
+      "kind": "claude-code",
+      "startup": "pending",
+      "bytes": 32820,
+      "sha256": "bf338f8ff95435ee71538cf4e52870669a232020fae5e251335425ce623e2c61",
+      "close_cleanup": true,
+      "caller_preserved": true,
+      "focus_preserved": true
+    },
+    {
+      "kind": "codex",
+      "startup": "pending",
+      "bytes": 32820,
+      "sha256": "bf338f8ff95435ee71538cf4e52870669a232020fae5e251335425ce623e2c61",
+      "close_cleanup": true,
+      "caller_preserved": true,
+      "focus_preserved": true
+    }
+  ],
+  "native_observation": [
+    {
+      "kind": "claude-code",
+      "startup": "started",
+      "process": {
+        "pid": 24278,
+        "executable": "2.1.284"
+      },
+      "launch_seconds": 0.412,
+      "receipt_present": false,
+      "digest_matches": false,
+      "bytes_matches": false,
+      "selection_preserved": true
+    },
+    {
+      "kind": "codex",
+      "startup": "started",
+      "process": {
+        "pid": 27882,
+        "executable": "codex"
+      },
+      "launch_seconds": 0.389,
+      "receipt_present": false,
+      "digest_matches": false,
+      "bytes_matches": false,
+      "selection_preserved": true
+    }
+  ],
+  "pty_diagnostic": {
+    "scope": "PTY observation, not a Ghostty diagnosis",
+    "observations": [
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "baseline",
+        "bracketed_requested": "on",
+        "command_bytes": 719,
+        "expected_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+        "expected_bytes": 500,
+        "success": false,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": true,
+        "error": "timeout waiting for fake-agent receipt",
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 0,
+        "output_tail": "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K\u001b[?2004h>....                                                            \r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7m'\u001b[27m\u001b[K\r\r\n\u001b[K",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 500
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "repaired",
+        "bracketed_requested": "on",
+        "command_bytes": 251,
+        "expected_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+        "expected_bytes": 500,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": true,
+        "receipt": {
+          "instruction": "--prompt-file",
+          "file_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+          "file_bytes": 500,
+          "argv": [
+            "--prompt-file",
+            "/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space ' dollar$ semi;/synthetic-500.txt"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "my\u001b[27m5\u001b[27md\u001b[27mk\u001b[27mw\u001b[27m4\u001b[27m1\u001b[27m1\u001b[27m4\u001b[27mc\u001b[27ml\u001b[27mf\u001b[27m_\u001b[27m_\u001b[27mb\u001b[27mf\u001b[27m5\u001b[27mq\u001b[27mj\u001b[27mm\u001b[27m_\u001b[27mr\u001b[27m1\u001b[27mr\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27mg\u001b[27mn\u001b[27m/\u001b[27mT\u001b[27m/\u001b[27mc\u001b[27m1\u001b[27m1\u001b[27m-\u001b[27mp\u001b[27mt\u001b[27my\u001b[27m-\u001b[27md\u001b[27mi\u001b[27ma\u001b[27mg\u001b[27mn\u001b[27mo\u001b[27mse\u001b[27m-\u001b[27mj\u001b[27m4\u001b[27m2\u001b[27mr\u001b[27m3\u001b[27mc\u001b[27mg\u001b[27mq\u001b[27m/\u001b[27ms\u001b[27mp\u001b[27ma\u001b[27mc\u001b[27me\u001b[27m \u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m \u001b[27md\u001b[27mo\u001b[27ml\u001b[27ml\u001b[27ma\u001b[27mr\u001b[27m$\u001b[27m \u001b[27ms\u001b[27me\u001b[27mm\u001b[27mi\u001b[27m;\u001b[27m/\u001b[27mf\u001b[27ma\u001b[27mk\u001b[27me\u001b[27m \u001b[27ma\u001b[27mg\u001b[27me\u001b[27mn\u001b[27mt\u001b[27m.\u001b[27mp\u001b[27my\u001b[27m'\u001b[27m \u001b[27m-\u001b[27m-\u001b[27mp\u001b[27mr\u001b[27mo\u001b[27mm\u001b[27mp\u001b[27mt\u001b[27m-\u001b[27mf\u001b[27mi\u001b[27ml\u001b[27me\u001b[27m \u001b[27m'\u001b[27m/\u001b[27mv\u001b[27ma\u001b[27mr\u001b[27m/\u001b[27mf\u001b[27mo\u001b[27ml\u001b[27md\u001b[27me\u001b[27mr\u001b[27ms\u001b[27m/4\u001b[27mh\u001b[27m/\u001b[27my\u001b[27m5\u001b[27md\u001b[27mk\u001b[27mw\u001b[27m4\u001b[27m1\u001b[27m1\u001b[27m4\u001b[27mc\u001b[27ml\u001b[27mf\u001b[27m_\u001b[27m_\u001b[27mb\u001b[27mf\u001b[27m5\u001b[27mq\u001b[27mj\u001b[27mm\u001b[27m_\u001b[27mr\u001b[27m1\u001b[27mr\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27mg\u001b[27mn\u001b[27m/\u001b[27mT\u001b[27m/\u001b[27mc\u001b[27m1\u001b[27m1\u001b[27m-\u001b[27mp\u001b[27mt\u001b[27my\u001b[27m-\u001b[27md\u001b[27mi\u001b[27ma\u001b[27mg\u001b[27mn\u001b[27mo\u001b[27ms\u001b[27me\u001b[27m-\u001b[27mj\u001b[27m4\u001b[27m2\u001b[27mr\u001b[27m3\u001b[27mc\u001b[27mg\u001b[27mq\u001b[27m/\u001b[27ms\u001b[27mp\u001b[27ma\u001b[27mc\u001b[27me\u001b[27m \u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m \u001b[27md\u001b[27mo\u001b[27ml\u001b[27ml\u001b[27ma\u001b[27mr$\u001b[27m \u001b[27ms\u001b[27me\u001b[27mm\u001b[27mi\u001b[27m;\u001b[27m/\u001b[27ms\u001b[27my\u001b[27mn\u001b[27mt\u001b[27mh\u001b[27me\u001b[27mt\u001b[27mi\u001b[27mc\u001b[27m-\u001b[27m5\u001b[27m0\u001b[27m0\u001b[27m.\u001b[27mt\u001b[27mx\u001b[27mt\u001b[27m'\u001b[?2004l\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 500
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "baseline",
+        "bracketed_requested": "off",
+        "command_bytes": 719,
+        "expected_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+        "expected_bytes": 500,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": false,
+        "receipt": {
+          "instruction": "synthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\n",
+          "file_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+          "file_bytes": 500,
+          "argv": [
+            "synthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\n"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "lf__bf5qjm_r1r0000gn/T/c11-pty-diagnos \r\u001b[Ke\re-j42r3cgq/space '\"'\"' dollar$ semi;/fake agent.py' 'synthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[K'\r\r\n",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 500
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "repaired",
+        "bracketed_requested": "off",
+        "command_bytes": 251,
+        "expected_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+        "expected_bytes": 500,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": false,
+        "receipt": {
+          "instruction": "--prompt-file",
+          "file_sha256": "ce4be08e2b32b044f0ef84473b8a788ed3d76d4d56c0b114dec0f9bce640d1a1",
+          "file_bytes": 500,
+          "argv": [
+            "--prompt-file",
+            "/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space ' dollar$ semi;/synthetic-500.txt"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K\u001b[?2004hu\bunset zle_bracketed_paste\u001b[?2004l\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K'\b'/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnos \r\u001b[Ke\re-j42r3cgq/space '\"'\"' dollar$ semi;/fake agent.py' --prompt-file '/var/folders/ \r\u001b[K4\r4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space '\"'\"' dollar \r\u001b[K$\r$ semi;/synthetic-500.txt'\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 500
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "baseline",
+        "bracketed_requested": "on",
+        "command_bytes": 1679,
+        "expected_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+        "expected_bytes": 1300,
+        "success": false,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": true,
+        "error": "timeout waiting for fake-agent receipt",
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 0,
+        "output_tail": "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K\u001b[?2004h>....                                                            \r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7m'\u001b[27m\u001b[K\r\r\n\u001b[K",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 1300
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "repaired",
+        "bracketed_requested": "on",
+        "command_bytes": 252,
+        "expected_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+        "expected_bytes": 1300,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": true,
+        "receipt": {
+          "instruction": "--prompt-file",
+          "file_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+          "file_bytes": 1300,
+          "argv": [
+            "--prompt-file",
+            "/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space ' dollar$ semi;/synthetic-1300.txt"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "m5\u001b[27md\u001b[27mk\u001b[27mw\u001b[27m4\u001b[27m1\u001b[27m1\u001b[27m4\u001b[27mc\u001b[27ml\u001b[27mf\u001b[27m_\u001b[27m_\u001b[27mb\u001b[27mf\u001b[27m5\u001b[27mq\u001b[27mj\u001b[27mm\u001b[27m_\u001b[27mr\u001b[27m1\u001b[27mr\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27mg\u001b[27mn\u001b[27m/\u001b[27mT\u001b[27m/\u001b[27mc\u001b[27m1\u001b[27m1\u001b[27m-\u001b[27mp\u001b[27mt\u001b[27my\u001b[27m-\u001b[27md\u001b[27mi\u001b[27ma\u001b[27mg\u001b[27mn\u001b[27mo\u001b[27mse\u001b[27m-\u001b[27mj\u001b[27m4\u001b[27m2\u001b[27mr\u001b[27m3\u001b[27mc\u001b[27mg\u001b[27mq\u001b[27m/\u001b[27ms\u001b[27mp\u001b[27ma\u001b[27mc\u001b[27me\u001b[27m \u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m \u001b[27md\u001b[27mo\u001b[27ml\u001b[27ml\u001b[27ma\u001b[27mr\u001b[27m$\u001b[27m \u001b[27ms\u001b[27me\u001b[27mm\u001b[27mi\u001b[27m;\u001b[27m/\u001b[27mf\u001b[27ma\u001b[27mk\u001b[27me\u001b[27m \u001b[27ma\u001b[27mg\u001b[27me\u001b[27mn\u001b[27mt\u001b[27m.\u001b[27mp\u001b[27my\u001b[27m'\u001b[27m \u001b[27m-\u001b[27m-\u001b[27mp\u001b[27mr\u001b[27mo\u001b[27mm\u001b[27mp\u001b[27mt\u001b[27m-\u001b[27mf\u001b[27mi\u001b[27ml\u001b[27me\u001b[27m \u001b[27m'\u001b[27m/\u001b[27mv\u001b[27ma\u001b[27mr\u001b[27m/\u001b[27mf\u001b[27mo\u001b[27ml\u001b[27md\u001b[27me\u001b[27mr\u001b[27ms\u001b[27m/4\u001b[27mh\u001b[27m/\u001b[27my\u001b[27m5\u001b[27md\u001b[27mk\u001b[27mw\u001b[27m4\u001b[27m1\u001b[27m1\u001b[27m4\u001b[27mc\u001b[27ml\u001b[27mf\u001b[27m_\u001b[27m_\u001b[27mb\u001b[27mf\u001b[27m5\u001b[27mq\u001b[27mj\u001b[27mm\u001b[27m_\u001b[27mr\u001b[27m1\u001b[27mr\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27mg\u001b[27mn\u001b[27m/\u001b[27mT\u001b[27m/\u001b[27mc\u001b[27m1\u001b[27m1\u001b[27m-\u001b[27mp\u001b[27mt\u001b[27my\u001b[27m-\u001b[27md\u001b[27mi\u001b[27ma\u001b[27mg\u001b[27mn\u001b[27mo\u001b[27ms\u001b[27me\u001b[27m-\u001b[27mj\u001b[27m4\u001b[27m2\u001b[27mr\u001b[27m3\u001b[27mc\u001b[27mg\u001b[27mq\u001b[27m/\u001b[27ms\u001b[27mp\u001b[27ma\u001b[27mc\u001b[27me\u001b[27m \u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m \u001b[27md\u001b[27mo\u001b[27ml\u001b[27ml\u001b[27ma\u001b[27mr$\u001b[27m \u001b[27ms\u001b[27me\u001b[27mm\u001b[27mi\u001b[27m;\u001b[27m/\u001b[27ms\u001b[27my\u001b[27mn\u001b[27mt\u001b[27mh\u001b[27me\u001b[27mt\u001b[27mi\u001b[27mc\u001b[27m-\u001b[27m1\u001b[27m3\u001b[27m0\u001b[27m0\u001b[27m.\u001b[27mt\u001b[27mx\u001b[27mt\u001b[27m'\u001b[?2004l\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 1300
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "baseline",
+        "bracketed_requested": "off",
+        "command_bytes": 1679,
+        "expected_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+        "expected_bytes": 1300,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": false,
+        "receipt": {
+          "instruction": "synthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\n",
+          "file_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+          "file_bytes": 1300,
+          "argv": [
+            "synthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\nsynthetic '$;` text\n"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "tic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[K'\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 1300
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "repaired",
+        "bracketed_requested": "off",
+        "command_bytes": 252,
+        "expected_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+        "expected_bytes": 1300,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": false,
+        "receipt": {
+          "instruction": "--prompt-file",
+          "file_sha256": "a30cca4b3f801f354f722cfc214ab48e22e6f06c0c694846a572a19c6ced2ccc",
+          "file_bytes": 1300,
+          "argv": [
+            "--prompt-file",
+            "/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space ' dollar$ semi;/synthetic-1300.txt"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K\u001b[?2004hu\bunset zle_bracketed_paste\u001b[?2004l\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K'\b'/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnos \r\u001b[Ke\re-j42r3cgq/space '\"'\"' dollar$ semi;/fake agent.py' --prompt-file '/var/folders/ \r\u001b[K4\r4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space '\"'\"' dollar \r\u001b[K$\r$ semi;/synthetic-1300.txt'\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 1300
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "baseline",
+        "bracketed_requested": "on",
+        "command_bytes": 39439,
+        "expected_sha256": "5e6735df867d5a7395aac6c2c7a09b9a840baee588198211fcc721b9a434fab4",
+        "expected_bytes": 32768,
+        "success": false,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": true,
+        "error": "timeout waiting for fake-agent receipt",
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 0,
+        "output_tail": "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K\u001b[?2004h>....                                                            \r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msynthetic '\"'\"'$;` text\u001b[27m\u001b[K\r\r\n\u001b[7msyntheti'\u001b[27m\u001b[K\r\r\n\u001b[K",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 32768
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "repaired",
+        "bracketed_requested": "on",
+        "command_bytes": 253,
+        "expected_sha256": "5e6735df867d5a7395aac6c2c7a09b9a840baee588198211fcc721b9a434fab4",
+        "expected_bytes": 32768,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": true,
+        "receipt": {
+          "instruction": "--prompt-file",
+          "file_sha256": "5e6735df867d5a7395aac6c2c7a09b9a840baee588198211fcc721b9a434fab4",
+          "file_bytes": 32768,
+          "argv": [
+            "--prompt-file",
+            "/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space ' dollar$ semi;/synthetic-32768.txt"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "md\u001b[27mk\u001b[27mw\u001b[27m4\u001b[27m1\u001b[27m1\u001b[27m4\u001b[27mc\u001b[27ml\u001b[27mf\u001b[27m_\u001b[27m_\u001b[27mb\u001b[27mf\u001b[27m5\u001b[27mq\u001b[27mj\u001b[27mm\u001b[27m_\u001b[27mr\u001b[27m1\u001b[27mr\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27mg\u001b[27mn\u001b[27m/\u001b[27mT\u001b[27m/\u001b[27mc\u001b[27m1\u001b[27m1\u001b[27m-\u001b[27mp\u001b[27mt\u001b[27my\u001b[27m-\u001b[27md\u001b[27mi\u001b[27ma\u001b[27mg\u001b[27mn\u001b[27mo\u001b[27mse\u001b[27m-\u001b[27mj\u001b[27m4\u001b[27m2\u001b[27mr\u001b[27m3\u001b[27mc\u001b[27mg\u001b[27mq\u001b[27m/\u001b[27ms\u001b[27mp\u001b[27ma\u001b[27mc\u001b[27me\u001b[27m \u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m \u001b[27md\u001b[27mo\u001b[27ml\u001b[27ml\u001b[27ma\u001b[27mr\u001b[27m$\u001b[27m \u001b[27ms\u001b[27me\u001b[27mm\u001b[27mi\u001b[27m;\u001b[27m/\u001b[27mf\u001b[27ma\u001b[27mk\u001b[27me\u001b[27m \u001b[27ma\u001b[27mg\u001b[27me\u001b[27mn\u001b[27mt\u001b[27m.\u001b[27mp\u001b[27my\u001b[27m'\u001b[27m \u001b[27m-\u001b[27m-\u001b[27mp\u001b[27mr\u001b[27mo\u001b[27mm\u001b[27mp\u001b[27mt\u001b[27m-\u001b[27mf\u001b[27mi\u001b[27ml\u001b[27me\u001b[27m \u001b[27m'\u001b[27m/\u001b[27mv\u001b[27ma\u001b[27mr\u001b[27m/\u001b[27mf\u001b[27mo\u001b[27ml\u001b[27md\u001b[27me\u001b[27mr\u001b[27ms\u001b[27m/4\u001b[27mh\u001b[27m/\u001b[27my\u001b[27m5\u001b[27md\u001b[27mk\u001b[27mw\u001b[27m4\u001b[27m1\u001b[27m1\u001b[27m4\u001b[27mc\u001b[27ml\u001b[27mf\u001b[27m_\u001b[27m_\u001b[27mb\u001b[27mf\u001b[27m5\u001b[27mq\u001b[27mj\u001b[27mm\u001b[27m_\u001b[27mr\u001b[27m1\u001b[27mr\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27m0\u001b[27mg\u001b[27mn\u001b[27m/\u001b[27mT\u001b[27m/\u001b[27mc\u001b[27m1\u001b[27m1\u001b[27m-\u001b[27mp\u001b[27mt\u001b[27my\u001b[27m-\u001b[27md\u001b[27mi\u001b[27ma\u001b[27mg\u001b[27mn\u001b[27mo\u001b[27ms\u001b[27me\u001b[27m-\u001b[27mj\u001b[27m4\u001b[27m2\u001b[27mr\u001b[27m3\u001b[27mc\u001b[27mg\u001b[27mq\u001b[27m/\u001b[27ms\u001b[27mp\u001b[27ma\u001b[27mc\u001b[27me\u001b[27m \u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m\"\u001b[27m'\u001b[27m \u001b[27md\u001b[27mo\u001b[27ml\u001b[27ml\u001b[27ma\u001b[27mr$\u001b[27m \u001b[27ms\u001b[27me\u001b[27mm\u001b[27mi\u001b[27m;\u001b[27m/\u001b[27ms\u001b[27my\u001b[27mn\u001b[27mt\u001b[27mh\u001b[27me\u001b[27mt\u001b[27mi\u001b[27mc\u001b[27m-\u001b[27m3\u001b[27m2\u001b[27m7\u001b[27m6\u001b[27m8\u001b[27m.\u001b[27mt\u001b[27mx\u001b[27mt\u001b[27m'\u001b[?2004l\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 32768
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "baseline",
+        "bracketed_requested": "off",
+        "command_bytes": 39439,
+        "expected_sha256": "5e6735df867d5a7395aac6c2c7a09b9a840baee588198211fcc721b9a434fab4",
+        "expected_bytes": 32768,
+        "success": false,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": false,
+        "error": "timeout writing paste payload",
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jquote> \u001b[Ks\bsynthetic '\"'\"'$;` text\r\r\n",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 32768
+      },
+      {
+        "scope": "interactive zsh PTY only; no Ghostty or real agent",
+        "submission": "repaired",
+        "bracketed_requested": "off",
+        "command_bytes": 253,
+        "expected_sha256": "5e6735df867d5a7395aac6c2c7a09b9a840baee588198211fcc721b9a434fab4",
+        "expected_bytes": 32768,
+        "success": true,
+        "pc_max_canon": 1024,
+        "icanon_at_prompt": false,
+        "bracketed_paste_at_prompt": false,
+        "receipt": {
+          "instruction": "--prompt-file",
+          "file_sha256": "5e6735df867d5a7395aac6c2c7a09b9a840baee588198211fcc721b9a434fab4",
+          "file_bytes": 32768,
+          "argv": [
+            "--prompt-file",
+            "/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space ' dollar$ semi;/synthetic-32768.txt"
+          ]
+        },
+        "paste_mode_on_count": 1,
+        "paste_mode_off_count": 1,
+        "output_tail": "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K\u001b[?2004hu\bunset zle_bracketed_paste\u001b[?2004l\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[JC11_PTY_READY> \u001b[K'\b'/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnos \r\u001b[Ke\re-j42r3cgq/space '\"'\"' dollar$ semi;/fake agent.py' --prompt-file '/var/folders/ \r\u001b[K4\r4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/c11-pty-diagnose-j42r3cgq/space '\"'\"' dollar \r\u001b[K$\r$ semi;/synthetic-32768.txt'\r\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r",
+        "shell_cleanup_returncode": -9,
+        "synthetic_prompt_bytes": 32768
+      }
+    ]
+  },
+  "cli_fixture": "PASS: inline/file raw prompt bytes preserved (500 B)\nPASS: inline/file raw prompt bytes preserved (1300 B)\nPASS: inline/file raw prompt bytes preserved (32768 B)\nPASS: conflicting, missing, whitespace-only and invalid UTF-8 files fail before launch\nPASS: startup=pending human and JSON forwarding\nPASS: startup=started human and JSON forwarding\nPASS: built CLI fake-socket launch-agent checks (10 accepted launches, 4 rejected inputs)\n"
+}

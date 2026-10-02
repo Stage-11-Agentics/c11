@@ -1,0 +1,1 @@
+PR #470 squash-merged to main as 44ec47a81. Fresh-context Sonnet review PASS at b671bdd1e; repair delta (selected-workspace predicate, fail unless final send is OK) attested at 52ddabfa0 by orchestrator. ci-macos-compat smoke at final head: 'Readiness poll 1 (2.2s): terminals=3 selected_focused_attached=1', 'Send response: OK', passed (run 36820823982). All PR checks green.

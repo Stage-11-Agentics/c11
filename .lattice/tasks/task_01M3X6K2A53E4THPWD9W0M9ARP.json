@@ -1,0 +1,95 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-hangs",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-301-mount-cap",
+      "linked_at": "2026-10-02T06:38:42Z",
+      "linked_by": "agent:astra-hangs",
+      "repo": null
+    }
+  ],
+  "comment_count": 8,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAn orchestrator that creates many unfocused workspaces mounts a live SwiftUI tree for each of them. The mount cap rises with the pending set, so the cap never holds. Backlog item: B012.\n\n## Evidence\norigin/main `0ff8887e5e`, verified in `reconcileMountedWorkspaceIds`.\n\n- `Sources/ContentView.swift` (the function at about 3029-3051) unions `pendingBackgroundWorkspaceLoadIds` into `pinnedIds`, then sets `maxMounted = max(baseMaxMounted, selectedCount + pinnedIds.count)`. The base cap is 1. The pending set defeats it.\n- Callers pass `eagerLoadTerminal: !focus` when creating a workspace that should not be focused (`SocketDispatch` near the workspace-create handler). Re-find that call. Fable cited `SocketDispatch.swift:1303` on this SHA.\n- Upstream cmux #7182 (`802351c879`) caps concurrent background mounts and still allows the headless start a new terminal needs.\n- Research: Fable cluster C5, wave 1. This is a producer for the SwiftUI hangs in C11-197, C11-202, and C11-205. It is not a sidebar rewrite.\n\n## Scope\nIn: pending background loads do not raise `maxMounted` without a small fixed ceiling. Workspaces still get created. Their terminals still start headless when something sends or reads. They do not all mount their SwiftUI bodies at once.\n\nOut:\n- Wakeup coalescing (B030), title filtering (B061), and the layout flush (B056). Separate tickets.\n- Sidebar snapshot isolation (B059). Gated on the soak. Do not start it here.\n- Dropping unfocused workspace creation to \"enforce\" the cap. Astra: do not cap pending work by dropping launches.\n- Parked B038 (initial split ratios). Re-check only if you are in that layout path. Do not expand.\n\n## Approach\nGive background mounts a constant ceiling, in the spirit of upstream's policy type, and keep the selected workspace and a real handoff pair outside that ceiling. Headless terminal start stays on the existing bootstrap path. Do not mount a workspace just because its terminal is starting.\n\n## Acceptance criteria\n1. A socket script creates 20 workspaces without focusing them. The number of mounted workspace bodies stays at or under the ceiling. `tree` still lists all 20.\n2. `send` to a terminal in one of those unfocused workspaces still runs, via the headless start, without mounting every sibling.\n3. The workspace the operator is looking at stays mounted. Cycling workspaces still shows the one they selected.\n\n## Validation\nA logic test for the mount-id function if it is pure (`WorkspaceMountPolicy.nextMountedWorkspaceIds` already looks pure). Feed it 20 pending ids and assert the mounted set size. Then one tagged-build socket script for criterion 2, on Atlas after C11-216. No soak. No source-grep test. Computer use: glance that the focused workspace is the one on screen, not a blank sidebar.\n\n## Dependencies\nNone inside ws:bugs. The cold-start ticket is related: headless start must keep working under the cap. Do not block on it. Cross-workstream: F1 is C11-216. The lead links it. C11-197, C11-202, and C11-205 stay the hang records. This ticket is one producer.\n\n## Risks\nA ceiling that prevents a background agent from starting at all. The acceptance send is the guard. Typing latency: this removes mounted trees. It must not add work to `TabItemView` or `hitTest`. Doctrine: no tenant config. No new strings. `TabItemView`'s `Equatable` stays untouched.\n\nSize: S. Tier: P1. Doctrine check: mount accounting only.\n",
+  "done_at": "2026-10-02T15:02:57Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XNRDYN71HE0RPYQQ9JT2QS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XP28Z46KGWX9M4M3D6KA0T",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XR8EFY9SW5G99N962SHBM7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XZX81QVMQ4HFKJ64WW6DCB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YJ7KKEEZEWG6B0W9W3FTCW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YJ7KNV7D5A29ZJGM6K5T63",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YJ7KR94HHXQP3F64D3GTG9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YJ7KR2FAPKE2MS159688H1",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K2A53E4THPWD9W0M9ARP",
+  "last_event_id": "ev_01M3YJ7KR94HHXQP3F64D3GTGB",
+  "last_status_changed_at": "2026-10-02T15:02:57Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:21:24Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01KZF332EFFVN656Q6ZSSW9RZQ",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-301",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Cap how many background workspaces mount at once",
+  "type": "bug",
+  "updated_at": "2026-10-02T15:02:57Z",
+  "urgency": null
+}

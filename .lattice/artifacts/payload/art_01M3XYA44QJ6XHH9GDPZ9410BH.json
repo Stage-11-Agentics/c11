@@ -1,0 +1,141 @@
+{
+  "ticket": "C11-283",
+  "head": "50fa043ece804bfd820eb94ddf91ad9b45fe7e4a",
+  "tag": "c11-283-window-scope",
+  "executable_sha256": "f3b154dc4c396ea5dea5d70d340352ef12c4cbc17b0c4452681428098ca6e8a1",
+  "checks": [
+    {
+      "name": "native feature advertised at version 1",
+      "passed": true
+    },
+    {
+      "name": "owned executable matches exact-head build digest",
+      "passed": true
+    },
+    {
+      "name": "setup window A is key",
+      "passed": true
+    },
+    {
+      "name": "scoped read sees B",
+      "passed": true
+    },
+    {
+      "name": "scoped read preserves key A",
+      "passed": true
+    },
+    {
+      "name": "unknown token rejected not-a-window",
+      "passed": true
+    },
+    {
+      "name": "unknown token rejected window:999999",
+      "passed": true
+    },
+    {
+      "name": "unknown token rejected empty",
+      "passed": true
+    },
+    {
+      "name": "foreign tab send rejected",
+      "passed": true
+    },
+    {
+      "name": "foreign text not delivered to A or B",
+      "passed": true
+    },
+    {
+      "name": "send rejects ambient caller tab",
+      "passed": true
+    },
+    {
+      "name": "send-key rejects ambient caller tab",
+      "passed": true
+    },
+    {
+      "name": "new tab routes to B without key change",
+      "passed": true
+    },
+    {
+      "name": "set-title accepts explicit B from caller A",
+      "passed": true
+    },
+    {
+      "name": "set-description accepts explicit B from caller A",
+      "passed": true
+    },
+    {
+      "name": "config default placement routes to B",
+      "passed": true
+    },
+    {
+      "name": "config new-workspace routes to B",
+      "passed": true
+    },
+    {
+      "name": "config unknown --workspace rejected",
+      "passed": true
+    },
+    {
+      "name": "config unknown --area rejected",
+      "passed": true
+    },
+    {
+      "name": "move without destination preserves source workspace",
+      "passed": true
+    },
+    {
+      "name": "move honors explicit destination window",
+      "passed": true
+    },
+    {
+      "name": "native tree scope []",
+      "passed": true
+    },
+    {
+      "name": "native tree scope ['--window']",
+      "passed": true
+    },
+    {
+      "name": "native tree scope ['--all']",
+      "passed": true
+    },
+    {
+      "name": "explicit focus-window selects B manager",
+      "passed": true
+    }
+  ],
+  "display_geometry": [
+    {
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "server_commit": null,
+  "reported_sha_match": null,
+  "cli_sha256": "bd0789d8fe8d6bece5eff02b7e39903429f9a797afc356c3b894d37c4e7ee545",
+  "key_after_explicit_focus": "A",
+  "result": "PASS",
+  "checks_passed": 25,
+  "quit_menu_rc": 0,
+  "quit_confirmation_rc": 1,
+  "owned_app_gone": true,
+  "build": {
+    "head": "50fa043ece804bfd820eb94ddf91ad9b45fe7e4a",
+    "dirty": false,
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    }
+  },
+  "cli_fixture": {
+    "cases_passed": 94,
+    "exit_code": 0,
+    "fixture": "tests/test_cli_window_scope.py",
+    "uses_packaged_cli": true
+  }
+}

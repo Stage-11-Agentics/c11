@@ -1,0 +1,176 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-crashes",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-298-single-instance",
+      "linked_at": "2026-10-02T07:15:03Z",
+      "linked_by": "agent:astra-crashes",
+      "repo": null
+    }
+  ],
+  "comment_count": 17,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nOpening a second copy of c11 force-kills the running app before it can save. One stray `open` takes down every agent. Backlog item: B005.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `Sources/AppDelegate.swift:13136` `enforceSingleInstance` lists every `NSRunningApplication` with the same bundle id, calls `terminate()`, then reads `isTerminated` immediately and `forceTerminate()`s. The force path is the normal path. There is no save and no yield.\n- Upstream cmux #14831. Tagged dev builds use another bundle id. A second copy of the Release app, including Sparkle's relaunch and `open -a c11`, still hits this.\n- Research: Fable cluster C4. Astra \u00a73. `05-bug-reconciled.md`.\n\n## Scope\nIn: the newer process yields to the one that is already running, or it asks and lets the old one save. The running fleet is not SIGKILLed. A visible reason when the new process exits is fine.\n\nRide-along: B025. The same scan can terminate a helper that inherited the bundle id. Match the real app executable, not the bundle id alone. The launch observer already exempts the bundled CLI. Startup should too.\n\nOut:\n- Quit confirmation. B051 and B073 are already fixed (`applicationShouldTerminate` confirms, and `pendingQuitConfirmation` serializes the sheet). Re-check only. Do not reopen.\n- Sparkle's helper rejection on macOS 26 (B200). Separate ticket. This one must not fight Sparkle's own relaunch: if Sparkle is restarting the same app, the new process still must not kill the old one before save. Coordinate with B200 if both touch `AppDelegate` launch.\n- Atlas guest instances (C11-244) if they use a different bundle id. If they share this bundle id, the yield rule has to leave a guest alone. Check before coding. Do not redesign guests here.\n- Parked rows: none other than the quit pair above.\n\n## Approach\nPrefer \"the process that is already running wins.\" The new process activates the old one and exits. If a replace is truly required, tell the old process to quit through the normal quit path and wait until it has exited, with a deadline, before continuing. Do not `forceTerminate` on the first check of `isTerminated`.\n\nIdentify processes by bundle path plus bundle id so a helper is not a candidate. Keep the bundled CLI exempt.\n\n## Acceptance criteria\n1. With a tagged c11 running and a terminal session dirty, `open` a second copy of that same bundle. The first session is still there, unsaved work included. The second process does not remain as a second fleet.\n2. A helper that is not the app executable is still running after that launch.\n3. The normal Quit menu still confirms when Warn Before Quit is on, and still quits when it is off.\n\n## Validation\nA small logic test for \"which pid is the app we would signal,\" if that decision can be pure. The launch behavior itself is a tagged-build check on Atlas after C11-216: start one instance, open a second, confirm the first session's tab is still alive via the socket. No soak. No source-grep test.\n\n## Dependencies\nNone inside ws:bugs. Name B200 as a neighbor. Cross-workstream: F1 is C11-216. The lead links it.\n\n## Risks\nA yield that also blocks Sparkle from finishing an update, or a match so broad it ignores a real second fleet. Doctrine: no tenant config. If you add a one-line reason in the UI, `String(localized:)` and the six locales. Public repo: describe the yield. Do not document a kill sequence.\n\nSize: S. Tier: P1. Doctrine check: launch policy only. No writes outside the app.\n",
+  "done_at": "2026-10-02T11:38:50Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XSQR497SYBPMGNSSR1SC8M",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XSQR6M5SAPX25CG5AJMP7Y",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XTEQR1QEG50XVQNYXDAZ2C",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XTP5AZM3Y6HM2HT0PGFZ4J",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XTP5DDDWYNP211ERYV92PV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XTP5FT8GA5P2XJZKNEQMNN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XW89THRJXMWVCA7N54TZN6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XWGM5N02DHMVTWTF5Z6NWB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWPN8APH5YV3X2MP2A7SFV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWPNAS8JND0C3CA33XHD9H",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWR4SZPZ7PNVPHBWQN8XMK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWR4YREYB87VNGZFK6KSV2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XWV2PXY2E3HK1E6E9YDVDW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XXXX8A7CGPV23274RQAQZ5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XXYTCPVWZFTSHDTBSFSC7G",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y14K0Q1TF5BM6WCWCFJ68D",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4HZWV3DW8SS0A5D2TVGDS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y551F6ZKGVT96FNW1DK7KB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y5FZ2AP3NKVC7KJVBY6XE5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y5HW66QX7QKZM75FRBJPM2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y5Z3SPYZZTT4PTW82S65ZJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y6B40DDFAP9F97FN84S9G9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y6HVVG4H3WY81Y3FYTYAJY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y6HVVCW2S69XYAPXC13V7A",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K228G0SQRN4835T7RA14",
+  "last_event_id": "ev_01M3Y6HVVG4H3WY81Y3FYTYAK0",
+  "last_status_changed_at": "2026-10-02T11:38:50Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:32:23Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3XAPVSTQ5H68S9K7J8N6NMY",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-298",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "A second copy of c11 must not kill the running fleet",
+  "type": "bug",
+  "updated_at": "2026-10-02T11:38:50Z",
+  "urgency": null
+}

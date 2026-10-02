@@ -19,6 +19,9 @@ final class MailboxOutboxWatcher {
     typealias ChangeHandler = @Sendable ([URL]) -> Void
 
     let directoryURL: URL
+    /// Only files with this extension are reported (`msg` for `_outbox/`,
+    /// `receipt` for `_receipts/`).
+    let fileExtension: String
     let debounceInterval: TimeInterval
     let pollingInterval: TimeInterval
     let queue: DispatchQueue
@@ -32,6 +35,7 @@ final class MailboxOutboxWatcher {
 
     init(
         directoryURL: URL,
+        fileExtension: String = MailboxLayout.envelopeExtension,
         debounceInterval: TimeInterval = 0.05,
         pollingInterval: TimeInterval = 5.0,
         queue: DispatchQueue = DispatchQueue(
@@ -41,6 +45,7 @@ final class MailboxOutboxWatcher {
         handler: @escaping ChangeHandler
     ) {
         self.directoryURL = directoryURL
+        self.fileExtension = fileExtension
         self.debounceInterval = debounceInterval
         self.pollingInterval = pollingInterval
         self.queue = queue
@@ -184,7 +189,7 @@ final class MailboxOutboxWatcher {
         var snapshot: Set<String> = []
         for url in entries {
             let name = url.lastPathComponent
-            guard name.hasSuffix(".\(MailboxLayout.envelopeExtension)") else { continue }
+            guard name.hasSuffix(".\(fileExtension)") else { continue }
             if name.hasPrefix(".") { continue }
             let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
             guard values?.isRegularFile == true else { continue }

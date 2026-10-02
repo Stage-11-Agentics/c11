@@ -1103,15 +1103,36 @@ final class SocketClient {
         try send(command: command, responseTimeout: Self.configuredDefaultDeadlineSeconds)
     }
 
-    // responseTimeout: nil = no SO_RCVTIMEO (unbounded); >0 = initial-read deadline in seconds.
+    // responseTimeout: nil = no SO_RCVTIMEO / SO_SNDTIMEO (unbounded); >0 = the
+    // deadline in seconds for writing the request (a peer that stops reading
+    // cannot hold the CLI) and for the initial read of the response.
+    /// A wall-clock bound every request in this process must finish by, on top
+    /// of its own deadline. A hook drain sets it to its claim cutoff, so a c11
+    /// that stops reading or answering can never hold the hook past the point
+    /// where it may still claim mail and finish before the harness's kill.
+    static var processDeadline: Date?
+
     func send(command: String, responseTimeout: TimeInterval?) throws -> String {
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
-        let payload = command + "\n"
-        try payload.withCString { ptr in
-            let sent = Darwin.write(socketFD, ptr, strlen(ptr))
+        var responseTimeout = responseTimeout
+        if let processDeadline = Self.processDeadline {
+            let remaining = processDeadline.timeIntervalSinceNow
+            guard remaining > 0.01 else { throw CLIError(message: SocketClient.commandTimedOutMessage) }
+            responseTimeout = min(responseTimeout ?? remaining, remaining)
+        }
+        let payload = Array((command + "\n").utf8)
+        try configureTimeout(SO_SNDTIMEO, responseTimeout)
+        var offset = 0
+        while offset < payload.count {
+            let sent = payload[offset...].withUnsafeBytes { Darwin.write(socketFD, $0.baseAddress, $0.count) }
             if sent < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw CLIError(message: SocketClient.commandTimedOutMessage)
+                }
                 throw CLIError(message: "Failed to write to socket")
             }
+            offset += sent
         }
 
         var data = Data()
@@ -1201,6 +1222,10 @@ final class SocketClient {
 
     // timeout == nil clears SO_RCVTIMEO (no deadline). timeout > 0 sets the deadline.
     private func configureReceiveTimeout(_ timeout: TimeInterval?) throws {
+        try configureTimeout(SO_RCVTIMEO, timeout)
+    }
+
+    private func configureTimeout(_ option: Int32, _ timeout: TimeInterval?) throws {
         var interval: timeval
         if let t = timeout, t > 0 {
             interval = timeval(
@@ -1214,13 +1239,13 @@ final class SocketClient {
             setsockopt(
                 socketFD,
                 SOL_SOCKET,
-                SO_RCVTIMEO,
+                option,
                 ptr,
                 socklen_t(MemoryLayout<timeval>.size)
             )
         }
         guard result == 0 else {
-            throw CLIError(message: "Failed to configure socket receive timeout")
+            throw CLIError(message: "Failed to configure socket timeout")
         }
     }
 
@@ -1912,6 +1937,12 @@ struct CMUXCLI {
                 environment: processEnv
             )
         }
+        // C11-257: a process that may claim mailbox mail at a turn boundary
+        // bounds every socket request it makes (auth and probes included) to
+        // its claim cutoff, before the first one.
+        if Self.isMailboxHookDrain(command: command, commandArgs: commandArgs) {
+            Self.boundSocketToClaimCutoff()
+        }
         cliTelemetry.breadcrumb(
             "socket.connect.attempt",
             data: [
@@ -1933,6 +1964,12 @@ struct CMUXCLI {
                let cliError = error as? CLIError,
                isAdvisoryHookConnectivityError(cliError) {
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                return
+            }
+            // A harness hook drain (`mailbox recv --hook-format`) runs on every
+            // turn; with c11 unreachable there is nothing to deliver, and it
+            // must not error the harness.
+            if command == "mailbox", commandArgs.contains("--hook-format") {
                 return
             }
             throw error
@@ -3484,6 +3521,16 @@ struct CMUXCLI {
                 commandArgs: commandArgs,
                 client: client,
                 jsonOutput: jsonOutput
+            )
+
+        // C11-257 D: the messages page is the durable, visual view over both
+        // explicit sends and mailbox traffic.
+        case "messages":
+            try runMessagesCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat
             )
 
         default:
@@ -8743,6 +8790,10 @@ struct CMUXCLI {
             """
         case "events":
             return eventsUsage()
+        case "messages":
+            return messagesUsage()
+        case "mailbox":
+            return mailboxUsage()
         case "help":
             return """
             Usage: c11 help
@@ -17092,6 +17143,20 @@ struct CMUXCLI {
 
         case "stop", "idle":
             telemetry.breadcrumb("claude-hook.stop")
+            // C11-257: mail that arrived during the turn is delivered first, with
+            // no socket call inside this case before the claim. Blocking the stop
+            // hands Claude the messages and it takes one more turn, so the tab
+            // stays working and no completion is announced. Never on a stop that
+            // is already a Stop-hook continuation.
+            if subcommand == "stop",
+               let drain = prepareMailboxHookDrain(
+                   format: .claude,
+                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput)
+               ),
+               deliverMailboxHookDrain(drain, client: client) {
+                telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
+                return
+            }
             // Turn ended. Don't consume session or clear PID — Claude is still alive.
             // Notification hook handles user-facing notifications; SessionEnd handles cleanup.
             var workspaceId = fallbackWorkspaceId
@@ -17107,6 +17172,8 @@ struct CMUXCLI {
                 workspaceId: workspaceId,
                 client: client
             )
+
+
             if let resolvedLifecycleSurface {
                 _ = try? reportAgentActivity(
                     client: client,
@@ -17184,7 +17251,9 @@ struct CMUXCLI {
                 icon: "bolt.fill",
                 color: "#4C8DFF"
             )
-            print("OK")
+            // Prints nothing: Claude adds UserPromptSubmit stdout to the turn's
+            // context. Mailbox mail is not drained here; it waits for this
+            // turn's Stop, where Claude takes it as its own next turn.
 
         case "notification", "notify":
             telemetry.breadcrumb("claude-hook.notification")
@@ -17584,6 +17653,17 @@ struct CMUXCLI {
             return candidate
         }
         return try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
+    }
+
+    /// The claude-hook subcommand names the event; stdin supplies the
+    /// `stop_hook_active` re-entry guard.
+    private func claudeMailboxHookInput(
+        event: MailboxHookEvent,
+        parsedInput: ClaudeHookParsedInput
+    ) -> MailboxHookInput {
+        var input = MailboxHookInput.parse(Data(parsedInput.rawInput.utf8))
+        input.event = event
+        return input
     }
 
     private func parseClaudeHookInput(rawInput: String) -> ClaudeHookParsedInput {
@@ -18345,6 +18425,9 @@ struct CMUXCLI {
 
           markdown [open] <path>             (open markdown file in formatted viewer tab with live reload)
 
+          messages view                         (open the live local agent-messages page)
+          mailbox [send|recv|trace|tail|view]    (durable inter-agent messaging)
+
           browser [--tab <id|ref|index> | <tab>] <subcommand> ...
           browser open [url] [--allow-insecure-http]   (create browser split in caller's workspace; if tab supplied, behaves like navigate)
           browser open-split [url] [--allow-insecure-http]
@@ -18961,6 +19044,66 @@ extension CMUXCLI {
 
 extension CMUXCLI {
 
+    fileprivate func runMessagesCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        guard let sub = commandArgs.first else {
+            print(messagesUsage())
+            return
+        }
+        let rest = Array(commandArgs.dropFirst())
+        switch sub {
+        case "help", "-h", "--help":
+            print(messagesUsage())
+        case "view":
+            var params: [String: Any] = [:]
+            if let workspaceRaw = optionValue(rest, name: "--workspace") {
+                params["workspace_id"] = try resolveWorkspaceId(workspaceRaw, client: client)
+            } else {
+                // `messages.view` is non-focus-intent. Carry the invoking
+                // c11 tab's workspace so the app can open the page there
+                // without selecting the operator's currently visible one.
+                let environment = ProcessInfo.processInfo.environment
+                let callerWorkspace = environment["C11_WORKSPACE_ID"]
+                    ?? environment["CMUX_WORKSPACE_ID"]
+                if let callerWorkspace,
+                   let workspaceID = UUID(uuidString: callerWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    params["workspace_id"] = workspaceID.uuidString
+                }
+            }
+            let payload = try client.sendV2(method: "messages.view", params: params)
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: "Opened c11 messages page"
+            )
+        default:
+            throw CLIError(message: "unknown messages subcommand '\(sub)'. Use `c11 messages help` for usage.")
+        }
+    }
+
+    private func messagesUsage() -> String {
+        """
+        c11 messages — live agent traffic
+
+        Open the self-contained local page that renders explicit `c11 send`
+        events and durable mailbox traffic. The page is written under c11's
+        Application Support state directory and does not start a server.
+
+          view                 open or refresh the messages browser tab
+
+        View flags:
+          --workspace <ref>    target a workspace (default: caller workspace)
+
+        Alias:
+          c11 mailbox view
+        """
+    }
+
     fileprivate func runMailboxCommand(
         commandArgs: [String],
         client: SocketClient,
@@ -18978,6 +19121,13 @@ extension CMUXCLI {
             try runMailboxSendCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "recv":
             try runMailboxRecvCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
+        case "view":
+            try runMessagesCommand(
+                commandArgs: ["view"] + rest,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: .refs
+            )
         case "trace":
             try runMailboxTraceCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "tail":
@@ -19006,6 +19156,7 @@ extension CMUXCLI {
 
           send       deliver an envelope to a tab in any workspace
           recv       drain or peek the caller's inbox
+          view       open or refresh the live messages page
           trace      pretty-print _dispatch.log lines for an envelope id
           tail       follow _dispatch.log
           outbox-dir print the caller's outbox directory (for raw-bash writers)
@@ -19029,8 +19180,11 @@ extension CMUXCLI {
           --content-type <mime>   MIME hint for body or body_ref
 
         Recv flags:
-          --drain                 default — list, print, unlink
+          --drain                 default — print each message and move it to _read/
           --peek                  list + print only
+          --hook-format <h>       claude | codex | grok: print that harness's Stop-hook JSON
+                                  (turn-end drain; event from hook stdin or --event)
+          --event <e>             stop (with --hook-format; other events never drain)
           --tab <name>            override caller's resolved tab
         """
     }
@@ -19334,9 +19488,13 @@ extension CMUXCLI {
         client: SocketClient,
         jsonOutput: Bool
     ) throws {
+        if let rawFormat = optionValue(subArgs, name: "--hook-format") {
+            runMailboxHookRecv(rawFormat: rawFormat, subArgs: subArgs, client: client)
+            return
+        }
         let peek = hasFlag(subArgs, name: "--peek")
         let drain = hasFlag(subArgs, name: "--drain") || !peek
-        let surfaceOverride = optionValue(subArgs, name: "--surface")
+        let surfaceOverride = optionValue(subArgs, name: "--tab") ?? optionValue(subArgs, name: "--surface")
 
         let (workspaceId, tabName, callerTabId) = try resolveMailboxCaller(
             client: client,
@@ -19359,23 +19517,197 @@ extension CMUXCLI {
             tabId: tabId,
             tabName: tabName
         )
-        let entries = inboxURLs.flatMap { inboxURL -> [URL] in
-            (try? FileManager.default.contentsOfDirectory(
-                at: inboxURL,
-                includingPropertiesForKeys: nil
-            )) ?? []
+        guard drain else {
+            let entries = inboxURLs
+                .flatMap { MailboxDrain.pendingEntries(inbox: $0) }
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            for url in entries {
+                let data = try Data(contentsOf: url)
+                if let text = String(data: data, encoding: .utf8) {
+                    print(text)
+                }
+            }
+            return
         }
-        .filter { $0.pathExtension == MailboxLayout.envelopeExtension }
-        .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
-        for url in entries {
-            let data = try Data(contentsOf: url)
-            if let text = String(data: data, encoding: .utf8) {
-                print(text)
-            }
-            if drain {
-                try? FileManager.default.removeItem(at: url)
-            }
+        // C11-257 C3: claim one envelope, write it, then the next, across the
+        // UUID inbox and any legacy title inbox merged in ULID order (as peek
+        // prints them). A failed write (closed pipe, full disk) puts that
+        // envelope back and stops, so nothing reaches `_read/` unless it
+        // reached stdout.
+        signal(SIGPIPE, SIG_IGN)
+        let claimed = MailboxDrain.claimPending(inboxes: inboxURLs) { message in
+            Self.writeStdout(message.text + "\n")
+        }.claimed
+        // `tabId` is the recipient's: the caller's own without `--tab`, the
+        // override's resolved UUID with it, nil when a `--tab` name matched no
+        // single live tab (the event then carries no surface rather than the
+        // caller's).
+        writeDeliveryReceipts(claimed, recipientTabId: tabId, recipient: { _ in tabName })
+    }
+
+    /// Checked stdout write: false when the bytes could not be written.
+    private static func writeStdout(_ text: String) -> Bool {
+        do {
+            try FileHandle.standardOutput.write(contentsOf: Data(text.utf8))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - recv --hook-format (turn-boundary drain)
+
+    /// One prepared hook drain: the stdout JSON plus the envelopes it claimed.
+    private struct MailboxHookDrain {
+        let json: String
+        let claimed: [MailboxDrain.ClaimedMessage]
+        let tabId: UUID
+    }
+
+    /// `c11 mailbox recv --drain --hook-format claude|codex|grok [--event
+    /// stop]`, run by a harness's Stop hook at every turn end. The
+    /// event comes from the hook's stdin JSON (`hook_event_name` /
+    /// `hookEventName`); `--event` overrides it. Prints the harness's hook JSON
+    /// only when it claimed mail. Every failure is silent with exit 0: this
+    /// runs on every turn and must never block or error the harness.
+    private func runMailboxHookRecv(rawFormat: String, subArgs: [String], client: SocketClient) {
+        guard let format = MailboxHookFormat(rawValue: rawFormat.lowercased()) else { return }
+        let stdinData = isatty(STDIN_FILENO) == 0
+            ? FileHandle.standardInput.readDataToEndOfFile()
+            : Data()
+        var input = MailboxHookInput.parse(stdinData)
+        if let rawEvent = optionValue(subArgs, name: "--event") {
+            input.event = MailboxHookEvent(name: rawEvent)
+        }
+        guard let drain = prepareMailboxHookDrain(format: format, input: input) else {
+            return
+        }
+        deliverMailboxHookDrain(drain, client: client)
+    }
+
+    /// Claims the caller's pending mail for a hook, within the context budget.
+    /// Returns nil (and claims nothing) when this event may not drain, the
+    /// inbox is empty, or the hook process is too old to finish in time.
+    ///
+    /// The inbox is the caller's C5 directory, `<mailboxes>/<C11_TAB_ID>/`,
+    /// found from the environment and the filesystem alone: no socket call
+    /// happens before the claim, so an empty inbox answers in a few
+    /// milliseconds however much mail sits in sibling inboxes. A tab moved to
+    /// another workspace still finds its inbox there (`tabInboxURLs`).
+    /// Title-keyed inboxes from older builds are left to an explicit
+    /// `c11 mailbox recv --drain`.
+    private func prepareMailboxHookDrain(
+        format: MailboxHookFormat,
+        input: MailboxHookInput
+    ) -> MailboxHookDrain? {
+        let env = ProcessInfo.processInfo.environment
+        guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
+              MailboxHookOutput.shouldDrain(format: format, input: input),
+              let tabId = Self.callerTabEnv(env).flatMap(UUID.init(uuidString:)),
+              let stateURL = try? MailboxLayout.defaultStateURL() else {
+            return nil
+        }
+        let inboxes = MailboxDrain.tabInboxURLs(
+            workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true),
+            preferredWorkspaceId: (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+            tabId: tabId,
+            scanCache: stateURL
+                .appendingPathComponent("mailbox-tab-scan", isDirectory: true)
+                .appendingPathComponent(tabId.uuidString.lowercased())
+        )
+        guard !inboxes.isEmpty,
+              MailboxHookOutput.mayClaim(processElapsedSeconds: Self.processElapsedSeconds()) else {
+            return nil
+        }
+        let (claimed, remaining) = MailboxDrain.claimPending(
+            inboxes: inboxes,
+            budget: MailboxHookOutput.contextBudget
+        )
+        guard !claimed.isEmpty else { return nil }
+        let context = MailboxHookOutput.context(framedBlocks: claimed.map(\.framed), remaining: remaining)
+        let json = MailboxHookOutput.render(MailboxHookOutput.payload(context: context))
+        guard !json.isEmpty else {
+            claimed.forEach { MailboxDrain.unclaim($0.readURL) }
+            return nil
+        }
+        return MailboxHookDrain(json: json, claimed: claimed, tabId: tabId)
+    }
+
+    /// The invocations that may claim mailbox mail inside a harness hook:
+    /// `claude-hook stop|prompt-submit` and `mailbox recv --hook-format`.
+    static func isMailboxHookDrain(command: String, commandArgs: [String]) -> Bool {
+        switch command {
+        case "claude-hook":
+            let sub = commandArgs.first?.lowercased()
+            return sub == "stop" || sub == "prompt-submit"
+        case "mailbox":
+            return commandArgs.first == "recv" && commandArgs.contains("--hook-format")
+        default:
+            return false
+        }
+    }
+
+    /// Caps every socket request this hook process makes at the claim
+    /// cutoff (`MailboxHookOutput.claimDeadlineSeconds` of process age), write
+    /// and read alike. Requests after the cutoff fail at once, and the cutoff
+    /// itself means no claim happens past it, so the hook finishes well before
+    /// the harness's 10 s kill however c11 behaves.
+    static func boundSocketToClaimCutoff() {
+        let age = processElapsedSeconds() ?? 0
+        SocketClient.processDeadline = Date(timeIntervalSinceNow: MailboxHookOutput.claimDeadlineSeconds - age)
+    }
+
+    /// Seconds since this process started, from the kernel's record of its
+    /// start time (so it includes everything before `main`); nil if unknown.
+    static func processElapsedSeconds() -> TimeInterval? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0 else { return nil }
+        let start = info.kp_proc.p_un.__p_starttime
+        let started = TimeInterval(start.tv_sec) + TimeInterval(start.tv_usec) / 1_000_000
+        return Date().timeIntervalSince1970 - started
+    }
+
+    /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
+    /// go back to the inbox (C3-order), otherwise each one is recorded as
+    /// `mailbox.delivered` with `via: "drain"`, under the workspace whose inbox
+    /// held it, through a receipt the app picks up. Returns whether it
+    /// delivered (the write, not the receipt).
+    @discardableResult
+    private func deliverMailboxHookDrain(_ drain: MailboxHookDrain, client: SocketClient) -> Bool {
+        signal(SIGPIPE, SIG_IGN)
+        guard Self.writeStdout(drain.json + "\n") else {
+            drain.claimed.forEach { MailboxDrain.unclaim($0.readURL) }
+            return false
+        }
+        // No socket I/O after the claim: the delivery is recorded through the
+        // filesystem, and the hook is done.
+        writeDeliveryReceipts(drain.claimed, recipientTabId: drain.tabId) {
+            $0.recipient ?? drain.tabId.uuidString.lowercased()
+        }
+        return true
+    }
+
+    /// Hands claimed envelopes to the app as `mailbox.delivered via:"drain"`:
+    /// receipts per workspace whose inbox they came from (split to fit the
+    /// receipt limits), written atomically into that workspace's `_receipts/`
+    /// spool. Filesystem only, so nothing a
+    /// stalled, paused or quit c11 does can delay the caller, and no
+    /// connection has to be authorized. `recipientTabId` nil leaves the
+    /// event without a surface rather than attributing it to the caller.
+    private func writeDeliveryReceipts(
+        _ claimed: [MailboxDrain.ClaimedMessage],
+        recipientTabId: UUID?,
+        recipient: (MailboxDrain.ClaimedMessage) -> String
+    ) {
+        let byMailboxesRoot = Dictionary(grouping: claimed) { $0.inbox.deletingLastPathComponent().path }
+        for (root, messages) in byMailboxesRoot {
+            MailboxDeliveryReceipt(
+                tabId: recipientTabId,
+                deliveries: messages.map { .init(id: $0.id, recipient: recipient($0)) }
+            ).writeAll(mailboxesRoot: URL(fileURLWithPath: root, isDirectory: true))
         }
     }
 

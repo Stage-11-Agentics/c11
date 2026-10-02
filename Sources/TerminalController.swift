@@ -2108,6 +2108,7 @@ class TerminalController {
     // bash) always include explicit IDs so the prompt-frequency telemetry
     // hits the fast path; only ad-hoc CLI invocations land on the slow path.
     nonisolated static let socketWorkerV1Commands: Set<String> = [
+        "clear_notifications",
         "report_pwd",
         "report_shell_state",
         "report_agent_activity",
@@ -2143,7 +2144,6 @@ class TerminalController {
     // while the run loop drains status writes cooperatively.
     nonisolated static let asyncAckV1Commands: Set<String> = [
         "set_status",
-        "clear_notifications",
         "set_agent_pid",
         "notify_target",
     ]
@@ -5856,7 +5856,15 @@ class TerminalController {
         let parsed = parseOptions(trimmed)
         guard let tabOption = parsed.options["tab"],
               !tabOption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "ERROR: Usage: clear_notifications [--tab=X]"
+            return "ERROR: Usage: clear_notifications [--tab=X [--panel=Y]]"
+        }
+        let rawPanel = parsed.options["panel"] ?? parsed.options["surface"]
+        let panelId: UUID?
+        if let rawPanel {
+            guard let id = UUID(uuidString: rawPanel) else { return "ERROR: Invalid originating tab" }
+            panelId = id
+        } else {
+            panelId = nil
         }
         var workspaceId: UUID?
         v2MainSync {
@@ -5867,10 +5875,20 @@ class TerminalController {
         guard let workspaceId else {
             return "ERROR: Tab not found"
         }
+        var result = "OK"
         v2MainSync {
-            TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId)
+            if let panelId {
+                guard let workspace = workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else {
+                    result = "ERROR: Tab not found"
+                    return
+                }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            } else {
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId)
+            }
         }
-        return "OK"
+        return result
     }
 
     func setAppFocusOverride(_ arg: String) -> String {
@@ -7920,7 +7938,7 @@ class TerminalController {
         return (nil, error)
     }
 
-    private func workspaceForSidebarMutation(id: UUID) -> Workspace? {
+    func workspaceForSidebarMutation(id: UUID) -> Workspace? {
         if let workspace = workspaceManager?.workspaces.first(where: { $0.id == id }) {
             return workspace
         }
@@ -8107,7 +8125,7 @@ class TerminalController {
                 }
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
-                    workspace.agentPIDs[key] = pidValue
+                    workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
                 }
                 return
             }
@@ -8122,7 +8140,7 @@ class TerminalController {
                 timestamp: Date()
             )
             if let pidValue {
-                workspace.agentPIDs[key] = pidValue
+                workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
             }
         }
         return "OK"
@@ -8143,13 +8161,13 @@ class TerminalController {
             if workspace.statusEntries.removeValue(forKey: key) == nil {
                 result = "OK (key not found)"
             }
-            workspace.agentPIDs.removeValue(forKey: key)
+            workspace.removeAgentPID(key: key)
         }
         return result
     }
 
     /// Register an agent PID for stale-session detection without setting a visible status entry.
-    /// Usage: set_agent_pid <key> <pid> [--tab=<id>]
+    /// Usage: set_agent_pid <key> <pid> [--tab=<workspace>] [--panel=<tab>]
     func setAgentPID(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard parsed.positional.count >= 2,
@@ -8161,9 +8179,11 @@ class TerminalController {
         guard let targetWorkspaceId = workspaceResolution.workspaceId else {
             return workspaceResolution.error ?? "ERROR: No tab selected"
         }
+        let explicitSurfaceId = normalizedOptionValue(parsed.options["panel"] ?? parsed.options["surface"])
+            .flatMap { UUID(uuidString: $0) }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.agentPIDs[key] = pid
+            workspace.registerAgentPID(pid, key: key, tabId: explicitSurfaceId)
         }
         return "OK"
     }
@@ -8182,7 +8202,7 @@ class TerminalController {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.agentPIDs.removeValue(forKey: key)
+            workspace.removeAgentPID(key: key)
         }
         return "OK"
     }

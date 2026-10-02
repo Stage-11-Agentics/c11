@@ -16948,7 +16948,6 @@ struct CMUXCLI {
             ]
         )
         let fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
-        let fallbackSurfaceId = try? resolveSurfaceId(surfaceArg, workspaceId: fallbackWorkspaceId, client: client)
 
         switch subcommand {
         case "session-start", "active":
@@ -17023,7 +17022,7 @@ struct CMUXCLI {
             // (PreToolUse).
             if let claudePid {
                 _ = try? sendV1Command(
-                    "set_agent_pid claude_code \(claudePid) --tab=\(workspaceId)",
+                    "set_agent_pid claude_code \(claudePid) --tab=\(workspaceId) --panel=\(surfaceId)",
                     client: client
                 )
             }
@@ -17118,6 +17117,7 @@ struct CMUXCLI {
             try setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
+                surfaceId: resolvedLifecycleSurface,
                 value: "Idle",
                 icon: "pause.circle.fill",
                 color: "#8E8E93"
@@ -17134,22 +17134,22 @@ struct CMUXCLI {
                 workspaceId = mappedWorkspace
                 preferredSurface = mapped.surfaceId
             }
-            if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+            let resolvedSurface = try resolveSurfaceIdForClaudeHook(
                 preferredSurface,
                 workspaceId: workspaceId,
                 client: client
-            ) {
-                _ = try? reportAgentActivity(
+            )
+            _ = try? reportAgentActivity(
                     client: client,
                     workspaceId: workspaceId,
                     surfaceId: resolvedSurface,
                     activity: "working"
                 )
-            }
-            _ = try sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+            _ = try sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
             try setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
+                surfaceId: resolvedSurface,
                 value: "Running",
                 icon: "bolt.fill",
                 color: "#4C8DFF"
@@ -17210,6 +17210,7 @@ struct CMUXCLI {
             _ = try? setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
+                surfaceId: surfaceId,
                 value: "Needs input",
                 icon: "bell.fill",
                 color: "#4C8DFF"
@@ -17222,16 +17223,26 @@ struct CMUXCLI {
             // Only clear when we are the primary cleanup path (Stop didn't fire first).
             // If Stop already consumed the session, consumedSession is nil and we skip
             // to avoid wiping the completion notification that Stop just delivered.
+            let mappedSession = parsedInput.sessionId.flatMap { try? sessionStore.lookup(sessionId: $0) }
+            let cleanupWorkspace = mappedSession?.workspaceId ?? fallbackWorkspaceId
+            guard let cleanupSurface = try? resolveSurfaceIdForClaudeHook(
+                mappedSession?.surfaceId ?? surfaceArg,
+                workspaceId: cleanupWorkspace,
+                client: client
+            ) else {
+                print("OK")
+                return
+            }
             let consumedSession = try? sessionStore.consume(
                 sessionId: parsedInput.sessionId,
-                workspaceId: fallbackWorkspaceId,
-                surfaceId: fallbackSurfaceId
+                workspaceId: cleanupWorkspace,
+                surfaceId: cleanupSurface
             )
             if let consumedSession {
                 let workspaceId = consumedSession.workspaceId
                 _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId)
                 _ = try? sendV1Command("clear_agent_pid claude_code --tab=\(workspaceId)", client: client)
-                _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+                _ = try? sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(consumedSession.surfaceId)", client: client)
                 // C11-24: SessionEnd race fix.
                 //
                 // The legacy code path here cleared `claude.session_id`
@@ -17303,56 +17314,51 @@ struct CMUXCLI {
                 preferredSurface = mapped.surfaceId
             }
 
-            // AskUserQuestion means Claude is about to ask the user something.
-            // Save question text in session so the Notification handler can use it
-            // instead of the generic "Claude Code needs your attention".
-            if let toolName = parsedInput.object?["tool_name"] as? String,
-               toolName == "AskUserQuestion",
-               let question = describeAskUserQuestion(parsedInput.object),
-               let sessionId = parsedInput.sessionId {
-                // Preserve the existing surfaceId from SessionStart; passing ""
-                // would overwrite it and cause notifications to target the wrong workspace.
-                let existingSurfaceId = (try? sessionStore.lookup(sessionId: sessionId))?.surfaceId ?? ""
-                try? sessionStore.upsert(
-                    sessionId: sessionId,
-                    workspaceId: workspaceId,
-                    surfaceId: existingSurfaceId,
-                    cwd: parsedInput.cwd,
-                    lastSubtitle: "Waiting",
-                    lastBody: question
-                )
-                if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
-                    preferredSurface,
-                    workspaceId: workspaceId,
-                    client: client
-                ) {
-                    _ = try? reportAgentActivity(
-                        client: client,
-                        workspaceId: workspaceId,
-                        surfaceId: resolvedSurface,
-                        activity: "idle",
-                        fromNotification: true
+            let resolvedSurface = try resolveSurfaceIdForClaudeHook(
+                preferredSurface, workspaceId: workspaceId, client: client
+            )
+            let toolName = parsedInput.object?["tool_name"] as? String
+            let permissionMode = parsedInput.object?["permission_mode"] as? String
+            let bypass = permissionMode == "bypassPermissions"
+            // A bypass-started session emits ExitPlanMode in plan mode while
+            // its approval UI waits. The native trace has no Notification edge.
+            let planApproval = toolName == "ExitPlanMode" && (bypass || permissionMode == "plan")
+            if toolName == "AskUserQuestion" || planApproval {
+                let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
+                let body: String
+                if toolName == "ExitPlanMode" {
+                    body = String(localized: "claudeHook.planApproval", defaultValue: "Plan approval needed")
+                } else {
+                    body = describeAskUserQuestion(parsedInput.object)
+                        ?? String(localized: "claudeHook.waitingForInput", defaultValue: "Waiting for input")
+                }
+                if let sessionId = parsedInput.sessionId {
+                    try? sessionStore.upsert(
+                        sessionId: sessionId, workspaceId: workspaceId, surfaceId: resolvedSurface,
+                        cwd: parsedInput.cwd, lastSubtitle: subtitle, lastBody: body
                     )
                 }
-                // Don't clear notifications or set status here.
-                // The Notification hook fires right after and will use the saved question.
+                _ = try? reportAgentActivity(
+                    client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
+                    activity: "idle", fromNotification: true
+                )
+                if bypass || planApproval {
+                    let payload = "Claude Code|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
+                    _ = try sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
+                    try setClaudeStatus(
+                        client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
+                        value: "Needs input", icon: "bell.fill", color: "#4C8DFF", pid: claudePid
+                    )
+                }
+                // Normal-mode AskUserQuestion retains the Notification route.
                 print("OK")
                 return
             }
 
-            _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
-            if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
-                preferredSurface,
-                workspaceId: workspaceId,
-                client: client
-            ) {
-                _ = try? reportAgentActivity(
-                    client: client,
-                    workspaceId: workspaceId,
-                    surfaceId: resolvedSurface,
-                    activity: "working"
-                )
-            }
+            _ = try sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
+            _ = try? reportAgentActivity(
+                client: client, workspaceId: workspaceId, surfaceId: resolvedSurface, activity: "working"
+            )
 
             let statusValue: String
             if UserDefaults.standard.bool(forKey: "claudeCodeVerboseStatus"),
@@ -17364,6 +17370,7 @@ struct CMUXCLI {
             try setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
+                surfaceId: resolvedSurface,
                 value: statusValue,
                 icon: "bolt.fill",
                 color: "#4C8DFF",
@@ -17387,12 +17394,16 @@ struct CMUXCLI {
     private func setClaudeStatus(
         client: SocketClient,
         workspaceId: String,
+        surfaceId: String? = nil,
         value: String,
         icon: String,
         color: String,
         pid: Int? = nil
     ) throws {
         var cmd = "set_status claude_code \(value) --icon=\(icon) --color=\(color) --tab=\(workspaceId)"
+        if let surfaceId {
+            cmd += " --panel=\(surfaceId)"
+        }
         if let pid {
             cmd += " --pid=\(pid)"
         }
@@ -17547,15 +17558,21 @@ struct CMUXCLI {
         return try resolveWorkspaceId(nil, client: client)
     }
 
+    /// Hooks must preserve their origin. Missing or invalid refs are never
+    /// substituted with the operator's focused tab.
     private func resolveSurfaceIdForClaudeHook(
         _ raw: String?,
         workspaceId: String,
         client: SocketClient
     ) throws -> String {
-        if let raw, !raw.isEmpty, let candidate = try? resolveSurfaceId(raw, workspaceId: workspaceId, client: client) {
-            return candidate
+        guard let raw else {
+            throw CLIError(message: "claude-hook requires an originating tab")
         }
-        return try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
+        let ref = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ref.isEmpty, isUUID(ref) || isHandleRef(ref) || Int(ref) != nil else {
+            throw CLIError(message: "claude-hook requires a valid originating tab")
+        }
+        return try resolveSurfaceId(ref, workspaceId: workspaceId, client: client)
     }
 
     /// The claude-hook subcommand names the event; stdin supplies the

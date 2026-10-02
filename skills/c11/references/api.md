@@ -14,6 +14,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Live messages page](#live-messages-page)
 - [Per-tab metadata](#per-tab-metadata)
 - [Agent declaration](#agent-declaration)
+- [Agent roster](#agent-roster)
 - [Title & description](#title--description)
 - [Sidebar reporting](#sidebar-reporting)
 - [Spatial layout (`c11 tree`)](#spatial-layout-c11-tree)
@@ -852,6 +853,27 @@ the open request; resume latency is reported separately. Missing evidence is
 `uncertain_count`, and `censored_count` are part of the result and must not be
 treated as zero evidence.
 
+**Which operator answers are observed.** An `operator_response` event records
+that the operator submitted an answer to an open ask. Today c11 observes:
+
+- an unmodified Return or keypad Enter pressed in the ask's terminal tab, once
+  per ask, for asks answered in the terminal (approval and plan review);
+- the text box Send action for that tab.
+
+It does not count a repeated (held) key, a key synthesized by `c11 send-key` or
+`send`, a key consumed by keyboard copy mode, a key that commits an IME
+composition, typing or editing, or merely viewing the tab.
+
+A Claude `AskUserQuestion` picker answer is **not observed**. The key that
+commits a picker choice is not yet established, so c11 fails closed and records
+nothing for those asks; it never guesses a key. For analytics this is partial
+coverage: in a window that mixes ordinary submits and picker asks,
+`operator_response` can report `status: "available"` from the ordinary submits
+while every picker answer is missing, so the wait for picker asks reads as
+censored, not as zero. The pinned Claude Code 2.1.287 picker fixture is a
+numbered sign-off step; until it passes, treat picker response coverage as
+unsupported.
+
 `c11 journal export` emits body-free NDJSON. Its first row is a manifest, then
 sequence-ordered `event` rows, optional `current_state` rows, explicit `gap`
 rows when retention or concurrent pruning/clear prevents a complete view, and
@@ -866,6 +888,39 @@ the `journal.clear` socket method; with c11 stopped it clears only the selected
 bundle namespace's lifecycle database and spool while preserving the sequence
 and coverage reset boundary. It does not delete
 conversations, snapshots, launch statistics, or tenant configuration.
+
+## Agent roster
+
+`c11 agents [--json] [--bundle-id <id>]` reads the journal-backed roster.
+Socket method: `agents.list`. It does not focus, launch, or resume anything.
+
+The JSON document is schema 1. `live_identity` is `available` or `unavailable`.
+`coverage` carries `health` (`ok` or `degraded`), `storage` (`ok` or
+`unavailable`), and `unattributed` (events with no tab or session). `tabs`
+lists live tabs. `restore_candidates` lists unconfirmed current rows.
+Timestamps are ISO-8601 UTC at whole seconds. Nulls are explicit.
+
+A live tab reports `flag`, `suppressed`, and `last_seen_at` even when it has
+no journal row. Journal fields are then null. `kind` comes from the journal
+owner. `model` is the model on the journal snapshot. Waiting `reason` is
+`approval`, `question`, `plan_review`, or null.
+
+With the app down, `tabs` is empty and `live_identity` is `unavailable`.
+Pass `--bundle-id` to open that bundle's journal read-only. The command does
+not guess a bundle from a missing socket. A live bundle that disagrees with
+`--bundle-id` is rejected. An invalid id errors. A missing journal file
+returns storage unavailable and no candidates.
+
+Offline example: `c11 agents --json --bundle-id com.stage11.c11-qa`.
+
+`restore_candidates[].label` is `historical_candidate`, `ended`, or `unknown`.
+`restore_candidates[].agent_kind` is the journal owner kind.
+Candidate `confirmation` is `unconfirmed`. Candidate `connection` is
+`disconnected` or `unknown`. `coverage` on a candidate is `retained` or
+`event_pruned`. The command never starts a process.
+
+`lifecycle.changed` is the phase edge. `waiting.left` remains the unread exit
+and is never renamed. See [events.md](events.md).
 
 ## Feed
 

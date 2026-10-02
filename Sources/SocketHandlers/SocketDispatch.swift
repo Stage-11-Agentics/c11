@@ -107,6 +107,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
         case "agent.event.append":
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
+        case "agents.list":
+            return v2Result(id: request.id, v2AgentsList(params: request.params))
         case "journal.clear":
             return v2Result(id: request.id, v2JournalClear(params: request.params))
         case "journal.status":

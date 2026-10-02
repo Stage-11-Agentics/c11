@@ -20,6 +20,7 @@ from attention_menu_bar_probe import Probe, JXA
 
 class FeedProbe(Probe):
     def ui(self, operation, *args):
+        before = set(super().ui('popup-windows', str(self.window_id))) if operation == 'open' else set()
         if operation in ('jump-shortcut', 'type-burst'):
             if super().ui('foreground') != self.args.pid:
                 raise RuntimeError('Exact tagged PID must be foreground for keyboard action')
@@ -32,7 +33,22 @@ class FeedProbe(Probe):
             return {}
         result = self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', JXA,
                            str(self.args.pid), operation, *args])
+        if operation == 'open':
+            self.menu_window_ids = set(super().ui('popup-windows', str(self.window_id))) - before
         return json.loads(result.stdout)
+
+    def dismiss(self):
+        # Focus-flash/tooltip windows are not menus and cannot be dismissed by Escape.
+        # Track the exact CGWindowIDs created by our status-item open action.
+        owned = getattr(self, 'menu_window_ids', set())
+        if not owned:
+            return
+        self.ui('dismiss-menu')
+        self.eventually(lambda: not owned.intersection(self.ui('popup-windows', str(self.window_id))),
+                        'Owned status menu stayed onscreen after explicit dismissal', seconds=2)
+        self.report.setdefault('dismissals', []).append({'before': sorted(owned), 'after': []})
+        self.report['checks'].append('PID-scoped menu dismissal removed exact opened menu windows')
+        self.menu_window_ids = set()
 
     def execute(self):
         self.preflight()

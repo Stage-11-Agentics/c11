@@ -260,29 +260,74 @@ C11-270 ruling ev_01M3XD1J9QC40BV7NAR7C071PT removes the M1 dependency. Measure
 a frozen current-main control against the repaired candidate now. Build both via
 remote-build with the same tag `c11-261`, retaining each bundle in its role's
 evidence directory before the next rebuild overwrites the single tag. Run them
-sequentially with equivalent fresh g60 populations, same display/window/settings.
-Both current-main and candidate already contain groups.
+in ABBA blocks with equivalent fresh g60 populations and matching display,
+window and settings.
+Both current-main and candidate already contain groups. The round-1 frozen
+comparison pair is candidate `a2e448b74d9ecdfdf356498cfb431036de9e5c95` and
+control `dedc6007a5bb886388af23d7c48c48d76025772f`; a later documentation-only
+commit does not silently replace either binary or its source identity.
 
 Once both artifacts exist, request `REQUEST QUIET ATLAS C11-261 <minutes>` at
-tab:210 and await the reservation. Hold both real build-slot FDs, record load at
-1 Hz and host CPU/RSS processes, require load <8 at each role start and throughout
-the admitted pair. Retain contamination as INCOMPLETE; no automatic resampling.
-Release slots immediately on completion or failure.
+tab:210 and await the reservation. The Orchestrator holds both real build-slot
+FDs; the owner observes its named holder/lease and never takes those locks.
+The revised request is 25 minutes. Record load at 1 Hz, host CPU/RSS processes
+and Tart VM state, plus uptime/load before and after every trial. Admit below
+15 one-minute load; later excursions remain in the data. Do not stop foreign
+VMs. Send `QUIET DONE C11-261` immediately when capture ends or fails, without
+holding slots for analysis or writing. The native UI lease remains capped at
+20 minutes including setup; no new guest while Validator priority is asserted.
 
-Reuse the C11-260 g60-w2-v1 targeted protocol: observed priming settlement then
-60-second warmup; fixed 60-second no-churn, churn and quiescence phases, each
-105 typing, 42 switch and 42 real sidebar-scroll probes (valid minimum 100/40/40).
-Churn is 600 RPCs at 10 Hz: 150 each reorder, transfer, flag, waiting suppression.
+The initial 130-second A/B attempt captured 130 pairs, 74/28/28 per role in
+no-churn, with load 9.1763–11.8481. It is **INCOMPLETE**, with zero churn or
+quiescence samples. Partial numbers/noise are published on C11-261 at
+`ev_01M3Z4EECZXZY6NPJB55W5BYJS`; none are pooled into a new cohort. The six
+partial tail comparisons are within budget but do not prove the full gate.
+
+The revised ABBA-10 protocol is preregistered as
+`art_01M3Z519J5VK0C5CQ793AAKXB6`, with frozen seal
+`art_01M3Z519MQ2R560EBH02X55RAD` and prepared helper source
+`art_01M3Z519Q9CAHDN2FYXBHBV2BK`. After observed priming settlement/calibration,
+run a common 60-second warmup, then fixed 240-second no-churn, churn and
+quiescence phases. Each has ten homogeneous-metric ABBA cycles, ten trials
+per block: typing, typing, switch, typing, scroll, typing, switch, typing,
+scroll, typing. Each role attempts 120/40/40; valid minima remain 100/40/40.
+Trial i is due at start + i×232/400 seconds; no phase extension or metric retry.
+Pair A1/B1 and B2/A2 by ordinal and report every signed delta, absolute paired
+variation, block contrast and actual timing imbalance. The 240-second budget
+comes from 400 trials × (measured ~400 ms overhead + 80 ms weighted paint)
+×1.25 margin. Reserve time for setup, boundary checks and normal dismissal;
+do not start sampling with less than 14 minutes left in either lease.
+
+Churn is 2,400 RPCs per role at 10 Hz: 600 each reorder, transfer, flag and
+waiting suppression, with exact mutation replay, focus and identity checks.
 Visible-state templates and distinct negative controls prove key-to-paint/switch/
 scroll endpoints; socket ACK is not paint time. Freeze scripts/geometry/budgets
 before collection and retain every attempt.
 
 All 18 phase/metric limits: candidate p95 ≤ max(control p95 ×1.20, control p95
 +5 ms); candidate p99 ≤ max(control p99 ×1.25, control p99 +15 ms). Nearest-rank
-percentiles; 42-sample p99 is the maximum. Publish raw samples/captures, failures,
+percentiles; 40-sample p99 is the maximum. Publish raw samples/captures, failures,
 monotonic timestamps, capture/setup overhead noise percentiles, continuous load,
 mutation schedule/results, hang-monitor records (2-second threshold), CPU/RSS/
 footprint/available IOSurface and quiescent recovery. Name unavailable instruments.
+Absolute pair variation includes possible real product differences; do not
+label it a pure-noise estimate. Absence of a hang log is not zero-hang proof.
+
+Window 2 is also **INCOMPLETE**: 800 ABBA observations, no-churn valid120/40/40
+on both roles; churn valid120/40/39 control and120/40/38 candidate. Three scroll
+timeouts are retained (two candidate, one control). Each worker delivered
+2,165/2,400 mutations (9.021Hz), so post-churn/quiescent recovery was not run.
+The twelve computable tail limits are within budget, but the gate is not PASS.
+Numbers/noise and the shared-selection-lock diagnosis are recorded at
+`ev_01M3Z62TEW4XZRMNKAB37E70SG` and `art_01M3Z62TCANQT0XPRHAW7ZZT5J`;
+raw-score artifact `art_01M3Z62T9N9WFNM61JN1NT59N9`.
+
+The Orchestrator authorized ONE separately preregistered final top-up: per-role
+selection locks, symmetric headroom, only missing churn-scroll minimums and the
+quiescence phase. Previous observations, timeouts, counts and clocks remain;
+no result is retroactively upgraded. Review proceeds on the five other repairs
+and window-2 evidence while this performance delta is pending. The top-up must
+name its actual dose, counts and aggregation rule and keep all original limits.
 
 C11-260 watch-point dispositions: per-header palette read is hoisted to one
 read per sidebar evaluation; dead SidebarDropPlanner.indicator/targetIndex and

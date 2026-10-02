@@ -47,6 +47,41 @@ final class GhosttyConfigTests: XCTestCase {
         let blue: Int
     }
 
+    func testDarkenConvertsNamedSystemAndGrayscaleColorsBeforeReadingHue() {
+        let colors = [
+            ("named system", NSColor.controlAccentColor),
+            ("grayscale", NSColor(calibratedWhite: 0.55, alpha: 0.7)),
+        ]
+
+        for (name, color) in colors {
+            let darkened = color.darken(by: 0.2)
+            XCTAssertEqual(
+                darkened.alphaComponent,
+                color.alphaComponent,
+                accuracy: 0.001,
+                "Darkening a \(name) color should preserve alpha"
+            )
+            XCTAssertLessThan(
+                darkened.luminance,
+                color.luminance,
+                "Darkening a \(name) color should reduce its luminance"
+            )
+        }
+    }
+
+    func testResolvedSplitDividerColorDarkensGrayscaleBackgroundWithoutExplicitColor() {
+        let background = NSColor(calibratedWhite: 0.55, alpha: 0.7)
+        var config = GhosttyConfig()
+        config.backgroundColor = background
+        config.splitDividerColor = nil
+
+        XCTAssertNil(config.splitDividerColor)
+
+        let divider = config.resolvedSplitDividerColor
+        XCTAssertEqual(divider.alphaComponent, background.alphaComponent, accuracy: 0.001)
+        XCTAssertLessThan(divider.luminance, background.luminance)
+    }
+
     func testResolveThemeNamePrefersLightEntryForPairedTheme() {
         let resolved = GhosttyConfig.resolveThemeName(
             from: "light:Builtin Solarized Light,dark:Builtin Solarized Dark",

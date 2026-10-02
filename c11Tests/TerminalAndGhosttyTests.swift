@@ -1399,6 +1399,11 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 
         for _ in 0..<3 {
             hostedView.setVisibleInUI(true)
+            // Deferred workspace/layout reconciliation uses ensureFocus directly,
+            // independently of the visibility setter's automatic apply callback.
+            hostedView.ensureFocus(for: workspace.id, surfaceId: terminal.id)
+            XCTAssertTrue(window.firstResponder === editor,
+                          "Focus reconciliation must preserve the active native editor")
             RunLoop.current.run(until: Date().addingTimeInterval(0.03))
             XCTAssertTrue(window.firstResponder === editor,
                           "Unchanged visibility must not reclaim focus from a native group editor")
@@ -1412,6 +1417,12 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         hostedView.moveFocus()
         XCTAssertTrue(hostedView.isSurfaceViewFirstResponder())
         XCTAssertEqual(field.stringValue, "Services")
+
+        XCTAssertTrue(window.makeFirstResponder(field))
+        XCTAssertTrue(firstResponderOwnsTextField(window.firstResponder, textField: field))
+        XCTAssertTrue(hostedView.restorePanelFocusIntent(.surface))
+        XCTAssertTrue(hostedView.isSurfaceViewFirstResponder(),
+                      "An explicit restored terminal intent must override native editor focus")
     }
 
     func testSearchOverlayMountsAndUnmountsWithSearchState() {

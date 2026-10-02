@@ -519,6 +519,27 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
 /// Repair the duplicate identities seen in B024 before any restore consumer
 /// creates tabs, rehydrates metadata, or schedules agent resumes.
 enum SessionRestoreNormalization {
+    /// Startup recovery reads activity, scrape contexts, and conversation seeds
+    /// before it installs workspaces. All of those consumers must see the same
+    /// first records as the later workspace restore.
+    static func prepareStartupSnapshot(
+        _ input: AppSessionSnapshot,
+        reportDrop: (String) -> Void = { NSLog("%@", $0) }
+    ) -> AppSessionSnapshot {
+        var snapshot = input
+        for windowIndex in snapshot.windows.indices {
+            for workspaceIndex in snapshot.windows[windowIndex].workspaceManager.workspaces.indices {
+                let workspace = snapshot.windows[windowIndex].workspaceManager.workspaces[workspaceIndex]
+                let normalized = normalize(workspace)
+                snapshot.windows[windowIndex].workspaceManager.workspaces[workspaceIndex] = normalized.snapshot
+                for drop in normalized.drops {
+                    reportDrop(drop.diagnostic(workspaceId: workspace.id))
+                }
+            }
+        }
+        return snapshot
+    }
+
     struct Drop: Equatable {
         enum Reason: String {
             case duplicateRecord = "duplicate_record"

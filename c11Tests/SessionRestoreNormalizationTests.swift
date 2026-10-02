@@ -35,6 +35,81 @@ final class SessionRestoreNormalizationTests: XCTestCase {
         )
     }
 
+    private func appSnapshot(workspaces: [SessionWorkspaceSnapshot]) -> AppSessionSnapshot {
+        AppSessionSnapshot(version: SessionSnapshotSchema.currentVersion, createdAt: 1, windows: [
+            SessionWindowSnapshot(frame: nil, display: nil,
+                workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: 0, workspaces: workspaces),
+                sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 200))
+        ])
+    }
+
+    private struct EmptyCodexScraper: ConversationScraper {
+        let kind = "codex"
+        func candidates(cwd: String?) -> [ScrapeCandidate] { [] }
+    }
+
+    func testStartupPreparationDeduplicatesCodexBeforeReconciliationAndPreservesFirstActivityFloor() async throws {
+        var workspace = fixture()
+        let firstFloor = Date(timeIntervalSince1970: 100)
+        workspace.panels[0].metadata = [TabMetadataKeyName.terminalType: .string("codex")]
+        workspace.panels[0].lastActivityAt = firstFloor
+        var duplicate = workspace.panels[0]
+        duplicate.directory = "/tmp/discarded"
+        duplicate.lastActivityAt = Date(timeIntervalSince1970: 200)
+        workspace.panels.insert(duplicate, at: 1)
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded(appSnapshot(workspaces: [workspace])))
+        var diagnostics: [String] = []
+        let prepared = SessionRestoreNormalization.prepareStartupSnapshot(decoded) { diagnostics.append($0) }
+        let preparedWorkspace = prepared.windows[0].workspaceManager.workspaces[0]
+        XCTAssertEqual(preparedWorkspace.panels.map(\.id), [a, b, c])
+        XCTAssertEqual(preparedWorkspace.panels[0].lastActivityAt, firstFloor)
+        XCTAssertEqual(diagnostics, ["session.restore.drop workspace=\(workspace.id) tab=\(a) reason=duplicate_record"])
+
+        let scope = ConversationSnapshotCaptureScope(snapshot: prepared)
+        XCTAssertEqual(scope.scrapeContexts, [ScrapeCaptureContext(
+            surfaceId: a.uuidString, kind: "codex", cwd: "/tmp", lastActivityTimestamp: firstFloor
+        )])
+        XCTAssertEqual(scope.markerSurfaceIds, Set([a, b, c].map(\.uuidString)))
+        let store = ConversationStore()
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(prepared, store: store)
+        let pipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [EmptyCodexScraper()]), strategies: .v1
+        )
+        let batch = try await pipeline.collectCandidateBatch(contexts: scope.scrapeContexts)
+        XCTAssertEqual(batch.contexts.count, 1)
+        XCTAssertEqual(batch.candidatesByKind["codex"], [])
+        // This calls reconcileCodex, whose unique-key dictionary trapped when
+        // startup fed it the two raw A contexts, even with zero candidates.
+        _ = await store.applyScrapeBatch(batch, pipeline: pipeline)
+        let active = await store.active(for: a.uuidString)
+        XCTAssertNil(active)
+    }
+
+    func testStartupPreparationNormalizesEveryWorkspaceAndReportsDropsOnlyOnce() throws {
+        var first = fixture()
+        first.panels.append(first.panels[0])
+        var second = fixture()
+        second.panels.append(second.panels[1])
+        var input = appSnapshot(workspaces: [first, fixture()])
+        input.windows.append(appSnapshot(workspaces: [second]).windows[0])
+        var diagnostics: [String] = []
+        let prepared = SessionRestoreNormalization.prepareStartupSnapshot(input) { diagnostics.append($0) }
+        XCTAssertEqual(prepared.windows.count, 2)
+        XCTAssertEqual(prepared.windows[0].workspaceManager.workspaces.count, 2)
+        XCTAssertEqual(prepared.windows.flatMap { $0.workspaceManager.workspaces }.map { $0.panels.count }, [3, 3, 3])
+        XCTAssertEqual(diagnostics, [
+            "session.restore.drop workspace=\(first.id) tab=\(a) reason=duplicate_record",
+            "session.restore.drop workspace=\(second.id) tab=\(b) reason=duplicate_record"
+        ])
+        let again = SessionRestoreNormalization.prepareStartupSnapshot(prepared) { _ in XCTFail("duplicate report after preparation") }
+        XCTAssertEqual(try encoded(again), try encoded(prepared))
+        for window in prepared.windows {
+            for workspace in window.workspaceManager.workspaces {
+                XCTAssertTrue(SessionRestoreNormalization.normalize(workspace).drops.isEmpty)
+            }
+        }
+    }
+
     private func encoded<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

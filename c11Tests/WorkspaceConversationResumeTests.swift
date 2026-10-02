@@ -28,6 +28,69 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         }
     }
 
+    func testStartupKeepsFirstConversationThroughSeedResumeAndSave() async throws {
+        try await assertStartupDuplicateConversationKeepsFirst(firstHasConversation: true)
+    }
+
+    func testStartupDoesNotAdoptLaterConversationWhenFirstIsEmpty() async throws {
+        try await assertStartupDuplicateConversationKeepsFirst(firstHasConversation: false)
+    }
+
+    private func assertStartupDuplicateConversationKeepsFirst(firstHasConversation: Bool) async throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.panels.keys.first)
+        let firstId = "11111111-1111-4111-8111-111111111111"
+        let laterId = "22222222-2222-4222-8222-222222222222"
+        func conversations(_ id: String) -> TabConversations {
+            TabConversations(active: ConversationRef(
+                kind: "codex", id: id, capturedVia: .runtimeEnv, state: .suspended
+            ), history: [])
+        }
+        // No terminal_type: isolate bridge seeding from scraper recovery.
+        var first = makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
+        first.surfaceConversations = firstHasConversation ? conversations(firstId) : nil
+        var later = first
+        later.surfaceConversations = conversations(laterId)
+        let prepared = SessionRestoreNormalization.prepareStartupSnapshot(
+            makeAppSnapshot(workspace: makeSnapshot(panels: [first, later])), reportDrop: { _ in }
+        )
+        let normalized = prepared.windows[0].workspaceManager.workspaces[0]
+        XCTAssertEqual(normalized.panels.count, 1)
+        XCTAssertTrue(ConversationSnapshotCaptureScope(snapshot: prepared).scrapeContexts.isEmpty)
+        let records = WorkspaceSnapshotConversationBridge.records(from: prepared)
+        XCTAssertEqual(records[panelId.uuidString]?.active?.id, firstHasConversation ? firstId : nil)
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(prepared)
+        let active = await ConversationStore.shared.active(for: panelId.uuidString)
+        XCTAssertEqual(active?.id, firstHasConversation ? firstId : nil)
+
+        let plans = workspace.pendingRestartPlans(
+            from: normalized, registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        )
+        XCTAssertEqual(plans.count, firstHasConversation ? 1 : 0)
+        if firstHasConversation {
+            guard case .typeCommand(let command, _) = plans.first?.action else {
+                return XCTFail("first conversation must supply the resume plan")
+            }
+            XCTAssertEqual(command, "codex resume --yolo '\(firstId)'")
+        }
+
+        // Exercise the real capture path that reads the conversation store;
+        // never execute a resume command or schedule an agent in this test.
+        let captured = workspace.sessionSnapshot(includeScrollback: false)
+        let capturedTab = try XCTUnwrap(captured.panels.first { $0.id == panelId })
+        XCTAssertEqual(capturedTab.surfaceConversations?.active?.id, firstHasConversation ? firstId : nil)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("c11-startup-duplicate-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("session.json")
+        XCTAssertTrue(SessionPersistenceStore.save(makeAppSnapshot(workspace: captured), fileURL: file))
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: file))
+        let savedRecords = WorkspaceSnapshotConversationBridge.records(from: loaded)
+        XCTAssertEqual(savedRecords[panelId.uuidString]?.active?.id, firstHasConversation ? firstId : nil)
+        XCTAssertFalse(savedRecords.values.contains { $0.active?.id == laterId })
+        await ConversationStore.shared.clear(surfaceId: panelId.uuidString)
+    }
+
     // MARK: - pendingRestartPlans
 
     func testEmitsTypeCommandPlanForClaudeCode() async throws {

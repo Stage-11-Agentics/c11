@@ -12,6 +12,15 @@ This card is deliberately short. It covers **orientation** — the one thing eve
 
 ## Detect c11
 
+**Ask this build:** `c11 guide` (alias `c11 --skill`) prints the skill shipped in
+the CLI's app bundle, including its build identity and skill version, with no
+socket required. `c11 guide api` prints a bundled reference page. An installed
+skill copy can be older than `c11 guide`; printing the guide does not update it.
+`c11 capabilities --json` reports the connected server's methods and enabled
+versioned features, both CLI/server identities, and `sha_match` (null when a
+commit stamp is unavailable). Use that server feature list to check support;
+the PATH CLI can belong to a different build.
+
 `C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`, `C11_TAB_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
 
 Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `tab:3`. **A bare number from the operator is a tab ref.** With the "Show Tab Numbers in Tab Titles" setting on, every tab displays `N: title` where N is its `tab:N` ordinal — so "send that to 292" means target `tab:292` (with its `--workspace`). Always write the `tab:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_TAB_NUM`.

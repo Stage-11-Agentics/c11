@@ -79,11 +79,28 @@ c11 list-areas                       # Areas in current workspace (* = focused)
 c11 list-area-tabs               # Tabs in current area
 c11 current-workspace                # Current workspace ref
 c11 sidebar-state                    # Sidebar metadata: git branch, ports, status, progress, logs
-c11 capabilities                     # JSON: all available socket API methods
+c11 guide [page] [--json]             # Offline bundled skill + CLI build identity
+c11 capabilities                     # JSON: methods, versioned features, CLI/server identity
 c11 version                          # Version string
 ```
 
 The `caller` block in `c11 identify` always reflects the area invoking the command; the `focused` block reflects whatever the user (or last `focus-area`) is looking at. They are frequently different.
+
+`c11 guide` and `c11 --skill` print the bundled c11 skill without connecting to
+a socket. `c11 guide api` reads one bundled reference page; use a single page
+name without a path or extension. `--json` includes `body`, `skill_version`,
+`source: bundle`, and `cli` identity. Installed skill copies can be older.
+
+`capabilities` includes `features_version: 1` and enabled `features` entries
+with `id` and `version`, plus `server` and `cli` identities (`short_version`,
+`build`, `commit`, `bundle_identifier`). `sha_match` compares commit prefixes:
+true for matching short/full hashes, false for different commits, null if
+either stamp is unavailable. It never substitutes checkout or environment
+identity. Existing ids: `vocabulary.workspace_area_tab`, `send.explicit_tab`,
+`events.offline`. Later commands advertise `routing.canonical_keys`,
+`create.initial_input`, `send.raw`, `read_selection.terminal`, and
+`window.route_without_focus` only when implemented. Adding an id preserves
+`features_version`; changing an existing id's meaning increments it.
 
 ### There is no `c11 list` (silent-empty footgun)
 

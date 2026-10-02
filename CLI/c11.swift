@@ -1774,6 +1774,10 @@ struct CMUXCLI {
                 print(versionSummary())
                 return
             }
+            if arg == "--skill" {
+                try runGuide(commandArgs: Array(args.dropFirst(index + 1)), jsonOutput: jsonOutput)
+                return
+            }
             if arg == "-h" || arg == "--help" {
                 print(usage())
                 return
@@ -1788,6 +1792,12 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        // Guide (including its help) is bundled, offline content. Socket
+        // discovery probes listeners, so return before resolving any path.
+        if command == "guide" {
+            try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -1905,7 +1915,9 @@ struct CMUXCLI {
         // file is the contract, so it must work with no running app. Handle it
         // before the socket connect, like `state verify`.
         if command == "events" {
-            try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            try CapabilityFeatures.current.dispatch(.offlineEvents) {
+                try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            }
             return
         }
 
@@ -1927,6 +1939,11 @@ struct CMUXCLI {
             return
         }
 
+        // Admission and advertised support share the feature registry. The
+        // send handlers below still enforce the explicit-tab contract.
+        if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
+            try CapabilityFeatures.current.dispatch(.explicitTab) {}
+        }
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -2007,7 +2024,11 @@ struct CMUXCLI {
             print(response)
 
         case "capabilities":
-            let response = try client.sendV2(method: "system.capabilities")
+            var response = try client.sendV2(method: "system.capabilities")
+            let identity = bundledCLIIdentity()
+            response["cli"] = identity.payload
+            let server = response["server"] as? [String: Any]
+            response["sha_match"] = C11BuildIdentity.commitsMatch(identity.commit, server?["commit"] as? String) as Any? ?? NSNull()
             print(jsonString(formatIDs(response, mode: idFormat)))
 
         case "brand":
@@ -8659,7 +8680,16 @@ struct CMUXCLI {
             return """
             Usage: c11 capabilities
 
-            Print server capabilities as JSON.
+            Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
+            sha_match is null when either build has no commit stamp.
+            """
+        case "guide":
+            return """
+            Usage: c11 guide [page] [--json]
+                   c11 --skill [page] [--json]
+
+            Print the skill shipped in this CLI's app bundle without connecting to a socket.
+            Optional page names select bundled markdown pages (for example: api).
             """
         case "brand":
             return """
@@ -12028,7 +12058,8 @@ struct CMUXCLI {
     }
 
     static func canonicalCommandName(_ command: String) -> String {
-        legacyCommandAliases[command] ?? command
+        guard CapabilityFeatures.current.supports(.workspaceAreaTab) else { return command }
+        return legacyCommandAliases[command] ?? command
     }
 
     /// Flag spellings that mean the same thing. The option helpers (`parseOption`,
@@ -17731,6 +17762,42 @@ struct CMUXCLI {
             .replacingOccurrences(of: "|", with: "¦")
     }
 
+    private func bundledCLIIdentity() -> C11BuildIdentity {
+        C11BuildIdentity(bundleURL: resolvedExecutableURL().flatMap { BundledSkill.containingBundle(executableURL: $0) })
+    }
+
+    private func runGuide(commandArgs: [String], jsonOutput: Bool) throws {
+        if commandArgs.contains("--help") || commandArgs.contains("-h") {
+            print(subcommandUsage("guide") ?? "Usage: c11 guide [page] [--json]")
+            return
+        }
+        let (asJSON, remaining) = parseBoolFlag(commandArgs, name: "--json")
+        guard remaining.count <= 1 else {
+            throw CLIError(message: "Usage: c11 guide [page] [--json]")
+        }
+        guard let executable = resolvedExecutableURL(),
+              let bundle = BundledSkill.containingBundle(executableURL: executable) else {
+            throw CLIError(message: String(localized: "cli.guide.missing", defaultValue: "This build has no bundled c11 skill."))
+        }
+        let page: BundledSkill.Page
+        do {
+            page = try BundledSkill(root: bundle.appendingPathComponent("Contents/Resources/skills/c11")).load(page: remaining.first)
+        } catch BundledSkill.LoadError.unknownPage(let name) {
+            throw CLIError(message: String(localized: "cli.guide.unknown_page", defaultValue: "No bundled skill page '\(name)'."))
+        } catch {
+            throw CLIError(message: String(localized: "cli.guide.missing", defaultValue: "This build has no bundled c11 skill."))
+        }
+        let identity = C11BuildIdentity(bundleURL: bundle)
+        if jsonOutput || asJSON {
+            print(jsonString([
+                "cli": identity.payload, "skill": "c11", "skill_version": page.version as Any? ?? NSNull(),
+                "source": "bundle", "page": page.name, "body": page.body
+            ]))
+        } else {
+            print(identity.summary + "\nskill: c11\nskill_version: \(page.version ?? "unknown")\nsource: bundle\n\n" + page.body, terminator: "")
+        }
+    }
+
     private func versionSummary() -> String {
         let info = resolvedVersionInfo()
         let commit = info["CMUXCommit"].flatMap { normalizedCommitHash($0) }
@@ -18123,6 +18190,7 @@ struct CMUXCLI {
           claude-teams [claude-args...]
           ping
           version
+          guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
           brand [--json]
           history [list] [--json] [--limit <1...200>]

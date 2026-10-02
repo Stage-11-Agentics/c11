@@ -507,6 +507,12 @@
 		C1130600A1B2C3D4E5F60701 /* ClaudeStopTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */; };
 		C1130600A1B2C3D4E5F60702 /* ClaudeStopTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */; };
 		C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */; };
+		C11284000000000000000002 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
+		C11284000000000000000003 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
+		C11284000000000000000012 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
+		C11284000000000000000013 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
+		C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000021 /* CapabilityFeaturesTests.swift */; };
+		C11284000000000000000032 /* BundledSkillTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000031 /* BundledSkillTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1047,6 +1053,10 @@
 		C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxReceiptRecorderTests.swift; sourceTree = "<group>"; };
 		C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStopTranscript.swift; sourceTree = "<group>"; };
 		C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStopTranscriptTests.swift; sourceTree = "<group>"; };
+		C11284000000000000000001 /* CapabilityFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeatures.swift; sourceTree = "<group>"; };
+		C11284000000000000000011 /* BundledSkill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkill.swift; sourceTree = "<group>"; };
+		C11284000000000000000021 /* CapabilityFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeaturesTests.swift; sourceTree = "<group>"; };
+		C11284000000000000000031 /* BundledSkillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1207,6 +1217,8 @@
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
 				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
+				C11284000000000000000011 /* BundledSkill.swift */,
+				C11284000000000000000001 /* CapabilityFeatures.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
 				D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */,
 				D7C24002A1B2C3D4E5F60718 /* TabManifestView.swift */,
@@ -1564,6 +1576,8 @@
 				D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */,
 				D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */,
 				C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */,
+				C11284000000000000000031 /* BundledSkillTests.swift */,
+				C11284000000000000000021 /* CapabilityFeaturesTests.swift */,
 				A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */,
@@ -1872,6 +1886,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C11284000000000000000032 /* BundledSkillTests.swift in Sources */,
+				C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */,
 				2BA0A65D723C9E1F886F326D /* AgentRestartRegistryTests.swift in Sources */,
 				A11C0DE0000000000040051F /* UpdateInstallerFailureMappingTests.swift in Sources */,
 				8B6BA07B09D5E9E01F141A44 /* BrowserChromeSnapshotTests.swift in Sources */,
@@ -2018,6 +2034,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C11284000000000000000012 /* BundledSkill.swift in Sources */,
+				C11284000000000000000002 /* CapabilityFeatures.swift in Sources */,
 				A5001001 /* c11App.swift in Sources */,
 				A5001002 /* ContentView.swift in Sources */,
 				E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,
@@ -2265,6 +2283,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C11284000000000000000013 /* BundledSkill.swift in Sources */,
+				C11284000000000000000003 /* CapabilityFeatures.swift in Sources */,
 				B9000002A1B2C3D4E5F60719 /* c11.swift in Sources */,
 				DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */,
 				DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */,

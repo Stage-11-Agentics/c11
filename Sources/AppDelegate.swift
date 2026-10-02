@@ -6331,12 +6331,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Explicit socket frame mutation requires AppKit's main thread, but no focus change.
-    func resizeMainWindow(windowId: UUID, width: CGFloat?, height: CGFloat?) -> Result<(frame: CGRect, clamped: Bool, changed: Bool), WindowResizePlan.Failure> {
+    func resizeMainWindow(windowId: UUID, width: CGFloat?, height: CGFloat?) -> Result<(frame: CGRect, screenDisplayID: UInt32?, screenFrame: CGRect?, screenVisibleFrame: CGRect?, clamped: Bool, changed: Bool), WindowResizePlan.Failure> {
         guard let window = windowForMainWindowId(windowId) else { return .failure(.notFound) }
         guard !window.styleMask.contains(.fullScreen) else { return .failure(.fullscreen) }
         let oldFrame = window.frame
+        // Use and report the same actual owning screen for this request, even
+        // if the resulting frame later spans a neighboring display.
+        let owningScreen = window.screen
         let plan = WindowResizePlan.decide(frame: oldFrame, width: width, height: height,
-                                           minSize: window.minSize, visibleFrame: window.screen?.visibleFrame)
+                                           minSize: window.minSize, visibleFrame: owningScreen?.visibleFrame)
         if plan.write {
             window.setFrame(plan.frame, display: true, animate: false)
         }
@@ -6344,7 +6347,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let applied = window.frame
         let clamped = plan.clamped || (width.map { $0 != applied.width } ?? false)
             || (height.map { $0 != applied.height } ?? false)
-        return .success((frame: applied, clamped: clamped, changed: applied != oldFrame))
+        let screenDisplayID: UInt32?
+        if let screenNumber = owningScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+            screenDisplayID = screenNumber.uint32Value
+        } else {
+            screenDisplayID = nil
+        }
+        return .success((frame: applied, screenDisplayID: screenDisplayID,
+                         screenFrame: owningScreen?.frame,
+                         screenVisibleFrame: owningScreen?.visibleFrame,
+                         clamped: clamped, changed: applied != oldFrame))
     }
 
     /// Socket `window.close`: an agent asked for this exact window, so no prompt.

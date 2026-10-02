@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C11-286 / cmux #9826: real tagged-window resize, read and no-focus checks.
+"""C11-286 / cmux #9826: tagged resize, dispatcher, geometry and focus evidence.
 
 Run only INSIDE an authorized Atlas sandbox guest, with its packaged CLI:
   C11_SOCKET=/tmp/c11-sandbox-<guest>.sock \
@@ -9,8 +9,9 @@ Run only INSIDE an authorized Atlas sandbox guest, with its packaged CLI:
 The harness opens and closes one extra window. It does not enter fullscreen,
 use computer input, launch providers, or touch installed skills. A forwarding
 socket observes actual CLI requests; it supplies no simulated responses.
-AppKit screen geometry is read through JXA to independently check the maximum
-clamp. No screenshots or unrelated window titles/IDs enter public evidence.
+The resize response reports the actual owning screen used for its clamp, and
+JXA independently enumerates display geometry. OS frontmost PID and AppKit key
+window are separate oracles; absent headless observations stay unproven.
 """
 
 from __future__ import annotations
@@ -52,6 +53,22 @@ def geometry(reply):
 
 def same_geometry(first, second):
     return all(close_number(a, b) for a, b in zip(geometry(first), geometry(second)))
+
+
+def rect_values(rect):
+    return tuple(rect[key] for key in ('x', 'y', 'width', 'height'))
+
+
+def same_rect(first, second):
+    return (isinstance(first, dict) and isinstance(second, dict) and
+            all(close_number(a, b) for a, b in zip(rect_values(first), rect_values(second))))
+
+
+def same_screen(first, second):
+    return (isinstance(first, dict) and isinstance(second, dict) and
+            first.get('display_id') == second.get('display_id') and
+            same_rect(first.get('frame'), second.get('frame')) and
+            same_rect(first.get('visible_frame'), second.get('visible_frame')))
 
 
 class Forwarder(socketserver.ThreadingUnixStreamServer):
@@ -96,10 +113,15 @@ class Harness:
         self.original_window = None
         self.first_frame = None
         self.screens = []
+        self.main_display_id = None
+        self.bundle_id = None
+        self.dispatch_log = None
+        self.dispatch_log_offset = 0
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(('C11_', 'CMUX_'))}
         self.report = {'suite': 'C11-286-tagged-window-resize', 'source_head': args.source_head,
-                       'computer_use': False, 'cases': [], 'cleanup': {}}
+                       'computer_use': False, 'cases': [], 'cleanup': {},
+                       'focus_evidence': {}, 'validator_scenarios': {}}
 
     def cli(self, arguments, accepted=True):
         result = subprocess.run([self.args.cli, '--socket', self.proxy or self.args.socket,
@@ -131,6 +153,58 @@ class Harness:
         require(len(keys) <= 1, 'expected at most one key window in the guest')
         return keys[0] if keys else None
 
+    def frontmost_pid(self):
+        result = subprocess.run(
+            ['/usr/bin/osascript', '-e',
+             'tell application "System Events" to get unix id of first process whose frontmost is true'],
+            capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return None
+        try:
+            return int(result.stdout.strip().splitlines()[-1])
+        except (IndexError, ValueError):
+            return None
+
+    def process_pid_named(self, name):
+        result = subprocess.run(
+            ['/usr/bin/osascript', '-e',
+             f'tell application "System Events" to get unix id of first process whose name is "{name}"'],
+            capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return None
+        try:
+            return int(result.stdout.strip().splitlines()[-1])
+        except (IndexError, ValueError):
+            return None
+
+    def activate_app(self, bundle_id):
+        result = subprocess.run(
+            ['/usr/bin/osascript', '-e', f'tell application id "{bundle_id}" to activate'],
+            capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+
+    def wait_frontmost(self, predicate, timeout=3):
+        end = time.monotonic() + timeout
+        last = None
+        while time.monotonic() < end:
+            last = self.frontmost_pid()
+            if last is not None and predicate(last):
+                return last
+            time.sleep(.05)
+        return last
+
+    def screen_summary(self, screen):
+        if not isinstance(screen, dict):
+            return None
+        enumerated = [item for item in self.screens if same_screen(item, screen)]
+        return {
+            'display_id': screen['display_id'],
+            'frame': screen['frame'],
+            'visible_frame': screen['visible_frame'],
+            'enumeration_matches': len(enumerated),
+            'is_main_screen': screen['display_id'] == self.main_display_id,
+        }
+
     def wait_focus(self, target):
         end = time.monotonic() + 5
         while time.monotonic() < end:
@@ -150,7 +224,8 @@ class Harness:
         app = cli.parents[3]
         require(app.name.startswith('c11 DEV ') and app.suffix == '.app', 'tagged app bundle required')
         info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
-        require('.debug.' in info.get('CFBundleIdentifier', ''), 'tagged debug bundle required')
+        self.bundle_id = info.get('CFBundleIdentifier', '')
+        require('.debug.' in self.bundle_id, 'tagged debug bundle required')
         commit = info.get('C11Commit') or info.get('CMUXCommit')
         if self.args.source_head == 'not-supplied' and isinstance(commit, str) and re.fullmatch(r'[0-9a-fA-F]{7,40}', commit):
             self.report['source_head'] = commit.lower()
@@ -179,17 +254,47 @@ class Harness:
                                    capture_output=True, text=True, timeout=5)
         require('n' + self.args.socket in listeners.stdout.splitlines(), 'tagged PID must own the socket')
         script = """ObjC.import('AppKit');
+        function rect(r) { return {x: r.origin.x, y: r.origin.y,
+                                   width: r.size.width, height: r.size.height}; }
         var result = [], screens = $.NSScreen.screens;
+        var mainScreen = $.NSScreen.mainScreen;
         for (var i = 0; i < screens.count; i++) {
             var screen = screens.objectAtIndex(i), f = screen.frame, v = screen.visibleFrame;
-            result.push({frame: f, visible: v});
+            result.push({display_id: Number(screen.deviceDescription.objectForKey('NSScreenNumber')),
+                         frame: rect(f), visible_frame: rect(v)});
         }
-        JSON.stringify(result);"""
+        JSON.stringify({screens: result,
+                        main_display_id: Number(mainScreen.deviceDescription.objectForKey('NSScreenNumber'))});"""
         result = subprocess.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', script],
                                 capture_output=True, text=True, timeout=5)
         require(result.returncode == 0, 'AppKit screen geometry read failed')
-        self.screens = json.loads(result.stdout)
+        displays = json.loads(result.stdout)
+        self.screens = displays.get('screens', [])
+        self.main_display_id = displays.get('main_display_id')
         require(bool(self.screens), 'guest screen geometry unavailable')
+        require(isinstance(self.main_display_id, int) and not isinstance(self.main_display_id, bool),
+                'main display identity unavailable')
+
+        explicit_log = os.environ.get('CMUX_DEBUG_LOG', '').strip()
+        if explicit_log:
+            log_path = explicit_log
+        else:
+            tag = os.environ.get('CMUX_TAG', '').strip()
+            socket_path = os.environ.get('CMUX_SOCKET_PATH', '').strip()
+            if tag:
+                token = re.sub(r'[^A-Za-z0-9_.-]+', '-', tag).strip('-.') or 'debug'
+                log_path = f'/tmp/cmux-debug-{token}.log'
+            elif socket_path and Path(socket_path).stem.startswith('cmux-debug-'):
+                log_path = f"/tmp/{Path(socket_path).stem}.log"
+            else:
+                token = re.sub(r'[^A-Za-z0-9_.-]+', '-', self.bundle_id).strip('-.') or 'debug'
+                log_path = '/tmp/cmux-debug.log' if self.bundle_id == 'com.cmuxterm.app.debug' else f'/tmp/cmux-debug-{token}.log'
+        self.dispatch_log = Path(log_path)
+        try:
+            self.dispatch_log_offset = self.dispatch_log.stat().st_size
+        except FileNotFoundError:
+            self.dispatch_log_offset = 0
+        self.report['display_count'] = len(self.screens)
 
     def discovery(self):
         capabilities = self.rpc('system.capabilities')
@@ -218,6 +323,13 @@ class Harness:
         for value in geometry(reply):
             require(not isinstance(value, bool) and isinstance(value, (float, int)) and math.isfinite(value),
                     'frame response must contain finite geometry')
+        screen = reply.get('screen')
+        require(isinstance(screen, dict) and isinstance(screen.get('display_id'), int),
+                'resize response must identify the target window owning screen')
+        require(all(math.isfinite(value) for rect in (screen.get('frame'), screen.get('visible_frame'))
+                    for value in rect_values(rect)), 'owning screen bounds must be finite')
+        require(sum(1 for item in self.screens if same_screen(item, screen)) == 1,
+                'owning screen identity must match exactly one independently enumerated NSScreen')
         require(reply['applied']['width'] > 0 and reply['applied']['height'] > 0, 'applied frame must be positive')
         require(close_number(reply['top_left']['x'], reply['origin']['x']) and
                 close_number(reply['top_left']['y'], reply['origin']['y'] + reply['applied']['height']),
@@ -249,16 +361,150 @@ class Harness:
         self.validate_reply(reply, target, width, height)
         return reply
 
-    def assert_primary_unchanged(self):
-        require(self.current_window() == self.first, 'resizing the second window changed the focused window')
-        key = self.key_window_if_present()
-        if key is not None:
-            require(key == self.first, 'resizing the second window stole the first window key state')
+    def assert_worker_dispatch(self, trigger):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                contents = self.dispatch_log.read_bytes()
+            except FileNotFoundError:
+                contents = b''
+            if len(contents) < self.dispatch_log_offset:
+                self.dispatch_log_offset = 0
+            new_lines = contents[self.dispatch_log_offset:].decode(errors='replace').splitlines()
+            marker = next((line for line in new_lines if 'v2.window.resize isMain=' in line), None)
+            if marker:
+                self.dispatch_log_offset = len(contents)
+                require('v2.window.resize isMain=false' in marker,
+                        'window.resize reached the main-actor fallback instead of the socket worker')
+                self.report['cases'].append({'case': 'window-resize-worker-dispatch',
+                                             'trigger': trigger, 'dispatcher_thread': 'socket_worker', 'passed': True})
+                return
+            time.sleep(.05)
+        raise AssertionError('executable dispatcher log did not record a window.resize worker invocation')
+
+    def assert_logical_context_unchanged(self):
+        require(self.current_window() == self.first,
+                'resizing the second window changed the logical current window')
         require(same_geometry(self.first_frame, self.resize(self.first)), 'first window frame changed')
 
     def assert_top_left(self, initial, current):
         require(all(close_number(initial['top_left'][axis], current['top_left'][axis]) for axis in ('x', 'y')),
                 'resize moved the target top-left')
+
+    def publish_focus_evidence(self, first, second):
+        self.report['focus_evidence'] = {
+            'logical_window_current': {
+                'status': 'passed',
+                'scope': 'logical selection only; not an OS frontmost or key-window oracle',
+            },
+            'scenario_1': first,
+            'scenario_2': second,
+        }
+
+    def record_secondary_display_scenario(self, initial):
+        scenario = {'name': '3-secondary-display-edge-clamp'}
+        self.report['validator_scenarios']['3'] = scenario
+        if len(self.screens) < 2:
+            scenario.update(status='unproven', reason='guest exposes fewer than two displays')
+            return
+        screen = initial.get('screen')
+        if not isinstance(screen, dict) or screen['display_id'] == self.main_display_id:
+            scenario.update(status='unproven', reason='disposable target is not on a secondary display')
+            return
+
+        visible = screen['visible_frame']
+        origin = initial['origin']
+        size = initial['applied']
+        gaps = (
+            origin['x'] - visible['x'],
+            visible['x'] + visible['width'] - (origin['x'] + size['width']),
+            origin['y'] - visible['y'],
+            visible['y'] + visible['height'] - (origin['y'] + size['height']),
+        )
+        if not any(0 <= gap <= 100 for gap in gaps):
+            scenario.update(status='unproven', reason='disposable target is not within 100 points of a visible-frame edge')
+            return
+
+        minimum = self.resize(self.second, 0, 0)
+        maximum = self.resize(self.second, 1000000, 1000000)
+        self.assert_top_left(initial, maximum)
+        require(same_screen(initial['screen'], maximum['screen']),
+                'secondary-display resize must clamp against the target owning screen')
+        expected_width = max(minimum['applied']['width'], visible['width'])
+        expected_height = max(minimum['applied']['height'], visible['height'])
+        require(maximum['clamped'] and close_number(maximum['applied']['width'], expected_width) and
+                close_number(maximum['applied']['height'], expected_height),
+                'secondary-display resize must clamp both dimensions to its owning visible frame')
+        restored = self.resize(self.second, size['width'], size['height'])
+        require(same_geometry(initial, restored), 'secondary-display scenario must restore the disposable target frame')
+        scenario.update(status='passed', owning_screen=self.screen_summary(screen),
+                        initial=geometry(initial), applied=maximum['applied'],
+                        expected={'width': expected_width, 'height': expected_height})
+
+    def record_focus_scenarios(self):
+        # Scenario 1: an unrelated app stays frontmost while the second c11
+        # window is resized. Frontmost PID and c11 key identity are independent
+        # observations; a missing key window is not reported as preserved.
+        first = {'name': '1-another-app-frontmost'}
+        self.report['validator_scenarios']['1'] = first
+        if not self.activate_app('com.apple.finder'):
+            first.update(status='unproven', reason='Finder activation was unavailable in this guest')
+        else:
+            finder_pid = self.process_pid_named('Finder')
+            before_pid = self.wait_frontmost(lambda pid: pid == finder_pid) if finder_pid is not None else None
+            if finder_pid is None or before_pid != finder_pid or before_pid == self.args.pid:
+                first.update(status='unproven', reason='could not observe Finder frontmost by its real PID')
+            else:
+                before_key = self.key_window_if_present()
+                self.resize(self.second, 1200, 800)
+                after_pid = self.frontmost_pid()
+                after_key = self.key_window_if_present()
+                require(after_pid == before_pid,
+                        'resizing a background c11 window changed the real frontmost application PID')
+                require(after_key == before_key,
+                        'resizing a background c11 window changed the c11 key-window identity')
+                key_status = 'passed' if before_key is not None else 'unproven_no_key_window'
+                first.update(status='passed' if before_key is not None else 'unproven',
+                             frontmost_pid={'status': 'passed', 'before': before_pid, 'after': after_pid},
+                             c11_key_window={'status': key_status, 'before': before_key, 'after': after_key})
+
+        # Scenario 2: establish a real c11 frontmost PID and first-window key
+        # identity before resizing the second window. Logical window.current is
+        # deliberately not used as a substitute for either OS observation.
+        second = {'name': '2-first-c11-window-key'}
+        self.report['validator_scenarios']['2'] = second
+        if not self.activate_app(self.bundle_id):
+            second.update(status='unproven', reason='tagged c11 activation was unavailable in this guest')
+            self.publish_focus_evidence(first, second)
+            return
+        before_pid = self.wait_frontmost(lambda pid: pid == self.args.pid)
+        if before_pid != self.args.pid:
+            second.update(status='unproven', reason='tagged c11 PID was not observed frontmost')
+            self.publish_focus_evidence(first, second)
+            return
+        self.cli(['focus-window', '--window', self.first])
+        self.wait_focus(self.first)
+        before_key = self.key_window_if_present()
+        if before_key is None:
+            second.update(status='unproven', reason='headless guest reports no key window')
+            self.publish_focus_evidence(first, second)
+            return
+        if before_key != self.first:
+            second.update(status='unproven', reason='first c11 window could not be established as key')
+            self.publish_focus_evidence(first, second)
+            return
+
+        self.resize(self.second, 1200, 800)
+        after_pid = self.frontmost_pid()
+        after_key = self.key_window_if_present()
+        require(after_pid == before_pid,
+                'resizing the second c11 window changed the real frontmost application PID')
+        require(after_key == before_key,
+                'resizing the second c11 window changed the first c11 key-window identity')
+        second.update(status='passed',
+                      frontmost_pid={'status': 'passed', 'before': before_pid, 'after': after_pid},
+                      key_window={'status': 'passed', 'before': before_key, 'after': after_key})
+        self.publish_focus_evidence(first, second)
 
     def fullscreen_checks(self, windows):
         normal = []
@@ -292,18 +538,20 @@ class Harness:
         self.wait_focus(self.first)
         self.first_frame = self.resize(self.first)
         initial = self.resize(self.second)
+        self.report['target_screen_at_start'] = self.screen_summary(initial['screen'])
 
         applied = self.resize(self.second, 1200, 800)
+        self.assert_worker_dispatch('valid-cli-resize')
         self.assert_top_left(initial, applied)
         require(same_geometry(applied, self.resize(self.second)), 'applied resize must equal the next actual frame read')
-        self.assert_primary_unchanged()
-        self.report['cases'].append({'case': 'resize-second-top-left-and-first-key',
+        self.assert_logical_context_unchanged()
+        self.report['cases'].append({'case': 'resize-second-top-left-and-logical-context',
                                      'applied': applied['applied'], 'clamped': applied['clamped'], 'passed': True})
 
         first_read, second_read = self.resize(self.second), self.resize(self.second)
         require(geometry(first_read) == geometry(second_read), 'repeated reads changed exact origin or size')
         self.assert_top_left(initial, second_read)
-        self.assert_primary_unchanged()
+        self.assert_logical_context_unchanged()
         self.report['cases'].append({'case': 'read-keeps-frame-and-omits-write-edges', 'changed': False, 'passed': True})
 
         minimum = self.resize(self.second, 0, 0)
@@ -312,33 +560,37 @@ class Harness:
         require(minimum['applied'] == smaller['applied'], 'smaller requests must clamp to the same minimum')
         require(same_geometry(minimum, self.resize(self.second)), 'minimum clamp differs from the actual frame')
         self.assert_top_left(initial, minimum)
-        self.assert_primary_unchanged()
+        self.assert_logical_context_unchanged()
         self.report['cases'].append({'case': 'minimum-clamp', 'applied': minimum['applied'], 'passed': True})
+
+        self.record_secondary_display_scenario(initial)
 
         maximum = self.resize(self.second, 1000000, 1000000)
         require(maximum['clamped'] is True, 'oversized request must clamp')
         require(same_geometry(maximum, self.resize(self.second)), 'maximum clamp differs from the actual frame')
-        # Match visible dimensions to the independently observed AppKit screens.
-        # This also works for multiple displays without guessing screen 0.
-        candidates = [screen['visible']['size'] for screen in self.screens]
-        require(any(close_number(maximum['applied']['width'], max(minimum['applied']['width'], size['width'])) and
-                    close_number(maximum['applied']['height'], max(minimum['applied']['height'], size['height']))
-                    for size in candidates), 'maximum clamp must match one current screen visible frame, respecting minimum')
+        require(same_screen(initial['screen'], maximum['screen']),
+                'maximum clamp must use the same owning screen as the target before resize')
+        visible = maximum['screen']['visible_frame']
+        require(close_number(maximum['applied']['width'], max(minimum['applied']['width'], visible['width'])) and
+                close_number(maximum['applied']['height'], max(minimum['applied']['height'], visible['height'])),
+                'maximum clamp must match this target window owning screen visible frame, respecting minimum')
         self.assert_top_left(initial, maximum)
-        self.assert_primary_unchanged()
-        self.report['cases'].append({'case': 'maximum-visible-screen-clamp', 'applied': maximum['applied'], 'passed': True})
+        self.assert_logical_context_unchanged()
+        self.report['cases'].append({'case': 'maximum-target-owning-screen-clamp',
+                                     'owning_screen': self.screen_summary(maximum['screen']),
+                                     'applied': maximum['applied'], 'passed': True})
 
         partial = self.resize(self.second, None, 900)
         require(close_number(partial['applied']['width'], maximum['applied']['width']), 'kept width changed')
         self.assert_top_left(initial, partial)
-        self.assert_primary_unchanged()
+        self.assert_logical_context_unchanged()
         self.report['cases'].append({'case': 'keep-one-edge', 'passed': True})
 
         before = self.resize(self.first)
         result = self.cli(['resize-window', '--window', str(uuid.uuid4()), '1200', '800'], accepted=False)
         require(result.returncode != 0 and 'not_found' in result.stderr, 'unknown UUID must return not_found')
         require(same_geometry(before, self.resize(self.first)), 'invalid UUID modified the first window frame')
-        self.assert_primary_unchanged()
+        self.assert_logical_context_unchanged()
         self.report['cases'].append({'case': 'unknown-uuid-preserves-first-frame', 'passed': True})
 
         invalid_cli = [
@@ -358,17 +610,20 @@ class Harness:
             require(len(self.forwarder.trace) == floor, 'invalid CLI resize must issue zero forwarding requests')
             require(same_geometry(before_first, self.resize(self.first)) and
                     same_geometry(before_second, self.resize(self.second)), 'invalid CLI arguments changed a frame')
-            self.assert_primary_unchanged()
+            self.assert_logical_context_unchanged()
             self.report['cases'].append({'case': 'invalid-cli-' + label, 'forwarded_requests': 0,
-                                         'frames_and_key_unchanged': True, 'passed': True})
+                                         'frames_and_logical_context_unchanged': True, 'passed': True})
 
         before = self.resize(self.second)
         for key in ('width', 'height'):
             for value in (True, False, '800', 'not-a-size'):
                 self.rpc_error('window.resize', {'window_id': self.second, key: value}, 'invalid_params')
                 require(same_geometry(before, self.resize(self.second)), 'invalid RPC parameter modified the target frame')
-                self.assert_primary_unchanged()
+                self.assert_logical_context_unchanged()
+        self.assert_worker_dispatch('invalid-RPC-dimensions')
         self.report['cases'].append({'case': 'bool-and-string-rpc-params-rejected', 'invalid_params_count': 8, 'passed': True})
+
+        self.record_focus_scenarios()
 
     def cleanup(self):
         if self.second:
@@ -377,10 +632,13 @@ class Harness:
         if self.original_window:
             self.rpc('window.focus', {'window_id': self.original_window})
             self.wait_focus(self.original_window)
-            self.report['cleanup']['original_focus_restored'] = self.current_window() == self.original_window
+            self.report['cleanup']['original_window_selected'] = self.current_window() == self.original_window
             key = self.key_window_if_present()
-            if key is not None:
-                self.report['cleanup']['original_key_restored'] = key == self.original_window
+            self.report['cleanup']['key_window_identity'] = (
+                {'status': 'passed', 'window_id': key} if key == self.original_window else
+                {'status': 'failed', 'window_id': key} if key is not None else
+                {'status': 'unproven_no_key_window'}
+            )
         if self.first_frame and self.first:
             self.report['cleanup']['first_frame_unchanged'] = same_geometry(self.first_frame, self.resize(self.first))
 
@@ -430,7 +688,7 @@ def main():
         signal.alarm(0)
     harness.report['passed'] = bool('error_type' not in harness.report and
         harness.report['cleanup'].get('second_window_closed') and
-        harness.report['cleanup'].get('original_focus_restored') and
+        harness.report['cleanup'].get('original_window_selected') and
         harness.report['cleanup'].get('first_frame_unchanged'))
     print(json.dumps(harness.report, sort_keys=True))
     return 0 if harness.report['passed'] else 1

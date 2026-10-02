@@ -26,10 +26,7 @@ extension TerminalController {
         case "window.close":
             return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WindowClose(params: params))
         case "window.resize":
-            guard CapabilityFeatures.current.supports(.windowResize) else {
-                return v2Error(id: id, code: "method_not_found", message: "Unknown method")
-            }
-            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WindowResize(params: params))
+            return v2WindowResizeWorker(id: id, params: params)
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }
@@ -100,35 +97,73 @@ extension TerminalController {
         ])
     }
 
-    private func v2WindowResize(params: [String: Any]) -> V2CallResult {
+    /// Parse the request on the socket worker, then resolve its live window ref
+    /// and read/write the AppKit frame together in one bounded main-actor hop.
+    nonisolated func v2WindowResizeWorker(id: Any?, params: [String: Any]) -> String {
+        guard CapabilityFeatures.current.supports(.windowResize) else {
+            return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+        }
+
+        func dimension(_ key: String) -> (value: CGFloat?, valid: Bool) {
+            guard let raw = params[key] else { return (nil, true) }
+            guard let number = raw as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue.isFinite else {
+                return (nil, false)
+            }
+            return (CGFloat(number.doubleValue), true)
+        }
+
+        let width = dimension("width")
+        let height = dimension("height")
+        let result: V2CallResult
+        if Thread.isMainThread {
+            result = MainActor.assumeIsolated {
+                self.v2WindowResizeOnMain(params: params, width: width, height: height)
+            }
+        } else {
+            result = DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    self.v2WindowResizeOnMain(params: params, width: width, height: height)
+                }
+            }
+        }
+        return v2Result(id: id, result)
+    }
+
+    private func v2WindowResizeOnMain(
+        params: [String: Any],
+        width: (value: CGFloat?, valid: Bool),
+        height: (value: CGFloat?, valid: Bool)
+    ) -> V2CallResult {
+        if let rejection = v2RejectUnresolvedTargetRefs(params) {
+            return rejection
+        }
         guard let windowId = v2UUID(params, "window_id") else {
             return .err(code: "invalid_params", message: String(localized: "socket.error.window_id", defaultValue: "Missing or invalid window_id"), data: nil)
         }
-        func dimension(_ key: String) throws -> CGFloat? {
-            guard let raw = params[key] else { return nil }
-            guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite else {
-                throw NSError(domain: "window.resize", code: 1)
-            }
-            return CGFloat(number.doubleValue)
-        }
-        let width: CGFloat?
-        let height: CGFloat?
-        do {
-            width = try dimension("width")
-            height = try dimension("height")
-        } catch {
+        guard width.valid, height.valid else {
             return .err(code: "invalid_params", message: String(localized: "socket.error.window_resize_params", defaultValue: "Width and height must be finite numbers."), data: nil)
         }
-        let result = v2MainSync { AppDelegate.shared?.resizeMainWindow(windowId: windowId, width: width, height: height) }
+
+        // This runs inside the same main-actor hop as target resolution above.
+        let result = AppDelegate.shared?.resizeMainWindow(windowId: windowId, width: width.value, height: height.value)
         switch result {
         case .success(let applied):
             return .ok([
                 "window_id": windowId.uuidString,
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
-                "requested": ["width": width.map { $0 as Any } ?? NSNull(), "height": height.map { $0 as Any } ?? NSNull()],
+                "requested": ["width": width.value.map { $0 as Any } ?? NSNull(), "height": height.value.map { $0 as Any } ?? NSNull()],
                 "applied": ["width": applied.frame.width, "height": applied.frame.height],
                 "origin": ["x": applied.frame.origin.x, "y": applied.frame.origin.y],
                 "top_left": ["x": applied.frame.origin.x, "y": applied.frame.maxY],
+                "screen": applied.screenFrame.map { screenFrame -> Any in
+                    [
+                        "display_id": applied.screenDisplayID.map { $0 as Any } ?? NSNull(),
+                        "frame": windowResizeRectPayload(screenFrame),
+                        "visible_frame": applied.screenVisibleFrame.map(windowResizeRectPayload) ?? NSNull()
+                    ] as [String: Any]
+                } ?? NSNull(),
                 "clamped": applied.clamped,
                 "changed": applied.changed
             ])
@@ -155,4 +190,8 @@ extension TerminalController {
             ])
     }
 
+}
+
+private func windowResizeRectPayload(_ rect: CGRect) -> [String: CGFloat] {
+    ["x": rect.origin.x, "y": rect.origin.y, "width": rect.width, "height": rect.height]
 }

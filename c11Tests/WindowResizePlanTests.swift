@@ -37,6 +37,26 @@ final class WindowResizePlanTests: XCTestCase {
         XCTAssertTrue(result.clamped)
     }
 
+    func testNegativeOriginSecondaryScreenClampsBothEdgesAtUpperRightEdge() {
+        // A coherent window already on a secondary display: its visible frame
+        // has a negative x origin, and its top/right edges begin near the
+        // display's top-right corner. The incident is mismatched hand sizing
+        // across computer-use runs (C7 / cmux #9826).
+        let secondaryVisible = CGRect(x: -1440, y: 500, width: 1440, height: 900)
+        let secondaryWindow = CGRect(x: -680, y: 720, width: 600, height: 600)
+        XCTAssertTrue(secondaryVisible.contains(secondaryWindow))
+
+        let result = WindowResizePlan.decide(frame: secondaryWindow, width: 5000, height: 5000,
+                                             minSize: CGSize(width: 400, height: 300),
+                                             visibleFrame: secondaryVisible)
+
+        XCTAssertEqual(result.frame, CGRect(x: -680, y: 420, width: 1440, height: 900))
+        XCTAssertEqual(result.frame.maxX, 760)
+        XCTAssertEqual(result.frame.maxY, secondaryWindow.maxY)
+        XCTAssertTrue(result.clamped)
+        XCTAssertTrue(result.write)
+    }
+
     func testReadReturnsExactFrameWithoutWrite() {
         let result = WindowResizePlan.decide(frame: frame, width: nil, height: nil,
                                              minSize: CGSize(width: 900, height: 900), visibleFrame: .zero)

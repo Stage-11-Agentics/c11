@@ -8,7 +8,6 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
 #include <libproc.h>
-#include <errno.h>
 #include <signal.h>
 #include <stdint.h>
 #include <time.h>
@@ -133,25 +132,10 @@ static void mouse(CGEventType type, CGPoint point, CGWindowID window) {
 int main(int argc,char **argv) {
     signal(SIGALRM,timeout_exit); alarm(8);
     @autoreleasepool {
-        if (argc<4) fail(@"Usage: list PID TAG | check PID TAG WINDOW | activate PID TAG WINDOW | key PID TAG WINDOW KEY [MODIFIERS] | text PID TAG WINDOW TEXT | click PID TAG WINDOW X Y | drag PID TAG WINDOW X1 Y1 X2 Y2 | scroll PID TAG WINDOW X Y PIXELS");
+        if (argc<4) fail(@"Usage: list PID TAG | check PID TAG WINDOW | activate PID TAG WINDOW | key PID TAG WINDOW KEY [MODIFIERS] | text PID TAG WINDOW TEXT | click PID TAG WINDOW X Y | drag PID TAG WINDOW X1 Y1 X2 Y2");
         char *end; long parsed=strtol(argv[2],&end,10); if (*end || parsed<=1 || parsed>INT_MAX) fail(@"Invalid PID");
-        target_pid=(pid_t)parsed; target_tag=@(argv[3]);
+        target_pid=(pid_t)parsed; target_tag=@(argv[3]); verify_process();
         NSString *command=@(argv[1]);
-        int32_t scrollPixels=0;
-        if ([command isEqualToString:@"scroll"]) {
-            if (argc!=8) fail(@"Usage: scroll PID TAG WINDOW X Y PIXELS (Quartz: positive up, negative down)");
-            const char *digits=argv[7];
-            if (*digits=='+' || *digits=='-') ++digits;
-            if (!*digits) fail(@"Scroll pixels must be a nonzero signed integer between -10000 and 10000");
-            for (const char *p=digits; *p; ++p) if (*p<'0' || *p>'9')
-                fail(@"Scroll pixels must be a nonzero signed integer between -10000 and 10000");
-            errno=0;
-            long pixels=strtol(argv[7],&end,10);
-            if (errno==ERANGE || *end || pixels==0 || pixels < -10000 || pixels > 10000)
-                fail(@"Scroll pixels must be a nonzero signed integer between -10000 and 10000");
-            scrollPixels=(int32_t)pixels;
-        }
-        verify_process();
         if ([command isEqualToString:@"list"]) {
             NSMutableArray *screens=[NSMutableArray array];
             for (NSScreen *screen in NSScreen.screens) {
@@ -189,17 +173,6 @@ int main(int argc,char **argv) {
             NSString *text=@(argv[5]); if (text.length>1024) fail(@"Text limited to 1024 UTF-16 units per invocation");
             UniChar chars[1024]; [text getCharacters:chars range:NSMakeRange(0,text.length)];
             for (int down=1;down>=0;--down) { CGEventRef event=CGEventCreateKeyboardEvent(NULL,0,down); CGEventSetFlags(event,0); CGEventKeyboardSetUnicodeString(event,text.length,chars); post(event); if (down) usleep(event_spacing_us); }
-        } else if ([command isEqualToString:@"scroll"]) {
-            // Preserve Quartz wheel-axis sign: positive scrolls up, negative down.
-            // This is one vertical pixel-unit event at a validated window point.
-            CGPoint point=local_point(window_bounds(window),argv[5],argv[6]);
-            CGEventRef event=CGEventCreateScrollWheelEvent(NULL,kCGScrollEventUnitPixel,1,scrollPixels);
-            if (!event) fail(@"Could not create Quartz scroll event");
-            CGEventSetFlags(event,0);
-            CGEventSetLocation(event,point);
-            CGEventSetIntegerValueField(event,kCGMouseEventWindowUnderMousePointer,(CGWindowID)wid);
-            CGEventSetIntegerValueField(event,kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent,(CGWindowID)wid);
-            post(event);
         } else if ([command isEqualToString:@"click"] || [command isEqualToString:@"drag"]) {
             BOOL drag=[command isEqualToString:@"drag"]; if (argc!=(drag?9:7)) fail(@"Wrong pointer argument count");
             CGRect bounds=window_bounds(window); CGPoint start=local_point(bounds,argv[5],argv[6]); CGPoint finish=drag?local_point(bounds,argv[7],argv[8]):start;

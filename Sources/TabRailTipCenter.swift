@@ -16,6 +16,8 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     static let shared = TabRailTipCenter()
 
     private var policy: TabRailTipPolicy
+    /// Where the Tab Layout mode lives. Tests pass an isolated suite.
+    private let defaults: UserDefaults
     private let model = TabRailTipModel()
     private var slots: [String: Slot] = [:]
     private var phase: Phase = .idle
@@ -66,8 +68,19 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
     }
 
+    /// Tests name the front area directly; the app derives it from the key window.
+    var frontAreaOverride: (@MainActor () -> (workspace: Workspace, paneId: PaneID)?)?
+
+    /// A center with its own policy and defaults and no window observers, for tests.
+    init(policy: TabRailTipPolicy, defaults: UserDefaults) {
+        self.policy = policy
+        self.defaults = defaults
+        super.init()
+    }
+
     private override init() {
         policy = TabRailTipPolicy(calendar: TabRailTipPolicy.localCalendar(), store: UserDefaultsTabRailTipStore())
+        defaults = .standard
         super.init()
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
@@ -82,6 +95,12 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             NSEvent.removeMonitor(escapeMonitor)
         }
     }
+
+    #if DEBUG
+    /// Puts a test center in the on-screen teaching phase without a popover.
+    func beginLiveOfferForTesting() { phase = .live }
+    var isOfferLiveForTesting: Bool { phase == .live }
+    #endif
 
     // MARK: Signals from a workspace
 
@@ -147,7 +166,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         anchorBeforeSwitch = slot.anchor
         model.mode = .undo
         model.rows = []
-        TabLayoutSettings.setMode(.rail)
+        TabLayoutSettings.setMode(.rail, defaults: defaults)
         workspace.bonsplitController.setRailOpen(true, inPane: slot.paneId)
         resizePopover()
         scheduleRefresh()
@@ -175,7 +194,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
         hidePopover()
         previewedRailSlot = nil
-        TabLayoutSettings.setMode(.tabs)
+        TabLayoutSettings.setMode(.tabs, defaults: defaults)
     }
 
     func performShowList() {
@@ -194,7 +213,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// Bonsplit toggles its sheet. Consume only the active teaching action.
     func performShowListFromCountCell(workspace: Workspace, paneId: PaneID) -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard TabLayoutSettings.mode() == .tabs else { return false }
+        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else { return false }
         switch phase {
         case .live, .pending:
             break
@@ -309,7 +328,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func considerStarting() {
-        guard TabLayoutSettings.mode() == .tabs else { return }
+        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else { return }
         guard let slot = frontSlot(), slot.overflowing, !slot.sheetOpen, slot.anchor?.window != nil else { return }
         guard policy.shouldOffer(now: Date(), layoutIsTabs: true, areaOverflowing: true) else { return }
         phase = .pending
@@ -318,7 +337,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func updateTeaching() {
-        guard TabLayoutSettings.mode() == .tabs else {
+        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else {
             endOffer()
             return
         }
@@ -334,7 +353,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func updateUndo() {
-        guard TabLayoutSettings.mode() == .rail else {
+        guard TabLayoutSettings.mode(defaults: defaults) == .rail else {
             endOffer()
             return
         }
@@ -505,6 +524,10 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// A key popover is skipped in favor of the main window. An inactive
     /// app has no front area, so the tip hides until the operator comes back.
     private func frontSlot() -> Slot? {
+        if let frontAreaOverride {
+            guard let area = frontAreaOverride() else { return nil }
+            return slots[slotID(area.workspace, area.paneId)]
+        }
         guard NSApp.isActive, let app = AppDelegate.shared else { return nil }
         var seen = Set<ObjectIdentifier>()
         for case let window? in [NSApp.keyWindow, NSApp.mainWindow] {

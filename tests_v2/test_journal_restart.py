@@ -18,6 +18,20 @@ from cmux import cmux, cmuxError
 from test_claude_attention_batch import eventually
 
 
+def wait_for_session_ready(client):
+    # The listener is available before C11-297 finishes restoring tabs.
+    # Retry only its explicit readiness response, not journal failures.
+    def session_ready():
+        try:
+            client._call('workspace.list', timeout_s=2)
+        except cmuxError as error:
+            if str(error).startswith('not_ready:'):
+                return False
+            raise
+        return True
+    eventually(session_ready, 'session restoration readiness', timeout=30)
+
+
 def main():
     address, cli = os.environ['C11_SOCKET_PATH'], os.environ['C11_CLI']
     app = next(p for p in Path(cli).resolve().parents if p.suffix == '.app')
@@ -31,6 +45,7 @@ def main():
     env = {k: v for k, v in os.environ.items() if not k.startswith(('C11_', 'CMUX_'))}
     env['CMUX_BUNDLE_ID'] = bundle
     with cmux(address) as client:
+        wait_for_session_ready(client)
         workspace = client.new_workspace()
         tabs = [client.list_surfaces(workspace)[0][1]]
         tabs += [client._call('tab.create', {'workspace_id': workspace, 'type': 'terminal'})['tab_id'] for _ in range(2)]
@@ -84,17 +99,7 @@ def main():
                 subprocess.Popen([str(executable)], env=launch_env, stdout=output, stderr=output, start_new_session=True)
             eventually(lambda: Path(address).is_socket(), 'resume socket', timeout=30)
             client.connect()
-            # The listener is available before C11-297 finishes restoring tabs.
-            # Retry only its explicit readiness response, not journal failures.
-            def session_ready():
-                try:
-                    client._call('workspace.list', timeout_s=2)
-                except cmuxError as error:
-                    if str(error).startswith('not_ready:'):
-                        return False
-                    raise
-                return True
-            eventually(session_ready, 'session restoration readiness', timeout=30)
+            wait_for_session_ready(client)
 
         def state(index):
             return client._call('tab.get_metadata', {'tab_id': tabs[index]})['metadata']['journal']

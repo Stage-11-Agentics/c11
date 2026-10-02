@@ -5,9 +5,8 @@
 # copy used for this probe. The script refuses the live ~/.codex profile,
 # runs Codex with a fresh CODEX_HOME, and denies writes to both the source
 # profile and the live profile. Exit codes:
-#   0  isolation failed: the bypass ran a tenant or project hook
-#   2  inconclusive, or isolation held (the result is not an implementation
-#      license; the plan must be revised before enabling hooks)
+#   0  isolation failed: an untrusted tenant or project hook ran
+#   2  inconclusive (including provider failure or an unverified layer)
 #   3  invalid invocation
 
 set -euo pipefail
@@ -70,10 +69,11 @@ fi
 probe_root="$(mktemp -d "${TMPDIR:-/tmp}/c11-codex-hook-trust.XXXXXX")"
 probe_home="$probe_root/codex-home"
 project_root="$probe_root/project"
+control_root="$probe_root/control-project"
 marker_root="$probe_root/markers"
 helper="$probe_root/marker-hook"
 profile="$probe_root/deny-writes.sb"
-mkdir -p "$probe_home" "$project_root/.codex" "$marker_root"
+mkdir -p "$probe_home" "$project_root/.codex" "$control_root/.codex" "$marker_root"
 
 cleanup() {
     rm -f "$probe_home/auth.json" "$profile" "$helper" 2>/dev/null || true
@@ -96,7 +96,7 @@ cat > "$helper" <<'EOF'
 set -eu
 marker_root="${C11_PROBE_MARKERS:?}"
 case "${1:-}" in
-    tenant|project|session)
+    tenant|project|control|session)
         umask 077
         printf 'marker=%s\n' "$1" > "$marker_root/$1"
         ;;
@@ -109,18 +109,56 @@ chmod 700 "$helper"
 
 tenant_command="$helper tenant"
 project_command="$helper project"
+control_command="$helper control"
 session_command="$helper session"
 
-# Codex's hook-file shape is intentionally the same minimal structural shape
-# used by its per-process -c hook argument. The marker helper writes no prompt,
-# tool, account, or model data.
-jq -n --arg command "$tenant_command" \
-    '{SessionStart:[{hooks:[{type:"command",command:$command,timeout:10}]}]}' \
-    > "$probe_home/hooks.json"
-jq -n --arg command "$project_command" \
-    '{SessionStart:[{hooks:[{type:"command",command:$command,timeout:10}]}]}' \
-    > "$project_root/.codex/hooks.json"
-chmod 600 "$probe_home/hooks.json" "$project_root/.codex/hooks.json"
+# Codex hook files have a top-level `hooks` envelope. Keep the fixture in the
+# provider's actual file shape, including an empty matcher, so a missing marker
+# is evidence about trust/discovery rather than a malformed test file.
+write_hooks_file() {
+    local command="$1"
+    local destination="$2"
+    jq -n --arg command "$command" \
+        '{hooks:{SessionStart:[{matcher:"",hooks:[{type:"command",command:$command,timeout:10}]}]}}' \
+        > "$destination"
+    chmod 600 "$destination"
+}
+
+write_hooks_file "$tenant_command" "$probe_home/hooks.json"
+write_hooks_file "$project_command" "$project_root/.codex/hooks.json"
+write_hooks_file "$control_command" "$control_root/.codex/hooks.json"
+
+# Codex discovers project hooks through the Git checkout. Both checkouts are
+# explicitly trusted as projects so Codex will load their project hook files;
+# neither hook file has persisted hook trust. The control checkout proves that
+# a valid project layer is discoverable and executable, while the probe
+# checkout supplies the no-bypass/bypass comparison.
+init_project() {
+    local root="$1"
+    git -C "$root" init -q
+    git -C "$root" config user.email c11-probe@example.invalid
+    git -C "$root" config user.name c11-probe
+    printf 'c11 hook trust probe\n' > "$root/.probe-fixture"
+    git -C "$root" add .probe-fixture
+    git -C "$root" commit -qm c11-probe-fixture
+}
+init_project "$project_root"
+init_project "$control_root"
+
+project_root="$(cd "$project_root" && pwd -P)"
+control_root="$(cd "$control_root" && pwd -P)"
+
+cat > "$probe_home/config.toml" <<EOF
+[features]
+hooks = true
+
+[projects."$control_root"]
+trust_level = "trusted"
+
+[projects."$project_root"]
+trust_level = "trusted"
+EOF
+chmod 600 "$probe_home/config.toml"
 
 session_entry="[{hooks=[{type=\"command\",command=\"${session_command}\",timeout=10}]}]"
 probe_prompt="${CODEX_PROBE_PROMPT:-Reply with the single word OK.}"
@@ -138,6 +176,11 @@ source_before="$probe_root/source-before"
 snapshot_tree "$live_codex_home" > "$live_before"
 snapshot_tree "$source_codex_home" > "$source_before"
 
+project_hooks_before="$probe_root/project-hooks-before"
+control_hooks_before="$probe_root/control-hooks-before"
+cp "$project_root/.codex/hooks.json" "$project_hooks_before"
+cp "$control_root/.codex/hooks.json" "$control_hooks_before"
+
 cat > "$profile" <<EOF
 (version 1)
 (deny file-write* (subpath "$live_codex_home"))
@@ -147,7 +190,8 @@ EOF
 
 run_bounded() {
     local mode="$1"
-    local log="$2"
+    local root="$2"
+    local log="$3"
     local -a args=(--enable hooks)
     if [[ "$mode" == "bypass" ]]; then
         args+=(--dangerously-bypass-hook-trust)
@@ -155,7 +199,6 @@ run_bounded() {
     args+=(
         -c "hooks.SessionStart=$session_entry"
         exec
-        --skip-git-repo-check
         --json
         -m "$probe_model"
         "$probe_prompt"
@@ -164,7 +207,7 @@ run_bounded() {
     (
         export CODEX_HOME="$probe_home"
         export C11_PROBE_MARKERS="$marker_root"
-        cd "$project_root"
+        cd "$root"
         sandbox-exec -f "$profile" "$codex_bin" "${args[@]}"
     ) > "$log" 2>&1 &
     local pid=$!
@@ -186,45 +229,118 @@ run_bounded() {
     return "$status"
 }
 
+marker_present() {
+    [[ -f "$marker_root/$1" ]]
+}
+
+provider_succeeded() {
+    local log="$1"
+    local status="$2"
+    [[ "$status" == 0 ]] || return 1
+    [[ -s "$log" ]] || return 1
+    grep -q '"type":"turn.completed"' "$log" || return 1
+    grep -q '"type":"item.completed"' "$log" || return 1
+    grep -q '"type":"agent_message"' "$log"
+}
+
+control_log="$probe_root/control.log"
 no_bypass_log="$probe_root/no-bypass.log"
 bypass_log="$probe_root/bypass.log"
+control_status=0
 no_bypass_status=0
 bypass_status=0
-run_bounded no-bypass "$no_bypass_log" || no_bypass_status=$?
+run_bounded bypass "$control_root" "$control_log" || control_status=$?
+control_provider=0
+control_project=0
+control_session=0
+if provider_succeeded "$control_log" "$control_status"; then control_provider=1; fi
+if marker_present control; then control_project=1; fi
+if marker_present session; then control_session=1; fi
+
+run_bounded no-bypass "$project_root" "$no_bypass_log" || no_bypass_status=$?
+no_bypass_provider=0
 no_bypass_tenant=0
 no_bypass_project=0
 no_bypass_session=0
-[[ -f "$marker_root/tenant" ]] && no_bypass_tenant=1
-[[ -f "$marker_root/project" ]] && no_bypass_project=1
-[[ -f "$marker_root/session" ]] && no_bypass_session=1
+if provider_succeeded "$no_bypass_log" "$no_bypass_status"; then no_bypass_provider=1; fi
+if marker_present tenant; then no_bypass_tenant=1; fi
+if marker_present project; then no_bypass_project=1; fi
+if marker_present session; then no_bypass_session=1; fi
 
-run_bounded bypass "$bypass_log" || bypass_status=$?
+run_bounded bypass "$project_root" "$bypass_log" || bypass_status=$?
+bypass_provider=0
 bypass_tenant=0
 bypass_project=0
 bypass_session=0
-[[ -f "$marker_root/tenant" ]] && bypass_tenant=1
-[[ -f "$marker_root/project" ]] && bypass_project=1
-[[ -f "$marker_root/session" ]] && bypass_session=1
+if provider_succeeded "$bypass_log" "$bypass_status"; then bypass_provider=1; fi
+if marker_present tenant; then bypass_tenant=1; fi
+if marker_present project; then bypass_project=1; fi
+if marker_present session; then bypass_session=1; fi
 
 live_after="$probe_root/live-after"
 source_after="$probe_root/source-after"
 snapshot_tree "$live_codex_home" > "$live_after"
 snapshot_tree "$source_codex_home" > "$source_after"
+live_profile_unchanged=1
+source_profile_unchanged=1
+if ! cmp -s "$live_before" "$live_after"; then live_profile_unchanged=0; fi
+if ! cmp -s "$source_before" "$source_after"; then source_profile_unchanged=0; fi
+project_hooks_unchanged=0
+control_hooks_unchanged=0
+if cmp -s "$project_hooks_before" "$project_root/.codex/hooks.json"; then project_hooks_unchanged=1; fi
+if cmp -s "$control_hooks_before" "$control_root/.codex/hooks.json"; then control_hooks_unchanged=1; fi
 
 version="$("$codex_bin" --version 2>/dev/null | head -n 1 | tr '\n' ' ' || true)"
 if [[ -z "$version" ]]; then
     version="unknown"
 fi
 printf 'VERSION %s\n' "$version"
-printf 'NO_BYPASS status=%s timeout=%s tenant=%s project=%s session=%s\n' \
+project_discoverable=0
+control_discoverable=0
+if [[ "$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)" == "$project_root" ]]; then project_discoverable=1; fi
+if [[ "$(git -C "$control_root" rev-parse --show-toplevel 2>/dev/null || true)" == "$control_root" ]]; then control_discoverable=1; fi
+printf 'DISCOVERY project_git=%s control_git=%s control_project=%s control_hooks_unchanged=%s project_hooks_unchanged=%s\n' \
+    "$project_discoverable" "$control_discoverable" "$control_project" \
+    "$control_hooks_unchanged" "$project_hooks_unchanged"
+printf 'PROFILE live_unchanged=%s source_unchanged=%s\n' \
+    "$live_profile_unchanged" "$source_profile_unchanged"
+printf 'CONTROL status=%s timeout=%s provider=%s project=%s session=%s\n' \
+    "$control_status" "$([[ "$control_status" == 124 ]] && printf 1 || printf 0)" \
+    "$control_provider" "$control_project" "$control_session"
+printf 'NO_BYPASS status=%s timeout=%s provider=%s tenant=%s project=%s session=%s\n' \
     "$no_bypass_status" "$([[ "$no_bypass_status" == 124 ]] && printf 1 || printf 0)" \
-    "$no_bypass_tenant" "$no_bypass_project" "$no_bypass_session"
-printf 'BYPASS status=%s timeout=%s tenant=%s project=%s session=%s\n' \
+    "$no_bypass_provider" "$no_bypass_tenant" "$no_bypass_project" "$no_bypass_session"
+printf 'BYPASS status=%s timeout=%s provider=%s tenant=%s project=%s session=%s\n' \
     "$bypass_status" "$([[ "$bypass_status" == 124 ]] && printf 1 || printf 0)" \
-    "$bypass_tenant" "$bypass_project" "$bypass_session"
+    "$bypass_provider" "$bypass_tenant" "$bypass_project" "$bypass_session"
 
-if ! cmp -s "$live_before" "$live_after" || ! cmp -s "$source_before" "$source_after"; then
+if (( live_profile_unchanged == 0 || source_profile_unchanged == 0 )); then
     inconclusive "PROFILE_METADATA_CHANGED"
+fi
+
+if (( control_discoverable == 0 || project_discoverable == 0 || control_provider == 0 || control_project == 0 )); then
+    inconclusive "POSITIVE_DISCOVERY_CONTROL_FAILED"
+fi
+
+if (( control_hooks_unchanged == 0 || project_hooks_unchanged == 0 )); then
+    inconclusive "HOOK_FIXTURE_CHANGED"
+fi
+
+if (( no_bypass_provider == 0 || bypass_provider == 0 || no_bypass_status != 0 || bypass_status != 0 )); then
+    inconclusive "PROVIDER_FAILURE_OR_NONCOMPARABLE_RUN"
+fi
+
+# The target project marker must fire in at least one successful run; otherwise
+# the project layer was never shown discoverable and the isolation claim is not
+# evidence. The bypass run is the positive execution leg for every untrusted
+# layer; a no-bypass execution is itself an isolation failure.
+if (( bypass_tenant == 0 || bypass_project == 0 || bypass_session == 0 )); then
+    inconclusive "PROJECT_OR_CONTROL_LAYER_UNVERIFIED"
+fi
+
+if (( no_bypass_tenant == 1 || no_bypass_project == 1 || no_bypass_session == 1 )); then
+    printf 'RESULT status=ISOLATION_FAILED reason=UNTRUSTED_LAYER_EXECUTED_WITHOUT_BYPASS\n'
+    exit 0
 fi
 
 if (( bypass_tenant == 1 || bypass_project == 1 )); then
@@ -232,7 +348,7 @@ if (( bypass_tenant == 1 || bypass_project == 1 )); then
     exit 0
 fi
 
-if (( bypass_session == 1 )) && (( bypass_tenant == 0 && bypass_project == 0 )); then
+if (( bypass_session == 1 )); then
     printf 'RESULT status=ISOLATION_HOLDS reason=SESSION_ONLY\n'
     exit 2
 fi

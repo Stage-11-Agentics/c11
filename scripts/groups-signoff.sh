@@ -118,12 +118,46 @@ quit_tagged() {
   /usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
   local deadline=$((SECONDS + 30))
   while (( SECONDS < deadline )); do
-    if ! pgrep -f "c11 DEV ${TAG}.app/Contents/MacOS/c11" >/dev/null 2>&1; then
+    if [[ -z "$(tagged_pids)" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  # A disposable tagged QA app may keep an AppKit quit request pending (for
+  # example while a lifecycle probe still owns a terminal). Once the graceful
+  # window has elapsed, terminate only this exact tagged executable so restore
+  # chapters cannot be skipped and no operator-owned c11 process is touched.
+  local pids
+  pids="$(tagged_pids)"
+  if [[ -n "$pids" ]]; then
+    kill $pids 2>/dev/null || true
+  fi
+  deadline=$((SECONDS + 10))
+  while (( SECONDS < deadline )); do
+    if [[ -z "$(tagged_pids)" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  pids="$(tagged_pids)"
+  if [[ -n "$pids" ]]; then
+    kill -KILL $pids 2>/dev/null || true
+  fi
+  deadline=$((SECONDS + 5))
+  while (( SECONDS < deadline )); do
+    if [[ -z "$(tagged_pids)" ]]; then
       return 0
     fi
     sleep 0.25
   done
   return 1
+}
+
+tagged_pids() {
+  /bin/ps -axo pid=,command= | /usr/bin/awk -v target="$APP/Contents/MacOS/c11" \
+    'index($0, target) { print $1 }'
 }
 
 launch_tagged() {

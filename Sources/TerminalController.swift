@@ -8300,14 +8300,11 @@ class TerminalController {
         return (positional, options)
     }
 
-    /// C11-165 COR-1: reject a v1 sidebar-metadata *write* (`set_status` /
-    /// `set_progress` / `log`) that carries no explicit `--tab` target, or an
-    /// empty one, instead of silently defaulting to the *selected* tab (audit
-    /// P0.2). These writes are tab(workspace)-scoped, so `--tab` is the
-    /// granularity-pinning ref. The CLI forwards `--workspace` /
-    /// `CMUX_WORKSPACE_ID` as `--tab=<id>`, so in-pane callers are unaffected;
-    /// only truly ref-less callers (cron / launchd / a fresh shell) are
-    /// rejected. Returns a v1 `ERROR:` string, or nil to proceed.
+    /// Reject v1 sidebar-metadata calls that must not fall back to the selected
+    /// workspace when the caller omits its `--tab` target. Writes were covered
+    /// by C11-165; C11-251 adds clear/list/state commands. The CLI resolves
+    /// `--workspace` / workspace environment context to `--tab=<id>` before
+    /// reaching this check. Returns a v1 `ERROR:` string, or nil to proceed.
     private func v1RejectMissingTabRef(_ args: String) -> String? {
         let options = parseOptions(args).options
         guard let r = SocketTabRefValidator.rejection(
@@ -8665,7 +8662,8 @@ class TerminalController {
     }
 
     func clearStatus(_ args: String) -> String {
-        clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
     }
 
     func clearMeta(_ args: String) -> String {
@@ -8673,7 +8671,8 @@ class TerminalController {
     }
 
     func listStatus(_ args: String) -> String {
-        listSidebarMetadata(args, emptyMessage: "No status entries")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return listSidebarMetadata(args, emptyMessage: "No status entries")
     }
 
     func listMeta(_ args: String) -> String {
@@ -8824,6 +8823,7 @@ class TerminalController {
     }
 
     func clearLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -8836,6 +8836,7 @@ class TerminalController {
     }
 
     func listLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         var limit: Int?
         if let limitStr = parsed.options["limit"] {
@@ -8916,6 +8917,7 @@ class TerminalController {
     }
 
     func clearProgress(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -9563,6 +9565,7 @@ class TerminalController {
     }
 
     func sidebarState(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = ""
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {

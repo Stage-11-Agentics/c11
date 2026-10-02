@@ -550,15 +550,18 @@ c11 set-description --from-file /tmp/desc.md
 Sidebar metadata commands are the fast path for reactive pills — separate from the per-tab JSON blob.
 
 ```bash
-c11 set-status <key> <value> [--icon <name>] [--color <#hex>]
-c11 clear-status <key>
-c11 list-status
-c11 set-progress <0.0-1.0> [--label <text>]
-c11 clear-progress
-c11 log [--level <level>] [--source <name>] <message>
-c11 list-log [--limit <n>]
-c11 clear-log
+c11 set-status <key> <value> [--icon <name>] [--color <#hex>] [--workspace <id|ref>]
+c11 clear-status <key> [--workspace <id|ref>]
+c11 list-status [--workspace <id|ref>]
+c11 set-progress <0.0-1.0> [--label <text>] [--workspace <id|ref>]
+c11 clear-progress [--workspace <id|ref>]
+c11 log [--level <level>] [--source <name>] [--workspace <id|ref>] <message>
+c11 list-log [--limit <n>] [--workspace <id|ref>]
+c11 clear-log [--workspace <id|ref>]
+c11 sidebar-state [--workspace <id|ref>]
 ```
+
+These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies the caller's workspace when `--workspace` is omitted; from a bare shell or cron, pass `--workspace`. `clear-status`, `clear-progress`, `clear-log`, `list-status`, `list-log`, and `sidebar-state` fail without a target; global `--window` alone is not a workspace target. They never read or change the operator's selected workspace.
 
 **Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `claude --dangerously-skip-permissions` keeps it intact.
 

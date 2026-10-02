@@ -783,6 +783,7 @@ class WorkspaceManager: ObservableObject {
     weak var window: NSWindow?
 
     @Published var workspaces: [Workspace] = []
+    @Published var workspaceGroups: [WorkspaceGroup] = []
     private var workspaceRefsCancellable: AnyCancellable?
     private var knownWorkspaceRefIds: Set<UUID> = []
     @Published private(set) var isWorkspaceCycleHot: Bool = false
@@ -1209,30 +1210,31 @@ class WorkspaceManager: ObservableObject {
         agentPIDSweepTimer = timer
     }
 
-    private func sweepStaleAgentPIDs() {
+    /// The liveness closure lets the incident test execute the real cleanup
+    /// without a timer or relying on the host's process table.
+    func sweepStaleAgentPIDs(
+        isRunning: (pid_t) -> Bool = { pid in
+            guard pid > 0 else { return false }
+            errno = 0
+            return kill(pid, 0) != -1 || POSIXErrorCode(rawValue: errno) != .ESRCH
+        },
+        notificationStore: TerminalNotificationStore? = nil
+    ) {
+        let store = notificationStore ?? AppDelegate.shared?.notificationStore
         for workspace in workspaces {
             var keysToRemove: [String] = []
             for (key, pid) in workspace.agentPIDs {
-                guard pid > 0 else {
-                    keysToRemove.append(key)
-                    continue
-                }
-                // kill(pid, 0) probes process liveness without sending a signal.
-                // ESRCH = process doesn't exist (stale). EPERM = process exists
-                // but we lack permission (not stale, keep tracking).
-                errno = 0
-                if kill(pid, 0) == -1, POSIXErrorCode(rawValue: errno) == .ESRCH {
+                if !isRunning(pid) {
                     keysToRemove.append(key)
                 }
             }
             if !keysToRemove.isEmpty {
                 for key in keysToRemove {
                     workspace.statusEntries.removeValue(forKey: key)
-                    workspace.agentPIDs.removeValue(forKey: key)
+                    if let tabId = workspace.removeAgentPID(key: key) {
+                        store?.clearNotifications(forWorkspaceId: workspace.id, surfaceId: tabId)
+                    }
                 }
-                // Also clear stale notifications (e.g. "Doing well, thanks!")
-                // left behind when Claude was killed without SessionEnd firing.
-                AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspace.id)
             }
         }
     }
@@ -2396,30 +2398,20 @@ class WorkspaceManager: ObservableObject {
 
     @discardableResult
     func reorderWorkspace(workspaceId: UUID, toIndex targetIndex: Int) -> Bool {
-        guard let currentIndex = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return false }
-        if workspaces.count <= 1 { return true }
-
-        let workspace = workspaces[currentIndex]
-        let clamped = clampedReorderIndex(for: workspace, targetIndex: targetIndex)
-        if currentIndex == clamped { return true }
-
-        workspaces.remove(at: currentIndex)
-        workspaces.insert(workspace, at: clamped)
+        guard let plan = try? WorkspaceReorderPlanner.move(
+            workspaces: workspaceOrderEntries, workspaceId: workspaceId, toIndex: targetIndex
+        ) else { return false }
+        applyWorkspaceReorderPlan(plan)
         return true
     }
 
     @discardableResult
     func reorderWorkspace(workspaceId: UUID, before beforeId: UUID? = nil, after afterId: UUID? = nil) -> Bool {
-        guard workspaces.contains(where: { $0.id == workspaceId }) else { return false }
-        if let beforeId {
-            guard let idx = workspaces.firstIndex(where: { $0.id == beforeId }) else { return false }
-            return reorderWorkspace(workspaceId: workspaceId, toIndex: idx)
-        }
-        if let afterId {
-            guard let idx = workspaces.firstIndex(where: { $0.id == afterId }) else { return false }
-            return reorderWorkspace(workspaceId: workspaceId, toIndex: idx + 1)
-        }
-        return false
+        guard let plan = try? WorkspaceReorderPlanner.move(
+            workspaces: workspaceOrderEntries, workspaceId: workspaceId, before: beforeId, after: afterId
+        ) else { return false }
+        applyWorkspaceReorderPlan(plan)
+        return true
     }
 
     func setCustomTitle(workspaceId: UUID, title: String?) {
@@ -2457,15 +2449,6 @@ class WorkspaceManager: ObservableObject {
         let pinnedCount = workspaces.filter { $0.isPinned }.count
         let insertIndex = min(pinnedCount, workspaces.count)
         workspaces.insert(workspace, at: insertIndex)
-    }
-
-    private func clampedReorderIndex(for workspace: Workspace, targetIndex: Int) -> Int {
-        let clamped = max(0, min(targetIndex, workspaces.count - 1))
-        let pinnedCount = workspaces.filter { $0.isPinned }.count
-        if workspace.isPinned {
-            return min(clamped, max(0, pinnedCount - 1))
-        }
-        return max(clamped, pinnedCount)
     }
 
     // MARK: - Surface Directory Updates (Backwards Compatibility)
@@ -2669,6 +2652,7 @@ class WorkspaceManager: ObservableObject {
         sidebarSelectedWorkspaceIds.remove(workspaceId)
 
         let removed = workspaces.remove(at: index)
+        removed.groupId = nil
         unwireClosedBrowserTracking(for: removed)
         removed.owningWorkspaceManager = nil
         lastFocusedTabByWorkspace.removeValue(forKey: removed.id)
@@ -2689,11 +2673,14 @@ class WorkspaceManager: ObservableObject {
 
     /// Attach an existing workspace to this window.
     func attachWorkspace(_ workspace: Workspace, at index: Int? = nil, select: Bool = true) {
+        workspace.groupId = nil
         workspace.owningWorkspaceManager = self
         wireClosedBrowserTracking(for: workspace)
         let insertIndex: Int = {
-            guard let index else { return workspaces.count }
-            return max(0, min(index, workspaces.count))
+            let pinnedCount = workspaces.filter { $0.isPinned }.count
+            let lower = workspace.isPinned ? 0 : pinnedCount
+            let upper = workspace.isPinned ? pinnedCount : workspaces.count
+            return max(lower, min(index ?? upper, upper))
         }()
         workspaces.insert(workspace, at: insertIndex)
         if select {
@@ -5584,6 +5571,15 @@ extension WorkspaceManager {
         var hasher = Hasher()
         hasher.combine(selectedWorkspaceId)
         hasher.combine(workspaces.count)
+        hasher.combine(workspaceGroups.count)
+        for group in workspaceGroups {
+            hasher.combine(group.id)
+            hasher.combine(group.name)
+            hasher.combine(group.color)
+            hasher.combine(group.icon)
+            hasher.combine(group.isCollapsed)
+            hasher.combine(group.isPinned)
+        }
         // Tier 1 Phase 2: fold in the monotonic per-process revision counter
         // from SurfaceMetadataStore so metadata-only changes (which never
         // touch workspace/panel counts or titles) still flip the fingerprint
@@ -5604,6 +5600,7 @@ extension WorkspaceManager {
             hasher.combine(workspace.customTitle ?? "")
             hasher.combine(workspace.customColor ?? "")
             hasher.combine(workspace.isPinned)
+            hasher.combine(workspace.groupId)
             hasher.combine(workspace.panels.count)
             hasher.combine(workspace.statusEntries.count)
             hasher.combine(workspace.metadataBlocks.count)
@@ -5665,7 +5662,8 @@ extension WorkspaceManager {
         }
         return SessionWorkspaceManagerSnapshot(
             selectedWorkspaceIndex: selectedWorkspaceIndex,
-            workspaces: workspaceSnapshots
+            workspaces: workspaceSnapshots,
+            workspaceGroups: workspaceGroups
         )
     }
 
@@ -5696,6 +5694,9 @@ extension WorkspaceManager {
         // emissions (empty tabs, nil selectedTabId) that can leave SwiftUI's
         // mountedWorkspaceIds empty and cause a frozen blank launch state (#399).
         var newTabs: [Workspace] = []
+        let restoredGroups = WorkspaceGroupProjection.restoredGroups(snapshot.workspaceGroups)
+        let restoredGroupIds = Set(restoredGroups.map(\.id))
+        var orphanMembershipCount = 0
         let workspaceSnapshots = snapshot.workspaces
             .prefix(SessionPersistencePolicy.maxWorkspacesPerWindow)
         for workspaceSnapshot in workspaceSnapshots {
@@ -5715,6 +5716,10 @@ extension WorkspaceManager {
             )
             workspace.owningWorkspaceManager = self
             workspace.restoreSessionSnapshot(workspaceSnapshot)
+            if let groupId = workspace.groupId, !restoredGroupIds.contains(groupId) {
+                workspace.groupId = nil
+                orphanMembershipCount += 1
+            }
             wireClosedBrowserTracking(for: workspace)
             workspace.startMailboxDispatcher()
             newTabs.append(workspace)
@@ -5740,8 +5745,13 @@ extension WorkspaceManager {
             newSelectedId = newTabs.first?.id
         }
 
-        // Single atomic assignment of @Published properties so SwiftUI observers
-        // never see an intermediate state with empty tabs or nil selection.
+        // Preserve selected UUID before normalizing corrupt or legacy pin order.
+        newTabs = newTabs.filter { $0.isPinned } + newTabs.filter { !$0.isPinned }
+        if orphanMembershipCount > 0 {
+            NSLog("c11 session restore: cleared %d orphan workspace group memberships", orphanMembershipCount)
+        }
+        workspaceGroups = restoredGroups
+        // Single workspace-array publication; folder records precede membership visibility.
         workspaces = newTabs
         selectedWorkspaceId = newSelectedId
         for workspace in newTabs {
@@ -5819,4 +5829,163 @@ extension Notification.Name {
     static let webViewDidReceiveClick = Notification.Name("webViewDidReceiveClick")
     static let terminalPortalVisibilityDidChange = Notification.Name("cmux.terminalPortalVisibilityDidChange")
     static let browserPortalRegistryDidChange = Notification.Name("cmux.browserPortalRegistryDidChange")
+}
+
+// MARK: - Window-local workspace folders
+extension WorkspaceManager {
+    var workspaceOrderEntries: [WorkspaceOrderEntry] {
+        workspaces.map { WorkspaceOrderEntry(id: $0.id, isPinned: $0.isPinned, groupId: $0.groupId) }
+    }
+
+    var workspaceSidebarProjection: [WorkspaceSidebarItem] {
+        WorkspaceGroupProjection.items(groups: workspaceGroups, workspaces: workspaceOrderEntries)
+    }
+
+    func batchWorkspaceReorderPlan(orderedWorkspaceIds: [UUID]) throws -> WorkspaceReorderPlan {
+        try WorkspaceReorderPlanner.batch(workspaces: workspaceOrderEntries, orderedWorkspaceIds: orderedWorkspaceIds)
+    }
+
+    @discardableResult
+    func applyBatchWorkspaceReorder(orderedWorkspaceIds: [UUID]) throws -> WorkspaceReorderPlan {
+        let plan = try batchWorkspaceReorderPlan(orderedWorkspaceIds: orderedWorkspaceIds)
+        applyWorkspaceReorderPlan(plan)
+        return plan
+    }
+
+    private func applyWorkspaceReorderPlan(_ plan: WorkspaceReorderPlan) {
+        guard plan.changed else { return }
+        let byId = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
+        // Plans are produced and applied synchronously on MainActor; no stale-plan API.
+        workspaces = plan.finalWorkspaceIds.compactMap { byId[$0] }
+    }
+
+    @discardableResult
+    func createWorkspaceGroup(name: String, color: String? = nil, icon: String? = nil) throws -> WorkspaceGroup {
+        let group = WorkspaceGroup(name: try normalizedGroupName(name), color: try normalizedGroupColor(color),
+                                   icon: try validatedGroupIcon(icon))
+        workspaceGroups.append(group)
+        return group
+    }
+
+    func renameWorkspaceGroup(id: UUID, name: String) throws {
+        let index = try workspaceGroupIndex(id)
+        let value = try normalizedGroupName(name)
+        workspaceGroups[index].name = value
+    }
+
+    func setWorkspaceGroupColor(id: UUID, color: String?) throws {
+        let index = try workspaceGroupIndex(id)
+        let value = try normalizedGroupColor(color)
+        workspaceGroups[index].color = value
+    }
+
+    func setWorkspaceGroupIcon(id: UUID, icon: String?) throws {
+        let index = try workspaceGroupIndex(id)
+        let value = try validatedGroupIcon(icon)
+        workspaceGroups[index].icon = value
+    }
+
+    func setWorkspaceGroupCollapsed(id: UUID, collapsed: Bool) throws {
+        workspaceGroups[try workspaceGroupIndex(id)].isCollapsed = collapsed
+    }
+
+    func setWorkspaceGroupPinned(id: UUID, pinned: Bool) throws {
+        let index = try workspaceGroupIndex(id)
+        guard workspaceGroups[index].isPinned != pinned else { return }
+        var final = workspaceGroups
+        var group = final.remove(at: index)
+        group.isPinned = pinned
+        final.insert(group, at: final.filter(\.isPinned).count)
+        workspaceGroups = final
+    }
+
+    /// Both delete and ungroup detach live members; neither closes a workspace.
+    func deleteWorkspaceGroup(id: UUID) throws {
+        let index = try workspaceGroupIndex(id)
+        for workspace in workspaces where workspace.groupId == id { workspace.groupId = nil }
+        workspaceGroups.remove(at: index)
+    }
+
+    func addWorkspacesToGroup(id: UUID, workspaceIds: [UUID]) throws {
+        _ = try workspaceGroupIndex(id)
+        let members = try validatedGroupWorkspaces(workspaceIds)
+        guard members.allSatisfy({ $0.groupId == nil }) else { throw WorkspaceGroupOperationError.alreadyGrouped }
+        for workspace in members { workspace.groupId = id }
+    }
+
+    func removeWorkspacesFromGroup(id: UUID, workspaceIds: [UUID]) throws {
+        _ = try workspaceGroupIndex(id)
+        let members = try validatedGroupWorkspaces(workspaceIds)
+        guard members.allSatisfy({ $0.groupId == id }) else { throw WorkspaceGroupOperationError.notMember }
+        for workspace in members { workspace.groupId = nil }
+    }
+
+    func moveWorkspaceToGroup(workspaceId: UUID, groupId: UUID?, before: UUID? = nil, after: UUID? = nil) throws {
+        if let groupId { _ = try workspaceGroupIndex(groupId) }
+        let plan = try WorkspaceReorderPlanner.transfer(workspaces: workspaceOrderEntries,
+                                                       workspaceId: workspaceId, groupId: groupId,
+                                                       before: before, after: after)
+        workspaces.first { $0.id == workspaceId }?.groupId = groupId
+        applyWorkspaceReorderPlan(plan)
+    }
+
+    func reorderWorkspaceGroup(id: UUID, toIndex: Int? = nil, before: UUID? = nil, after: UUID? = nil) throws {
+        _ = try workspaceGroupIndex(id)
+        if let relative = before ?? after { _ = try workspaceGroupIndex(relative) }
+        let plan = try WorkspaceReorderPlanner.move(
+            workspaces: workspaceGroups.map { WorkspaceOrderEntry(id: $0.id, isPinned: $0.isPinned) },
+            workspaceId: id, toIndex: toIndex, before: before, after: after)
+        guard plan.changed else { return }
+        let byId = Dictionary(uniqueKeysWithValues: workspaceGroups.map { ($0.id, $0) })
+        workspaceGroups = plan.finalWorkspaceIds.compactMap { byId[$0] }
+    }
+
+    @discardableResult
+    func focusWorkspaceGroup(id: UUID) throws -> UUID {
+        let index = try workspaceGroupIndex(id)
+        let members = workspaces.filter { $0.groupId == id }
+        guard let member = members.first(where: { $0.id == selectedWorkspaceId }) ?? members.first else {
+            throw WorkspaceGroupOperationError.emptyGroup
+        }
+        workspaceGroups[index].isCollapsed = false
+        if selectedWorkspaceId != member.id { selectWorkspace(member) }
+        return member.id
+    }
+
+    private func workspaceGroupIndex(_ id: UUID) throws -> Int {
+        guard let index = workspaceGroups.firstIndex(where: { $0.id == id }) else {
+            throw WorkspaceGroupOperationError.groupNotFound
+        }
+        return index
+    }
+
+    private func validatedGroupWorkspaces(_ ids: [UUID]) throws -> [Workspace] {
+        try WorkspaceReorderPlanner.validateTargets(ids, workspaces: workspaceOrderEntries)
+        let byId = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
+        return ids.compactMap { byId[$0] }
+    }
+
+    private func normalizedGroupName(_ name: String) throws -> String {
+        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            throw WorkspaceGroupOperationError(code: "invalid_params", message: String(localized: "workspaceGroup.error.invalidName", defaultValue: "A workspace group name cannot be empty."))
+        }
+        return value
+    }
+
+    private func normalizedGroupColor(_ color: String?) throws -> String? {
+        guard let color else { return nil }
+        guard let value = WorkspaceColorSettings.normalizedHex(color) else {
+            throw WorkspaceGroupOperationError(code: "invalid_params", message: String(localized: "workspaceGroup.error.invalidColor", defaultValue: "Provide a valid hexadecimal color."))
+        }
+        return value
+    }
+
+    private func validatedGroupIcon(_ icon: String?) throws -> String? {
+        guard let icon else { return nil }
+        guard NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil else {
+            throw WorkspaceGroupOperationError(code: "invalid_params", message: String(localized: "workspaceGroup.error.invalidIcon", defaultValue: "Provide a valid SF Symbol name."))
+        }
+        return icon
+    }
 }

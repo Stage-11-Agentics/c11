@@ -304,6 +304,7 @@ class TerminalController {
     static let focusIntentV2Methods: Set<String> = [
         "window.focus",
         "workspace.select",
+        "workspace.group.focus",
         "workspace.next",
         "workspace.previous",
         "workspace.last",
@@ -330,6 +331,7 @@ class TerminalController {
     enum V2HandleKind: String, CaseIterable {
         case window
         case workspace
+        case workspaceGroup = "workspace_group"
         case pane = "area"
         case surface = "tab"
     }
@@ -2144,6 +2146,23 @@ class TerminalController {
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
+        // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
+        "workspace.reorder_batch",
+        "workspace.group.list",
+        "workspace.group.create",
+        "workspace.group.rename",
+        "workspace.group.delete",
+        "workspace.group.ungroup",
+        "workspace.group.add",
+        "workspace.group.remove",
+        "workspace.group.move",
+        "workspace.group.collapse",
+        "workspace.group.expand",
+        "workspace.group.pin",
+        "workspace.group.unpin",
+        "workspace.group.set_color",
+        "workspace.group.set_icon",
+        "workspace.group.focus",
         "history.list",
         "tab.send_text",
         "tab.send_key",
@@ -2195,6 +2214,7 @@ class TerminalController {
     // bash) always include explicit IDs so the prompt-frequency telemetry
     // hits the fast path; only ad-hoc CLI invocations land on the slow path.
     nonisolated static let socketWorkerV1Commands: Set<String> = [
+        "clear_notifications",
         "report_pwd",
         "report_shell_state",
         "report_agent_activity",
@@ -2230,7 +2250,6 @@ class TerminalController {
     // while the run loop drains status writes cooperatively.
     nonisolated static let asyncAckV1Commands: Set<String> = [
         "set_status",
-        "clear_notifications",
         "set_agent_pid",
         "notify_target",
     ]
@@ -2300,6 +2319,7 @@ class TerminalController {
             "workspace_count": workspaceNodes.count,
             "selected_workspace_id": v2OrNull(summary.selectedWorkspaceId?.uuidString),
             "selected_workspace_ref": v2Ref(kind: .workspace, uuid: summary.selectedWorkspaceId),
+            "workspace_groups": AppDelegate.shared?.workspaceManagerFor(windowId: summary.windowId).map { v2WorkspaceGroupRecords($0) } ?? [],
             "workspaces": workspaceNodes
         ]
     }
@@ -2466,6 +2486,7 @@ class TerminalController {
             "title": workspace.title,
             "selected": selected,
             "pinned": workspace.isPinned,
+            "group_id": v2OrNull(workspace.groupId?.uuidString),
             "root_directory": v2OrNull(workspace.rootDirectory),
             "content_area": contentArea,
             "areas": panes,
@@ -2728,6 +2749,9 @@ class TerminalController {
         for item in windows {
             _ = v2EnsureHandleRef(kind: .window, uuid: item.windowId)
             if let tm = app.workspaceManagerFor(windowId: item.windowId) {
+                for group in tm.workspaceGroups {
+                    _ = v2EnsureHandleRef(kind: .workspaceGroup, uuid: group.id)
+                }
                 for ws in tm.workspaces {
                     _ = v2EnsureHandleRef(kind: .workspace, uuid: ws.id)
                     for paneId in ws.bonsplitController.allPaneIds {
@@ -5946,7 +5970,15 @@ class TerminalController {
         let parsed = parseOptions(trimmed)
         guard let tabOption = parsed.options["tab"],
               !tabOption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "ERROR: Usage: clear_notifications [--tab=X]"
+            return "ERROR: Usage: clear_notifications [--tab=X [--panel=Y]]"
+        }
+        let rawPanel = parsed.options["panel"] ?? parsed.options["surface"]
+        let panelId: UUID?
+        if let rawPanel {
+            guard let id = UUID(uuidString: rawPanel) else { return "ERROR: Invalid originating tab" }
+            panelId = id
+        } else {
+            panelId = nil
         }
         var workspaceId: UUID?
         v2MainSync {
@@ -5957,10 +5989,20 @@ class TerminalController {
         guard let workspaceId else {
             return "ERROR: Tab not found"
         }
+        var result = "OK"
         v2MainSync {
-            TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId)
+            if let panelId {
+                guard let workspace = workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else {
+                    result = "ERROR: Tab not found"
+                    return
+                }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            } else {
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId)
+            }
         }
-        return "OK"
+        return result
     }
 
     func setAppFocusOverride(_ arg: String) -> String {
@@ -8010,7 +8052,7 @@ class TerminalController {
         return (nil, error)
     }
 
-    private func workspaceForSidebarMutation(id: UUID) -> Workspace? {
+    func workspaceForSidebarMutation(id: UUID) -> Workspace? {
         if let workspace = workspaceManager?.workspaces.first(where: { $0.id == id }) {
             return workspace
         }
@@ -8197,7 +8239,7 @@ class TerminalController {
                 }
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
-                    workspace.agentPIDs[key] = pidValue
+                    workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
                 }
                 return
             }
@@ -8212,7 +8254,7 @@ class TerminalController {
                 timestamp: Date()
             )
             if let pidValue {
-                workspace.agentPIDs[key] = pidValue
+                workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
             }
         }
         return "OK"
@@ -8233,13 +8275,13 @@ class TerminalController {
             if workspace.statusEntries.removeValue(forKey: key) == nil {
                 result = "OK (key not found)"
             }
-            workspace.agentPIDs.removeValue(forKey: key)
+            workspace.removeAgentPID(key: key)
         }
         return result
     }
 
     /// Register an agent PID for stale-session detection without setting a visible status entry.
-    /// Usage: set_agent_pid <key> <pid> [--tab=<id>]
+    /// Usage: set_agent_pid <key> <pid> [--tab=<workspace>] [--panel=<tab>]
     func setAgentPID(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard parsed.positional.count >= 2,
@@ -8251,9 +8293,11 @@ class TerminalController {
         guard let targetWorkspaceId = workspaceResolution.workspaceId else {
             return workspaceResolution.error ?? "ERROR: No tab selected"
         }
+        let explicitSurfaceId = normalizedOptionValue(parsed.options["panel"] ?? parsed.options["surface"])
+            .flatMap { UUID(uuidString: $0) }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.agentPIDs[key] = pid
+            workspace.registerAgentPID(pid, key: key, tabId: explicitSurfaceId)
         }
         return "OK"
     }
@@ -8272,7 +8316,7 @@ class TerminalController {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.agentPIDs.removeValue(forKey: key)
+            workspace.removeAgentPID(key: key)
         }
         return "OK"
     }

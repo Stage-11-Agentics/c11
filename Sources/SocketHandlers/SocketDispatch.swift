@@ -87,6 +87,10 @@ extension TerminalController {
         dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
         #endif
 
+        if request.method.hasPrefix("workspace.group.") || request.method == "workspace.reorder_batch" {
+            return v2Result(id: request.id, v2WorkspaceGroupCommand(request.method, params: request.params))
+        }
+
         switch request.method {
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
@@ -229,6 +233,8 @@ extension TerminalController {
     /// Dispatch a v1 command to its nonisolated worker variant.
     private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
         switch head {
+        case "clear_notifications":
+            return clearNotificationsWorker(args)
         case "report_pwd":
             return reportPwdWorker(args)
         case "report_shell_state":
@@ -379,6 +385,31 @@ extension TerminalController {
             i += 1
         }
         return (positional, options)
+    }
+
+    private nonisolated func clearNotificationsWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let rawPanel = parsed.options["panel"] ?? parsed.options["surface"] else {
+            // Interactive all/workspace clears retain their synchronous result.
+            return nil
+        }
+        guard let panelId = UUID(uuidString: rawPanel),
+              let rawWorkspace = parsed.options["tab"],
+              let workspaceId = UUID(uuidString: rawWorkspace),
+              parsed.positional.isEmpty else {
+            return "ERROR: Scoped clear requires workspace and originating tab UUIDs"
+        }
+        // Hook-frequency parsing is worker-owned. A missing/stale association
+        // is a queued no-op, never a workspace-wide clear or focus fallback.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let workspace = self.workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else { return }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            }
+        }
+        return "OK"
     }
 
     private nonisolated func reportPwdWorker(_ args: String) -> String? {

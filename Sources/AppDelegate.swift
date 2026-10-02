@@ -8238,6 +8238,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     notificationId: notification.id
                 )
             },
+            onOpenFlag: { [weak self] flag in
+                _ = self?.openNotification(
+                    workspaceId: flag.workspaceId,
+                    surfaceId: flag.surfaceId,
+                    notificationId: nil
+                )
+            },
             onJumpToLatestUnread: { [weak self] in
                 self?.jumpToLatestUnread()
             },
@@ -13847,14 +13854,19 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu = NSMenu(title: "c11")
     private let notificationStore: TerminalNotificationStore
+    private let attentionIndex: TabAttentionIndex
     private let onShowMainWindow: () -> Void
     private let onShowNotifications: () -> Void
     private let onOpenNotification: (TerminalNotification) -> Void
+    private let onOpenFlag: (TabAttentionSnapshot) -> Void
     private let onJumpToLatestUnread: () -> Void
     private let onCheckForUpdates: () -> Void
     private let onOpenPreferences: () -> Void
     private let onQuitApp: () -> Void
     private var notificationsCancellable: AnyCancellable?
+    private var attentionCancellable: AnyCancellable?
+    private var refreshScheduled = false
+    private var removedFromMenuBar = false
     private let buildHintTitle: String?
 
     private let stateHintItem = NSMenuItem(title: String(localized: "statusMenu.noUnread", defaultValue: "No unread notifications"), action: nil, keyEquivalent: "")
@@ -13871,6 +13883,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit c11"), action: nil, keyEquivalent: "")
 
     private var notificationItems: [NSMenuItem] = []
+    private var flagItems: [NSMenuItem] = []
+    private let flaggedSectionItem = NSMenuItem(title: String(localized: "statusMenu.flagged", defaultValue: "Flagged Tabs"), action: nil, keyEquivalent: "")
+    private let flagSectionSeparator = NSMenuItem.separator()
     private let maxInlineNotificationItems = 6
 
     init(
@@ -13878,15 +13893,19 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         onShowMainWindow: @escaping () -> Void,
         onShowNotifications: @escaping () -> Void,
         onOpenNotification: @escaping (TerminalNotification) -> Void,
+        onOpenFlag: @escaping (TabAttentionSnapshot) -> Void,
         onJumpToLatestUnread: @escaping () -> Void,
         onCheckForUpdates: @escaping () -> Void,
         onOpenPreferences: @escaping () -> Void,
-        onQuitApp: @escaping () -> Void
+        onQuitApp: @escaping () -> Void,
+        attentionIndex: TabAttentionIndex = .shared
     ) {
         self.notificationStore = notificationStore
+        self.attentionIndex = attentionIndex
         self.onShowMainWindow = onShowMainWindow
         self.onShowNotifications = onShowNotifications
         self.onOpenNotification = onOpenNotification
+        self.onOpenFlag = onOpenFlag
         self.onJumpToLatestUnread = onJumpToLatestUnread
         self.onCheckForUpdates = onCheckForUpdates
         self.onOpenPreferences = onOpenPreferences
@@ -13907,7 +13926,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         notificationsCancellable = notificationStore.$notifications
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.refreshUI()
+                self?.scheduleRefreshUI()
+            }
+
+        attentionCancellable = attentionIndex.$snapshots
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.scheduleRefreshUI()
             }
 
         refreshUI()
@@ -13932,6 +13957,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         menu.addItem(showMainWindowItem)
 
         menu.addItem(notificationListSeparator)
+        flaggedSectionItem.isEnabled = false
+        menu.addItem(flaggedSectionItem)
+        menu.addItem(flagSectionSeparator)
         notificationSectionSeparator.isHidden = true
         menu.addItem(notificationSectionSeparator)
 
@@ -13977,15 +14005,37 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     }
 
     func removeFromMenuBar() {
+        removedFromMenuBar = true
         notificationsCancellable?.cancel()
         notificationsCancellable = nil
+        attentionCancellable?.cancel()
+        attentionCancellable = nil
         statusItem.menu = nil
         NSStatusBar.system.removeStatusItem(statusItem)
     }
 
+    private func scheduleRefreshUI() {
+        guard !refreshScheduled, !removedFromMenuBar else { return }
+        refreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.refreshScheduled = false
+            guard !self.removedFromMenuBar else { return }
+            self.refreshUI()
+        }
+    }
+
+#if DEBUG
+    var menuForTesting: NSMenu { menu }
+    var statusItemTooltipForTesting: String? { statusItem.button?.toolTip }
+    var statusItemImageForTesting: NSImage? { statusItem.button?.image }
+#endif
+
     private func refreshUI() {
         let snapshot = NotificationMenuSnapshotBuilder.make(
             notifications: notificationStore.notifications,
+            flags: attentionIndex.oldestFlags,
+            attentionSnapshots: attentionIndex.snapshots,
             maxInlineNotificationItems: maxInlineNotificationItems
         )
         let actualUnreadCount = snapshot.unreadCount
@@ -14002,35 +14052,42 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .showNotifications), to: showNotificationsItem)
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .jumpToUnread), to: jumpToUnreadItem)
 
-        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications
+        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty
         markAllReadItem.isEnabled = snapshot.hasUnreadNotifications
         clearAllItem.isEnabled = snapshot.hasNotifications
 
-        rebuildInlineNotificationItems(recentNotifications: snapshot.recentNotifications)
+        rebuildInlineNotificationItems(snapshot: snapshot)
 
         if let button = statusItem.button {
-            button.image = MenuBarIconRenderer.makeImage(unreadCount: displayedUnreadCount)
-            button.toolTip = makeStatusItemTooltip(displayedUnreadCount: displayedUnreadCount)
+            button.image = MenuBarIconRenderer.makeImage(unreadCount: displayedUnreadCount, flagCount: snapshot.flags.count)
+            button.toolTip = makeStatusItemTooltip(displayedUnreadCount: displayedUnreadCount, snapshot: snapshot)
         }
     }
 
-    private func makeStatusItemTooltip(displayedUnreadCount: Int) -> String {
-        if displayedUnreadCount == 0 {
+    private func makeStatusItemTooltip(displayedUnreadCount: Int, snapshot: NotificationMenuSnapshot) -> String {
+        if displayedUnreadCount == 0 && snapshot.flags.isEmpty {
             return "c11"
         }
 
-        let countLine: String = displayedUnreadCount == 1
-            ? "c11: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
-            : "c11: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")
-
-        let titleSummary = unreadTabTitleSummary(maxItems: maxInlineNotificationItems)
-        return titleSummary.isEmpty ? countLine : countLine + "\n" + titleSummary
+        var lines: [String] = []
+        if !snapshot.flags.isEmpty {
+            lines.append(NotificationMenuSnapshotBuilder.flagCountTitle(snapshot.flags.count))
+            lines.append(contentsOf: snapshot.flags.prefix(maxInlineNotificationItems).compactMap(\.flagReason))
+        }
+        if displayedUnreadCount > 0 {
+            lines.append(displayedUnreadCount == 1
+                ? String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
+                : String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications"))
+            let titleSummary = unreadTabTitleSummary(notifications: snapshot.signalNotifications, maxItems: maxInlineNotificationItems)
+            if !titleSummary.isEmpty { lines.append(titleSummary) }
+        }
+        return "c11: " + lines.joined(separator: "\n")
     }
 
-    private func unreadTabTitleSummary(maxItems: Int) -> String {
+    private func unreadTabTitleSummary(notifications: [TerminalNotification], maxItems: Int) -> String {
         var seen: Set<String> = []
         var ordered: [String] = []
-        for notification in notificationStore.notifications {
+        for notification in notifications {
             guard !notification.isRead else { continue }
             let raw = AppDelegate.shared?.tabTitle(for: notification.workspaceId)
             let title = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -14057,17 +14114,35 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         item.keyEquivalentModifierMask = shortcut.modifierFlags
     }
 
-    private func rebuildInlineNotificationItems(recentNotifications: [TerminalNotification]) {
-        for item in notificationItems {
+    private func rebuildInlineNotificationItems(snapshot: NotificationMenuSnapshot) {
+        for item in notificationItems + flagItems {
             menu.removeItem(item)
         }
         notificationItems.removeAll(keepingCapacity: true)
+        flagItems.removeAll(keepingCapacity: true)
 
-        notificationListSeparator.isHidden = recentNotifications.isEmpty
-        notificationSectionSeparator.isHidden = recentNotifications.isEmpty
-        guard !recentNotifications.isEmpty else { return }
+        let recentNotifications = snapshot.recentNotifications
+        notificationListSeparator.isHidden = recentNotifications.isEmpty && snapshot.flags.isEmpty
+        flaggedSectionItem.isHidden = snapshot.flags.isEmpty
+        flagSectionSeparator.isHidden = snapshot.flags.isEmpty || recentNotifications.isEmpty
+        notificationSectionSeparator.isHidden = recentNotifications.isEmpty && snapshot.flags.isEmpty
 
-        let insertionIndex = menu.index(of: showNotificationsItem)
+        let flagInsertionIndex = menu.index(of: flagSectionSeparator)
+        for (offset, flag) in snapshot.flags.enumerated() {
+            let item = NSMenuItem(title: "", action: #selector(openFlagItemAction(_:)), keyEquivalent: "")
+            item.target = self
+            let workspaceTitle = AppDelegate.shared?.tabTitle(for: flag.workspaceId) ?? flag.workspaceId.uuidString
+            let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: flag.workspaceId)?.workspaces.first { $0.id == flag.workspaceId }
+            let tabTitle = workspace?.tabTitle(panelId: flag.surfaceId) ?? flag.surfaceId.uuidString
+            let fullTitle = "⚑ \(flag.flagReason ?? "")\n\(workspaceTitle) · \(tabTitle)"
+            item.title = MenuBarNotificationLineFormatter.flagMenuTitle(fullTitle)
+            item.toolTip = fullTitle
+            item.representedObject = FlagMenuItemPayload(flag: flag)
+            menu.insertItem(item, at: flagInsertionIndex + offset)
+            flagItems.append(item)
+        }
+
+        let insertionIndex = menu.index(of: notificationSectionSeparator)
         guard insertionIndex >= 0 else { return }
 
         for (offset, notification) in recentNotifications.enumerated() {
@@ -14090,6 +14165,11 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     @objc private func openNotificationItemAction(_ sender: NSMenuItem) {
         guard let payload = sender.representedObject as? NotificationMenuItemPayload else { return }
         onOpenNotification(payload.notification)
+    }
+
+    @objc private func openFlagItemAction(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? FlagMenuItemPayload else { return }
+        onOpenFlag(payload.flag)
     }
 
     @objc private func showMainWindowAction() {
@@ -14134,17 +14214,29 @@ private final class NotificationMenuItemPayload: NSObject {
     }
 }
 
+private final class FlagMenuItemPayload: NSObject {
+    let flag: TabAttentionSnapshot
+
+    init(flag: TabAttentionSnapshot) {
+        self.flag = flag
+        super.init()
+    }
+}
+
 struct NotificationMenuSnapshot {
     let unreadCount: Int
     let hasNotifications: Bool
     let recentNotifications: [TerminalNotification]
+    let signalNotifications: [TerminalNotification]
+    let flags: [TabAttentionSnapshot]
 
     var hasUnreadNotifications: Bool {
         unreadCount > 0
     }
 
     var stateHintTitle: String {
-        NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
+        let routineTitle = NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
+        return flags.isEmpty ? routineTitle : NotificationMenuSnapshotBuilder.flagCountTitle(flags.count) + " · " + routineTitle
     }
 }
 
@@ -14153,9 +14245,16 @@ enum NotificationMenuSnapshotBuilder {
 
     static func make(
         notifications: [TerminalNotification],
+        flags: [TabAttentionSnapshot] = [],
+        attentionSnapshots: [String: TabAttentionSnapshot] = [:],
         maxInlineNotificationItems: Int = defaultInlineNotificationLimit
     ) -> NotificationMenuSnapshot {
-        let unreadCount = notifications.reduce(into: 0) { count, notification in
+        let signalNotifications = notifications.filter { notification in
+            guard let surfaceId = notification.surfaceId else { return true }
+            let key = "\(notification.workspaceId.uuidString):\(surfaceId.uuidString)"
+            return attentionSnapshots[key]?.isSignalEligible ?? true
+        }
+        let unreadCount = signalNotifications.reduce(into: 0) { count, notification in
             if !notification.isRead {
                 count += 1
             }
@@ -14164,9 +14263,17 @@ enum NotificationMenuSnapshotBuilder {
         let inlineLimit = max(0, maxInlineNotificationItems)
         return NotificationMenuSnapshot(
             unreadCount: unreadCount,
-            hasNotifications: !notifications.isEmpty,
-            recentNotifications: Array(notifications.prefix(inlineLimit))
+            hasNotifications: !signalNotifications.isEmpty,
+            recentNotifications: Array(signalNotifications.prefix(inlineLimit)),
+            signalNotifications: signalNotifications,
+            flags: flags.filter(\.isFlagged)
         )
+    }
+
+    static func flagCountTitle(_ count: Int) -> String {
+        count == 1
+            ? String(localized: "statusMenu.flagCount.one", defaultValue: "1 flagged tab")
+            : String(localized: "statusMenu.flagCount.other", defaultValue: "\(count) flagged tabs")
     }
 
     static func stateHintTitle(unreadCount: Int) -> String {
@@ -14221,6 +14328,10 @@ enum MenuBarNotificationLineFormatter {
     ) -> String {
         let base = plainTitle(notification: notification, tabTitle: tabTitle)
         return wrappedAndTruncated(base, maxWidth: maxWidth, maxLines: maxLines)
+    }
+
+    static func flagMenuTitle(_ text: String) -> String {
+        wrappedAndTruncated(text, maxWidth: defaultMaxMenuTextWidth, maxLines: defaultMaxMenuTextLines)
     }
 
     static func attributedTitle(notification: TerminalNotification, tabTitle: String?) -> NSAttributedString {
@@ -14547,8 +14658,8 @@ enum MenuBarIconDebugSettings {
 
 enum MenuBarIconRenderer {
 
-    static func makeImage(unreadCount: Int) -> NSImage {
-        let badgeText = MenuBarBadgeLabelFormatter.badgeText(for: unreadCount)
+    static func makeImage(unreadCount: Int, flagCount: Int = 0) -> NSImage {
+        let badgeText = MenuBarBadgeLabelFormatter.badgeText(for: flagCount > 0 ? flagCount : unreadCount)
         let config = MenuBarIconDebugSettings.badgeRenderConfig()
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
@@ -14556,7 +14667,11 @@ enum MenuBarIconRenderer {
         defer { image.unlockFocus() }
 
         let glyphRect = NSRect(x: 1.0, y: 1.0, width: 11.0, height: 11.0)
-        drawGlyph(in: glyphRect)
+        if flagCount > 0 {
+            drawFlag(in: glyphRect)
+        } else {
+            drawGlyph(in: glyphRect)
+        }
 
         if let text = badgeText {
             drawBadge(text: text, in: config.badgeRect, config: config)
@@ -14564,6 +14679,18 @@ enum MenuBarIconRenderer {
 
         image.isTemplate = true
         return image
+    }
+
+    private static func drawFlag(in rect: NSRect) {
+        let pole = NSBezierPath(rect: NSRect(x: rect.minX, y: rect.minY, width: 1.5, height: rect.height))
+        NSColor.black.setFill()
+        pole.fill()
+        let pennant = NSBezierPath()
+        pennant.move(to: NSPoint(x: rect.minX + 1.5, y: rect.maxY))
+        pennant.line(to: NSPoint(x: rect.maxX, y: rect.maxY - rect.height * 0.25))
+        pennant.line(to: NSPoint(x: rect.minX + 1.5, y: rect.midY))
+        pennant.close()
+        pennant.fill()
     }
 
     private static func drawGlyph(in rect: NSRect) {

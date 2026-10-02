@@ -1634,11 +1634,17 @@ final class SocketClient {
             if code == "input_guard_refused" {
                 let data = error["data"] as? [String: Any] ?? [:]
                 let reason = data["reason"] as? String ?? "unknown"
+                // A caller that follows a refused send with `send-key enter` would
+                // submit the operator's draft or pick a dialog option, so say so.
+                let guidance = message.contains("Nothing was sent") ? "" : String(
+                    localized: "cli.send.guard_refused_guidance",
+                    defaultValue: "\nNothing was sent; do not press Enter. If the operator is mid-draft, raise a flag (c11 raise-flag) instead of retrying."
+                )
                 throw CLIError(
                     message: String(format: String(
                         localized: "cli.send.guard_refused",
                         defaultValue: "%@\ninput_guard: refused (reason: %@)"
-                    ), "\(code): \(message)", reason),
+                    ), "\(code): \(message)", reason) + guidance,
                     structuredResponse: ["ok": false, "error": error]
                 )
             }
@@ -10800,6 +10806,10 @@ struct CMUXCLI {
             The screen check is not atomic with a later keypress: typing can
             happen after the read and before the paste. send-key is not guarded.
             Delivery reports PTY input or queueing, never agent acknowledgment.
+            send submits its own Return; do not follow it with send-key enter.
+            To run a second command only after a send succeeded, chain with &&:
+              c11 send --tab tab:2 "text" && c11 send-key --tab tab:2 enter
+            A refused send exits nonzero and types nothing.
             """)
         case "send-key":
             return """
@@ -10811,6 +10821,10 @@ struct CMUXCLI {
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
               --tab <id|ref>     Target tab (default: $C11_TAB_ID)
+
+            send-key is not guarded: it does not check for a draft or dialog.
+            After a c11 send, chain with && so a refused send is not followed by a key:
+              c11 send --tab tab:2 "text" && c11 send-key --tab tab:2 enter
 
             Example:
               c11 send-key enter

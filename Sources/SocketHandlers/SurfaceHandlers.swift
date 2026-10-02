@@ -1064,7 +1064,7 @@ extension TerminalController {
                     code: "input_guard_refused",
                     message: String(format: String(
                         localized: "socket.send.guard_refused",
-                        defaultValue: "Input guard refused the send because a %@ is present."
+                        defaultValue: "Input guard refused the send because a %@ is present. Nothing was sent; do not press Enter. If the operator is mid-draft, raise a flag (c11 raise-flag) instead of retrying."
                     ), reason),
                     data: data
                 )

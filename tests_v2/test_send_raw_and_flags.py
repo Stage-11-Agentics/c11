@@ -256,6 +256,7 @@ def offline(cli):
             assert payload["error"]["data"]["draft_length"] == 7, payload
             assert payload["error"]["data"]["hint"] == "Inspect or explicitly override.", payload
             assert "input_guard_refused" in proc.stderr and "input_guard: refused" in proc.stderr, proc.stderr
+            assert "Nothing was sent; do not press Enter" in proc.stderr and "raise-flag" in proc.stderr, proc.stderr
             assert [request["method"] for request in requests] == ["system.capabilities", "tab.send_text"], requests
 
     with tempfile.TemporaryDirectory(prefix="c11-267-input-state-") as directory:

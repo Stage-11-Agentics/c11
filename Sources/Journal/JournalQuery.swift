@@ -157,10 +157,10 @@ enum JournalQuery {
         return [
             "units duration=ms blocked_minutes=ms/60000 rate=per covered hour window=[from,to)",
             "time_in_state_ms \(time) disconnected=\(metric.disconnected) unconfirmed=\(metric.unconfirmed) degraded=\(metric.degraded)",
-            "operator_response status=\(response[\"status\"] as? String ?? \"unavailable\") wait_ms=\(display(response[\"wait_ms\"])) wait_count=\(response[\"wait_count\"] ?? 0) resume_ms=\(display(response[\"resume_ms\"])) resume_count=\(response[\"resume_count\"] ?? 0) censored_count=\(response[\"censored_count\"] ?? 0)",
+            "operator_response status=\(response["status"] as? String ?? "unavailable") wait_ms=\(display(response["wait_ms"])) wait_count=\(response["wait_count"] ?? 0) resume_ms=\(display(response["resume_ms"])) resume_count=\(response["resume_count"] ?? 0) censored_count=\(response["censored_count"] ?? 0)",
             "blocked_ms \(blocked)",
-            "turns started=\(turns[\"started\"] ?? 0) completed=\(turns[\"completed\"] ?? 0) interrupted=\(turns[\"interrupted\"] ?? 0) ambiguous=\(turns[\"ambiguous\"] ?? 0) covered_hours=\(turns[\"covered_hours\"] ?? 0) per_hour=\(display(turns[\"per_hour\"]))",
-            "errors root=\(errors[\"root\"] ?? 0) interrupts=\(errors[\"interrupts\"] ?? 0) child_or_tool_diagnostic=\(errors[\"child_or_tool_diagnostic\"] ?? 0)",
+            "turns started=\(turns["started"] ?? 0) completed=\(turns["completed"] ?? 0) interrupted=\(turns["interrupted"] ?? 0) ambiguous=\(turns["ambiguous"] ?? 0) covered_hours=\(turns["covered_hours"] ?? 0) per_hour=\(display(turns["per_hour"]))",
+            "errors root=\(errors["root"] ?? 0) interrupts=\(errors["interrupts"] ?? 0) child_or_tool_diagnostic=\(errors["child_or_tool_diagnostic"] ?? 0)",
             "stalls \(stallText)"
         ].joined(separator: "\n")
     }

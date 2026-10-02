@@ -109,7 +109,7 @@ def main():
     processes = subprocess.check_output(["/bin/ps", "-axo", "pid=,command="], text=True)
     pid = next(int(line.strip().split(None, 1)[0]) for line in processes.splitlines() if app_binary in line)
     for menu_item in ("Next Workspace", "Previous Workspace"):
-        subprocess.run(["/usr/bin/osascript", "-e", f'tell application "System Events" to tell (first process whose unix id is {pid}) to click menu item "{menu_item}" of menu "Workspace" of menu bar 1'], check=True)
+        subprocess.run(["/usr/bin/osascript", "-e", f'tell application "System Events" to tell (first process whose unix id is {pid}) to click menu item "{menu_item}" of menu 1 of menu bar item "Workspace" of menu bar 1'], check=True)
         time.sleep(0.3)
     assert selected(path) == a
     # Finder remains frontmost throughout the agent attempts.

@@ -121,7 +121,7 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
 
     private func findTerminalView(in view: NSView) -> GhosttyNSView? {
         if let terminal = view as? GhosttyNSView { return terminal }
-        return view.subviews.lazy.compactMap { findTerminalView(in: $0) }.first
+        return view.subviews.lazy.compactMap { self.findTerminalView(in: $0) }.first
     }
 
     private func eventName(_ line: String) -> String {

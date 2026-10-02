@@ -1798,16 +1798,20 @@ struct CMUXCLI {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
-        // Validate create input before any socket connection or routing query.
-        if ["new-workspace", "new-split", "new-area", "new-tab"].contains(command),
-           !commandArgs.contains("--help"), !commandArgs.contains("-h") {
-            if commandArgs.contains("--command"), optionValue(commandArgs, name: "--command") == nil {
+        // Remove the literal command value before inspecting create flags. A
+        // body such as "--layout" is input, not another CLI option.
+        let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
+        let (createCommandText, createArgs) = isTerminalCreate
+            ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        // Validate create input before socket discovery or any routing query.
+        if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
+            if createArgs.contains("--command"), createCommandText == nil {
                 throw CLIError(message: String(localized: "cli.create.command.requiresValue", defaultValue: "--command requires text"))
             }
             _ = try resolvedCreateInput(
-                raw: optionValue(commandArgs, name: "--command"),
-                panelType: command == "new-workspace" || command == "new-split" ? "terminal" : optionValue(commandArgs, name: "--type"),
-                hasLayout: command == "new-workspace" && commandArgs.contains("--layout")
+                raw: createCommandText,
+                panelType: command == "new-workspace" || command == "new-split" ? "terminal" : optionValue(createArgs, name: "--type"),
+                hasLayout: command == "new-workspace" && createArgs.contains("--layout")
             )
         }
 
@@ -1847,7 +1851,7 @@ struct CMUXCLI {
         // so help text is available even when cmux is not running.
         if command != "__tmux-compat",
            command != "claude-teams",
-           (commandArgs.contains("--help") || commandArgs.contains("-h")) {
+           (createArgs.contains("--help") || createArgs.contains("-h")) {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
                 return
             }
@@ -2294,7 +2298,8 @@ struct CMUXCLI {
             )
 
         case "new-workspace":
-            let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
+            let commandOpt = createCommandText
+            let rem0 = createArgs
             let (cwdOpt, rem1) = parseOption(rem0, name: "--cwd")
             let (rootOpt, rem2) = parseOption(rem1, name: "--root")
             let (layoutOpt, rem3) = parseOption(rem2, name: "--layout")
@@ -2326,12 +2331,13 @@ struct CMUXCLI {
                            fallbackText: createOKSummary(response, idFormat: idFormat, kinds: ["workspace"]))
 
         case "new-split":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (wsArg, rem0) = parseOption(createArgs, name: "--workspace")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
             let (sfArg, rem2) = parseOption(rem1, name: "--surface")
             let (titleArg, rem3) = parseOption(rem2, name: "--title")
             let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
-            let (createCommand, rem5) = parseOption(rem4, name: "--command")
+            let rem5 = rem4
+            let createCommand = createCommandText
             let initialInput = try resolvedCreateInput(raw: createCommand, panelType: "terminal")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
@@ -2357,7 +2363,7 @@ struct CMUXCLI {
             }
             // --allow-undersized (alias --force) bypasses the size-aware split policy
             // for this one call.
-            if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
+            if createArgs.contains("--allow-undersized") || createArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
             let payload = try client.sendV2(method: "tab.split", params: params)
@@ -2432,14 +2438,14 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["area", "workspace"]))
 
         case "new-area":
-            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
-            let type = optionValue(commandArgs, name: "--type")
-            let initialInput = try resolvedCreateInput(raw: optionValue(commandArgs, name: "--command"), panelType: type)
-            let direction = optionValue(commandArgs, name: "--direction") ?? "right"
-            let url = optionValue(commandArgs, name: "--url")
-            let file = optionValue(commandArgs, name: "--file")
-            let title = optionValue(commandArgs, name: "--title")
-            let cwd = optionValue(commandArgs, name: "--cwd")
+            let workspaceArg = workspaceFromArgsOrEnv(createArgs, windowOverride: windowId)
+            let type = optionValue(createArgs, name: "--type")
+            let initialInput = try resolvedCreateInput(raw: createCommandText, panelType: type)
+            let direction = optionValue(createArgs, name: "--direction") ?? "right"
+            let url = optionValue(createArgs, name: "--url")
+            let file = optionValue(createArgs, name: "--file")
+            let title = optionValue(createArgs, name: "--title")
+            let cwd = optionValue(createArgs, name: "--cwd")
             var params: [String: Any] = ["direction": direction]
             if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -2457,7 +2463,7 @@ struct CMUXCLI {
             }
             // --allow-undersized (alias --force) bypasses the size-aware split policy
             // for this one call.
-            if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
+            if createArgs.contains("--allow-undersized") || createArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
             let payload = try client.sendV2(method: "area.create", params: params)
@@ -2685,14 +2691,14 @@ struct CMUXCLI {
             printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "new-tab":
-            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
-            let type = optionValue(commandArgs, name: "--type")
-            let initialInput = try resolvedCreateInput(raw: optionValue(commandArgs, name: "--command"), panelType: type)
-            let paneRaw = optionValue(commandArgs, name: "--pane")
-            let url = optionValue(commandArgs, name: "--url")
-            let file = optionValue(commandArgs, name: "--file")
-            let cwd = optionValue(commandArgs, name: "--cwd")
-            let noFocus = commandArgs.contains("--no-focus")
+            let workspaceArg = workspaceFromArgsOrEnv(createArgs, windowOverride: windowId)
+            let type = optionValue(createArgs, name: "--type")
+            let initialInput = try resolvedCreateInput(raw: createCommandText, panelType: type)
+            let paneRaw = optionValue(createArgs, name: "--pane")
+            let url = optionValue(createArgs, name: "--url")
+            let file = optionValue(createArgs, name: "--file")
+            let cwd = optionValue(createArgs, name: "--cwd")
+            let noFocus = createArgs.contains("--no-focus")
             var params: [String: Any] = [:]
             if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)

@@ -159,7 +159,11 @@ def main() -> int:
                     panel_types = (None, "terminal") if command in ("new-area", "new-tab") else (None,)
                     for panel_type in panel_types:
                         args = arguments(command, panel_type)
-                        for raw in (body, body + "\r"):
+                        # A --command value can itself spell another CLI flag.
+                        # It remains literal input, including help and routing
+                        # names, rather than changing the create invocation.
+                        for raw in (body, body + "\r", "--layout", "--type", "--help",
+                                    "--command", "--workspace", "-h"):
                             for json_output in (False, True):
                                 require_creation(command, [*args, "--command", raw], raw,
                                                  json_output=json_output)

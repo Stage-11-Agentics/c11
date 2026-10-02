@@ -78,6 +78,21 @@ final class EventLogTests: XCTestCase {
         XCTAssertNil(EventEnvelope.seq(fromLine: ""))
     }
 
+    func testLifecycleChangedEnvelopeUsesTheClosedTypeAndPayload() {
+        let tab = UUID(uuidString: "6f9619ff-8b86-d011-b42d-00cf4fc964ff")!
+        let line = EventEnvelope(
+            type: .lifecycleChanged,
+            instance: "i",
+            ts: Date(timeIntervalSince1970: 1_770_000_123),
+            workspace: "9b2d4e6a-1c3f-4a5b-8d7e-2f0a1b3c4d5e",
+            surface: tab.uuidString,
+            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"]
+        ).serialize(seq: 12)
+        let object = parse(line)
+        XCTAssertEqual(object["type"] as? String, "lifecycle.changed")
+        XCTAssertEqual((object["payload"] as? [String: Any])?["to"] as? String, "blocked")
+    }
+
     // MARK: - Layout
 
     func testLayoutFilenameAndInstanceSanitize() {

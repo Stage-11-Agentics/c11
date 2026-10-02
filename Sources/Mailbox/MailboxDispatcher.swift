@@ -363,10 +363,10 @@ final class MailboxDispatcher {
         envelopeBytes: Data
     ) {
         do {
-            let inbox = try MailboxLayout.inboxURL(
+            let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
                 workspaceId: workspaceId,
-                tabName: recipient.name
+                tabId: recipient.surfaceId
             )
             try FileManager.default.createDirectory(
                 at: inbox,

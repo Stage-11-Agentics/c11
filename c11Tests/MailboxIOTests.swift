@@ -94,4 +94,52 @@ final class MailboxIOTests: XCTestCase {
         XCTAssertTrue(entries[0].hasPrefix("."))
         XCTAssertTrue(entries[0].hasSuffix(".tmp"))
     }
+
+    // MARK: - C3 claim
+
+    private func seedInbox(id: String) throws -> URL {
+        let inbox = tempRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try Data("envelope".utf8).write(
+            to: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        )
+        return inbox
+    }
+
+    func testClaimMovesEnvelopeIntoRead() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456J"
+        let inbox = try seedInbox(id: id)
+        let claimed = try XCTUnwrap(try MailboxIO.claim(id: id, inbox: inbox))
+        XCTAssertEqual(claimed.deletingLastPathComponent().lastPathComponent, "_read")
+        XCTAssertEqual(try Data(contentsOf: claimed), Data("envelope".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)).path
+        ))
+    }
+
+    /// Two consumers race; the second finds nothing and must skip, not throw.
+    func testSecondClaimFindsNothing() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456K"
+        let inbox = try seedInbox(id: id)
+        XCTAssertNotNil(try MailboxIO.claim(id: id, inbox: inbox))
+        XCTAssertNil(try MailboxIO.claim(id: id, inbox: inbox))
+    }
+
+    func testClaimOfMissingInboxIsNil() throws {
+        let inbox = tempRoot.appendingPathComponent("absent", isDirectory: true)
+        XCTAssertNil(try MailboxIO.claim(id: "01K3A2B7X8PQRTVWYZ0123456L", inbox: inbox))
+    }
+
+    /// A failed hand-over puts the envelope back in the inbox root, where the
+    /// next consumer (or `recv --drain`) finds it.
+    func testUnclaimRestoresEnvelope() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456M"
+        let inbox = try seedInbox(id: id)
+        XCTAssertNotNil(try MailboxIO.claim(id: id, inbox: inbox))
+        MailboxIO.unclaim(id: id, inbox: inbox)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)).path
+        ))
+        XCTAssertNotNil(try MailboxIO.claim(id: id, inbox: inbox))
+    }
 }

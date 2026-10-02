@@ -3937,6 +3937,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// When the operator last pressed a key in this terminal. Deliberately not
     /// `@Published`: it changes per keystroke and must never invalidate SwiftUI.
     var lastOperatorInputAt: Date?
+    /// Last operator keystroke into the PTY (not a click, not the text box).
+    /// The mailbox push reads it to avoid splicing onto an unsent draft.
+    var lastOperatorKeyAt: Date?
     /// When the scrollback last grew while the surface was visible: real output,
     /// not an in-place repaint. Not `@Published`.
     var lastOutputGrowthAt: Date?
@@ -4088,7 +4091,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
             TabLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: id,
                 workspaceId: workspaceId,
-                activity: .working
+                activity: .working,
+                source: .submit
             )
         }
         if surfaceView.window == nil, let surface {
@@ -5643,7 +5647,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if let terminalSurface {
             // Tab sheet "touched" clock: a plain Date store (~20 ns), nothing
             // published. Synthesized keys (socket `send`) are not the operator.
-            if !isSynthesizingKey { terminalSurface.lastOperatorInputAt = Date() }
+            if !isSynthesizingKey {
+                let now = Date()
+                terminalSurface.lastOperatorInputAt = now
+                terminalSurface.lastOperatorKeyAt = now
+            }
 #if DEBUG
             let dismissNotificationStart = ProcessInfo.processInfo.systemUptime
 #endif
@@ -5666,7 +5674,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: terminalSurface.id,
                     workspaceId: terminalSurface.workspaceId,
-                    activity: .working
+                    activity: .working,
+                    source: .submit
                 )
             }
 #if DEBUG

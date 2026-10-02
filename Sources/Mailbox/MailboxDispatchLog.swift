@@ -74,13 +74,15 @@ final class MailboxDispatchLog {
     /// C11-144 delivery-safety lifecycle (all emitted as `handler` events with
     /// handler="stdin" so a buffered message's full path is visible in
     /// `c11 mailbox trace <id>` — never a silent drop):
-    /// - `buffered`: recipient shell was busy (`commandRunning`/`unknown`);
-    ///   the framed block was queued to flush at the next prompt.
-    /// - `flushed`: a previously-buffered block was injected once the shell
-    ///   returned to `promptIdle`.
-    /// - `expired`: a buffered block aged past the freshness window before the
-    ///   shell went idle; dropped from the buffer (the filesystem inbox +
-    ///   `recv --drain` floor still holds it).
+    /// - `buffered`: the recipient was busy (an agent mid-turn or with an
+    ///   operator draft, or a shell running a command); the framed block was
+    ///   queued to flush at the next turn end or prompt.
+    /// - `flushed`: a previously-buffered block was injected at the agent's
+    ///   next turn end or the shell's return to `promptIdle`.
+    /// - `expired`: a buffered shell block aged past the freshness window, or
+    ///   a buffered agent block whose agent exited to the shell; dropped from
+    ///   the buffer (the filesystem inbox + `recv --drain` floor still holds it).
+    /// - `skipped`: the push found the envelope already claimed by a drain.
     /// - `evicted`: a buffered block was dropped because the per-surface buffer
     ///   cap was exceeded (oldest-first; inbox floor still holds it).
     ///
@@ -89,6 +91,9 @@ final class MailboxDispatchLog {
     enum HandlerOutcome: String {
         case ok, timeout, eio, closed
         case buffered, flushed, expired, evicted
+        /// The stdin push found the envelope already claimed (a `recv
+        /// --drain` took it first), so nothing was typed.
+        case skipped
     }
 
     // MARK: - File I/O

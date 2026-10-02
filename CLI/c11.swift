@@ -16683,12 +16683,17 @@ struct CMUXCLI {
                 workspaceId: workspaceId,
                 client: client
             )
-            _ = try? reportAgentActivity(
-                client: client,
-                workspaceId: workspaceId,
-                surfaceId: surfaceId,
-                activity: "idle"
-            )
+            // A fresh, resumed or cleared session rests at its prompt. A
+            // `compact` SessionStart fires mid-turn after auto-compaction, so
+            // it must not claim the agent is idle.
+            if (parsedInput.object?["source"] as? String) != "compact" {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    activity: "idle"
+                )
+            }
             let claudePid: Int? = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_CLAUDE_PID"]?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -18681,16 +18686,18 @@ extension CMUXCLI {
 
     // MARK: - Caller resolution
 
-    /// Returns the caller's workspace UUID and tab name. Workspace UUID
-    /// comes from the CMUX_WORKSPACE_ID (or C11_WORKSPACE_ID alias) env var
-    /// that every tab shell inherits. Tab name is looked up via
-    /// `tab.get_metadata`. Pass an override when scripting without a
-    /// live c11 tab.
+    /// Returns the caller's workspace UUID, tab name and tab UUID. Workspace
+    /// UUID comes from the CMUX_WORKSPACE_ID (or C11_WORKSPACE_ID alias) env
+    /// var that every tab shell inherits. Tab name is looked up via
+    /// `tab.get_metadata`. Pass an override when scripting without a live
+    /// c11 tab; the tab UUID is then the override itself when it is a UUID,
+    /// else nil (`resolveMailboxInboxTabId` resolves a name over the socket).
+    /// Inboxes are keyed on the tab UUID; the name is the sender's `from`.
     private func resolveMailboxCaller(
         client: SocketClient,
         fromOverride: String?,
         surfaceOverride: String?
-    ) throws -> (workspaceId: UUID, tabName: String) {
+    ) throws -> (workspaceId: UUID, tabName: String, tabId: UUID?) {
         let env = ProcessInfo.processInfo.environment
         let workspaceIdStr = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
         guard
@@ -18703,7 +18710,7 @@ extension CMUXCLI {
         }
 
         if let name = fromOverride ?? surfaceOverride, !name.isEmpty {
-            return (workspaceId, name)
+            return (workspaceId, name, UUID(uuidString: name))
         }
 
         let surfaceIdStr = Self.callerTabEnv(env)
@@ -18727,7 +18734,35 @@ extension CMUXCLI {
                 ).replacingOccurrences(of: "%@", with: "(untitled)")
             )
         }
-        return (workspaceId, title)
+        return (workspaceId, title, UUID(uuidString: surfaceIdStr))
+    }
+
+    /// The tab UUID whose inbox `recv` / `inbox-dir` should read. A caller
+    /// without an override already knows it; a `--surface <name>` override is
+    /// resolved through `mailbox.resolve` in the caller's workspace. `nil` when
+    /// the name matches no single live tab (or c11 is unreachable): only the
+    /// legacy title-keyed inbox is then readable.
+    private func resolveMailboxInboxTabId(
+        client: SocketClient,
+        workspaceId: UUID,
+        tabName: String,
+        tabId: UUID?
+    ) -> UUID? {
+        if let tabId { return tabId }
+        guard let payload = try? client.sendV2(
+            method: "mailbox.resolve",
+            params: [
+                "to": tabName,
+                "sender_workspace_id": workspaceId.uuidString,
+                "workspace": workspaceId.uuidString
+            ]
+        ),
+            (payload["resolution"] as? String) == "unique",
+            let ids = payload["surface_ids"] as? [String],
+            ids.count == 1 else {
+            return nil
+        }
+        return UUID(uuidString: ids[0])
     }
 
     // MARK: - send
@@ -18783,7 +18818,7 @@ extension CMUXCLI {
             )
         }
 
-        let (workspaceId, tabName) = try resolveMailboxCaller(
+        let (workspaceId, tabName, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: fromOverride,
             surfaceOverride: nil
@@ -18952,26 +18987,33 @@ extension CMUXCLI {
         let drain = hasFlag(subArgs, name: "--drain") || !peek
         let surfaceOverride = optionValue(subArgs, name: "--surface")
 
-        let (workspaceId, tabName) = try resolveMailboxCaller(
+        let (workspaceId, tabName, callerTabId) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: surfaceOverride
         )
+        let tabId = resolveMailboxInboxTabId(
+            client: client,
+            workspaceId: workspaceId,
+            tabName: tabName,
+            tabId: callerTabId
+        )
 
+        // The UUID-keyed inbox plus, when one exists on disk, the title-keyed
+        // inbox an older build wrote, merged in ULID (send) order.
         let stateURL = try MailboxLayout.defaultStateURL()
-        let inboxURL = try MailboxLayout.inboxURL(
+        let inboxURLs = MailboxLayout.recvInboxURLs(
             state: stateURL,
             workspaceId: workspaceId,
+            tabId: tabId,
             tabName: tabName
         )
-        guard FileManager.default.fileExists(atPath: inboxURL.path) else {
-            return
+        let entries = inboxURLs.flatMap { inboxURL -> [URL] in
+            (try? FileManager.default.contentsOfDirectory(
+                at: inboxURL,
+                includingPropertiesForKeys: nil
+            )) ?? []
         }
-
-        let entries = try FileManager.default.contentsOfDirectory(
-            at: inboxURL,
-            includingPropertiesForKeys: nil
-        )
         .filter { $0.pathExtension == MailboxLayout.envelopeExtension }
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
@@ -19047,7 +19089,7 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (workspaceId, _) = try resolveMailboxCaller(
+        let (workspaceId, _, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil
@@ -19260,7 +19302,7 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (workspaceId, _) = try resolveMailboxCaller(
+        let (workspaceId, _, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil
@@ -19275,16 +19317,29 @@ extension CMUXCLI {
         client: SocketClient
     ) throws {
         let surfaceOverride = optionValue(subArgs, name: "--surface")
-        let (workspaceId, tabName) = try resolveMailboxCaller(
+        let (workspaceId, tabName, callerTabId) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: surfaceOverride
         )
+        guard let tabId = resolveMailboxInboxTabId(
+            client: client,
+            workspaceId: workspaceId,
+            tabName: tabName,
+            tabId: callerTabId
+        ) else {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.surface-not-found",
+                    defaultValue: "No tab named %@ in this workspace."
+                ).replacingOccurrences(of: "%@", with: tabName)
+            )
+        }
         let stateURL = try MailboxLayout.defaultStateURL()
-        let url = try MailboxLayout.inboxURL(
+        let url = MailboxLayout.inboxURL(
             state: stateURL,
             workspaceId: workspaceId,
-            tabName: tabName
+            tabId: tabId
         )
         print(url.path)
     }
@@ -19293,7 +19348,7 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (_, tabName) = try resolveMailboxCaller(
+        let (_, tabName, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil

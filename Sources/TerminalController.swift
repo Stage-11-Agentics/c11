@@ -8727,7 +8727,8 @@ class TerminalController {
                 TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
-                    activity: activity
+                    activity: activity,
+                    source: .reported
                 )
             }
             return "OK"
@@ -8758,7 +8759,8 @@ class TerminalController {
             TabLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: surfaceId,
                 workspaceId: workspace.id,
-                activity: activity
+                activity: activity,
+                source: .reported
             )
         }
         return result

@@ -10906,6 +10906,11 @@ final class Workspace: Identifiable, ObservableObject {
             reason: "test.workspace.layout",
             terminalFocusPanelId: terminalFocusPanelId
         )
+        // Production callers observe the deferred attempt on the next run-loop
+        // turn. Drain that queued turn here so this synchronous DEBUG seam keeps
+        // its existing contract for focus/visibility assertions without making
+        // the production begin path re-entrant again.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
         reconcileFocusState()
     }
 #endif

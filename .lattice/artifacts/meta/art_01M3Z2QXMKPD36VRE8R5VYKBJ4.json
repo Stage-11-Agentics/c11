@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:51:29Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2QXMKPD36VRE8R5VYKBJ4",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z2QXMKPD36VRE8R5VYKBJ4.md",
+    "size_bytes": 19553
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Overrides sequential gate: below15, A/B per-sample equal counts, uptime before/after,180second phases/1800churn perrole; same built artifacts. Prior attempts no latency observations.",
+  "tags": [],
+  "title": "Binding Orchestrator interleaved ruling, seal 006",
+  "token_usage": null,
+  "type": "file"
+}

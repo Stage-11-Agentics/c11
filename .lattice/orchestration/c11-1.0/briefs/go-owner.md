@@ -19,8 +19,7 @@ Atin gave the go (2026-10-01). **Build mode is ON.** You are a fresh owner for o
 
 ## Builds and tests
 - **Hyperion (this Mac) is allowed overnight** (Atin, 2026-10-01) for one locked build at a time: `scripts/reload.sh --tag <tag>` only (it holds the build lock; never bare `xcodebuild`, never an untagged DEV app), launch with `scripts/launch-tagged-automation.sh <tag> --qa fresh`. Computer use only on your own tagged app; never touch the production c11 window or its agents. Prefer Atlas once it is live.
-- **Until the Orchestrator sends `ATLAS BUILDS LIVE`**, verify with GitHub CI on your draft PR: the `build` job compiles and runs logic tests (about 6-12 min). Python-only scripts may run their unit tests locally if they are light.
-- **After `ATLAS BUILDS LIVE`**: build, test and launch tagged builds on Atlas through `scripts/remote-build.sh` (from C11-216; read `skills/c11-hotload/SKILL.md` on main). Tagged builds only, `C11_QA_LAUNCH` set. Computer-use validation runs on Atlas against your tagged build, never on Hyperion.
+- **Atlas builds are live** (C11-216 merged): build, test and launch tagged builds on Atlas through `scripts/remote-build.sh` (from C11-216; read `skills/c11-hotload/SKILL.md` on main). Tagged builds only, `C11_QA_LAUNCH` set. Computer-use validation runs on Atlas against your tagged build, never on Hyperion.
 - **Performance:** the fleet soak (C11-270) is deferred to the end of the run (Atin). If your plan measures against "the soak baseline" or "M1", measure instead on your tagged Atlas build against a tagged build of origin/main with the same scenario, and record both numbers and the load average.
 
 ## Unchanged
@@ -43,3 +42,4 @@ Rulings final. Doctrine (no writes to agent tools' config). C11-188 guardrail. H
 **UI slot reservation:** if `/tmp/c11-1.0-ui.reserved` exists, the Validator holds priority: do not take the UI slot (finish and release a lease you already hold) until that file is gone. The Validator removes it when its reserved runs end.
 
 **One Atlas tag per ticket:** always build with the same tag, `c11-<ticket number>` (e.g. `--tag c11-303`), for every rebuild and test run, so Atlas holds one ~5 GB checkout per ticket instead of one per attempt. Delete any other tags you created (`ssh atlas 'rm -rf ~/c11-builds/<old-tag> ~/Library/Developer/Xcode/DerivedData/c11-<old-tag>'`) once their logs are retrieved.
+- **Validator has Atlas VM priority.** macOS allows two guests at once. Before starting a guest, check Atlas for `/tmp/c11-validator-vm-wanted`; if it exists, do not start one (finish what you have, then wait or do non-VM work). The Validator creates that file when it is waiting for a guest and deletes it when its lease starts.

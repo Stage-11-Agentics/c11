@@ -127,6 +127,13 @@ final class MailboxDispatcher {
         watcher.triggerImmediateScan()
         self.watcher = watcher
 
+        // C11-257: record the deliveries CLI drains leave in `_receipts/`.
+        MailboxReceiptRecorder.shared.watch(
+            workspaceId: workspaceId,
+            mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId),
+            workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        )
+
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(
             deadline: .now() + Self.gcSweepInterval,
@@ -141,6 +148,9 @@ final class MailboxDispatcher {
     }
 
     func stop() {
+        if watcher != nil {
+            MailboxReceiptRecorder.shared.unwatch(workspaceId: workspaceId)
+        }
         watcher?.stop()
         watcher = nil
         gcTimer?.cancel()
@@ -170,6 +180,11 @@ final class MailboxDispatcher {
                 elapsedMs: nil
             )
         )
+    }
+
+    /// The stdin push could not claim an envelope; it stays in the inbox.
+    func logStdinClaimFailed(id: String, recipient: String, errno code: Int32) {
+        log.append(.claimFailed(id: id, recipient: recipient, errno: code))
     }
 
     // MARK: - Stale-tmp GC
@@ -295,7 +310,12 @@ final class MailboxDispatcher {
             id: envelope.id,
             from: envelope.from,
             to: envelope.to,
-            topic: envelope.topic
+            body: envelope.body,
+            bodyRef: envelope.bodyRef,
+            topic: envelope.topic,
+            replyTo: envelope.replyTo,
+            inReplyTo: envelope.inReplyTo,
+            urgent: envelope.urgent
         )
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
@@ -363,10 +383,10 @@ final class MailboxDispatcher {
         envelopeBytes: Data
     ) {
         do {
-            let inbox = try MailboxLayout.inboxURL(
+            let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
                 workspaceId: workspaceId,
-                tabName: recipient.name
+                tabId: recipient.surfaceId
             )
             try FileManager.default.createDirectory(
                 at: inbox,
@@ -383,7 +403,8 @@ final class MailboxDispatcher {
                 workspace: workspaceId,
                 id: envelope.id,
                 recipient: recipient.name,
-                surface: recipient.surfaceId
+                surface: recipient.surfaceId,
+                via: "inbox"
             )
         } catch {
             // The `resolved` event already lists the recipient; failure to

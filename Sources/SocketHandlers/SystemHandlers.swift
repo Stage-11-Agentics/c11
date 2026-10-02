@@ -245,6 +245,7 @@ extension TerminalController {
             "debug.shortcut.set",
             "debug.shortcut.simulate",
             "debug.type",
+            "debug.terminal.operator_keys",
             "debug.app.activate",
             "debug.command_palette.toggle",
             "debug.command_palette.rename_tab.open",

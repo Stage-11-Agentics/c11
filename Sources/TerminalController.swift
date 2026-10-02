@@ -822,6 +822,30 @@ class TerminalController {
         }
     }
 
+    /// How a `report_agent_activity` counts for the mailbox gate (the
+    /// sidebar treats every report alike):
+    /// - `--source=notification`: the agent is waiting on the operator (a
+    ///   permission or question prompt), never a turn edge.
+    /// - `--pid=<n>`: an explicit turn edge from an interactive agent launch
+    ///   (its wrapper's `C11_AGENT_INTERACTIVE_PID`).
+    /// - anything else (`--source=headless`, or no PID at all): an agent that
+    ///   is never at a prompt. Fails closed for unknown callers.
+    nonisolated static func reportedAgentLifecycleSource(
+        _ options: [String: String]
+    ) -> AgentLifecycleSource {
+        switch options["source"]?.lowercased() {
+        case "notification": return .inferred
+        case "headless": return .headless
+        default: return reportedAgentPID(options) != nil ? .reported : .headless
+        }
+    }
+
+    /// The interactive agent PID a report carries (`--pid=<n>`), if any.
+    nonisolated static func reportedAgentPID(_ options: [String: String]) -> pid_t? {
+        guard let raw = options["pid"], let pid = pid_t(raw), pid > 1 else { return nil }
+        return pid
+    }
+
     /// Update which window's TabManager receives socket commands.
     /// This is used when the user switches between multiple terminal windows.
     func setActiveWorkspaceManager(_ workspaceManager: WorkspaceManager?) {
@@ -3170,8 +3194,13 @@ class TerminalController {
     struct TabSendPhaseAResolved {
         let terminalPanel: TerminalTab
         let initialSurface: ghostty_surface_t?
+        let workspaceId: UUID
+        let tabId: UUID
         let workspaceIdString: String
         let tabIdString: String
+        let callerTabId: UUID?
+        let callerTitle: String?
+        let targetTitle: String
         let responseEnvelope: [String: Any]
     }
 
@@ -3251,6 +3280,35 @@ class TerminalController {
         guard let terminalPanel = targetWorkspace.terminalPanel(for: surfaceId) else {
             return .err(.err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
+
+        // Match `flag_caller_tab_id` validation: caller attribution is an
+        // identity UUID, not a target handle, and old callers arrive here as
+        // `caller_surface_id` after wire canonicalization.
+        let rawCaller = params["caller_surface_id"] as? String
+            ?? params["caller_tab_id"] as? String
+        let callerTabId: UUID?
+        if rawCaller == nil {
+            callerTabId = nil
+        } else {
+            let trimmedCaller = rawCaller!.trimmingCharacters(in: .whitespacesAndNewlines)
+            callerTabId = UUID(uuidString: trimmedCaller)
+        }
+
+        let callerTitle: String?
+        if let callerTabId {
+            let caller = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: callerTabId,
+                preferredWorkspaceId: nil
+            )
+            callerTitle = caller.map {
+                $0.workspace.tabTitle(panelId: callerTabId)
+                    ?? $0.workspace.panels[callerTabId]?.displayTitle
+            } ?? nil
+        } else {
+            callerTitle = nil
+        }
+
+        let targetTitle = targetWorkspace.tabTitle(panelId: surfaceId) ?? terminalPanel.displayTitle
         let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
         let envelope: [String: Any] = [
             "workspace_id": targetWorkspace.id.uuidString,
@@ -3263,8 +3321,13 @@ class TerminalController {
         return .ok(TabSendPhaseAResolved(
             terminalPanel: terminalPanel,
             initialSurface: terminalPanel.surface.surface,
+            workspaceId: targetWorkspace.id,
+            tabId: surfaceId,
             workspaceIdString: targetWorkspace.id.uuidString,
             tabIdString: surfaceId.uuidString,
+            callerTabId: callerTabId,
+            callerTitle: callerTitle,
+            targetTitle: targetTitle,
             responseEnvelope: envelope
         ))
     }
@@ -3275,6 +3338,14 @@ class TerminalController {
     // pointer-validity check and input injection.
     struct LegacyTabSendTarget {
         let terminalPanel: TerminalTab
+        let workspaceId: UUID
+        let surfaceId: UUID
+        let targetTitle: String
+    }
+
+    nonisolated static func namedKeySubmits(_ keyName: String) -> Bool {
+        let normalized = keyName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "enter" || normalized == "return"
     }
 
     enum LegacyTabSendTargetOutcome {
@@ -3292,7 +3363,15 @@ class TerminalController {
             guard let terminalTab = resolveTerminalPanel(from: target, workspaceManager: workspaceManager) else {
                 return .error(missingTargetError ?? "ERROR: Surface not found")
             }
-            return .ok(LegacyTabSendTarget(terminalPanel: terminalTab))
+            guard let workspace = workspaceManager.workspaces.first(where: { $0.panels[terminalTab.id] != nil }) else {
+                return .error(missingTargetError ?? "ERROR: Surface not found")
+            }
+            return .ok(LegacyTabSendTarget(
+                terminalPanel: terminalTab,
+                workspaceId: workspace.id,
+                surfaceId: terminalTab.id,
+                targetTitle: workspace.tabTitle(panelId: terminalTab.id) ?? terminalTab.displayTitle
+            ))
         }
 
         guard let selectedId = workspaceManager.selectedWorkspaceId,
@@ -3300,7 +3379,12 @@ class TerminalController {
               let terminalTab = workspace.focusedTerminalTab else {
             return .error("ERROR: No focused terminal")
         }
-        return .ok(LegacyTabSendTarget(terminalPanel: terminalTab))
+        return .ok(LegacyTabSendTarget(
+            terminalPanel: terminalTab,
+            workspaceId: workspace.id,
+            surfaceId: terminalTab.id,
+            targetTitle: workspace.tabTitle(panelId: terminalTab.id) ?? terminalTab.displayTitle
+        ))
     }
 
     nonisolated func resolveLegacySurfaceSendTargetOffMain(
@@ -3346,6 +3430,9 @@ class TerminalController {
 
             let semaphore = DispatchSemaphore(value: 0)
             nonisolated(unsafe) var result = "ERROR: Failed to send input"
+            nonisolated(unsafe) var didSend = false
+            nonisolated(unsafe) var eventKind: String?
+            nonisolated(unsafe) var eventText = ""
             Task { @MainActor in
                 defer { semaphore.signal() }
                 guard resolved.terminalPanel.surface.surface == surface else {
@@ -3359,22 +3446,45 @@ class TerminalController {
                         .replacingOccurrences(of: "\\n", with: "\r")
                         .replacingOccurrences(of: "\\r", with: "\r")
                         .replacingOccurrences(of: "\\t", with: "\t")
+                    eventKind = "text"
+                    eventText = unescaped
                     for char in unescaped {
                         if char.unicodeScalars.count == 1,
                            let scalar = char.unicodeScalars.first,
                            handleControlScalar(scalar, surface: surface) {
+                            didSend = true
                             continue
                         }
                         sendTextEvent(surface: surface, text: String(char))
+                        didSend = true
                     }
                     result = "OK"
                 case .key(let keyName):
-                    result = sendNamedKey(surface, keyName: keyName)
-                        ? "OK"
-                        : "ERROR: Unknown key '\(keyName)'"
+                    eventKind = "key"
+                    eventText = keyName
+                    if sendNamedKey(surface, keyName: keyName) {
+                        didSend = true
+                        result = "OK"
+                    } else {
+                        result = "ERROR: Unknown key '\(keyName)'"
+                    }
                 }
             }
             semaphore.wait()
+            if didSend, let eventKind {
+                EventEmitter.shared.emitTabInputSent(
+                    workspace: resolved.workspaceId,
+                    surface: resolved.surfaceId,
+                    callerTabId: nil,
+                    callerTitle: nil,
+                    targetTitle: resolved.targetTitle,
+                    kind: eventKind,
+                    text: eventText,
+                    submitted: eventKind == "text"
+                        ? eventText.contains("\r")
+                        : Self.namedKeySubmits(eventText)
+                )
+            }
             return result
         }
     }
@@ -6581,11 +6691,44 @@ class TerminalController {
         return result.isEmpty ? "ERROR: No tab selected" : result
     }
 
+    /// The raw socket key/text write every v1 and v2 send path ends in. It
+    /// takes part in the tab's input transactions (it waits behind another
+    /// writer's paste-then-Return), records a bare Return as a submit edge,
+    /// and records typed text as a draft, in event order.
     private func sendKeyEvent(
         surface: ghostty_surface_t,
         keycode: UInt32,
         mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE,
         text: String? = nil
+    ) {
+        guard let terminalSurface = TerminalSurface.owning(surface) else {
+            Self.writeKeyEvent(surface: surface, keycode: keycode, mods: mods, text: text)
+            return
+        }
+        terminalSurface.writeOrDefer { [weak terminalSurface] in
+            guard let terminalSurface, let live = terminalSurface.surface else { return }
+            Self.writeKeyEvent(surface: live, keycode: keycode, mods: mods, text: text)
+            if keycode == UInt32(kVK_Return), mods == GHOSTTY_MODS_NONE {
+                // A socket-sent Return submits whatever is in the input
+                // line, exactly like a typed Return.
+                TabLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: terminalSurface.id,
+                    workspaceId: terminalSurface.workspaceId,
+                    activity: .working,
+                    source: .submit
+                )
+            } else if let text, !text.isEmpty, text != "\r", text != "\n" {
+                // Typed text sits in the input line until a Return: a draft.
+                terminalSurface.lastOperatorKeyAt = Date()
+            }
+        }
+    }
+
+    private static func writeKeyEvent(
+        surface: ghostty_surface_t,
+        keycode: UInt32,
+        mods: ghostty_input_mods_e,
+        text: String?
     ) {
         var keyEvent = ghostty_input_key_s()
         keyEvent.action = GHOSTTY_ACTION_PRESS
@@ -6709,20 +6852,36 @@ class TerminalController {
         let body = Self.trimmingTrailingNewlines(text)
         let wantsReturn = submit || body != text
 
-        if !body.isEmpty {
-            if Self.socketTextIsPasteDeliverable(body) {
-                terminalSurface.sendText(body)
-            } else {
-                sendSocketText(body, surface: surface)
+        // One input transaction from the first byte to the submit Return, so
+        // no other writer (the mailbox push, another send, the text box)
+        // lands in the paste-settle window. If one is in flight, this runs
+        // after it; the live surface is re-read then.
+        terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
+            guard let self, let terminalSurface, let surface = terminalSurface.surface else {
+                return finish()
             }
-        }
-
-        if wantsReturn {
-            // The Return must land *after* the target has finished ingesting the
-            // paste — a Return inside the paste-processing window is silently
-            // dropped by Claude Code and codex. Same paste-settle delay the
-            // interactive text box uses.
-            terminalSurface.scheduleSubmitReturnAfterPasteDelay()
+            if !body.isEmpty {
+                if Self.socketTextIsPasteDeliverable(body) {
+                    terminalSurface.writeProgrammaticText(body, marksDraft: false)
+                } else {
+                    self.sendSocketText(body, surface: surface)
+                }
+            }
+            if wantsReturn {
+                // The Return must land *after* the target has finished
+                // ingesting the paste — a Return inside the paste-processing
+                // window is silently dropped by Claude Code and codex. Same
+                // paste-settle delay the interactive text box uses.
+                terminalSurface.scheduleSubmitReturnAfterPasteDelay(then: finish)
+            } else {
+                // Text left in the input line without a submit is a draft the
+                // mailbox push must not splice onto. Stamped after the write,
+                // so it is newer than any Return the key sequence contained.
+                if !body.isEmpty {
+                    terminalSurface.lastOperatorKeyAt = Date()
+                }
+                finish()
+            }
         }
         return wantsReturn
     }
@@ -8727,7 +8886,9 @@ class TerminalController {
                 TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
-                    activity: activity
+                    activity: activity,
+                    source: Self.reportedAgentLifecycleSource(parsed.options),
+                    agentPid: Self.reportedAgentPID(parsed.options)
                 )
             }
             return "OK"
@@ -8758,7 +8919,9 @@ class TerminalController {
             TabLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: surfaceId,
                 workspaceId: workspace.id,
-                activity: activity
+                activity: activity,
+                source: Self.reportedAgentLifecycleSource(parsed.options),
+                agentPid: Self.reportedAgentPID(parsed.options)
             )
         }
         return result

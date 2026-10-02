@@ -44,6 +44,11 @@
 # writeup.
 # ============================================================================
 
+# C11_AGENT_INTERACTIVE_PID is the positive interactive-agent marker (set
+# below only for a launch that reads its terminal). Clear any inherited value
+# first so no early exec passes a parent's marker on.
+unset C11_AGENT_INTERACTIVE_PID
+
 # Find the real claude binary, skipping our own directory.
 find_real_claude() {
     local self_dir
@@ -140,9 +145,17 @@ esac
 SKIP_SESSION_ID=false
 for arg in "$@"; do
     case "$arg" in
-        --resume|--resume=*|--session-id|--session-id=*|--continue|-c)
+        --) break ;;
+        --resume|--resume=*|--session-id|--session-id=*|--continue|-c|-r)
             SKIP_SESSION_ID=true
             break
+            ;;
+        # Combined short flags carrying -c or -r (`-cp`, `-pc`, `-rp`).
+        -[!-]?*)
+            if [[ "$arg" == *[cr]* ]]; then
+                SKIP_SESSION_ID=true
+                break
+            fi
             ;;
     esac
 done
@@ -150,6 +163,25 @@ done
 # Export the wrapper's PID. Because we exec claude below, this PID becomes
 # the actual claude process PID, which hooks use for stale-session detection.
 export CMUX_CLAUDE_PID=$$
+
+# Mark this launch as an interactive agent only when it reads and writes its
+# terminal: not print mode (`-p`, `--print`) and not a background session
+# (`--bg`, `--background`). c11 pushes mailbox messages only to a tab whose
+# lifecycle reports carry this PID (exec keeps it, and hooks inherit it), and
+# only while that PID's process group owns the terminal.
+claude_interactive=1
+[[ -t 0 && -t 1 ]] || claude_interactive=0
+for arg in "$@"; do
+    case "$arg" in
+        --) break ;;
+        -p|--print|--print=*|--bg|--background) claude_interactive=0; break ;;
+        # Combined short flags (`-cp`, `-pc`): any cluster carrying `p`.
+        -[!-]*p*|-p?*) claude_interactive=0; break ;;
+    esac
+done
+if [[ "$claude_interactive" == "1" ]]; then
+    export C11_AGENT_INTERACTIVE_PID=$$
+fi
 
 # Declare agent identity via `c11 set-agent` (source=declare). Runs in the
 # background so startup latency is unaffected. Precedence at the store level

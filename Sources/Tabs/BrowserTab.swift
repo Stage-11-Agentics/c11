@@ -2376,6 +2376,11 @@ final class BrowserTab: TabContent, ObservableObject {
     /// Published URL being displayed
     @Published private(set) var currentURL: URL?
 
+    /// Non-persistent marker for the c11 messages page. A file-write
+    /// notification reloads only this local page and never touches ordinary
+    /// browser tabs.
+    private var messagesPageURL: URL?
+
     /// Whether the browser panel should render its WKWebView in the content area.
     /// New browser tabs stay in an empty "new tab" state until first navigation.
     @Published private(set) var shouldRenderWebView: Bool = false
@@ -2535,6 +2540,7 @@ final class BrowserTab: TabContent, ObservableObject {
     private var developerToolsLastAttachedHostAt: Date?
     private var developerToolsLastKnownVisibleAt: Date?
     private var detachedDeveloperToolsWindowCloseObserver: NSObjectProtocol?
+    private var messagesPageReloadObserver: NSObjectProtocol?
     private var preferredAttachedDeveloperToolsWidth: CGFloat?
     private var preferredAttachedDeveloperToolsWidthFraction: CGFloat?
     private var browserThemeMode: BrowserThemeMode
@@ -2893,6 +2899,9 @@ final class BrowserTab: TabContent, ObservableObject {
         self.skipNextLoadStamp = pendingHibernate
             || (createdAt.map { Date().timeIntervalSince($0) > 5 } ?? true)
         self.workspaceId = workspaceId
+        self.messagesPageURL = initialURL.flatMap {
+            MessagesPageLayout.isMessagesPageURL($0) ? $0.standardizedFileURL : nil
+        }
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
             ? requestedProfileID
@@ -3046,6 +3055,8 @@ final class BrowserTab: TabContent, ObservableObject {
         // `WKWebView` itself off-main — that would be a `@MainActor`
         // isolation violation against an AppKit/WebKit object.
         TabMetricsSampler.shared.register(surfaceId: self.id)
+
+        installMessagesPageReloadObserverIfNeeded()
 
         // Navigate to initial URL if provided.
         //
@@ -4096,9 +4107,51 @@ final class BrowserTab: TabContent, ObservableObject {
 
     // MARK: - Navigation
 
+    private func installMessagesPageReloadObserverIfNeeded() {
+        guard messagesPageURL != nil, messagesPageReloadObserver == nil else { return }
+        messagesPageReloadObserver = NotificationCenter.default.addObserver(
+            forName: MessagesPageWriter.pageDidWriteNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            guard let writtenURL = notification.object as? URL else {
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let messagesPageURL = self.messagesPageURL,
+                      let currentURL = self.currentURL,
+                      MessagesPageLayout.isMessagesPageURL(currentURL),
+                      writtenURL.standardizedFileURL.path == messagesPageURL.standardizedFileURL.path,
+                      currentURL.standardizedFileURL.path == messagesPageURL.standardizedFileURL.path else {
+                    // A browser back/forward navigation may leave the
+                    // observer installed while the current document is no
+                    // longer the messages page. Never reload that document.
+                    return
+                }
+                self.reload()
+            }
+        }
+    }
+
+    private func updateMessagesPageReloadObserver(for url: URL) {
+        let nextURL = MessagesPageLayout.isMessagesPageURL(url) ? url.standardizedFileURL : nil
+        guard nextURL != messagesPageURL else {
+            installMessagesPageReloadObserverIfNeeded()
+            return
+        }
+        if let messagesPageReloadObserver {
+            NotificationCenter.default.removeObserver(messagesPageReloadObserver)
+            self.messagesPageReloadObserver = nil
+        }
+        messagesPageURL = nextURL
+        installMessagesPageReloadObserverIfNeeded()
+    }
+
     /// Navigate to a URL
     @discardableResult
     func navigate(to url: URL, recordTypedNavigation: Bool = false) -> BrowserNavigationDisposition {
+        updateMessagesPageReloadObserver(for: url)
         supersedeInsecureHTTPConsentIfNeeded(for: url)
         let request = URLRequest(url: url)
         if shouldBlockInsecureHTTPNavigation(to: url) {
@@ -4448,6 +4501,9 @@ final class BrowserTab: TabContent, ObservableObject {
         developerToolsVisibilityLossCheckWorkItem = nil
         if let detachedDeveloperToolsWindowCloseObserver {
             NotificationCenter.default.removeObserver(detachedDeveloperToolsWindowCloseObserver)
+        }
+        if let messagesPageReloadObserver {
+            NotificationCenter.default.removeObserver(messagesPageReloadObserver)
         }
         webViewObservers.removeAll()
         webViewCancellables.removeAll()

@@ -8,7 +8,7 @@
   "surface": "c56a4180-65aa-42ec-a945-5fd21dec0538",
   "payload": {
     "id": "01K3A2B7X8PQRTVWYZ0123456J",
-    "from": "watcher",
-    "to": "builder"
+    "recipient": "builder",
+    "via": "inbox"
   }
 }

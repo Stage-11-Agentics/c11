@@ -120,6 +120,20 @@ extension TerminalController {
                 result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
                 return
             }
+            // Codex's notify callback fires only on a completed agent turn, so
+            // this is an explicit prompt edge for the mailbox stdin gate. It
+            // goes through the deriver queue like every other lifecycle edge,
+            // so a Return typed just before it is applied first.
+            if params[LegacyCodexNotifyGuard.payloadKey] != nil,
+               let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
+                TabLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: surfaceId,
+                    workspaceId: ws.id,
+                    activity: .idle,
+                    source: .reported,
+                    agentPid: agentPid
+                )
+            }
             TerminalNotificationStore.shared.addNotification(
                 workspaceId: ws.id,
                 surfaceId: surfaceId,
@@ -160,6 +174,20 @@ extension TerminalController {
             if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
                 result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
                 return
+            }
+            // Codex's notify callback fires only on a completed agent turn, so
+            // this is an explicit prompt edge for the mailbox stdin gate. It
+            // goes through the deriver queue like every other lifecycle edge,
+            // so a Return typed just before it is applied first.
+            if params[LegacyCodexNotifyGuard.payloadKey] != nil,
+               let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
+                TabLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: surfaceId,
+                    workspaceId: ws.id,
+                    activity: .idle,
+                    source: .reported,
+                    agentPid: agentPid
+                )
             }
             TerminalNotificationStore.shared.addNotification(
                 workspaceId: ws.id,

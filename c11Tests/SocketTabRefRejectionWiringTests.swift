@@ -1,6 +1,5 @@
 import XCTest
 import Darwin
-import GhosttyKit
 @testable import c11
 
 /// C11-165 COR-1 — the *wiring* half of COR-4. The pure seam

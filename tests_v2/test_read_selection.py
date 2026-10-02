@@ -100,11 +100,16 @@ def main():
                 else: assert result.returncode == 0 and result.stdout.strip() == 'No selection.', result
             browser = client._call('tab.create', {'workspace_id': state['workspace'], 'type': 'browser', 'url': 'about:blank'})['tab_id']
             try:
+                instrument = {'workspace_id': state['workspace'], 'tab_id': browser,
+                    'script': 'window.selectionReadCalls=0;document.getSelection=()=>{window.selectionReadCalls++;return null};window.getSelection=document.getSelection;0'}
+                client._call('browser.eval', instrument)
                 reject({'workspace_id': state['workspace'], 'tab_id': browser}, 'invalid_params')
+                observed = client._call('browser.eval', {'workspace_id': state['workspace'], 'tab_id': browser, 'script': 'window.selectionReadCalls'})
+                assert observed['value'] == 0, observed
             finally:
                 client._call('tab.close', {'workspace_id': state['workspace'], 'tab_id': browser})
             path = Path('/tmp/c11-282-selection.md'); path.write_text('# Selection fixture\n')
-            markdown = client._call('tab.create', {'workspace_id': state['workspace'], 'type': 'markdown', 'path': str(path)})['tab_id']
+            markdown = client._call('tab.create', {'workspace_id': state['workspace'], 'type': 'markdown', 'file': str(path)})['tab_id']
             try:
                 reject({'workspace_id': state['workspace'], 'tab_id': markdown}, 'invalid_params')
             finally:

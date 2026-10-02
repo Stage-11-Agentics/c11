@@ -319,6 +319,16 @@ struct WorkspaceGroupNameEditor: View {
         .onAppear {
             capturedFocus = focusTarget ?? WorkspaceGroupEditorFocusTarget.capture()
             draft = initialName
+            fieldFocused = false
+        }
+        .task {
+            // Menu-driven popovers can appear before their field is attached.
+            // Request focus after the presentation transaction, and abandon the
+            // request if the operator dismisses the editor first.
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            guard !Task.isCancelled else { return }
             fieldFocused = true
         }
         .onExitCommand(perform: onDismiss)
@@ -385,7 +395,14 @@ private struct WorkspaceGroupIconEditor: View {
         }
         .padding(16)
         .frame(width: 320)
-        .onAppear { draft = initialIcon ?? ""; fieldFocused = true }
+        .onAppear { draft = initialIcon ?? ""; fieldFocused = false }
+        .task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            guard !Task.isCancelled else { return }
+            fieldFocused = true
+        }
         .onExitCommand(perform: onDismiss)
         .onDisappear {
             fieldFocused = false

@@ -1,0 +1,1893 @@
+{
+  "id": "opencode-session",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:30:59.946Z",
+      "source": "opencode",
+      "name": "session.created",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 1,
+      "id": "ev-1",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.113Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
+      "t_ms": 167
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 168
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 168
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 168
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 6,
+      "id": "ev-6",
+      "t_ms": 169
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 7,
+      "id": "ev-7",
+      "t_ms": 169
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 8,
+      "id": "ev-8",
+      "t_ms": 169
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 9,
+      "id": "ev-9",
+      "t_ms": 170
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 10,
+      "id": "ev-10",
+      "t_ms": 170
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 11,
+      "id": "ev-11",
+      "t_ms": 170
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 12,
+      "id": "ev-12",
+      "t_ms": 170
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 13,
+      "id": "ev-13",
+      "t_ms": 170
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 14,
+      "id": "ev-14",
+      "t_ms": 272
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 15,
+      "id": "ev-15",
+      "t_ms": 272
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 16,
+      "id": "ev-16",
+      "t_ms": 272
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 17,
+      "id": "ev-17",
+      "t_ms": 273
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 18,
+      "id": "ev-18",
+      "t_ms": 273
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 19,
+      "id": "ev-19",
+      "t_ms": 273
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 20,
+      "id": "ev-20",
+      "t_ms": 273
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 21,
+      "id": "ev-21",
+      "t_ms": 273
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 22,
+      "id": "ev-22",
+      "t_ms": 274
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 23,
+      "id": "ev-23",
+      "t_ms": 274
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 24,
+      "id": "ev-24",
+      "t_ms": 274
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 25,
+      "id": "ev-25",
+      "t_ms": 274
+    },
+    {
+      "t": "2026-10-02T02:31:00.223Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 26,
+      "id": "ev-26",
+      "t_ms": 277
+    },
+    {
+      "t": "2026-10-02T02:31:00.226Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 27,
+      "id": "ev-27",
+      "t_ms": 280
+    },
+    {
+      "t": "2026-10-02T02:31:00.228Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 28,
+      "id": "ev-28",
+      "t_ms": 282
+    },
+    {
+      "t": "2026-10-02T02:31:00.240Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 29,
+      "id": "ev-29",
+      "t_ms": 294
+    },
+    {
+      "t": "2026-10-02T02:31:00.240Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 30,
+      "id": "ev-30",
+      "t_ms": 294
+    },
+    {
+      "t": "2026-10-02T02:31:00.242Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 31,
+      "id": "ev-31",
+      "t_ms": 296
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 32,
+      "id": "ev-32",
+      "t_ms": 297
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 33,
+      "id": "ev-33",
+      "t_ms": 297
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 34,
+      "id": "ev-34",
+      "t_ms": 297
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 35,
+      "id": "ev-35",
+      "t_ms": 298
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 36,
+      "id": "ev-36",
+      "t_ms": 298
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 37,
+      "id": "ev-37",
+      "t_ms": 298
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 38,
+      "id": "ev-38",
+      "t_ms": 298
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 39,
+      "id": "ev-39",
+      "t_ms": 299
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 40,
+      "id": "ev-40",
+      "t_ms": 299
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 41,
+      "id": "ev-41",
+      "t_ms": 299
+    },
+    {
+      "t": "2026-10-02T02:31:00.253Z",
+      "source": "opencode",
+      "name": "session.status",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 42,
+      "id": "ev-42",
+      "t_ms": 307
+    },
+    {
+      "t": "2026-10-02T02:31:00.255Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "true",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 43,
+      "id": "ev-43",
+      "t_ms": 309
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 44,
+      "id": "ev-44",
+      "t_ms": 383
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 45,
+      "id": "ev-45",
+      "t_ms": 383
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 46,
+      "id": "ev-46",
+      "t_ms": 383
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 47,
+      "id": "ev-47",
+      "t_ms": 384
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 48,
+      "id": "ev-48",
+      "t_ms": 384
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 49,
+      "id": "ev-49",
+      "t_ms": 384
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 50,
+      "id": "ev-50",
+      "t_ms": 385
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 51,
+      "id": "ev-51",
+      "t_ms": 385
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 52,
+      "id": "ev-52",
+      "t_ms": 385
+    },
+    {
+      "t": "2026-10-02T02:31:00.332Z",
+      "source": "opencode",
+      "name": "reference.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 53,
+      "id": "ev-53",
+      "t_ms": 386
+    },
+    {
+      "t": "2026-10-02T02:31:00.335Z",
+      "source": "opencode",
+      "name": "session.diff",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 54,
+      "id": "ev-54",
+      "t_ms": 389
+    },
+    {
+      "t": "2026-10-02T02:31:00.335Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 55,
+      "id": "ev-55",
+      "t_ms": 389
+    },
+    {
+      "t": "2026-10-02T02:31:00.337Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 56,
+      "id": "ev-56",
+      "t_ms": 391
+    },
+    {
+      "t": "2026-10-02T02:31:00.518Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 57,
+      "id": "ev-57",
+      "t_ms": 572
+    },
+    {
+      "t": "2026-10-02T02:31:00.569Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 58,
+      "id": "ev-58",
+      "t_ms": 623
+    },
+    {
+      "t": "2026-10-02T02:31:00.721Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 59,
+      "id": "ev-59",
+      "t_ms": 775
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 60,
+      "id": "ev-60",
+      "t_ms": 776
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 61,
+      "id": "ev-61",
+      "t_ms": 776
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 62,
+      "id": "ev-62",
+      "t_ms": 776
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 63,
+      "id": "ev-63",
+      "t_ms": 776
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 64,
+      "id": "ev-64",
+      "t_ms": 776
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 65,
+      "id": "ev-65",
+      "t_ms": 776
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 66,
+      "id": "ev-66",
+      "t_ms": 777
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 67,
+      "id": "ev-67",
+      "t_ms": 777
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 68,
+      "id": "ev-68",
+      "t_ms": 777
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 69,
+      "id": "ev-69",
+      "t_ms": 777
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 70,
+      "id": "ev-70",
+      "t_ms": 777
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 71,
+      "id": "ev-71",
+      "t_ms": 778
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 72,
+      "id": "ev-72",
+      "t_ms": 778
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 73,
+      "id": "ev-73",
+      "t_ms": 778
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 74,
+      "id": "ev-74",
+      "t_ms": 778
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 75,
+      "id": "ev-75",
+      "t_ms": 778
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 76,
+      "id": "ev-76",
+      "t_ms": 778
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 77,
+      "id": "ev-77",
+      "t_ms": 779
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 78,
+      "id": "ev-78",
+      "t_ms": 779
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 79,
+      "id": "ev-79",
+      "t_ms": 779
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 80,
+      "id": "ev-80",
+      "t_ms": 779
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 81,
+      "id": "ev-81",
+      "t_ms": 779
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 82,
+      "id": "ev-82",
+      "t_ms": 779
+    },
+    {
+      "t": "2026-10-02T02:31:00.727Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 83,
+      "id": "ev-83",
+      "t_ms": 781
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 84,
+      "id": "ev-84",
+      "t_ms": 782
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 85,
+      "id": "ev-85",
+      "t_ms": 782
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 86,
+      "id": "ev-86",
+      "t_ms": 782
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 87,
+      "id": "ev-87",
+      "t_ms": 782
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 88,
+      "id": "ev-88",
+      "t_ms": 782
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 89,
+      "id": "ev-89",
+      "t_ms": 782
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 90,
+      "id": "ev-90",
+      "t_ms": 783
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 91,
+      "id": "ev-91",
+      "t_ms": 783
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 92,
+      "id": "ev-92",
+      "t_ms": 783
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 93,
+      "id": "ev-93",
+      "t_ms": 783
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 94,
+      "id": "ev-94",
+      "t_ms": 783
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 95,
+      "id": "ev-95",
+      "t_ms": 783
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 96,
+      "id": "ev-96",
+      "t_ms": 827
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 97,
+      "id": "ev-97",
+      "t_ms": 827
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 98,
+      "id": "ev-98",
+      "t_ms": 827
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 99,
+      "id": "ev-99",
+      "t_ms": 828
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 100,
+      "id": "ev-100",
+      "t_ms": 828
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 101,
+      "id": "ev-101",
+      "t_ms": 828
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 102,
+      "id": "ev-102",
+      "t_ms": 828
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 103,
+      "id": "ev-103",
+      "t_ms": 828
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 104,
+      "id": "ev-104",
+      "t_ms": 828
+    },
+    {
+      "t": "2026-10-02T02:31:00.775Z",
+      "source": "opencode",
+      "name": "reference.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 105,
+      "id": "ev-105",
+      "t_ms": 829
+    },
+    {
+      "t": "2026-10-02T02:31:00.873Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 106,
+      "id": "ev-106",
+      "t_ms": 927
+    },
+    {
+      "t": "2026-10-02T02:31:00.922Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 107,
+      "id": "ev-107",
+      "t_ms": 976
+    },
+    {
+      "t": "2026-10-02T02:31:00.923Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 108,
+      "id": "ev-108",
+      "t_ms": 977
+    },
+    {
+      "t": "2026-10-02T02:31:00.974Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 109,
+      "id": "ev-109",
+      "t_ms": 1028
+    },
+    {
+      "t": "2026-10-02T02:31:01.264Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 110,
+      "id": "ev-110",
+      "t_ms": 1318
+    },
+    {
+      "t": "2026-10-02T02:31:01.315Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "false"
+      },
+      "oracle": null,
+      "seq": 111,
+      "id": "ev-111",
+      "t_ms": 1369
+    },
+    {
+      "t": "2026-10-02T02:31:01.483Z",
+      "source": "opencode",
+      "name": "session.status",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 112,
+      "id": "ev-112",
+      "t_ms": 1537
+    },
+    {
+      "t": "2026-10-02T02:31:09Z",
+      "source": "oracle",
+      "name": "after-opencode",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "terminal_type": "opencode",
+        "model_detected": "mimo-v2.6-flash-free",
+        "model_label": "opencode/mimo-v2",
+        "lifecycle_state": "throttled"
+      },
+      "oracle": {
+        "mark": "working",
+        "unread": 0,
+        "activity": "working",
+        "status": "busy"
+      },
+      "seq": 113,
+      "id": "ev-113",
+      "t_ms": 9054
+    },
+    {
+      "t": "2026-10-02T02:31:09.589Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 114,
+      "id": "ev-114",
+      "t_ms": 9643
+    },
+    {
+      "t": "2026-10-02T02:31:10.214Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 115,
+      "id": "ev-115",
+      "t_ms": 10268
+    },
+    {
+      "t": "2026-10-02T02:31:10.219Z",
+      "source": "opencode",
+      "name": "message.part.delta",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 116,
+      "id": "ev-116",
+      "t_ms": 10273
+    },
+    {
+      "t": "2026-10-02T02:31:10.219Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-opencode",
+      "attrs": {
+        "child": "false",
+        "has_session": "true"
+      },
+      "oracle": null,
+      "seq": 117,
+      "id": "ev-117",
+      "t_ms": 10273
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "Plugin event names: ['catalog.updated', 'integration.updated', 'message.part.delta', 'message.part.updated', 'message.updated', 'plugin.added', 'reference.updated', 'session.created', 'session.diff', 'session.status', 'session.updated']."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "OpenCode's native signals are plugin events (session.idle, session.status, permission.asked, session.error), not Claude hook names. Child sessions must not retarget the root tab."
+  }
+}

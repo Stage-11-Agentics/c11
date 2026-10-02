@@ -1,0 +1,185 @@
+{
+  "id": "claude-session-end",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T03:00:27.036Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-end",
+      "attrs": {
+        "kind": "terminal",
+        "c11_seq": "4129",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 1,
+      "id": "ev-1",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T03:00:27.037Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-end",
+      "attrs": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]",
+        "c11_seq": "4130",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
+      "t_ms": 1
+    },
+    {
+      "t": "2026-10-02T03:00:27.572Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-end",
+      "attrs": {
+        "state": "idle",
+        "c11_seq": "4131",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 536
+    },
+    {
+      "t": "2026-10-02T03:00:27.605Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-end",
+      "attrs": {
+        "state": "working",
+        "c11_seq": "4132",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 569
+    },
+    {
+      "t": "2026-10-02T03:00:28Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "session_id": "sess-6",
+      "tab": "tab-end",
+      "attrs": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "oracle": null,
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 964
+    },
+    {
+      "t": "2026-10-02T03:00:29Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "session_id": "sess-6",
+      "tab": "tab-end",
+      "attrs": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "oracle": null,
+      "seq": 6,
+      "id": "ev-6",
+      "t_ms": 1964
+    },
+    {
+      "t": "2026-10-02T03:00:31Z",
+      "source": "claude-hook",
+      "name": "Stop",
+      "tool_name": null,
+      "session_id": "sess-6",
+      "tab": "tab-end",
+      "attrs": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "Stop",
+        "stop_hook_active": "false",
+        "background_tasks": "0",
+        "session_crons": "0"
+      },
+      "oracle": null,
+      "seq": 7,
+      "id": "ev-7",
+      "t_ms": 3964
+    },
+    {
+      "t": "2026-10-02T03:00:33Z",
+      "source": "claude-hook",
+      "name": "SessionEnd",
+      "tool_name": null,
+      "session_id": "sess-6",
+      "tab": "tab-end",
+      "attrs": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-6",
+        "hook_event_name": "SessionEnd"
+      },
+      "oracle": null,
+      "seq": 8,
+      "id": "ev-8",
+      "t_ms": 5964
+    },
+    {
+      "t": "2026-10-02T03:00:33Z",
+      "source": "oracle",
+      "name": "after-session-end",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-end",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled"
+      },
+      "oracle": {
+        "mark": "working",
+        "unread": 0,
+        "activity": "working",
+        "status": ""
+      },
+      "seq": 9,
+      "id": "ev-9",
+      "t_ms": 5964
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "SessionEnd arrived while get-metadata for that tab still succeeded. The oracle after SessionEnd is the observed mark."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "A clean session end clears that tab's running turn. The mark comes from the oracle taken while the tab still exists."
+  }
+}

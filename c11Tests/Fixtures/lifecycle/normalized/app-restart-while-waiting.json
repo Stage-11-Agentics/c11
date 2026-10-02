@@ -1,0 +1,14 @@
+{
+  "id": "app-restart-while-waiting",
+  "origin": "gap",
+  "events": [],
+  "current": {
+    "mark": "not-observed",
+    "notes": "No app restart was performed. No restart event was recorded."
+  },
+  "intended": {
+    "mark": "waiting",
+    "notes": "After an app restart, a tab that was blocked stays blocked rather than being dropped or applied to a sibling."
+  },
+  "recapture_required": "tagged-build"
+}

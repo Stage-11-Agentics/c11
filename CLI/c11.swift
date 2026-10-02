@@ -8533,7 +8533,6 @@ struct CMUXCLI {
               default <name|id>|--pin-current       Set the default configuration.
               launch <name|id> [fields]              Launch a configuration.
 
-            Run `c11 config <subcommand> --help` for command-specific details.
             """
         case "events":
             return eventsUsage()
@@ -8976,10 +8975,10 @@ struct CMUXCLI {
             """
         case "ssh-session-end":
             return """
-            Usage: c11 ssh-session-end --relay-port <port> [--workspace <ref>] [--surface <ref>]
+            Usage: c11 ssh-session-end --relay-port <port> [--workspace <ref>] [--tab <ref>]
 
             Notify c11 that an SSH terminal session has ended.
-            Defaults to CMUX_WORKSPACE_ID and C11_TAB_ID when omitted.
+            Defaults to C11_WORKSPACE_ID and C11_TAB_ID when omitted.
             """
         case "remote-daemon-status":
             return """
@@ -10544,10 +10543,11 @@ struct CMUXCLI {
             """
         case "markdown-content":
             return """
-            Usage: c11 markdown-content [--surface <id|ref>] [--json]
+            Usage: c11 markdown-content [--tab <id|ref>] [--json]
 
             Read the content of the caller's markdown tab, or the tab named by
-            --surface. The caller tab defaults to C11_TAB_ID.
+            --tab. The workspace and caller tab default to C11_WORKSPACE_ID and
+            C11_TAB_ID.
             """
         case "ui":
             return """

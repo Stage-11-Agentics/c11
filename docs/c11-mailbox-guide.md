@@ -41,7 +41,7 @@ Choose the channel by whether the communication needs a record:
 | Need | Command | Contract |
 |---|---|---|
 | Nudge, short brief, or immediate instruction in a tab | `c11 send --workspace <ref> --tab <ref> "…"` | Types into the target PTY and submits one turn. c11 records the full text as `tab.input_sent`, but the PTY action is not a durable completion receipt. |
-| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> --body "…"` | Records the envelope and body. `mailbox.accepted` and `mailbox.delivered` events make the exchange inspectable; delivery records `via: push`, `drain`, or `inbox`. A waiting agent receives a new turn; a busy agent receives it at the end of its turn. |
+| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> --body "…"` | Records the envelope and body. `mailbox.accepted` and `mailbox.delivered` events make the exchange inspectable; delivery records `via: push`, `drain`, or `inbox`. A waiting agent that opted into push (`mailbox.delivery=stdin`) receives a new turn; a busy agent receives it at the end of its turn. |
 | Review the recorded exchange | `c11 messages view` or `c11 mailbox view` | Opens the live traffic page in a c11 browser tab without taking focus. The mailbox spelling is an alias. |
 
 Declare `mailbox.address` once during orientation, before peers need to reach the tab. The address is stable across title changes, so it is the right value to use with `--to`; a title is display text and can change.
@@ -52,7 +52,7 @@ If the tab is an interactive agent and should receive pushed mail, opt in during
 c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.delivery --value stdin --type string
 ```
 
-c11 pushes only to an interactive agent that owns its terminal: the tab must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never receive agent mail. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's c11 wrapper and Codex's per-launch hooks drain at turn boundaries; Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit inbox floor.
+c11 pushes only to an interactive agent that owns its terminal: the tab must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's c11 wrapper and Codex's per-launch hooks drain at turn boundaries; Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit inbox floor.
 
 Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
 

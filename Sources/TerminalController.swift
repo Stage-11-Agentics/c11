@@ -3170,8 +3170,13 @@ class TerminalController {
     struct TabSendPhaseAResolved {
         let terminalPanel: TerminalTab
         let initialSurface: ghostty_surface_t?
+        let workspaceId: UUID
+        let tabId: UUID
         let workspaceIdString: String
         let tabIdString: String
+        let callerTabId: UUID?
+        let callerTitle: String?
+        let targetTitle: String
         let responseEnvelope: [String: Any]
     }
 
@@ -3251,6 +3256,35 @@ class TerminalController {
         guard let terminalPanel = targetWorkspace.terminalPanel(for: surfaceId) else {
             return .err(.err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
+
+        // Match `flag_caller_tab_id` validation: caller attribution is an
+        // identity UUID, not a target handle, and old callers arrive here as
+        // `caller_surface_id` after wire canonicalization.
+        let rawCaller = params["caller_surface_id"] as? String
+            ?? params["caller_tab_id"] as? String
+        let callerTabId: UUID?
+        if rawCaller == nil {
+            callerTabId = nil
+        } else {
+            let trimmedCaller = rawCaller!.trimmingCharacters(in: .whitespacesAndNewlines)
+            callerTabId = UUID(uuidString: trimmedCaller)
+        }
+
+        let callerTitle: String?
+        if let callerTabId {
+            let caller = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: callerTabId,
+                preferredWorkspaceId: nil
+            )
+            callerTitle = caller.map {
+                $0.workspace.tabTitle(panelId: callerTabId)
+                    ?? $0.workspace.panels[callerTabId]?.displayTitle
+            } ?? nil
+        } else {
+            callerTitle = nil
+        }
+
+        let targetTitle = targetWorkspace.tabTitle(panelId: surfaceId) ?? terminalPanel.displayTitle
         let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
         let envelope: [String: Any] = [
             "workspace_id": targetWorkspace.id.uuidString,
@@ -3263,8 +3297,13 @@ class TerminalController {
         return .ok(TabSendPhaseAResolved(
             terminalPanel: terminalPanel,
             initialSurface: terminalPanel.surface.surface,
+            workspaceId: targetWorkspace.id,
+            tabId: surfaceId,
             workspaceIdString: targetWorkspace.id.uuidString,
             tabIdString: surfaceId.uuidString,
+            callerTabId: callerTabId,
+            callerTitle: callerTitle,
+            targetTitle: targetTitle,
             responseEnvelope: envelope
         ))
     }
@@ -3275,6 +3314,14 @@ class TerminalController {
     // pointer-validity check and input injection.
     struct LegacyTabSendTarget {
         let terminalPanel: TerminalTab
+        let workspaceId: UUID
+        let surfaceId: UUID
+        let targetTitle: String
+    }
+
+    nonisolated static func namedKeySubmits(_ keyName: String) -> Bool {
+        let normalized = keyName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "enter" || normalized == "return"
     }
 
     enum LegacyTabSendTargetOutcome {
@@ -3292,7 +3339,15 @@ class TerminalController {
             guard let terminalTab = resolveTerminalPanel(from: target, workspaceManager: workspaceManager) else {
                 return .error(missingTargetError ?? "ERROR: Surface not found")
             }
-            return .ok(LegacyTabSendTarget(terminalPanel: terminalTab))
+            guard let workspace = workspaceManager.workspaces.first(where: { $0.panels[terminalTab.id] != nil }) else {
+                return .error(missingTargetError ?? "ERROR: Surface not found")
+            }
+            return .ok(LegacyTabSendTarget(
+                terminalPanel: terminalTab,
+                workspaceId: workspace.id,
+                surfaceId: terminalTab.id,
+                targetTitle: workspace.tabTitle(panelId: terminalTab.id) ?? terminalTab.displayTitle
+            ))
         }
 
         guard let selectedId = workspaceManager.selectedWorkspaceId,
@@ -3300,7 +3355,12 @@ class TerminalController {
               let terminalTab = workspace.focusedTerminalTab else {
             return .error("ERROR: No focused terminal")
         }
-        return .ok(LegacyTabSendTarget(terminalPanel: terminalTab))
+        return .ok(LegacyTabSendTarget(
+            terminalPanel: terminalTab,
+            workspaceId: workspace.id,
+            surfaceId: terminalTab.id,
+            targetTitle: workspace.tabTitle(panelId: terminalTab.id) ?? terminalTab.displayTitle
+        ))
     }
 
     nonisolated func resolveLegacySurfaceSendTargetOffMain(
@@ -3346,6 +3406,9 @@ class TerminalController {
 
             let semaphore = DispatchSemaphore(value: 0)
             nonisolated(unsafe) var result = "ERROR: Failed to send input"
+            nonisolated(unsafe) var didSend = false
+            nonisolated(unsafe) var eventKind: String?
+            nonisolated(unsafe) var eventText = ""
             Task { @MainActor in
                 defer { semaphore.signal() }
                 guard resolved.terminalPanel.surface.surface == surface else {
@@ -3359,22 +3422,45 @@ class TerminalController {
                         .replacingOccurrences(of: "\\n", with: "\r")
                         .replacingOccurrences(of: "\\r", with: "\r")
                         .replacingOccurrences(of: "\\t", with: "\t")
+                    eventKind = "text"
+                    eventText = unescaped
                     for char in unescaped {
                         if char.unicodeScalars.count == 1,
                            let scalar = char.unicodeScalars.first,
                            handleControlScalar(scalar, surface: surface) {
+                            didSend = true
                             continue
                         }
                         sendTextEvent(surface: surface, text: String(char))
+                        didSend = true
                     }
                     result = "OK"
                 case .key(let keyName):
-                    result = sendNamedKey(surface, keyName: keyName)
-                        ? "OK"
-                        : "ERROR: Unknown key '\(keyName)'"
+                    eventKind = "key"
+                    eventText = keyName
+                    if sendNamedKey(surface, keyName: keyName) {
+                        didSend = true
+                        result = "OK"
+                    } else {
+                        result = "ERROR: Unknown key '\(keyName)'"
+                    }
                 }
             }
             semaphore.wait()
+            if didSend, let eventKind {
+                EventEmitter.shared.emitTabInputSent(
+                    workspace: resolved.workspaceId,
+                    surface: resolved.surfaceId,
+                    callerTabId: nil,
+                    callerTitle: nil,
+                    targetTitle: resolved.targetTitle,
+                    kind: eventKind,
+                    text: eventText,
+                    submitted: eventKind == "text"
+                        ? eventText.contains("\r")
+                        : Self.namedKeySubmits(eventText)
+                )
+            }
             return result
         }
     }

@@ -78,6 +78,13 @@ final class SendKeyVocabularyTests: XCTestCase {
         XCTAssertEqual(keycode("esc"), UInt32(kVK_Escape))
     }
 
+    func testOnlyEnterAndReturnAreSubmittedKeys() {
+        XCTAssertTrue(TerminalController.namedKeySubmits("enter"))
+        XCTAssertTrue(TerminalController.namedKeySubmits("RETURN"))
+        XCTAssertFalse(TerminalController.namedKeySubmits("ctrl-c"))
+        XCTAssertFalse(TerminalController.namedKeySubmits("tab"))
+    }
+
     func testControlCombinationsResolveToLetterKeycodes() {
         XCTAssertEqual(keycode("ctrl-c"), UInt32(kVK_ANSI_C))
         XCTAssertEqual(keycode("ctrl-d"), UInt32(kVK_ANSI_D))

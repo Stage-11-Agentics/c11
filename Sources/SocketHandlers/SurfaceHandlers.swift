@@ -977,6 +977,17 @@ extension TerminalController {
         envelope["submitted"] = submitted
         envelope["queued"] = queued
         envelope["delivered"] = !queued
+        EventEmitter.shared.emitTabInputSent(
+            workspace: resolved.workspaceId,
+            surface: resolved.tabId,
+            callerTabId: resolved.callerTabId,
+            callerTitle: resolved.callerTitle,
+            targetTitle: resolved.targetTitle,
+            kind: "text",
+            text: text,
+            submitted: submitted,
+            queued: queued
+        )
         return .ok(envelope)
     }
 
@@ -1042,6 +1053,16 @@ extension TerminalController {
 
         switch phaseBOutcome {
         case .ok:
+            EventEmitter.shared.emitTabInputSent(
+                workspace: resolved.workspaceId,
+                surface: resolved.tabId,
+                callerTabId: resolved.callerTabId,
+                callerTitle: resolved.callerTitle,
+                targetTitle: resolved.targetTitle,
+                kind: "key",
+                text: key,
+                submitted: TerminalController.namedKeySubmits(key)
+            )
             return .ok(resolved.responseEnvelope)
         case .unknownKey:
             return .err(code: "invalid_params", message: "Unknown key", data: ["key": key])

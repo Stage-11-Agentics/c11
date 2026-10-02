@@ -10,18 +10,17 @@ where `<instance>` is the per-process instance id (e.g. `com.stage11.c11-12345`)
 
 `fixtures/events/valid-*.json` must all parse successfully. `fixtures/events/invalid-*.json` must all violate exactly one documented rule. These fixtures drive:
 
-- A Swift validator unit test (mirrors `c11Tests/MailboxEnvelopeValidationTests.swift`) — asserts every `valid-*` validates and every `invalid-*` fails.
-- `tests_v2/test_events_parity.py` (to be created) — CLI vs raw-file parity test for `c11 events tail`.
+- `tests_v2/test_events_parity.py` — asserts every `valid-*` validates and every `invalid-*` fails, then checks CLI vs raw-file parity for `c11 events tail` when a live instance is available.
 
 ## What the schema enforces
 
 - `seq` is an integer ≥ 0 — the monotonic per-instance sequence number.
 - `ts` is an RFC3339 / ISO-8601 UTC timestamp with `Z` suffix and optional fractional seconds.
-- `type` is one of the closed v1 enum: `surface.created`, `surface.closed`, `workspace.selected`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `mailbox.accepted`, `mailbox.delivered`, `conversation.resume.mode`, `conversation.resume.decision`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`.
+- `type` is one of the closed v1 enum: `surface.created`, `surface.closed`, `workspace.selected`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, `mailbox.accepted`, `tab.input_sent`, `mailbox.delivered`, `conversation.resume.mode`, `conversation.resume.decision`, `hang.precursor`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`.
 - `instance` is a non-empty string.
 - `v` is the integer `1`.
 - `workspace`, `surface`, `pane` are optional UUID strings.
-- `payload` is an optional, free-form object (any keys); its shape is keyed by `type`.
+- `payload` is an optional, free-form object (any keys); its shape is keyed by `type`. In the emitted v1 payloads, `mailbox.accepted` carries `{id, from, body, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?, truncated?}`, `tab.input_sent` carries `{caller_tab_id, caller_title, target_title, kind, text, bytes, submitted, truncated?, queued?}`, and `mailbox.delivered` carries `{id, recipient, via}`. `via` is `push`, `drain`, or `inbox`; `queued` marks input accepted before the target surface attached.
 - `seq`, `ts`, `type`, `instance`, `v` are required; `additionalProperties: false` at the top level.
 
 ## What the schema does NOT enforce

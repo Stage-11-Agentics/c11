@@ -2968,6 +2968,9 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
+            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_tab_id"] = callerTabId
+            }
             let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(
                 payload,
@@ -2996,6 +2999,9 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
+            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_tab_id"] = callerTabId
+            }
             let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
@@ -3016,6 +3022,9 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
+            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_tab_id"] = callerTabId
+            }
             let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(
                 payload,
@@ -3040,6 +3049,9 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
+            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_tab_id"] = callerTabId
+            }
             let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 

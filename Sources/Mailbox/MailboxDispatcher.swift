@@ -295,7 +295,12 @@ final class MailboxDispatcher {
             id: envelope.id,
             from: envelope.from,
             to: envelope.to,
-            topic: envelope.topic
+            body: envelope.body,
+            bodyRef: envelope.bodyRef,
+            topic: envelope.topic,
+            replyTo: envelope.replyTo,
+            inReplyTo: envelope.inReplyTo,
+            urgent: envelope.urgent
         )
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
@@ -383,7 +388,8 @@ final class MailboxDispatcher {
                 workspace: workspaceId,
                 id: envelope.id,
                 recipient: recipient.name,
-                surface: recipient.surfaceId
+                surface: recipient.surfaceId,
+                via: "inbox"
             )
         } catch {
             // The `resolved` event already lists the recipient; failure to

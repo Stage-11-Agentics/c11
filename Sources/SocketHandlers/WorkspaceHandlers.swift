@@ -11,6 +11,9 @@ extension TerminalController {
     /// v2 dispatch slice for the `workspace.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchWorkspace(_ method: String, id: Any?, params: [String: Any]) -> String {
+        if method.hasPrefix("workspace.group.") || method == "workspace.reorder_batch" {
+            return v2Result(id: id, v2WorkspaceGroupCommand(method, params: params))
+        }
         switch method {
         case "workspace.list":
             return v2Result(id: id, self.v2WorkspaceList(params: params))
@@ -89,6 +92,7 @@ extension TerminalController {
                     "title": ws.title,
                     "selected": ws.id == workspaceManager.selectedWorkspaceId,
                     "pinned": ws.isPinned,
+                    "group_id": v2OrNull(ws.groupId?.uuidString),
                     "listening_ports": ws.listeningPorts,
                     "remote": ws.remoteStatusPayload(),
                     "current_directory": v2OrNull(ws.currentDirectory),

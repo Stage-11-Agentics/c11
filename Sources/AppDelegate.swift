@@ -2255,6 +2255,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    @MainActor
+    private final class WeakWorkspaceManagerReference {
+        weak var value: WorkspaceManager?
+
+        init(_ value: WorkspaceManager) {
+            self.value = value
+        }
+    }
+
     private final class MainWindowController: NSWindowController, NSWindowDelegate {
         var onClose: (() -> Void)?
 
@@ -2448,6 +2457,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
 
     private var mainWindowContexts: [ObjectIdentifier: MainWindowContext] = [:]
+    /// Weak index lets resume checks see a retained surface after its window
+    /// context unregisters, without extending the manager's lifetime.
+    private var knownWorkspaceManagers: [ObjectIdentifier: WeakWorkspaceManagerReference] = [:]
     private var mainWindowControllers: [MainWindowController] = []
     private var startupSessionSnapshot: AppSessionSnapshot?
     private var didPrepareStartupSessionSnapshot = false
@@ -5241,6 +5253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarSelectionState: SidebarSelectionState
     ) {
         _ = TerminalController.shared.v2EnsureHandleRef(kind: .window, uuid: windowId)
+        knownWorkspaceManagers[ObjectIdentifier(workspaceManager)] = WeakWorkspaceManagerReference(workspaceManager)
         workspaceManager.window = window
         installMainWindowCloseGuard(on: window)
 
@@ -5361,7 +5374,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ) -> Set<UUID> {
         var result: Set<UUID> = []
         var seenManagers: Set<ObjectIdentifier> = []
-        let managers = mainWindowContexts.values.map(\.workspaceManager)
+        knownWorkspaceManagers = knownWorkspaceManagers.filter { $0.value.value != nil }
+        let managers = knownWorkspaceManagers.values.compactMap(\.value)
+            + mainWindowContexts.values.map(\.workspaceManager)
             + [workspaceManager].compactMap { $0 }
 
         for manager in managers where seenManagers.insert(ObjectIdentifier(manager)).inserted {

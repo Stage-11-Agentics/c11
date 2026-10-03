@@ -126,7 +126,6 @@ def main() -> int:
         workspace_id = str(created.get("workspace_id") or "")
         if not workspace_id:
             raise cmuxError(f"workspace.create returned no workspace_id: {created}")
-        client._call("workspace.select", {"workspace_id": workspace_id})
 
         surface_id = ""
         probe_text = ""
@@ -204,7 +203,6 @@ def main() -> int:
                     client._call("workspace.close", {"workspace_id": workspace_id})
                 except Exception:
                     pass
-                client._call("workspace.select", {"workspace_id": original_workspace_id})
 
 
 if __name__ == "__main__":

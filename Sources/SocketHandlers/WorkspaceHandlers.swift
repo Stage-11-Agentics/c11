@@ -283,16 +283,6 @@ extension TerminalController {
         var success = false
         v2MainSync {
             if let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
-                // If this workspace belongs to another window, bring it forward so focus is visible.
-                if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                    _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                    setActiveWorkspaceManager(workspaceManager)
-                    // Bring c11 to the macOS foreground for explicit focus-intent commands.
-                    // workspace.select is in focusIntentV2Methods, so this is intentional.
-                    DispatchQueue.main.async {
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
-                }
                 workspaceManager.selectWorkspace(ws)
                 success = true
             }
@@ -341,6 +331,7 @@ extension TerminalController {
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "workspace_id": wsId.uuidString,
+            "previous_workspace_id": v2OrNull(workspaceManager.previousWorkspaceId?.uuidString),
             "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
             "workspace": wsPayload ?? NSNull()
         ])
@@ -653,10 +644,6 @@ extension TerminalController {
         var result: V2CallResult = .err(code: "not_found", message: "No workspace selected", data: nil)
         v2MainSync {
             guard workspaceManager.selectedWorkspaceId != nil else { return }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
-            }
             workspaceManager.selectNextWorkspace()
             guard let workspaceId = workspaceManager.selectedWorkspaceId else { return }
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
@@ -678,10 +665,6 @@ extension TerminalController {
         var result: V2CallResult = .err(code: "not_found", message: "No workspace selected", data: nil)
         v2MainSync {
             guard workspaceManager.selectedWorkspaceId != nil else { return }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
-            }
             workspaceManager.selectPreviousWorkspace()
             guard let workspaceId = workspaceManager.selectedWorkspaceId else { return }
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
@@ -703,10 +686,6 @@ extension TerminalController {
         var result: V2CallResult = .err(code: "not_found", message: "No previous workspace in history", data: nil)
         v2MainSync {
             guard let before = workspaceManager.selectedWorkspaceId else { return }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
-            }
             workspaceManager.navigateBack()
             guard let after = workspaceManager.selectedWorkspaceId, after != before else { return }
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
@@ -1244,6 +1223,11 @@ extension TerminalController {
     }
 
     private func v2WorkspaceSetMetadata(params: [String: Any]) -> V2CallResult {
+        if let r = SocketTabRefValidator.rejection(
+            params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
+        ) {
+            return .err(code: r.code, message: r.message, data: nil)
+        }
         // Parse + validate off-main per the socket command threading policy
         // (CLAUDE.md "Socket command threading policy").
         let rawMetadata = v2StringMap(params, "metadata")
@@ -1338,6 +1322,11 @@ extension TerminalController {
     }
 
     private func v2WorkspaceGetMetadata(params: [String: Any]) -> V2CallResult {
+        if let r = SocketTabRefValidator.rejection(
+            params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
+        ) {
+            return .err(code: r.code, message: r.message, data: nil)
+        }
         let requestedKey = v2String(params, "key")
         let requestedKeys = v2StringArray(params, "keys")
 
@@ -1380,6 +1369,11 @@ extension TerminalController {
     }
 
     private func v2WorkspaceClearMetadata(params: [String: Any]) -> V2CallResult {
+        if let r = SocketTabRefValidator.rejection(
+            params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
+        ) {
+            return .err(code: r.code, message: r.message, data: nil)
+        }
         let keys: [String]?
         if params["keys"] == nil || params["keys"] is NSNull {
             keys = nil

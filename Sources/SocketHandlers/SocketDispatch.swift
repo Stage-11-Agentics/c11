@@ -178,6 +178,27 @@ extension TerminalController {
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        let request = parseV2SocketRequest(command)
+        let method = request?.method ?? command.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
+        let context = SocketCommandContext(
+            method: method,
+            allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: method, isV2: request != nil),
+            callerTabId: SocketCommandContext.current?.callerTabId
+                ?? (request?.params["caller_tab_id"] as? String).flatMap(UUID.init(uuidString:)),
+            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+        )
+        return SocketCommandContext.withContext(context) {
+            let response = executeSocketCommand(command)
+            guard let target = context.blockedTarget else { return response }
+            if let request {
+                return v2Error(id: request.id, code: "workspace_switch_blocked", message: SocketCommandContext.blockedMessage,
+                               data: ["target": target.uuidString])
+            }
+            return "ERROR: workspace_switch_blocked: \(SocketCommandContext.blockedMessage)"
+        }
+    }
+
+    private nonisolated func executeSocketCommand(_ command: String) -> String {
         if let response = startupNotReadyResponse(for: command) { return response }
         if let response = Self.socketWorkerImmediateV1Response(command) {
             return withSocketCommandPolicy(commandKey: "ping", isV2: false) {
@@ -213,8 +234,11 @@ extension TerminalController {
         if Thread.isMainThread {
             return MainActor.assumeIsolated { self.processCommand(command) }
         }
+        let context = SocketCommandContext.current
         return DispatchQueue.main.sync {
-            MainActor.assumeIsolated { self.processCommand(command) }
+            SocketCommandContext.withContext(context) {
+                MainActor.assumeIsolated { self.processCommand(command) }
+            }
         }
     }
 
@@ -246,8 +270,11 @@ extension TerminalController {
         let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
         guard Self.asyncAckV1Commands.contains(head) else { return nil }
 
+        let context = SocketCommandContext.current
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { _ = self.processCommand(command) }
+            SocketCommandContext.withContext(context) {
+                MainActor.assumeIsolated { _ = self.processCommand(command) }
+            }
         }
         return "OK"
     }
@@ -731,6 +758,16 @@ extension TerminalController {
 
         case "select_workspace":
             return selectWorkspace(args)
+
+        case "next_workspace", "next_window":
+            workspaceManager?.selectNextWorkspace()
+            return "OK"
+        case "previous_workspace", "previous_window":
+            workspaceManager?.selectPreviousWorkspace()
+            return "OK"
+        case "last_workspace", "last_window":
+            workspaceManager?.navigateBack()
+            return "OK"
 
         case "current_workspace":
             return currentWorkspace()

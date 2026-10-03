@@ -171,6 +171,57 @@ enum DefaultAgentLaunchComposition: Equatable {
     }
 }
 
+/// One socket request, carried explicitly across worker → main hops. Never a
+/// process-wide stack: overlapping connections must not lend each other focus.
+final class SocketCommandContext: @unchecked Sendable {
+    static let threadKey = "com.stage11.c11.socket-request"
+    static var current: SocketCommandContext? {
+        Thread.current.threadDictionary[threadKey] as? SocketCommandContext
+    }
+    let method: String
+    let allowsFocus: Bool
+    let callerTabId: UUID?
+    let callerTTYDevice: UInt32?
+    var blockedTarget: UUID?
+    /// A command-palette session adopts the request that drives it (a simulated
+    /// shortcut, a debug call). Once adopted, the operator-only wrappers around
+    /// palette actions keep this context, so the selection setter still refuses
+    /// and attributes the action. Operator-driven sessions never carry one.
+    var holdsOperatorWrappers = false
+
+    init(method: String, allowsFocus: Bool, callerTabId: UUID? = nil, callerTTYDevice: UInt32? = nil) {
+        self.method = method
+        self.allowsFocus = allowsFocus
+        self.callerTabId = callerTabId
+        self.callerTTYDevice = callerTTYDevice
+    }
+
+    /// The origin of the palette session now running, or nil when an operator drives it.
+    /// Call where a session accepts a submission or saves one to replay later.
+    @discardableResult
+    static func adoptForPaletteSession() -> SocketCommandContext? {
+        guard let context = current else { return nil }
+        context.holdsOperatorWrappers = true
+        return context
+    }
+
+    static func withContext<T>(_ context: SocketCommandContext?, _ body: () throws -> T) rethrows -> T {
+        if context == nil, current?.holdsOperatorWrappers == true { return try body() }
+        let prior = current
+        if let context { Thread.current.threadDictionary[threadKey] = context }
+        else { Thread.current.threadDictionary.removeObject(forKey: threadKey) }
+        defer {
+            if let prior { Thread.current.threadDictionary[threadKey] = prior }
+            else { Thread.current.threadDictionary.removeObject(forKey: threadKey) }
+        }
+        return try body()
+    }
+
+    static var blockedMessage: String {
+        String(localized: "socket.error.workspaceSwitchBlocked", defaultValue: "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable.")
+    }
+}
+
 /// Unix socket-based controller for programmatic terminal control
 /// Allows automated testing and external control of terminal tabs
 @MainActor
@@ -306,9 +357,6 @@ class TerminalController {
     var workspaceManager: WorkspaceManager?
     var accessMode: SocketControlMode = .c11Only
     private let myPid = getpid()
-    private nonisolated(unsafe) static var socketCommandPolicyDepth: Int = 0
-    private nonisolated(unsafe) static var socketCommandFocusAllowanceStack: [Bool] = []
-    private nonisolated static let socketCommandPolicyLock = NSLock()
     private nonisolated static let socketListenBacklog: Int32 = 128
     private nonisolated static let acceptFailureBaseBackoffMs = 10
     private nonisolated static let acceptFailureMaxBackoffMs = 5_000
@@ -609,9 +657,7 @@ class TerminalController {
     }
 
     nonisolated static func shouldSuppressSocketCommandActivation() -> Bool {
-        socketCommandPolicyLock.lock()
-        defer { socketCommandPolicyLock.unlock() }
-        return socketCommandPolicyDepth > 0
+        SocketCommandContext.current != nil
     }
 
     nonisolated static func socketCommandAllowsInAppFocusMutations() -> Bool {
@@ -619,9 +665,7 @@ class TerminalController {
     }
 
     private nonisolated static func allowsInAppFocusMutationsForActiveSocketCommand() -> Bool {
-        socketCommandPolicyLock.lock()
-        defer { socketCommandPolicyLock.unlock() }
-        return socketCommandFocusAllowanceStack.last ?? false
+        SocketCommandContext.current?.allowsFocus ?? false
     }
 
     private func socketCommandAllowsInAppFocusMutations() -> Bool {
@@ -646,7 +690,7 @@ class TerminalController {
         }
     }
 
-    private nonisolated static func socketCommandAllowsInAppFocusMutations(commandKey: String, isV2: Bool) -> Bool {
+    nonisolated static func socketCommandAllowsInAppFocusMutations(commandKey: String, isV2: Bool) -> Bool {
         if isV2 {
             return focusIntentV2Methods.contains(LegacyWireAliases.canonicalMethod(commandKey))
         }
@@ -654,20 +698,17 @@ class TerminalController {
     }
 
     nonisolated func withSocketCommandPolicy<T>(commandKey: String, isV2: Bool, _ body: () -> T) -> T {
-        let allowsFocusMutation = Self.socketCommandAllowsInAppFocusMutations(commandKey: commandKey, isV2: isV2)
-        Self.socketCommandPolicyLock.lock()
-        Self.socketCommandPolicyDepth += 1
-        Self.socketCommandFocusAllowanceStack.append(allowsFocusMutation)
-        Self.socketCommandPolicyLock.unlock()
-        defer {
-            Self.socketCommandPolicyLock.lock()
-            if !Self.socketCommandFocusAllowanceStack.isEmpty {
-                _ = Self.socketCommandFocusAllowanceStack.popLast()
-            }
-            Self.socketCommandPolicyDepth = max(0, Self.socketCommandPolicyDepth - 1)
-            Self.socketCommandPolicyLock.unlock()
+        // Reuse the request object installed at dispatch, including its denial result.
+        if let context = SocketCommandContext.current, context.method == commandKey {
+            return body()
         }
-        return body()
+        let context = SocketCommandContext(
+            method: commandKey,
+            allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: commandKey, isV2: isV2),
+            callerTabId: SocketCommandContext.current?.callerTabId,
+            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+        )
+        return SocketCommandContext.withContext(context, body)
     }
 
 #if DEBUG
@@ -2195,6 +2236,7 @@ class TerminalController {
             }
         }
 
+        let callerTTYDevice = socketCallerTTYDevice(peerPid: peerPid ?? getPeerPid(socket))
         var authenticated = false
         Self.serveCommandLines(
             socket: socket,
@@ -2203,9 +2245,38 @@ class TerminalController {
                 if let authResponse = authResponseIfNeeded(for: command, authenticated: &authenticated) {
                     return authResponse
                 }
-                return processCommandUsingSocketExecutionPolicy(command)
+                let connection = SocketCommandContext(method: "connection", allowsFocus: false, callerTTYDevice: callerTTYDevice)
+                return SocketCommandContext.withContext(connection) {
+                    processCommandUsingSocketExecutionPolicy(command)
+                }
             }
         )
+    }
+
+    private nonisolated func socketCallerTTYDevice(peerPid: pid_t?) -> UInt32? {
+        guard let peerPid else { return nil }
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(peerPid, PROC_PIDTBSDINFO, 0, &info, size) == size,
+              info.e_tdev != UInt32.max else { return nil }
+        return info.e_tdev
+    }
+
+    /// Attribution is resolved only for a switch attempt, already on main.
+    /// Telemetry connections do not incur a new synchronous main hop.
+    static func socketCallerTabId(_ context: SocketCommandContext) -> UUID? {
+        if let device = context.callerTTYDevice, let app = AppDelegate.shared {
+            for summary in app.listMainWindowSummaries() {
+                guard let manager = app.workspaceManagerFor(windowId: summary.windowId) else { continue }
+                for workspace in manager.workspaces {
+                    for (tabId, tty) in workspace.tabTTYNames {
+                        if let tabDevice = TerminalPIDResolver.ttyDevice(for: tty),
+                           UInt32(bitPattern: tabDevice) == device { return tabId }
+                    }
+                }
+            }
+        }
+        return context.callerTabId
     }
 
     /// Serves one client connection: reads newline-framed commands until EOF, a read
@@ -2746,7 +2817,8 @@ class TerminalController {
         if Thread.isMainThread {
             return body()
         }
-        return DispatchQueue.main.sync(execute: body)
+        let context = SocketCommandContext.current
+        return DispatchQueue.main.sync { SocketCommandContext.withContext(context, body) }
     }
 
     // 8 s is slightly under the CLI 10 s deadline so the server-side error
@@ -2764,8 +2836,9 @@ class TerminalController {
         // if needed (e.g., os_unfair_lock) for strict memory-model correctness.
         var cancelled = false
         let sema = DispatchSemaphore(value: 0)
+        let context = SocketCommandContext.current
         DispatchQueue.main.async {
-            if !cancelled { result = body() }
+            if !cancelled { result = SocketCommandContext.withContext(context, body) }
             sema.signal()
         }
         if sema.wait(timeout: .now() + seconds) == .success { return result }
@@ -3334,19 +3407,13 @@ class TerminalController {
     func v2ResolveWorkspaceForMetadata(
         params: [String: Any]
     ) -> (workspaceManager: WorkspaceManager, workspaceId: UUID)? {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
-        if let explicit = v2UUID(params, "workspace_id") {
-            return v2MainSync {
-                guard workspaceManager.workspaces.contains(where: { $0.id == explicit }) else { return nil }
-                return (workspaceManager, explicit)
-            }
-        }
+        // C11-251: callers reject a missing/empty `workspace_id` first; an
+        // unresolvable one is "not found", never the selected workspace.
+        guard let explicit = v2UUID(params, "workspace_id"),
+              let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
         return v2MainSync {
-            guard let selected = workspaceManager.selectedWorkspaceId,
-                  workspaceManager.workspaces.contains(where: { $0.id == selected }) else {
-                return nil
-            }
-            return (workspaceManager, selected)
+            guard workspaceManager.workspaces.contains(where: { $0.id == explicit }) else { return nil }
+            return (workspaceManager, explicit)
         }
     }
 
@@ -5156,6 +5223,7 @@ class TerminalController {
     }
 
     private func prepareWindowForSyntheticInput(_ window: NSWindow?) {
+        guard !Self.shouldSuppressSocketCommandActivation() else { return }
         guard let window else { return }
         // Keep socket-driven input simulation focused on the intended window without
         // paying repeated activation/order-front costs for every synthetic key event.
@@ -6200,15 +6268,19 @@ class TerminalController {
 
         var success = false
         v2MainSync {
-            guard let workspaceId = workspaceManager.selectedWorkspaceId,
-                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
+            let target = UUID(uuidString: trimmed).flatMap { id in
+                AppDelegate.shared?.locateSurface(surfaceId: id).flatMap { location in
+                    location.workspaceManager.workspaces.first { $0.id == location.workspaceId }
+                }
+            } ?? workspaceManager.selectedWorkspace
+            guard let workspace = target else {
                 return
             }
 
             if let uuid = UUID(uuidString: trimmed),
                workspace.panels[uuid] != nil {
                 guard workspace.bonsplitTabIdFromTabId(uuid) != nil else { return }
-                workspaceManager.focusSurface(workspaceId: workspace.id, surfaceId: uuid)
+                (workspace.owningWorkspaceManager ?? workspaceManager).focusSurface(workspaceId: workspace.id, surfaceId: uuid)
                 success = true
                 return
             }
@@ -6217,7 +6289,7 @@ class TerminalController {
                 let panels = orderedPanels(in: workspace)
                 guard index < panels.count else { return }
                 guard workspace.bonsplitTabIdFromTabId(panels[index].id) != nil else { return }
-                workspaceManager.focusSurface(workspaceId: workspace.id, surfaceId: panels[index].id)
+                (workspace.owningWorkspaceManager ?? workspaceManager).focusSurface(workspaceId: workspace.id, surfaceId: panels[index].id)
                 success = true
             }
         }
@@ -7962,11 +8034,20 @@ class TerminalController {
 
         var result = "ERROR: Panel not found or not a browser"
         v2MainSync {
-            guard let workspaceId = workspaceManager.selectedWorkspaceId,
-                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
+            let target = UUID(uuidString: panelArg).flatMap { id in
+                AppDelegate.shared?.locateSurface(surfaceId: id).flatMap { location in
+                    location.workspaceManager.workspaces.first { $0.id == location.workspaceId }
+                }
+            } ?? workspaceManager.selectedWorkspace
+            guard let workspace = target,
                   let panelId = UUID(uuidString: panelArg),
                   let browserPanel = workspace.browserPanel(for: panelId) else {
                 return
+            }
+            let manager = workspace.owningWorkspaceManager ?? workspaceManager
+            if manager.selectedWorkspaceId != workspace.id {
+                manager.selectWorkspace(workspace)
+                guard manager.selectedWorkspaceId == workspace.id else { return }
             }
 
             // Programmatic WebView focus should win over stale omnibar focus state, especially
@@ -8119,8 +8200,10 @@ class TerminalController {
 
         var result = "ERROR: Pane not found"
         v2MainSync {
-            guard let workspaceId = workspaceManager.selectedWorkspaceId,
-                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
+            let target = UUID(uuidString: paneArg).flatMap { id in
+                workspaceManager.workspaces.first { $0.bonsplitController.allPaneIds.contains { $0.id == id } }
+            } ?? workspaceManager.selectedWorkspace
+            guard let workspace = target else {
                 return
             }
 
@@ -8147,8 +8230,12 @@ class TerminalController {
 
         var result = "ERROR: Panel not found"
         v2MainSync {
-            guard let workspaceId = workspaceManager.selectedWorkspaceId,
-                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
+            let target = UUID(uuidString: workspaceArg).flatMap { id in
+                AppDelegate.shared?.locateSurface(surfaceId: id).flatMap { location in
+                    location.workspaceManager.workspaces.first { $0.id == location.workspaceId }
+                }
+            } ?? workspaceManager.selectedWorkspace
+            guard let workspace = target else {
                 return
             }
 
@@ -8157,7 +8244,7 @@ class TerminalController {
             if let panelUUID = UUID(uuidString: workspaceArg),
                workspace.panels[panelUUID] != nil,
                workspace.bonsplitTabIdFromTabId(panelUUID) != nil {
-                workspaceManager.focusSurface(workspaceId: workspace.id, surfaceId: panelUUID)
+                (workspace.owningWorkspaceManager ?? workspaceManager).focusSurface(workspaceId: workspace.id, surfaceId: panelUUID)
                 result = "OK"
             }
         }
@@ -8458,14 +8545,11 @@ class TerminalController {
         return (positional, options)
     }
 
-    /// C11-165 COR-1: reject a v1 sidebar-metadata *write* (`set_status` /
-    /// `set_progress` / `log`) that carries no explicit `--tab` target, or an
-    /// empty one, instead of silently defaulting to the *selected* tab (audit
-    /// P0.2). These writes are tab(workspace)-scoped, so `--tab` is the
-    /// granularity-pinning ref. The CLI forwards `--workspace` /
-    /// `CMUX_WORKSPACE_ID` as `--tab=<id>`, so in-pane callers are unaffected;
-    /// only truly ref-less callers (cron / launchd / a fresh shell) are
-    /// rejected. Returns a v1 `ERROR:` string, or nil to proceed.
+    /// Reject v1 sidebar-metadata calls that must not fall back to the selected
+    /// workspace when the caller omits its `--tab` target. Writes were covered
+    /// by C11-165; C11-251 adds clear/list/state commands. The CLI resolves
+    /// `--workspace` / workspace environment context to `--tab=<id>` before
+    /// reaching this check. Returns a v1 `ERROR:` string, or nil to proceed.
     private func v1RejectMissingTabRef(_ args: String) -> String? {
         let options = parseOptions(args).options
         guard let r = SocketTabRefValidator.rejection(
@@ -8816,26 +8900,31 @@ class TerminalController {
     }
 
     func reportMeta(_ args: String) -> String {
-        upsertSidebarMetadata(
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return upsertSidebarMetadata(
             args,
             missingError: "ERROR: Missing metadata key or value — usage: report_meta <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X]"
         )
     }
 
     func clearStatus(_ args: String) -> String {
-        clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
     }
 
     func clearMeta(_ args: String) -> String {
-        clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
     }
 
     func listStatus(_ args: String) -> String {
-        listSidebarMetadata(args, emptyMessage: "No status entries")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return listSidebarMetadata(args, emptyMessage: "No status entries")
     }
 
     func listMeta(_ args: String) -> String {
-        listSidebarMetadata(args, emptyMessage: "No metadata entries")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return listSidebarMetadata(args, emptyMessage: "No metadata entries")
     }
 
     private func splitMetadataBlockArgs(_ args: String) -> (optionsPart: String, markdownPart: String?) {
@@ -8857,6 +8946,7 @@ class TerminalController {
         guard workspaceManager != nil else { return "ERROR: TabManager not available" }
 
         let parts = splitMetadataBlockArgs(args)
+        if let reject = v1RejectMissingTabRef(parts.optionsPart) { return reject }
         let parsed = parseOptionsNoStop(parts.optionsPart)
         guard let key = parsed.positional.first, !key.isEmpty else {
             return "ERROR: Missing metadata block key — usage: report_meta_block <key> [--priority=N] [--tab=X] -- <markdown>"
@@ -8917,6 +9007,7 @@ class TerminalController {
     }
 
     func clearMetaBlock(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         guard let key = parsed.positional.first, parsed.positional.count == 1 else {
             return "ERROR: Missing metadata block key — usage: clear_meta_block <key> [--tab=X]"
@@ -8936,6 +9027,7 @@ class TerminalController {
     }
 
     func listMetaBlocks(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = ""
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -8982,6 +9074,7 @@ class TerminalController {
     }
 
     func clearLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -8994,6 +9087,7 @@ class TerminalController {
     }
 
     func listLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         var limit: Int?
         if let limitStr = parsed.options["limit"] {
@@ -9074,6 +9168,7 @@ class TerminalController {
     }
 
     func clearProgress(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -9721,6 +9816,7 @@ class TerminalController {
     }
 
     func sidebarState(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = ""
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -9818,6 +9914,7 @@ class TerminalController {
     }
 
     func resetSidebar(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {

@@ -577,6 +577,15 @@ extension TerminalController {
 
     /// Structured `sidebar_state` — JSON variant that includes the M3 `agent_chip` block.
     private func v2SidebarState(params: [String: Any]) -> V2CallResult {
+        guard v2UUID(params, "workspace_id") != nil
+                || v2UUID(params, "surface_id") != nil
+                || v2UUID(params, "tab_id") != nil else {
+            return .err(
+                code: "missing_ref",
+                message: String(localized: "socket.sidebar.state.targetRequired", defaultValue: "sidebar.state requires a workspace or tab target; selected-workspace fallback is disabled"),
+                data: nil
+            )
+        }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }

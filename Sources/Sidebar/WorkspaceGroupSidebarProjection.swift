@@ -200,7 +200,7 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
         let source = WorkspaceGroupSidebarObservationSource(
             structureChanges: Publishers.Merge(manager.$workspaces.map { _ in () }, manager.$workspaceGroups.map { _ in () })
                 .eraseToAnyPublisher(),
-            selectionChanges: manager.$selectedWorkspaceId.map { _ in () }.eraseToAnyPublisher(),
+            selectionChanges: manager.$storedSelectedWorkspaceId.map { _ in () }.eraseToAnyPublisher(),
             notificationChanges: notificationStore.objectWillChange.eraseToAnyPublisher(),
             groups: { [weak manager] in manager?.workspaceGroups ?? [] },
             workspaces: { [weak manager, weak notificationStore] in

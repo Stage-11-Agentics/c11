@@ -1099,7 +1099,7 @@ private struct NotificationsPopoverView: View {
 
     private func jumpToLatestUnread() {
         DispatchQueue.main.async {
-            AppDelegate.shared?.jumpToLatestUnread()
+            AppDelegate.shared?.operatorJumpToLatestUnread()
             onDismiss()
         }
     }
@@ -1108,7 +1108,7 @@ private struct NotificationsPopoverView: View {
         // SwiftUI action closures are not guaranteed to run on the main actor.
         // Ensure window focus + tab selection happens on the main thread.
         DispatchQueue.main.async {
-            _ = AppDelegate.shared?.openNotification(
+            _ = AppDelegate.shared?.operatorOpenNotification(
                 workspaceId: notification.workspaceId,
                 surfaceId: notification.surfaceId,
                 notificationId: notification.id

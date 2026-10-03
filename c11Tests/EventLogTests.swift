@@ -549,3 +549,18 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual((events[3]["payload"] as? [String: Any])?["by"] as? String, "operator")
     }
 }
+
+extension EventLogTests {
+    func testWorkspaceSwitchAttributionSerializes() {
+        let target = UUID(), caller = UUID()
+        let blocked = parse(EventEnvelope(type: .workspaceSwitchBlocked, instance: "fixture", ts: Date(timeIntervalSince1970: 1770000000), workspace: target.uuidString,
+            payload: ["target": target.uuidString, "method": "workspace.select", "caller_tab_id": caller.uuidString]).serialize(seq: 1))
+        XCTAssertEqual(blocked["type"] as? String, "workspace.switch_blocked")
+        let payload = blocked["payload"] as? [String: Any]
+        XCTAssertEqual(payload?["caller_tab_id"] as? String, caller.uuidString)
+        XCTAssertEqual(payload?["target"] as? String, target.uuidString)
+        let selected = parse(EventEnvelope(type: .workspaceSelected, instance: "fixture", ts: Date(timeIntervalSince1970: 1770000000), workspace: target.uuidString,
+            payload: ["cause": "sidebar"]).serialize(seq: 2))
+        XCTAssertEqual((selected["payload"] as? [String: Any])?["cause"] as? String, "sidebar")
+    }
+}

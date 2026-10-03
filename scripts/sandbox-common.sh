@@ -46,10 +46,13 @@ sandbox_vm_name() {
 # zsh that runs on the Tart host. Callers prepend it to a remote script.
 sandbox_host_prelude() {
   local golden="${C11_SANDBOX_GOLDEN:-c11-sandbox-golden}"
+  local golden_b="${C11_SANDBOX_GOLDEN_B:-${golden}-b}"
   local guest="${C11_SANDBOX_GUEST_USER:-admin}"
   sandbox_validate_token "golden image" "$golden" '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+  sandbox_validate_token "second golden image" "$golden_b" '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
   sandbox_validate_token "guest user" "$guest" '^[A-Za-z_][A-Za-z0-9._-]{0,31}$'
   printf 'golden=%q\n' "$golden"
+  printf 'golden_b=%q\n' "$golden_b"
   printf 'guest_user=%q\n' "$guest"
   cat <<'ZSH'
 zmodload zsh/datetime
@@ -75,6 +78,7 @@ tart_bin() {
 refuse_protected() {
   local name="$1"
   [[ "$name" != "$golden" ]] || die "refusing to operate on the golden image ($golden)"
+  [[ "$name" != "$golden_b" ]] || die "refusing to operate on the golden image ($golden_b)"
   case "$name" in
     scanner-*) die "refusing to operate on scanner VM $name" ;;
   esac

@@ -274,15 +274,7 @@ extension TerminalController {
                 return
             }
 
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
-            }
 
-            // Make sure the workspace is selected so focus effects apply to the visible UI.
-            if workspaceManager.selectedWorkspaceId != ws.id {
-                workspaceManager.selectWorkspace(ws)
-            }
 
             guard ws.panels[surfaceId] != nil else {
                 result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])

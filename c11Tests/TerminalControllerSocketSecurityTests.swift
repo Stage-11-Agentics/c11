@@ -120,6 +120,39 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 #endif
     }
 
+    func testConcurrentSocketPoliciesStayOnTheirOwnRequest() async {
+        let controller = TerminalController.shared
+        let firstEntered = DispatchSemaphore(value: 0)
+        let secondEntered = DispatchSemaphore(value: 0)
+        let letFirstFinish = DispatchSemaphore(value: 0)
+        let letSecondFinish = DispatchSemaphore(value: 0)
+        let first = Task.detached {
+            controller.withSocketCommandPolicy(commandKey: "workspace.select", isV2: true) {
+                firstEntered.signal()
+                _ = letFirstFinish.wait(timeout: .now() + 5)
+                return TerminalController.socketCommandAllowsInAppFocusMutations()
+            }
+        }
+        _ = firstEntered.wait(timeout: .now() + 5)
+        let second = Task.detached {
+            controller.withSocketCommandPolicy(commandKey: "ping", isV2: false) {
+                secondEntered.signal()
+                _ = letSecondFinish.wait(timeout: .now() + 5)
+                return TerminalController.socketCommandAllowsInAppFocusMutations()
+            }
+        }
+        _ = secondEntered.wait(timeout: .now() + 5)
+        // Neither worker request contaminates the operator's main thread.
+        XCTAssertFalse(TerminalController.shouldSuppressSocketCommandActivation())
+        letFirstFinish.signal()
+        let firstAllowed = await first.value
+        XCTAssertTrue(firstAllowed)
+        letSecondFinish.signal()
+        let secondAllowed = await second.value
+        XCTAssertFalse(secondAllowed)
+        XCTAssertNil(SocketCommandContext.current)
+    }
+
     func testPingHasContextFreeSocketWorkerResponse() async {
         let response = await Task.detached {
             XCTAssertFalse(Thread.isMainThread)

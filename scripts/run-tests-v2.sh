@@ -154,8 +154,9 @@ for _ in range(3):
         except Exception:
             existing_ids = []
 
-        ws_id = client.new_workspace()
-        client.select_workspace(ws_id)
+        ws_id = client.current_workspace()
+        if not ws_id:
+            raise RuntimeError("QA bootstrap has no selected workspace")
 
         for old_id in existing_ids:
             if old_id == ws_id:

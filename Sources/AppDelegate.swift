@@ -6346,13 +6346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func focusMainWindow(windowId: UUID) -> Bool {
         guard let window = windowForMainWindowId(windowId) else { return false }
         if TerminalController.shouldSuppressSocketCommandActivation() {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            if TerminalController.socketCommandAllowsInAppFocusMutations() {
-                window.orderFront(nil)
-                setActiveMainWindow(window)
-            }
+            // A socket scope may route work here, but never reveals this window.
             return true
         }
         bringToFront(window)
@@ -8363,17 +8357,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.showNotificationsPopoverFromMenuBar()
             },
             onOpenNotification: { [weak self] notification in
-                _ = self?.openNotification(
+                _ = self?.operatorOpenNotification(
                     workspaceId: notification.workspaceId,
                     surfaceId: notification.surfaceId,
                     notificationId: notification.id
                 )
             },
             onOpenFlag: { [weak self] flag in
-                _ = self?.openAttentionTarget(.init(workspaceID: flag.workspaceId, tabID: flag.surfaceId), notificationID: nil)
+                _ = SocketCommandContext.withContext(nil) {
+                    self?.openAttentionTarget(.init(workspaceID: flag.workspaceId, tabID: flag.surfaceId), notificationID: nil, cause: "menu")
+                }
             },
             onJumpToLatestUnread: { [weak self] in
-                self?.jumpToLatestUnread()
+                self?.operatorJumpToLatestUnread()
             },
             onCheckForUpdates: { [weak self] in
                 self?.checkForUpdates(nil)
@@ -10902,7 +10898,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   readySurfaceId == surfaceId else { return }
             attemptFocus()
         })
-        selectedWorkspaceCancellable = workspaceManager.$selectedWorkspaceId
+        selectedWorkspaceCancellable = workspaceManager.$storedSelectedWorkspaceId
             .map { _ in () }
             .sink { _ in attemptFocus() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
@@ -11070,6 +11066,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         FeedProjectionBridge.shared.snapshot().openAskCount > 0
     }
 
+    /// UI entry points clear a reentrant browser socket frame's context. They
+    /// are never exposed by the socket dispatcher; socket debug paths use the
+    /// ordinary gated functions below.
+    func operatorJumpToLatestUnread() {
+        SocketCommandContext.withContext(nil) { jumpToLatestUnread() }
+    }
+
+    @discardableResult
+    func operatorOpenNotification(workspaceId: UUID, surfaceId: UUID?, notificationId: UUID?) -> Bool {
+        SocketCommandContext.withContext(nil) {
+            openNotification(workspaceId: workspaceId, surfaceId: surfaceId, notificationId: notificationId)
+        }
+    }
+
     func jumpToLatestUnread() {
         guard let notificationStore else { return }
 #if DEBUG
@@ -11145,7 +11155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let shortcutTimingStart = CmuxTypingTiming.start()
 #endif
                 let shortcutStart = ProcessInfo.processInfo.systemUptime
-                let handledByShortcut = self.handleCustomShortcut(event: event)
+                let handledByShortcut = self.handleCustomShortcut(event: event, operatorIntent: true)
 #if DEBUG
                 shortcutMs = (ProcessInfo.processInfo.systemUptime - shortcutStart) * 1000.0
                 CmuxTypingTiming.logDuration(
@@ -11450,7 +11460,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    private func handleCustomShortcut(event: NSEvent) -> Bool {
+    private func withOperatorShortcutIntent<T>(_ operatorIntent: Bool, _ body: () -> T) -> T {
+        operatorIntent ? SocketCommandContext.withContext(nil, body) : body()
+    }
+
+    private func handleCustomShortcut(event: NSEvent, operatorIntent: Bool = false) -> Bool {
         // The New Workspace picker is a window, not a sheet, so the modal
         // guards below never see it. Its chords (⌘1–⌘9 open a pin, ⌘F focuses
         // search, ⌘W closes it) are the picker's own; ⌘W would otherwise close
@@ -11922,7 +11936,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 writeJumpUnreadTestData(["jumpUnreadShortcutHandled": "1"])
             }
 #endif
-            jumpToLatestUnread()
+            if operatorIntent { operatorJumpToLatestUnread() }
+            else { jumpToLatestUnread() }
             return true
         }
 
@@ -11963,7 +11978,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=next repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            workspaceManager?.selectNextWorkspace()
+            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectNextWorkspace(cause: "shortcut") }
             return true
         }
 
@@ -11974,7 +11989,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=prev repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            workspaceManager?.selectPreviousWorkspace()
+            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectPreviousWorkspace(cause: "shortcut") }
             return true
         }
 
@@ -12093,7 +12108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "shortcut.action name=workspaceDigit digit=\(num) targetIndex=\(targetIndex) manager=\(debugManagerToken(manager)) \(debugShortcutRouteSnapshot(event: event))"
             )
 #endif
-            manager.selectWorkspace(at: targetIndex)
+            withOperatorShortcutIntent(operatorIntent) { manager.selectWorkspace(at: targetIndex, cause: "shortcut") }
             return true
         }
 
@@ -12967,7 +12982,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// through the same app-level shortcut handler used by the local key monitor.
     @discardableResult
     func handleBrowserSurfaceKeyEquivalent(_ event: NSEvent) -> Bool {
-        handleCustomShortcut(event: event)
+        handleCustomShortcut(event: event, operatorIntent: true)
     }
 
     @discardableResult
@@ -13660,21 +13675,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @discardableResult
-    func selectFeedTarget(_ target: AttentionOrder.Target) -> Bool {
+    func selectFeedTarget(_ target: AttentionOrder.Target, cause: String = "jump") -> Bool {
         guard let (manager, workspace) = resolveFeedTarget(target) else { return false }
-        manager.selectWorkspace(workspace)
+        manager.selectWorkspace(workspace, cause: cause)
+        guard manager.selectedWorkspaceId == workspace.id else { return false }
         workspace.focusPanel(target.tabID)
         return true
     }
 
-    private func openAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?) -> Bool {
+    private func openAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?, cause: String = "jump") -> Bool {
         guard let context = contextContainingWorkspaceId(target.workspaceID),
               let window = context.window ?? NSApp.windows.first(where: {
                   $0.identifier?.rawValue == "cmux.main.\(context.windowId.uuidString)"
               }),
               let (manager, workspace) = resolveFeedTarget(target) else { return false }
         workspace.clearSplitZoom()
-        guard selectFeedTarget(target) else { return false }
+        guard selectFeedTarget(target, cause: cause) else { return false }
         context.sidebarSelectionState.selection = .tabs
         // Only the explicit user jump raises the owning window, after validating both IDs.
         bringToFront(window)
@@ -13750,6 +13766,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func openNotificationInContext(_ context: MainWindowContext, workspaceId: UUID, surfaceId: UUID?, notificationId: UUID?) -> Bool {
+        // This path raises the window before it selects, so a socket-adopted palette
+        // session is refused here, ahead of any raise.
+        if context.workspaceManager.selectedWorkspaceId != workspaceId,
+           context.workspaceManager.refuseSocketWorkspaceSelection(target: workspaceId) { return false }
         let expectedIdentifier = "cmux.main.\(context.windowId.uuidString)"
         let window: NSWindow? = context.window ?? NSApp.windows.first(where: { $0.identifier?.rawValue == expectedIdentifier })
         guard let window else {
@@ -13932,7 +13952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   surfaceId == expectedSurfaceId else { return }
             Task { @MainActor in finishIfFocused() }
         })
-        cancellables.append(workspaceManager.$selectedWorkspaceId.sink { _ in
+        cancellables.append(workspaceManager.$storedSelectedWorkspaceId.sink { _ in
             Task { @MainActor in finishIfFocused() }
         })
         if let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) {
@@ -13960,6 +13980,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func bringToFront(_ window: NSWindow) {
+        guard !TerminalController.shouldSuppressSocketCommandActivation() else { return }
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }

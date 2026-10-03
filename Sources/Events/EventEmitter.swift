@@ -130,10 +130,19 @@ final class EventEmitter {
         emit(.workspaceReordered, payload: payload)
     }
 
-    func emitWorkspaceSelected(previous: UUID?, selected: UUID) {
+    func emitWorkspaceSelected(previous: UUID?, selected: UUID, cause: String = "menu", method: String? = nil, callerTabId: UUID? = nil) {
         var payload: [String: Any] = [:]
         if let previous { payload["previous"] = previous.uuidString }
+        payload["cause"] = cause
+        if let method { payload["method"] = method; payload["caller_tab_id"] = callerTabId?.uuidString ?? NSNull() }
         emit(.workspaceSelected, workspace: selected, payload: payload)
+    }
+
+    func emitWorkspaceSwitchBlocked(target: UUID, method: String, callerTabId: UUID?) {
+        emit(.workspaceSwitchBlocked, workspace: target, payload: [
+            "target": target.uuidString, "method": method,
+            "caller_tab_id": callerTabId?.uuidString ?? NSNull()
+        ])
     }
 
     /// `scope` is "surface" or "pane"; `source` is the `MetadataSource` raw

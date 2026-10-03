@@ -48,7 +48,8 @@ The taxonomy types below are the closed v1 enum. The envelope fields `workspace`
 | `surface.created` | workspace + surface | `{kind, title?}` | A new tab opened. `kind` is terminal / browser / markdown. |
 | `surface.closed` | workspace + surface | — | Tab torn down. |
 | `workspace.reordered` | none (window-scoped) | `{window_id, final_workspace_ids}` | Applied batch order changed. Dry-run, no-op and rejected batches emit nothing. |
-| `workspace.selected` | workspace (the selected one) | `{previous?}` | Sidebar workspace switch. `previous` is the prior workspace UUID. |
+| `workspace.selected` | selected workspace | `{previous?, cause, method?, caller_tab_id?}` | Operator selection. `cause` is `sidebar`, `shortcut`, `palette`, `notification`, `jump`, `menu`, `socket`, `close_fallback`, `restore`, or `create`. Socket fields identify the method and calling tab when known. |
+| `workspace.switch_blocked` | requested workspace | `{target, method, caller_tab_id}` | Socket attempt refused before selection changes. `caller_tab_id` is the peer TTY's tab, or the supplied caller UUID when no TTY is available; null means unknown. |
 | `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `surface`\|`pane` (the tab and area scopes); `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
 | `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
 | `waiting.entered` | workspace + surface? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
@@ -143,3 +144,5 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 - **Drops surface as data, not silence.** Under a stalled disk c11 sheds events and records the loss as `log.dropped {count}` rather than blocking. A gap is always marked; it is never hidden.
 - **`ts` is not authoritative for ordering.** It can invert slightly relative to `seq` across racing threads. Never sort or dedupe on `ts`.
 - **Per-instance, not global.** There is no cross-instance total order; `seq` only means something within one `instance`.
+
+To answer who attempted a switch, run `c11 events tail --filter type=workspace.switch_blocked`. Resolve `payload.caller_tab_id` against `c11 tree --all --json`; a closed caller remains attributable by UUID. CLI requests include their caller identity; raw sockets from terminals are attributed by the peer's controlling TTY. This is attribution, not permission to switch.

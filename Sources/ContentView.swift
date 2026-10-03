@@ -1559,6 +1559,8 @@ struct ContentView: View {
     @State private var commandPaletteTerminalOpenTargetAvailability: Set<TerminalDirectoryOpenTarget> = []
     @State private var isCommandPaletteSearchPending = false
     @State private var commandPalettePendingActivation: CommandPalettePendingActivation?
+    /// Who submitted the pending activation (nil: the operator), replayed with it.
+    @State private var commandPalettePendingOrigin: SocketCommandContext?
     @State private var commandPaletteResultsRevision: UInt64 = 0
     @State private var commandPaletteUsageHistoryByCommandId: [String: CommandPaletteUsageEntry] = [:]
     @State private var isFeedbackComposerPresented = false
@@ -4543,7 +4545,7 @@ struct ContentView: View {
         let usageHistory = commandPaletteUsageHistoryByCommandId
         let queryIsEmpty = CommandPaletteFuzzyMatcher.preparedQuery(matchingQuery).isEmpty
         let historyTimestamp = Date().timeIntervalSince1970
-        commandPalettePendingActivation = nil
+        commandPalettePendingActivation = nil; commandPalettePendingOrigin = nil
         cancelCommandPaletteSearch()
         if Self.commandPaletteShouldSynchronouslySeedResults(
             hasVisibleResultsForScope: commandPaletteVisibleResultsScope == scope
@@ -4613,6 +4615,7 @@ struct ContentView: View {
                 )
                 let resultIDs = cachedCommandPaletteResults.map(\.id)
                 let pendingActivation = commandPalettePendingActivation
+                let pendingOrigin = commandPalettePendingOrigin
                 let resolvedActivation = Self.commandPaletteResolvedPendingActivation(
                     pendingActivation,
                     requestID: requestID,
@@ -4630,13 +4633,16 @@ struct ContentView: View {
                 )
                 if Self.commandPalettePendingActivationRequestID(pendingActivation) == requestID {
                     commandPalettePendingActivation = nil
+                    commandPalettePendingOrigin = nil
                 }
                 commandPaletteResultsRevision &+= 1
                 if commandPaletteSearchRequestID == requestID {
                     commandPaletteSearchTask = nil
                 }
                 if let resolvedActivation {
-                    runCommandPaletteResolvedActivation(resolvedActivation)
+                    SocketCommandContext.withContext(pendingOrigin) {
+                        runCommandPaletteResolvedActivation(resolvedActivation)
+                    }
                 }
             }
         }
@@ -4953,10 +4959,7 @@ struct ContentView: View {
         // Switcher commands dismiss the palette after action dispatch.
         // Defer focus mutation one turn so browser omnibar autofocus can run
         // without being blocked by the palette-visibility guard.
-        DispatchQueue.main.async {
-            _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusWorkspace(workspaceId, suppressFlash: true)
-        }
+        workspaceManager.focusPaletteSwitcherTarget(windowId: windowId, workspaceId: workspaceId)
     }
 
     private func focusCommandPaletteSwitcherSurfaceTarget(
@@ -4965,10 +4968,7 @@ struct ContentView: View {
         workspaceId: UUID,
         panelId: UUID
     ) {
-        DispatchQueue.main.async {
-            _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusWorkspace(workspaceId, surfaceId: panelId, suppressFlash: true)
-        }
+        workspaceManager.focusPaletteSwitcherTarget(windowId: windowId, workspaceId: workspaceId, surfaceId: panelId)
     }
 
     private func commandPaletteWorkspaceSearchMetadata(for workspace: Workspace) -> CommandPaletteSwitcherSearchMetadata {
@@ -6074,7 +6074,7 @@ struct ContentView: View {
             AppDelegate.shared?.toggleNotificationsPopover(animated: false)
         }
         registry.register(commandId: "palette.jumpUnread") {
-            AppDelegate.shared?.jumpToLatestUnread()
+            AppDelegate.shared?.operatorJumpToLatestUnread()
         }
         registry.register(commandId: "palette.openSettings") {
 #if DEBUG
@@ -6120,10 +6120,10 @@ struct ContentView: View {
             workspaceManager.setPinned(workspace, pinned: !workspace.isPinned)
         }
         registry.register(commandId: "palette.nextWorkspace") {
-            workspaceManager.selectNextWorkspace()
+            workspaceManager.selectNextWorkspace(cause: "palette")
         }
         registry.register(commandId: "palette.previousWorkspace") {
-            workspaceManager.selectPreviousWorkspace()
+            workspaceManager.selectPreviousWorkspace(cause: "palette")
         }
         registry.register(commandId: "palette.moveWorkspaceUp") {
             moveSelectedWorkspace(by: -1)
@@ -6137,7 +6137,7 @@ struct ContentView: View {
                 return
             }
             workspaceManager.moveWorkspacesToTop([workspace.id])
-            workspaceManager.selectWorkspace(workspace)
+            SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
         }
         registry.register(commandId: "palette.markWorkspaceRead") {
             guard let workspaceId = workspaceManager.selectedWorkspace?.id else {
@@ -6633,6 +6633,7 @@ struct ContentView: View {
                     requestID: commandPaletteSearchRequestID,
                     commandID: commandID
                 )
+                commandPalettePendingOrigin = SocketCommandContext.adoptForPaletteSession()
             }
             return
         }
@@ -6647,6 +6648,7 @@ struct ContentView: View {
                     fallbackSelectedIndex: commandPaletteSelectedResultIndex,
                     preferredCommandID: commandPaletteSelectionAnchorCommandID
                 )
+                commandPalettePendingOrigin = SocketCommandContext.adoptForPaletteSession()
             }
             return
         }
@@ -6670,6 +6672,7 @@ struct ContentView: View {
         dlog("palette.run commandId=\(command.id) dismissOnRun=\(command.dismissOnRun ? 1 : 0)")
 #endif
         recordCommandPaletteUsage(command.id)
+        SocketCommandContext.adoptForPaletteSession()
         command.action()
         if command.dismissOnRun {
             dismissCommandPalette(restoreFocus: false)
@@ -6861,7 +6864,7 @@ struct ContentView: View {
         commandPaletteResolvedSearchFingerprint = nil
         commandPaletteTerminalOpenTargetAvailability = []
         isCommandPaletteSearchPending = false
-        commandPalettePendingActivation = nil
+        commandPalettePendingActivation = nil; commandPalettePendingOrigin = nil
         commandPaletteResultsRevision &+= 1
         if let window = observedWindow {
             _ = window.makeFirstResponder(nil)
@@ -7029,7 +7032,7 @@ struct ContentView: View {
         if let window = observedWindow, !window.isKeyWindow {
             window.makeKeyAndOrderFront(nil)
         }
-        workspaceManager.focusWorkspace(target.workspaceId, surfaceId: target.panelId, suppressFlash: true)
+        workspaceManager.focusWorkspace(target.workspaceId, surfaceId: target.panelId, suppressFlash: true, cause: "palette")
 
         guard let context = focusedPanelContext,
               context.workspace.id == target.workspaceId,
@@ -7200,7 +7203,7 @@ struct ContentView: View {
         let targetIndex = currentIndex + delta
         guard targetIndex >= 0, targetIndex < workspaceManager.workspaces.count else { return }
         _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex)
-        workspaceManager.selectWorkspace(workspace)
+        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
     }
 
     private func syncSidebarSelectedWorkspaceIds() {
@@ -8696,9 +8699,9 @@ struct WorkspaceSidebar: View {
             modifierKeyMonitor.start()
             horizontalScrollMonitor.start { [workspaceManager] step in
                 if step > 0 {
-                    workspaceManager.selectNextWorkspace()
+                    workspaceManager.selectNextWorkspace(cause: "shortcut")
                 } else {
-                    workspaceManager.selectPreviousWorkspace()
+                    workspaceManager.selectPreviousWorkspace(cause: "shortcut")
                 }
             }
             draggedWorkspaceId = nil
@@ -8827,7 +8830,7 @@ struct WorkspaceSidebar: View {
                 try? workspaceManager.setWorkspaceGroupCollapsed(id: id, collapsed: !group.isCollapsed)
             },
             onFocus: { id in
-                guard let selected = try? workspaceManager.focusWorkspaceGroup(id: id) else { return }
+                guard let selected = try? SocketCommandContext.withContext(nil, { try workspaceManager.withWorkspaceSelectionCause("sidebar") { try workspaceManager.focusWorkspaceGroup(id: id) } }) else { return }
                 selectedWorkspaceIds = [selected]
                 lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selected }
                 selection = .tabs
@@ -11093,7 +11096,7 @@ private struct SidebarWaitingAgentCluster: View {
 
     private func jump() {
         DispatchQueue.main.async {
-            AppDelegate.shared?.jumpToLatestUnread()
+            AppDelegate.shared?.operatorJumpToLatestUnread()
         }
     }
 }
@@ -12448,7 +12451,7 @@ private struct WorkspaceRowView: View, Equatable {
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
         guard agent.flagged || agent.presentedState == .waiting else { return }
-        _ = AppDelegate.shared?.openNotification(
+        _ = AppDelegate.shared?.operatorOpenNotification(
             workspaceId: workspace.id,
             surfaceId: agent.surfaceId,
             notificationId: nil
@@ -13578,7 +13581,7 @@ private struct WorkspaceRowView: View, Equatable {
         } catch { return }
         selectedWorkspaceIds = [workspace.id]
         lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
-        workspaceManager.selectWorkspace(workspace)
+        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
         setSelectionToTabs()
     }
 
@@ -13616,7 +13619,7 @@ private struct WorkspaceRowView: View, Equatable {
         }
 
         lastSidebarSelectionIndex = index
-        workspaceManager.selectWorkspace(workspace)
+        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
         if wasSelected, !isCommand, !isShift {
             workspaceManager.dismissNotificationOnDirectInteraction(
                 workspaceId: workspace.id,

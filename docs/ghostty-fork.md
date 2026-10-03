@@ -272,3 +272,19 @@ results; renderer resources are released before pending font-key ownership;
 IO config handling appends its color report without waiting on its own queue.
 This changes no Swift callback executor and does not close B033. The original
 teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
+
+### 12) C11-267 bounded styled prompt-region capture
+
+- Commit: `e6999ae7adc7c584d6bbda415aa59a6a8c3a2470`
+- Files: `include/ghostty.h`, `src/apprt/embedded.zig`,
+  `src/terminal/prompt_region.zig`
+- Adds `ghostty_surface_try_read_prompt_region`, a one-shot renderer-lock
+  acquisition that copies only the active screen into caller-owned buffers:
+  at most 16 rows, 4096 cells, and 16 KiB of UTF-8 text. Rows preserve hard and
+  soft wraps; cells retain faint style. A clipped copy is marked incomplete.
+  It reads no viewport or scrollback, allocates no text, and introduces no
+  colors. Swift captures on the app thread while the surface is live, then
+  classifies the bounded snapshot off the socket worker.
+- On rebase, preserve the C struct layout and limits with the matching Swift
+  importer, plus the one-shot mutex try-lock. Do not turn incomplete captures
+  into an empty prompt.

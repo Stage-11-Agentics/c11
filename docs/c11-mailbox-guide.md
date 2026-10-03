@@ -54,7 +54,7 @@ c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.delivery --value stdin --type
 
 c11 pushes only to an interactive agent that owns its terminal: the tab must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's c11 wrapper and Codex's per-launch hooks drain at turn boundaries; Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit inbox floor.
 
-Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
+A direct `c11 send` is refused (nonzero exit, nothing typed) when the target shows a recognized operator draft or question/plan dialog. A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --tab <t> "…" && c11 send-key --tab <t> enter` so a refusal stops the chain. Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
 
 ---
 

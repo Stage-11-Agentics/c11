@@ -2384,6 +2384,7 @@ class TerminalController {
         "tab.send_key",
         "tab.read_text",
         "tab.read_selection",
+        "tab.input_state",
         "tab.clear_history",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI
@@ -3563,6 +3564,8 @@ class TerminalController {
     // we are still safely on the main actor.
 
     struct TabSendPhaseAResolved {
+        let workspaceManager: WorkspaceManager
+        let workspace: Workspace
         let terminalPanel: TerminalTab
         let initialSurface: ghostty_surface_t?
         let workspaceId: UUID
@@ -3688,6 +3691,8 @@ class TerminalController {
             "window_ref": v2Ref(kind: .window, uuid: windowId)
         ]
         return .ok(TabSendPhaseAResolved(
+            workspaceManager: workspaceManager,
+            workspace: targetWorkspace,
             terminalPanel: terminalPanel,
             initialSurface: terminalPanel.surface.surface,
             workspaceId: targetWorkspace.id,
@@ -3928,6 +3933,90 @@ class TerminalController {
 
 
 
+
+    // Call once on demand with caller-owned bounded buffers. No borrowed native
+    // memory escapes; copied prompt bytes are transient classifier input and
+    // never enter a response, log, or persistent store.
+    @MainActor
+    func capturePromptInputRegion(surface: ghostty_surface_t) -> PromptRegionSnapshot? {
+        var native = ghostty_prompt_region_s()
+        var nativeRows = [ghostty_prompt_region_row_s](
+            repeating: ghostty_prompt_region_row_s(), count: PromptInputClassifier.maxRows
+        )
+        var nativeCells = [ghostty_prompt_region_cell_s](
+            repeating: ghostty_prompt_region_cell_s(), count: PromptInputClassifier.maxCells
+        )
+        var nativeText = [CChar](repeating: 0, count: PromptInputClassifier.maxTextBytes)
+
+        let nativeStart = DispatchTime.now().uptimeNanoseconds
+        let status = nativeRows.withUnsafeMutableBufferPointer { rowBuffer in
+            nativeCells.withUnsafeMutableBufferPointer { cellBuffer in
+                nativeText.withUnsafeMutableBufferPointer { textBuffer in
+                    ghostty_surface_try_read_prompt_region(
+                        surface,
+                        &native,
+                        rowBuffer.baseAddress!, UInt(rowBuffer.count),
+                        cellBuffer.baseAddress!, UInt(cellBuffer.count),
+                        textBuffer.baseAddress!, UInt(textBuffer.count)
+                    )
+                }
+            }
+        }
+        let nativeEnded = DispatchTime.now().uptimeNanoseconds
+        guard status == GHOSTTY_TEXT_READ_OK else {
+            #if DEBUG
+            dlog("terminal.input_state.native status=\(status.rawValue) ms=\(Double(nativeEnded - nativeStart) / 1e6)")
+            #endif
+            return nil
+        }
+
+        let rowCount = Int(native.row_count)
+        let cellCount = Int(native.cell_count)
+        let textCount = Int(native.text_len)
+        guard rowCount <= nativeRows.count,
+              cellCount <= nativeCells.count,
+              textCount <= nativeText.count else { return nil }
+
+        var rows: [PromptRegionRow] = []
+        rows.reserveCapacity(rowCount)
+        for row in nativeRows.prefix(rowCount) {
+            let cellStart = Int(row.cell_start)
+            let rowCellCount = Int(row.cell_count)
+            guard cellStart <= cellCount, rowCellCount <= cellCount - cellStart else { return nil }
+            rows.append(PromptRegionRow(
+                screenY: Int(row.screen_y),
+                cellRange: cellStart..<(cellStart + rowCellCount),
+                softWrap: row.soft_wrap,
+                wrapContinuation: row.wrap_continuation
+            ))
+        }
+
+        var cells: [PromptRegionCell] = []
+        cells.reserveCapacity(cellCount)
+        for cell in nativeCells.prefix(cellCount) {
+            cells.append(PromptRegionCell(
+                textOffset: Int(cell.text_offset),
+                textLength: Int(cell.text_len),
+                faint: cell.faint
+            ))
+        }
+        let copiedText = nativeText.withUnsafeBufferPointer { textBuffer in
+            Data(textBuffer.prefix(textCount).map { UInt8(bitPattern: $0) })
+        }
+
+        #if DEBUG
+        dlog("terminal.input_state.native status=ok rows=\(rowCount) cells=\(cellCount) bytes=\(textCount) ms=\(Double(nativeEnded - nativeStart) / 1e6)")
+        #endif
+        return PromptRegionSnapshot(
+            cursorX: Int(native.cursor_x),
+            cursorY: Int(native.cursor_y),
+            cursorPendingWrap: native.cursor_pending_wrap,
+            complete: native.complete,
+            rows: rows,
+            cells: cells,
+            text: copiedText
+        )
+    }
 
     // Native text allocation/formatting and byte ownership are main-thread work.
     // try_read_text bounds lock acquisition ONLY: after OK acquisition native

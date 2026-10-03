@@ -7,10 +7,11 @@ import XCTest
 #endif
 
 final class CapabilityFeaturesTests: XCTestCase {
-    func testCurrentAdvertisesBrowserProfilesAndFeedAsks() {
+    func testCurrentAdvertisesBrowserProfilesFeedAsksAndTerminalInputState() {
         let featureIDs = Set(CapabilityFeatures.current.payload.compactMap { $0["id"] as? String })
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.browserProfiles.rawValue))
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.feedAsks.rawValue))
+        XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.terminalInputState.rawValue))
     }
 
     func testDisabledAndMissingFeaturesNeverExecute() throws {

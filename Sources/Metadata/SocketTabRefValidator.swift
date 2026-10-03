@@ -1,9 +1,10 @@
 import Foundation
 
-/// (C11-165 COR-1) Surface-ref validation seam for the v2/v1 socket
-/// *write* handlers (`set_metadata`, `clear_metadata`, `set_title`,
-/// `set_description`, `set_agent`, `trigger_flash`, `rename`, and the
-/// v1 sidebar-metadata writes `set_status` / `set_progress` / `log`).
+/// (C11-165 COR-1; C11-251) Explicit-target validation seam for v2/v1 socket
+/// writes and selected-workspace-protected sidebar commands. Write handlers
+/// include `set_metadata`, `clear_metadata`, `set_title`, `set_description`,
+/// `set_agent`, `trigger_flash`, `rename`, and v1 `set_status` / `set_progress`
+/// / `log`; C11-251 also uses it for sidebar clear/list/state commands.
 ///
 /// The June 2026 audit (P0.2) found that an empty or absent surface ref
 /// silently *defaults to the operator-focused surface* on every write
@@ -14,8 +15,8 @@ import Foundation
 /// `?? focusedPanelId`.
 ///
 /// This validator distinguishes the three raw states *before* resolution
-/// so the write family can reject empty **and** absent refs (never
-/// falling back to focus). It is a pure function over the raw params
+/// so callers can reject empty **and** absent refs (never falling back to
+/// selected context). It is a pure function over the raw params
 /// dict so the rejection contract is exercised from `c11LogicTests`
 /// without standing up a socket frame loop — mirroring the C11-106
 /// precedent `SocketMetadataSourceValidator`.
@@ -54,7 +55,7 @@ internal enum SocketTabRefValidator {
         let message: String
     }
 
-    /// Returns a `Rejection` when a write's surface targeting is invalid,
+    /// Returns a `Rejection` when an operation's required target is invalid,
     /// or `nil` to accept.
     ///
     /// - Parameters:
@@ -65,8 +66,8 @@ internal enum SocketTabRefValidator {
     ///     them present-but-empty is rejected (`empty_ref`) even if it is
     ///     not required — an explicitly-empty ref is always a bug.
     ///   - requiredAnyOf: the granularity-pinning key(s); at least one
-    ///     must be `.present` or the write is rejected (`missing_ref`,
-    ///     no focused-surface fallback).
+    ///     must be `.present` or the operation is rejected (`missing_ref`,
+    ///     no selected-context fallback).
     static func rejection(
         params: [String: Any],
         targetKeys: [String],
@@ -77,7 +78,7 @@ internal enum SocketTabRefValidator {
             if case .empty = classify(params[key]) {
                 return Rejection(
                     code: emptyRefCode,
-                    message: "tab ref '\(key)' was provided but empty — pass a concrete id (no focused-tab fallback for writes)"
+                    message: String(localized: "socket.tabRef.empty.noSelectedFallback", defaultValue: "A tab reference was provided but empty; pass a concrete id (no selected-context fallback).")
                 )
             }
         }
@@ -89,7 +90,7 @@ internal enum SocketTabRefValidator {
         if !hasTarget {
             return Rejection(
                 code: missingRefCode,
-                message: "no tab target — pass one of \(requiredAnyOf.joined(separator: ", ")) (no focused-tab fallback for writes)"
+                message: String(localized: "socket.tabRef.missing.noSelectedFallback", defaultValue: "No tab target was provided; pass an explicit tab or workspace id (no selected-context fallback).")
             )
         }
         return nil

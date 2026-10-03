@@ -7,7 +7,7 @@ c11 gives the hyperengineer and their agents a shared workspace for terminals, e
 <!-- WALKTHROUGH VIDEO: C11-124 -->
 Walkthrough video: coming soon.
 
-<!-- SCREENSHOT: one c11 window with terminal, browser, and Markdown tabs arranged across areas -->
+![c11 workspace with terminal, browser, Markdown, and saved agent configurations](docs/images/readme/workspace-overview.png)
 
 ## Workspaces, areas, tabs
 
@@ -15,7 +15,7 @@ A window contains workspaces. Each workspace contains areas. Each area holds ter
 
 Workspace folders group related workspaces in the sidebar. Collapse a folder to hide its member rows while its workspaces stay open. Pin and reorder folders and workspaces independently.
 
-<!-- SCREENSHOT: sidebar with pinned and collapsed workspace folders -->
+![Sidebar with a pinned, collapsed folder and an expanded workspace folder](docs/images/readme/workspace-folders.png)
 
 ## Agents in the workspace
 
@@ -23,21 +23,17 @@ Launch a supported coding agent in a tab. Give it a title, role, and task. It ca
 
 The A-button picker launches a saved configuration or pins it as the default. Open it with `⌘⇧A`. Saved configurations keep an agent and its launch settings together.
 
-<!-- SCREENSHOT: A-button picker showing saved agent configurations -->
-
 ## Attention and messages
 
 The Feed gathers open asks and raised flags. Flags keep their priority when an agent is suppressed. Suppression keeps routine worker signals out of the operator's attention list. The Feed points to the exact tab that needs attention.
 
 Use `c11 mailbox send` for durable messages between agent tabs, including across workspaces. Open `c11 messages view` to read the live message timeline and delivery state.
 
-<!-- SCREENSHOT: Feed with an open ask, a raised flag, and a suppressed worker -->
-
 ## Browser profiles
 
 The embedded browser lives beside terminals and Markdown tabs. Named profiles keep website data and browser history separate. Switch profiles from a browser tab, or create one from its profile menu.
 
-<!-- SCREENSHOT: browser tab with its profile menu open -->
+![Embedded browser tab beside a terminal](docs/images/readme/browser-profile-control.png)
 
 ## Journal and session restore
 

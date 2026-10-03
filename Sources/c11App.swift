@@ -443,7 +443,7 @@ struct cmuxApp: App {
                 }
 
                 splitCommandButton(title: String(localized: "menu.notifications.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: jumpToUnreadMenuShortcut) {
-                    appDelegate.jumpToLatestUnread()
+                    appDelegate.operatorJumpToLatestUnread()
                 }
                 .disabled(!snapshot.hasUnreadNotifications && snapshot.flags.isEmpty && !appDelegate.hasJournalAttention)
 
@@ -908,11 +908,11 @@ struct cmuxApp: App {
                 Divider()
 
                 splitCommandButton(title: String(localized: "menu.workspace.next", defaultValue: "Next Workspace"), shortcut: nextWorkspaceMenuShortcut) {
-                    activeWorkspaceManager.selectNextWorkspace()
+                    SocketCommandContext.withContext(nil) { activeWorkspaceManager.selectNextWorkspace(cause: "menu") }
                 }
 
                 splitCommandButton(title: String(localized: "menu.workspace.previous", defaultValue: "Previous Workspace"), shortcut: prevWorkspaceMenuShortcut) {
-                    activeWorkspaceManager.selectPreviousWorkspace()
+                    SocketCommandContext.withContext(nil) { activeWorkspaceManager.selectPreviousWorkspace(cause: "menu") }
                 }
 
                 Divider()
@@ -922,7 +922,7 @@ struct cmuxApp: App {
                     Button(String(localized: "menu.workspace.numbered", defaultValue: "Workspace \(number)")) {
                         let manager = activeWorkspaceManager
                         if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forCommandDigit: number, workspaceCount: manager.workspaces.count) {
-                            manager.selectWorkspace(at: targetIndex)
+                            SocketCommandContext.withContext(nil) { manager.selectWorkspace(at: targetIndex, cause: "shortcut") }
                         }
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -1335,7 +1335,7 @@ struct cmuxApp: App {
     }
 
     private func openNotificationFromMainMenu(_ notification: TerminalNotification) {
-        _ = appDelegate.openNotification(
+        _ = appDelegate.operatorOpenNotification(
             workspaceId: notification.workspaceId,
             surfaceId: notification.surfaceId,
             notificationId: notification.id
@@ -1528,10 +1528,10 @@ struct cmuxApp: App {
     @ViewBuilder
     private func splitCommandButton(title: String, shortcut: StoredShortcut, action: @escaping () -> Void) -> some View {
         if let key = shortcut.keyEquivalent {
-            Button(title, action: action)
+            Button(title) { SocketCommandContext.withContext(nil, action) }
                 .keyboardShortcut(key, modifiers: shortcut.eventModifiers)
         } else {
-            Button(title, action: action)
+            Button(title) { SocketCommandContext.withContext(nil, action) }
         }
     }
 

@@ -10,7 +10,13 @@
             "state": "translated",
             "value": "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the tab."
           }
-        }
+        },
+        "ja": {"stringUnit": {"state": "translated", "value": "c11 1.0 ではフィードへの複数行の回答に対応していません。何も送信されていません。タブで回答するには c11 feed open を使用してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "У c11 1.0 відповіді на запити через стрічку з кількох рядків не підтримуються. Нічого не надіслано; щоб відповісти у вкладці, скористайтеся c11 feed open."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "c11 1.0에서는 피드 답변에 여러 줄을 사용할 수 없습니다. 아무것도 전송되지 않았습니다. 탭에서 답변하려면 c11 feed open을 사용하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 1.0 不支持在信息流中提交多行回答。未发送任何内容；如需在标签页中回答，请使用 c11 feed open。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 1.0 不支援在資訊流中提交多行回答。未傳送任何內容；如需在分頁中回答，請使用 c11 feed open。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "В c11 1.0 нельзя отправлять ответы в ленте из нескольких строк. Ничего не отправлено; чтобы ответить во вкладке, используйте c11 feed open."}}
       }
     },
     "feed.quick.title": {
@@ -311,6 +317,18 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体无法更改操作员的工作区。如需操作员切换，请发出标记提醒；后台标签页仍可完整操作。" } },
         "zh-Hant": { "stringUnit": { "state": "translated", "value": "代理程式無法更改操作員的工作區。如需操作員切換，請發出標記提醒；背景分頁仍可完整操作。" } },
         "ru": { "stringUnit": { "state": "translated", "value": "Агенты не могут менять рабочее пространство оператора. Если оператору нужно переключиться, поднимите флаг; вкладками в фоне можно полноценно управлять." } }
+      }
+    },
+    "socket.send.guard_refused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Input guard refused the send because a %@ is present. Nothing was sent; do not press Enter. If the operator is mid-draft, raise a flag (c11 raise-flag) instead of retrying."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "入力ガードは「%@」を検出したため、送信を拒否しました。何も送信されていません。Enter キーを押さないでください。オペレーターが入力途中の場合は再試行せず、c11 raise-flag でフラグを立ててください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Захист вводу відхилив надсилання, оскільки виявлено %@. Нічого не надіслано; не натискайте Enter. Якщо оператор ще вводить текст, замість повторної спроби встановіть прапорець командою c11 raise-flag."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "입력 보호 기능이 감지된 항목(%@) 때문에 전송을 거부했습니다. 아무것도 전송되지 않았습니다. Enter 키를 누르지 마세요. 운영자가 입력 중이면 다시 시도하지 말고 c11 raise-flag로 플래그를 올리세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "输入保护因检测到 %@ 而拒绝发送。未发送任何内容；请勿按 Enter。若操作员正在输入，请使用 c11 raise-flag 设置标记，不要重试。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "輸入防護因偵測到 %@ 而拒絕傳送。未傳送任何內容；請勿按 Enter。若操作人員正在輸入，請使用 c11 raise-flag 設定標記，不要重試。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Защита ввода отклонила отправку: обнаружено %@. Ничего не отправлено; не нажимайте Enter. Если оператор набирает текст, вместо повтора установите флаг командой c11 raise-flag."}}
       }
     },
     "statusMenu.attention.none": {

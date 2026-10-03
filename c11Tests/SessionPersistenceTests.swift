@@ -169,6 +169,71 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(second.snapshot.panels.map(\.id), [id])
     }
 
+    func testAutosaveHoldbackUsesNormalizedDistinctIdentities() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-normalized-holdback-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let duplicateURL = root.appendingPathComponent("duplicates.json")
+        var duplicateSnapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        var duplicateWorkspace = duplicateSnapshot.windows[0].workspaceManager.workspaces[0]
+        let duplicateID = UUID()
+        let duplicatePanel = SessionTabSnapshot(
+            id: duplicateID, type: .terminal, title: "Synthetic", customTitle: nil,
+            directory: "/tmp", isPinned: false, isManuallyUnread: false,
+            gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
+            browser: nil, markdown: nil, metadata: nil, metadataSources: nil
+        )
+        duplicateWorkspace.panels = [duplicatePanel, duplicatePanel]
+        duplicateWorkspace.layout = .pane(SessionAreaLayoutSnapshot(
+            panelIds: [duplicateID, duplicateID], selectedPanelId: duplicateID
+        ))
+        duplicateSnapshot.windows[0].workspaceManager.workspaces[0] = duplicateWorkspace
+        XCTAssertTrue(SessionPersistenceStore.save(duplicateSnapshot, fileURL: duplicateURL))
+
+        let duplicateNow = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: duplicateNow.addingTimeInterval(-60)],
+            ofItemAtPath: duplicateURL.path
+        )
+        var repaired = try XCTUnwrap(SessionPersistenceStore.load(fileURL: duplicateURL))
+        let repairedWorkspace = SessionRestoreNormalization.normalize(
+            repaired.windows[0].workspaceManager.workspaces[0]
+        )
+        XCTAssertEqual(repairedWorkspace.drops.count, 2)
+        repaired.windows[0].workspaceManager.workspaces[0] = repairedWorkspace.snapshot
+        XCTAssertTrue(SessionPersistenceStore.save(repaired, fileURL: duplicateURL, now: duplicateNow))
+
+        let repairedOnDisk = try XCTUnwrap(SessionPersistenceStore.load(fileURL: duplicateURL))
+        XCTAssertEqual(repairedOnDisk.windows[0].workspaceManager.workspaces[0].panels.map(\.id), [duplicateID])
+
+        let closedURL = root.appendingPathComponent("closed-panel.json")
+        let richerSnapshot = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 2, titlePrefix: "Rich")
+        XCTAssertTrue(SessionPersistenceStore.save(richerSnapshot, fileURL: closedURL))
+        let closeNow = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: closeNow.addingTimeInterval(-60)],
+            ofItemAtPath: closedURL.path
+        )
+        var closedSnapshot = richerSnapshot
+        var closedWorkspace = closedSnapshot.windows[0].workspaceManager.workspaces[0]
+        let survivorID = try XCTUnwrap(closedWorkspace.panels.first?.id)
+        closedWorkspace.panels.removeLast()
+        closedWorkspace.focusedPanelId = survivorID
+        closedWorkspace.layout = .pane(SessionAreaLayoutSnapshot(
+            panelIds: [survivorID], selectedPanelId: survivorID
+        ))
+        closedSnapshot.windows[0].workspaceManager.workspaces[0] = closedWorkspace
+        XCTAssertTrue(SessionPersistenceStore.save(closedSnapshot, fileURL: closedURL, now: closeNow))
+
+        let heldBack = try XCTUnwrap(SessionPersistenceStore.load(fileURL: closedURL))
+        XCTAssertEqual(
+            heldBack.windows[0].workspaceManager.workspaces[0].panels.map(\.id),
+            richerSnapshot.windows[0].workspaceManager.workspaces[0].panels.map(\.id)
+        )
+    }
+
     func testSaveAndLoadRoundTripWithCustomSnapshotPath() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-tests-\(UUID().uuidString)", isDirectory: true)

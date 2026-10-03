@@ -781,20 +781,30 @@ enum SessionPersistenceStore {
 
         let age = now.timeIntervalSince(modifiedAt)
         guard age < poorerSnapshotHoldbackInterval else { return false }
-        let existingWorkspaceCount = existingSnapshot.windows.reduce(0) {
-            $0 + $1.workspaceManager.workspaces.count
+        let existingIdentities = normalizedIdentityCounts(in: existingSnapshot)
+        let incomingIdentities = normalizedIdentityCounts(in: snapshot)
+        return incomingIdentities.workspaces.count < existingIdentities.workspaces.count
+            || incomingIdentities.panels.count < existingIdentities.panels.count
+    }
+
+    /// Holdback compares restorable identities, not raw record counts. Use the
+    /// same per-workspace normalization as startup restore so repairing
+    /// duplicate records cannot make an autosave appear poorer.
+    private static func normalizedIdentityCounts(
+        in snapshot: AppSessionSnapshot
+    ) -> (workspaces: Set<UUID>, panels: Set<UUID>) {
+        var workspaceIDs = Set<UUID>()
+        var panelIDs = Set<UUID>()
+        for window in snapshot.windows {
+            for workspace in window.workspaceManager.workspaces {
+                workspaceIDs.insert(workspace.id)
+                let normalized = SessionRestoreNormalization.normalize(workspace).snapshot
+                for panel in normalized.panels {
+                    panelIDs.insert(panel.id)
+                }
+            }
         }
-        let incomingWorkspaceCount = snapshot.windows.reduce(0) {
-            $0 + $1.workspaceManager.workspaces.count
-        }
-        let existingSurfaceCount = existingSnapshot.windows.reduce(0) { windowCount, window in
-            windowCount + window.workspaceManager.workspaces.reduce(0) { $0 + $1.panels.count }
-        }
-        let incomingSurfaceCount = snapshot.windows.reduce(0) { windowCount, window in
-            windowCount + window.workspaceManager.workspaces.reduce(0) { $0 + $1.panels.count }
-        }
-        return incomingWorkspaceCount < existingWorkspaceCount
-            || incomingSurfaceCount < existingSurfaceCount
+        return (workspaceIDs, panelIDs)
     }
 
     private static func encodedSnapshotData(_ snapshot: AppSessionSnapshot) throws -> Data {

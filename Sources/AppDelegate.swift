@@ -2501,6 +2501,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         label: "com.stage11.c11.sessionPersistence",
         qos: .utility
     )
+#if DEBUG
+    // Lets the lifecycle regression observe the real resign callback's writer boundary.
+    var resignSnapshotWriterOverrideForTesting: (() -> Void)?
+#endif
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
         label: "com.stage11.c11.launchServicesRegistration",
         qos: .utility
@@ -3289,7 +3293,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sentryBreadcrumb("app.willResignActive", category: "lifecycle", data: [
             "tabCount": workspaceManager?.workspaces.count ?? 0
         ])
-        _ = saveSessionSnapshot(includeScrollback: false)
+        let savedSnapshot = Self.saveSessionSnapshotOnResign {
+            _ = self.saveSessionSnapshot(includeScrollback: false)
+        }
+#if DEBUG
+        if !savedSnapshot {
+            dlog("session.persistence.resign.snapshot.skipped")
+        }
+#endif
     }
 
     func persistSessionForUpdateRelaunch() {
@@ -4689,6 +4700,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         forceSynchronousWrite: Bool = false,
         purpose: SessionPersistenceStore.SavePurpose = .autosave
     ) -> Bool {
+#if DEBUG
+        if let resignSnapshotWriterOverrideForTesting {
+            resignSnapshotWriterOverrideForTesting()
+            return true
+        }
+#endif
         // A bind/listen failure must not let the launch seed overwrite the
         // pending session. Preserve it on quit as well as on autosave.
         if deferredStartupSessionRestore != nil
@@ -4781,6 +4798,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     nonisolated static func shouldRunSessionAutosaveTick(isTerminatingApp: Bool) -> Bool {
         !isTerminatingApp
+    }
+
+    nonisolated static func shouldSaveSessionSnapshotOnResign() -> Bool {
+        false
+    }
+
+    /// Runtime seam used by the AppKit resign callback. Tests exercise this
+    /// callback boundary so they prove whether resign actually invokes the
+    /// snapshot writer, not only what a policy constant returns.
+    static func saveSessionSnapshotOnResign(save: () -> Void) -> Bool {
+        guard shouldSaveSessionSnapshotOnResign() else { return false }
+        save()
+        return true
     }
 
     private func remainingSessionAutosaveTypingQuietPeriod(

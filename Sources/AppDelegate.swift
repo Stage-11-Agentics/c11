@@ -2481,6 +2481,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         label: "com.stage11.c11.sessionPersistence",
         qos: .utility
     )
+#if DEBUG
+    // Lets the lifecycle regression observe the real resign callback's writer boundary.
+    var resignSnapshotWriterOverrideForTesting: (() -> Void)?
+#endif
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
         label: "com.stage11.c11.launchServicesRegistration",
         qos: .utility
@@ -3270,13 +3274,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "tabCount": workspaceManager?.workspaces.count ?? 0
         ])
         let savedSnapshot = Self.saveSessionSnapshotOnResign {
-            _ = self.saveSessionSnapshot(includeScrollback: false)
+            _ = self.writeSessionSnapshotOnResign()
         }
 #if DEBUG
         if !savedSnapshot {
             dlog("session.persistence.resign.snapshot.skipped")
         }
 #endif
+    }
+
+    private func writeSessionSnapshotOnResign() -> Bool {
+#if DEBUG
+        if let resignSnapshotWriterOverrideForTesting {
+            resignSnapshotWriterOverrideForTesting()
+            return true
+        }
+#endif
+        return saveSessionSnapshot(includeScrollback: false)
     }
 
     func persistSessionForUpdateRelaunch() {

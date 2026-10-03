@@ -1018,12 +1018,21 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testResigningActiveDoesNotSaveSessionSnapshot() async {
         await MainActor.run {
+            let app = AppDelegate()
             var saveCount = 0
-            let didSave = AppDelegate.saveSessionSnapshotOnResign {
+            app.resignSnapshotWriterOverrideForTesting = {
                 saveCount += 1
             }
-            XCTAssertFalse(didSave)
-            XCTAssertEqual(saveCount, 0, "the resign callback must not invoke saveSessionSnapshot")
+
+            app.applicationWillResignActive(
+                Notification(name: NSApplication.willResignActiveNotification)
+            )
+
+            XCTAssertEqual(
+                saveCount,
+                0,
+                "applicationWillResignActive must not synchronously invoke the snapshot writer"
+            )
         }
     }
 

@@ -1640,26 +1640,6 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
         XCTAssertEqual(publications, 1)
     }
 
-    /// The Feed quick view's Return goes through `operatorOpenAttentionTarget`, which clears any
-    /// reentrant socket context and selects with cause "jump". It must still switch workspaces
-    /// inside a socket frame, while the same selection without the wrapper stays blocked.
-    func testFeedQuickViewReturnIsAnOperatorActionEvenInsideASocketFrame() throws {
-        _ = NSApplication.shared
-        let manager = WorkspaceManager()
-        let original = try XCTUnwrap(manager.selectedWorkspaceId)
-        let target = manager.addWorkspace(select: false)
-        let frame = SocketCommandContext(method: "browser.eval", allowsFocus: true, callerTabId: UUID())
-        SocketCommandContext.withContext(frame) {
-            manager.selectWorkspace(target, cause: "jump")
-        }
-        XCTAssertEqual(manager.selectedWorkspaceId, original, "an agent frame cannot select with the jump cause")
-        XCTAssertEqual(frame.blockedTarget, target.id)
-        SocketCommandContext.withContext(frame) {
-            SocketCommandContext.withContext(nil) { manager.selectWorkspace(target, cause: "jump") }
-        }
-        XCTAssertEqual(manager.selectedWorkspaceId, target.id, "the operator wrapper switches workspaces")
-    }
-
     /// Incident route: a socket `simulate_shortcut` opens the palette and submits it. The
     /// submission defers its focus to the next main turn, past the request context.
     func testSocketPaletteSubmissionIsRefusedBeforeItsDeferredHop() throws {

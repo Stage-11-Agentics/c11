@@ -51,8 +51,17 @@ final class FeedQuickViewModel: ObservableObject {
 
     func openSelected() {
         guard let row = rows.first(where: { $0.tabID == selection.selectedTabID }) else { return }
-        guard onOpen(.init(workspaceID: row.workspaceID, tabID: row.tabID)) else {
-            markUnavailable()
+        // Like the command palette, the session adopts the request that submits it. A Return that
+        // arrives inside a socket request (a simulated shortcut) keeps that context for the whole
+        // action, so the selection setter refuses and attributes it; only real operator input has
+        // no context to adopt and switches workspaces.
+        let origin = SocketCommandContext.adoptForPaletteSession()
+        let opened = SocketCommandContext.withContext(origin) {
+            onOpen(.init(workspaceID: row.workspaceID, tabID: row.tabID))
+        }
+        guard opened else {
+            // A refused agent action is attributed by the gate; it is not an unavailable tab.
+            if origin?.blockedTarget == nil { markUnavailable() }
             return
         }
         onOpened()

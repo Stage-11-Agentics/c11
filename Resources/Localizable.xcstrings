@@ -98,6 +98,10 @@
       "extractionState": "manual",
       "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%@ · rank %lld" } } }
     },
+    "socket.error.workspaceSwitchBlocked": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable." } } }
+    },
     "statusMenu.attention.none": {
       "extractionState": "manual",
       "localizations": {

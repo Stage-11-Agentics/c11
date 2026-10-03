@@ -944,7 +944,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             // Raising the destination can close the popover synchronously. Disable
             // origin restoration before that transition, not after open returns.
             self.restoreFeedFocusOnClose = false
-            let opened = app.openAttentionTarget(target, notificationID: nil)
+            let opened = app.operatorOpenAttentionTarget(target)
             if !opened { self.restoreFeedFocusOnClose = true }
             return opened
         }

@@ -1612,3 +1612,213 @@ final class StartupBundledReportsTests: XCTestCase {
         return result
     }
 }
+
+/// Regression for the background-agent browser-proof workspace interruptions.
+@MainActor
+final class AgentWorkspaceSelectionTests: XCTestCase {
+    func testSocketSelectionDoesNotPublishOrSwitchAndOperatorStillCan() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        var publications = 0
+        let subscription = manager.$storedSelectedWorkspaceId.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        let context = SocketCommandContext(method: "workspace.select", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(context) { manager.selectWorkspace(target) }
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        XCTAssertEqual(publications, 0)
+        XCTAssertEqual(context.blockedTarget, target.id)
+        SocketCommandContext.withContext(context) {
+            manager.selectNextWorkspace()
+            manager.selectPreviousWorkspace()
+        }
+        XCTAssertFalse(manager.isWorkspaceCycleHot)
+        XCTAssertEqual(publications, 0)
+        manager.selectWorkspace(target, cause: "sidebar")
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+        XCTAssertEqual(publications, 1)
+    }
+
+    /// The Feed quick view's Return goes through `operatorOpenAttentionTarget`, which clears any
+    /// reentrant socket context and selects with cause "jump". It must still switch workspaces
+    /// inside a socket frame, while the same selection without the wrapper stays blocked.
+    func testFeedQuickViewReturnIsAnOperatorActionEvenInsideASocketFrame() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let frame = SocketCommandContext(method: "browser.eval", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(frame) {
+            manager.selectWorkspace(target, cause: "jump")
+        }
+        XCTAssertEqual(manager.selectedWorkspaceId, original, "an agent frame cannot select with the jump cause")
+        XCTAssertEqual(frame.blockedTarget, target.id)
+        SocketCommandContext.withContext(frame) {
+            SocketCommandContext.withContext(nil) { manager.selectWorkspace(target, cause: "jump") }
+        }
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id, "the operator wrapper switches workspaces")
+    }
+
+    /// Incident route: a socket `simulate_shortcut` opens the palette and submits it. The
+    /// submission defers its focus to the next main turn, past the request context.
+    func testSocketPaletteSubmissionIsRefusedBeforeItsDeferredHop() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let context = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(context) {
+            manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id)
+            manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id, surfaceId: UUID())
+        }
+        XCTAssertEqual(context.blockedTarget, target.id)
+        let settled = expectation(description: "main turn passed")
+        DispatchQueue.main.async { DispatchQueue.main.async { settled.fulfill() } }
+        wait(for: [settled], timeout: 5)
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        // The operator's own palette use still switches, labeled palette.
+        manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id)
+        let operatorTurn = expectation(description: "operator submission applied")
+        DispatchQueue.main.async { DispatchQueue.main.async { operatorTurn.fulfill() } }
+        wait(for: [operatorTurn], timeout: 5)
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+    }
+
+    /// Pending-search route: a submission before the search settles is saved and replayed
+    /// on a later main turn. ContentView saves the origin with it (`adoptForPaletteSession`)
+    /// and replays it under that context (`withContext(origin)`); both calls are made here.
+    func testPendingPaletteSubmissionReplaysUnderItsSocketOrigin() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let request = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        let savedOrigin = SocketCommandContext.withContext(request) { SocketCommandContext.adoptForPaletteSession() }
+        XCTAssertNil(SocketCommandContext.current, "the request has ended before the replay")
+        SocketCommandContext.withContext(savedOrigin) {
+            manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id)
+            SocketCommandContext.withContext(nil) { manager.selectWorkspace(target, cause: "palette") }
+        }
+        let settled = expectation(description: "main turn passed")
+        DispatchQueue.main.async { DispatchQueue.main.async { settled.fulfill() } }
+        wait(for: [settled], timeout: 5)
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        XCTAssertEqual(request.blockedTarget, target.id)
+        // An operator-origin pending submission replays with no context and switches.
+        SocketCommandContext.withContext(nil) { manager.selectWorkspace(target, cause: "palette") }
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+    }
+
+    /// Jump to Latest Unread runs through operator-only wrappers (`withContext(nil)`).
+    /// Inside a socket-adopted palette session they must keep the socket origin; the
+    /// window is not raised and the selection does not move. Operator use still jumps.
+    func testPaletteJumpUnderSocketOriginCannotSwitchThroughOperatorWrapper() throws {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let manager = WorkspaceManager()
+        let windowId = UUID()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(window, windowId: windowId, workspaceManager: manager,
+                               sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState())
+        defer { window.close() }
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let panel = try XCTUnwrap(target.focusedPanelId)
+        let request = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(request) {
+            SocketCommandContext.adoptForPaletteSession()
+            XCTAssertFalse(app.operatorOpenNotification(workspaceId: target.id, surfaceId: panel, notificationId: nil))
+        }
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        XCTAssertEqual(request.blockedTarget, target.id)
+        XCTAssertTrue(app.operatorOpenNotification(workspaceId: target.id, surfaceId: panel, notificationId: nil))
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+    }
+
+    func testSelectionCausesReachTheEventLogFromRealRoutes() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-323-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("events.ndjson")
+        EventEmitter.shared.startForTesting(log: EventLog(url: url, instance: "c11-323"), instance: "c11-323")
+        defer { EventEmitter.shared.resetForTesting(); try? FileManager.default.removeItem(at: directory) }
+        func causes() throws -> [String] {
+            EventEmitter.shared.flush()
+            let text = try String(contentsOf: url, encoding: .utf8)
+            return try text.split(separator: "\n").compactMap { line in
+                let row = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+                guard row["type"] as? String == "workspace.selected" else { return nil }
+                return (row["payload"] as? [String: Any])?["cause"] as? String
+            }
+        }
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.selectedWorkspace)
+        let second = manager.addWorkspace(select: false)
+        let group = try manager.createWorkspaceGroup(name: "C11-323")
+        try manager.addWorkspacesToGroup(id: group.id, workspaceIds: [second.id])
+        // Sidebar folder click: the enclosing cause survives the shared group helper.
+        _ = try manager.withWorkspaceSelectionCause("sidebar") { try manager.focusWorkspaceGroup(id: group.id) }
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
+        // Palette Next/Previous label themselves; shortcuts and scroll gestures too.
+        manager.selectPreviousWorkspace(cause: "palette")
+        manager.selectNextWorkspace(cause: "palette")
+        manager.selectWorkspace(at: 0, cause: "shortcut")
+        XCTAssertEqual(manager.selectedWorkspaceId, first.id)
+        manager.selectNextWorkspace(cause: "shortcut")
+        XCTAssertEqual(Array(try causes().suffix(5)), ["sidebar", "palette", "palette", "shortcut", "shortcut"])
+    }
+
+    func testSocketDispatcherReturnsRefusalForBothWireVersions() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let controller = TerminalController.shared
+        let savedManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = savedManager }
+        let request: [String: Any] = ["id": 323, "method": "workspace.select",
+            "params": ["workspace_id": target.id.uuidString, "caller_tab_id": UUID().uuidString]]
+        let data = try JSONSerialization.data(withJSONObject: request)
+        let reply = controller.processCommandUsingSocketExecutionPolicy(String(decoding: data, as: UTF8.self))
+        let decoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+        XCTAssertEqual(decoded["ok"] as? Bool, false)
+        XCTAssertEqual((decoded["error"] as? [String: Any])?["code"] as? String, "workspace_switch_blocked")
+        XCTAssertTrue(controller.processCommandUsingSocketExecutionPolicy("select_workspace \(target.id.uuidString)")
+            .contains("workspace_switch_blocked"))
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+    }
+
+    func testSocketCloseCannotRemoveVisibleWorkspace() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspace)
+        _ = manager.addWorkspace(select: false)
+        let context = SocketCommandContext(method: "workspace.close", allowsFocus: false)
+        SocketCommandContext.withContext(context) { manager.closeWorkspace(original) }
+        XCTAssertEqual(manager.selectedWorkspaceId, original.id)
+        XCTAssertTrue(manager.workspaces.contains { $0.id == original.id })
+        XCTAssertNotNil(context.blockedTarget)
+    }
+
+    func testCloseUsesSeenHistoryInsteadOfIndexNeighbour() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspace)
+        let recent = manager.addWorkspace(select: false)
+        let neighbour = manager.addWorkspace(select: false)
+        manager.workspaces = [original, neighbour, recent]
+        // Runtime history fixture: last-seen UUID beats an index neighbour.
+        let snapshot = FocusHistorySnapshot(entries: [
+            FocusHistoryEntry(workspaceId: recent.id, panelId: UUID(), seenAt: Date(), dwell: 2)
+        ], index: 0)
+        XCTAssertEqual(manager.closeFallback(excluding: original.id, index: 0, history: snapshot), recent.id)
+        XCTAssertEqual(manager.closeFallback(excluding: original.id, index: 0,
+            history: FocusHistorySnapshot(entries: [], index: nil)), neighbour.id)
+        manager.closeWorkspace(original)
+        XCTAssertTrue(manager.workspaces.contains { $0.id == neighbour.id })
+    }
+}

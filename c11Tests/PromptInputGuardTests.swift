@@ -355,6 +355,21 @@ final class PromptInputClassifierTests: XCTestCase {
         )
         XCTAssertEqual(refusedWrites, 0)
 
+        let codexSoftWrappedSingleLine = region([
+            Row(y: 0, spans: [Span(text: "› Reply with exactly C11-FEED-SINGLE-OK and")], softWrap: true),
+            Row(y: 1, spans: [Span(text: "  nothing else.")], wrapContinuation: true),
+        ], cursorY: 1)
+        let singleLineBody = "Reply with exactly C11-FEED-SINGLE-OK and nothing else."
+        XCTAssertEqual(PromptInputClassifier.composerText(codexSoftWrappedSingleLine), singleLineBody)
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(
+                state: PromptInputClassifier.classify(codexSoftWrappedSingleLine).state,
+                composer: PromptInputClassifier.composerText(codexSoftWrappedSingleLine),
+                expected: singleLineBody
+            ),
+            .matches
+        )
+
         let transcript = region([
             Row(y: 0, spans: [Span(text: "❯ say hi in two words")]),
         ], cursorY: 0)

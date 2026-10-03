@@ -196,7 +196,7 @@ enum PromptInputClassifier {
                 content = Array(content.dropFirst(prefix.endIndex))
             } else if prefix.isBoxed {
                 content = stripLeadingBoxEdge(content)
-            } else if prefix.isCodex && !line.wrapContinuation {
+            } else if prefix.isCodex {
                 content = stripCodexContinuationIndent(content)
             }
             if prefix.isBoxed {
@@ -298,9 +298,10 @@ enum PromptInputClassifier {
         return PromptPrefix(endIndex: index + 2, isBoxed: boxed, isCodex: false)
     }
 
-    /// Codex indents each hard continuation row by two display cells. Remove
-    /// that presentation gutter before comparing the composer with pasted text;
-    /// any additional leading spaces remain operator input.
+    /// Codex indents each continuation row, including visual soft-wrap rows,
+    /// by two display cells. Remove that presentation gutter before comparing
+    /// the composer with pasted text; any additional leading spaces remain
+    /// operator input.
     private static func stripCodexContinuationIndent(_ scalars: [StyledScalar]) -> [StyledScalar] {
         guard scalars.count >= 2,
               scalars[0].value == " ", !scalars[0].faint,

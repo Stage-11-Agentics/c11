@@ -4,103 +4,303 @@
   "strings": {
     "feed.quick.title": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Feed" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Feed" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フィード" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Стрічка" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "피드" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "信息流" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "資訊流" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Лента" } }
+      }
     },
     "feed.quick.filter.asks": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Asks" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Asks" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "依頼" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Запити" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "요청" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Запросы" } }
+      }
     },
     "feed.quick.filter.turns": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Turns" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Turns" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターン" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Ходи" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "턴" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "轮次" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "回合" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ходы" } }
+      }
     },
     "feed.quick.empty.asks": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No open asks" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No open asks" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未対応の依頼はありません" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Немає відкритих запитів" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "열린 요청이 없습니다" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有待处理的请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "沒有待處理的請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нет открытых запросов" } }
+      }
     },
     "feed.quick.empty.turns": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No finished turns" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No finished turns" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "完了したターンはありません" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Завершених ходів немає" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료된 턴이 없습니다" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有已结束的轮次" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "沒有已結束的回合" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Завершённых ходов нет" } }
+      }
     },
     "feed.quick.loading": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Loading" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "読み込み中…" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Завантаження…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "불러오는 중…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "加载中…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "載入中…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Загрузка…" } }
+      }
     },
     "feed.quick.unavailable": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "That tab is unavailable" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "That tab is unavailable" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "そのタブは利用できません" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Ця вкладка недоступна" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "해당 탭을 사용할 수 없습니다" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该标签页不可用" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "該分頁無法使用" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Эта вкладка недоступна" } }
+      }
     },
     "feed.quick.hint": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Arrows move. Return opens. Tab switches filter. Esc closes." } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Arrows move. Return opens. Tab switches filter. Esc closes." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "矢印キーで移動。Returnで開く。Tabでフィルタを切り替え。Escで閉じる。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Стрілки переміщують вибір. Return відкриває. Tab перемикає фільтр. Esc закриває." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "화살표 키로 이동하고 Return으로 열며 Tab으로 필터를 전환하고 Esc로 닫습니다." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "方向键移动，Return 打开，Tab 切换筛选项，Esc 关闭。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "方向鍵移動，Return 開啟，Tab 切換篩選條件，Esc 關閉。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Стрелки перемещают выбор. Return открывает. Tab переключает фильтр. Esc закрывает." } }
+      }
     },
     "feed.quick.kind.question": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Question" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Question" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "質問" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Запитання" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "질문" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "問題" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вопрос" } }
+      }
     },
     "feed.quick.kind.plan": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Plan" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plan" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "計画" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "План" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "계획" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "計畫" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "План" } }
+      }
     },
     "feed.quick.kind.permission": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Permission" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Permission" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "許可" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Дозвіл" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "권한" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "权限" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "權限" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Разрешение" } }
+      }
     },
     "feed.quick.kind.turnEnd": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Turn ended" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Turn ended" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターン終了" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Хід завершено" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "턴 종료" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "轮次已结束" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "回合已結束" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ход завершён" } }
+      }
     },
     "feed.quick.kind.flag": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Flag" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Flag" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグ" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Прапорець" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "标记" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "標記" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Флаг" } }
+      }
     },
     "feed.quick.prompt.missing": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "—" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "—" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "—" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "—" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "—" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "—" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "—" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "—" } }
+      }
     },
     "feed.quick.age.missing": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "—" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "—" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "—" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "—" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "—" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "—" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "—" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "—" } }
+      }
     },
     "feed.quick.source.hook": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Hook" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hook" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フック" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Хук" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "훅" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "钩子" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "掛鉤" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Хук" } }
+      }
     },
     "feed.quick.source.plugin": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Plugin" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plugin" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プラグイン" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Плагін" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플러그인" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "插件" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "外掛" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Плагин" } }
+      }
     },
     "feed.quick.source.transcript": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Transcript" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Transcript" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "文字起こし" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Стенограма" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "대화 기록" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "转录记录" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "逐字稿" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Транскрипт" } }
+      }
     },
     "feed.quick.source.screen": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Screen" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Screen" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "画面" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Екран" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "화면" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "屏幕" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "螢幕" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Экран" } }
+      }
     },
     "feed.quick.source.shell": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Shell" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "シェル" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Оболонка" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "셸" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "命令行" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "命令列" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Оболочка" } }
+      }
     },
     "feed.quick.source.keypress": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Keypress" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keypress" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キー入力" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Натискання клавіші" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "키 입력" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "按键" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "按鍵" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нажатие клавиши" } }
+      }
     },
     "feed.quick.source.selfReport": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Self report" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Self report" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "自己申告" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Самозвіт" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "자체 보고" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自我报告" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "自我回報" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Самоотчёт" } }
+      }
     },
     "feed.quick.source.c11": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "c11" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "c11" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "c11" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "c11" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "c11" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "c11" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "c11" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "c11" } }
+      }
     },
     "feed.quick.evidence": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%@ · rank %lld" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ · rank %lld" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%@ · 順位 %lld" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "%@ · ранг %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%@ · 순위 %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ · 排名 %lld" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%@ · 排名 %lld" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "%@ · ранг %lld" } }
+      }
     },
     "socket.error.workspaceSwitchBlocked": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable." } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントはオペレーターのワークスペースを切り替えられません。切り替えが必要な場合はフラグを立ててください。バックグラウンドのタブもすべて操作できます。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Агенти не можуть змінювати робочий простір оператора. Якщо оператору потрібно перейти до іншого простору, підніміть прапорець; фоновими вкладками можна повноцінно керувати." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트는 운영자의 작업 공간을 변경할 수 없습니다. 운영자가 전환해야 한다면 플래그를 설정해 알리세요. 백그라운드 탭은 모두 조작할 수 있습니다." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体无法更改操作员的工作区。如需操作员切换，请发出标记提醒；后台标签页仍可完整操作。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "代理程式無法更改操作員的工作區。如需操作員切換，請發出標記提醒；背景分頁仍可完整操作。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Агенты не могут менять рабочее пространство оператора. Если оператору нужно переключиться, поднимите флаг; вкладками в фоне можно полноценно управлять." } }
+      }
     },
     "statusMenu.attention.none": {
       "extractionState": "manual",
@@ -61100,48 +61300,13 @@
     "tabRailTip.undoBody": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This area's tab list stays open on the left. Undo puts Tabs back."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべてのエリアで、タブ一覧が左側に表示されます。元に戻すと「タブ」に戻ります。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Кожна область тримає список вкладок ліворуч. Скасування повертає «Вкладки»."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "모든 영역의 탭 목록이 왼쪽에 표시됩니다. 실행 취소하면 '탭'으로 돌아갑니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个区域的标签页列表都固定在左侧。撤销后将恢复为“标签页”。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每個區域的分頁清單都固定在左側。復原後會恢復為「分頁」。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "В каждой области список вкладок остаётся слева. Отмена вернёт «Вкладки»."
-          }
-        }
+        "en": { "stringUnit": { "state": "translated", "value": "This area's tab list stays open on the left. Undo puts Tabs back." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このエリアでは、タブ一覧が左側に開いたままになります。元に戻すと「タブ」に戻ります。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "У цій області список вкладок залишається відкритим ліворуч. «Скасувати» поверне режим «Вкладки»." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 영역의 탭 목록은 왼쪽에 열린 상태로 유지됩니다. 실행 취소하면 ‘탭’ 보기로 돌아갑니다." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此区域的标签页列表会保持在左侧打开。撤销后将恢复为“标签页”。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "此區域的分頁清單會保持在左側開啟。復原後會恢復為「分頁」。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "В этой области список вкладок остаётся открытым слева. Отмена вернёт режим «Вкладки»." } }
       }
     },
     "tabRailTip.undoTitle": {

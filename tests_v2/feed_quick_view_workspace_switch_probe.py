@@ -1,21 +1,37 @@
 #!/usr/bin/env python3
-"""Packaged check that the Feed quick view's Return, an operator action, still switches workspaces.
+"""Packaged check of the Feed quick view against C11-323's workspace-selection gate.
 
 C11-323 stops agents from changing the selected workspace; the operator's own jump paths must
-still switch. Workspace A stays selected, a flagged tab sits in background workspace B, and the
-real Command-I then Return (PID-scoped System Events keys) must land in B on that exact tab.
+still switch. Workspace A stays selected and a flagged tab sits in background workspace B. A
+socket `simulate_shortcut cmd+i` opens the view and a socket `simulate_shortcut return` must be
+refused (the operator stays in A). Then the operator's real Return (a PID-scoped System Events
+key) on the same open view must land in B on that exact tab.
 Same safety envelope as feed_quick_view_keyboard_probe.py. Synthetic facts only.
 """
 import argparse
 import json
 import os
 import signal
+import socket as socketlib
 import threading
 
 from feed_quick_view_keyboard_probe import KeyboardProbe, RETURN
 
 
 class WorkspaceSwitchProbe(KeyboardProbe):
+    def v1(self, command):
+        with socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM) as connection:
+            connection.settimeout(self.timeout())
+            connection.connect(self.args.socket)
+            connection.sendall((command + '\n').encode())
+            reply = b''
+            while b'\n' not in reply:
+                part = connection.recv(65536)
+                if not part:
+                    break
+                reply += part
+        return reply.split(b'\n', 1)[0].decode()
+
     def close_workspace(self):
         # Return left the new workspace selected; C11-323 refuses an agent close that would change the
         # operator's selection (workspace_switch_blocked). The disposable guest is deleted instead.
@@ -30,14 +46,21 @@ class WorkspaceSwitchProbe(KeyboardProbe):
         self.check(self.rpc('workspace.current')['workspace_id'] == origin, 'Setup left the operator workspace selected')
         self.rpc('flag.raise', {'tab_id': tab, 'reason': 'Synthetic cross-workspace flag', 'by': 'operator'})
         self.pause(0.8)
-        self.open_view()
-        self.screenshot('01-quick-view-before-return')
-        self.check(self.rpc('workspace.current')['workspace_id'] == origin, 'Opening the quick view never switches workspaces')
-        self.press(RETURN)
+        self.v1('simulate_shortcut cmd+i')  # An agent may open the view; opening never switches.
+        self.pause(0.8)
+        self.screenshot('01-socket-opened-quick-view')
+        self.check(self.rpc('workspace.current')['workspace_id'] == origin, 'A socket Command-I never switches workspaces')
+        self.v1('simulate_shortcut return')  # The bypass: must be refused and attributed.
+        self.pause(0.8)
+        self.screenshot('02-after-socket-return')
+        self.check(self.rpc('workspace.current')['workspace_id'] == origin,
+                   'A socket-simulated Return in the quick view never switches workspaces')
+        self.ui('activate')
+        self.press(RETURN)  # The operator's own Return on the same open view.
         self.eventually(lambda: self.rpc('workspace.current')['workspace_id'] == self.workspace,
                         'Return did not switch to the tab\'s workspace')
         self.eventually(lambda: self.focused() == tab, 'Return did not focus the exact tab')
-        self.screenshot('02-after-return-other-workspace')
+        self.screenshot('03-after-operator-return-other-workspace')
         self.report['fixture'] = 'Synthetic; actual packaged Command-I and Return; operator action switches workspace'
 
 

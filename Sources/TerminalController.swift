@@ -2282,6 +2282,7 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        "agents.list",
         "journal.clear",
         "journal.status",
         // Feed list and display notes parse off main and do not move focus.
@@ -3332,19 +3333,13 @@ class TerminalController {
     func v2ResolveWorkspaceForMetadata(
         params: [String: Any]
     ) -> (workspaceManager: WorkspaceManager, workspaceId: UUID)? {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
-        if let explicit = v2UUID(params, "workspace_id") {
-            return v2MainSync {
-                guard workspaceManager.workspaces.contains(where: { $0.id == explicit }) else { return nil }
-                return (workspaceManager, explicit)
-            }
-        }
+        // C11-251: callers reject a missing/empty `workspace_id` first; an
+        // unresolvable one is "not found", never the selected workspace.
+        guard let explicit = v2UUID(params, "workspace_id"),
+              let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
         return v2MainSync {
-            guard let selected = workspaceManager.selectedWorkspaceId,
-                  workspaceManager.workspaces.contains(where: { $0.id == selected }) else {
-                return nil
-            }
-            return (workspaceManager, selected)
+            guard workspaceManager.workspaces.contains(where: { $0.id == explicit }) else { return nil }
+            return (workspaceManager, explicit)
         }
     }
 
@@ -5969,8 +5964,15 @@ class TerminalController {
     func closeWindow(_ arg: String) -> String {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let windowId = UUID(uuidString: trimmed) else { return "ERROR: Invalid window id" }
-        let ok = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? false }
-        return ok ? "OK" : "ERROR: Window not found"
+        let result = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? .notFound }
+        switch result {
+        case .closed:
+            return "OK"
+        case .invalidState:
+            return "ERROR: invalid_state: Window has an attached sheet"
+        case .notFound:
+            return "ERROR: Window not found"
+        }
     }
 
     func moveWorkspaceToWindow(_ args: String) -> String {
@@ -8361,14 +8363,11 @@ class TerminalController {
         return (positional, options)
     }
 
-    /// C11-165 COR-1: reject a v1 sidebar-metadata *write* (`set_status` /
-    /// `set_progress` / `log`) that carries no explicit `--tab` target, or an
-    /// empty one, instead of silently defaulting to the *selected* tab (audit
-    /// P0.2). These writes are tab(workspace)-scoped, so `--tab` is the
-    /// granularity-pinning ref. The CLI forwards `--workspace` /
-    /// `CMUX_WORKSPACE_ID` as `--tab=<id>`, so in-pane callers are unaffected;
-    /// only truly ref-less callers (cron / launchd / a fresh shell) are
-    /// rejected. Returns a v1 `ERROR:` string, or nil to proceed.
+    /// Reject v1 sidebar-metadata calls that must not fall back to the selected
+    /// workspace when the caller omits its `--tab` target. Writes were covered
+    /// by C11-165; C11-251 adds clear/list/state commands. The CLI resolves
+    /// `--workspace` / workspace environment context to `--tab=<id>` before
+    /// reaching this check. Returns a v1 `ERROR:` string, or nil to proceed.
     private func v1RejectMissingTabRef(_ args: String) -> String? {
         let options = parseOptions(args).options
         guard let r = SocketTabRefValidator.rejection(
@@ -8719,26 +8718,31 @@ class TerminalController {
     }
 
     func reportMeta(_ args: String) -> String {
-        upsertSidebarMetadata(
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return upsertSidebarMetadata(
             args,
             missingError: "ERROR: Missing metadata key or value — usage: report_meta <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X]"
         )
     }
 
     func clearStatus(_ args: String) -> String {
-        clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
     }
 
     func clearMeta(_ args: String) -> String {
-        clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
     }
 
     func listStatus(_ args: String) -> String {
-        listSidebarMetadata(args, emptyMessage: "No status entries")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return listSidebarMetadata(args, emptyMessage: "No status entries")
     }
 
     func listMeta(_ args: String) -> String {
-        listSidebarMetadata(args, emptyMessage: "No metadata entries")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return listSidebarMetadata(args, emptyMessage: "No metadata entries")
     }
 
     private func splitMetadataBlockArgs(_ args: String) -> (optionsPart: String, markdownPart: String?) {
@@ -8760,6 +8764,7 @@ class TerminalController {
         guard workspaceManager != nil else { return "ERROR: TabManager not available" }
 
         let parts = splitMetadataBlockArgs(args)
+        if let reject = v1RejectMissingTabRef(parts.optionsPart) { return reject }
         let parsed = parseOptionsNoStop(parts.optionsPart)
         guard let key = parsed.positional.first, !key.isEmpty else {
             return "ERROR: Missing metadata block key — usage: report_meta_block <key> [--priority=N] [--tab=X] -- <markdown>"
@@ -8820,6 +8825,7 @@ class TerminalController {
     }
 
     func clearMetaBlock(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         guard let key = parsed.positional.first, parsed.positional.count == 1 else {
             return "ERROR: Missing metadata block key — usage: clear_meta_block <key> [--tab=X]"
@@ -8839,6 +8845,7 @@ class TerminalController {
     }
 
     func listMetaBlocks(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = ""
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -8885,6 +8892,7 @@ class TerminalController {
     }
 
     func clearLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -8897,6 +8905,7 @@ class TerminalController {
     }
 
     func listLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         var limit: Int?
         if let limitStr = parsed.options["limit"] {
@@ -8977,6 +8986,7 @@ class TerminalController {
     }
 
     func clearProgress(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -9624,6 +9634,7 @@ class TerminalController {
     }
 
     func sidebarState(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = ""
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {
@@ -9721,6 +9732,7 @@ class TerminalController {
     }
 
     func resetSidebar(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {

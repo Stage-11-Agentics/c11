@@ -191,6 +191,23 @@ guest_receive_tar() {
     "${guest_user}@${ip}" \
     "mkdir -p $(printf '%q' "$dest") && /usr/bin/tar -xf - -C $(printf '%q' "$dest")"
 }
+
+# Run one remote command in the guest with this function's stdin as its stdin.
+# Secrets travel this way: the command line carries code, stdin carries the data.
+guest_ssh_run() {
+  local ip="$1" cmd="$2"
+  guest_ssh_opts "$ip"
+  ssh -i "$key" \
+    -o BatchMode=yes \
+    -o IdentitiesOnly=yes \
+    -o StrictHostKeyChecking=accept-new \
+    -o UserKnownHostsFile="$known" \
+    -o ConnectTimeout=20 \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=10 \
+    -o LogLevel=ERROR \
+    "${guest_user}@${ip}" "$cmd"
+}
 ZSH
 }
 

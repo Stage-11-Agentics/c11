@@ -849,6 +849,7 @@ struct TextBoxInputContainer: View {
     }
 
     private func submit() {
+        JournalCoordinator.shared.noteTextBoxSubmit(tabID: surface.id)
         let content = text
         TextBoxSubmit.send(content, via: surface)
         text = ""

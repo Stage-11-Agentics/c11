@@ -53,6 +53,7 @@ extension TerminalController {
     private func v2Capabilities() -> [String: Any] {
         var methods: [String] = [
             "agent.event.append",
+            "agents.list",
             "journal.clear",
             "journal.status",
             "system.ping",

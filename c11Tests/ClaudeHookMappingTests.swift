@@ -132,6 +132,25 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertEqual(compact.snapshot?.phase, working.phase)
     }
 
+    func testSessionEndIgnoresAnUnrelatedPromptID() throws {
+        let start = try owned("session-start", base(), tab: tabA)
+        let working = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1).snapshot)
+        let turn = try owned("prompt-submit", base(), tab: tabA)
+        let running = try XCTUnwrap(JournalTestData.fold(working, turn, seq: 2).snapshot)
+        let stop = try owned("stop", base(), tab: tabA)
+        let idle = try XCTUnwrap(JournalTestData.fold(running, stop, seq: 3).snapshot)
+
+        var sessionEnd = base()
+        sessionEnd["prompt_id"] = "unrelated-next-prompt"
+        let endedDraft = try owned("session-end", sessionEnd, tab: tabA)
+        XCTAssertEqual(endedDraft.kind, .sessionEnded)
+        XCTAssertNil(endedDraft.turnID)
+        let ended = JournalTestData.fold(idle, endedDraft, seq: 4)
+        XCTAssertEqual(ended.effect, .applied)
+        XCTAssertEqual(ended.snapshot?.connection, .disconnected)
+        XCTAssertEqual(ended.snapshot?.confirmation, .unconfirmed)
+    }
+
     func testLateToolAndSiblingToolLeaveTheOtherState() throws {
         let working = try XCTUnwrap(JournalTestData.fold(nil, try owned("prompt-submit", base(), tab: tabA), seq: 1).snapshot)
         let completed = try XCTUnwrap(JournalTestData.fold(working, try owned("stop", base(), tab: tabA), seq: 2).snapshot)

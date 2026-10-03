@@ -28,8 +28,9 @@ Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents c
 Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
 clone headless, place one .app on the Tart host, copy it into the guest,
 and launch it with the automation socket. The golden image is never booted.
-A second running guest needs --allow-second and is the only clone that gets
-a new serial. Two running guests is always refused. If this command is cut
+A second running guest needs --allow-second and clones c11-sandbox-golden-b,
+which has its own serial, so neither guest shows Setup Assistant. A third
+running guest is always refused. If this command is cut
 off, scripts/sandbox-down.sh <run-id> removes the clone.
 
 --agents stages logged-in agent CLIs into the clone once the app is up
@@ -266,12 +267,41 @@ if (( n >= 1 && allow_second != 1 )); then
   die "a guest is already running. Pass --allow-second to start another, or stop the one that is up."
 fi
 mkdir -p "\$root/runs/\$run_id" "\$root/out/\$run_id"
+# Two golden images, each with its own serial and Setup Assistant already done
+# under it. A clone keeps its golden's serial, so pick the golden no running
+# guest came from: two running guests never share a machine identifier and
+# neither shows Setup Assistant. The choice is recorded under the clone lock,
+# before boot, so a concurrent sandbox-up sees it. A guest with no record
+# predates the second golden and is counted against the first.
+golden_in_use() {
+  local want="\$1" line name used
+  while IFS= read -r line; do
+    [[ -z "\$line" || "\$line" == Source* ]] && continue
+    local -a f
+    f=("\${(z)line}")
+    name="\${f[2]:-}"
+    [[ "\$name" == c11-sb-* && "\${f[-1]}" != stopped ]] || continue
+    used="\$(cat "\$root/runs/\${name#c11-sb-}/golden" 2>/dev/null || print -r -- "\$golden")"
+    [[ "\$used" == "\$want" ]] && return 0
+  done < <("\$tart" list)
+  return 1
+}
+source_golden="\$golden"
+random_serial=0
+if golden_in_use "\$golden"; then
+  if [[ "\$(vm_field "\$golden_b" || true)" == stopped ]] && ! golden_in_use "\$golden_b"; then
+    source_golden="\$golden_b"
+  else
+    # No free golden: fall back to a new serial. Setup Assistant can show.
+    print -u2 -- "sandbox: \$golden_b is missing or in use; this guest gets a new serial and may show Setup Assistant"
+    random_serial=1
+  fi
+fi
+print -r -- "\$source_golden" > "\$root/runs/\$run_id/golden"
 clone_start="\$EPOCHSECONDS"
-"\$tart" clone "\$golden" "\$vm"
+"\$tart" clone "\$source_golden" "\$vm"
 clone_secs=\$((EPOCHSECONDS - clone_start))
-# A single clone keeps the golden serial, so Setup Assistant stays done.
-# A second concurrent guest must not share that serial.
-if (( n >= 1 )); then
+if (( random_serial )); then
   "\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac --random-serial
 else
   "\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac
@@ -348,10 +378,12 @@ write_meta "\$(meta_path "\$run_id")" \
   "DSOCK=\${DSOCK:-}" \
   "CLONE_SECS=\$clone_secs" \
   "BOOT_SECS=\$boot_secs" \
-  "APP_SOURCE=\$app_source"
+  "APP_SOURCE=\$app_source" \
+  "GOLDEN=\$source_golden"
 failed=0
 printf 'run_id=%s\n' "\$run_id"
 printf 'vm=%s\n' "\$vm"
+printf 'golden=%s\n' "\$source_golden"
 printf 'guest_ip=%s\n' "\$ip"
 printf 'guest_app=%s\n' "\${GUEST_APP:-}"
 printf 'socket=%s\n' "\${SOCKET:-}"

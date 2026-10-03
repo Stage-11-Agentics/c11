@@ -3584,8 +3584,17 @@ struct CMUXCLI {
                     try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: resolvedSocketPath)
                 },
                 defaultWorkspace: { workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId) },
-                resolveWorkspace: { raw in try normalizeWorkspaceHandle(raw, client: client) },
-                resolveTab: { raw, ws in try normalizeSurfaceHandle(raw, client: client, workspaceHandle: ws) }
+                // feed.answer runs on a socket worker and accepts exact UUIDs;
+                // canonicalize the public short refs here after the normal CLI
+                // resolver has applied the same workspace/tab scoping rules.
+                resolveWorkspace: { raw in
+                    guard let handle = try normalizeWorkspaceHandle(raw, client: client) else { return nil }
+                    return try canonicalWorkspaceID(handle, client: client)
+                },
+                resolveTab: { raw, ws in
+                    guard let handle = try normalizeSurfaceHandle(raw, client: client, workspaceHandle: ws) else { return nil }
+                    return try canonicalTabID(handle, workspaceID: ws, client: client)
+                }
             )
 
         case "list-notifications":
@@ -5729,6 +5738,39 @@ struct CMUXCLI {
             }
         }
         throw CLIError(message: "Workspace index not found")
+    }
+
+    private func canonicalWorkspaceID(_ handle: String, client: SocketClient) throws -> String? {
+        if isUUID(handle) { return handle }
+        let windowsPayload = try client.sendV2(method: "window.list")
+        let windows = windowsPayload["windows"] as? [[String: Any]] ?? []
+        for window in windows {
+            guard let windowID = window["id"] as? String else { continue }
+            let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowID])
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            if let item = items.first(where: {
+                ($0["ref"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+                    || ($0["id"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+            }) {
+                return item["id"] as? String
+            }
+        }
+        throw CLIError(message: "Workspace handle no longer resolves: \(handle)")
+    }
+
+    private func canonicalTabID(_ handle: String, workspaceID: String?, client: SocketClient) throws -> String? {
+        if isUUID(handle) { return handle }
+        var params: [String: Any] = [:]
+        if let workspaceID { params["workspace_id"] = workspaceID }
+        let listed = try client.sendV2(method: "tab.list", params: params)
+        let items = listed["tabs"] as? [[String: Any]] ?? []
+        guard let item = items.first(where: {
+            ($0["ref"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+                || ($0["id"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+        }), let id = item["id"] as? String else {
+            throw CLIError(message: "Tab handle no longer resolves: \(handle)")
+        }
+        return id
     }
 
     private func normalizePaneHandle(

@@ -43,13 +43,20 @@ The embedded browser lives beside terminals and Markdown tabs. Named profiles ke
 
 The lifecycle journal makes agent activity queryable by agent, model, or workspace. Inspect turns, time in state, errors, and stalls with `c11 journal query`. Export the journal as body-free NDJSON.
 
-Workspace snapshots restore layouts and supported agent sessions. c11 resumes exact sessions for Claude Code, Codex, pi, omp, OpenCode, and Grok. Kimi and GitHub Copilot start fresh after restore. If a session identity is missing or ambiguous, c11 skips auto-resume instead of choosing another conversation.
+Workspace snapshots restore layouts and supported agent sessions. c11 resumes exact sessions for Claude Code, Codex, pi, omp, OpenCode, and Grok. Kimi and GitHub Copilot do not support exact-session restore. If a session identity is missing or ambiguous, c11 skips auto-resume instead of choosing another conversation.
 
 ## Install
 
 Requires macOS 14 or later.
 
-Download the signed and notarized c11 1.0 macOS DMG from [GitHub Releases](https://github.com/Stage-11-Agentics/c11/releases).
+Download the latest signed DMG from [Releases](https://github.com/Stage-11-Agentics/c11/releases).
+
+Or install with Homebrew:
+
+```bash
+brew tap stage-11-agentics/c11
+brew install --cask c11
+```
 
 ### Hardware
 

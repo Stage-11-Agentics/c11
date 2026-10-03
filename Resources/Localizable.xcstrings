@@ -2,6 +2,102 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "feed.quick.title": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Feed" } } }
+    },
+    "feed.quick.filter.asks": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Asks" } } }
+    },
+    "feed.quick.filter.turns": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Turns" } } }
+    },
+    "feed.quick.empty.asks": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No open asks" } } }
+    },
+    "feed.quick.empty.turns": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No finished turns" } } }
+    },
+    "feed.quick.loading": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Loading" } } }
+    },
+    "feed.quick.unavailable": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "That tab is unavailable" } } }
+    },
+    "feed.quick.hint": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Arrows move. Return opens. Tab switches filter. Esc closes." } } }
+    },
+    "feed.quick.kind.question": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Question" } } }
+    },
+    "feed.quick.kind.plan": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Plan" } } }
+    },
+    "feed.quick.kind.permission": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Permission" } } }
+    },
+    "feed.quick.kind.turnEnd": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Turn ended" } } }
+    },
+    "feed.quick.kind.flag": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Flag" } } }
+    },
+    "feed.quick.prompt.missing": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "—" } } }
+    },
+    "feed.quick.age.missing": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "—" } } }
+    },
+    "feed.quick.source.hook": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Hook" } } }
+    },
+    "feed.quick.source.plugin": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Plugin" } } }
+    },
+    "feed.quick.source.transcript": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Transcript" } } }
+    },
+    "feed.quick.source.screen": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Screen" } } }
+    },
+    "feed.quick.source.shell": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Shell" } } }
+    },
+    "feed.quick.source.keypress": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Keypress" } } }
+    },
+    "feed.quick.source.selfReport": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Self report" } } }
+    },
+    "feed.quick.source.c11": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "c11" } } }
+    },
+    "feed.quick.evidence": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%@ · rank %lld" } } }
+    },
     "socket.error.workspaceSwitchBlocked": {
       "extractionState": "manual",
       "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable." } } }

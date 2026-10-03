@@ -11080,6 +11080,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// The Feed quick view's Return key is the operator's own action, so it clears any
+    /// reentrant socket context and switches workspaces like the other jump paths.
+    @discardableResult
+    func operatorOpenAttentionTarget(_ target: AttentionOrder.Target) -> Bool {
+        SocketCommandContext.withContext(nil) {
+            openAttentionTarget(target, notificationID: nil, cause: "jump")
+        }
+    }
+
     func jumpToLatestUnread() {
         guard let notificationStore else { return }
 #if DEBUG
@@ -11815,18 +11824,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return false
         }
 
-        // When the notifications popover is open, Escape should dismiss it immediately.
-        if flags.isEmpty, event.keyCode == 53, titlebarAccessoryController.dismissNotificationsPopoverIfShown() {
-            return true
-        }
-
-        // When the notifications popover is showing an empty state, consume plain typing
-        // so key presses do not leak through into the focused terminal.
-        if flags.isDisjoint(with: [.command, .control, .option]),
-           titlebarAccessoryController.isNotificationsPopoverShown(),
-           (notificationStore?.notifications.isEmpty ?? false) {
-            return true
-        }
+        // Share the visible Feed's scoped router with its local monitor. Another
+        // window's Escape/Return/typing must not be swallowed by an open popover.
+        if titlebarAccessoryController.handleFeedQuickViewKey(event) { return true }
 
         let hasEventWindowContext = shortcutEventHasAddressableWindow(event)
         let didSynchronizeShortcutContext = synchronizeShortcutRoutingContext(event: event)

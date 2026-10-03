@@ -190,13 +190,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
 
     func list(scope: FeedScope) -> [String: Any] {
         queue.sync {
-            let rows = scope == .all ? projected.rows : projected.attentionRows.map { row in
-                // A flagged completed turn is a flag-only row in attention scope.
-                guard row.kind == .turnEnd else { return row }
-                return FeedRow(workspaceID: row.workspaceID, tabID: row.tabID, kind: nil,
-                    prompt: nil, options: nil, promptAvailable: false, source: nil, sourceRank: nil,
-                    openedAtMs: nil, state: nil, requestID: nil, confirmation: nil, blocking: nil, flag: row.flag)
-            }
+            let rows = scope == .all ? projected.rows : projected.attentionRows
             return [
                 "scope": scope.rawValue,
                 "instance": EventEmitter.shared.currentInstance() ?? NSNull(),

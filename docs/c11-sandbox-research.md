@@ -218,6 +218,26 @@ Numbers below are the ones this phase actually observed.
 | tests_v2 in the guest | From the laptop, `sandbox-tests-v2.sh ghostty2 tests_v2/test_cli_id_format_defaults.py` copied the suite to Atlas, relaunched c11 in the guest, and passed both of that file's assertions against the guest socket. Wall time was about 17 seconds. |
 | Single clone, default SSH path | From the laptop with `C11_SANDBOX_HOST` unset, `sandbox-up repair1` of a released `.app` returned `clone_secs=0` and `boot_secs=29` while `tart run` stayed up after that SSH session closed. `docs/images/c11-244-no-setup.png` is the guest display: Aqua, Finder, c11, System Settings restored from the golden image, no Setup Assistant. One `cliclick` on the System Settings close button closed that window. `docs/images/c11-244-click.png` is the display after, with the four terminals in front. `sandbox-down repair1` then deleted the clone. The golden image and both scanner VMs stayed stopped. |
 
+## Fallback: a clone that still shows Setup Assistant
+
+Only for a clone whose golden image has no serial of its own (an older image, a missing `c11-sandbox-golden-b`, or the `--random-serial` fallback). Both current golden images keep their own serial and boot to the desktop, so this should not happen. The sign: the probe preflight fails at `Exact tagged PID is frontmost` with every identity check green, and a read-only `screencapture -x -D 1` plus `NSWorkspace.frontmostApplication` reads `Setup Assistant` (measured 2026-10-02, C11-266). With the operator's go, in your own disposable guest only, step it with single `cliclick c:X,Y` pointer clicks, one capture after each (guest points are screenshot pixels / 2), and wait for each pane to finish drawing before the next click (the first click on a new pane can only focus it):
+
+1. Update Mac Automatically: Only Download Automatically.
+2. Sign In to Your Apple Account: Other Sign-In Options, Sign in Later in Settings, then Skip. Nothing signs in.
+3. FileVault: Not Now, then Continue.
+4. Welcome: Get Started.
+
+Then Accessibility already lists `sshd-keygen-wrapper`, `osascript` and `tart-guest-agent` as on. The first scripted key can raise a one-time "sshd-keygen-wrapper would like to control this computer" sheet: choose Open System Settings, confirm the toggle is on, close Settings. No grant is needed.
+
+## Measured probe gotchas
+
+- Send Escape and shortcuts with System Events `key code`, scoped to the PID. `cliclick kp:esc` is not seen by c11's key monitor.
+- A System Events walk of c11's window tree takes about 18 s and drops the popover, so it cannot read Feed rows. Use `tests_v2/feed_quick_view_keyboard_probe.py` (keys, socket state and screenshots, no tree walk).
+- c11's own "Turn on notifications for c11" sheet can take Return mid-run. Decline it with its Not Now button (never Open Settings) before the scenario.
+- The `out` share can serve a stale copy of a file you just replaced. Stage probes under a new directory name and compare the guest `md5` with the host.
+- A relaunched tagged app can open 48 px off the display; place it with System Events (`position {0, 30}`, `size {1024, 680}`) before a probe that checks window bounds.
+- `sandbox_guest_script` and the helpers need `bash`; `zsh` fails on `BASH_SOURCE`.
+
 ## Agents in the guest
 
 C11-322. Live proofs that need real agent tabs run in the guest, so the laptop's screen lock, focus, and CPU are out of the path.

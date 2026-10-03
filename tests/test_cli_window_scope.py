@@ -651,9 +651,18 @@ def main() -> int:
                 assert not server.windows[1]["workspaces"][expected_ws["index"]]["notifications"]
                 commands = [name for name, _ in server.calls if name.startswith("clear_notifications")]
                 assert len(commands) == 1 and f"--tab={expected_ws['id']}" in commands[0], commands
-            run("set-status", "scope-test", "B-only", env=caller)
+            # A global --window scopes the lookup; it does not replace the
+            # caller's workspace. Reject A under B without dispatching a write.
+            out = run("set-status", "scope-test", "B-only", env=caller, success=False)
+            assert "not_found" in out.stderr, out.stderr
+            assert not any(name.startswith("set_status") for name, _ in server.calls), server.calls
+            unchanged()
+            # An explicit B workspace is valid and overrides the A caller env.
+            run("set-status", "scope-test", "B-only", "--workspace", b_ws["id"], env=caller)
             assert server.windows[1]["workspaces"][0]["status"] == {"set_status": ["scope-test", "B-only"]}
-            assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+            assert server.windows[0] == a and server.mutations == [
+                ("set_status", b["ref"], b_ws["ref"])
+            ], server.mutations
             for args in (("--workspace", a_ws["id"]), ("--workspace", a_ws["ref"]),
                          ("--tab", a_ws["id"]), ("--tab", a_ws["ref"]),
                          ("--tab", a_tab["id"]), ("--tab", a_tab["ref"])):
@@ -664,7 +673,12 @@ def main() -> int:
             assert not any(name.startswith("clear_notifications") for name, _ in server.calls), server.calls
             unchanged()
 
-            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+            out = run("sidebar-state", env=caller, success=False)
+            assert "not_found" in out.stderr, out.stderr
+            assert not any(name == "sidebar.state" for name, _ in server.calls), server.calls
+            unchanged()
+            for extra, expected_ws in ((["--workspace", b_ws["id"]], b_ws),
+                                       (["--workspace", "1"], b["workspaces"][1])):
                 payload = json.loads(run("sidebar-state", *extra, env=caller).stdout)
                 assert payload["workspace_id"] == expected_ws["id"], payload
                 routed("sidebar.state")

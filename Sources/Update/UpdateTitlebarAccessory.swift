@@ -785,6 +785,11 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
     private var lastAppliedLayoutSnapshot: TitlebarControlsLayoutSnapshot?
     private let viewModel = TitlebarControlsViewModel()
     private var userDefaultsObserver: NSObjectProtocol?
+    private var feedSubscription: AnyCancellable?
+    private var feedClock: Timer?
+    private var feedModel: FeedQuickViewModel?
+    private let feedKeyboard = FeedQuickViewKeyboardSession()
+    private var restoreFeedFocusOnClose = true
     var popoverIsShownForTesting: Bool { notificationsPopover.isShown }
     private var showsWorkspaceTitlebar: Bool { !WorkspacePresentationModeSettings.isMinimal() }
 
@@ -842,6 +847,9 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
     }
 
     deinit {
+        feedSubscription?.cancel()
+        feedClock?.invalidate()
+        feedKeyboard.stop(restoreFocus: false)
         if let userDefaultsObserver {
             NotificationCenter.default.removeObserver(userDefaultsObserver)
         }
@@ -927,23 +935,44 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             notificationsPopover.performClose(nil)
             return
         }
-        // Recreate content view each time to avoid stale observers when popover is hidden
-        let hostingController = NSHostingController(
-            rootView: NotificationsPopoverView(
-                notificationStore: notificationStore,
-                onDismiss: { [weak notificationsPopover] in
-                    notificationsPopover?.performClose(nil)
-                }
-            )
-        )
+        guard let window = externalAnchor?.window ?? view.window ?? hostingView.window ?? NSApp.keyWindow,
+              let contentView = window.contentView else { return }
+        restoreFeedFocusOnClose = true
+        let model = FeedQuickViewModel()
+        model.onOpen = { [weak self] target in
+            guard let self, let app = AppDelegate.shared, app.resolveFeedTarget(target) != nil else { return false }
+            // Raising the destination can close the popover synchronously. Disable
+            // origin restoration before that transition, not after open returns.
+            self.restoreFeedFocusOnClose = false
+            let opened = app.operatorOpenAttentionTarget(target)
+            if !opened { self.restoreFeedFocusOnClose = true }
+            return opened
+        }
+        model.onOpened = { [weak self] in
+            self?.restoreFeedFocusOnClose = false
+            self?.notificationsPopover.performClose(nil)
+        }
+        feedModel = model
+        updateFeedSnapshot(FeedProjectionBridge.shared.snapshot())
+        feedKeyboard.start(window: window) { [weak self, weak model] action in
+            switch action {
+            case .move(let delta): model?.move(delta)
+            case .open: model?.openSelected()
+            case .toggleFilter: model?.toggleFilter()
+            case .cancel: self?.notificationsPopover.performClose(nil)
+            case .consume: break
+            }
+        }
+        feedSubscription = FeedProjectionBridge.shared.snapshots.receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.updateFeedSnapshot($0) }
+        feedClock = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.updateFeedSnapshot(FeedProjectionBridge.shared.snapshot())
+        }
+        let hostingController = NSHostingController(rootView: FeedQuickView(model: model))
+        hostingController.preferredContentSize = FeedQuickViewGeometry.size
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = .clear
         notificationsPopover.contentViewController = hostingController
-
-        guard let window = externalAnchor?.window ?? view.window ?? hostingView.window ?? NSApp.keyWindow,
-              let contentView = window.contentView else {
-            return
-        }
 
         // Force layout to ensure geometry is current.
         contentView.layoutSubtreeIfNeeded()
@@ -953,7 +982,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             externalAnchor.superview?.layoutSubtreeIfNeeded()
             let anchorRect = externalAnchor.convert(externalAnchor.bounds, to: contentView)
             if !anchorRect.isEmpty {
-                notificationsPopover.animates = animated
+                notificationsPopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                 notificationsPopover.show(relativeTo: anchorRect, of: contentView, preferredEdge: .maxY)
                 postNotificationsPopoverVisibilityDidChange(isShown: true)
                 return
@@ -964,7 +993,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             anchorView.superview?.layoutSubtreeIfNeeded()
             let anchorRect = anchorView.convert(anchorView.bounds, to: contentView)
             if !anchorRect.isEmpty {
-                notificationsPopover.animates = animated
+                notificationsPopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                 notificationsPopover.show(relativeTo: anchorRect, of: contentView, preferredEdge: .maxY)
                 postNotificationsPopoverVisibilityDidChange(isShown: true)
                 return
@@ -974,7 +1003,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         // Fallback: position near top-left of the window content.
         let bounds = contentView.bounds
         let anchorRect = NSRect(x: 12, y: bounds.maxY - 8, width: 1, height: 1)
-        notificationsPopover.animates = animated
+        notificationsPopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         notificationsPopover.show(relativeTo: anchorRect, of: contentView, preferredEdge: .maxY)
         postNotificationsPopoverVisibilityDidChange(isShown: true)
     }
@@ -994,197 +1023,46 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         return popover
     }
 
+    private func updateFeedSnapshot(_ projection: FeedProjectionSnapshot) {
+        guard let feedModel else { return }
+        let previousSelectedRow = feedModel.rows.first { $0.tabID == feedModel.selection.selectedTabID }
+        var titles: [UUID: String] = [:]
+        for row in projection.rows {
+            let target = AttentionOrder.Target(workspaceID: row.workspaceID, tabID: row.tabID)
+            if let (_, workspace) = AppDelegate.shared?.resolveFeedTarget(target) {
+                titles[row.tabID] = workspace.title + " · " + (workspace.tabTitle(panelId: row.tabID) ?? "—")
+            }
+        }
+        feedModel.apply(.init(projection: projection, titles: titles, now: Date(), loading: false))
+        if let row = previousSelectedRow,
+           !feedModel.rows.contains(where: { $0.tabID == row.tabID }),
+           AppDelegate.shared?.resolveFeedTarget(.init(workspaceID: row.workspaceID, tabID: row.tabID)) == nil {
+            feedModel.markUnavailable()
+        }
+    }
+
+    func handleFeedQuickViewKey(_ event: NSEvent) -> Bool {
+        guard notificationsPopover.isShown else { return false }
+        feedKeyboard.popoverWindow = notificationsPopover.contentViewController?.view.window
+        return feedKeyboard.handle(event)
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        feedKeyboard.popoverWindow = notificationsPopover.contentViewController?.view.window
+    }
+
     // MARK: - NSPopoverDelegate
 
     func popoverDidClose(_ notification: Notification) {
+        feedSubscription?.cancel()
+        feedSubscription = nil
+        feedClock?.invalidate()
+        feedClock = nil
+        feedKeyboard.stop(restoreFocus: restoreFeedFocusOnClose)
+        feedModel = nil
         // Clear the content view controller to stop SwiftUI observers when popover is hidden
         notificationsPopover.contentViewController = nil
         postNotificationsPopoverVisibilityDidChange(isShown: false)
-    }
-}
-
-private struct NotificationsPopoverView: View {
-    @ObservedObject var notificationStore: TerminalNotificationStore
-    @AppStorage(KeyboardShortcutSettings.Action.jumpToUnread.defaultsKey) private var jumpToUnreadShortcutData = Data()
-    let onDismiss: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(String(localized: "notifications.title", defaultValue: "Notifications"))
-                    .font(.headline)
-                Spacer()
-                Button(action: jumpToLatestUnread) {
-                    HStack(spacing: 6) {
-                        Text(String(localized: "notifications.jumpToLatest", defaultValue: "Jump to Latest"))
-                        Text(jumpToUnreadShortcut.displayString)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("notificationsPopover.jumpToLatest")
-                .accessibilityValue(jumpToUnreadShortcut.displayString)
-                .safeHelp(
-                    KeyboardShortcutSettings.Action.jumpToUnread.tooltip(
-                        String(localized: "notifications.jumpToLatest", defaultValue: "Jump to Latest")
-                    )
-                )
-                .disabled(!hasUnreadNotifications)
-
-                Button(String(localized: "notifications.clearAll", defaultValue: "Clear All")) {
-                    notificationStore.clearAll()
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("notificationsPopover.clearAll")
-                .disabled(notificationStore.notifications.isEmpty)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            Divider()
-
-            if notificationStore.notifications.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "bell.slash")
-                        .font(.system(size: 28))
-                        .foregroundColor(.secondary)
-                    Text(String(localized: "notifications.empty.title", defaultValue: "It's quiet."))
-                        .font(.headline)
-                    Text(String(localized: "notifications.empty.subtitle", defaultValue: "When an area needs you, it rings here."))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(minWidth: 420, idealWidth: 520, maxWidth: 640, minHeight: 180)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(notificationStore.notifications) { notification in
-                            NotificationPopoverRow(
-                                notification: notification,
-                                tabTitle: tabTitle(for: notification.workspaceId),
-                                onOpen: { open(notification) },
-                                onClear: { notificationStore.remove(id: notification.id) }
-                            )
-                        }
-                    }
-                    .padding(12)
-                }
-                .frame(minWidth: 420, idealWidth: 520, maxWidth: 640, minHeight: 320, maxHeight: 480)
-            }
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private func tabTitle(for workspaceId: UUID) -> String? {
-        AppDelegate.shared?.tabTitle(for: workspaceId)
-    }
-
-    private var jumpToUnreadShortcut: StoredShortcut {
-        decodeShortcut(
-            from: jumpToUnreadShortcutData,
-            fallback: KeyboardShortcutSettings.Action.jumpToUnread.defaultShortcut
-        )
-    }
-
-    private var hasUnreadNotifications: Bool {
-        notificationStore.notifications.contains(where: { !$0.isRead })
-    }
-
-    private func decodeShortcut(from data: Data, fallback: StoredShortcut) -> StoredShortcut {
-        guard !data.isEmpty,
-              let shortcut = try? JSONDecoder().decode(StoredShortcut.self, from: data) else {
-            return fallback
-        }
-        return shortcut
-    }
-
-    private func jumpToLatestUnread() {
-        DispatchQueue.main.async {
-            AppDelegate.shared?.operatorJumpToLatestUnread()
-            onDismiss()
-        }
-    }
-
-    private func open(_ notification: TerminalNotification) {
-        // SwiftUI action closures are not guaranteed to run on the main actor.
-        // Ensure window focus + tab selection happens on the main thread.
-        DispatchQueue.main.async {
-            _ = AppDelegate.shared?.operatorOpenNotification(
-                workspaceId: notification.workspaceId,
-                surfaceId: notification.surfaceId,
-                notificationId: notification.id
-            )
-            onDismiss()
-        }
-    }
-}
-
-private struct NotificationPopoverRow: View {
-    let notification: TerminalNotification
-    let tabTitle: String?
-    let onOpen: () -> Void
-    let onClear: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Button(action: onOpen) {
-                HStack(alignment: .top, spacing: 10) {
-                    Circle()
-                        .fill(notification.isRead ? Color.clear : cmuxAccentColor())
-                        .frame(width: 8, height: 8)
-                        .overlay(
-                            Circle()
-                                .stroke(cmuxAccentColor().opacity(notification.isRead ? 0.2 : 1), lineWidth: 1)
-                        )
-                        .padding(.top, 6)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(notification.title)
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text(notification.createdAt.formatted(date: .omitted, time: .shortened))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        if !notification.body.isEmpty {
-                            Text(notification.body)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(3)
-                        }
-
-                        if let tabTitle {
-                            Text(tabTitle)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.trailing, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("NotificationPopoverRow.\(notification.id.uuidString)")
-            // XCUITest's `.click()` is not always reliable for SwiftUI `Button`s hosted in an `NSPopover`.
-            // Provide an explicit accessibility action so AXPress always routes to `onOpen`.
-            .accessibilityAction { onOpen() }
-
-            Button(action: onClear) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
     }
 }
 
@@ -1423,6 +1301,10 @@ final class UpdateTitlebarAccessoryController {
 
     func isNotificationsPopoverShown() -> Bool {
         controlsControllers.allObjects.contains(where: { $0.popoverIsShownForTesting })
+    }
+
+    func handleFeedQuickViewKey(_ event: NSEvent) -> Bool {
+        controlsControllers.allObjects.contains { $0.handleFeedQuickViewKey(event) }
     }
 
     @discardableResult

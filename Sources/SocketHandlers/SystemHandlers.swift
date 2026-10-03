@@ -280,6 +280,7 @@ extension TerminalController {
             "debug.terminal.operator_keys",
             "debug.terminal.scroll_viewport",
             "debug.terminal.runtime_start_hold",
+            "debug.feed_answer.hold_after_paste",
             "debug.app.activate",
             "debug.command_palette.toggle",
             "debug.command_palette.rename_tab.open",
@@ -328,6 +329,7 @@ extension TerminalController {
         }
         if CapabilityFeatures.current.supports(.feedAsks) {
             methods.append("feed.list")
+            methods.append("feed.answer")
             methods.append("feed.open")
             methods.append("feed.note_display")
         }

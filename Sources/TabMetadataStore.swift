@@ -569,6 +569,7 @@ final class TabMetadataStore: @unchecked Sendable {
         flag: TabAttentionFlagMutation = .unchanged,
         suppression: TabAttentionSuppressionMutation = .unchanged,
         callerTabId: UUID? = nil,
+        expectedFlagEpoch: Date? = nil,
         now: Date = Date()
     ) throws -> (result: WriteResult, before: TabAttentionSnapshot, after: TabAttentionSnapshot) {
         try queue.sync {
@@ -615,7 +616,10 @@ final class TabMetadataStore: @unchecked Sendable {
                     result.reasons[MetadataKey.flag] = "unchanged"
                 }
             case .lower:
-                if let prior = blob.removeValue(forKey: MetadataKey.flag) {
+                if let expectedFlagEpoch, before.flagRaisedAt != expectedFlagEpoch {
+                    result.applied[MetadataKey.flag] = false
+                    result.reasons[MetadataKey.flag] = "epoch_changed"
+                } else if let prior = blob.removeValue(forKey: MetadataKey.flag) {
                     result.priorValues[MetadataKey.flag] = prior
                     sourceBlob.removeValue(forKey: MetadataKey.flag)
                     for key in MetadataKey.flagCallerKeys {

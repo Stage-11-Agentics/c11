@@ -480,6 +480,8 @@ read and before the paste. `send-key` does not run this guard.
 
 **Text after `❯` on an idle Claude Code screen can be faint auto-suggest.** `read-screen` returns that ghost text exactly like typed text. `input-state` distinguishes the supported faint suggestion from a real draft; `send` accepts the suggestion so it may be replaced, but refuses a positively recognized draft or supported question/plan dialog unless `--allow-unguarded` is passed. Unknown screens retain delivery compatibility and report `input_guard: unknown`; older apps report `unguarded`. Do not treat this check as atomic: an operator can type after inspection and before delivery. `send-key` remains unchanged and is not guarded. A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --tab <t> "…" && c11 send-key --tab <t> enter` so a refusal stops the chain.
 
+The Codex empty composer uses a faint `Ask Codex to do anything` placeholder after `›`. Codex adds a two-cell display indent to continuation rows, including visual soft-wrap rows; prompt inspection removes that layout padding when comparing a pasted answer and preserves any additional operator-entered spaces. Nonempty Codex drafts remain `draft` and are refused before Feed writes input.
+
 **`c11 send` delivers the payload as a paste, then submits it with a separate Return.** The Return is a real key event dispatched after the target has ingested the paste, so paste-detecting TUIs (Claude Code, codex) register a submit rather than swallowing it. This holds whether or not the target's workspace is the one on screen — a send into a background agent lands exactly like one into the focused area.
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
@@ -933,6 +935,7 @@ and is never renamed. See [events.md](events.md).
 ```bash
 c11 feed list [--json] [--scope attention|all]
 c11 feed open <tab> [--workspace <id|ref>] [--json]
+c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
 c11 feed watch [--json] [--scope attention|all]
 ```
 
@@ -950,6 +953,39 @@ mark anything read, or send an answer. A missing
 workspace or tab returns `unavailable` and changes nothing. `list` and `watch`
 never move focus.
 
+`feed answer` accepts an exact tab target only when its current row is a flag with
+no blocking ask, or a `turn_end` row. A blocking question, plan, or permission
+remains ineligible even when that tab is flagged. Before pasting, it uses the
+C11-267 complete prompt-region inspection and accepts only `empty` or `suggestion`;
+`draft`, `dialog`, `unknown`, and `unavailable` return `input_guard_refused`.
+The text is limited to 16 KiB of UTF-8 and must be prose (control bytes are refused).
+c11 1.0 accepts single-line answers only. Any newline returns the machine-readable
+`multiline_unsupported` refusal before target lookup or paste, with `delivered: false`,
+`submitted: false`, `retry: "safe"`, and `nothing_was_sent: true`. The message directs
+the caller to `c11 feed open` to answer in the tab. An unattached tab returns `not_ready`
+without queueing input. Whitespace-only single-line text follows the exact-target
+`feed open` path and sends nothing.
+
+The response reports `delivered`, `submitted`, `answered`, and `retry`. `answered`
+means native Return handoff plus, for a flag row, lowering the flag epoch this reply
+started from; it does not claim the agent understood the text. `retry` is `safe`
+only when nothing was pasted and `unsafe` after a paste. A changed flag epoch leaves
+the new flag raised and returns `submitted: true`, `answered: false`,
+`flag_lowered: false`, and `flag_epoch: "replaced"`. A keypress during the Feed-answer
+paste-settle window can leave the answer pasted but unsubmitted, so retry is unsafe.
+Feed waits an additional 350 ms after the standard 200 ms delay before its exact composer
+and target checks. This bounded settle period remains inside the guarded single-line
+submit path.
+
+On a successful flag reply, the local `flag.lowered` event carries `{by, answer}`;
+the reply body is not written to the structural journal. The local EventLog retains
+an 8 MiB current file and one rolled generation. Other lower paths omit `answer`.
+
+Debug builds expose `debug.feed_answer.hold_after_paste` for deterministic race
+validation. Arm it with the exact `workspace_id`, `tab_id`, and `hold_ms` (1–5000)
+before calling `feed.answer`; the one-shot delay is added after paste and before
+the Return callback. It is omitted from Release builds and does not send Return.
+
 `feed watch` prints one list snapshot, then follows `ask.opened`, `ask.closed`,
 `flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, and the
 log markers. It binds `events-<instance>.ndjson` for the `instance` returned by
@@ -966,6 +1002,7 @@ journal, the event log, or `ask.opened` / `ask.closed`. After restart,
 `options` array means the hook extracted zero labels.
 
 Socket methods: `feed.list` (`scope`), `feed.open` (`workspace_id`, `tab_id`),
+`feed.answer` (`workspace_id`, `tab_id`, `text`, optional `by`),
 `feed.note_display` (hook/plugin display text; not a command agents call), and
 feature id `feed.asks` version 1. Discover it before depending on the methods.
 
@@ -974,8 +1011,8 @@ unmanaged legacy hook, where the journal method is unsupported or no draft was
 built, still stores `lastBody` and may notify with that body. This command does
 not erase those older records.
 
-Live answer and resume traces that need later producer work stay out of this
-command. `feed open` is focus only.
+Live resume traces that need later producer work stay out of this command.
+`feed open` is focus only.
 
 ### Operator workspace selection
 

@@ -1990,6 +1990,12 @@ struct CMUXCLI {
         let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
         let (createCommandText, createArgs) = isTerminalCreate
             ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        let feedAnswerValueOptions: Set<String> =
+            command == "feed" && commandArgs.first?.lowercased() == "answer" ? ["--text"] : []
+        let hasSubcommandHelp = CLIHelpFlagScanner.containsHelpFlag(
+            in: createArgs,
+            valueOptions: feedAnswerValueOptions
+        )
         var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
         if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
@@ -2071,8 +2077,12 @@ struct CMUXCLI {
            command != "__tmux-compat",
            command != "claude-teams",
            (!isSendText || sendWantsHelp),
-           (createArgs.contains("--help") || createArgs.contains("-h")) {
-            if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
+           hasSubcommandHelp {
+            if dispatchSubcommandHelp(
+                command: command,
+                commandArgs: commandArgs,
+                valueOptions: feedAnswerValueOptions
+            ) {
                 return
             }
             print("Unknown command '\(command)'. Run 'c11 help' to see available commands.")
@@ -3584,8 +3594,17 @@ struct CMUXCLI {
                     try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: resolvedSocketPath)
                 },
                 defaultWorkspace: { workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId) },
-                resolveWorkspace: { raw in try normalizeWorkspaceHandle(raw, client: client) },
-                resolveTab: { raw, ws in try normalizeSurfaceHandle(raw, client: client, workspaceHandle: ws) }
+                // feed.answer runs on a socket worker and accepts exact UUIDs;
+                // canonicalize the public short refs here after the normal CLI
+                // resolver has applied the same workspace/tab scoping rules.
+                resolveWorkspace: { raw in
+                    guard let handle = try normalizeWorkspaceHandle(raw, client: client) else { return nil }
+                    return try canonicalWorkspaceID(handle, client: client)
+                },
+                resolveTab: { raw, ws in
+                    guard let handle = try normalizeSurfaceHandle(raw, client: client, workspaceHandle: ws) else { return nil }
+                    return try canonicalTabID(handle, workspaceID: ws, client: client)
+                }
             )
 
         case "list-notifications":
@@ -5729,6 +5748,39 @@ struct CMUXCLI {
             }
         }
         throw CLIError(message: "Workspace index not found")
+    }
+
+    private func canonicalWorkspaceID(_ handle: String, client: SocketClient) throws -> String? {
+        if isUUID(handle) { return handle }
+        let windowsPayload = try client.sendV2(method: "window.list")
+        let windows = windowsPayload["windows"] as? [[String: Any]] ?? []
+        for window in windows {
+            guard let windowID = window["id"] as? String else { continue }
+            let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowID])
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            if let item = items.first(where: {
+                ($0["ref"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+                    || ($0["id"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+            }) {
+                return item["id"] as? String
+            }
+        }
+        throw CLIError(message: "Workspace handle no longer resolves: \(handle)")
+    }
+
+    private func canonicalTabID(_ handle: String, workspaceID: String?, client: SocketClient) throws -> String? {
+        if isUUID(handle) { return handle }
+        var params: [String: Any] = [:]
+        if let workspaceID { params["workspace_id"] = workspaceID }
+        let listed = try client.sendV2(method: "tab.list", params: params)
+        let items = listed["tabs"] as? [[String: Any]] ?? []
+        guard let item = items.first(where: {
+            ($0["ref"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+                || ($0["id"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+        }), let id = item["id"] as? String else {
+            throw CLIError(message: "Tab handle no longer resolves: \(handle)")
+        }
+        return id
     }
 
     private func normalizePaneHandle(
@@ -11857,8 +11909,12 @@ struct CMUXCLI {
     }
 
     /// Dispatch help for a subcommand. Returns true if help was printed.
-    private func dispatchSubcommandHelp(command: String, commandArgs: [String]) -> Bool {
-        guard commandArgs.contains("--help") || commandArgs.contains("-h") else { return false }
+    private func dispatchSubcommandHelp(
+        command: String,
+        commandArgs: [String],
+        valueOptions: Set<String> = []
+    ) -> Bool {
+        guard CLIHelpFlagScanner.containsHelpFlag(in: commandArgs, valueOptions: valueOptions) else { return false }
         guard let text = subcommandUsage(command, commandArgs: commandArgs) else { return false }
         // For two-level commands (e.g. `c11 workspace new --help`) include the
         // resolved subcommand in the header so the operator can tell which
@@ -19750,6 +19806,8 @@ struct CMUXCLI {
           list-notifications
           feed list [--json] [--scope attention|all]
           feed open <tab> [--workspace <id|ref>] [--json]
+          feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
+          feed answer supports single-line text only in c11 1.0; use feed open for multiline answers
           feed watch [--json] [--scope attention|all]
           clear-notifications
           agent-event append --stdin

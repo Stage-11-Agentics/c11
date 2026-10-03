@@ -19,6 +19,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
     private var projected = FeedProjectionSnapshot.empty
     private let snapshotLock = NSLock()
     private var publishedSnapshot = FeedProjectionSnapshot.empty
+    private var publishedAnswerRows: [UUID: FeedAnswerProjectionRow] = [:]
     private let changes = CurrentValueSubject<FeedProjectionSnapshot, Never>(.empty)
     var snapshots: AnyPublisher<FeedProjectionSnapshot, Never> { changes.eraseToAnyPublisher() }
 
@@ -29,17 +30,38 @@ final class FeedProjectionBridge: @unchecked Sendable {
         return publishedSnapshot
     }
 
+    /// Current immutable C11-264 row identity for a guarded answer. This is a
+    /// lock-only read; projection and ordering stay on the utility queue.
+    func answerRow(tabID: UUID) -> FeedAnswerProjectionRow? {
+        snapshotLock.lock()
+        defer { snapshotLock.unlock() }
+        return publishedAnswerRows[tabID]
+    }
+
     private func refreshProjection() {
-        let next = FeedProjectionSnapshot(rows: FeedProjector.project(
+        let rows = FeedProjector.project(
             journalRows: Array(journal.values), attention: Array(attention.values),
             notes: cache.notesByTab(), scope: .all
-        ))
-        guard next != projected else { return }
+        )
+        let next = FeedProjectionSnapshot(rows: rows)
+        var answerRows: [UUID: FeedAnswerProjectionRow] = [:]
+        answerRows.reserveCapacity(rows.count)
+        for row in rows {
+            let snapshot = journal[row.tabID]
+            answerRows[row.tabID] = FeedAnswerProjectionRow(
+                row: row,
+                owner: snapshot?.owner,
+                sequence: snapshot?.lastSequence,
+                askEventID: currentAskEventIDs[row.tabID]
+            )
+        }
+        let projectionChanged = next != projected
         projected = next
         snapshotLock.lock()
-        publishedSnapshot = next
+        publishedAnswerRows = answerRows
+        if projectionChanged { publishedSnapshot = next }
         snapshotLock.unlock()
-        changes.send(next)
+        if projectionChanged { changes.send(next) }
     }
 
     init() {}

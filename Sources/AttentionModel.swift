@@ -250,13 +250,17 @@ final class TabAttentionService {
     func lower(
         workspaceId: UUID,
         surfaceId: UUID,
-        by actor: TabAttentionActor
+        by actor: TabAttentionActor,
+        answer: String? = nil,
+        expectedFlagEpoch: Date? = nil
     ) throws -> TabMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: .lower,
-            actor: actor
+            actor: actor,
+            answer: answer,
+            expectedFlagEpoch: expectedFlagEpoch
         )
     }
 
@@ -384,6 +388,8 @@ final class TabAttentionService {
         suppression: TabAttentionSuppressionMutation = .unchanged,
         callerTabId: UUID? = nil,
         actor: TabAttentionActor = .agent,
+        answer: String? = nil,
+        expectedFlagEpoch: Date? = nil,
         title: String? = nil
     ) throws -> TabMetadataStore.WriteResult {
         let transaction = try TabMetadataStore.shared.mutateAttention(
@@ -391,7 +397,8 @@ final class TabAttentionService {
             surfaceId: surfaceId,
             flag: flag,
             suppression: suppression,
-            callerTabId: callerTabId
+            callerTabId: callerTabId,
+            expectedFlagEpoch: expectedFlagEpoch
         )
         let flagChanged = transaction.result.applied[MetadataKey.flag] == true
         let suppressionChanged = transaction.result.applied[MetadataKey.suppressed] == true
@@ -424,7 +431,8 @@ final class TabAttentionService {
                 EventEmitter.shared.emitFlagLowered(
                     workspace: workspaceId,
                     surface: surfaceId,
-                    by: actor
+                    by: actor,
+                    answer: answer
                 )
                 if let epoch = transaction.before.flagRaisedAt {
                     TerminalNotificationStore.shared.cancelFlagNotification(

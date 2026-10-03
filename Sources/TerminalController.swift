@@ -2359,6 +2359,7 @@ class TerminalController {
         // Feed list and display notes parse off main and do not move focus.
         "feed.list",
         "feed.note_display",
+        "feed.answer",
         // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
         "workspace.reorder_batch",
         "workspace.group.list",
@@ -7447,7 +7448,8 @@ class TerminalController {
         submit: Bool,
         preserveNewlines: Bool = false,
         terminalSurface: TerminalSurface,
-        surface: ghostty_surface_t
+        surface: ghostty_surface_t,
+        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil
     ) -> Bool {
         let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
         let body = delivery.body
@@ -7473,7 +7475,10 @@ class TerminalController {
                 // ingesting the paste — a Return inside the paste-processing
                 // window is silently dropped by Claude Code and codex. Same
                 // paste-settle delay the interactive text box uses.
-                terminalSurface.scheduleSubmitReturnAfterPasteDelay(then: finish)
+                terminalSurface.scheduleSubmitReturnAfterPasteDelay(
+                    then: finish,
+                    feedAnswerGate: feedAnswerGate
+                )
             } else {
                 // Text left in the input line without a submit is a draft the
                 // mailbox push must not splice onto. Stamped after the write,

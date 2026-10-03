@@ -201,8 +201,15 @@ final class EventEmitter {
         )
     }
 
-    func emitFlagLowered(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
-        emit(.flagLowered, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    func emitFlagLowered(
+        workspace: UUID,
+        surface: UUID,
+        by actor: TabAttentionActor,
+        answer: String? = nil
+    ) {
+        var payload: [String: Any] = ["by": actor.rawValue]
+        if let answer { payload["answer"] = answer }
+        emit(.flagLowered, workspace: workspace, surface: surface, payload: payload)
     }
 
     func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {

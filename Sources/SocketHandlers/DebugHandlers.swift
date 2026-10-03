@@ -64,6 +64,8 @@ extension TerminalController {
                 }
                 return .ok(["held": hold, "maximum_seconds": 10, "tab_id": fixture.id.uuidString])
             })
+        case "debug.feed_answer.hold_after_paste":
+            return v2Result(id: id, self.v2DebugFeedAnswerHoldAfterPaste(params: params))
         case "debug.app.activate":
             return v2Result(id: id, self.v2DebugActivateApp())
         case "debug.command_palette.toggle":
@@ -409,6 +411,28 @@ extension TerminalController {
         }
         return .ok(payload)
     }
+
+#if DEBUG
+    private func v2DebugFeedAnswerHoldAfterPaste(params: [String: Any]) -> V2CallResult {
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              let tabID = v2UUID(params, "tab_id"),
+              let holdMilliseconds = v2Int(params, "hold_ms"),
+              (1...5_000).contains(holdMilliseconds) else {
+            return .err(code: "invalid_params", message: "workspace_id, tab_id, and hold_ms (1...5000) are required", data: nil)
+        }
+        return v2MainSync {
+            guard let located = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: tabID, preferredWorkspaceId: workspaceID
+            ), located.workspace.panels[tabID] is TerminalTab else {
+                return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+            }
+            guard FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: holdMilliseconds) else {
+                return .err(code: "invalid_state", message: "A feed-answer hold is already armed", data: nil)
+            }
+            return .ok(["armed": true, "tab_id": tabID.uuidString, "hold_ms": holdMilliseconds])
+        }
+    }
+#endif
 
 #if DEBUG
     /// DEBUG-only: force an on-disk session snapshot round-trip through

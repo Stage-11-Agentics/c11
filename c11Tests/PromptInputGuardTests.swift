@@ -58,6 +58,43 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(fields["draft_length"] as? Int, sentinel.unicodeScalars.count)
     }
 
+    func testComposerTextIsExactForDraftsAndUnavailableForOtherStates() {
+        let body = "FEED-ANSWER-FIXTURE"
+        let singleLine = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}" + body)]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.composerText(singleLine), body)
+
+        let multiline = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}first line")]),
+            Row(y: 2, spans: [Span(text: "")]),
+            Row(y: 3, spans: [Span(text: "  third line")]),
+            Row(y: 4, spans: [Span(text: rule)]),
+        ], cursorY: 3)
+        XCTAssertEqual(PromptInputClassifier.composerText(multiline), "first line\n\n  third line")
+
+        let suggestion = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0} "), Span(text: "suggested text", faint: true)]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ], cursorY: 1)
+        XCTAssertNil(PromptInputClassifier.composerText(suggestion))
+
+        let dialog = region([
+            Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
+            Row(y: 1, spans: [Span(text: "❯ Yes, implement this plan")]),
+            Row(y: 2, spans: [Span(text: "  No, keep planning")]),
+            Row(y: 3, spans: [Span(text: "Enter to select · Esc to go back")]),
+        ], cursorY: 3)
+        XCTAssertNil(PromptInputClassifier.composerText(dialog))
+
+        let unknown = region([Row(y: 0, spans: [Span(text: "ordinary terminal output")])], cursorY: 0)
+        XCTAssertNil(PromptInputClassifier.composerText(unknown))
+    }
+
     func testMultilineDraftSurvivesBlankCursorRow() {
         let input = region([
             Row(y: 0, spans: [Span(text: rule)]),
@@ -248,11 +285,107 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(input).state, .empty)
     }
 
-    func testCodexAndHistoricalPromptTextRemainUnknown() {
+    func testCodexEmptyPromptPlaceholderIsSuggestionAndHistoricalPromptRemainsUnknown() {
         let codex = region([
             Row(y: 0, spans: [Span(text: "› "), Span(text: "Ask Codex to do anything", faint: true)]),
         ], cursorY: 0)
-        XCTAssertEqual(PromptInputClassifier.classify(codex).state, .unknown)
+        let emptyCodexPrompt = PromptRegionSnapshot(
+            cursorX: 2,
+            cursorY: codex.cursorY,
+            cursorPendingWrap: codex.cursorPendingWrap,
+            complete: codex.complete,
+            rows: codex.rows,
+            cells: codex.cells,
+            text: codex.text
+        )
+        XCTAssertEqual(PromptInputClassifier.classify(emptyCodexPrompt).state, .suggestion)
+        XCTAssertNil(PromptInputClassifier.composerText(emptyCodexPrompt))
+
+        let nonFaintText = region([
+            Row(y: 0, spans: [Span(text: "› "), Span(text: "Ask Codex to do anything")]),
+        ], cursorY: 0)
+        let editedCodexPrompt = PromptRegionSnapshot(
+            cursorX: 2,
+            cursorY: nonFaintText.cursorY,
+            cursorPendingWrap: nonFaintText.cursorPendingWrap,
+            complete: nonFaintText.complete,
+            rows: nonFaintText.rows,
+            cells: nonFaintText.cells,
+            text: nonFaintText.text
+        )
+        XCTAssertEqual(PromptInputClassifier.classify(editedCodexPrompt).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(editedCodexPrompt), "Ask Codex to do anything")
+
+        let codexDraft = region([
+            Row(y: 0, spans: [Span(text: "› " + "first line")]),
+            Row(y: 1, spans: [Span(text: "second line")]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(codexDraft).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexDraft), "first line\nsecond line")
+
+        let codexRenderedMultiline = region([
+            Row(y: 0, spans: [Span(text: "› first line")]),
+            Row(y: 1, spans: [Span(text: "  second line")]),
+            Row(y: 2, spans: [Span(text: "    third line")]),
+        ], cursorY: 2)
+        let codexBody = "first line\nsecond line\n  third line"
+        XCTAssertEqual(PromptInputClassifier.classify(codexRenderedMultiline).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexRenderedMultiline), codexBody)
+        XCTAssertEqual(
+            PromptInputClassifier.classify(codexRenderedMultiline).draftLength,
+            codexBody.unicodeScalars.count
+        )
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(
+                state: PromptInputClassifier.classify(codexRenderedMultiline).state,
+                composer: PromptInputClassifier.composerText(codexRenderedMultiline),
+                expected: codexBody
+            ),
+            .matches
+        )
+
+        var refusedWrites = 0
+        XCTAssertEqual(
+            SendInputGuard.perform(
+                state: PromptInputClassifier.classify(codexRenderedMultiline).state,
+                allowUnguarded: false
+            ) { refusedWrites += 1 },
+            .refuse(reason: "draft"),
+            "a pre-existing Codex draft remains protected by the shared send guard"
+        )
+        XCTAssertEqual(refusedWrites, 0)
+
+        let codexSoftWrappedSingleLine = region([
+            Row(y: 0, spans: [Span(text: "› Reply with exactly C11-FEED-SINGLE-OK and ")], softWrap: true),
+            Row(y: 1, spans: [Span(text: "  nothing else.")], wrapContinuation: true),
+        ], cursorY: 1)
+        let singleLineBody = "Reply with exactly C11-FEED-SINGLE-OK and nothing else."
+        XCTAssertEqual(PromptInputClassifier.composerText(codexSoftWrappedSingleLine), singleLineBody)
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(
+                state: PromptInputClassifier.classify(codexSoftWrappedSingleLine).state,
+                composer: PromptInputClassifier.composerText(codexSoftWrappedSingleLine),
+                expected: singleLineBody
+            ),
+            .matches
+        )
+
+        let codexMultilineWithWrappedFirstRow = region([
+            Row(y: 0, spans: [Span(text: "› Return these two lines exactly and nothing ")], softWrap: true),
+            Row(y: 1, spans: [Span(text: "  else:")], wrapContinuation: true),
+            Row(y: 2, spans: [Span(text: "  C11-268-MULTILINE-ONE")]),
+            Row(y: 3, spans: [Span(text: "  C11-268-MULTILINE-TWO")]),
+        ], cursorY: 3)
+        let multilineBody = "Return these two lines exactly and nothing else:\nC11-268-MULTILINE-ONE\nC11-268-MULTILINE-TWO"
+        XCTAssertEqual(PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow), multilineBody)
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(
+                state: PromptInputClassifier.classify(codexMultilineWithWrappedFirstRow).state,
+                composer: PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow),
+                expected: multilineBody
+            ),
+            .matches
+        )
 
         let transcript = region([
             Row(y: 0, spans: [Span(text: "❯ say hi in two words")]),
@@ -386,5 +519,338 @@ final class SendInputGuardTests: XCTestCase {
         XCTAssertFalse(sameWorkspace)
         XCTAssertEqual(decision, .unavailable)
         XCTAssertEqual(writes, 0)
+    }
+}
+
+final class FeedAnswerSafetyTests: XCTestCase {
+    func testFeedAnswerAddsPasteSettleBeforeGuardedReturn() {
+        XCTAssertEqual(FeedAnswerTiming.returnDelayMilliseconds(baseDelayMs: 200, debugHoldMs: 0), 550)
+        XCTAssertEqual(FeedAnswerTiming.returnDelayMilliseconds(baseDelayMs: 200, debugHoldMs: 150), 700)
+    }
+
+    func testEligibilityRequiresCurrentFlagOrCompletedTurnAndExactRowIdentity() throws {
+        let workspaceID = UUID()
+        let tabID = UUID()
+        let owner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "fixture-session")
+        let epoch = Date(timeIntervalSince1970: 1_000)
+        let flagSnapshot = snapshot(owner: owner, workspaceID: workspaceID, phase: .working, sequence: 41)
+        let attention = TabAttentionSnapshot(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flagReason: "fixture blocker",
+            flagRaisedAt: epoch,
+            suppressed: false
+        )
+        let projectedRow = try row(for: flagSnapshot, attention: attention)
+
+        let identity = try XCTUnwrap(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: flagSnapshot,
+            attention: attention,
+            projectedRow: projectedRow
+        ))
+        XCTAssertEqual(identity.startKind, .flag)
+        XCTAssertEqual(identity.flagEpoch, epoch)
+        XCTAssertFalse(FeedAnswerEligibility.stillEligible(
+            identity,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: snapshot(owner: owner, workspaceID: workspaceID, phase: .working, sequence: 42),
+            attention: attention
+        ), "a later journal row must not inherit this answer")
+
+        let wrongOwner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "replacement-session")
+        XCTAssertNil(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: wrongOwner,
+            snapshot: flagSnapshot,
+            attention: attention,
+            projectedRow: projectedRow
+        ))
+        XCTAssertNil(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: flagSnapshot,
+            attention: attention,
+            projectedRow: FeedAnswerProjectionRow(
+                row: projectedRow.row,
+                owner: owner,
+                sequence: flagSnapshot.lastSequence + 1,
+                askEventID: projectedRow.askEventID
+            )
+        ))
+
+        let blockedSnapshot = snapshot(
+            owner: owner,
+            workspaceID: workspaceID,
+            phase: .blocked,
+            reason: .question,
+            sequence: 43
+        )
+        let blockedRow = try row(for: blockedSnapshot, attention: attention)
+        XCTAssertNil(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: blockedSnapshot,
+            attention: attention,
+            projectedRow: blockedRow
+        ), "an ask remains blocking even when its tab is flagged")
+
+        let completed = snapshot(
+            owner: owner,
+            workspaceID: workspaceID,
+            phase: .idle,
+            sequence: 44,
+            turnOutcome: "completed"
+        )
+        let completedRow = try row(for: completed, attention: nil)
+        let turnIdentity = try XCTUnwrap(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: completed,
+            attention: TabAttentionSnapshot(
+                workspaceId: workspaceID,
+                surfaceId: tabID,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                suppressed: false
+            ),
+            projectedRow: completedRow
+        ))
+        XCTAssertEqual(turnIdentity.startKind, .turnEnd)
+        XCTAssertNil(turnIdentity.flagEpoch)
+    }
+
+    func testOnlyPositiveNativeHandoffCanLowerFlag() {
+        var lowerCalls = 0
+        XCTAssertEqual(
+            FeedAnswerHandoff.outcome(nativeHandoff: false, startKind: .flag) {
+                lowerCalls += 1
+                return .lowered
+            },
+            .submitUnconfirmed
+        )
+        XCTAssertEqual(lowerCalls, 0)
+
+        XCTAssertEqual(
+            FeedAnswerHandoff.outcome(nativeHandoff: true, startKind: .flag) {
+                lowerCalls += 1
+                return .lowered
+            },
+            .submitted(flagLowered: true, flagEpoch: nil)
+        )
+        XCTAssertEqual(lowerCalls, 1)
+
+        XCTAssertEqual(
+            FeedAnswerHandoff.outcome(nativeHandoff: true, startKind: .turnEnd) {
+                lowerCalls += 1
+                return .lowered
+            },
+            .submitted(flagLowered: false, flagEpoch: nil)
+        )
+        XCTAssertEqual(lowerCalls, 1)
+    }
+
+    func testComposerCheckSeparatesUnseenPasteFromChangedPrompt() {
+        let body = "FEED-ANSWER-FIXTURE"
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: body, expected: body), .matches)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .empty, composer: nil, expected: body), .notVisible)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .suggestion, composer: nil, expected: body), .notVisible)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "FEED-ANSWER", expected: body), .notVisible)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "operator text", expected: body), .changed)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .dialog, composer: nil, expected: body), .changed)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .unknown, composer: nil, expected: body), .changed)
+    }
+
+    func testTimeoutCancelsPendingAnswerBeforeDelayedCommitRuns() {
+        var effects = 0
+        let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> {
+            effects += 1
+            return .submitted(flagLowered: true, flagEpoch: nil)
+        }
+
+        XCTAssertNil(gate.wait(timeout: 0.001))
+        gate.enqueue { work in work() }
+        XCTAssertEqual(effects, 0, "a cancelled paste-settle callback must not submit or lower")
+    }
+
+    #if DEBUG
+    func testCloseDuringHeldPostPasteReturnFailsClosedWithUnsafeRetryAndNoLower() throws {
+        let tabID = UUID()
+        let replacementTabID = UUID()
+        XCTAssertTrue(FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: 900))
+        defer { FeedAnswerDebugHold.shared.clear(tabID: tabID) }
+        XCTAssertNil(FeedAnswerDebugHold.shared.consume(tabID: replacementTabID))
+        XCTAssertEqual(FeedAnswerDebugHold.shared.consume(tabID: tabID), 900)
+
+        let state = FeedAnswerRaceState()
+        let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> {
+            if let failure = FeedAnswerPreReturnCheck.outcome(
+                targetIsCurrent: state.targetIsCurrent,
+                rowIsCurrent: true,
+                operatorInputUnchanged: true,
+                composer: .matches
+            ) {
+                return failure
+            }
+            return FeedAnswerHandoff.outcome(
+                nativeHandoff: state.sendReturn(),
+                startKind: .flag
+            ) {
+                state.lowerFlag()
+            }
+        }
+
+        let held = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        gate.enqueue { work in
+            DispatchQueue.global(qos: .utility).async {
+                held.signal()
+                _ = release.wait(timeout: .now() + 2)
+                work()
+            }
+        }
+        XCTAssertEqual(held.wait(timeout: .now() + 1), .success)
+        state.closeTarget()
+        release.signal()
+
+        let outcome = try XCTUnwrap(gate.wait(timeout: 1))
+        XCTAssertEqual(outcome, .targetLost)
+        XCTAssertEqual(
+            FeedAnswerFailureDisposition.make(for: outcome),
+            FeedAnswerFailureDisposition(code: "target_lost", retry: "unsafe")
+        )
+        XCTAssertEqual(state.effects.returns, 0)
+        XCTAssertEqual(state.effects.flagLowers, 0)
+    }
+    #endif
+
+    func testReplacedFlagEpochCannotBeLoweredByDelayedAnswer() throws {
+        let store = TabMetadataStore.shared
+        let workspaceID = UUID()
+        let tabID = UUID()
+        let originalEpoch = Date(timeIntervalSince1970: 2_000)
+        let replacementEpoch = Date(timeIntervalSince1970: 3_000)
+        defer { store.removeSurface(workspaceId: workspaceID, surfaceId: tabID) }
+
+        _ = try store.mutateAttention(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flag: .raise("original"),
+            now: originalEpoch
+        )
+        _ = try store.mutateAttention(workspaceId: workspaceID, surfaceId: tabID, flag: .lower)
+        _ = try store.mutateAttention(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flag: .raise("replacement"),
+            now: replacementEpoch
+        )
+
+        let staleLower = try store.mutateAttention(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flag: .lower,
+            expectedFlagEpoch: originalEpoch
+        )
+        XCTAssertEqual(staleLower.result.applied[MetadataKey.flag], false)
+        XCTAssertEqual(staleLower.result.reasons[MetadataKey.flag], "epoch_changed")
+        XCTAssertEqual(staleLower.after.flagReason, "replacement")
+        XCTAssertEqual(staleLower.after.flagRaisedAt, replacementEpoch)
+    }
+
+    private func snapshot(
+        owner: JournalOwner,
+        workspaceID: UUID,
+        phase: JournalPhase,
+        reason: JournalReason? = nil,
+        sequence: Int64,
+        turnOutcome: String? = nil
+    ) -> JournalSnapshot {
+        JournalSnapshot(
+            owner: owner,
+            workspaceID: workspaceID,
+            phase: phase,
+            reason: reason,
+            requestID: reason == nil ? nil : "fixture-request",
+            turnOutcome: turnOutcome,
+            appInstanceID: UUID(),
+            lastSequence: sequence,
+            confirmation: .confirmed,
+            connection: .live
+        )
+    }
+
+    private func row(
+        for snapshot: JournalSnapshot,
+        attention: TabAttentionSnapshot?
+    ) throws -> FeedAnswerProjectionRow {
+        let attentionFacts = attention.map { value in
+            [FeedAttentionFact(
+                workspaceID: value.workspaceId,
+                tabID: value.surfaceId,
+                flagReason: value.flagReason,
+                flagRaisedAtMs: value.flagRaisedAt.map { Int64($0.timeIntervalSince1970 * 1_000) },
+                flagCallerTabID: value.flagCallerTabId,
+                suppressed: value.suppressed
+            )]
+        } ?? []
+        let projected = try XCTUnwrap(FeedProjector.project(
+            journalRows: [snapshot],
+            attention: attentionFacts,
+            notes: [:],
+            scope: .all
+        ).first)
+        return FeedAnswerProjectionRow(
+            row: projected,
+            owner: snapshot.owner,
+            sequence: snapshot.lastSequence,
+            askEventID: UUID()
+        )
+    }
+}
+
+private final class FeedAnswerRaceState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = true
+    private var returnCount = 0
+    private var flagLowerCount = 0
+
+    var targetIsCurrent: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return isOpen
+    }
+
+    var effects: (returns: Int, flagLowers: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (returnCount, flagLowerCount)
+    }
+
+    func closeTarget() {
+        lock.lock(); isOpen = false; lock.unlock()
+    }
+
+    func sendReturn() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard isOpen else { return false }
+        returnCount += 1
+        return true
+    }
+
+    func lowerFlag() -> FeedAnswerFlagLowerOutcome {
+        lock.lock(); defer { lock.unlock() }
+        flagLowerCount += 1
+        return .lowered
     }
 }

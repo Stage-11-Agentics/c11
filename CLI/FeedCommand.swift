@@ -1,16 +1,42 @@
 import Foundation
 
+enum CLIHelpFlagScanner {
+    static func containsHelpFlag(in arguments: [String], valueOptions: Set<String> = []) -> Bool {
+        var index = arguments.startIndex
+        while index < arguments.endIndex {
+            if valueOptions.contains(arguments[index]) {
+                index = arguments.index(index, offsetBy: 2, limitedBy: arguments.endIndex) ?? arguments.endIndex
+            } else if arguments[index] == "--help" || arguments[index] == "-h" {
+                return true
+            } else {
+                index = arguments.index(after: index)
+            }
+        }
+        return false
+    }
+}
+
 enum FeedCommand {
     static let usageText = """
     Usage: c11 feed list [--json] [--scope attention|all]
            c11 feed open <tab> [--workspace <id|ref>] [--json]
+           c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
            c11 feed watch [--json] [--scope attention|all]
 
-    List, open, or follow typed asks. Default scope is attention: open blocking asks and flag rows.
+    List, open, answer, or follow typed asks. Default scope is attention: open blocking asks and flag rows.
     --scope all also includes non-suppressed turn_end rows. Generic input is unsupported.
     feed open selects the named workspace and tab inside c11 and does not activate the app or send an answer.
     A missing workspace or tab prints unavailable and changes nothing.
-    Prompt text appears only in this process's live list/watch JSON. It is not stored in the journal or the event log.
+    feed answer accepts only an eligible flag or turn_end row with a complete empty/suggestion prompt.
+    c11 1.0 supports single-line answers only. Newlines return multiline_unsupported; nothing is sent.
+    Use c11 feed open to answer in the tab.
+    Blocking asks, drafts, dialogs, unknown input, and cold tabs are refused. Whitespace-only text opens
+    the exact tab without sending. --by defaults to agent. The result includes answered and retry; retry
+    is safe only when nothing was pasted. A keypress during the Feed answer paste-settle window can leave
+    the answer pasted but unsubmitted, so retry is unsafe.
+    Ask prompt text appears only in this process's live list/watch JSON. It is not stored in the journal or the event log.
+    A successful flag reply includes its text in the local flag.lowered event. The local EventLog
+    retains an 8 MiB current file and one rolled generation; the body-free journal never receives it.
     """
 
     static func run(
@@ -22,17 +48,42 @@ enum FeedCommand {
         resolveWorkspace: (String) throws -> String?,
         resolveTab: (_ tab: String, _ workspace: String?) throws -> String?
     ) throws {
-        if arguments.isEmpty || arguments.contains("--help") || arguments.contains("-h") {
+        let answerValueOptions: Set<String> = arguments.first?.lowercased() == "answer" ? ["--text"] : []
+        if arguments.isEmpty || CLIHelpFlagScanner.containsHelpFlag(
+            in: arguments,
+            valueOptions: answerValueOptions
+        ) {
             print(usageText)
             return
         }
         var args = arguments
-        let json = jsonOutput || args.contains("--json")
-        args.removeAll { $0 == "--json" }
-        func take(_ name: String) throws -> String? {
-            guard let index = args.firstIndex(of: name) else { return nil }
+        var json = jsonOutput
+        var scan = args.startIndex
+        while scan < args.endIndex {
+            if args[scan] == "--text" {
+                scan = args.index(scan, offsetBy: 2, limitedBy: args.endIndex) ?? args.endIndex
+            } else if args[scan] == "--json" {
+                json = true
+                args.remove(at: scan)
+            } else {
+                scan = args.index(after: scan)
+            }
+        }
+        func take(_ name: String, allowFlagValue: Bool = false) throws -> String? {
+            var index = args.startIndex
+            while index < args.endIndex {
+                if name != "--text", args[index] == "--text" {
+                    index = args.index(index, offsetBy: 2, limitedBy: args.endIndex) ?? args.endIndex
+                } else if args[index] == name {
+                    break
+                } else {
+                    index = args.index(after: index)
+                }
+            }
+            guard index < args.endIndex else { return nil }
             let valueIndex = args.index(after: index)
-            guard valueIndex < args.endIndex, !args[valueIndex].hasPrefix("--") else {
+            guard valueIndex < args.endIndex,
+                  allowFlagValue || !args[valueIndex].hasPrefix("--") else {
                 throw CLIError(message: "feed: \(name) requires a value")
             }
             let value = args[valueIndex]
@@ -40,25 +91,26 @@ enum FeedCommand {
             args.remove(at: index)
             return value
         }
-        let scope = try take("--scope") ?? FeedScope.attention.rawValue
+        let scopeFlag = try take("--scope")
+        let scope = scopeFlag ?? FeedScope.attention.rawValue
         guard let feedScope = FeedScope(rawValue: scope) else {
             throw CLIError(message: "feed: --scope must be attention or all")
         }
         let workspaceFlag = try take("--workspace")
         let tabFlag = try take("--tab")
-        guard !args.contains(where: { $0.hasPrefix("--") }) else {
-            throw CLIError(message: "feed: unknown flag")
-        }
         guard let subcommand = args.first else {
             throw CLIError(message: "feed requires list, open, or watch")
         }
         args.removeFirst()
         switch subcommand {
         case "list":
-            guard args.isEmpty, tabFlag == nil else { throw CLIError(message: "usage: c11 feed list [--json] [--scope attention|all]") }
+            guard args.isEmpty, tabFlag == nil, workspaceFlag == nil else { throw CLIError(message: "usage: c11 feed list [--json] [--scope attention|all]") }
             let payload = try client.sendV2(method: "feed.list", params: ["scope": feedScope.rawValue])
             printList(payload, json: json)
         case "open":
+            guard scopeFlag == nil, !args.contains(where: { $0.hasPrefix("--") }) else {
+                throw CLIError(message: "usage: c11 feed open <tab> [--workspace <id|ref>] [--json]")
+            }
             let tabRaw = tabFlag ?? args.first
             if tabFlag == nil { args = Array(args.dropFirst()) }
             guard let tabRaw, args.isEmpty else { throw CLIError(message: "usage: c11 feed open <tab> [--workspace <id|ref>]") }
@@ -79,9 +131,72 @@ enum FeedCommand {
             } catch let error as CLIError where error.message.hasPrefix("unavailable") {
                 throw CLIError(message: "unavailable")
             }
+        case "answer":
+            guard scopeFlag == nil else { throw CLIError(message: "feed answer does not accept --scope") }
+            let text = try take("--text", allowFlagValue: true)
+            let actor = try take("--by") ?? "agent"
+            guard actor == "agent" || actor == "operator" else {
+                throw CLIError(message: "feed answer: --by must be agent or operator")
+            }
+            guard !args.contains(where: { $0.hasPrefix("--") }) else {
+                throw CLIError(message: "feed answer: unknown flag")
+            }
+            guard let text else { throw CLIError(message: "usage: c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]") }
+            guard !(tabFlag != nil && !args.isEmpty) else {
+                throw CLIError(message: "feed answer accepts one tab target")
+            }
+            let tabRaw = tabFlag ?? args.first
+            if tabFlag == nil { args = Array(args.dropFirst()) }
+            guard let tabRaw, args.isEmpty else {
+                throw CLIError(message: "usage: c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]")
+            }
+            let workspaceRaw = workspaceFlag ?? defaultWorkspace()
+            guard let workspaceRaw, let workspace = try resolveWorkspace(workspaceRaw) else {
+                throw CLIError(message: "feed answer requires a workspace")
+            }
+            guard let tab = try resolveTab(tabRaw, workspace) else {
+                throw CLIError(message: "feed answer requires a tab")
+            }
+            let payload: [String: Any]
+            do {
+                payload = try client.sendV2(method: "feed.answer", params: [
+                    "workspace_id": workspace,
+                    "tab_id": tab,
+                    "text": text,
+                    "by": actor,
+                ])
+            } catch let error as CLIError where error.structuredResponse != nil {
+                if json, let structured = error.structuredResponse {
+                    print(jsonLine(structured))
+                    fflush(stdout)
+                    throw CLIError(message: error.message)
+                }
+                let code = ((error.structuredResponse?["error"] as? [String: Any])?["code"] as? String)
+                if code == "input_guard_refused" {
+                    throw CLIError(message: "\(error.message)\nUse `c11 feed open <tab>` to inspect or resolve the prompt before answering.")
+                }
+                throw error
+            }
+            if json {
+                print(jsonLine(payload))
+                fflush(stdout)
+            } else {
+                let answered = payload["answered"] as? Bool ?? false
+                let submitted = payload["submitted"] as? Bool ?? false
+                let retry = payload["retry"] as? String ?? "unknown"
+                if payload["opened"] as? Bool == true {
+                    print("opened \((payload["tab_id"] as? String) ?? tab); delivered: false")
+                } else {
+                    print("answered: \(answered)  submitted: \(submitted)  retry: \(retry)")
+                }
+                fflush(stdout)
+            }
         case "watch":
             guard args.isEmpty, tabFlag == nil, workspaceFlag == nil else {
                 throw CLIError(message: "usage: c11 feed watch [--json] [--scope attention|all]")
+            }
+            guard scopeFlag == nil || FeedScope(rawValue: scope) != nil else {
+                throw CLIError(message: "feed: --scope must be attention or all")
             }
             try watch(client: client, scope: feedScope, json: json, reconnect: reconnect)
         default:

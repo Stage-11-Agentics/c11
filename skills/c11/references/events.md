@@ -18,7 +18,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 
 - **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>` (e.g. `com.stage11.c11-12345`) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
 - **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`.
-- **`log.opened` begins each instance's log.** Its payload carries the `pid`. **`seq` resets to 0 per instance** — it is monotonic *within* one file, never across instances.
+- **`log.opened` begins each instance's log.** Its payload carries the `pid` and its first emitted `seq` is **1**. The counter is per instance, not the lifecycle journal's committed sequence; do not resume a journal cursor from an events file.
 - **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (a single rolled generation is retained; the previous `.1` is discarded). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
 
 Schema: **`spec/event-envelope.v1.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line.

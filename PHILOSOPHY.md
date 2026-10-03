@@ -18,6 +18,8 @@ c11 features must not require agent-side cooperation. When a feature needs infor
 
 **How to apply.** When designing any c11 feature that surfaces "what's going on" in a tab, default to external observation plus a small model for interpretation. Only consider agent-side integration when external observation is genuinely insufficient, and when you reach for it, flag it as a philosophical exception worth discussing before building. Exceptions here are load-bearing; they shouldn't accumulate casually.
 
+**Bounded exception.** A c11 terminal may attach optional, non-blocking observations to the process it launches, and only to that process. An observation may carry a lifecycle or attention fact the journal already allows. It may not carry a tool body, a prompt, an answer, or a permission decision, and it may not trust hooks the operator configured. A tab with no observation is still a normal terminal. Missing evidence is a visible gap.
+
 ## Built for the hyperengineer and their agents
 
 The target operator is the compound actor: a human navigating a shifting capability surface as a single entity, often orchestrating extensive terminal-based LLM coding agents in parallel. Everything else is scaffolding.

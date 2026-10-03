@@ -1214,6 +1214,26 @@ final class SessionPersistenceTests: XCTestCase {
         )
     }
 
+    func testResigningActiveDoesNotSaveSessionSnapshot() async {
+        await MainActor.run {
+            let app = AppDelegate()
+            var saveCount = 0
+            app.resignSnapshotWriterOverrideForTesting = {
+                saveCount += 1
+            }
+
+            app.applicationWillResignActive(
+                Notification(name: NSApplication.willResignActiveNotification)
+            )
+
+            XCTAssertEqual(
+                saveCount,
+                0,
+                "applicationWillResignActive must not synchronously invoke the snapshot writer"
+            )
+        }
+    }
+
     func testSessionAutosaveTickPolicySkipsWhenTerminating() {
         XCTAssertTrue(
             AppDelegate.shouldRunSessionAutosaveTick(isTerminatingApp: false)

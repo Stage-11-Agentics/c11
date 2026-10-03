@@ -44,6 +44,7 @@ final class FocusHistoryStore {
     @discardableResult
     func navigate(back: Bool, focus: ((WorkspaceManager, Workspace, UUID) -> Void)? = nil) -> Bool {
         reconcile()
+        let priorModel = model
         let date = now()
         model.prepareForNavigation(at: date)
         let entry = back ? model.back(isLive: { _ in true }) : model.forward(isLive: { _ in true })
@@ -59,7 +60,16 @@ final class FocusHistoryStore {
             if location.workspaceManager.selectedWorkspaceId != workspace.id {
                 location.workspaceManager.selectWorkspace(workspace)
             }
+            guard location.workspaceManager.selectedWorkspaceId == workspace.id else {
+                model = priorModel
+                return false
+            }
             workspace.focusPanel(entry.panelId)
+        }
+        // A refused socket switch must not consume an operator history step.
+        guard location.workspaceManager.selectedWorkspaceId == workspace.id else {
+            model = priorModel
+            return false
         }
         TabSeenTracker.shared.refresh()
         // Two visits may resolve to the same live tab after intermediate tabs close.

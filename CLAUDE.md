@@ -107,7 +107,7 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 
 **Threading.** Never `DispatchQueue.main.sync` on high-frequency telemetry (`report_*`, `ports_kick`, status/progress/log/metadata). Parse, validate, and coalesce off-main; hop to main with `async` only for the minimal mutation. Commands that manipulate AppKit/Ghostty state (focus, select, open, close, send key/input, exact snapshot queries) may run on main. New socket commands default to off-main; main-thread execution needs a comment explaining why.
 
-**Focus.** Socket/CLI commands never steal macOS focus: no app activation, no window raising. Only explicit focus-intent commands mutate in-app selection (`window.focus`, `workspace.select/next/previous/last`, `area.focus`, `area.last`, `tab.focus`, browser focus commands, and v1 equivalents). Every other command preserves the operator's focus while applying its change.
+**Focus.** Socket/CLI commands never activate c11 or raise a window. Agents cannot change any window's selected workspace: the selection setter returns `workspace_switch_blocked`, with no setting or override. `tab.focus` / `area.focus` update their target workspace's local focus, including hidden workspaces. Background creation, sends, browser automation and metadata remain allowed. Operator sidebar, shortcut, palette, notification, jump, menu and restore paths switch normally. Request focus policy is thread-local and explicitly propagated over main hops; never share a connection-wide or process-wide allowance stack. `workspace.selected` records cause; `workspace.switch_blocked` records target, method and caller tab.
 
 ## Pitfalls
 

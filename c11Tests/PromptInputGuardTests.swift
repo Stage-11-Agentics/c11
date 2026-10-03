@@ -285,11 +285,43 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(input).state, .empty)
     }
 
-    func testCodexAndHistoricalPromptTextRemainUnknown() {
+    func testCodexEmptyPromptPlaceholderIsSuggestionAndHistoricalPromptRemainsUnknown() {
         let codex = region([
             Row(y: 0, spans: [Span(text: "› "), Span(text: "Ask Codex to do anything", faint: true)]),
         ], cursorY: 0)
-        XCTAssertEqual(PromptInputClassifier.classify(codex).state, .unknown)
+        let emptyCodexPrompt = PromptRegionSnapshot(
+            cursorX: 2,
+            cursorY: codex.cursorY,
+            cursorPendingWrap: codex.cursorPendingWrap,
+            complete: codex.complete,
+            rows: codex.rows,
+            cells: codex.cells,
+            text: codex.text
+        )
+        XCTAssertEqual(PromptInputClassifier.classify(emptyCodexPrompt).state, .suggestion)
+        XCTAssertNil(PromptInputClassifier.composerText(emptyCodexPrompt))
+
+        let nonFaintText = region([
+            Row(y: 0, spans: [Span(text: "› "), Span(text: "Ask Codex to do anything")]),
+        ], cursorY: 0)
+        let editedCodexPrompt = PromptRegionSnapshot(
+            cursorX: 2,
+            cursorY: nonFaintText.cursorY,
+            cursorPendingWrap: nonFaintText.cursorPendingWrap,
+            complete: nonFaintText.complete,
+            rows: nonFaintText.rows,
+            cells: nonFaintText.cells,
+            text: nonFaintText.text
+        )
+        XCTAssertEqual(PromptInputClassifier.classify(editedCodexPrompt).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(editedCodexPrompt), "Ask Codex to do anything")
+
+        let codexDraft = region([
+            Row(y: 0, spans: [Span(text: "› " + "first line")]),
+            Row(y: 1, spans: [Span(text: "second line")]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(codexDraft).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexDraft), "first line\nsecond line")
 
         let transcript = region([
             Row(y: 0, spans: [Span(text: "❯ say hi in two words")]),
@@ -584,6 +616,57 @@ final class FeedAnswerSafetyTests: XCTestCase {
         XCTAssertEqual(effects, 0, "a cancelled paste-settle callback must not submit or lower")
     }
 
+    #if DEBUG
+    func testCloseDuringHeldPostPasteReturnFailsClosedWithUnsafeRetryAndNoLower() throws {
+        let tabID = UUID()
+        let replacementTabID = UUID()
+        XCTAssertTrue(FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: 900))
+        defer { FeedAnswerDebugHold.shared.clear(tabID: tabID) }
+        XCTAssertNil(FeedAnswerDebugHold.shared.consume(tabID: replacementTabID))
+        XCTAssertEqual(FeedAnswerDebugHold.shared.consume(tabID: tabID), 900)
+
+        let state = FeedAnswerRaceState()
+        let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> {
+            if let failure = FeedAnswerPreReturnCheck.outcome(
+                targetIsCurrent: state.targetIsCurrent,
+                rowIsCurrent: true,
+                operatorInputUnchanged: true,
+                composer: .matches
+            ) {
+                return failure
+            }
+            return FeedAnswerHandoff.outcome(
+                nativeHandoff: state.sendReturn(),
+                startKind: .flag
+            ) {
+                state.lowerFlag()
+            }
+        }
+
+        let held = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        gate.enqueue { work in
+            DispatchQueue.global(qos: .utility).async {
+                held.signal()
+                _ = release.wait(timeout: .now() + 2)
+                work()
+            }
+        }
+        XCTAssertEqual(held.wait(timeout: .now() + 1), .success)
+        state.closeTarget()
+        release.signal()
+
+        let outcome = try XCTUnwrap(gate.wait(timeout: 1))
+        XCTAssertEqual(outcome, .targetLost)
+        XCTAssertEqual(
+            FeedAnswerFailureDisposition.make(for: outcome),
+            FeedAnswerFailureDisposition(code: "target_lost", retry: "unsafe")
+        )
+        XCTAssertEqual(state.effects.returns, 0)
+        XCTAssertEqual(state.effects.flagLowers, 0)
+    }
+    #endif
+
     func testReplacedFlagEpochCannotBeLoweredByDelayedAnswer() throws {
         let store = TabMetadataStore.shared
         let workspaceID = UUID()
@@ -666,5 +749,39 @@ final class FeedAnswerSafetyTests: XCTestCase {
             sequence: snapshot.lastSequence,
             askEventID: UUID()
         )
+    }
+}
+
+private final class FeedAnswerRaceState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = true
+    private var returnCount = 0
+    private var flagLowerCount = 0
+
+    var targetIsCurrent: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return isOpen
+    }
+
+    var effects: (returns: Int, flagLowers: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (returnCount, flagLowerCount)
+    }
+
+    func closeTarget() {
+        lock.lock(); isOpen = false; lock.unlock()
+    }
+
+    func sendReturn() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard isOpen else { return false }
+        returnCount += 1
+        return true
+    }
+
+    func lowerFlag() -> FeedAnswerFlagLowerOutcome {
+        lock.lock(); defer { lock.unlock() }
+        flagLowerCount += 1
+        return .lowered
     }
 }

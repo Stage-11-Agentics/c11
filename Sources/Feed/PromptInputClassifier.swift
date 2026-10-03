@@ -143,6 +143,13 @@ enum PromptInputClassifier {
             )
         }
 
+        if isEmptyCodexPrompt(lines[cursorIndex], cursorX: region.cursorX) {
+            return Analysis(
+                classification: PromptInputClassification(state: .suggestion, draftLength: nil),
+                composerText: nil
+            )
+        }
+
         guard let promptIndex = lines.indices.reversed().first(where: { index in
             lines[index].y <= region.cursorY && currentPromptPrefix(in: lines[index]) != nil
         }), promptIndex <= cursorIndex,
@@ -274,12 +281,32 @@ enum PromptInputClassifier {
             index += 1
             while index < line.scalars.count, line.scalars[index].value == " " { index += 1 }
         }
+        if index + 1 < line.scalars.count,
+           line.scalars[index].value.value == 0x203A,
+           line.scalars[index + 1].value == " ",
+           !line.scalars[index].faint, !line.scalars[index + 1].faint {
+            return PromptPrefix(endIndex: index + 2, isBoxed: false)
+        }
         guard index + 1 < line.scalars.count,
               line.scalars[index].value.value == 0x276F,
               line.scalars[index + 1].value.value == 0x00A0,
               !line.scalars[index].faint,
               !line.scalars[index + 1].faint else { return nil }
         return PromptPrefix(endIndex: index + 2, isBoxed: boxed)
+    }
+
+    /// Codex 0.159 renders its empty composer as a single `› ` row followed by
+    /// this faint placeholder. Recognize only that exact, cursor-aligned shape;
+    /// edited prompts and historical transcript rows remain unknown.
+    private static func isEmptyCodexPrompt(_ line: Line, cursorX: Int) -> Bool {
+        let placeholder = Array("Ask Codex to do anything".unicodeScalars)
+        guard !line.softWrap, !line.wrapContinuation, cursorX == 2,
+              line.scalars.count == placeholder.count + 2,
+              line.scalars[0].value.value == 0x203A, !line.scalars[0].faint,
+              line.scalars[1].value == " ", !line.scalars[1].faint else { return false }
+        return zip(line.scalars.dropFirst(2), placeholder).allSatisfy {
+            $0.value.value == $1.value && $0.faint
+        }
     }
 
     private static let chooserOptionPairs: [(String, String)] = [

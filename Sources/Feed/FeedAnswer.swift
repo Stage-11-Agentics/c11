@@ -128,6 +128,80 @@ enum FeedAnswerComposerCheck: Equatable {
     }
 }
 
+/// Last check before the delayed Return. This stays in the logic layer so the
+/// close-during-paste race exercises the same fail-closed decision in tests
+/// and in the terminal commit path.
+enum FeedAnswerPreReturnCheck {
+    static func outcome(
+        targetIsCurrent: Bool,
+        rowIsCurrent: Bool,
+        operatorInputUnchanged: Bool,
+        composer: FeedAnswerComposerCheck?
+    ) -> FeedAnswerSubmitOutcome? {
+        guard targetIsCurrent else { return .targetLost }
+        guard rowIsCurrent, operatorInputUnchanged else { return .pastedNotSubmitted }
+        guard let composer else { return nil }
+        switch composer {
+        case .matches: return nil
+        case .notVisible: return .submitUnconfirmed
+        case .changed: return .pastedNotSubmitted
+        }
+    }
+}
+
+struct FeedAnswerFailureDisposition: Equatable {
+    let code: String
+    let retry: String
+
+    static func make(for outcome: FeedAnswerSubmitOutcome) -> Self? {
+        switch outcome {
+        case .targetLost: return Self(code: "target_lost", retry: "unsafe")
+        case .pastedNotSubmitted: return Self(code: "pasted_not_submitted", retry: "unsafe")
+        case .submitUnconfirmed: return Self(code: "submit_unconfirmed", retry: "unsafe")
+        case .submitted: return nil
+        }
+    }
+}
+
+#if DEBUG
+/// One-shot test control for holding a feed answer after paste, before its
+/// Return callback is queued. It is absent from Release builds.
+final class FeedAnswerDebugHold: @unchecked Sendable {
+    static let shared = FeedAnswerDebugHold()
+
+    private struct ArmedHold {
+        let tabID: UUID
+        let milliseconds: Int
+    }
+
+    private let lock = NSLock()
+    private var armed: ArmedHold?
+
+    @discardableResult
+    func arm(tabID: UUID, milliseconds: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard armed == nil, (1...5_000).contains(milliseconds) else { return false }
+        armed = ArmedHold(tabID: tabID, milliseconds: milliseconds)
+        return true
+    }
+
+    func consume(tabID: UUID) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let armed, armed.tabID == tabID else { return nil }
+        self.armed = nil
+        return armed.milliseconds
+    }
+
+    func clear(tabID: UUID) {
+        lock.lock()
+        if armed?.tabID == tabID { armed = nil }
+        lock.unlock()
+    }
+}
+#endif
+
 enum FeedAnswerFlagLowerOutcome {
     case lowered
     case replaced

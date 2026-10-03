@@ -4366,7 +4366,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
         then finish: @escaping () -> Void = {},
         feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil
     ) {
-        let delayMs = TextBoxBehavior.returnKeyDelayMs
+        let delayMs: Int
+#if DEBUG
+        let feedAnswerHoldMs = feedAnswerGate == nil ? 0 : FeedAnswerDebugHold.shared.consume(tabID: id) ?? 0
+        delayMs = max(0, TextBoxBehavior.returnKeyDelayMs) + feedAnswerHoldMs
+#else
+        delayMs = TextBoxBehavior.returnKeyDelayMs
+#endif
         if delayMs <= 0 {
             if let feedAnswerGate {
                 feedAnswerGate.enqueue { work in work() }

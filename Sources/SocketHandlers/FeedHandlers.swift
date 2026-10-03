@@ -177,21 +177,14 @@ extension TerminalController {
         var data = prepared.resolved.responseEnvelope
         for (key, value) in inputFields { data[key] = value }
         switch outcome {
-        case .targetLost:
-            for (key, value) in feedAnswerStatusFields(delivered: true, submitted: false, retry: "unsafe") {
+        case .targetLost, .pastedNotSubmitted, .submitUnconfirmed:
+            guard let failure = FeedAnswerFailureDisposition.make(for: outcome) else {
+                return feedAnswerError(code: "internal_error", data: data)
+            }
+            for (key, value) in feedAnswerStatusFields(delivered: true, submitted: false, retry: failure.retry) {
                 data[key] = value
             }
-            return feedAnswerError(code: "target_lost", data: data)
-        case .pastedNotSubmitted:
-            for (key, value) in feedAnswerStatusFields(delivered: true, submitted: false, retry: "unsafe") {
-                data[key] = value
-            }
-            return feedAnswerError(code: "pasted_not_submitted", data: data)
-        case .submitUnconfirmed:
-            for (key, value) in feedAnswerStatusFields(delivered: true, submitted: false, retry: "unsafe") {
-                data[key] = value
-            }
-            return feedAnswerError(code: "submit_unconfirmed", data: data)
+            return feedAnswerError(code: failure.code, data: data)
         case .submitted(let flagLowered, let flagEpoch):
             for (key, value) in feedAnswerStatusFields(delivered: true, submitted: true, retry: "unsafe") {
                 data[key] = value
@@ -414,21 +407,29 @@ extension TerminalController {
         answer: String,
         actor: TabAttentionActor
     ) -> FeedAnswerSubmitOutcome {
-        guard feedAnswerTargetIsCurrent(prepared) else { return .targetLost }
-        guard feedAnswerRowIsCurrent(prepared) else { return .pastedNotSubmitted }
-        guard prepared.terminalSurface.lastOperatorInputAt == prepared.operatorInputAt,
-              let region = capturePromptInputRegion(surface: prepared.nativeSurface) else {
+        let targetIsCurrent = feedAnswerTargetIsCurrent(prepared)
+        let rowIsCurrent = targetIsCurrent && feedAnswerRowIsCurrent(prepared)
+        let operatorInputUnchanged = prepared.terminalSurface.lastOperatorInputAt == prepared.operatorInputAt
+        if let outcome = FeedAnswerPreReturnCheck.outcome(
+            targetIsCurrent: targetIsCurrent,
+            rowIsCurrent: rowIsCurrent,
+            operatorInputUnchanged: operatorInputUnchanged,
+            composer: nil
+        ) {
+            return outcome
+        }
+        guard let region = capturePromptInputRegion(surface: prepared.nativeSurface) else {
             return .pastedNotSubmitted
         }
         let inputState = PromptInputClassifier.classify(region).state
         let composer = inputState == .draft ? PromptInputClassifier.composerText(region) : nil
-        switch FeedAnswerComposerCheck.compare(state: inputState, composer: composer, expected: body) {
-        case .matches:
-            break
-        case .notVisible:
-            return .submitUnconfirmed
-        case .changed:
-            return .pastedNotSubmitted
+        if let outcome = FeedAnswerPreReturnCheck.outcome(
+            targetIsCurrent: targetIsCurrent,
+            rowIsCurrent: rowIsCurrent,
+            operatorInputUnchanged: operatorInputUnchanged,
+            composer: FeedAnswerComposerCheck.compare(state: inputState, composer: composer, expected: body)
+        ) {
+            return outcome
         }
 
         prepared.terminalSurface.armFeedAnswerFlagLowerSuppression()

@@ -973,6 +973,11 @@ On a successful flag reply, the local `flag.lowered` event carries `{by, answer}
 the reply body is not written to the structural journal. The local EventLog retains
 an 8 MiB current file and one rolled generation. Other lower paths omit `answer`.
 
+Debug builds expose `debug.feed_answer.hold_after_paste` for deterministic race
+validation. Arm it with the exact `workspace_id`, `tab_id`, and `hold_ms` (1–5000)
+before calling `feed.answer`; the one-shot delay is added after paste and before
+the Return callback. It is omitted from Release builds and does not send Return.
+
 `feed watch` prints one list snapshot, then follows `ask.opened`, `ask.closed`,
 `flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, and the
 log markers. It binds `events-<instance>.ndjson` for the `instance` returned by

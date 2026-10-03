@@ -90,9 +90,16 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
             commandKey: "focus_window",
             isV2: false
         )
-        XCTAssertTrue(focusV1.insideSuppressed)
+        XCTAssertFalse(focusV1.insideSuppressed)
         XCTAssertTrue(focusV1.insideAllowsFocus)
         XCTAssertFalse(focusV1.outsideSuppressed)
+
+        let focusWindowV2 = TerminalController.debugSocketCommandPolicySnapshot(
+            commandKey: "window.focus",
+            isV2: true
+        )
+        XCTAssertFalse(focusWindowV2.insideSuppressed)
+        XCTAssertTrue(focusWindowV2.insideAllowsFocus)
 
         let focusV2 = TerminalController.debugSocketCommandPolicySnapshot(
             commandKey: "workspace.select",
@@ -101,6 +108,13 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
         XCTAssertTrue(focusV2.insideSuppressed)
         XCTAssertTrue(focusV2.insideAllowsFocus)
         XCTAssertFalse(focusV2.outsideSuppressed)
+
+        let selectWorkspaceV1 = TerminalController.debugSocketCommandPolicySnapshot(
+            commandKey: "select_workspace",
+            isV2: false
+        )
+        XCTAssertTrue(selectWorkspaceV1.insideSuppressed)
+        XCTAssertTrue(selectWorkspaceV1.insideAllowsFocus)
 
         let moveWorkspace = TerminalController.debugSocketCommandPolicySnapshot(
             commandKey: "workspace.move_to_window",

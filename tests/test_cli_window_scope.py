@@ -155,7 +155,13 @@ class Server(socketserver.ThreadingUnixStreamServer):
         return items[0]
 
     def focus(self, token: str) -> dict:
-        window = self.window({"window_id": token})
+        try:
+            uuid.UUID(token)
+        except ValueError:
+            raise RPCError("invalid_argument", "Invalid window id") from None
+        window = next((item for item in self.windows if item["id"] == token), None)
+        if window is None:
+            raise RPCError("not_found", f"Window not found: {token}")
         for item in self.windows:
             item["key"] = item is window
         self.mutations.append(("focus", window["ref"]))
@@ -172,7 +178,13 @@ class Server(socketserver.ThreadingUnixStreamServer):
             elif arg.startswith("--") and index + 1 < len(args):
                 options[arg[2:]] = args[index + 1]
         if command == "close_window":
-            window = self.window({"window_id": args[1]})
+            try:
+                uuid.UUID(args[1])
+            except ValueError:
+                raise RPCError("invalid_argument", "Invalid window id") from None
+            window = next((item for item in self.windows if item["id"] == args[1]), None)
+            if window is None:
+                raise RPCError("not_found", f"Window not found: {args[1]}")
             self.windows.remove(window)
             self.mutations.append((command, window["ref"]))
             return "OK"
@@ -253,6 +265,17 @@ class Server(socketserver.ThreadingUnixStreamServer):
         if method == "window.list":
             return {"windows": [{k: copy.deepcopy(v) for k, v in item.items() if k != "workspaces"}
                                 for item in self.windows]}
+        if method == "window.resize":
+            token = params.get("window_id")
+            try:
+                uuid.UUID(str(token))
+            except ValueError:
+                raise RPCError("invalid_params", "Missing or invalid window_id") from None
+            window = next((item for item in self.windows if item["id"] == token), None)
+            if window is None:
+                raise RPCError("not_found", f"Window not found: {token}")
+            self.mutations.append((method, window["ref"]))
+            return {"window_id": window["id"], "window_ref": window["ref"]}
         if method == "window.focus":
             return self.context(self.focus(params["window_id"]), self.windows[1]["workspaces"][0])
         if method == "system.tree":
@@ -502,12 +525,18 @@ def main() -> int:
 
         try:
             # UUID, global ref, and 0-based window index all resolve B without focus.
-            for token in (b["id"], b["ref"], "1"):
+            for token in (b["id"], "window:2", "1"):
                 payload = json.loads(run("read-screen", "--tab", b_tab["ref"], window=token).stdout)
                 assert payload["text"] == b_tab["text"] and payload["window_id"] == b["id"], payload
                 routed("tab.read_text")
                 assert any(method == "window.list" for method, _ in server.calls), server.calls
                 unchanged()
+
+            # V2 window methods also need UUIDs when the CLI receives a ref.
+            run("resize-window", "--window", "window:2", "900", "600", window=None)
+            resize_calls = [params for method, params in server.calls if method == "window.resize"]
+            assert resize_calls == [{"window_id": b["id"], "width": 900.0, "height": 600.0}], resize_calls
+            assert server.windows[0]["key"] and not server.windows[1]["key"], server.windows
 
             # Ambient A caller identities cannot override B for fleet reads/create.
             payload = json.loads(run("read-screen", env=caller).stdout)
@@ -874,6 +903,7 @@ def main() -> int:
             # no command dispatch or mutation in the surviving key window.
             run("read-screen", "--tab", b_tab["ref"])
             run("close-window", "--window", b["ref"], window=None, reset=False)
+            assert (f"close_window {b['id']}", {}) in server.calls, server.calls
             closed_state, close_mutations = copy.deepcopy(server.windows), list(server.mutations)
             assert len(closed_state) == 1 and closed_state[0]["key"]
             out = run("read-screen", "--tab", a_tab["ref"], success=False, reset=False)
@@ -889,9 +919,10 @@ def main() -> int:
                 unchanged()
 
             # Per-command focus-window remains the explicit v1 focus action.
-            run("focus-window", "--window", b["ref"], window=None)
-            assert (f"focus_window {b['ref']}", {}) in server.calls, server.calls
-            assert server.windows[1]["key"] and not server.windows[0]["key"], server.windows
+            for token in (b["id"], b["ref"], "1"):
+                run("focus-window", "--window", token, window=None)
+                assert (f"focus_window {b['id']}", {}) in server.calls, server.calls
+                assert server.windows[1]["key"] and not server.windows[0]["key"], server.windows
 
             # Without global scope, caller-local behavior is preserved.
             payload = json.loads(run("read-screen", window=None, env=caller).stdout)

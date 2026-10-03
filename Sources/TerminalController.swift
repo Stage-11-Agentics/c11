@@ -452,6 +452,14 @@ class TerminalController {
         "feed.open"
     ]
 
+    /// These commands explicitly move focus to a window. Other socket focus
+    /// intents may change c11's selected surface or workspace, but must not
+    /// activate the app or raise a window as a side effect.
+    nonisolated private static let socketWindowActivationIntentMethods: Set<String> = [
+        "focus_window",
+        "window.focus"
+    ]
+
     // C11-159: widened private->internal so per-domain socket handler
     // extensions in Sources/SocketHandlers/ can name this type. Module-internal
     // only (app target, no library API surface). See DX-5 widening inventory.
@@ -657,7 +665,8 @@ class TerminalController {
     }
 
     nonisolated static func shouldSuppressSocketCommandActivation() -> Bool {
-        SocketCommandContext.current != nil
+        guard let context = SocketCommandContext.current else { return false }
+        return !socketWindowActivationIntentMethods.contains(context.method)
     }
 
     nonisolated static func socketCommandAllowsInAppFocusMutations() -> Bool {

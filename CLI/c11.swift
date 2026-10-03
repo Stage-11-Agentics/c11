@@ -2435,7 +2435,8 @@ struct CMUXCLI {
             guard let target = optionValue(commandArgs, name: "--window") else {
                 throw CLIError(message: "focus-window requires --window")
             }
-            let response = try sendV1Command("focus_window \(target)", client: client)
+            let windowId = try resolveScopedWindow(target, client: client)
+            let response = try sendV1Command("focus_window \(windowId)", client: client)
             print(response)
 
         case "close-window":
@@ -2443,7 +2444,8 @@ struct CMUXCLI {
             guard let target = optionValue(commandArgs, name: "--window") else {
                 throw CLIError(message: "close-window requires --window")
             }
-            let response = try sendV1Command("close_window \(target)", client: client)
+            let windowId = try resolveScopedWindow(target, client: client)
+            let response = try sendV1Command("close_window \(windowId)", client: client)
             print(response)
 
         case "resize-window":
@@ -5665,24 +5667,18 @@ struct CMUXCLI {
         guard let raw else {
             if !allowCurrent { return nil }
             let current = try client.sendV2(method: "window.current")
-            return (current["window_ref"] as? String) ?? (current["window_id"] as? String)
+            return (current["window_id"] as? String) ?? (current["window_ref"] as? String)
         }
 
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return nil }
-        if isUUID(trimmed) || isHandleRef(trimmed) {
+        if isUUID(trimmed) {
             return trimmed
         }
-        guard let wantedIndex = Int(trimmed) else {
-            throw CLIError(message: "Invalid window handle: \(trimmed) (expected UUID, ref like window:1, or index)")
-        }
-
-        let listed = try client.sendV2(method: "window.list")
-        let windows = listed["windows"] as? [[String: Any]] ?? []
-        for item in windows where intFromAny(item["index"]) == wantedIndex {
-            return (item["ref"] as? String) ?? (item["id"] as? String)
-        }
-        throw CLIError(message: "Window index not found")
+        // V1 focus/close and several V2 methods accept only a UUID in
+        // `window_id`. Resolve refs and indexes here so every CLI command that
+        // accepts a window handle sends the same live identifier downstream.
+        return try resolveScopedWindow(trimmed, client: client)
     }
 
     private func resolveScopedWindow(_ raw: String, client: SocketClient) throws -> String {

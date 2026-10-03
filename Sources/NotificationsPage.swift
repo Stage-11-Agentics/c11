@@ -26,7 +26,7 @@ struct NotificationsPage: View {
                                     // SwiftUI action closures are not guaranteed to run on the main actor.
                                     // Ensure window focus + tab selection happens on the main thread.
                                     DispatchQueue.main.async {
-                                        _ = AppDelegate.shared?.openNotification(
+                                        _ = AppDelegate.shared?.operatorOpenNotification(
                                             workspaceId: notification.workspaceId,
                                             surfaceId: notification.surfaceId,
                                             notificationId: notification.id
@@ -105,7 +105,7 @@ struct NotificationsPage: View {
     private var jumpToUnreadButton: some View {
         if let key = jumpToUnreadShortcut.keyEquivalent {
             Button(action: {
-                AppDelegate.shared?.jumpToLatestUnread()
+                AppDelegate.shared?.operatorJumpToLatestUnread()
             }) {
                 HStack(spacing: 6) {
                     Text(String(localized: "notifications.jumpToLatestUnread", defaultValue: "Jump to Latest Unread"))
@@ -118,7 +118,7 @@ struct NotificationsPage: View {
             .disabled(!hasUnreadNotifications)
         } else {
             Button(action: {
-                AppDelegate.shared?.jumpToLatestUnread()
+                AppDelegate.shared?.operatorJumpToLatestUnread()
             }) {
                 HStack(spacing: 6) {
                     Text(String(localized: "notifications.jumpToLatestUnread", defaultValue: "Jump to Latest Unread"))

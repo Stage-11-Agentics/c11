@@ -46,7 +46,7 @@ then uses `--tab "$MY_TAB"` on every tab-scoped write. Ticket-bound roles additi
 `c11 new-tab --area <ref>` starts in the workspace root (or, in a rootless workspace, the area's last shell cwd), never in a particular delegator's worktree, so an un-anchored sub-agent lands in the wrong tree. And Claude Code's Bash tool does not persist `cd` across tool calls. Therefore bind the cwd at birth with `--cwd` and keep the launch line atomic:
 
 ```bash
-c11 new-tab --area "$DELEGATE_AREA" --cwd <abs-worktree> --no-focus   # capture the new tab ref
+c11 new-tab --area "$DELEGATE_AREA" --cwd <abs-worktree>   # capture the new tab ref; creation preserves focus
 c11 send --workspace $WS --tab $NEW_TAB "cd <abs-worktree> && claude --dangerously-skip-permissions --model <model> \"Read <prompt-path> and follow the instructions.\""
 c11 send-key --workspace $WS --tab $NEW_TAB enter
 ```

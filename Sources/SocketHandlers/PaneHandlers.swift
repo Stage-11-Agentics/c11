@@ -106,13 +106,6 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "Area not found", data: ["pane_id": paneUUID.uuidString])
                 return
             }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
-            }
-            if workspaceManager.selectedWorkspaceId != ws.id {
-                workspaceManager.selectWorkspace(ws)
-            }
             ws.bonsplitController.focusPane(paneId)
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok(["window_id": v2OrNull(windowId?.uuidString), "window_ref": v2Ref(kind: .window, uuid: windowId), "workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "pane_id": paneId.id.uuidString, "pane_ref": v2Ref(kind: .pane, uuid: paneId.id)])

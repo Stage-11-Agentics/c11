@@ -567,6 +567,11 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		C1126500A1B2C3D4E5F60002 /* AttentionOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */; };
 		C1126500A1B2C3D4E5F60003 /* AttentionOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */; };
 		C1126500A1B2C3D4E5F60005 /* AttentionOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126500A1B2C3D4E5F60004 /* AttentionOrderTests.swift */; };
+		C11266000000000000000002 /* FeedQuickViewSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11266000000000000000001 /* FeedQuickViewSelection.swift */; };
+		C11266000000000000000004 /* FeedQuickView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11266000000000000000003 /* FeedQuickView.swift */; };
+		C11266000000000000000006 /* FeedQuickViewKeyboardSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11266000000000000000005 /* FeedQuickViewKeyboardSession.swift */; };
+		C11266000000000000000008 /* FeedQuickViewSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11266000000000000000007 /* FeedQuickViewSelectionTests.swift */; };
+		C1126600000000000000000A /* FeedQuickViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11266000000000000000009 /* FeedQuickViewTests.swift */; };
 		C1126400A1B2C3D4E5F60003 /* FeedProjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */; };
 		C1126400A1B2C3D4E5F60005 /* AskDisplayCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60004 /* AskDisplayCache.swift */; };
 		C1126400A1B2C3D4E5F60007 /* FeedProjectionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60006 /* FeedProjectionBridge.swift */; };
@@ -1183,6 +1188,11 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedProjector.swift; path = Feed/FeedProjector.swift; sourceTree = "<group>"; };
 		C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AttentionOrder.swift; path = Feed/AttentionOrder.swift; sourceTree = "<group>"; };
 		C1126500A1B2C3D4E5F60004 /* AttentionOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionOrderTests.swift; sourceTree = "<group>"; };
+		C11266000000000000000001 /* FeedQuickViewSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feed/FeedQuickViewSelection.swift; sourceTree = "<group>"; };
+		C11266000000000000000003 /* FeedQuickView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feed/FeedQuickView.swift; sourceTree = "<group>"; };
+		C11266000000000000000005 /* FeedQuickViewKeyboardSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feed/FeedQuickViewKeyboardSession.swift; sourceTree = "<group>"; };
+		C11266000000000000000007 /* FeedQuickViewSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedQuickViewSelectionTests.swift; sourceTree = "<group>"; };
+		C11266000000000000000009 /* FeedQuickViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedQuickViewTests.swift; sourceTree = "<group>"; };
 		C1126400A1B2C3D4E5F60004 /* AskDisplayCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AskDisplayCache.swift; path = Feed/AskDisplayCache.swift; sourceTree = "<group>"; };
 		C1126400A1B2C3D4E5F60006 /* FeedProjectionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedProjectionBridge.swift; path = Feed/FeedProjectionBridge.swift; sourceTree = "<group>"; };
 		C1126400A1B2C3D4E5F60008 /* FeedHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedHandlers.swift; sourceTree = "<group>"; };
@@ -1341,6 +1351,9 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				732505E4F8E3443519782672 /* JournalEvent.swift */,
 				C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */,
 				C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */,
+				C11266000000000000000001 /* FeedQuickViewSelection.swift */,
+				C11266000000000000000003 /* FeedQuickView.swift */,
+				C11266000000000000000005 /* FeedQuickViewKeyboardSession.swift */,
 				C1126400A1B2C3D4E5F60004 /* AskDisplayCache.swift */,
 				C1126400A1B2C3D4E5F60006 /* FeedProjectionBridge.swift */,
 				C11274000000000000000001 /* ClaudeHookMapping.swift */,
@@ -1671,6 +1684,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				5E6EFBCD7A7D8320A0DAFE52 /* JournalReducerTests.swift */,
 				C1126400A1B2C3D4E5F6000C /* FeedProjectorTests.swift */,
 				C1126500A1B2C3D4E5F60004 /* AttentionOrderTests.swift */,
+				C11266000000000000000007 /* FeedQuickViewSelectionTests.swift */,
+				C11266000000000000000009 /* FeedQuickViewTests.swift */,
 				C11274000000000000000011 /* ClaudeHookMappingTests.swift */,
 				C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */,
 				C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */,
@@ -2113,6 +2128,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				138D04FD78E6FA414487CCB9 /* JournalReducerTests.swift in Sources */,
 				C1126400A1B2C3D4E5F6000D /* FeedProjectorTests.swift in Sources */,
 				C1126500A1B2C3D4E5F60005 /* AttentionOrderTests.swift in Sources */,
+				C11266000000000000000008 /* FeedQuickViewSelectionTests.swift in Sources */,
 				C11274000000000000000012 /* ClaudeHookMappingTests.swift in Sources */,
 				C11259000000000000000402 /* WorkspaceReorderPlannerTests.swift in Sources */,
 				C11259000000000000000302 /* WorkspaceGroupTests.swift in Sources */,
@@ -2282,6 +2298,9 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C1126400A1B2C3D4E5F60009 /* FeedHandlers.swift in Sources */,
 				C1126400A1B2C3D4E5F60002 /* FeedProjector.swift in Sources */,
 				C1126500A1B2C3D4E5F60002 /* AttentionOrder.swift in Sources */,
+				C11266000000000000000002 /* FeedQuickViewSelection.swift in Sources */,
+				C11266000000000000000004 /* FeedQuickView.swift in Sources */,
+				C11266000000000000000006 /* FeedQuickViewKeyboardSession.swift in Sources */,
 				C1126400A1B2C3D4E5F60005 /* AskDisplayCache.swift in Sources */,
 				C1126400A1B2C3D4E5F60007 /* FeedProjectionBridge.swift in Sources */,
 				2D304B403082C96B893A9199 /* JournalReplayPolicy.swift in Sources */,
@@ -2644,6 +2663,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,
 				C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */,
 				F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */,
+				C1126600000000000000000A /* FeedQuickViewTests.swift in Sources */,
 				C11C249A01B2C3D4E5F60702 /* TabRailTipCenterTests.swift in Sources */,
 				A5001702 /* TextBoxInputTests.swift in Sources */,
 				A5F1001001A1B2C3D4E5F009 /* ThemedValueEvaluatorTests.swift in Sources */,

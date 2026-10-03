@@ -1628,6 +1628,104 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
     }
 
+    // MARK: - Feed quick view Return and C11-323's workspace-selection gate
+
+    private struct QuickViewFixture {
+        let appDelegate: AppDelegate
+        let windowId: UUID
+        let window: NSWindow
+        let manager: WorkspaceManager
+        let controller: TitlebarControlsAccessoryViewController
+        let original: UUID
+        let target: Workspace
+        let tabID: UUID
+    }
+
+    /// A real window with the operator in workspace A, a flagged tab in background workspace B, and
+    /// the real titlebar controller that owns the quick view anchored to that window. The app-level
+    /// accessory does not attach to windows made in the test host, so the controller is built here;
+    /// it is the object `AppDelegate`'s shortcut handler forwards every quick-view key to.
+    private func makeQuickViewFixture() throws -> QuickViewFixture {
+        let appDelegate = try XCTUnwrap(AppDelegate.shared)
+        let windowId = appDelegate.createMainWindow()
+        let window = try XCTUnwrap(self.window(withId: windowId))
+        let manager = try XCTUnwrap(appDelegate.workspaceManagerFor(windowId: windowId))
+        XCTAssertTrue(appDelegate.focusMainWindow(windowId: windowId))
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let tabID = try XCTUnwrap(target.panels.keys.first)
+        FeedProjectionBridge.shared.noteAttention(TabAttentionSnapshot(
+            workspaceId: target.id, surfaceId: tabID, flagReason: "Synthetic quick view flag",
+            flagRaisedAt: Date(), suppressed: false))
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline,
+              !FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.tabID == tabID }) {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        XCTAssertTrue(FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.tabID == tabID }))
+        let controller = TitlebarControlsAccessoryViewController(notificationStore: TerminalNotificationStore.shared)
+        _ = controller.view
+        return QuickViewFixture(appDelegate: appDelegate, windowId: windowId, window: window, manager: manager,
+                                controller: controller, original: original, target: target, tabID: tabID)
+    }
+
+    private func tearDownQuickViewFixture(_ fixture: QuickViewFixture) {
+        fixture.controller.dismissNotificationsPopover()
+        FeedProjectionBridge.shared.noteAttention(TabAttentionSnapshot(
+            workspaceId: fixture.target.id, surfaceId: fixture.tabID, flagReason: nil,
+            flagRaisedAt: nil, suppressed: false))
+        closeWindow(withId: fixture.windowId)
+    }
+
+    /// Opens the quick view the way Command-I does, anchored to the fixture window (under `socket`
+    /// when a request is driving it).
+    private func openQuickView(_ fixture: QuickViewFixture, under socket: SocketCommandContext? = nil) -> Bool {
+        SocketCommandContext.withContext(socket) {
+            fixture.controller.toggleNotificationsPopover(animated: false, externalAnchor: fixture.window.contentView)
+        }
+        return fixture.controller.popoverIsShownForTesting
+    }
+
+    /// Sends a key to the quick view through the same entry point the app's shortcut handler uses.
+    private func pressInQuickView(_ fixture: QuickViewFixture, key: String, keyCode: UInt16) -> Bool {
+        guard let event = makeKeyDownEvent(key: key, modifiers: [], keyCode: keyCode,
+                                           windowNumber: fixture.window.windowNumber) else {
+            XCTFail("Failed to construct key event \(key)")
+            return false
+        }
+        return fixture.controller.handleFeedQuickViewKey(event)
+    }
+
+    /// Incident replay: a socket `simulate_shortcut cmd+i` then `simulate_shortcut return` must not
+    /// switch the operator's workspace through the quick view, and the refusal is attributed.
+    func testSocketSimulatedReturnInQuickViewIsRefusedAndAttributed() throws {
+        let fixture = try makeQuickViewFixture()
+        defer { tearDownQuickViewFixture(fixture) }
+        let socket = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        XCTAssertTrue(openQuickView(fixture, under: socket), "a socket Command-I opens the quick view")
+        XCTAssertEqual(fixture.manager.selectedWorkspaceId, fixture.original, "opening never switches")
+        SocketCommandContext.withContext(socket) {
+            XCTAssertTrue(pressInQuickView(fixture, key: "\r", keyCode: 36))
+        }
+        XCTAssertEqual(fixture.manager.selectedWorkspaceId, fixture.original,
+                       "a socket-simulated Return must not switch workspaces")
+        XCTAssertEqual(socket.blockedTarget, fixture.target.id, "the refusal is attributed to its target")
+        XCTAssertTrue(fixture.controller.popoverIsShownForTesting, "a refused open leaves the view up")
+    }
+
+    /// The operator's own Command-I then Return, with no socket context, still switches workspaces.
+    func testOperatorReturnInQuickViewSwitchesToTheTabsWorkspace() throws {
+        let fixture = try makeQuickViewFixture()
+        defer { tearDownQuickViewFixture(fixture) }
+        XCTAssertNil(SocketCommandContext.current)
+        XCTAssertTrue(openQuickView(fixture), "the operator's Command-I opens the quick view")
+        XCTAssertEqual(fixture.manager.selectedWorkspaceId, fixture.original)
+        XCTAssertTrue(pressInQuickView(fixture, key: "\r", keyCode: 36))
+        XCTAssertEqual(fixture.manager.selectedWorkspaceId, fixture.target.id,
+                       "the operator's Return switches to the tab's workspace")
+        XCTAssertFalse(fixture.controller.popoverIsShownForTesting, "a successful open dismisses")
+    }
+
     func testCmdUnshiftedSymbolDoesNotMatchDigitShortcut() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")

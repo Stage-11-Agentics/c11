@@ -81,7 +81,15 @@ enum AttentionOrder {
 struct FeedProjectionSnapshot: Equatable {
     let rows: [FeedRow]
     static let empty = FeedProjectionSnapshot(rows: [])
-    var attentionRows: [FeedRow] { rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) } }
+    var attentionRows: [FeedRow] {
+        rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) }.map { row in
+            guard row.kind == .turnEnd else { return row }
+            // A finished turn may still carry a flag; attention presents just that flag.
+            return FeedRow(workspaceID: row.workspaceID, tabID: row.tabID, kind: nil,
+                prompt: nil, options: nil, promptAvailable: false, source: nil, sourceRank: nil,
+                openedAtMs: nil, state: nil, requestID: nil, confirmation: nil, blocking: nil, flag: row.flag)
+        }
+    }
     var flagCount: Int { rows.lazy.filter { $0.flag != nil }.count }
     var openAskCount: Int { rows.lazy.filter(AttentionOrder.isOpenAsk).count }
 }

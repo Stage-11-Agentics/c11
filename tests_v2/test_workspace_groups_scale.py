@@ -500,9 +500,10 @@ def provision(client: cmux, state_path: Path, fixture_root: Path, tag: str) -> d
         for role in GROUP_ORDER:
             if GROUP_MEMBERS[role]:
                 order_group_members(client, state, role)
-        client._call("workspace.select", {
-            "window_id": window_id, "workspace_id": workspace_id(state, "g60-w03"),
-        })
+        # C11-323 forbids socket callers from changing the operator's visible
+        # workspace. Keep the fixture in the background; every oracle operation
+        # below addresses its window and workspace IDs directly. Visible checks
+        # belong to the human computer-use chapters.
         record_all_workspaces(client, state)
         initial_snapshot = assert_g60(client, state)
         state["initial_snapshot"] = initial_snapshot

@@ -193,6 +193,11 @@ scenario artifact. Inspect `c11 tree --no-layout` before calling the run good;
 rebalance areas if the target interaction is unreadable. The socket is setup
 and oracle infrastructure, not a substitute for these UI steps.
 
+Visible workspace selection is a human step. Use the tagged app's sidebar to
+select the workspace named by each visible check, and record its UUID in that
+chapter's evidence. The socket oracle deliberately does not call
+`workspace.select`; it operates on the background fixture by ID.
+
 1. **C1 collapse/expand and typing.** With a selected terminal inside a group,
    collapse and expand its header while preserving selection, then type into
    the terminal. Capture the visible selected row and a read-screen receipt.
@@ -375,7 +380,8 @@ Evidence directory: ______  Independent C results: ______  Perf result: ______
 
 H1. Confirm the tagged window matches the identity block. Result: ______
 
-H2. Walk C1, C2 and C3 yourself; stop on the first surprise. Result: ______
+H2. Walk C1, C2 and C3 yourself; use the visible sidebar for workspace
+selection, and stop on the first surprise. Result: ______
 
 H3. Run scoped cleanup and quit; confirm production session untouched. Result: ______
 

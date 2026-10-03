@@ -3535,8 +3535,10 @@ struct CMUXCLI {
             } else if windowId != nil {
                 let wsId = try resolveWorkspaceId(nil, client: client)
                 socketCmd += " --tab=\(wsId)"
-            } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
-                      let wsId = try? resolveWorkspaceId(envWs, client: client) {
+            } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"], !envWs.isEmpty {
+                // A malformed value must fail here: swallowing it would send an
+                // untargeted clear_notifications, which clears every workspace.
+                let wsId = try resolveWorkspaceId(envWs, client: client)
                 socketCmd += " --tab=\(wsId)"
             }
             let response = try sendV1Command(socketCmd, client: client)
@@ -3617,16 +3619,17 @@ struct CMUXCLI {
         case "sidebar-state":
             // --json emits the v2 sidebar.state response (includes agent_chip).
             if commandArgs.contains("--json") || jsonOutput {
-                let (workspaceRaw, _) = parseOption(commandArgs, name: "--workspace")
-                var params: [String: Any] = [:]
+                let workspaceRaw = optionValue(commandArgs, name: "--workspace")
+                    ?? sidebarWorkspaceFromEnv()
+                let workspaceId: String
                 if let workspaceRaw {
-                    if let ws = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
-                        params["workspace_id"] = ws
-                    }
-                } else if windowId == nil, let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
-                          let ws = try normalizeWorkspaceHandle(envWs, client: client) {
-                    params["workspace_id"] = ws
+                    workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
+                } else {
+                    throw CLIError(message: String(localized: "cli.sidebar.target.required", defaultValue: "sidebar command requires --workspace or C11_WORKSPACE_ID; it will not use the selected workspace"))
                 }
+                let params: [String: Any] = [
+                    "workspace_id": workspaceId
+                ]
                 let payload = try client.sendV2(method: "sidebar.state", params: params)
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
@@ -9269,6 +9272,12 @@ struct CMUXCLI {
             throw CLIError(message: "Workspace index not found")
         }
 
+        // A supplied value that is not a UUID, ref or index is a typo or a stale
+        // environment value; only an absent value (nil) means the current workspace.
+        if let raw {
+            throw CLIError(message: String(localized: "cli.workspace.handle.invalid", defaultValue: "Invalid workspace handle: \(raw) (expected UUID, ref like workspace:1, or index)"))
+        }
+
         let current = try client.sendV2(method: "workspace.current")
         if let wsId = current["workspace_id"] as? String { return wsId }
         throw CLIError(message: "No workspace selected")
@@ -10946,7 +10955,7 @@ struct CMUXCLI {
             Flags:
               --icon <name>          Icon name (e.g. "sparkle", "hammer")
               --color <#hex>         Pill color (e.g. "#ff9500")
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
 
             Example:
               c11 set-status build "compiling" --icon hammer --color "#ff9500"
@@ -10959,10 +10968,11 @@ struct CMUXCLI {
             Remove a sidebar status entry by key.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
+              --window alone is not a workspace target
 
             Example:
-              c11 clear-status build
+              c11 clear-status build --workspace workspace:2
             """
         case "list-status":
             return """
@@ -10971,10 +10981,10 @@ struct CMUXCLI {
             List all sidebar status entries for a workspace.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
+              --window alone is not a workspace target
 
             Example:
-              c11 list-status
               c11 list-status --workspace workspace:2
             """
         case "set-progress":
@@ -10985,7 +10995,7 @@ struct CMUXCLI {
 
             Flags:
               --label <text>         Label shown next to the progress bar
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
 
             Example:
               c11 set-progress 0.5 --label "Building..."
@@ -10998,10 +11008,11 @@ struct CMUXCLI {
             Clear the sidebar progress bar for a workspace.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
+              --window alone is not a workspace target
 
             Example:
-              c11 clear-progress
+              c11 clear-progress --workspace workspace:2
             """
         case "log":
             return """
@@ -11012,7 +11023,7 @@ struct CMUXCLI {
             Flags:
               --level <level>        Log level: info, progress, success, warning, error (default: info)
               --source <name>        Source label (e.g. "build", "test")
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
 
             Example:
               c11 log "Build started"
@@ -11026,10 +11037,11 @@ struct CMUXCLI {
             Clear all sidebar log entries for a workspace.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
+              --window alone is not a workspace target
 
             Example:
-              c11 clear-log
+              c11 clear-log --workspace workspace:2
             """
         case "list-log":
             return """
@@ -11039,11 +11051,12 @@ struct CMUXCLI {
 
             Flags:
               --limit <n>            Show only the last N entries
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
+              --window alone is not a workspace target
 
             Example:
-              c11 list-log
-              c11 list-log --limit 5
+              c11 list-log --workspace workspace:2
+              c11 list-log --workspace workspace:2 --limit 5
             """
         case "sidebar-state":
             return """
@@ -11053,11 +11066,12 @@ struct CMUXCLI {
             status entries, progress, log entries).
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
+              --window alone is not a workspace target
 
             Example:
-              c11 sidebar-state
               c11 sidebar-state --workspace workspace:2
+              c11 sidebar-state --json --workspace workspace:2
             """
         case "set-agent":
             return """
@@ -11218,7 +11232,7 @@ struct CMUXCLI {
             must match [A-Za-z0-9_.-]+ and cap at 1024 chars each.
 
             Flags:
-              --workspace <id|ref>     Target workspace (default: current)
+              --workspace <id|ref>     Required outside c11; defaults to $C11_WORKSPACE_ID
               --json '{...}'           Full JSON object of keys/values
               --json                   Emit raw JSON result
 
@@ -11231,7 +11245,8 @@ struct CMUXCLI {
             Usage: c11 get-workspace-metadata [<key>] [--workspace <id|ref>] [--json]
 
             Read workspace metadata via workspace.get_metadata. With a key, prints
-            just that value. Without a key, prints all keys/values.
+            just that value. Without a key, prints all keys/values. The workspace is
+            --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
 
             Examples:
               c11 get-workspace-metadata
@@ -11242,7 +11257,8 @@ struct CMUXCLI {
             Usage: c11 clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>] [--json]
 
             Clear workspace metadata keys via workspace.clear_metadata. With no
-            key, clears the entire workspace metadata dictionary.
+            key, clears the entire workspace metadata dictionary. The workspace is
+            --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
 
             Examples:
               c11 clear-workspace-metadata description
@@ -11252,14 +11268,16 @@ struct CMUXCLI {
             return """
             Usage: c11 set-workspace-description <text> [--workspace <id|ref>]
 
-            Sugar for `c11 set-workspace-metadata description <text>`.
+            Sugar for `c11 set-workspace-metadata description <text>`. The workspace
+            is --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
             """
         case "set-workspace-icon":
             return """
             Usage: c11 set-workspace-icon <glyph> [--workspace <id|ref>]
 
             Sugar for `c11 set-workspace-metadata icon <glyph>`. Supports emoji
-            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill").
+            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill"). The workspace
+            is --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
             """
         case "set-app-focus":
             return """
@@ -13793,9 +13811,13 @@ struct CMUXCLI {
         commandArgs: [String],
         client: SocketClient,
         windowOverride: String?
-    ) throws -> String? {
-        let raw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
-        return try normalizeWorkspaceHandle(raw, client: client)
+    ) throws -> String {
+        // C11-251: explicit --workspace or the caller's workspace environment only;
+        // never the selected workspace, and a global --window is not a target.
+        guard let raw = optionValue(commandArgs, name: "--workspace") ?? sidebarWorkspaceFromEnv() else {
+            throw CLIError(message: String(localized: "cli.workspace.target.required", defaultValue: "workspace command requires --workspace or C11_WORKSPACE_ID; it will not use the selected workspace"))
+        }
+        return try resolveWorkspaceId(raw, client: client)
     }
 
     /// `c11 set-workspace-metadata <key> <value>` — wraps workspace.set_metadata.
@@ -13840,7 +13862,7 @@ struct CMUXCLI {
         )
 
         var params: [String: Any] = [:]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         if !metadata.isEmpty {
             params["metadata"] = metadata
         } else if let singleKey, let singleValue {
@@ -13869,7 +13891,7 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         var params: [String: Any] = [:]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         if let keyFilter { params["key"] = keyFilter }
 
         let payload = try client.sendV2(method: "workspace.get_metadata", params: params)
@@ -13915,7 +13937,7 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         var params: [String: Any] = [:]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         if !keys.isEmpty { params["keys"] = keys }
 
         let payload = try client.sendV2(method: "workspace.clear_metadata", params: params)
@@ -13943,7 +13965,7 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         var params: [String: Any] = ["key": key, "value": value]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         let payload = try client.sendV2(method: "workspace.set_metadata", params: params)
         printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
     }
@@ -15075,17 +15097,15 @@ struct CMUXCLI {
         }
 
         if !resolvedExplicitWorkspace,
-           let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride) {
+           let workspaceArg = sidebarWorkspaceFromEnv() {
             let workspaceId = try resolveWorkspaceId(workspaceArg, client: client)
             insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
             resolvedWorkspaceId = workspaceId
         }
-        if !resolvedExplicitWorkspace, resolvedWorkspaceId == nil, windowOverride != nil {
-            // v1 sidebar commands have no window parameter; carry the scoped
-            // window's selected workspace explicitly instead of ambient focus.
-            let workspaceId = try resolveWorkspaceId(nil, client: client)
-            insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
-            resolvedWorkspaceId = workspaceId
+        // v1 sidebar commands have no window parameter and never use the selected
+        // workspace: a global --window alone is not a target.
+        if resolvedWorkspaceId == nil {
+            throw CLIError(message: String(localized: "cli.sidebar.target.required", defaultValue: "sidebar command requires --workspace or C11_WORKSPACE_ID; it will not use the selected workspace"))
         }
 
         // C11-171: resolve an explicit surface ref against the resolved workspace
@@ -15105,6 +15125,19 @@ struct CMUXCLI {
             .map(shellQuote)
             .joined(separator: " ")
         return try sendV1Command(command, client: client)
+    }
+
+    /// Resolve only explicit workspace context for sidebar commands. CMUX is
+    /// retained as a hidden compatibility alias; current selection is never a
+    /// fallback for commands that require a workspace target.
+    private func sidebarWorkspaceFromEnv() -> String? {
+        let environment = ProcessInfo.processInfo.environment
+        for key in ["C11_WORKSPACE_ID", "CMUX_WORKSPACE_ID"] {
+            if let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        return nil
     }
 
     /// True when `uuid` names a workspace in any window (as opposed to a tab).

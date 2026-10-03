@@ -3274,23 +3274,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "tabCount": workspaceManager?.workspaces.count ?? 0
         ])
         let savedSnapshot = Self.saveSessionSnapshotOnResign {
-            _ = self.writeSessionSnapshotOnResign()
+            _ = self.saveSessionSnapshot(includeScrollback: false)
         }
 #if DEBUG
         if !savedSnapshot {
             dlog("session.persistence.resign.snapshot.skipped")
         }
 #endif
-    }
-
-    private func writeSessionSnapshotOnResign() -> Bool {
-#if DEBUG
-        if let resignSnapshotWriterOverrideForTesting {
-            resignSnapshotWriterOverrideForTesting()
-            return true
-        }
-#endif
-        return saveSessionSnapshot(includeScrollback: false)
     }
 
     func persistSessionForUpdateRelaunch() {
@@ -4684,6 +4674,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         conversationsByPanelId conversationsByTabId: [String: TabConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
+#if DEBUG
+        if let resignSnapshotWriterOverrideForTesting {
+            resignSnapshotWriterOverrideForTesting()
+            return true
+        }
+#endif
         // A bind/listen failure must not let the launch seed overwrite the
         // pending session. Preserve it on quit as well as on autosave.
         if deferredStartupSessionRestore != nil

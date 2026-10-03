@@ -5126,7 +5126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let saved = saveSessionSnapshot(
             includeScrollback: false,
             removeWhenEmpty: false,
-            forceSynchronousWrite: true
+            forceSynchronousWrite: true, purpose: .operatorRequested
         )
         guard saved else {
             dlog("debug.session.save_and_load step=save result=failed")

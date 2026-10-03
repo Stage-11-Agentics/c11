@@ -3322,7 +3322,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             includeScrollback: includeScrollback,
             removeWhenEmpty: false,
             conversationsByPanelId: conversations,
-            forceSynchronousWrite: true
+            forceSynchronousWrite: true,
+            purpose: .operatorRequested
         )
         guard ok, let canonicalURL = SessionPersistenceStore.defaultSnapshotFileURL() else {
             return nil
@@ -3556,7 +3557,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             recordResolvedResumeRecoveryMode(.noResume)
             return
         }
-        let snapshot = SessionPersistenceStore.load().map {
+        let snapshot = SessionPersistenceStore.load(
+            historyFileURL: SessionPersistenceStore.startupHistoryRestoreURL()
+        ).map {
             SessionRestoreNormalization.prepareStartupSnapshot($0)
         }
         startupSessionSnapshot = snapshot
@@ -4618,7 +4621,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             includeScrollback: true,
             removeWhenEmpty: false,
             conversationsByPanelId: conversations,
-            forceSynchronousWrite: true
+            forceSynchronousWrite: true,
+            purpose: .cleanShutdown
         )
     }
 
@@ -4652,7 +4656,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             includeScrollback: true,
             removeWhenEmpty: false,
             conversationsByPanelId: conversations,
-            forceSynchronousWrite: true
+            forceSynchronousWrite: true,
+            purpose: .cleanShutdown
         )
         guard CleanPersistencePromotionPolicy.allowsPromotion(
             resolutionCompleted: true,
@@ -4673,7 +4678,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         includeScrollback: Bool,
         removeWhenEmpty: Bool = false,
         conversationsByPanelId conversationsByTabId: [String: TabConversations]? = nil,
-        forceSynchronousWrite: Bool = false
+        forceSynchronousWrite: Bool = false,
+        purpose: SessionPersistenceStore.SavePurpose = .autosave
     ) -> Bool {
         // A bind/listen failure must not let the launch seed overwrite the
         // pending session. Preserve it on quit as well as on autosave.
@@ -4721,7 +4727,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 nil,
                 removeWhenEmpty: removeWhenEmpty,
                 persistedGeometryData: nil,
-                synchronously: writeSynchronously
+                synchronously: writeSynchronously,
+                purpose: purpose
             )
             return false
         }
@@ -4740,7 +4747,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             snapshot,
             removeWhenEmpty: false,
             persistedGeometryData: persistedGeometryData,
-            synchronously: writeSynchronously
+            synchronously: writeSynchronously,
+            purpose: purpose
         )
     }
 
@@ -4968,7 +4976,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ snapshot: AppSessionSnapshot?,
         removeWhenEmpty: Bool,
         persistedGeometryData: Data?,
-        synchronously: Bool
+        synchronously: Bool,
+        purpose: SessionPersistenceStore.SavePurpose
     ) -> Bool {
         guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return false }
 
@@ -4977,7 +4986,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 WindowGeometryPersistenceStore.persist(persistedGeometryData)
             }
             if let snapshot {
-                return SessionPersistenceStore.save(snapshot)
+                return SessionPersistenceStore.save(snapshot, purpose: purpose)
             } else if removeWhenEmpty {
                 SessionPersistenceStore.removeSnapshot()
             }
@@ -5129,7 +5138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let saved = saveSessionSnapshot(
             includeScrollback: false,
             removeWhenEmpty: false,
-            forceSynchronousWrite: true
+            forceSynchronousWrite: true, purpose: .operatorRequested
         )
         guard saved else {
             dlog("debug.session.save_and_load step=save result=failed")

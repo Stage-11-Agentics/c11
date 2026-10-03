@@ -196,7 +196,7 @@ c11 set-agent --workspace $WS --tab $TAB --type claude-code --model claude-opus-
 c11 send --workspace $WS --tab $TAB "Your tab is named 'Lint Fixes'; your parent is 'Login Button'. Keep the title short and distinct, keep your description current (it is your live subtitle), and keep its last-line 'Lineage:' breadcrumb accurate. Now: fix all lint errors in src/"
 ```
 
-**One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls).
+**One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls). `send` refuses a recognized operator draft or question/plan dialog and types nothing; A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --tab <t> "…" && c11 send-key --tab <t> enter` so a refusal stops the chain.
 
 ### Spawning multiple tabs at once
 

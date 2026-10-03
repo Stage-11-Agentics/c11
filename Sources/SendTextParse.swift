@@ -16,6 +16,7 @@ struct SendTextParse {
     var raw: Bool
     var submit = true
     var json = false
+    var allowUnguarded = false
     var input: Input
 
     static func parse(_ arguments: [String], paste: Bool = false) throws -> Self {
@@ -48,6 +49,8 @@ struct SendTextParse {
                 parsed.submit = false
             } else if !literal && argument == "--json" {
                 parsed.json = true
+            } else if !literal && argument == "--allow-unguarded" {
+                parsed.allowUnguarded = true
             } else if !literal && argument.hasPrefix("--") {
                 throw Failure(description: String(format: String(
                     localized: "cli.send.unknown_flag", defaultValue: "Unknown flag '%@'."

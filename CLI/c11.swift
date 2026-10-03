@@ -14,6 +14,12 @@ import Sentry
 
 struct CLIError: Error, CustomStringConvertible {
     let message: String
+    let structuredResponse: [String: Any]?
+
+    init(message: String, structuredResponse: [String: Any]? = nil) {
+        self.message = message
+        self.structuredResponse = structuredResponse
+    }
 
     var description: String { message }
 }
@@ -1637,6 +1643,23 @@ final class SocketClient {
             // Structured `data` is otherwise dropped on the floor, so surface
             // the one field that tells the caller what to do next.
             let hint = (error["data"] as? [String: Any])?["hint"] as? String
+            if code == "input_guard_refused" {
+                let data = error["data"] as? [String: Any] ?? [:]
+                let reason = data["reason"] as? String ?? "unknown"
+                // A caller that follows a refused send with `send-key enter` would
+                // submit the operator's draft or pick a dialog option, so say so.
+                let guidance = message.contains("Nothing was sent") ? "" : String(
+                    localized: "cli.send.guard_refused_guidance",
+                    defaultValue: "\nNothing was sent; do not press Enter. If the operator is mid-draft, raise a flag (c11 raise-flag) instead of retrying."
+                )
+                throw CLIError(
+                    message: String(format: String(
+                        localized: "cli.send.guard_refused",
+                        defaultValue: "%@\ninput_guard: refused (reason: %@)"
+                    ), "\(code): \(message)", reason) + guidance,
+                    structuredResponse: ["ok": false, "error": error]
+                )
+            }
             if let hint, !hint.isEmpty, !message.contains(hint) {
                 throw CLIError(message: "\(code): \(message)\n\(hint)")
             }
@@ -3347,6 +3370,44 @@ struct CMUXCLI {
                 print(String(localized: "cli.read_selection.none", defaultValue: "No selection."))
             }
 
+        case "input-state":
+            let (wsRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (tabRaw, rem1) = parseOption(rem0, name: "--tab")
+            let (legacyTabRaw, rem2) = parseOption(rem1, name: "--surface")
+            let inputStateJSON = jsonOutput || rem2.contains("--json")
+            let trailing = rem2.filter { $0 != "--json" }
+            guard trailing.isEmpty else {
+                throw CLIError(message: String(format: String(
+                    localized: "cli.input_state.arguments",
+                    defaultValue: "input-state: unexpected arguments: %@"
+                ), trailing.joined(separator: " ")))
+            }
+            guard tabRaw == nil || legacyTabRaw == nil else {
+                throw CLIError(message: String(localized: "cli.input_state.duplicate_tab", defaultValue: "input-state: pass --tab once"))
+            }
+            let explicitTab = try requireNonEmptyHandle(tabRaw ?? legacyTabRaw, flag: "--tab", command: "input-state")
+            guard let explicitTab else {
+                throw CLIError(message: String(localized: "cli.input_state.tab_required", defaultValue: "input-state requires --tab <id|ref>"))
+            }
+            let workspaceArg = wsRaw ?? nonEmptyEnv("C11_WORKSPACE_ID")
+            var params: [String: Any] = [:]
+            let workspaceID = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            if let workspaceID { params["workspace_id"] = workspaceID }
+            guard let tabID = try normalizeSurfaceHandle(explicitTab, client: client, workspaceHandle: workspaceID) else {
+                throw CLIError(message: String(localized: "cli.input_state.tab_required", defaultValue: "input-state requires --tab <id|ref>"))
+            }
+            params["tab_id"] = tabID
+            let payload = try client.sendV2(method: "tab.input_state", params: params)
+            if inputStateJSON {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "")
+            } else {
+                let state = payload["input_state"] as? String ?? "unknown"
+                let draftLength = debugString(payload["draft_length"]) ?? "null"
+                let source = debugString(payload["source"]) ?? "null"
+                let observedAt = debugString(payload["observed_at_ms"]) ?? "null"
+                print("input_state: \(state) draft_length: \(draftLength) source: \(source) observed_at_ms: \(observedAt)")
+            }
+
         case "read-screen":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
@@ -3401,6 +3462,7 @@ struct CMUXCLI {
             let text = try parsed.text(stdin: stdin)
             var params: [String: Any] = ["text": text, "submit": parsed.submit]
             if parsed.raw { params["preserve_newlines"] = true }
+            if parsed.allowUnguarded { params["allow_unguarded"] = true }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
@@ -3408,7 +3470,16 @@ struct CMUXCLI {
             if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
                 params["caller_tab_id"] = callerTabId
             }
-            let payload = try client.sendV2(method: "tab.send_text", params: params)
+            let payload: [String: Any]
+            do {
+                let response = try client.sendV2(method: "tab.send_text", params: params)
+                payload = sendGuardCompatibilityFields(response)
+            } catch let error as CLIError where error.structuredResponse != nil {
+                if jsonOutput, let structured = error.structuredResponse {
+                    print(jsonString(structured))
+                }
+                throw CLIError(message: error.message)
+            }
             printV2Payload(
                 payload,
                 jsonOutput: jsonOutput,
@@ -5717,7 +5788,21 @@ struct CMUXCLI {
             queued: (payload["queued"] as? Bool) ?? false,
             submitted: (payload["submitted"] as? Bool) ?? false
         )
+        let inputGuard = payload["input_guard"] as? String ?? "unguarded"
         return v2OKSummary(payload, idFormat: idFormat) + " " + status
+            + " " + String(format: String(localized: "cli.send.input_guard", defaultValue: "input_guard: %@"), inputGuard)
+    }
+
+    private func sendGuardCompatibilityFields(_ response: [String: Any]) -> [String: Any] {
+        var payload = response
+        if payload["input_guard"] == nil {
+            payload["input_guard"] = "unguarded"
+            payload["input_state"] = "unknown"
+            payload["draft_length"] = NSNull()
+            payload["source"] = NSNull()
+            payload["observed_at_ms"] = NSNull()
+        }
+        return payload
     }
 
     private func requireRawSendSupport(client: SocketClient) throws {
@@ -10821,6 +10906,14 @@ struct CMUXCLI {
             returns busy; the caller wait is five seconds. Native capture and
             formatting remain on main; their allocation and time are not bounded.
             """)
+        case "input-state":
+            return String(localized: "cli.input_state.help", defaultValue: """
+            Usage: c11 input-state --tab <id|ref> [--workspace <id|ref>] [--json]
+
+            Inspect one exact terminal tab's bounded active-screen input state.
+            The result never includes prompt or draft text. --tab is required;
+            this command does not fall back to the focused tab.
+            """)
         case "read-screen":
             return """
             Usage: c11 read-screen [flags]
@@ -10855,9 +10948,16 @@ struct CMUXCLI {
               --tab <id|ref>         Target tab (required for send-tab)
               --raw                 Literal escape/newline handling (send.raw required)
               --no-submit           Do not schedule an additional Return
+              --allow-unguarded     Deliver even if a draft or dialog is detected
               --json                Report delivered, queued and submitted booleans
 
+            The screen check is not atomic with a later keypress: typing can
+            happen after the read and before the paste. send-key is not guarded.
             Delivery reports PTY input or queueing, never agent acknowledgment.
+            send submits its own Return; do not follow it with send-key enter.
+            To run a second command only after a send succeeded, chain with &&:
+              c11 send --tab tab:2 "text" && c11 send-key --tab tab:2 enter
+            A refused send exits nonzero and types nothing.
             """)
         case "send-key":
             return """
@@ -10869,6 +10969,10 @@ struct CMUXCLI {
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
               --tab <id|ref>     Target tab (default: $C11_TAB_ID)
+
+            send-key is not guarded: it does not check for a draft or dialog.
+            After a c11 send, chain with && so a refused send is not followed by a key:
+              c11 send --tab tab:2 "text" && c11 send-key --tab tab:2 enter
 
             Example:
               c11 send-key enter
@@ -19634,11 +19738,12 @@ struct CMUXCLI {
           rename-window [--workspace <id|ref>] <title>
           current-workspace
           read-selection [--workspace <id|ref>] [--tab <id|ref>]
+          input-state --tab <id|ref> [--workspace <id|ref>] [--json]
           read-screen [--workspace <id|ref>] [--tab <id|ref>] [--scrollback] [--lines <n>]
-          send [--workspace <id|ref>] [--tab <id|ref>] [--raw] [--no-submit] <text | ->
-          paste [--workspace <id|ref>] [--tab <id|ref>] [--no-submit] [text | -]
+          send [--workspace <id|ref>] [--tab <id|ref>] [--raw] [--no-submit] [--allow-unguarded] <text | ->
+          paste [--workspace <id|ref>] [--tab <id|ref>] [--no-submit] [--allow-unguarded] [text | -]
           send-key [--workspace <id|ref>] [--tab <id|ref>] <key>
-          send-tab --tab <id|ref> [--workspace <id|ref>] [--raw] [--no-submit] <text | ->
+          send-tab --tab <id|ref> [--workspace <id|ref>] [--raw] [--no-submit] [--allow-unguarded] <text | ->
           send-key-tab --tab <id|ref> [--workspace <id|ref>] <key>
           notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--tab <id|ref>]
           area-confirm --tab <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]

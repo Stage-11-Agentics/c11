@@ -42,8 +42,8 @@ After the report is written, surface it to the operator with a clear summary hea
 Load the Lattice Orchestrator Workflow skill (`lattice-orchestrator`) and read `references/result-validator.md` before starting.
 EOF
 
-c11 send --workspace $WS --tab $RV_TAB "cd <project-root> && claude --dangerously-skip-permissions --model opus \"Read /tmp/result-validator-boot.md and follow the instructions.\""
-c11 send-key --workspace $WS --tab $RV_TAB enter
+c11 send --workspace $WS --tab $RV_TAB "cd <project-root> && claude --dangerously-skip-permissions --model opus \"Read /tmp/result-validator-boot.md and follow the instructions.\"" \
+  && c11 send-key --workspace $WS --tab $RV_TAB enter
 ```
 
 ## Audit protocol

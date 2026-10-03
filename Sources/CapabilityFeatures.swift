@@ -11,6 +11,7 @@ struct CapabilityFeatures {
         case initialInput = "create.initial_input"
         case rawSend = "send.raw"
         case terminalSelection = "read_selection.terminal"
+        case terminalInputState = "input_state.terminal"
         case windowRouteWithoutFocus = "window.route_without_focus"
         case windowResize = "window.resize"
         case rpc = "cli.rpc"
@@ -39,6 +40,7 @@ struct CapabilityFeatures {
         Entry(id: .initialInput, version: 1, enabled: true),
         Entry(id: .rawSend, version: 1, enabled: true),
         Entry(id: .terminalSelection, version: 1, enabled: true),
+        Entry(id: .terminalInputState, version: 1, enabled: true),
         Entry(id: .windowRouteWithoutFocus, version: 1, enabled: true),
         Entry(id: .windowResize, version: 1, enabled: true),
         Entry(id: .rpc, version: 1, enabled: true),

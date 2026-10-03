@@ -48,6 +48,7 @@ final class SendTextParseTests: XCTestCase {
             XCTAssertEqual(parsed.tab, "tab:3")
             XCTAssertTrue(parsed.raw)
             XCTAssertTrue(parsed.json)
+            XCTAssertFalse(parsed.allowUnguarded)
             XCTAssertFalse(parsed.submit)
             XCTAssertEqual(try parsed.text(), "body")
         }
@@ -55,6 +56,10 @@ final class SendTextParseTests: XCTestCase {
         XCTAssertNil(literal.tab)
         XCTAssertFalse(literal.raw)
         XCTAssertEqual(try literal.text(), "--bogus --raw --tab tab:9")
+
+        let override = try SendTextParse.parse(["--allow-unguarded", "draft"])
+        XCTAssertTrue(override.allowUnguarded)
+        XCTAssertEqual(try override.text(), "draft")
     }
 
     func testUnknownFlagsAndMissingTargetsAreErrorsRatherThanText() {

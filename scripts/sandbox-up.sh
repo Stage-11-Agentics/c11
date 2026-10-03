@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 # Clone the golden Tart image on the sandbox host, boot it headless, and launch a c11 .app inside it.
-# Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
-#        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second]
+# Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]
+#        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second] [--agents ...]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=sandbox-common.sh
 source "$SCRIPT_DIR/sandbox-common.sh"
 
+# Started with a signal ignored (a background job of a non-interactive shell ignores SIGINT,
+# `nohup` ignores SIGHUP), bash cannot trap it: a signal ignored on entry stays ignored, and
+# Ctrl-C or kill -INT during agent staging would leave a credential-bearing clone running.
+# Re-exec once with INT, TERM and HUP at their defaults, so the staging trap below sees them.
+if [[ -z "${C11_SANDBOX_SIGNALS_RESET:-}" ]]; then
+  export C11_SANDBOX_SIGNALS_RESET=1
+  exec /usr/bin/python3 -c 'import os, signal, sys
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, signal.SIG_DFL)
+os.execv("/bin/bash", ["/bin/bash"] + sys.argv[1:])' "$0" "$@"
+fi
+
 usage() {
   cat <<'EOF'
-Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
-       scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second]
+Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]
+       scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second] [--agents ...]
 
 Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
 clone headless, place one .app on the Tart host, copy it into the guest,
@@ -19,6 +31,10 @@ and launch it with the automation socket. The golden image is never booted.
 A second running guest needs --allow-second and is the only clone that gets
 a new serial. Two running guests is always refused. If this command is cut
 off, scripts/sandbox-down.sh <run-id> removes the clone.
+
+--agents stages logged-in agent CLIs into the clone once the app is up
+(scripts/sandbox-agent.sh <run-id> stage). A kind that cannot be staged
+fails the whole command and the clone is removed.
 
 --app-source (or C11_SANDBOX_APP_SOURCE) names where the .app comes from.
 Every source leaves one bundle at ~/.c11-sandbox/apps/<run-id>/ on the Tart
@@ -74,10 +90,17 @@ run_id=""
 app=""
 allow_second=0
 app_source="${C11_SANDBOX_APP_SOURCE:-local-app}"
+agents=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --allow-second) allow_second=1; shift ;;
+    --agents)
+      [[ $# -ge 2 ]] || sandbox_die "--agents needs a list such as claude,codex,grok"
+      agents="$2"
+      shift 2
+      ;;
+    --agents=*) agents="${1#--agents=}"; shift ;;
     --app-source)
       [[ $# -ge 2 ]] || sandbox_die "--app-source needs a name"
       app_source="$2"
@@ -107,6 +130,9 @@ if [[ $# -gt 0 ]]; then
 fi
 [[ -n "$run_id" ]] || { usage >&2; exit 1; }
 sandbox_validate_run_id "$run_id"
+if [[ -n "$agents" ]]; then
+  [[ "$agents" =~ ^(claude|codex|grok)(,(claude|codex|grok))*$ ]] || sandbox_die "--agents takes a comma-separated list of claude, codex, grok"
+fi
 rel=".c11-sandbox/apps/${run_id}"
 
 # The case is the seam. Add a source by staging one .app into $rel on the
@@ -333,3 +359,34 @@ printf 'cli=%s\n' "\${CLI:-}"
 printf 'clone_secs=%s\n' "\$clone_secs"
 printf 'boot_secs=%s\n' "\$boot_secs"
 EOF
+
+# From here the clone is up and staging may write credentials into it. Until staging
+# succeeds, any failure or signal tears the clone down, and a failed teardown says so.
+agents_teardown() {
+  trap - INT TERM HUP
+  echo "sandbox: $1; removing the clone" >&2
+  if ! "$SCRIPT_DIR/sandbox-down.sh" "$run_id" >&2; then
+    echo "sandbox: TEARDOWN FAILED for ${run_id}. The clone may still be running with staged credentials. Run scripts/sandbox-down.sh ${run_id} until it reports deleted=." >&2
+    exit 2
+  fi
+  exit 1
+}
+stage_pid=""
+stop_stage() {
+  # The staging child and its direct children (the host ssh); the clone delete ends the rest.
+  [[ -n "$stage_pid" ]] || return 0
+  pkill -TERM -P "$stage_pid" 2>/dev/null || true
+  kill -TERM "$stage_pid" 2>/dev/null || true
+  wait "$stage_pid" 2>/dev/null || true
+}
+if [[ -n "$agents" ]]; then
+  # Armed before the child starts. The child runs in the background and is waited
+  # on, so a signal reaches the trap at once instead of after staging finishes.
+  trap 'stop_stage; agents_teardown "interrupted while staging agents"' INT TERM HUP
+  "$SCRIPT_DIR/sandbox-agent.sh" "$run_id" stage "$agents" &
+  stage_pid=$!
+  if ! wait "$stage_pid"; then
+    agents_teardown "staging agents ($agents) failed"
+  fi
+  trap - INT TERM HUP
+fi

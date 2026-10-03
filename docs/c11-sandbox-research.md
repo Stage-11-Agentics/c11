@@ -236,6 +236,35 @@ Other measured gotchas:
 - Hyperion to Atlas uploads ran at about 160 KB/s that day, so a 118 MB app stalled. Build with `remote-build.sh` (source only), then run the sandbox scripts on Atlas from `~/c11-builds/<tag>/source` with `C11_SANDBOX_HOST=local`, using `bash`, so the app never crosses the link.
 - `sandbox_guest_script` and the helpers need `bash`; `zsh` fails on `BASH_SOURCE`.
 
+## Agents in the guest
+
+C11-322. Live proofs that need real agent tabs run in the guest, so the laptop's screen lock, focus, and CPU are out of the path.
+
+`scripts/sandbox-up.sh <run-id> <app> --agents claude,codex,grok` boots the clone as above, then runs `scripts/sandbox-agent.sh <run-id> stage <kinds>`. A staging failure fails `sandbox-up` and removes the clone.
+
+**CLIs.** Stage copies the agent binaries installed on the Tart host into the clone (`/usr/local/libexec/c11-sandbox/<kind>`, linked from `/usr/local/bin`, which is on the guest login PATH behind c11's wrappers). The version is recorded in the run's `agents.env`. Claude runs with `DISABLE_AUTOUPDATER=1` so it stays on that version. The golden image stays minimal and is never booted to install anything.
+
+**Credentials.** Atin's decision (2026-10-02): reuse the Overwatch seat credentials, no new logins. On the Tart host, `seat.sh export-cred --agent <kind>` (Overwatch launcher) runs the same `kind_credentials` a Prime seat gets: the Claude setup-token for a call-sign, checked against the account it bills (default Alpha; `C11_SANDBOX_CLAUDE_ACCOUNT` overrides); an access-only Codex `auth.json` from the dedicated seat login (no refresh token); a Grok access token from the dedicated seat login (about 6 hours). The JSON stays in the host shell's memory and goes to the guest on SSH stdin, where a stager writes:
+
+| Kind | Guest file (mode 600) | How the CLI reads it |
+|---|---|---|
+| Claude | `~/.c11-sandbox-secrets/claude-oauth` | A `claude` shim exports `CLAUDE_CODE_OAUTH_TOKEN`; Claude has no file login on macOS |
+| Codex | `~/.codex/auth.json` | Codex's own file store |
+| Grok | `~/.c11-sandbox-secrets/grok-token` | `auth_provider_command` runs `grok-auth`, which prints it |
+
+First-run state is seeded the way prime-seat-image seeds a box (onboarding, trust for `~/c11-sandbox/work`, bypass acceptance, no update checks, Grok always-approve and telemetry off). Rerun `stage` to refresh; Grok's token is the one that expires.
+
+**The invariant.** No secret persists in the golden image or outlives its clone: secrets are exported only on the Tart host, are never in argv, a host file, or a log, live in the guest only on the clone's disk, and leave with `tart delete`. `sandbox-down` first runs `sandbox-agent.sh <run-id> wipe`. After it, `sandbox-agent.sh <run-id> verify-clean` checks that the clone and its VM directory are gone, that the golden `disk.img` mtime has not moved since staging, and searches that disk and the host's `~/.c11-sandbox` for every staged value. The values are re-exported and fed to the scanner on stdin, the scanner reads only allocated extents at nice 15 (the 32 GB golden image takes about 30 s), and it prints only found, absent, or error. An unreadable file or failed read is an error, never an absence, and a staged value that has since rotated (it can no longer be exported, so it cannot be searched for) fails the check: neither can be certified clean. `verify-clean --control`, run while a clone is up, must find the values on that clone's own disk: it proves the search can see guest files (the guest disk is not FileVault-encrypted), so an absent on the golden image means something.
+
+**Driving agents.** `sandbox-agent.sh <run-id> launch <kind> <brief>` copies the brief into the guest and runs the guest's `c11 launch-agent --prompt-file`, so the agent gets a file pointer. It sets `mailbox.address` to the title and `mailbox.delivery=stdin`, steps the known first-run screens, and waits for the composer. `sandbox-agent.sh <run-id> c11 …` runs any guest CLI command against the guest socket; `screen` is `read-screen`. Mailbox traffic is per workspace, so send mail from a shell tab inside the guest workspace (`c11 send` a `c11 mailbox send …` line into it), as an operator would.
+
+**Measured on Atlas, 2026-10-02.** C11-257 sign-off steps 3-8 passed in one guest for Claude (Bravo) and Codex: waiting mail by push, busy mail after the turn (Claude by Stop-hook drain, Codex by push at the idle edge), the awkward title by `recv --drain`, and an operator draft (`send --raw --no-submit`) left intact with the mail delivered as its own turn after the draft's turn. Each envelope was delivered once. `verify-clean --control` found the staged values on the live clone's disk; after `sandbox-down`, `verify-clean` found none on the golden disk or the host tree. Copying the three CLIs (claude 2.1.287, codex-cli 0.159.3, grok 1.0.46, about 750 MB) and staging took about a minute; restaging with the CLIs already present takes seconds. All three agents started logged in. Claude on Alpha and Grok were at their weekly limits that day and showed the provider's limit screen instead of answering: a logged-in agent with no quota looks like a stuck one until you read its screen.
+
+**Gotchas.**
+- The Tart host's Homebrew `codex` carries `com.apple.quarantine`; executing it over SSH hangs in Gatekeeper's first-launch check (stuck at `_dyld_start`). Stage reads Codex's version from the cask's `codex-package.json` and never runs it on the host. The guest copy has no xattrs and runs.
+- The host and guest scripts run as `zsh -s` with the script on stdin. A child that reads stdin swallows the rest of the script; give such children `</dev/null`.
+- Uploading a 100 MB app from the laptop to Atlas can stall mid-stream. The remote build already left the app on Atlas, so run the scripts there with `C11_SANDBOX_HOST=local`.
+
 ## Open risks
 
 - Ghostty on Family 5 Metal worked for the v0.66.1 probe (attached surfaces, visible shell prompts). A later guest OS or a different c11 build can still fail the same way a locked host screen fails: `ghostty_surface_new` returns `error.OutOfMemory`. Treat that as a stop, not a reason to switch designs inside a run.

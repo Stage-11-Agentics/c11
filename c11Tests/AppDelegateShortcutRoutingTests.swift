@@ -676,6 +676,48 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertNil(self.window(withId: windowId), "Confirming Cmd+Ctrl+W should close the window")
     }
 
+    func testWillCloseNotificationRetainsCloseGuardUntilDelegateCallback() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let windowId = appDelegate.createMainWindow()
+        let survivingWindowId = appDelegate.createMainWindow()
+        defer {
+            closeWindow(withId: windowId)
+            closeWindow(withId: survivingWindowId)
+        }
+
+        guard let targetWindow = window(withId: windowId) else {
+            XCTFail("Expected test window")
+            return
+        }
+        XCTAssertTrue(
+            appDelegate.debugHasMainWindowCloseGuard(for: targetWindow),
+            "The main window must have its close guard installed"
+        )
+
+        // Drive the context teardown performed by the will-close notification
+        // observer, then do a real close to exercise the delegate callback.
+        appDelegate.debugUnregisterMainWindow(targetWindow)
+
+        XCTAssertNil(
+            appDelegate.workspaceManagerFor(windowId: windowId),
+            "The willClose observer must unregister the window context"
+        )
+        XCTAssertTrue(
+            appDelegate.debugHasMainWindowCloseGuard(for: targetWindow),
+            "Unregistering the window must retain the close guard through windowWillClose"
+        )
+
+        closeWindow(withId: windowId)
+        XCTAssertFalse(
+            appDelegate.debugHasMainWindowCloseGuard(for: targetWindow),
+            "windowWillClose must release the guard after its final callback"
+        )
+    }
+
     func testCmdWClosesWindowWhenClosingLastSurfaceInLastWorkspace() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")

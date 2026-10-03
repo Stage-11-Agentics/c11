@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		C11282000000000000000002 /* SelectionRead.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11282000000000000000001 /* SelectionRead.swift */; };
+		C1126700A1B2C3D4E5F60711 /* PromptInputClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126700A1B2C3D4E5F60701 /* PromptInputClassifier.swift */; };
+		C1126700A1B2C3D4E5F60712 /* SendInputGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126700A1B2C3D4E5F60702 /* SendInputGuard.swift */; };
+		C1126700A1B2C3D4E5F60713 /* PromptInputGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126700A1B2C3D4E5F60703 /* PromptInputGuardTests.swift */; };
 		C11282000000000000000004 /* SelectionReadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11282000000000000000003 /* SelectionReadTests.swift */; };
 		C11304000000000000000001 /* TerminalTitleChurnFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11304000000000000000002 /* TerminalTitleChurnFilter.swift */; };
 		C11304000000000000000003 /* TerminalTitleChurnFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */; };
@@ -661,6 +664,9 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 
 /* Begin PBXFileReference section */
 		C11282000000000000000001 /* SelectionRead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionRead.swift; sourceTree = "<group>"; };
+		C1126700A1B2C3D4E5F60701 /* PromptInputClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feed/PromptInputClassifier.swift; sourceTree = "<group>"; };
+		C1126700A1B2C3D4E5F60702 /* SendInputGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feed/SendInputGuard.swift; sourceTree = "<group>"; };
+		C1126700A1B2C3D4E5F60703 /* PromptInputGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptInputGuardTests.swift; sourceTree = "<group>"; };
 		C11282000000000000000003 /* SelectionReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionReadTests.swift; sourceTree = "<group>"; };
 		C11304000000000000000002 /* TerminalTitleChurnFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitleChurnFilter.swift; sourceTree = "<group>"; };
 		C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitleChurnFilterTests.swift; sourceTree = "<group>"; };
@@ -1326,6 +1332,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		A5001041 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				C1126700A1B2C3D4E5F60701 /* PromptInputClassifier.swift */,
+				C1126700A1B2C3D4E5F60702 /* SendInputGuard.swift */,
 				C11277000000000000000002 /* JournalExport.swift */,
 				C11277000000000000000001 /* JournalQuery.swift */,
 				CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */,
@@ -1766,6 +1774,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C11282000000000000000003 /* SelectionReadTests.swift */,
 				DH022BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshotTests.swift */,
 				C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */,
+				C1126700A1B2C3D4E5F60703 /* PromptInputGuardTests.swift */,
 				C11285A00000000000000005 /* RpcCommandTests.swift */,
 				DH023BF1A1B2C3D4E5F60718 /* TerminalControllerTelemetryWorkerTests.swift */,
 				D800CBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCaptureTests.swift */,
@@ -2134,6 +2143,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C11282000000000000000004 /* SelectionReadTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
 				C1128104A1B2C3D4E5F60718 /* SendTextParseTests.swift in Sources */,
+				C1126700A1B2C3D4E5F60713 /* PromptInputGuardTests.swift in Sources */,
 				C11285A00000000000000004 /* RpcCommandTests.swift in Sources */,
 				949D60897130D3A2A359CC20 /* CommandPaletteSearchEngineTests.swift in Sources */,
 				B16AE553A156E736A1DE50DB /* DefaultGridSettingsTests.swift in Sources */,
@@ -2295,6 +2305,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C11284000000000000000002 /* CapabilityFeatures.swift in Sources */,
 				C11286000000000000000002 /* WindowResizePlan.swift in Sources */,
 				C11282000000000000000002 /* SelectionRead.swift in Sources */,
+				C1126700A1B2C3D4E5F60711 /* PromptInputClassifier.swift in Sources */,
+				C1126700A1B2C3D4E5F60712 /* SendInputGuard.swift in Sources */,
 				A5001001 /* c11App.swift in Sources */,
 				A5001002 /* ContentView.swift in Sources */,
 				E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,

@@ -131,7 +131,7 @@ either stamp is unavailable. It never substitutes checkout or environment
 identity. Existing ids: `vocabulary.workspace_area_tab`, `send.explicit_tab`,
 `events.offline`, `feed.asks`. Later commands advertise `routing.canonical_keys`,
 `create.initial_input`, `send.raw`, `read_selection.terminal`, and
-`window.route_without_focus` only when implemented. Adding an id preserves
+`input_state.terminal`, and `window.route_without_focus` only when implemented. Adding an id preserves
 `features_version`; changing an existing id's meaning increments it.
 
 ### There is no `c11 list` (silent-empty footgun)
@@ -447,6 +447,7 @@ Terminals start lazily. `send` and `read-screen` request a runtime even in a hid
 # Read terminal content
 c11 read-screen [--lines <n>] [--scrollback]
 c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
+c11 input-state --tab tab:3 [--workspace workspace:2] [--json]
 
 # Send text to a terminal
 c11 send "echo hello"                # Types text AND submits (default behavior)
@@ -454,11 +455,30 @@ c11 send --no-submit "cd /tmp/"      # Types text only, no Return — for partia
 c11 send-key down                    # Send a keypress directly (no text) — drives TUI menus
 c11 send --workspace workspace:2 --tab tab:3 "ls"
 c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one turn
+c11 send --tab tab:3 --allow-unguarded "continue"
 ```
+
+`input-state` inspects one exact terminal tab's bounded active-screen region and
+returns `input_state`, `draft_length`, `source`, and `observed_at_ms`; it never
+returns prompt text. It requires `--tab` and does not use the focused tab as a
+fallback. A cold live tab or an unrecognized screen is `unknown`; an exact tab
+that is gone or cannot be read is `unavailable`.
+
+On builds that advertise `input_state.terminal`, `send` and `send-tab` inspect
+the target on demand in the same main-actor phase as delivery. A positive
+`draft` or supported Claude `dialog` returns `input_guard: refused` before PTY
+write, queueing, or `tab.input_sent`; `empty` and `suggestion` return
+`input_guard: checked`, and unrecognized or cold live tabs remain deliverable
+with `input_guard: unknown`. Successful responses also include `input_state`,
+`draft_length`, `source`, and `observed_at_ms`. The CLI reports
+`input_guard: unguarded` when an older app omits these fields. `--allow-unguarded`
+delivers despite a detected draft or dialog and reports `overridden`. This
+screen check is not atomic with the next keypress; typing can happen after the
+read and before the paste. `send-key` does not run this guard.
 
 `read-screen` requests startup for a cold terminal without focusing it and allows the same two-second startup wait as `send`. A successful read can be empty before the shell prints its prompt; retry the read if you need that output. An unavailable terminal returns an error after the startup wait. The read has one five-second caller deadline, including main-queue scheduling and startup. A contended terminal text lock returns a typed `busy` error immediately; retry the read later. A `timeout` ends the caller wait, but cannot interrupt native text formatting or copying already running on main. Swift text decoding, scrollback merging, line selection and base64 encoding run off main.
 
-**Text after `❯` on an idle Claude Code screen is usually not the operator's.** When an agent ends its turn on a question, Claude Code ghosts a suggested reply into the input line ("one yes, two no", "yes, proceed"). `read-screen` returns that ghost text exactly like typed text. Treat an unsent line on an idle prompt as auto-suggest, never as an answer the operator drafted: do not press Enter on it, do not relay it, and do not report it as "typed but unsent". Only a submitted turn (the text echoed above the prompt, followed by the agent's response) is operator input.
+**Text after `❯` on an idle Claude Code screen can be faint auto-suggest.** `read-screen` returns that ghost text exactly like typed text. `input-state` distinguishes the supported faint suggestion from a real draft; `send` accepts the suggestion so it may be replaced, but refuses a positively recognized draft or supported question/plan dialog unless `--allow-unguarded` is passed. Unknown screens retain delivery compatibility and report `input_guard: unknown`; older apps report `unguarded`. Do not treat this check as atomic: an operator can type after inspection and before delivery. `send-key` remains unchanged and is not guarded. A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --tab <t> "…" && c11 send-key --tab <t> enter` so a refusal stops the chain.
 
 **`c11 send` delivers the payload as a paste, then submits it with a separate Return.** The Return is a real key event dispatched after the target has ingested the paste, so paste-detecting TUIs (Claude Code, codex) register a submit rather than swallowing it. This holds whether or not the target's workspace is the one on screen — a send into a background agent lands exactly like one into the focused area.
 

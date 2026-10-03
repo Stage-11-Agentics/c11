@@ -27,6 +27,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugType(params: params))
         case "debug.terminal.operator_keys":
             return v2Result(id: id, self.v2DebugTerminalOperatorKeys(params: params))
+        case "debug.terminal.scroll_viewport":
+            return v2Result(id: id, self.v2DebugTerminalScrollViewport(params: params))
         case "debug.terminal.runtime_start_hold":
             return v2Result(id: id, v2MainSync {
                 guard let tabId = v2UUID(params, "tab_id"),
@@ -503,6 +505,31 @@ extension TerminalController {
                 return .err(code: "unavailable", message: "Tab has no window to deliver keys to", data: nil)
             }
             return .ok(["delivered": delivered])
+        }
+    }
+
+    /// Test seam (`debug.terminal.scroll_viewport`): move a terminal's viewport by
+    /// `lines` (negative scrolls up into scrollback) through the same Ghostty
+    /// binding action a scroll gesture ends in, so a scrolled-away viewport can be
+    /// produced without a pointer. Moves no focus and activates nothing.
+    private func v2DebugTerminalScrollViewport(params: [String: Any]) -> V2CallResult {
+        guard let lines = v2Int(params, "lines") else {
+            return .err(code: "invalid_params", message: "Missing lines", data: nil)
+        }
+        guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+        }
+        return v2MainSync {
+            guard let located = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: tabId,
+                preferredWorkspaceId: nil
+            ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+                return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+            }
+            guard terminal.surface.performBindingAction("scroll_page_lines:\(lines)") else {
+                return .err(code: "unavailable", message: "Tab has no live surface to scroll", data: nil)
+            }
+            return .ok(["lines": lines])
         }
     }
 

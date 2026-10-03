@@ -116,20 +116,23 @@ def offline(cli):
     cases = [
         (["send", "--raw", "--no-submit", r"literal\n"], None, r"literal\n", True, False),
         (["send", "--no-submit", r"literal\n"], None, "literal\r", False, False),
+        (["send", "--json", "body"], None, "body", False, True),
         (["send", "--raw", "--no-submit", "-"], "\nline1\nline2\r\n", "\nline1\nline2\r\n", True, False),
         (["paste", "--no-submit"], "\n", "\n", True, False),
         (["send-tab", "--raw", "--no-submit", "body"], None, "body", True, False),
         (["send", "--no-submit", "--", "--bogus"], None, "--bogus", False, False),
         (["send", "--no-submit", "--", "--help"], None, "--help", False, False),
     ]
-    cases = [(a, stdin, body, raw, submit, False, True) for a, stdin, body, raw, submit in cases]
+    cases = [(a, stdin, body, raw, submit, False, True, None) for a, stdin, body, raw, submit in cases]
     cases += [
-        (["send", "--raw", "--no-submit", "queued-body"], None, "queued-body", True, False, True, True),
-        (["send", "--raw", "body"], None, "body", True, True, False, True),
-        (["paste", "--no-submit", "body"], None, None, True, False, False, False),
-        (["paste", "--no-submit", "body"], None, None, True, False, False, None),
+        (["send", "--raw", "--no-submit", "queued-body"], None, "queued-body", True, False, True, True, None),
+        (["send", "--raw", "body"], None, "body", True, True, False, True, None),
+        (["send", "--allow-unguarded", "body"], None, "body", False, True, False, True, None),
+        (["send", "--json", "checked-body"], None, "checked-body", False, True, False, True, "checked"),
+        (["paste", "--no-submit", "body"], None, None, True, False, False, False, None),
+        (["paste", "--no-submit", "body"], None, None, True, False, False, None, None),
     ]
-    for arguments, stdin, expected, raw, submit, queued, supported in cases:
+    for arguments, stdin, expected, raw, submit, queued, supported, guard_state in cases:
         with tempfile.TemporaryDirectory(prefix="c11-281-peer-", dir="/tmp") as directory:
             path = str(Path(directory) / "peer.sock")
             requests, errors = [], []
@@ -156,6 +159,10 @@ def offline(cli):
                                     assert request["method"] == "tab.send_text", request
                                     result = {"workspace_id": workspace, "tab_id": tab,
                                               "queued": queued, "delivered": not queued, "submitted": submit}
+                                    if guard_state == "checked":
+                                        result.update({"input_guard": "checked", "input_state": "empty",
+                                                       "draft_length": None, "source": "active_screen",
+                                                       "observed_at_ms": 123})
                                 response = {"id": request["id"], "ok": True, "result": result}
                                 if request["method"] == "system.capabilities" and supported is None:
                                     response = {"id": request["id"], "ok": False,
@@ -183,10 +190,16 @@ def offline(cli):
                 params = sends[0]["params"]
                 assert params["text"] == expected and params["submit"] is submit, params
                 assert params.get("preserve_newlines", False) is raw, params
+                assert params.get("allow_unguarded", False) is ("--allow-unguarded" in arguments), params
                 assert params["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", params
                 expected_status = "queued, not delivered" if queued else (
                     "delivered, return scheduled" if submit else "delivered, not submitted")
-                assert expected_status in proc.stdout, proc.stdout
+                if "--json" in arguments:
+                    payload = json.loads(proc.stdout)
+                    assert payload["input_guard"] == (guard_state or "unguarded"), payload
+                    assert payload["input_state"] == ("empty" if guard_state == "checked" else "unknown"), payload
+                else:
+                    assert expected_status in proc.stdout and "input_guard: unguarded" in proc.stdout, proc.stdout
                 assert all(r["method"] in ("system.capabilities", "tab.send_text") for r in requests), requests
 
     with tempfile.TemporaryDirectory(prefix="c11-281-absent-") as directory:
@@ -195,6 +208,101 @@ def offline(cli):
             proc = cli_run(cli, dead, "send", "--tab", tab, flag, "hello", ok=False)
             assert flag in proc.stderr and "Unknown flag" in proc.stderr, proc.stderr
         assert "send --raw" in cli_run(cli, dead, "paste", "--help").stdout
+        send_help = cli_run(cli, dead, "send", "--help").stdout
+        assert "--allow-unguarded" in send_help and "not atomic" in send_help.lower(), send_help
+        assert "send-key is not guarded" in send_help.lower(), send_help
+        assert "Usage: c11 input-state" in cli_run(cli, dead, "input-state", "--help").stdout
+
+    with tempfile.TemporaryDirectory(prefix="c11-267-refusal-") as directory:
+        path = str(Path(directory) / "peer.sock")
+        requests, errors = [], []
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(path)
+            listener.listen(1)
+            listener.settimeout(25)
+
+            def serve_refusal():
+                try:
+                    with listener.accept()[0] as connection, connection.makefile("rwb") as stream:
+                        connection.settimeout(25)
+                        for line in stream:
+                            if line.startswith(b"auth "):
+                                stream.write(b"OK\n")
+                                stream.flush()
+                                continue
+                            request = json.loads(line)
+                            requests.append(request)
+                            if request["method"] == "system.capabilities":
+                                response = {"id": request["id"], "ok": True, "result": {
+                                    "methods": ["system.capabilities", "tab.list", "tab.send_text"], "features": []}}
+                            else:
+                                assert request["method"] == "tab.send_text", request
+                                response = {"id": request["id"], "ok": False, "error": {
+                                    "code": "input_guard_refused", "message": "Input guard refused a draft.",
+                                    "data": {"input_guard": "refused", "input_state": "draft",
+                                             "draft_length": 7, "source": "active_screen",
+                                             "observed_at_ms": 123, "reason": "draft",
+                                             "hint": "Inspect or explicitly override."}}}
+                            stream.write((json.dumps(response) + "\n").encode())
+                            stream.flush()
+                except Exception as error:
+                    errors.append(error)
+
+            peer = threading.Thread(target=serve_refusal, daemon=True)
+            peer.start()
+            proc = cli_run(cli, path, "--json", "send", "--workspace", workspace,
+                           "--tab", tab, "body", ok=False)
+            peer.join(timeout=25)
+            assert not peer.is_alive() and not errors, errors
+            payload = json.loads(proc.stdout)
+            assert payload["ok"] is False, payload
+            assert payload["error"]["code"] == "input_guard_refused", payload
+            assert payload["error"]["data"]["draft_length"] == 7, payload
+            assert payload["error"]["data"]["hint"] == "Inspect or explicitly override.", payload
+            assert "input_guard_refused" in proc.stderr and "input_guard: refused" in proc.stderr, proc.stderr
+            assert "Nothing was sent; do not press Enter" in proc.stderr and "raise-flag" in proc.stderr, proc.stderr
+            assert [request["method"] for request in requests] == ["system.capabilities", "tab.send_text"], requests
+
+    with tempfile.TemporaryDirectory(prefix="c11-267-input-state-") as directory:
+        path = str(Path(directory) / "peer.sock")
+        requests, errors = [], []
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(path)
+            listener.listen(1)
+            listener.settimeout(25)
+
+            def serve_input_state():
+                try:
+                    with listener.accept()[0] as connection, connection.makefile("rwb") as stream:
+                        connection.settimeout(25)
+                        for line in stream:
+                            if line.startswith(b"auth "):
+                                stream.write(b"OK\n")
+                                stream.flush()
+                                continue
+                            request = json.loads(line)
+                            requests.append(request)
+                            if request["method"] == "system.capabilities":
+                                result = {"methods": ["system.capabilities", "tab.list", "tab.input_state"], "features": []}
+                            else:
+                                assert request["method"] == "tab.input_state", request
+                                assert request["params"].get("tab_id") == tab, request
+                                result = {"tab_id": tab, "input_state": "draft", "draft_length": 7,
+                                          "source": "active_screen", "observed_at_ms": 123}
+                            response = {"id": request["id"], "ok": True, "result": result}
+                            stream.write((json.dumps(response) + "\n").encode())
+                            stream.flush()
+                except Exception as error:
+                    errors.append(error)
+
+            peer = threading.Thread(target=serve_input_state, daemon=True)
+            peer.start()
+            proc = cli_run(cli, path, "input-state", "--workspace", workspace, "--tab", tab, "--json")
+            peer.join(timeout=25)
+            assert not peer.is_alive() and not errors, errors
+            payload = json.loads(proc.stdout)
+            assert payload["input_state"] == "draft" and payload["draft_length"] == 7, payload
+            assert [request["method"] for request in requests] == ["system.capabilities", "tab.input_state"], requests
     print("PASS C11-281 built-CLI parser/protocol fixtures (not live PTY proof)")
 
 

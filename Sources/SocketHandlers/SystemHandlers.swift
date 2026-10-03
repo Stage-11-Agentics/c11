@@ -278,6 +278,7 @@ extension TerminalController {
             "debug.shortcut.simulate",
             "debug.type",
             "debug.terminal.operator_keys",
+            "debug.terminal.scroll_viewport",
             "debug.terminal.runtime_start_hold",
             "debug.app.activate",
             "debug.command_palette.toggle",
@@ -321,6 +322,9 @@ extension TerminalController {
 
         if CapabilityFeatures.current.supports(.terminalSelection) {
             methods.append("tab.read_selection")
+        }
+        if CapabilityFeatures.current.supports(.terminalInputState) {
+            methods.append("tab.input_state")
         }
         if CapabilityFeatures.current.supports(.feedAsks) {
             methods.append("feed.list")

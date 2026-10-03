@@ -239,6 +239,38 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Menu-driven add workspace should still route to key window context when object-key lookup misses")
     }
 
+    func testTerminateTelemetryFlushDoesNotWaitForWorker() {
+        let analyticsWorker = DispatchQueue(label: "B050.analytics-worker")
+        let releaseWorker = DispatchSemaphore(value: 0)
+        let workerStarted = DispatchSemaphore(value: 0)
+        let flushFinished = DispatchSemaphore(value: 0)
+
+        analyticsWorker.async {
+            workerStarted.signal()
+            releaseWorker.wait()
+        }
+        XCTAssertEqual(workerStarted.wait(timeout: .now() + .seconds(2)), .success)
+
+        let terminationReturned = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            TerminationTelemetry.flushIfEnabled(isEnabled: true) {
+                analyticsWorker.sync {}
+                flushFinished.signal()
+            }
+            terminationReturned.signal()
+        }
+
+        let returnedBeforeWorkerRelease = terminationReturned.wait(timeout: .now() + .milliseconds(250)) == .success
+        releaseWorker.signal()
+
+        XCTAssertTrue(
+            returnedBeforeWorkerRelease || terminationReturned.wait(timeout: .now() + .seconds(2)) == .success,
+            "The terminate path did not return after the blocked analytics worker was released"
+        )
+        XCTAssertEqual(flushFinished.wait(timeout: .now() + .seconds(2)), .success)
+        XCTAssertTrue(returnedBeforeWorkerRelease, "The terminate path waited for the analytics worker")
+    }
+
     func testAddWorkspaceInPreferredMainWindowPrunesOrphanedContextWithoutLiveWindow() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")

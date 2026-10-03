@@ -2205,6 +2205,14 @@ func shouldSuppressWindowMoveForFolderDrag(window: NSWindow, event: NSEvent) -> 
     return shouldSuppressWindowMoveForFolderDrag(hitView: hitView)
 }
 
+enum TerminationTelemetry {
+    static func flushIfEnabled(isEnabled: Bool, flush: @escaping @Sendable () -> Void) {
+        guard isEnabled else { return }
+        // PostHog can synchronously wait on its worker, which can in turn need main.
+        DispatchQueue.global(qos: .utility).async(execute: flush)
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuItemValidation {
     static var shared: AppDelegate?
@@ -3271,7 +3279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         TerminalController.shared.stop()
         VSCodeServeWebController.shared.stop()
         BrowserProfileStore.shared.flushPendingSaves()
-        if TelemetrySettings.enabledForCurrentLaunch {
+        TerminationTelemetry.flushIfEnabled(isEnabled: TelemetrySettings.enabledForCurrentLaunch) {
             PostHogAnalytics.shared.flush()
         }
         notificationStore?.clearAll()

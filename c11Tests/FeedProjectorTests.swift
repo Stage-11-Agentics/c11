@@ -35,6 +35,13 @@ final class FeedProjectorTests: XCTestCase {
         FeedAttentionFact(workspaceID: workspace, tabID: tab, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerTabID: otherTab, suppressed: suppressed)
     }
 
+    func testFeedAnswerTextPolicyClassifiesNewlinesForPreDeliveryRefusal() {
+        XCTAssertNil(FeedAnswerTextPolicy.refusalCode(for: "single line answer"))
+        XCTAssertEqual(FeedAnswerTextPolicy.refusalCode(for: "first\nsecond"), "multiline_unsupported")
+        XCTAssertEqual(FeedAnswerTextPolicy.refusalCode(for: "first\rsecond"), "multiline_unsupported")
+        XCTAssertEqual(FeedAnswerTextPolicy.refusalCode(for: "first\u{2028}second"), "multiline_unsupported")
+    }
+
     @MainActor
     func testAttentionServiceRemovalAndPruningRetireClosedTargets() throws {
         let bridge = FeedProjectionBridge()

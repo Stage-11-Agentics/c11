@@ -958,10 +958,13 @@ no blocking ask, or a `turn_end` row. A blocking question, plan, or permission
 remains ineligible even when that tab is flagged. Before pasting, it uses the
 C11-267 complete prompt-region inspection and accepts only `empty` or `suggestion`;
 `draft`, `dialog`, `unknown`, and `unavailable` return `input_guard_refused`.
-The text is limited to 16 KiB of UTF-8 and must be prose (control bytes other than
-newlines are refused). Multiline text is one bracketed paste followed by a separate
-Return. An unattached tab returns `not_ready` without queueing input. Whitespace-only
-text follows the exact-target `feed open` path and sends nothing.
+The text is limited to 16 KiB of UTF-8 and must be prose (control bytes are refused).
+c11 1.0 accepts single-line answers only. Any newline returns the machine-readable
+`multiline_unsupported` refusal before target lookup or paste, with `delivered: false`,
+`submitted: false`, `retry: "safe"`, and `nothing_was_sent: true`. The message directs
+the caller to `c11 feed open` to answer in the tab. An unattached tab returns `not_ready`
+without queueing input. Whitespace-only single-line text follows the exact-target
+`feed open` path and sends nothing.
 
 The response reports `delivered`, `submitted`, `answered`, and `retry`. `answered`
 means native Return handoff plus, for a flag row, lowering the flag epoch this reply
@@ -971,7 +974,8 @@ the new flag raised and returns `submitted: true`, `answered: false`,
 `flag_lowered: false`, and `flag_epoch: "replaced"`. A keypress during the Feed-answer
 paste-settle window can leave the answer pasted but unsubmitted, so retry is unsafe.
 Feed waits an additional 350 ms after the standard 200 ms delay before its exact composer
-and target checks, giving Codex more time to lay out bracketed multiline paste text.
+and target checks. This bounded settle period remains inside the guarded single-line
+submit path.
 
 On a successful flag reply, the local `flag.lowered` event carries `{by, answer}`;
 the reply body is not written to the structural journal. The local EventLog retains

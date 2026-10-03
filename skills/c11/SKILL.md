@@ -75,7 +75,7 @@ Feed and the configured attention jump use oldest flags first, then oldest eligi
 
 Show Notifications (default ⌘I; custom bindings preserved) opens the read-only Feed quick view: arrows select, Tab switches Asks/Turns, Return opens that exact tab, Esc restores the originating focus, and Turns shows finished turns without removing attention-jump targets.
 
-Use `c11 feed answer` only for an eligible flag or `turn_end` row; it sends one guarded paste to an exact empty/suggestion prompt and reports whether retry is safe.
+Use `c11 feed answer` only for an eligible flag or `turn_end` row; in c11 1.0 it accepts single-line text only, sends one guarded paste to an exact empty/suggestion prompt, and reports whether retry is safe. Text containing a newline is refused as `multiline_unsupported` before typing; nothing is sent. Use `c11 feed open` to answer multiline text in the tab.
 
 ### Flag
 

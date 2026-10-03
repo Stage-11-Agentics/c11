@@ -101,6 +101,19 @@ extension TerminalController {
               let text = params["text"] as? String else {
             return .err(code: "invalid_params", message: "feed.answer requires workspace_id, tab_id, and text", data: nil)
         }
+        if let refusalCode = FeedAnswerTextPolicy.refusalCode(for: text) {
+            var data = feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
+            data["nothing_was_sent"] = true
+            data["guidance"] = "c11 feed open"
+            return .err(
+                code: refusalCode,
+                message: String(
+                    localized: "feed.answer.multilineUnsupported",
+                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the tab."
+                ),
+                data: data
+            )
+        }
         guard text.utf8.count <= 16 * 1024 else {
             return feedAnswerError(
                 code: "answer_too_long",

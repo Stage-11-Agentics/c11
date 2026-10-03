@@ -28,6 +28,8 @@ enum FeedCommand {
     feed open selects the named workspace and tab inside c11 and does not activate the app or send an answer.
     A missing workspace or tab prints unavailable and changes nothing.
     feed answer accepts only an eligible flag or turn_end row with a complete empty/suggestion prompt.
+    c11 1.0 supports single-line answers only. Newlines return multiline_unsupported; nothing is sent.
+    Use c11 feed open to answer in the tab.
     Blocking asks, drafts, dialogs, unknown input, and cold tabs are refused. Whitespace-only text opens
     the exact tab without sending. --by defaults to agent. The result includes answered and retry; retry
     is safe only when nothing was pasted. A keypress during the Feed answer paste-settle window can leave

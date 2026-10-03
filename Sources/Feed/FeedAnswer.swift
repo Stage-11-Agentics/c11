@@ -109,9 +109,17 @@ enum FeedAnswerSubmitOutcome: Equatable {
     case submitted(flagLowered: Bool, flagEpoch: String?)
 }
 
+enum FeedAnswerTextPolicy {
+    static func refusalCode(for text: String) -> String? {
+        text.unicodeScalars.contains { CharacterSet.newlines.contains($0) }
+            ? "multiline_unsupported"
+            : nil
+    }
+}
+
 enum FeedAnswerTiming {
-    // Codex can continue laying out a bracketed multiline paste after the
-    // standard return-key delay. The exact composer guard still runs afterward.
+    // Give pasted text a bounded settle period before the exact composer and
+    // target checks that guard the synthetic Return.
     static let additionalPasteSettleMilliseconds = 350
 
     static func returnDelayMilliseconds(baseDelayMs: Int, debugHoldMs: Int) -> Int {

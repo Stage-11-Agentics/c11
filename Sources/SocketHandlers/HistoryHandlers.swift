@@ -49,6 +49,7 @@ extension TerminalController {
         guard store.navigate(back: method == "history.back", focus: { manager, workspace, panelId in
             self.v2MaybeFocusWindow(for: manager)
             self.v2MaybeSelectWorkspace(manager, workspace: workspace)
+            guard manager.selectedWorkspaceId == workspace.id else { return }
             workspace.focusPanel(panelId)
         }), let index = store.model.index,
            var result = v2HistoryEntry(store.model.entries[index], current: true) else {

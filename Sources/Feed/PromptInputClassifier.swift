@@ -97,6 +97,7 @@ enum PromptInputClassifier {
     private struct PromptPrefix {
         let endIndex: Int
         let isBoxed: Bool
+        let isCodex: Bool
     }
 
     private struct Analysis {
@@ -195,6 +196,8 @@ enum PromptInputClassifier {
                 content = Array(content.dropFirst(prefix.endIndex))
             } else if prefix.isBoxed {
                 content = stripLeadingBoxEdge(content)
+            } else if prefix.isCodex && !line.wrapContinuation {
+                content = stripCodexContinuationIndent(content)
             }
             if prefix.isBoxed {
                 content = stripTrailingBoxEdge(content)
@@ -285,14 +288,24 @@ enum PromptInputClassifier {
            line.scalars[index].value.value == 0x203A,
            line.scalars[index + 1].value == " ",
            !line.scalars[index].faint, !line.scalars[index + 1].faint {
-            return PromptPrefix(endIndex: index + 2, isBoxed: false)
+            return PromptPrefix(endIndex: index + 2, isBoxed: false, isCodex: true)
         }
         guard index + 1 < line.scalars.count,
               line.scalars[index].value.value == 0x276F,
               line.scalars[index + 1].value.value == 0x00A0,
               !line.scalars[index].faint,
               !line.scalars[index + 1].faint else { return nil }
-        return PromptPrefix(endIndex: index + 2, isBoxed: boxed)
+        return PromptPrefix(endIndex: index + 2, isBoxed: boxed, isCodex: false)
+    }
+
+    /// Codex indents each hard continuation row by two display cells. Remove
+    /// that presentation gutter before comparing the composer with pasted text;
+    /// any additional leading spaces remain operator input.
+    private static func stripCodexContinuationIndent(_ scalars: [StyledScalar]) -> [StyledScalar] {
+        guard scalars.count >= 2,
+              scalars[0].value == " ", !scalars[0].faint,
+              scalars[1].value == " ", !scalars[1].faint else { return scalars }
+        return Array(scalars.dropFirst(2))
     }
 
     /// Codex 0.159 renders its empty composer as a single `› ` row followed by

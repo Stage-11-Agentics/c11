@@ -323,6 +323,38 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(codexDraft).state, .draft)
         XCTAssertEqual(PromptInputClassifier.composerText(codexDraft), "first line\nsecond line")
 
+        let codexRenderedMultiline = region([
+            Row(y: 0, spans: [Span(text: "› first line")]),
+            Row(y: 1, spans: [Span(text: "  second line")]),
+            Row(y: 2, spans: [Span(text: "    third line")]),
+        ], cursorY: 2)
+        let codexBody = "first line\nsecond line\n  third line"
+        XCTAssertEqual(PromptInputClassifier.classify(codexRenderedMultiline).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexRenderedMultiline), codexBody)
+        XCTAssertEqual(
+            PromptInputClassifier.classify(codexRenderedMultiline).draftLength,
+            codexBody.unicodeScalars.count
+        )
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(
+                state: PromptInputClassifier.classify(codexRenderedMultiline).state,
+                composer: PromptInputClassifier.composerText(codexRenderedMultiline),
+                expected: codexBody
+            ),
+            .matches
+        )
+
+        var refusedWrites = 0
+        XCTAssertEqual(
+            SendInputGuard.perform(
+                state: PromptInputClassifier.classify(codexRenderedMultiline).state,
+                allowUnguarded: false
+            ) { refusedWrites += 1 },
+            .refuse(reason: "draft"),
+            "a pre-existing Codex draft remains protected by the shared send guard"
+        )
+        XCTAssertEqual(refusedWrites, 0)
+
         let transcript = region([
             Row(y: 0, spans: [Span(text: "❯ say hi in two words")]),
         ], cursorY: 0)

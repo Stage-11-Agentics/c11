@@ -128,7 +128,10 @@ struct CodexStrategy: ConversationStrategy {
         // agent must not start asking for approvals its launched twin never
         // asked for. Accepted by the `resume` subcommand as a hidden alias of
         // `--dangerously-bypass-approvals-and-sandbox`.
-        let text = "\(withAutoApprove("codex resume")) \(quoted)"
+        var text = "\(withAutoApprove("codex resume")) \(quoted)"
+        if let cwd = ref.cwd, !cwd.isEmpty {
+            text = "cd \(conversationShellQuote(cwd)) && \(text)"
+        }
         return .typeCommand(text: text, submitWithReturn: true)
     }
 

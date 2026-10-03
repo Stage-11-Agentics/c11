@@ -1,5 +1,21 @@
 import Foundation
 
+enum CLIHelpFlagScanner {
+    static func containsHelpFlag(in arguments: [String], valueOptions: Set<String> = []) -> Bool {
+        var index = arguments.startIndex
+        while index < arguments.endIndex {
+            if valueOptions.contains(arguments[index]) {
+                index = arguments.index(index, offsetBy: 2, limitedBy: arguments.endIndex) ?? arguments.endIndex
+            } else if arguments[index] == "--help" || arguments[index] == "-h" {
+                return true
+            } else {
+                index = arguments.index(after: index)
+            }
+        }
+        return false
+    }
+}
+
 enum FeedCommand {
     static let usageText = """
     Usage: c11 feed list [--json] [--scope attention|all]
@@ -30,7 +46,11 @@ enum FeedCommand {
         resolveWorkspace: (String) throws -> String?,
         resolveTab: (_ tab: String, _ workspace: String?) throws -> String?
     ) throws {
-        if arguments.isEmpty || arguments.contains("--help") || arguments.contains("-h") {
+        let answerValueOptions: Set<String> = arguments.first?.lowercased() == "answer" ? ["--text"] : []
+        if arguments.isEmpty || CLIHelpFlagScanner.containsHelpFlag(
+            in: arguments,
+            valueOptions: answerValueOptions
+        ) {
             print(usageText)
             return
         }

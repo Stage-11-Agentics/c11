@@ -1990,6 +1990,12 @@ struct CMUXCLI {
         let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
         let (createCommandText, createArgs) = isTerminalCreate
             ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        let feedAnswerValueOptions: Set<String> =
+            command == "feed" && commandArgs.first?.lowercased() == "answer" ? ["--text"] : []
+        let hasSubcommandHelp = CLIHelpFlagScanner.containsHelpFlag(
+            in: createArgs,
+            valueOptions: feedAnswerValueOptions
+        )
         var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
         if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
@@ -2071,8 +2077,12 @@ struct CMUXCLI {
            command != "__tmux-compat",
            command != "claude-teams",
            (!isSendText || sendWantsHelp),
-           (createArgs.contains("--help") || createArgs.contains("-h")) {
-            if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
+           hasSubcommandHelp {
+            if dispatchSubcommandHelp(
+                command: command,
+                commandArgs: commandArgs,
+                valueOptions: feedAnswerValueOptions
+            ) {
                 return
             }
             print("Unknown command '\(command)'. Run 'c11 help' to see available commands.")
@@ -11899,8 +11909,12 @@ struct CMUXCLI {
     }
 
     /// Dispatch help for a subcommand. Returns true if help was printed.
-    private func dispatchSubcommandHelp(command: String, commandArgs: [String]) -> Bool {
-        guard commandArgs.contains("--help") || commandArgs.contains("-h") else { return false }
+    private func dispatchSubcommandHelp(
+        command: String,
+        commandArgs: [String],
+        valueOptions: Set<String> = []
+    ) -> Bool {
+        guard CLIHelpFlagScanner.containsHelpFlag(in: commandArgs, valueOptions: valueOptions) else { return false }
         guard let text = subcommandUsage(command, commandArgs: commandArgs) else { return false }
         // For two-level commands (e.g. `c11 workspace new --help`) include the
         // resolved subcommand in the header so the operator can tell which

@@ -673,7 +673,12 @@ def main() -> int:
             assert not any(name.startswith("clear_notifications") for name, _ in server.calls), server.calls
             unchanged()
 
-            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+            out = run("sidebar-state", env=caller, success=False)
+            assert "not_found" in out.stderr, out.stderr
+            assert not any(name == "sidebar.state" for name, _ in server.calls), server.calls
+            unchanged()
+            for extra, expected_ws in ((["--workspace", b_ws["id"]], b_ws),
+                                       (["--workspace", "1"], b["workspaces"][1])):
                 payload = json.loads(run("sidebar-state", *extra, env=caller).stdout)
                 assert payload["workspace_id"] == expected_ws["id"], payload
                 routed("sidebar.state")

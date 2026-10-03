@@ -2851,11 +2851,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private(set) var surface: ghostty_surface_t? {
         didSet {
+            if oldValue != surface {
+                nativeSurfaceLifetimeID = UUID()
+            }
             // A different runtime surface has its own renderer thread and its own
             // display-link state, so nothing we told the old one carries over.
             displayIDGate.invalidate()
         }
     }
+    private(set) var nativeSurfaceLifetimeID = UUID()
     /// Collapses redundant `ghostty_surface_set_display_id` traffic. See
     /// `GhosttyDisplayIDGate` for why an unnecessary push is not free.
     private var displayIDGate = GhosttyDisplayIDGate()
@@ -4358,16 +4362,31 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// inside the input burst is silently swallowed).
     /// Call from inside an input transaction; `then` (the transaction's
     /// finish) runs once the Return has gone out.
-    func scheduleSubmitReturnAfterPasteDelay(then finish: @escaping () -> Void = {}) {
+    func scheduleSubmitReturnAfterPasteDelay(
+        then finish: @escaping () -> Void = {},
+        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil
+    ) {
         let delayMs = TextBoxBehavior.returnKeyDelayMs
         if delayMs <= 0 {
-            sendKeyNow(.returnKey)
+            if let feedAnswerGate {
+                feedAnswerGate.enqueue { work in work() }
+            } else {
+                _ = sendKeyNow(.returnKey)
+            }
             finish()
             return
         }
         let delay = TimeInterval(delayMs) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.sendKeyNow(.returnKey)
+            guard let self else { finish(); return }
+            if let feedAnswerGate {
+                // Run inline on the main actor inside this transaction. The
+                // worker may cancel while this is still pending; enqueue then
+                // becomes a no-op before any validation or key side effect.
+                feedAnswerGate.enqueue { work in work() }
+            } else {
+                _ = self.sendKeyNow(.returnKey)
+            }
             finish()
         }
     }
@@ -4494,13 +4513,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     /// Build a synthetic `NSEvent` for a named key and deliver it to the
     /// terminal surface the same way AppKit would route a real keystroke.
+    @discardableResult
     func sendSyntheticKey(
         characters: String,
         keyCode: UInt16,
-        modifiers: NSEvent.ModifierFlags = []
-    ) {
+        modifiers: NSEvent.ModifierFlags = [],
+        captureNativeHandoffFor expectedSurface: ghostty_surface_t? = nil
+    ) -> Bool {
         let view = surfaceView
-        guard let window = view.window else { return }
+        guard let window = view.window else { return false }
         guard let event = NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
@@ -4512,12 +4533,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
             charactersIgnoringModifiers: characters,
             isARepeat: false,
             keyCode: keyCode
-        ) else { return }
+        ) else { return false }
         // Fabricated for socket `send` (and the text box): not the operator's own
         // keystroke, so it must not stamp the "touched" clock.
+        if let expectedSurface {
+            view.beginSyntheticKeyHandoffCapture(expectedSurface: expectedSurface)
+        }
         view.isSynthesizingKey = true
         defer { view.isSynthesizingKey = false }
         view.keyDown(with: event)
+        if expectedSurface != nil {
+            return view.endSyntheticKeyHandoffCapture()
+        }
+        return true
     }
 
     /// Named-key wrapper used by `TextBoxInputContainer` when routing
@@ -4537,7 +4565,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     /// Send now, inside the current transaction (or with none active).
-    func sendKeyNow(_ key: TextBoxKeyRouting.TerminalKey) {
+    @discardableResult
+    func sendKeyNow(
+        _ key: TextBoxKeyRouting.TerminalKey,
+        captureNativeHandoff: Bool = false
+    ) -> Bool {
         if case .returnKey = key {
             TabLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: id,
@@ -4546,18 +4578,32 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 source: .submit
             )
         }
-        if surfaceView.window == nil, let surface {
-            sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: surface)
-            return
+        let currentSurface = surface
+        if captureNativeHandoff, currentSurface == nil { return false }
+        if surfaceView.window == nil, let currentSurface {
+            return sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: currentSurface)
         }
-        sendSyntheticKey(characters: key.characters, keyCode: key.keyCode)
+        return sendSyntheticKey(
+            characters: key.characters,
+            keyCode: key.keyCode,
+            captureNativeHandoffFor: captureNativeHandoff ? currentSurface : nil
+        )
+    }
+
+    func armFeedAnswerFlagLowerSuppression() {
+        surfaceView.suppressNextSyntheticFlagLower = true
+    }
+
+    func clearFeedAnswerFlagLowerSuppression() {
+        surfaceView.suppressNextSyntheticFlagLower = false
     }
 
     /// Window-independent key injection: hand Ghostty the key event directly
     /// rather than routing a synthesized `NSEvent` through AppKit. Ghostty owns
     /// the keycode → PTY-bytes translation, so this produces the same bytes a
     /// real keypress would.
-    private func sendKeyDirectlyToSurface(keyCode: UInt16, surface: ghostty_surface_t) {
+    @discardableResult
+    private func sendKeyDirectlyToSurface(keyCode: UInt16, surface: ghostty_surface_t) -> Bool {
         var event = ghostty_input_key_s()
         event.action = GHOSTTY_ACTION_PRESS
         event.keycode = UInt32(keyCode)
@@ -4566,7 +4612,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         event.unshifted_codepoint = 0
         event.composing = false
         event.text = nil
-        _ = ghostty_surface_key(surface, event)
+        return ghostty_surface_key(surface, event)
     }
 
     /// Pass-through for a fully-formed NSEvent (Rule 2 `forwardControl`).
@@ -4856,6 +4902,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     var scrollbar: GhosttyScrollbar?
     /// True only while `TerminalSurface.sendSyntheticKey` drives `keyDown`.
     var isSynthesizingKey = false
+    var suppressNextSyntheticFlagLower = false
+    private var handoffCaptureExpectedSurface: ghostty_surface_t?
+    private var handoffCaptureObserved: (surface: ghostty_surface_t, handled: Bool)?
     var cellSize: CGSize = .zero
     var desiredFocus: Bool = false
     var suppressingReparentFocus: Bool = false
@@ -4872,6 +4921,22 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var keyboardCopyModeConsumedKeyUps: Set<UInt16> = []
     private var keyboardCopyModeInputState = TerminalKeyboardCopyModeInputState()
     private var keyboardCopyModeViewportRow: Int?
+
+    func beginSyntheticKeyHandoffCapture(expectedSurface: ghostty_surface_t) {
+        handoffCaptureExpectedSurface = expectedSurface
+        handoffCaptureObserved = nil
+    }
+
+    func endSyntheticKeyHandoffCapture() -> Bool {
+        defer {
+            handoffCaptureExpectedSurface = nil
+            handoffCaptureObserved = nil
+        }
+        guard let expected = handoffCaptureExpectedSurface,
+              let observed = handoffCaptureObserved,
+              observed.surface == expected else { return false }
+        return observed.handled
+    }
     /// Tracks whether the user has explicitly entered visual selection mode (v).
     /// Separate from Ghostty's `has_selection` because copy mode always maintains
     /// a 1-cell selection as a visible cursor. This flag determines whether
@@ -6160,13 +6225,18 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 workspaceId: terminalSurface.workspaceId,
                 surfaceId: terminalSurface.id
             )
-            // A keystroke into a flagged surface is the operator answering the
-            // flag: lower it immediately. Guarded no-op when nothing is raised.
-            _ = try? TabAttentionService.shared.lowerIfFlagged(
-                workspaceId: terminalSurface.workspaceId,
-                surfaceId: terminalSurface.id,
-                by: .operator
-            )
+            // The feed-answer Return carries its own answer-bearing lower after
+            // native handoff. Consume only that one synthesized key; ordinary
+            // and operator input keep the existing per-key behavior.
+            let suppressFlagLower = isSynthesizingKey && suppressNextSyntheticFlagLower
+            if suppressFlagLower { suppressNextSyntheticFlagLower = false }
+            if !suppressFlagLower {
+                _ = try? TabAttentionService.shared.lowerIfFlagged(
+                    workspaceId: terminalSurface.workspaceId,
+                    surfaceId: terminalSurface.id,
+                    by: .operator
+                )
+            }
             let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if !event.isARepeat,
                (event.keyCode == 36 || event.keyCode == 76),
@@ -6473,7 +6543,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     )
                     ghosttySendMs += (ProcessInfo.processInfo.systemUptime - ghosttySendStart) * 1000.0
                     #else
-                    _ = ghostty_surface_key(surface, keyEvent)
+                    _ = sendGhosttyKey(surface, keyEvent)
                     #endif
                 }
             }
@@ -6539,7 +6609,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     )
                     ghosttySendMs += (ProcessInfo.processInfo.systemUptime - ghosttySendStart) * 1000.0
                     #else
-                    _ = ghostty_surface_key(surface, keyEvent)
+                    _ = sendGhosttyKey(surface, keyEvent)
                     #endif
                 }
             } else {
@@ -6555,7 +6625,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 )
                 ghosttySendMs += (ProcessInfo.processInfo.systemUptime - ghosttySendStart) * 1000.0
                 #else
-                _ = ghostty_surface_key(surface, keyEvent)
+                _ = sendGhosttyKey(surface, keyEvent)
                 #endif
             }
         }
@@ -6595,7 +6665,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #if DEBUG
         Self.debugGhosttySurfaceKeyEventObserver?(keyEvent)
 #endif
-        return ghostty_surface_key(surface, keyEvent)
+        let handled = ghostty_surface_key(surface, keyEvent)
+        if isSynthesizingKey,
+           let expected = handoffCaptureExpectedSurface,
+           expected == surface,
+           handoffCaptureObserved == nil {
+            handoffCaptureObserved = (surface, handled)
+        }
+        return handled
     }
 
 #if DEBUG

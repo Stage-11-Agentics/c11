@@ -75,6 +75,8 @@ Feed and the configured attention jump use oldest flags first, then oldest eligi
 
 Show Notifications (default ⌘I; custom bindings preserved) opens the read-only Feed quick view: arrows select, Tab switches Asks/Turns, Return opens that exact tab, Esc restores the originating focus, and Turns shows finished turns without removing attention-jump targets.
 
+Use `c11 feed answer` only for an eligible flag or `turn_end` row; it sends one guarded paste to an exact empty/suggestion prompt and reports whether retry is safe.
+
 ### Flag
 
 ```bash
@@ -198,7 +200,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | tab-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
 | tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
-| read typed asks (`c11 feed list\|open\|watch`); generic input is unsupported | [references/api.md](references/api.md#feed) |
+| read and answer typed asks (`c11 feed list\|open\|answer\|watch`); generic input is unsupported | [references/api.md](references/api.md#feed) |
 | workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, conversation resume & lifecycle journal | [references/conversation.md](references/conversation.md) |
 | read agent lifecycle, journal analytics & export | [references/journal.md](references/journal.md) |

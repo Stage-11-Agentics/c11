@@ -933,6 +933,7 @@ and is never renamed. See [events.md](events.md).
 ```bash
 c11 feed list [--json] [--scope attention|all]
 c11 feed open <tab> [--workspace <id|ref>] [--json]
+c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
 c11 feed watch [--json] [--scope attention|all]
 ```
 
@@ -950,6 +951,28 @@ mark anything read, or send an answer. A missing
 workspace or tab returns `unavailable` and changes nothing. `list` and `watch`
 never move focus.
 
+`feed answer` accepts an exact tab target only when its current row is a flag with
+no blocking ask, or a `turn_end` row. A blocking question, plan, or permission
+remains ineligible even when that tab is flagged. Before pasting, it uses the
+C11-267 complete prompt-region inspection and accepts only `empty` or `suggestion`;
+`draft`, `dialog`, `unknown`, and `unavailable` return `input_guard_refused`.
+The text is limited to 16 KiB of UTF-8 and must be prose (control bytes other than
+newlines are refused). Multiline text is one bracketed paste followed by a separate
+Return. An unattached tab returns `not_ready` without queueing input. Whitespace-only
+text follows the exact-target `feed open` path and sends nothing.
+
+The response reports `delivered`, `submitted`, `answered`, and `retry`. `answered`
+means native Return handoff plus, for a flag row, lowering the flag epoch this reply
+started from; it does not claim the agent understood the text. `retry` is `safe`
+only when nothing was pasted and `unsafe` after a paste. A changed flag epoch leaves
+the new flag raised and returns `submitted: true`, `answered: false`,
+`flag_lowered: false`, and `flag_epoch: "replaced"`. A keypress during the 200 ms
+paste-settle window can leave the answer pasted but unsubmitted, so retry is unsafe.
+
+On a successful flag reply, the local `flag.lowered` event carries `{by, answer}`;
+the reply body is not written to the structural journal. The local EventLog retains
+an 8 MiB current file and one rolled generation. Other lower paths omit `answer`.
+
 `feed watch` prints one list snapshot, then follows `ask.opened`, `ask.closed`,
 `flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, and the
 log markers. It binds `events-<instance>.ndjson` for the `instance` returned by
@@ -966,6 +989,7 @@ journal, the event log, or `ask.opened` / `ask.closed`. After restart,
 `options` array means the hook extracted zero labels.
 
 Socket methods: `feed.list` (`scope`), `feed.open` (`workspace_id`, `tab_id`),
+`feed.answer` (`workspace_id`, `tab_id`, `text`, optional `by`),
 `feed.note_display` (hook/plugin display text; not a command agents call), and
 feature id `feed.asks` version 1. Discover it before depending on the methods.
 
@@ -974,8 +998,8 @@ unmanaged legacy hook, where the journal method is unsupported or no draft was
 built, still stores `lastBody` and may notify with that body. This command does
 not erase those older records.
 
-Live answer and resume traces that need later producer work stay out of this
-command. `feed open` is focus only.
+Live resume traces that need later producer work stay out of this command.
+`feed open` is focus only.
 
 ### Operator workspace selection
 

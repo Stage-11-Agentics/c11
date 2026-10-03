@@ -19750,6 +19750,7 @@ struct CMUXCLI {
           list-notifications
           feed list [--json] [--scope attention|all]
           feed open <tab> [--workspace <id|ref>] [--json]
+          feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
           feed watch [--json] [--scope attention|all]
           clear-notifications
           agent-event append --stdin

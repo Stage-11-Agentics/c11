@@ -99,34 +99,55 @@ enum PromptInputClassifier {
         let isBoxed: Bool
     }
 
+    private struct Analysis {
+        let classification: PromptInputClassification
+        let composerText: String?
+    }
+
     static func classify(_ region: PromptRegionSnapshot) -> PromptInputClassification {
+        analyze(region).classification
+    }
+
+    /// Transiently returns the typed text for an exact composer comparison.
+    /// Suggestions, dialogs, incomplete captures, and unsupported layouts do
+    /// not expose text to callers.
+    static func composerText(_ region: PromptRegionSnapshot) -> String? {
+        let analysis = analyze(region)
+        guard analysis.classification.state == .draft else { return nil }
+        return analysis.composerText
+    }
+
+    private static func analyze(_ region: PromptRegionSnapshot) -> Analysis {
         guard region.complete,
               !region.rows.isEmpty,
               region.rows.count <= maxRows,
               region.cells.count <= maxCells,
               region.text.count <= maxTextBytes else {
-            return .unknown
+            return Analysis(classification: .unknown, composerText: nil)
         }
 
         let bytes = Array(region.text)
         guard let lines = makeLines(region, bytes: bytes),
               let cursorIndex = lines.firstIndex(where: { $0.y == region.cursorY }) else {
-            return .unknown
+            return Analysis(classification: .unknown, composerText: nil)
         }
         guard region.cursorX >= 0,
               region.cursorX <= region.rows[cursorIndex].cellRange.count else {
-            return .unknown
+            return Analysis(classification: .unknown, composerText: nil)
         }
 
         if isSupportedDialog(lines, cursorY: region.cursorY) {
-            return PromptInputClassification(state: .dialog, draftLength: nil)
+            return Analysis(
+                classification: PromptInputClassification(state: .dialog, draftLength: nil),
+                composerText: nil
+            )
         }
 
         guard let promptIndex = lines.indices.reversed().first(where: { index in
             lines[index].y <= region.cursorY && currentPromptPrefix(in: lines[index]) != nil
         }), promptIndex <= cursorIndex,
               let prefix = currentPromptPrefix(in: lines[promptIndex]) else {
-            return .unknown
+            return Analysis(classification: .unknown, composerText: nil)
         }
 
         var typedScalars: [Unicode.Scalar] = []
@@ -140,12 +161,14 @@ enum PromptInputClassifier {
             if index > promptIndex {
                 let previous = lines[previousIndex]
                 if line.y != previous.y + 1 || previous.softWrap != line.wrapContinuation {
-                    return .unknown
+                    return Analysis(classification: .unknown, composerText: nil)
                 }
                 if isRule(line) {
                     // The composer's closing rule sits below the cursor row. A rule
                     // above it means the typed row was never reached: not empty.
-                    if line.y <= region.cursorY { return .unknown }
+                    if line.y <= region.cursorY {
+                        return Analysis(classification: .unknown, composerText: nil)
+                    }
                     stoppedAtRule = true
                     break
                 }
@@ -192,18 +215,24 @@ enum PromptInputClassifier {
         // If the bounded window ends halfway through a soft-wrapped line, the
         // composer may continue outside the capture and cannot be called empty.
         if !stoppedAtRule, let last = lines.last, last.softWrap {
-            return .unknown
+            return Analysis(classification: .unknown, composerText: nil)
         }
 
         guard hasTypedText else {
-            return PromptInputClassification(
-                state: hasFaintSuggestion ? .suggestion : .empty,
-                draftLength: nil
+            return Analysis(
+                classification: PromptInputClassification(
+                    state: hasFaintSuggestion ? .suggestion : .empty,
+                    draftLength: nil
+                ),
+                composerText: ""
             )
         }
 
         let trimmed = trimWhitespace(typedScalars)
-        return PromptInputClassification(state: .draft, draftLength: trimmed.count)
+        return Analysis(
+            classification: PromptInputClassification(state: .draft, draftLength: trimmed.count),
+            composerText: String(String.UnicodeScalarView(typedScalars))
+        )
     }
 
     private static func makeLines(_ region: PromptRegionSnapshot, bytes: [UInt8]) -> [Line]? {

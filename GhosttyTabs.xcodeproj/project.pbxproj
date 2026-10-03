@@ -564,6 +564,7 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		C112310000000000000000D1 /* JournalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 193AECCF771604D4FFC20573 /* JournalStore.swift */; };
 		C112310000000000000000D2 /* JournalReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */; };
 		C1126400A1B2C3D4E5F60002 /* FeedProjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */; };
+		C11288000000000000000002 /* FeedAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11288000000000000000001 /* FeedAnswer.swift */; };
 		C1126500A1B2C3D4E5F60002 /* AttentionOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */; };
 		C1126500A1B2C3D4E5F60003 /* AttentionOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */; };
 		C1126500A1B2C3D4E5F60005 /* AttentionOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126500A1B2C3D4E5F60004 /* AttentionOrderTests.swift */; };
@@ -1186,6 +1187,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		C112310000000000000000B1 /* AgentRosterHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRosterHandlers.swift; sourceTree = "<group>"; };
 		C112310000000000000000C1 /* AgentRosterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentRosterTests.swift; path = AgentRosterTests.swift; sourceTree = "<group>"; };
 		C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedProjector.swift; path = Feed/FeedProjector.swift; sourceTree = "<group>"; };
+		C11288000000000000000001 /* FeedAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedAnswer.swift; path = Feed/FeedAnswer.swift; sourceTree = "<group>"; };
 		C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AttentionOrder.swift; path = Feed/AttentionOrder.swift; sourceTree = "<group>"; };
 		C1126500A1B2C3D4E5F60004 /* AttentionOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionOrderTests.swift; sourceTree = "<group>"; };
 		C11266000000000000000001 /* FeedQuickViewSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feed/FeedQuickViewSelection.swift; sourceTree = "<group>"; };
@@ -1350,6 +1352,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				3C562C4BF3F41684F3E215BC /* JournalSpool.swift */,
 				732505E4F8E3443519782672 /* JournalEvent.swift */,
 				C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */,
+				C11288000000000000000001 /* FeedAnswer.swift */,
 				C1126500A1B2C3D4E5F60001 /* AttentionOrder.swift */,
 				C11266000000000000000001 /* FeedQuickViewSelection.swift */,
 				C11266000000000000000003 /* FeedQuickView.swift */,
@@ -2297,6 +2300,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				EFCC13F4E9E4ABE05B000382 /* JournalHandlers.swift in Sources */,
 				C1126400A1B2C3D4E5F60009 /* FeedHandlers.swift in Sources */,
 				C1126400A1B2C3D4E5F60002 /* FeedProjector.swift in Sources */,
+				C11288000000000000000002 /* FeedAnswer.swift in Sources */,
 				C1126500A1B2C3D4E5F60002 /* AttentionOrder.swift in Sources */,
 				C11266000000000000000002 /* FeedQuickViewSelection.swift in Sources */,
 				C11266000000000000000004 /* FeedQuickView.swift in Sources */,

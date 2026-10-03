@@ -58,6 +58,43 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(fields["draft_length"] as? Int, sentinel.unicodeScalars.count)
     }
 
+    func testComposerTextIsExactForDraftsAndUnavailableForOtherStates() {
+        let body = "FEED-ANSWER-FIXTURE"
+        let singleLine = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}" + body)]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.composerText(singleLine), body)
+
+        let multiline = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}first line")]),
+            Row(y: 2, spans: [Span(text: "")]),
+            Row(y: 3, spans: [Span(text: "  third line")]),
+            Row(y: 4, spans: [Span(text: rule)]),
+        ], cursorY: 3)
+        XCTAssertEqual(PromptInputClassifier.composerText(multiline), "first line\n\n  third line")
+
+        let suggestion = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0} "), Span(text: "suggested text", faint: true)]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ], cursorY: 1)
+        XCTAssertNil(PromptInputClassifier.composerText(suggestion))
+
+        let dialog = region([
+            Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
+            Row(y: 1, spans: [Span(text: "❯ Yes, implement this plan")]),
+            Row(y: 2, spans: [Span(text: "  No, keep planning")]),
+            Row(y: 3, spans: [Span(text: "Enter to select · Esc to go back")]),
+        ], cursorY: 3)
+        XCTAssertNil(PromptInputClassifier.composerText(dialog))
+
+        let unknown = region([Row(y: 0, spans: [Span(text: "› Ask Codex to do anything")])], cursorY: 0)
+        XCTAssertNil(PromptInputClassifier.composerText(unknown))
+    }
+
     func testMultilineDraftSurvivesBlankCursorRow() {
         let input = region([
             Row(y: 0, spans: [Span(text: rule)]),
@@ -386,5 +423,248 @@ final class SendInputGuardTests: XCTestCase {
         XCTAssertFalse(sameWorkspace)
         XCTAssertEqual(decision, .unavailable)
         XCTAssertEqual(writes, 0)
+    }
+}
+
+final class FeedAnswerSafetyTests: XCTestCase {
+    func testEligibilityRequiresCurrentFlagOrCompletedTurnAndExactRowIdentity() throws {
+        let workspaceID = UUID()
+        let tabID = UUID()
+        let owner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "fixture-session")
+        let epoch = Date(timeIntervalSince1970: 1_000)
+        let flagSnapshot = snapshot(owner: owner, workspaceID: workspaceID, phase: .working, sequence: 41)
+        let attention = TabAttentionSnapshot(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flagReason: "fixture blocker",
+            flagRaisedAt: epoch,
+            suppressed: false
+        )
+        let projectedRow = try row(for: flagSnapshot, attention: attention)
+
+        let identity = try XCTUnwrap(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: flagSnapshot,
+            attention: attention,
+            projectedRow: projectedRow
+        ))
+        XCTAssertEqual(identity.startKind, .flag)
+        XCTAssertEqual(identity.flagEpoch, epoch)
+        XCTAssertFalse(FeedAnswerEligibility.stillEligible(
+            identity,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: snapshot(owner: owner, workspaceID: workspaceID, phase: .working, sequence: 42),
+            attention: attention
+        ), "a later journal row must not inherit this answer")
+
+        let wrongOwner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "replacement-session")
+        XCTAssertNil(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: wrongOwner,
+            snapshot: flagSnapshot,
+            attention: attention,
+            projectedRow: projectedRow
+        ))
+        XCTAssertNil(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: flagSnapshot,
+            attention: attention,
+            projectedRow: FeedAnswerProjectionRow(
+                row: projectedRow.row,
+                owner: owner,
+                sequence: flagSnapshot.lastSequence + 1,
+                askEventID: projectedRow.askEventID
+            )
+        ))
+
+        let blockedSnapshot = snapshot(
+            owner: owner,
+            workspaceID: workspaceID,
+            phase: .blocked,
+            reason: .question,
+            sequence: 43
+        )
+        let blockedRow = try row(for: blockedSnapshot, attention: attention)
+        XCTAssertNil(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: blockedSnapshot,
+            attention: attention,
+            projectedRow: blockedRow
+        ), "an ask remains blocking even when its tab is flagged")
+
+        let completed = snapshot(
+            owner: owner,
+            workspaceID: workspaceID,
+            phase: .idle,
+            sequence: 44,
+            turnOutcome: "completed"
+        )
+        let completedRow = try row(for: completed, attention: nil)
+        let turnIdentity = try XCTUnwrap(FeedAnswerEligibility.capture(
+            workspaceID: workspaceID,
+            tabID: tabID,
+            targetWorkspaceID: workspaceID,
+            owner: owner,
+            snapshot: completed,
+            attention: TabAttentionSnapshot(
+                workspaceId: workspaceID,
+                surfaceId: tabID,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                suppressed: false
+            ),
+            projectedRow: completedRow
+        ))
+        XCTAssertEqual(turnIdentity.startKind, .turnEnd)
+        XCTAssertNil(turnIdentity.flagEpoch)
+    }
+
+    func testOnlyPositiveNativeHandoffCanLowerFlag() {
+        var lowerCalls = 0
+        XCTAssertEqual(
+            FeedAnswerHandoff.outcome(nativeHandoff: false, startKind: .flag) {
+                lowerCalls += 1
+                return .lowered
+            },
+            .submitUnconfirmed
+        )
+        XCTAssertEqual(lowerCalls, 0)
+
+        XCTAssertEqual(
+            FeedAnswerHandoff.outcome(nativeHandoff: true, startKind: .flag) {
+                lowerCalls += 1
+                return .lowered
+            },
+            .submitted(flagLowered: true, flagEpoch: nil)
+        )
+        XCTAssertEqual(lowerCalls, 1)
+
+        XCTAssertEqual(
+            FeedAnswerHandoff.outcome(nativeHandoff: true, startKind: .turnEnd) {
+                lowerCalls += 1
+                return .lowered
+            },
+            .submitted(flagLowered: false, flagEpoch: nil)
+        )
+        XCTAssertEqual(lowerCalls, 1)
+    }
+
+    func testComposerCheckSeparatesUnseenPasteFromChangedPrompt() {
+        let body = "FEED-ANSWER-FIXTURE"
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: body, expected: body), .matches)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .empty, composer: nil, expected: body), .notVisible)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .suggestion, composer: nil, expected: body), .notVisible)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "FEED-ANSWER", expected: body), .notVisible)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "operator text", expected: body), .changed)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .dialog, composer: nil, expected: body), .changed)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .unknown, composer: nil, expected: body), .changed)
+    }
+
+    func testTimeoutCancelsPendingAnswerBeforeDelayedCommitRuns() {
+        var effects = 0
+        let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> {
+            effects += 1
+            return .submitted(flagLowered: true, flagEpoch: nil)
+        }
+
+        XCTAssertNil(gate.wait(timeout: 0.001))
+        gate.enqueue { work in work() }
+        XCTAssertEqual(effects, 0, "a cancelled paste-settle callback must not submit or lower")
+    }
+
+    func testReplacedFlagEpochCannotBeLoweredByDelayedAnswer() throws {
+        let store = TabMetadataStore.shared
+        let workspaceID = UUID()
+        let tabID = UUID()
+        let originalEpoch = Date(timeIntervalSince1970: 2_000)
+        let replacementEpoch = Date(timeIntervalSince1970: 3_000)
+        defer { store.removeSurface(workspaceId: workspaceID, surfaceId: tabID) }
+
+        _ = try store.mutateAttention(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flag: .raise("original"),
+            now: originalEpoch
+        )
+        _ = try store.mutateAttention(workspaceId: workspaceID, surfaceId: tabID, flag: .lower)
+        _ = try store.mutateAttention(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flag: .raise("replacement"),
+            now: replacementEpoch
+        )
+
+        let staleLower = try store.mutateAttention(
+            workspaceId: workspaceID,
+            surfaceId: tabID,
+            flag: .lower,
+            expectedFlagEpoch: originalEpoch
+        )
+        XCTAssertEqual(staleLower.result.applied[MetadataKey.flag], false)
+        XCTAssertEqual(staleLower.result.reasons[MetadataKey.flag], "epoch_changed")
+        XCTAssertEqual(staleLower.after.flagReason, "replacement")
+        XCTAssertEqual(staleLower.after.flagRaisedAt, replacementEpoch)
+    }
+
+    private func snapshot(
+        owner: JournalOwner,
+        workspaceID: UUID,
+        phase: JournalPhase,
+        reason: JournalReason? = nil,
+        sequence: Int64,
+        turnOutcome: String? = nil
+    ) -> JournalSnapshot {
+        JournalSnapshot(
+            owner: owner,
+            workspaceID: workspaceID,
+            phase: phase,
+            reason: reason,
+            requestID: reason == nil ? nil : "fixture-request",
+            turnOutcome: turnOutcome,
+            appInstanceID: UUID(),
+            lastSequence: sequence,
+            confirmation: .confirmed,
+            connection: .live
+        )
+    }
+
+    private func row(
+        for snapshot: JournalSnapshot,
+        attention: TabAttentionSnapshot?
+    ) throws -> FeedAnswerProjectionRow {
+        let attentionFacts = attention.map { value in
+            [FeedAttentionFact(
+                workspaceID: value.workspaceId,
+                tabID: value.surfaceId,
+                flagReason: value.flagReason,
+                flagRaisedAtMs: value.flagRaisedAt.map { Int64($0.timeIntervalSince1970 * 1_000) },
+                flagCallerTabID: value.flagCallerTabId,
+                suppressed: value.suppressed
+            )]
+        } ?? []
+        let projected = try XCTUnwrap(FeedProjector.project(
+            journalRows: [snapshot],
+            attention: attentionFacts,
+            notes: [:],
+            scope: .all
+        ).first)
+        return FeedAnswerProjectionRow(
+            row: projected,
+            owner: snapshot.owner,
+            sequence: snapshot.lastSequence,
+            askEventID: UUID()
+        )
     }
 }

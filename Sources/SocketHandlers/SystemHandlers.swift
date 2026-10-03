@@ -328,6 +328,7 @@ extension TerminalController {
         }
         if CapabilityFeatures.current.supports(.feedAsks) {
             methods.append("feed.list")
+            methods.append("feed.answer")
             methods.append("feed.open")
             methods.append("feed.note_display")
         }

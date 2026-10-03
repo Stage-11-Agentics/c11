@@ -30,7 +30,7 @@ enum FeedCommand {
     feed answer accepts only an eligible flag or turn_end row with a complete empty/suggestion prompt.
     Blocking asks, drafts, dialogs, unknown input, and cold tabs are refused. Whitespace-only text opens
     the exact tab without sending. --by defaults to agent. The result includes answered and retry; retry
-    is safe only when nothing was pasted. A keypress during the 200 ms paste-settle window can leave
+    is safe only when nothing was pasted. A keypress during the Feed answer paste-settle window can leave
     the answer pasted but unsubmitted, so retry is unsafe.
     Ask prompt text appears only in this process's live list/watch JSON. It is not stored in the journal or the event log.
     A successful flag reply includes its text in the local flag.lowered event. The local EventLog

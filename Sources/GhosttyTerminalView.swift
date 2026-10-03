@@ -4369,9 +4369,23 @@ final class TerminalSurface: Identifiable, ObservableObject {
         let delayMs: Int
 #if DEBUG
         let feedAnswerHoldMs = feedAnswerGate == nil ? 0 : FeedAnswerDebugHold.shared.consume(tabID: id) ?? 0
-        delayMs = max(0, TextBoxBehavior.returnKeyDelayMs) + feedAnswerHoldMs
+        if feedAnswerGate != nil {
+            delayMs = FeedAnswerTiming.returnDelayMilliseconds(
+                baseDelayMs: TextBoxBehavior.returnKeyDelayMs,
+                debugHoldMs: feedAnswerHoldMs
+            )
+        } else {
+            delayMs = max(0, TextBoxBehavior.returnKeyDelayMs)
+        }
 #else
-        delayMs = TextBoxBehavior.returnKeyDelayMs
+        if feedAnswerGate != nil {
+            delayMs = FeedAnswerTiming.returnDelayMilliseconds(
+                baseDelayMs: TextBoxBehavior.returnKeyDelayMs,
+                debugHoldMs: 0
+            )
+        } else {
+            delayMs = TextBoxBehavior.returnKeyDelayMs
+        }
 #endif
         if delayMs <= 0 {
             if let feedAnswerGate {

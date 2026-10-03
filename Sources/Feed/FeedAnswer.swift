@@ -109,6 +109,16 @@ enum FeedAnswerSubmitOutcome: Equatable {
     case submitted(flagLowered: Bool, flagEpoch: String?)
 }
 
+enum FeedAnswerTiming {
+    // Codex can continue laying out a bracketed multiline paste after the
+    // standard return-key delay. The exact composer guard still runs afterward.
+    static let additionalPasteSettleMilliseconds = 350
+
+    static func returnDelayMilliseconds(baseDelayMs: Int, debugHoldMs: Int) -> Int {
+        max(0, baseDelayMs) + additionalPasteSettleMilliseconds + max(0, debugHoldMs)
+    }
+}
+
 enum FeedAnswerComposerCheck: Equatable {
     case matches
     case notVisible

@@ -370,6 +370,23 @@ final class PromptInputClassifierTests: XCTestCase {
             .matches
         )
 
+        let codexMultilineWithWrappedFirstRow = region([
+            Row(y: 0, spans: [Span(text: "› Return these two lines exactly and nothing ")], softWrap: true),
+            Row(y: 1, spans: [Span(text: "  else:")], wrapContinuation: true),
+            Row(y: 2, spans: [Span(text: "  C11-268-MULTILINE-ONE")]),
+            Row(y: 3, spans: [Span(text: "  C11-268-MULTILINE-TWO")]),
+        ], cursorY: 3)
+        let multilineBody = "Return these two lines exactly and nothing else:\nC11-268-MULTILINE-ONE\nC11-268-MULTILINE-TWO"
+        XCTAssertEqual(PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow), multilineBody)
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(
+                state: PromptInputClassifier.classify(codexMultilineWithWrappedFirstRow).state,
+                composer: PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow),
+                expected: multilineBody
+            ),
+            .matches
+        )
+
         let transcript = region([
             Row(y: 0, spans: [Span(text: "❯ say hi in two words")]),
         ], cursorY: 0)
@@ -506,6 +523,11 @@ final class SendInputGuardTests: XCTestCase {
 }
 
 final class FeedAnswerSafetyTests: XCTestCase {
+    func testFeedAnswerAddsPasteSettleBeforeGuardedReturn() {
+        XCTAssertEqual(FeedAnswerTiming.returnDelayMilliseconds(baseDelayMs: 200, debugHoldMs: 0), 550)
+        XCTAssertEqual(FeedAnswerTiming.returnDelayMilliseconds(baseDelayMs: 200, debugHoldMs: 150), 700)
+    }
+
     func testEligibilityRequiresCurrentFlagOrCompletedTurnAndExactRowIdentity() throws {
         let workspaceID = UUID()
         let tabID = UUID()

@@ -968,8 +968,10 @@ means native Return handoff plus, for a flag row, lowering the flag epoch this r
 started from; it does not claim the agent understood the text. `retry` is `safe`
 only when nothing was pasted and `unsafe` after a paste. A changed flag epoch leaves
 the new flag raised and returns `submitted: true`, `answered: false`,
-`flag_lowered: false`, and `flag_epoch: "replaced"`. A keypress during the 200 ms
+`flag_lowered: false`, and `flag_epoch: "replaced"`. A keypress during the Feed-answer
 paste-settle window can leave the answer pasted but unsubmitted, so retry is unsafe.
+Feed waits an additional 350 ms after the standard 200 ms delay before its exact composer
+and target checks, giving Codex more time to lay out bracketed multiline paste text.
 
 On a successful flag reply, the local `flag.lowered` event carries `{by, answer}`;
 the reply body is not written to the structural journal. The local EventLog retains

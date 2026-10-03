@@ -666,12 +666,26 @@ struct AppSessionSnapshot: Codable, Sendable {
 }
 
 enum SessionPersistenceStore {
-    static func load(fileURL: URL? = nil) -> AppSessionSnapshot? {
+    enum SavePurpose: Equatable, Sendable {
+        case autosave
+        case operatorRequested
+        case cleanShutdown
+    }
+
+    static let poorerSnapshotHoldbackInterval: TimeInterval = 5 * 60
+    static let historyRestoreEnvironmentKey = "C11_SESSION_HISTORY_RESTORE_FILE"
+
+    static func load(
+        fileURL: URL? = nil,
+        historyFileURL: URL? = nil
+    ) -> AppSessionSnapshot? {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return nil }
+        if let historyFileURL,
+           let snapshot = loadHistorySnapshot(from: historyFileURL, forSnapshot: fileURL) {
+            return snapshot
+        }
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
-        let decoder = JSONDecoder()
-        guard var snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
-        guard snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
+        guard var snapshot = decodeSnapshot(data) else { return nil }
         // A window without workspaces is not a restorable window. In particular,
         // do not turn stale empty-window records into extra fallback workspaces.
         snapshot.windows.removeAll { $0.workspaceManager.workspaces.isEmpty }
@@ -679,8 +693,55 @@ enum SessionPersistenceStore {
         return snapshot
     }
 
+    /// Resolves the operator's one-shot startup recovery choice. The selected
+    /// file is still validated against the canonical snapshot's own history
+    /// directory by `loadHistorySnapshot` before it can be used.
+    static func startupHistoryRestoreURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL? {
+        guard let rawPath = environment[historyRestoreEnvironmentKey]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawPath.isEmpty else { return nil }
+        return URL(
+            fileURLWithPath: (rawPath as NSString).expandingTildeInPath,
+            isDirectory: false
+        ).standardizedFileURL
+    }
+
+    /// Loads one archived snapshot only when it is a named archive for this
+    /// live snapshot and resolves to a regular file directly inside that
+    /// snapshot's history directory. Symlinked escapes are rejected too.
+    static func loadHistorySnapshot(
+        from historyFileURL: URL,
+        forSnapshot snapshotFileURL: URL
+    ) -> AppSessionSnapshot? {
+        let historyDirectory = historyDirectoryURL(for: snapshotFileURL).standardizedFileURL
+        let candidate = historyFileURL.standardizedFileURL
+        guard candidate.deletingLastPathComponent().path == historyDirectory.path else { return nil }
+        guard historyFileURLs(for: snapshotFileURL).contains(where: {
+            $0.standardizedFileURL.path == candidate.path
+        }) else { return nil }
+
+        let resolvedSnapshotDirectory = snapshotFileURL.deletingLastPathComponent()
+            .resolvingSymlinksInPath().standardizedFileURL
+        let resolvedHistoryDirectory = historyDirectory.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedCandidate = candidate.resolvingSymlinksInPath().standardizedFileURL
+        guard resolvedHistoryDirectory.deletingLastPathComponent().path == resolvedSnapshotDirectory.path else { return nil }
+        guard resolvedCandidate.deletingLastPathComponent().path == resolvedHistoryDirectory.path else { return nil }
+        guard let data = try? Data(contentsOf: resolvedCandidate),
+              var snapshot = decodeSnapshot(data) else { return nil }
+        snapshot.windows.removeAll { $0.workspaceManager.workspaces.isEmpty }
+        guard !snapshot.windows.isEmpty else { return nil }
+        return snapshot
+    }
+
     @discardableResult
-    static func save(_ snapshot: AppSessionSnapshot, fileURL: URL? = nil) -> Bool {
+    static func save(
+        _ snapshot: AppSessionSnapshot,
+        fileURL: URL? = nil,
+        purpose: SavePurpose = .autosave,
+        now: Date = Date()
+    ) -> Bool {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return false }
         let directory = fileURL.deletingLastPathComponent()
         do {
@@ -689,12 +750,51 @@ enum SessionPersistenceStore {
             if let existingData = try? Data(contentsOf: fileURL), existingData == data {
                 return true
             }
-            guard archiveBeforeFirstOverwrite(fileURL: fileURL) else { return false }
+            if purpose == .autosave,
+               shouldHoldBackPoorerSnapshot(snapshot, replacing: fileURL, now: now) {
+                return true
+            }
+            guard archiveBeforeFirstOverwrite(fileURL: fileURL, now: now) else { return false }
             try data.write(to: fileURL, options: .atomic)
             return true
         } catch {
             return false
         }
+    }
+
+    private static func decodeSnapshot(_ data: Data) -> AppSessionSnapshot? {
+        guard let snapshot = try? JSONDecoder().decode(AppSessionSnapshot.self, from: data),
+              snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
+        return snapshot
+    }
+
+    private static func shouldHoldBackPoorerSnapshot(
+        _ snapshot: AppSessionSnapshot,
+        replacing fileURL: URL,
+        now: Date
+    ) -> Bool {
+        guard let existingData = try? Data(contentsOf: fileURL),
+              let existingSnapshot = decodeSnapshot(existingData),
+              let modifiedAt = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+            return false
+        }
+
+        let age = now.timeIntervalSince(modifiedAt)
+        guard age < poorerSnapshotHoldbackInterval else { return false }
+        let existingWorkspaceCount = existingSnapshot.windows.reduce(0) {
+            $0 + $1.workspaceManager.workspaces.count
+        }
+        let incomingWorkspaceCount = snapshot.windows.reduce(0) {
+            $0 + $1.workspaceManager.workspaces.count
+        }
+        let existingSurfaceCount = existingSnapshot.windows.reduce(0) { windowCount, window in
+            windowCount + window.workspaceManager.workspaces.reduce(0) { $0 + $1.panels.count }
+        }
+        let incomingSurfaceCount = snapshot.windows.reduce(0) { windowCount, window in
+            windowCount + window.workspaceManager.workspaces.reduce(0) { $0 + $1.panels.count }
+        }
+        return incomingWorkspaceCount < existingWorkspaceCount
+            || incomingSurfaceCount < existingSurfaceCount
     }
 
     private static func encodedSnapshotData(_ snapshot: AppSessionSnapshot) throws -> Data {

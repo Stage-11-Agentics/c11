@@ -291,6 +291,139 @@ final class SessionPersistenceTests: XCTestCase {
         )
     }
 
+    func testPoorerAutosaveKeepsRicherSnapshotDuringFiveMinuteHoldback() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-poorer-snapshot-holdback-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let rich = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 2, titlePrefix: "Rich")
+        let poor = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 1, titlePrefix: "Partial")
+        XCTAssertTrue(SessionPersistenceStore.save(rich, fileURL: snapshotURL))
+        let liveBytes = try Data(contentsOf: snapshotURL)
+
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-60)],
+            ofItemAtPath: snapshotURL.path
+        )
+        XCTAssertTrue(SessionPersistenceStore.save(poor, fileURL: snapshotURL, now: now))
+
+        XCTAssertEqual(try Data(contentsOf: snapshotURL), liveBytes)
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: snapshotURL))
+        XCTAssertEqual(loaded.windows[0].workspaceManager.workspaces.count, 1)
+        XCTAssertEqual(loaded.windows[0].workspaceManager.workspaces[0].panels.count, 2)
+    }
+
+    func testPoorerAutosaveWithFewerWorkspacesKeepsRicherSnapshot() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-poorer-workspace-holdback-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let rich = makeSnapshotWithShape(workspaceCount: 2, surfacesPerWorkspace: 0, titlePrefix: "Rich")
+        let poor = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 0, titlePrefix: "Partial")
+        XCTAssertTrue(SessionPersistenceStore.save(rich, fileURL: snapshotURL))
+        let liveBytes = try Data(contentsOf: snapshotURL)
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-60)],
+            ofItemAtPath: snapshotURL.path
+        )
+
+        XCTAssertTrue(SessionPersistenceStore.save(poor, fileURL: snapshotURL, now: now))
+
+        XCTAssertEqual(try Data(contentsOf: snapshotURL), liveBytes)
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: snapshotURL))
+        XCTAssertEqual(loaded.windows[0].workspaceManager.workspaces.count, 2)
+    }
+
+    func testPoorerAutosaveCanReplaceSnapshotAfterFiveMinutes() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-poorer-snapshot-expiry-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let rich = makeSnapshotWithShape(workspaceCount: 2, surfacesPerWorkspace: 1, titlePrefix: "Rich")
+        let poor = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 0, titlePrefix: "Partial")
+        XCTAssertTrue(SessionPersistenceStore.save(rich, fileURL: snapshotURL))
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-SessionPersistenceStore.poorerSnapshotHoldbackInterval - 1)],
+            ofItemAtPath: snapshotURL.path
+        )
+
+        XCTAssertTrue(SessionPersistenceStore.save(poor, fileURL: snapshotURL, now: now))
+
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: snapshotURL))
+        XCTAssertEqual(loaded.windows[0].workspaceManager.workspaces.count, 1)
+        XCTAssertTrue(loaded.windows[0].workspaceManager.workspaces[0].panels.isEmpty)
+    }
+
+    func testExplicitAndCleanShutdownSavesOverridePoorerSnapshotHoldback() throws {
+        for purpose in [SessionPersistenceStore.SavePurpose.operatorRequested, .cleanShutdown] {
+            let tempDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("c11-poorer-snapshot-override-\(UUID())", isDirectory: true)
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tempDir) }
+
+            let snapshotURL = tempDir.appendingPathComponent("session.json")
+            let rich = makeSnapshotWithShape(workspaceCount: 2, surfacesPerWorkspace: 1, titlePrefix: "Rich")
+            let poor = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 0, titlePrefix: "Intentional")
+            XCTAssertTrue(SessionPersistenceStore.save(rich, fileURL: snapshotURL))
+            let now = Date()
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(-60)],
+                ofItemAtPath: snapshotURL.path
+            )
+
+            XCTAssertTrue(SessionPersistenceStore.save(poor, fileURL: snapshotURL, purpose: purpose, now: now))
+
+            let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: snapshotURL))
+            XCTAssertEqual(loaded.windows[0].workspaceManager.workspaces.count, 1)
+            XCTAssertTrue(loaded.windows[0].workspaceManager.workspaces[0].panels.isEmpty)
+        }
+    }
+
+    func testSelectedHistoryArchiveRestoresThroughStartupLoadAndRejectsOutsidePaths() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-session-history-restore-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        var archived = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 0, titlePrefix: "Archived")
+        archived.windows[0].workspaceManager.workspaces[0].customTitle = "Archived workspace"
+        var current = makeSnapshotWithShape(workspaceCount: 1, surfacesPerWorkspace: 0, titlePrefix: "Current")
+        current.windows[0].workspaceManager.workspaces[0].customTitle = "Current workspace"
+        try JSONEncoder().encode(archived).write(to: snapshotURL)
+        XCTAssertTrue(SessionPersistenceStore.save(current, fileURL: snapshotURL, purpose: .cleanShutdown))
+
+        let historyURL = try XCTUnwrap(SessionPersistenceStore.historyFileURLs(for: snapshotURL).first)
+        let selectedPath = SessionPersistenceStore.startupHistoryRestoreURL(environment: [
+            SessionPersistenceStore.historyRestoreEnvironmentKey: historyURL.path
+        ])
+        XCTAssertEqual(selectedPath, historyURL.standardizedFileURL)
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(
+            fileURL: snapshotURL,
+            historyFileURL: selectedPath
+        ))
+
+        let prepared = SessionRestoreNormalization.prepareStartupSnapshot(loaded)
+        XCTAssertEqual(prepared.windows[0].workspaceManager.workspaces.count, 1)
+        XCTAssertEqual(
+            prepared.windows[0].workspaceManager.workspaces[0].customTitle,
+            "Archived workspace"
+        )
+
+        let outsideURL = tempDir.appendingPathComponent(historyURL.lastPathComponent)
+        try Data(contentsOf: historyURL).write(to: outsideURL)
+        XCTAssertNil(SessionPersistenceStore.loadHistorySnapshot(from: outsideURL, forSnapshot: snapshotURL))
+    }
+
     func testSessionTabSnapshotCustomColorRoundTrip() throws {
         let panelId = UUID()
         let snapshot = SessionTabSnapshot(
@@ -1528,6 +1661,50 @@ final class SessionPersistenceTests: XCTestCase {
             createdAt: Date().timeIntervalSince1970,
             windows: [window]
         )
+    }
+
+    private func makeSnapshotWithShape(
+        workspaceCount: Int,
+        surfacesPerWorkspace: Int,
+        titlePrefix: String
+    ) -> AppSessionSnapshot {
+        var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        let template = snapshot.windows[0].workspaceManager.workspaces[0]
+        let workspaces = (0..<workspaceCount).map { workspaceIndex -> SessionWorkspaceSnapshot in
+            var workspace = template
+            workspace.id = UUID()
+            workspace.customTitle = "\(titlePrefix) \(workspaceIndex)"
+            let panels = (0..<surfacesPerWorkspace).map { panelIndex -> SessionTabSnapshot in
+                let id = UUID()
+                return SessionTabSnapshot(
+                    id: id,
+                    type: .terminal,
+                    title: "Terminal \(panelIndex)",
+                    customTitle: nil,
+                    directory: "/tmp",
+                    isPinned: false,
+                    isManuallyUnread: false,
+                    gitBranch: nil,
+                    listeningPorts: [],
+                    ttyName: nil,
+                    terminal: nil,
+                    browser: nil,
+                    markdown: nil,
+                    metadata: nil,
+                    metadataSources: nil
+                )
+            }
+            workspace.panels = panels
+            let panelIds = panels.map(\.id)
+            workspace.layout = .pane(SessionAreaLayoutSnapshot(
+                panelIds: panelIds,
+                selectedPanelId: panelIds.first
+            ))
+            return workspace
+        }
+        snapshot.windows[0].workspaceManager.workspaces = workspaces
+        snapshot.windows[0].workspaceManager.selectedWorkspaceIndex = workspaces.isEmpty ? nil : 0
+        return snapshot
     }
 
     private func fileNumber(for fileURL: URL) throws -> Int {

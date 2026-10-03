@@ -26,6 +26,55 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         return window
     }
 
+    func testLatePaneCloseConfirmationCannotCreateTerminalAfterWindowUnregister() async throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+        let windowId = UUID()
+        let window = makeMainWindow(id: windowId)
+        defer {
+            NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+            window.orderOut(nil)
+        }
+
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.workspaces.first)
+        let originalPanelId = try XCTUnwrap(workspace.focusedPanelId)
+        let paneId = try XCTUnwrap(workspace.paneId(forPanelId: originalPanelId))
+        app.registerMainWindow(
+            window,
+            windowId: windowId,
+            workspaceManager: manager,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+
+        // This production confirmation task creates a replacement terminal
+        // after an asynchronous user decision when the only pane is closed.
+        workspace.splitTabBar(workspace.bonsplitController, didRequestClosePane: paneId)
+        for _ in 0..<8 {
+            if workspace.areaCloseInteractionRuntime.active[paneId.id] != nil { break }
+            await Task.yield()
+        }
+        XCTAssertNotNil(workspace.areaCloseInteractionRuntime.active[paneId.id])
+
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+        for _ in 0..<8 { await Task.yield() }
+        XCTAssertTrue(manager.isRetiredForWindowClose)
+        XCTAssertTrue(workspace.isRetiredForWindowClose)
+        XCTAssertNotNil(
+            workspace.areaCloseInteractionRuntime.active[paneId.id],
+            "The queued confirmation must still reach the post-close creation guard"
+        )
+
+        workspace.areaCloseInteractionRuntime.resolveConfirm(panelId: paneId.id, result: .confirmed)
+        for _ in 0..<8 { await Task.yield() }
+
+        XCTAssertTrue(
+            workspace.panels.isEmpty,
+            "A confirmation callback delivered after unregister must not create a replacement terminal"
+        )
+    }
+
     func testSynchronizeActiveMainWindowContextPrefersProvidedWindowOverStaleActiveManager() {
         _ = NSApplication.shared
         let app = AppDelegate()

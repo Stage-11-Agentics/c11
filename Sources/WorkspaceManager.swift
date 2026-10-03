@@ -783,6 +783,7 @@ class WorkspaceManager: ObservableObject {
     weak var window: NSWindow?
 
     @Published var workspaces: [Workspace] = []
+    private(set) var isRetiredForWindowClose = false
     @Published var workspaceGroups: [WorkspaceGroup] = []
     private var workspaceRefsCancellable: AnyCancellable?
     private var knownWorkspaceRefIds: Set<UUID> = []
@@ -2698,6 +2699,17 @@ class WorkspaceManager: ObservableObject {
         workspace.owningWorkspaceManager = nil
 
         workspaces.remove(at: index)
+    }
+
+    /// Permanently stop late callbacks from creating terminals after this
+    /// manager has lost its last registered main window. Existing panels stay
+    /// alive on their current close paths.
+    func retireForWindowClose() {
+        guard !isRetiredForWindowClose else { return }
+        isRetiredForWindowClose = true
+        for workspace in workspaces {
+            workspace.retireForWindowClose()
+        }
     }
 
     /// Detach a workspace from this window without closing its panels.

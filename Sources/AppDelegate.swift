@@ -2255,6 +2255,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    @MainActor
+    private final class WeakWorkspaceManagerReference {
+        weak var value: WorkspaceManager?
+
+        init(_ value: WorkspaceManager) {
+            self.value = value
+        }
+    }
+
     private final class MainWindowController: NSWindowController, NSWindowDelegate {
         var onClose: (() -> Void)?
 
@@ -2448,6 +2457,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
 
     private var mainWindowContexts: [ObjectIdentifier: MainWindowContext] = [:]
+    /// Weak index lets resume checks see a retained surface after its window
+    /// context unregisters, without extending the manager's lifetime.
+    private var knownWorkspaceManagers: [ObjectIdentifier: WeakWorkspaceManagerReference] = [:]
     private var mainWindowControllers: [MainWindowController] = []
     private var startupSessionSnapshot: AppSessionSnapshot?
     private var didPrepareStartupSessionSnapshot = false
@@ -5241,6 +5253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarSelectionState: SidebarSelectionState
     ) {
         _ = TerminalController.shared.v2EnsureHandleRef(kind: .window, uuid: windowId)
+        knownWorkspaceManagers[ObjectIdentifier(workspaceManager)] = WeakWorkspaceManagerReference(workspaceManager)
         workspaceManager.window = window
         installMainWindowCloseGuard(on: window)
 
@@ -5348,6 +5361,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 workspace.panels.values.compactMap { ($0 as? BrowserTab)?.profileID }
             }
         })
+    }
+
+    /// Return surfaces whose live, attributed agent still owns its terminal
+    /// and whose ConversationStore record is an exact causal match. This is
+    /// intentionally narrower than a process-table scan: a shell or a stale
+    /// PID cannot claim a conversation writer.
+    func liveAttributedAgentSurfaceIds(
+        matching conversation: ConversationRef,
+        excluding targetSurfaceId: UUID,
+        conversationsBySurface: [String: TabConversations]
+    ) -> Set<UUID> {
+        var result: Set<UUID> = []
+        var seenManagers: Set<ObjectIdentifier> = []
+        knownWorkspaceManagers = knownWorkspaceManagers.filter { $0.value.value != nil }
+        let managers = knownWorkspaceManagers.values.compactMap(\.value)
+            + mainWindowContexts.values.map(\.workspaceManager)
+            + [workspaceManager].compactMap { $0 }
+
+        for manager in managers where seenManagers.insert(ObjectIdentifier(manager)).inserted {
+            for workspace in manager.workspaces {
+                for surfaceId in workspace.panels.keys where surfaceId != targetSurfaceId {
+                    guard let active = conversationsBySurface[surfaceId.uuidString]?.active,
+                          active.kind == conversation.kind,
+                          active.id == conversation.id,
+                          active.hasCausalExactEvidence,
+                          workspace.hasLiveAttributedAgentWriter(surfaceId: surfaceId) else {
+                        continue
+                    }
+                    result.insert(surfaceId)
+                }
+            }
+        }
+        return result
     }
 
     func windowMoveTargets(referenceWindowId: UUID?) -> [WindowMoveTarget] {

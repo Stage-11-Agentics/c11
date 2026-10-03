@@ -91,7 +91,7 @@ final class PromptInputClassifierTests: XCTestCase {
         ], cursorY: 3)
         XCTAssertNil(PromptInputClassifier.composerText(dialog))
 
-        let unknown = region([Row(y: 0, spans: [Span(text: "› Ask Codex to do anything")])], cursorY: 0)
+        let unknown = region([Row(y: 0, spans: [Span(text: "ordinary terminal output")])], cursorY: 0)
         XCTAssertNil(PromptInputClassifier.composerText(unknown))
     }
 

@@ -1580,11 +1580,11 @@
           }
         },
         "ja": { "stringUnit": { "state": "translated", "value": "%lld 件の %@ モデルを検索…" } },
-        "uk": { "stringUnit": { "state": "translated", "value": "Пошук %lld моделей у %@…" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Пошук моделей (%lld) у %@…" } },
         "ko": { "stringUnit": { "state": "translated", "value": "%lld개의 %@ 모델 검색…" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索 %lld 个 %@ 模型…" } },
         "zh-Hant": { "stringUnit": { "state": "translated", "value": "搜尋 %lld 個 %@ 模型…" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Поиск %lld моделей у %@…" } }
+        "ru": { "stringUnit": { "state": "translated", "value": "Поиск моделей (%lld) у %@…" } }
       }
     },
     "agentConfigEditor.model.upgradeTo": {
@@ -57782,13 +57782,13 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld агентов"
+            "value": "Агенты: %lld"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld агентів"
+            "value": "Агенти: %lld"
           }
         }
       }
@@ -58090,13 +58090,13 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ещё %lld агентов"
+            "value": "Ещё: %lld"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ще %lld агентів"
+            "value": "Ще: %lld"
           }
         }
       }
@@ -58278,13 +58278,13 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld терминалов"
+            "value": "Терминалы: %lld"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld терміналів"
+            "value": "Термінали: %lld"
           }
         }
       }
@@ -66631,37 +66631,37 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "閉じられるタブ:"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "将关闭的标签页："
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "將關閉的分頁："
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "닫힐 탭:"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Вкладки, которые будут закрыты:"
           }
         },
         "uk": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Вкладки, які буде закрито:"
           }
         }
@@ -66678,37 +66678,37 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "閉じられるタブ:"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "将关闭的标签页："
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "將關閉的分頁："
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "닫힐 탭:"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Вкладка, которая будет закрыта:"
           }
         },
         "uk": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Вкладка, яку буде закрито:"
           }
         }
@@ -70962,7 +70962,7 @@
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@: %lld робочих просторів, %lld вкладок із прапорцями, %lld вкладок в очікуванні, %lld непрочитаних сповіщень"
+            "value": "%@: Робочі простори: %lld; вкладки з прапорцями: %lld; вкладки в очікуванні: %lld; непрочитані сповіщення: %lld"
           }
         },
         "ko": {
@@ -70986,7 +70986,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@: рабочих пространств — %lld, вкладок с флагами — %lld, ожидающих вкладок — %lld, непрочитанных уведомлений — %lld"
+            "value": "%@: Рабочие пространства: %lld; вкладки с флагами: %lld; вкладки в ожидании: %lld; непрочитанные уведомления: %lld"
           }
         }
       }

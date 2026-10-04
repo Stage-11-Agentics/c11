@@ -68,9 +68,9 @@ tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. cmux (manaflow-ai)
 
 ## The skill is the contract
 
-c11's value to an agent is `skills/c11/SKILL.md` and its peers (`c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-computer-use`, `c11-hotload`, `release`). The bar: an agent that read the skill drives a whole c11 session (spawn, dissolve, report, recover) without the operator stepping in. **A change to the CLI, socket protocol, metadata schema, or tab model is incomplete until the skill matches it.**
+c11's value to an agent is `skills/c11/SKILL.md` and its peers (`c11-browser`, `c11-markdown`, `c11-fanout`, `c11-debug-windows`, `c11-computer-use`, `c11-hotload`, `release`). The bar: an agent that read the skill drives a whole c11 session (spawn, dissolve, report, recover) without the operator stepping in. **A change to the CLI, socket protocol, metadata schema, or tab model is incomplete until the skill matches it.**
 
-**Syncing the installed copy is part of the edit (HARD RULE).** c11 installs skills as one-time copies in `~/.claude/skills/<name>/` (stamped `.c11-skill.json`) and never tracks the repo afterward. Editing or committing a skill under `skills/` changes nothing an agent loads. For any skill in `skills/MANIFEST.json`, the edit is done only after `scripts/sync-installed-skills.sh [name]` and a check of the live copy.
+**Syncing the installed copy is part of the edit (HARD RULE).** c11 installs skills as one-time copies in every agent harness's skills folder (`~/.claude/skills/<name>/`, `~/.codex/skills/<name>/`, `~/.pi/agent/skills/<name>/`, …; stamped `.c11-skill.json`) and never tracks the repo afterward. The sync script refreshes every harness copy that exists. Editing or committing a skill under `skills/` changes nothing an agent loads. For any skill in `skills/MANIFEST.json`, the edit is done only after `scripts/sync-installed-skills.sh [name]` and a check of the live copy.
 
 To validate what the operator actually sees, load `c11-computer-use`. Socket and CLI checks prove state, not UI.
 

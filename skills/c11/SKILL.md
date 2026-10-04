@@ -207,6 +207,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |
 | drive the embedded browser (validate UI without leaving c11) | [c11-browser skill](../c11-browser/SKILL.md) |
 | open markdown tabs with live reload | [c11-markdown skill](../c11-markdown/SKILL.md) |
+| fan one brief out to several agents (models, harnesses or approaches), then compare, judge and merge their results | [c11-fanout skill](../c11-fanout/SKILL.md) |
 
 A few cross-cutting rules worth knowing before you reach for those:
 
@@ -259,7 +260,7 @@ The bar under the tabs shows only the tab's description (`c11 set-description`);
 
 ## Editing this skill
 
-It installs as a **one-time copy** under `~/.claude/skills/c11/`; the app does not track the repo source after install. After any source edit, run `scripts/sync-installed-skills.sh c11` or the live copy agents load stays stale. This is the skill-editing equivalent of `reload.sh` after a code change.
+It installs as a **one-time copy** into each agent harness's skills folder (`~/.claude/skills/c11/`, `~/.codex/skills/c11/`, …); the app does not track the repo source after install. After any source edit, run `scripts/sync-installed-skills.sh c11` or the live copy agents load stays stale. This is the skill-editing equivalent of `reload.sh` after a code change.
 
 ## Troubleshooting
 

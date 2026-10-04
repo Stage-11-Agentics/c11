@@ -247,6 +247,14 @@ c11 focus-area --area <id|ref>
 c11 rename-workspace <title>
 c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
 
+# Tab color: an accent in the tab strip; persists and follows the tab across moves
+c11 tab-color set --tab <id|ref> "#RRGGBB"   # quote the hex
+c11 tab-color get --tab <id|ref>
+c11 tab-color clear --tab <id|ref>
+    # Color marks a set (one fan-out group, one role family) or a risk (a production
+    # shell). Avoid purple and magenta; they read as flagged. The operator sets the
+    # same color from the tab's context menu (Tab Color).
+
 # Close
 c11 close-tab [--tab <id|ref>]      # Close a tab (defaults to caller's)
 c11 close-workspace --workspace <id|ref>    # Close entire workspace

@@ -17,6 +17,8 @@ From a provisioned delegator worktree on the laptop:
 
 This runs no local xcodebuild. It bundles the exact parent/submodule commits, overlays tracked modifications and untracked non-ignored files with content hashes, and retrieves the tagged Debug app plus logs and `result.json` under `build-remote/<invocation>/`. Tracked deletions, executable modes and symlinks are preserved. Dirty submodules are refused: commit and pin their changes first. Initialize the required submodules with `git submodule update --init --recursive ghostty vendor/bonsplit`; do not run `setup.sh` on the laptop to build GhosttyKit.
 
+Staging uploads only the commits Atlas lacks: Atlas keeps one mirror per repository (`~/c11-builds/mirrors/`), and each bundle excludes everything reachable from a head the mirror holds, so a head whose parent was built before sends a few KB; with no shared base it falls back to a full bundle. The client prints `staged <MB> in <s>; bundles: …` per run, and Atlas checks out the requested SHAs from the mirror and verifies them before building.
+
 Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Developer`) and Zig 0.15.2 (`~/zig-0.15.2`). `C11_REMOTE_HOST` defaults to `atlas`; `--host` overrides it. `C11_REMOTE_DEVELOPER_DIR` and `C11_REMOTE_ZIG_DIR` override paths but the versions are checked. No global Xcode selection or credential provisioning happens.
 
 The Atlas route admits at most two builds with separate per-tag caches. After one-minute load stays above 40 for 60 seconds it admits only one until load returns to 40 or below. Active builds finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.

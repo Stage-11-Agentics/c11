@@ -163,12 +163,19 @@ jobs:
             echo "Quarantined host test: $test_id"
             SKIP_ARGS+=("-skip-testing:$test_id")
           done
-          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
-            -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
-            -only-testing:c11Tests \
-            "${SKIP_ARGS[@]}" \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            test
+          host_tests() {
+            "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+              -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+              "$@" \
+              "${SKIP_ARGS[@]}" \
+              -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+              -disableAutomaticPackageResolution \
+              -destination "platform=macOS" \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              test
+          }
+          # C11-332: AppDelegateShortcutRoutingTests runs in its own host process.
+          # Its closed main windows stay alive in this host, and the backlog they
+          # leave on the main queue starves later classes' deferred-mount waits.
+          host_tests -only-testing:c11Tests -skip-testing:c11Tests/AppDelegateShortcutRoutingTests
+          host_tests -only-testing:c11Tests/AppDelegateShortcutRoutingTests

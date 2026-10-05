@@ -339,7 +339,7 @@ def client(args):
         run([*ssh, shlex.join(["mkdir", "-p", relative])])
         run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", str(payload) + "/", host + ":" + relative + "/"])
         sent = sum(f.stat().st_size for f in payload.rglob("*") if f.is_file() and not f.is_symlink())
-        print(f"[remote-build] staged {sent / 1e6:.1f} MB in {time.monotonic() - started:.1f}s; bundles: " +
+        print(f"[remote-build] staged {sent / 1e6:.2f} MB in {time.monotonic() - started:.1f}s; bundles: " +
               (", ".join(f"{r}={k}" for r, k in manifest["bundles"].items()) or "none, host holds every head"),
               flush=True)
         command = shlex.join(["python3", relative + "/remote_build.py", "--remote", relative])

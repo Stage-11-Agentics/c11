@@ -1701,7 +1701,13 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         hostedView.setSearchOverlay(
             searchState: TerminalSurface.SearchState(needle: "operator")
         )
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // The overlay mounts on a deferred main-queue hop; wait for it rather
+        // than a fixed interval, which a busy host can outlast.
+        let mountDeadline = Date().addingTimeInterval(2)
+        while !hostedView.debugHasSearchOverlay(), Date() < mountDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertTrue(hostedView.debugHasSearchOverlay(), "Precondition: search overlay should mount")
         TabAttentionIndex.shared.publish(
             TabAttentionSnapshot(
                 workspaceId: workspace,

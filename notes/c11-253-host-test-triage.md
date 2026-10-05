@@ -86,7 +86,7 @@ The seven C11-109 class exclusions are gone; the hourly host gate now has method
 | --- | --- | --- |
 | GhosttyConfigTests | 29/29 pass | Un-quarantined. Guards C11-311 B083 (divider darkening of dynamic and grayscale colors). |
 | NotificationBurstCoalescerTests, TerminalNotificationDirectInteractionTests, WorkspaceManagerReopenClosedBrowserFocusTests | pass | Un-quarantined as is. |
-| BrowserDeveloperToolsVisibilityPersistenceTests | 8 of 22 fail | Un-quarantined; guards C11-287's 14 recovery tests. Stale fake: its `attach()` counted a `show`. Tests acted inside the 0.15 s show transition and now settle first. One fixture leaked a detached-inspector window into the next test. |
+| BrowserDeveloperToolsVisibilityPersistenceTests | 8 of 17 fail | Un-quarantined; guards two C11-287 inspector-replacement tests. Stale fake: its `attach()` counted a `show`. Tests acted inside the 0.15 s show transition and now settle first. One fixture leaked a detached-inspector window into the next test. |
 | BrowserTabHostContainerViewTests | 7 of 14 fail | Un-quarantined. Manual divider routing applies only to the promoted side-dock container (upstream `06c5cac4df`); fixtures now promote through the production path. |
 | AppDelegateShortcutRoutingTests | 10 of 68 fail (17 assertions) | Un-quarantined; guards C11-250 close guard, C11-266 quick view, B050 quit flush. Stale fixtures: default 2x2 grid and welcome quad; Cmd+N now opens the New Workspace picker; strong window references hid closes; the real palette overlay shadowed the fixture's; Cmd+W on a non-main window passes through; an idle shell needs a prompt-idle report to close without confirmation. Two methods stay quarantined for a product bug (below). |
 

@@ -15,11 +15,26 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     private var actionsWithPersistedShortcut: Set<KeyboardShortcutSettings.Action> = []
     private var savedWelcomeShown: Any?
     private var savedDefaultGridEnabled: Any?
+    private var baselineWindows: Set<ObjectIdentifier> = []
+    private var baselineMainWindowIds: Set<UUID> = []
+    private var baselineSurfaceIds: Set<UUID> = []
+    private weak var baselineKeyWindow: NSWindow?
+    private weak var baselineWorkspaceManager: WorkspaceManager?
+    private weak var baselineSidebarState: SidebarState?
+    private weak var baselineSidebarSelectionState: SidebarSelectionState?
 
     override func setUp() {
         super.setUp()
         // Prevent a single hanging test from consuming the entire CI timeout budget.
         executionTimeAllowance = 30
+        // Snapshot host state so tearDown can remove everything a test adds.
+        baselineWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+        baselineMainWindowIds = mainWindowIds()
+        baselineSurfaceIds = Set(TerminalSurfaceRegistry.shared.allSurfaces().map(\.id))
+        baselineKeyWindow = NSApp.keyWindow
+        baselineWorkspaceManager = AppDelegate.shared?.workspaceManager
+        baselineSidebarState = AppDelegate.shared?.sidebarState
+        baselineSidebarSelectionState = AppDelegate.shared?.sidebarSelectionState
         // Every fixture here assumes a fresh main window opens one workspace with
         // one terminal. The host app's first-run welcome quad and the default
         // 2x2 grid (both applied to new workspaces) would add three panes.
@@ -49,7 +64,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         for picker in createWorkspacePickerWindows() {
             picker.close()
         }
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        removeTestResidue()
         restoreDefaultsValue(savedWelcomeShown, forKey: WelcomeSettings.shownKey, defaults: .standard)
         restoreDefaultsValue(savedDefaultGridEnabled, forKey: DefaultGridSettings.enabledKey, defaults: .standard)
         for action in KeyboardShortcutSettings.Action.allCases {
@@ -3503,6 +3518,52 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         guard let window = window(withId: windowId) else { return }
         // close(), not performClose(): teardown must not raise the close prompt.
         window.close()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+
+    /// Leaves the host as setUp found it. Each main window a test opens runs a
+    /// real Ghostty terminal (login shell + renderer), and closing the window does
+    /// not free it here: without this sweep the class leaves ~one live terminal
+    /// per test behind and starves later classes' main-queue work.
+    private func removeTestResidue() {
+        guard let appDelegate = AppDelegate.shared else { return }
+
+        for windowId in mainWindowIds().subtracting(baselineMainWindowIds) {
+            closeWindow(withId: windowId)
+        }
+        for window in NSApp.windows
+        where !baselineWindows.contains(ObjectIdentifier(window))
+            && window.isVisible
+            && (window.identifier?.rawValue.hasPrefix("cmux.") ?? false) {
+            window.close()
+        }
+
+        // Orphaned contexts (registered, but their NSWindow is gone).
+        for summary in appDelegate.listMainWindowSummaries()
+        where !baselineMainWindowIds.contains(summary.windowId)
+            && appDelegate.mainWindow(for: summary.windowId) == nil {
+            discardOrphanedMainWindowContext(appDelegate: appDelegate, windowId: summary.windowId)
+        }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+#if DEBUG
+        // Free every terminal created during the test that is still alive.
+        for surface in TerminalSurfaceRegistry.shared.allSurfaces()
+        where !baselineSurfaceIds.contains(surface.id) {
+            surface.releaseSurfaceForTesting()
+        }
+#endif
+
+        if let manager = baselineWorkspaceManager,
+           appDelegate.windowId(for: manager) != nil {
+            appDelegate.workspaceManager = manager
+            appDelegate.sidebarState = baselineSidebarState
+            appDelegate.sidebarSelectionState = baselineSidebarSelectionState
+            TerminalController.shared.setActiveWorkspaceManager(manager)
+        }
+        if let keyWindow = baselineKeyWindow, keyWindow.isVisible, !keyWindow.isKeyWindow {
+            keyWindow.makeKey()
+        }
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
     }
 

@@ -130,37 +130,33 @@ jobs:
             test
 
       - name: Host-bound unit tests (gate)
-        # C11-253: all retained tests gate. Every exclusion has a named reason;
-        # see notes/c11-253-host-test-triage.md for the failure inventory.
+        # C11-253 / C11-332: all retained tests gate, and every exclusion is a
+        # single method with a one-line reason. No class-level exclusions.
+        # Inventory: notes/c11-253-host-test-triage.md.
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           HOST_TEST_QUARANTINE=(
-            # C11-109 / C11-99 Area C: historical 10s host expectation timeouts.
-            # Restore these classes after the owning host-harness repair.
-            c11Tests/AppDelegateShortcutRoutingTests
-            c11Tests/GhosttyConfigTests
-            c11Tests/NotificationBurstCoalescerTests
-            c11Tests/WorkspaceManagerReopenClosedBrowserFocusTests
-            c11Tests/TerminalNotificationDirectInteractionTests
-            c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests
-            c11Tests/BrowserTabHostContainerViewTests
-            # C11-253: standalone synthetic views lack a registered live
-            # Ghostty surface/responder. Real input proof belongs to guest QA.
+            # C11-253: synthetic views lack a live Ghostty surface/responder; guest QA proves Shift+backquote.
             c11Tests/GhosttyBackquoteRegressionTests/testShiftBackquoteEscFallbackSendsLiteralTilde
+            # C11-253: synthetic views lack a live Ghostty surface/responder; guest QA proves Option+Delete.
             c11Tests/GhosttyOptionDeleteRegressionTests/testOptionDeletePreservesAltAsModifierForWordDelete
+            # C11-253: synthetic views lack a live Ghostty surface/responder; guest QA proves Korean commit + Return.
             c11Tests/KoreanIMEReturnCommitRegressionTests/testReturnAfterKoreanCommitAlsoSendsReturnToSurface
+            # C11-253: standalone split panels have no portal-bound window; guest QA proves split-focus recovery.
             c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalClickRecoversSplitActiveStateWhenFocusCallbackIsSuppressed
+            # C11-253: standalone split panels have no portal-bound window; guest QA proves split-focus recovery.
             c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalFirstResponderConvergesSplitActiveStateWhenSelectionAlreadyMatches
-            # C11-253: ttyname(stdin) can name a pty without making it the
-            # host process's controlling tty; PROC_TTY_ONLY then has no match.
+            # C11-253: ttyname(stdin) can name a pty that is not the host's controlling tty, so PROC_TTY_ONLY finds nothing.
             c11Tests/TabLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY
-            # C11-253: this standalone AppKit host remaps posted pointer
-            # window coordinates, failing the fixture's dispatch precondition.
-            # Keep the real-event guards; Atlas guest scenarios 9/10 must prove
-            # collapsed-divider reopening until the host harness is repaired.
+            # C11-253: the standalone host remaps posted pointer coordinates; guest scenario 9 proves divider reopening.
             c11Tests/WindowBrowserHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed
+            # C11-253: the standalone host remaps posted pointer coordinates; guest scenario 10 proves divider reopening.
             c11Tests/WindowTerminalHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed
+            # C11-332 product bug: workspace creation never prunes an orphaned window context (selection skips it, so discard is unreachable).
+            c11Tests/AppDelegateShortcutRoutingTests/testAddWorkspaceInPreferredMainWindowPrunesOrphanedContextWithoutLiveWindow
+            # C11-332 product bug: same unpruned orphaned window context, reached through a remapped New Workspace shortcut.
+            c11Tests/AppDelegateShortcutRoutingTests/testCustomCmdTNewWorkspacePrunesOrphanedContextWithoutLiveWindow
           )
           SKIP_ARGS=()
           for test_id in "${HOST_TEST_QUARANTINE[@]}"; do

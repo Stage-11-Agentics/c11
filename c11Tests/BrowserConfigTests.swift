@@ -2066,10 +2066,12 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             attached
         }
 
+        // `attach` only docks the inspector. Production reveal calls `attach`
+        // (while the presentation is unknown) and then `show`, so counting a show
+        // here would report one operator-visible open as two.
         @objc func attach() {
             attachCount += 1
             attached = true
-            show()
         }
 
         @objc func show() {
@@ -2117,6 +2119,8 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
         return nil
     }
 
+    /// Lets the show/hide transition settle. Restore and toggle defer while a
+    /// transition is in flight, so tests of the settled paths must wait first.
     private func waitForDeveloperToolsTransitions() {
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
     }
@@ -2139,6 +2143,11 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
         XCTAssertTrue(panel.showDeveloperTools())
         XCTAssertTrue(panel.isDeveloperToolsVisible())
         XCTAssertEqual(inspector.showCount, 1)
+        waitForDeveloperToolsTransitions()
+        XCTAssertTrue(
+            panel.shouldUseLocalInlineDeveloperToolsHosting(),
+            "Precondition: no detached Web Inspector window leaked from another test"
+        )
 
         // Simulate WebKit closing inspector during detach/reattach churn.
         inspector.close()
@@ -2169,6 +2178,11 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             oldWebView.cmuxSetUnitTestInspector(nil)
             panel.webView.cmuxSetUnitTestInspector(nil)
             inspectorWindow.close()
+            // A closed window can stay in NSApp.windows until it deallocates.
+            // Strip what marks it as a detached inspector so later tests' panels
+            // don't adopt a detached presentation from this fixture.
+            inspectorWindow.title = ""
+            inspectorWindow.contentView = nil
         }
         XCTAssertTrue(panel.showDeveloperTools())
         try? await Task.sleep(nanoseconds: 200_000_000)
@@ -2238,6 +2252,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
         XCTAssertTrue(panel.showDeveloperTools())
         XCTAssertEqual(inspector.showCount, 1)
+        waitForDeveloperToolsTransitions()
 
         // Simulate user closing inspector before detach.
         inspector.close()
@@ -2253,6 +2268,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
         XCTAssertTrue(panel.showDeveloperTools())
         XCTAssertEqual(inspector.showCount, 1)
+        waitForDeveloperToolsTransitions()
 
         // Simulate a transient close caused by view detach, not user intent.
         inspector.close()
@@ -2270,10 +2286,12 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
         XCTAssertTrue(panel.isDeveloperToolsVisible())
         XCTAssertEqual(inspector.showCount, 1)
         XCTAssertEqual(inspector.closeCount, 0)
+        waitForDeveloperToolsTransitions()
 
         panel.requestDeveloperToolsRefreshAfterNextAttach(reason: "unit-test")
         panel.restoreDeveloperToolsAfterAttachIfNeeded()
 
+        XCTAssertFalse(panel.hasPendingDeveloperToolsRefreshAfterAttach())
         XCTAssertTrue(panel.isDeveloperToolsVisible())
         XCTAssertEqual(inspector.closeCount, 0)
         XCTAssertEqual(inspector.showCount, 1)
@@ -2289,6 +2307,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
         XCTAssertTrue(panel.showDeveloperTools())
         XCTAssertFalse(panel.hasPendingDeveloperToolsRefreshAfterAttach())
+        waitForDeveloperToolsTransitions()
 
         panel.requestDeveloperToolsRefreshAfterNextAttach(reason: "unit-test")
         XCTAssertTrue(panel.hasPendingDeveloperToolsRefreshAfterAttach())
@@ -2333,6 +2352,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
         XCTAssertTrue(panel.showDeveloperTools())
         XCTAssertTrue(panel.isDeveloperToolsVisible())
+        waitForDeveloperToolsTransitions()
 
         XCTAssertTrue(panel.toggleDeveloperTools())
 

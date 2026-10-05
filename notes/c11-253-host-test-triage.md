@@ -77,3 +77,17 @@ Additional numbered Atlas-guest Validator scenarios (in addition to the original
 10. Repeat scenario 9 with a terminal portal. Expect the divider gesture to reopen the adjacent area and ordinary terminal content to remain interactive.
 
 Native repair results and any specifically evidenced host-harness quarantines are recorded on C11-253. Guest scenarios remain pending with the Atlas Validator batch; passing the host tests is not packaged-app proof.
+
+## C11-332: class exclusions retired
+
+The seven C11-109 class exclusions are gone; the hourly host gate now has method exclusions only, each with a one-line reason in `ci-hourly.yml`. Baseline at main `6e2c1dc47f` (Atlas invocation `b2dae594`): four classes already passed (GhosttyConfigTests, NotificationBurstCoalescerTests, TerminalNotificationDirectInteractionTests, WorkspaceManagerReopenClosedBrowserFocusTests); three failed on stale fixtures. No product code changed.
+
+| Class | Baseline | Disposition |
+| --- | --- | --- |
+| GhosttyConfigTests | 29/29 pass | Un-quarantined. Guards C11-311 B083 (divider darkening of dynamic and grayscale colors). |
+| NotificationBurstCoalescerTests, TerminalNotificationDirectInteractionTests, WorkspaceManagerReopenClosedBrowserFocusTests | pass | Un-quarantined as is. |
+| BrowserDeveloperToolsVisibilityPersistenceTests | 8 of 22 fail | Un-quarantined; guards C11-287's 14 recovery tests. Stale fake: its `attach()` counted a `show`. Tests acted inside the 0.15 s show transition and now settle first. One fixture leaked a detached-inspector window into the next test. |
+| BrowserTabHostContainerViewTests | 7 of 14 fail | Un-quarantined. Manual divider routing applies only to the promoted side-dock container (upstream `06c5cac4df`); fixtures now promote through the production path. |
+| AppDelegateShortcutRoutingTests | 10 of 68 fail (17 assertions) | Un-quarantined; guards C11-250 close guard, C11-266 quick view, B050 quit flush. Stale fixtures: default 2x2 grid and welcome quad; Cmd+N now opens the New Workspace picker; strong window references hid closes; the real palette overlay shadowed the fixture's; Cmd+W on a non-main window passes through; an idle shell needs a prompt-idle report to close without confirmation. Two methods stay quarantined for a product bug (below). |
+
+**Product bug, still quarantined:** `testAddWorkspaceInPreferredMainWindowPrunesOrphanedContextWithoutLiveWindow` and `testCustomCmdTNewWorkspacePrunesOrphanedContextWithoutLiveWindow`. A main-window context whose window was freed without a will-close is never pruned by workspace creation: every candidate in `preferredMainWindowContextForWorkspaceCreation` requires a resolved window, so the discard after a failed resolution is unreachable. The orphan stays in `mainWindowContexts` (and in window summaries) until something else removes it. The first test also needs a host with no live window, which this host never has. Running guards for the reachable half: `…SkipsOrphanedContextWithoutLiveWindow` and `testCustomCmdTNewWorkspacePresentsPickerAndSkipsOrphanedContext`.

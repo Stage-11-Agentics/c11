@@ -12175,7 +12175,8 @@ struct CMUXCLI {
             return """
             Usage: c11 workspace-color <set|clear|get|list-palette> [options]
 
-            Read or change the workspace frame color.
+            Read or change the workspace frame color: a palette name (red, teal,
+            navy, …; `c11 workspace-color list-palette` lists them) or #RRGGBB.
             """
         case "panel-color", "tab-color":
             return """
@@ -12924,7 +12925,7 @@ struct CMUXCLI {
         let (workspaceOpt, rest) = parseOption(args, name: "--workspace")
         let positional = rest.filter { !$0.hasPrefix("-") }
         guard let hex = positional.first else {
-            throw CLIError(message: "workspace-color set <hex> [--workspace <ref>]")
+            throw CLIError(message: "workspace-color set <palette-name|#RRGGBB> [--workspace <ref>] (quote hex starting with '#': c11 workspace-color set \"#RRGGBB\")")
         }
         let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
         var params: [String: Any] = ["hex": hex]
@@ -13075,7 +13076,7 @@ struct CMUXCLI {
         let (surfaceOpt, rest2) = parseOption(rest1, name: "--panel")
         let extras = rest2.filter { !$0.hasPrefix("-") }
         if !extras.isEmpty {
-            throw CLIError(message: "panel-color clear takes no positional arguments. Use 'panel-color set <hex>' to set a color.")
+            throw CLIError(message: "panel-color clear takes no positional arguments. Use 'panel-color set <palette-name|#RRGGBB>' to set a color.")
         }
         let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
         let surfaceRef = surfaceOpt ?? Self.callerTabEnv()

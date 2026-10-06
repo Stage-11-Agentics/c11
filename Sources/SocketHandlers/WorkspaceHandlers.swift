@@ -467,6 +467,15 @@ extension TerminalController {
         if !clear && hex == nil {
             return .err(code: "invalid_params", message: "Provide either 'hex' or 'clear=true'", data: nil)
         }
+        // Resolve off-main: a value that is neither #RRGGBB nor a palette name
+        // is an error, never a silent clear.
+        if !clear, let hex, WorkspaceColorSettings.resolvedColorHex(hex) == nil {
+            return .err(
+                code: "invalid_params",
+                message: "Invalid color (use #RRGGBB or a palette name: \(WorkspaceColorSettings.paletteNameList()))",
+                data: ["hex": hex]
+            )
+        }
 
         var applied: String? = nil
         var found = false

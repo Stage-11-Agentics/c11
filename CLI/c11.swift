@@ -12797,17 +12797,10 @@ struct CMUXCLI {
     }
 
     private func runWorkspaceColorListPalette(client _: SocketClient, jsonOutput: Bool) throws {
-        // The app's default palette (`WorkspaceColorSettings.defaultPalette`):
-        // the names `set-tab-color`, `tab-color set` and blueprints resolve.
-        // Operator overrides can change a name's hex; the names are fixed.
-        let palette: [(String, String)] = [
-            ("red", "#C0392B"), ("crimson", "#922B21"), ("orange", "#A04000"),
-            ("amber", "#7D6608"), ("olive", "#4A5C18"), ("green", "#196F3D"),
-            ("teal", "#006B6B"), ("aqua", "#0E6B8C"), ("blue", "#1565C0"),
-            ("navy", "#1A5276"), ("indigo", "#283593"), ("purple", "#6A1B9A"),
-            ("magenta", "#AD1457"), ("rose", "#880E4F"), ("brown", "#7B3F00"),
-            ("charcoal", "#3E4B5E")
-        ]
+        // Shared with the app (`DefaultColorPalette`): the names `set-tab-color`,
+        // `tab-color set`, `workspace-color set` and blueprints resolve. Operator
+        // overrides can change a name's hex; the names are fixed.
+        let palette = DefaultColorPalette.entries.map { ($0.name.lowercased(), $0.hex) }
         if jsonOutput {
             print(jsonString(["palette": palette.map { ["name": $0.0, "default_hex": $0.1] }]))
             return

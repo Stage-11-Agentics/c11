@@ -3070,6 +3070,19 @@ final class WorkspaceCustomColorDidChangeTests: XCTestCase {
         XCTAssertEqual(received, ["#FF0000", nil], "Publish normalized set and clear values in order")
     }
 
+    func testSetCustomColorResolvesPaletteNamesAndRejectsGarbage() {
+        let workspace = Workspace()
+        XCTAssertTrue(workspace.setCustomColor("teal"))
+        XCTAssertEqual(workspace.customColor, WorkspaceColorSettings.defaultColorHex(named: "Teal"))
+
+        // An unresolvable value must not silently clear the color.
+        XCTAssertFalse(workspace.setCustomColor("chartreuse"))
+        XCTAssertEqual(workspace.customColor, WorkspaceColorSettings.defaultColorHex(named: "Teal"))
+
+        XCTAssertTrue(workspace.setCustomColor("   "))
+        XCTAssertNil(workspace.customColor)
+    }
+
     func testSetCustomColorNoopDoesNotPublish() {
         let workspace = Workspace()
         var fired = 0

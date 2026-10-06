@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Source precedence for metadata writes.
@@ -344,6 +345,10 @@ final class TabMetadataStore: @unchecked Sendable {
             }
             if trimmed.contains("\n") || trimmed.contains("\r") {
                 return .reservedKeyInvalidType(key, "must be a single line")
+            }
+            if trimmed.hasPrefix("sf:"),
+               NSImage(systemSymbolName: String(trimmed.dropFirst(3)), accessibilityDescription: nil) == nil {
+                return .reservedKeyInvalidType(key, "unknown SF Symbol '\(trimmed.dropFirst(3))'")
             }
             return nil
         case "color":

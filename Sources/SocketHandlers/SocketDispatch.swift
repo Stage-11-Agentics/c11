@@ -105,9 +105,9 @@ extension TerminalController {
         case "window.resize":
             return v2WindowResizeWorker(id: request.id, params: request.params)
         case "panel.send_text":
-            return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
+            return v2Result(id: request.id, v2PanelSendText(params: request.params))
         case "panel.send_key":
-            return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
+            return v2Result(id: request.id, v2PanelSendKey(params: request.params))
         case "agent.event.append":
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
         case "agents.list":
@@ -123,13 +123,13 @@ extension TerminalController {
         case "feed.answer":
             return v2Result(id: request.id, v2FeedAnswer(params: request.params))
         case "panel.read_selection":
-            return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
+            return v2Result(id: request.id, v2PanelReadSelection(params: request.params))
         case "panel.input_state":
-            return v2Result(id: request.id, v2SurfaceInputState(params: request.params))
+            return v2Result(id: request.id, v2PanelInputState(params: request.params))
         case "panel.read_text":
-            return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
+            return v2Result(id: request.id, v2PanelReadText(params: request.params))
         case "panel.clear_history":
-            return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
+            return v2Result(id: request.id, v2PanelClearHistory(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
         case "config.launch":
@@ -932,7 +932,7 @@ extension TerminalController {
             return seedDragPasteboardFileURL()
 
         case "seed_drag_pasteboard_tabtransfer":
-            return seedDragPasteboardTabTransfer()
+            return seedDragPasteboardPanelTransfer()
 
         case "seed_drag_pasteboard_sidebar_reorder":
             return seedDragPasteboardSidebarReorder()
@@ -1567,7 +1567,7 @@ extension TerminalController {
                                 reason: launchFlagReason,
                                 callerPanelId: launchCallerSurfaceId,
                                 by: launchFlagActor,
-                                title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
+                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }
                         if let stagedPrompt {
@@ -1683,14 +1683,14 @@ extension TerminalController {
         }
         guard case .ok(let rawPayload) = outcome, var payload = rawPayload as? [String: Any],
               let wsRaw = payload["workspace_id"] as? String, let wsId = UUID(uuidString: wsRaw),
-              let tabRaw = payload["surface_id"] as? String, let tabId = UUID(uuidString: tabRaw) else { return outcome }
+              let panelRaw = payload["surface_id"] as? String, let panelId = UUID(uuidString: panelRaw) else { return outcome }
         let probeDeadline = min(responseDeadline, Date().addingTimeInterval(5))
         let startup = AgentStartupProbe.observe(ttyName: {
             let snapshot = AgentLaunchDeadlineGate<String?>(deadline: probeDeadline) {
                 MainActor.assumeIsolated {
                     guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
-                          ws.terminalPanel(for: tabId) != nil else { return nil }
-                    return ws.panelTTYNames[tabId]
+                          ws.terminalPanel(for: panelId) != nil else { return nil }
+                    return ws.panelTTYNames[panelId]
                 }
             }
             snapshot.enqueueOnMain()

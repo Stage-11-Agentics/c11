@@ -458,7 +458,7 @@ final class InternalTabDragConfigurationTests: XCTestCase {
             throw XCTSkip("Requires macOS 26 drag configuration APIs")
         }
 
-        let configuration = InternalTabDragConfigurationProvider.value
+        let configuration = InternalPanelDragConfigurationProvider.value
         let withinApp = try dragConfigurationOperationsSnapshot(from: configuration.operationsWithinApp)
         let outsideApp = try dragConfigurationOperationsSnapshot(from: configuration.operationsOutsideApp)
 

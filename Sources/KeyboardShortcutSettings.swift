@@ -25,7 +25,7 @@ enum KeyboardShortcutSettings {
         case prevSidebarWorkspace = "prevSidebarTab"
         case focusHistoryBack
         case focusHistoryForward
-        case renameTab
+        case renamePanel = "renameTab"
         case renameWorkspace
         case closeWorkspace
         case newSurface
@@ -74,7 +74,7 @@ enum KeyboardShortcutSettings {
             case .prevSidebarWorkspace: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
             case .focusHistoryBack: return String(localized: "shortcut.focusHistoryBack.label", defaultValue: "Focus History Back")
             case .focusHistoryForward: return String(localized: "shortcut.focusHistoryForward.label", defaultValue: "Focus History Forward")
-            case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Panel")
+            case .renamePanel: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Panel")
             case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
             case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Workspace")
             case .newSurface: return String(localized: "shortcut.newSurface.label", defaultValue: "New Panel")
@@ -113,7 +113,7 @@ enum KeyboardShortcutSettings {
             case .prevSidebarWorkspace: return "shortcut.prevSidebarTab"
             case .focusHistoryBack: return "shortcut.focusHistoryBack"
             case .focusHistoryForward: return "shortcut.focusHistoryForward"
-            case .renameTab: return "shortcut.renameTab"
+            case .renamePanel: return "shortcut.renameTab"
             case .renameWorkspace: return "shortcut.renameWorkspace"
             case .closeWorkspace: return "shortcut.closeWorkspace"
             case .focusLeft: return "shortcut.focusLeft"
@@ -165,7 +165,7 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
             case .focusHistoryBack, .focusHistoryForward:
                 return .unbound
-            case .renameTab:
+            case .renamePanel:
                 // C11-41: rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
                 return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)
             case .renameWorkspace:

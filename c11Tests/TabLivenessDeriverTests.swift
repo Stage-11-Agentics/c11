@@ -688,7 +688,7 @@ final class TabLivenessDeriverTests: XCTestCase {
     }
 
     private func journal(_ phase: JournalPhase, since: Int64, connection: JournalConnection = .live) -> JournalSnapshot {
-        JournalSnapshot(owner: .init(tabID: UUID(), agentKind: "claude-code", sessionID: "synthetic-cache"),
+        JournalSnapshot(owner: .init(panelID: UUID(), agentKind: "claude-code", sessionID: "synthetic-cache"),
                         phase: phase, sinceMs: since, appInstanceID: UUID(), connection: connection)
     }
 

@@ -12,7 +12,7 @@ import Bonsplit
 /// spelling. Reads prefer `panelLayoutMode` and fall back to the old key, and
 /// `tabs` still reads as `strip` from either key. Writes go to the new key
 /// only; the old key is never deleted.
-enum TabLayoutSettings {
+enum PanelLayoutSettings {
     static let modeKey = "panelLayoutMode"
     /// The pre-rename key. Read as a fallback and copied forward; never written or deleted.
     static let legacyModeKey = "tabLayoutMode"
@@ -92,8 +92,8 @@ enum TabLayoutSettings {
 /// KVO bridge so each `Workspace` can react to the panel layout setting live.
 /// Mirrors `TabOrdinalDisplayObserver`. It watches the old key too, so a write
 /// to it still applies while the new key is unset.
-final class TabLayoutObserver: NSObject {
-    private static let observedKeys = [TabLayoutSettings.modeKey, TabLayoutSettings.legacyModeKey]
+final class PanelLayoutObserver: NSObject {
+    private static let observedKeys = [PanelLayoutSettings.modeKey, PanelLayoutSettings.legacyModeKey]
     private let onChange: () -> Void
     private let defaults: UserDefaults
 
@@ -122,8 +122,8 @@ final class TabLayoutObserver: NSObject {
         // A runtime write to the old key while the new one is unset: carry it
         // forward so the Settings picker (which reads the new key) agrees with
         // the live layout.
-        if keyPath == TabLayoutSettings.legacyModeKey {
-            TabLayoutSettings.migrateLegacyKeys(defaults: defaults)
+        if keyPath == PanelLayoutSettings.legacyModeKey {
+            PanelLayoutSettings.migrateLegacyKeys(defaults: defaults)
         }
         let onChange = self.onChange
         Task { @MainActor in onChange() }

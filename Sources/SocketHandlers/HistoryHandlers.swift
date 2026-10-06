@@ -73,7 +73,7 @@ extension TerminalController {
             "workspace_title": workspace.title,
             "panel_id": entry.panelId.uuidString,
             "panel_ref": v2Ref(kind: .surface, uuid: entry.panelId),
-            "title": workspace.tabTitle(panelId: entry.panelId) ?? panel.displayTitle,
+            "title": workspace.panelTitle(panelId: entry.panelId) ?? panel.displayTitle,
             "type": panel.panelType.rawValue,
             "seen_at": Self.historyTimestampFormatter.string(from: entry.seenAt),
             "dwell_seconds": (entry.dwell * 1000).rounded() / 1000,

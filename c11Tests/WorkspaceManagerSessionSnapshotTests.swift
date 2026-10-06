@@ -481,32 +481,32 @@ extension WorkspaceManagerSessionSnapshotTests {
         let suppressed = manager.addWorkspace(select: false)
         let waiting = manager.addWorkspace(select: false)
         let members = [plainFlagged, suppressed, waiting]
-        let tabIds = try members.map { try XCTUnwrap($0.focusedPanelId) }
+        let panelIds = try members.map { try XCTUnwrap($0.focusedPanelId) }
         let group = try manager.createWorkspaceGroup(name: "Unread fixture")
         try manager.addWorkspacesToGroup(id: group.id, workspaceIds: members.map(\.id))
         try manager.setWorkspaceGroupCollapsed(id: group.id, collapsed: true)
-        plainFlagged.setDetectedTerminalType("shell", forSurface: tabIds[0])
-        waiting.setDetectedTerminalType("codex", forSurface: tabIds[2])
-        XCTAssertFalse(AreaSizePolicy.isAgentKind(plainFlagged.surfaceActivityTerminalKind(panelId: tabIds[0])))
+        plainFlagged.setDetectedTerminalType("shell", forSurface: panelIds[0])
+        waiting.setDetectedTerminalType("codex", forSurface: panelIds[2])
+        XCTAssertFalse(AreaSizePolicy.isAgentKind(plainFlagged.surfaceActivityTerminalKind(panelId: panelIds[0])))
 
         // Seed the real index and workspace projections, as production attention delivery does.
         // Suppressed routine unread stays in history but must not reach the header.
         // A suppressed explicit flag remains signal eligible, exactly like a row.
         for index in 0..<2 {
-            let snapshot = PanelAttentionSnapshot(workspaceId: members[index].id, surfaceId: tabIds[index],
+            let snapshot = PanelAttentionSnapshot(workspaceId: members[index].id, surfaceId: panelIds[index],
                 flagReason: index == 0 ? "Synthetic flag" : nil,
                 flagRaisedAt: index == 0 ? Date(timeIntervalSince1970: 1_700_000_000) : nil,
                 suppressed: true)
             PanelAttentionIndex.shared.publish(snapshot)
-            members[index].setAttentionSnapshot(snapshot, forSurface: tabIds[index])
+            members[index].setAttentionSnapshot(snapshot, forSurface: panelIds[index])
         }
         let store = TerminalNotificationStore.makeForNotificationCommandTesting()
         var pending: [@MainActor () -> Void] = []
         let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: { pending.append($0) })
         defer {
             coordinator.detach()
-            for (workspace, tabId) in zip(members, tabIds) {
-                PanelAttentionIndex.shared.remove(workspaceId: workspace.id, surfaceId: tabId)
+            for (workspace, panelId) in zip(members, panelIds) {
+                PanelAttentionIndex.shared.remove(workspaceId: workspace.id, surfaceId: panelId)
                 workspace.teardownAllPanels()
             }
         }
@@ -515,11 +515,11 @@ extension WorkspaceManagerSessionSnapshotTests {
             pending.removeAll()
             for refresh in work { refresh() }
         }
-        func notification(workspaceId: UUID, tabId: UUID?) -> TerminalNotification {
-            TerminalNotification(id: UUID(), workspaceId: workspaceId, surfaceId: tabId,
+        func notification(workspaceId: UUID, panelId: UUID?) -> TerminalNotification {
+            TerminalNotification(id: UUID(), workspaceId: workspaceId, surfaceId: panelId,
                 title: "Synthetic unread", subtitle: "", body: "", createdAt: Date(), isRead: false)
         }
-        let notifications = zip(members, tabIds).map { notification(workspaceId: $0.0.id, tabId: $0.1) }
+        let notifications = zip(members, panelIds).map { notification(workspaceId: $0.0.id, panelId: $0.1) }
         coordinator.attach(manager: manager, notificationStore: store)
         store.replaceNotificationsForTesting(notifications)
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.unreadCount, 0,
@@ -532,7 +532,7 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertTrue(coordinator.projection.visibleWorkspaceIds.isEmpty)
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: UUID()), 0)
 
-        let workspaceScoped = notification(workspaceId: waiting.id, tabId: nil)
+        let workspaceScoped = notification(workspaceId: waiting.id, panelId: nil)
         store.replaceNotificationsForTesting(notifications + [workspaceScoped])
         flushRefresh()
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: waiting.id), 2)

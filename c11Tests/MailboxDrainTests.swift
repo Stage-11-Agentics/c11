@@ -164,10 +164,10 @@ final class MailboxDrainTests: XCTestCase {
     }
 
     func testTabInboxIsTheLowercasedTabUUID() throws {
-        let tab = UUID(uuidString: "B3A3DFEF-0A83-4887-BBE9-FDE27516A3B5")!
+        let panel = UUID(uuidString: "B3A3DFEF-0A83-4887-BBE9-FDE27516A3B5")!
         let root = URL(fileURLWithPath: "/tmp/m", isDirectory: true)
         XCTAssertEqual(
-            MailboxDrain.tabInboxURL(mailboxesRoot: root, tabId: tab).path,
+            MailboxDrain.panelInboxURL(mailboxesRoot: root, panelId: panel).path,
             "/tmp/m/b3a3dfef-0a83-4887-bbe9-fde27516a3b5"
         )
     }
@@ -185,44 +185,44 @@ final class MailboxDrainTests: XCTestCase {
 
     // MARK: - Moved tab
 
-    private func workspaceInbox(_ root: URL, _ workspace: UUID, _ tab: UUID) -> URL {
+    private func workspaceInbox(_ root: URL, _ workspace: UUID, _ panel: UUID) -> URL {
         root.appendingPathComponent(workspace.uuidString, isDirectory: true)
             .appendingPathComponent("mailboxes", isDirectory: true)
-            .appendingPathComponent(tab.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(panel.uuidString.lowercased(), isDirectory: true)
     }
 
     func testTabInboxURLsFindsAMovedTabsInboxInAnotherWorkspace() throws {
         let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
-        let tab = UUID(), stale = UUID(), current = UUID(), unrelated = UUID()
-        try FileManager.default.createDirectory(at: workspaceInbox(root, current, tab), withIntermediateDirectories: true)
+        let panel = UUID(), stale = UUID(), current = UUID(), unrelated = UUID()
+        try FileManager.default.createDirectory(at: workspaceInbox(root, current, panel), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: workspaceInbox(root, unrelated, UUID()), withIntermediateDirectories: true)
 
-        let found = MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, tabId: tab, scanCache: nil)
-        XCTAssertEqual(found.map(\.path), [workspaceInbox(root, current, tab).path])
+        let found = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel, scanCache: nil)
+        XCTAssertEqual(found.map(\.path), [workspaceInbox(root, current, panel).path])
         XCTAssertEqual(MailboxDrain.workspaceId(ofInbox: found[0]), current)
 
         // The environment's workspace, when it holds an inbox, comes first.
-        try FileManager.default.createDirectory(at: workspaceInbox(root, stale, tab), withIntermediateDirectories: true)
-        let both = MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, tabId: tab, scanCache: nil)
-        XCTAssertEqual(both.map(\.path), [workspaceInbox(root, stale, tab).path, workspaceInbox(root, current, tab).path])
+        try FileManager.default.createDirectory(at: workspaceInbox(root, stale, panel), withIntermediateDirectories: true)
+        let both = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel, scanCache: nil)
+        XCTAssertEqual(both.map(\.path), [workspaceInbox(root, stale, panel).path, workspaceInbox(root, current, panel).path])
     }
 
     func testTabInboxScanIsReusedWithinItsInterval() throws {
         let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
         let cache = inbox.deletingLastPathComponent().appendingPathComponent("scan-cache")
-        let tab = UUID(), first = UUID(), later = UUID()
-        try FileManager.default.createDirectory(at: workspaceInbox(root, first, tab), withIntermediateDirectories: true)
+        let panel = UUID(), first = UUID(), later = UUID()
+        try FileManager.default.createDirectory(at: workspaceInbox(root, first, panel), withIntermediateDirectories: true)
         let now = Date()
         XCTAssertEqual(
-            MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, tabId: tab, scanCache: cache, now: now).count, 1
+            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, panelId: panel, scanCache: cache, now: now).count, 1
         )
         // A move after the scan is not seen until the interval has passed.
-        try FileManager.default.createDirectory(at: workspaceInbox(root, later, tab), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspaceInbox(root, later, panel), withIntermediateDirectories: true)
         XCTAssertEqual(
-            MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, tabId: tab, scanCache: cache, now: now.addingTimeInterval(5)).count, 1
+            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, panelId: panel, scanCache: cache, now: now.addingTimeInterval(5)).count, 1
         )
         XCTAssertEqual(
-            MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, tabId: tab, scanCache: cache, now: now.addingTimeInterval(301)).count, 2
+            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, panelId: panel, scanCache: cache, now: now.addingTimeInterval(301)).count, 2
         )
     }
 
@@ -374,7 +374,7 @@ final class MailboxDrainTests: XCTestCase {
 
     func testReceiptWritesPanelIdBesideLegacyTabId() throws {
         let receipt = MailboxDeliveryReceipt(
-            tabId: receiptPanel, deliveries: [.init(id: idA, recipient: "watcher")], ts: "t"
+            panelId: receiptPanel, deliveries: [.init(id: idA, recipient: "watcher")], ts: "t"
         )
         let data = try XCTUnwrap(receipt.encode())
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -386,19 +386,19 @@ final class MailboxDrainTests: XCTestCase {
     func testReceiptDecodesLegacyTabIdOnly() throws {
         let json = #"{"version":1,"via":"drain","ts":"t","tab_id":"\#(receiptPanel.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
         let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(json.utf8)))
-        XCTAssertEqual(decoded.receipt.tabId, receiptPanel)
+        XCTAssertEqual(decoded.receipt.panelId, receiptPanel)
         XCTAssertTrue(decoded.dropped.isEmpty)
     }
 
     func testReceiptDecodesPanelIdOnlyAndPrefersItOverTabId() throws {
         let other = UUID(uuidString: "00000000-0000-0000-0000-0000000000b2")!
         let panelOnly = #"{"version":1,"via":"drain","ts":"t","panel_id":"\#(receiptPanel.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
-        XCTAssertEqual(MailboxDeliveryReceipt.decode(Data(panelOnly.utf8))?.receipt.tabId, receiptPanel)
+        XCTAssertEqual(MailboxDeliveryReceipt.decode(Data(panelOnly.utf8))?.receipt.panelId, receiptPanel)
         let both = #"{"version":1,"via":"drain","ts":"t","panel_id":"\#(receiptPanel.uuidString)","tab_id":"\#(other.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
-        XCTAssertEqual(MailboxDeliveryReceipt.decode(Data(both.utf8))?.receipt.tabId, receiptPanel)
+        XCTAssertEqual(MailboxDeliveryReceipt.decode(Data(both.utf8))?.receipt.panelId, receiptPanel)
         let invalidPanel = #"{"version":1,"via":"drain","ts":"t","panel_id":"not-a-uuid","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
         let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(invalidPanel.utf8)))
-        XCTAssertNil(decoded.receipt.tabId)
+        XCTAssertNil(decoded.receipt.panelId)
         XCTAssertEqual(decoded.receipt.deliveries.count, 1)
         XCTAssertEqual(decoded.dropped.count, 1)
     }

@@ -15,104 +15,104 @@ final class TabLayoutSettingsTests: XCTestCase {
 
     func testDefaultIsStrip() {
         let suite = makeSuite()
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
-        XCTAssertEqual(TabLayoutSettings.Mode.strip.rawValue, "strip")
-        XCTAssertEqual(TabLayoutSettings.bonsplitLayout(.strip), .tabs)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
+        XCTAssertEqual(PanelLayoutSettings.Mode.strip.rawValue, "strip")
+        XCTAssertEqual(PanelLayoutSettings.bonsplitLayout(.strip), .tabs)
     }
 
     func testRailAndUnknownValues() {
         let suite = makeSuite()
-        suite.set("rail", forKey: TabLayoutSettings.modeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
-        XCTAssertEqual(TabLayoutSettings.bonsplitLayout(.rail), .rail)
-        suite.set("  RAIL ", forKey: TabLayoutSettings.modeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
-        suite.set("sideways", forKey: TabLayoutSettings.modeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
+        suite.set("rail", forKey: PanelLayoutSettings.modeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .rail)
+        XCTAssertEqual(PanelLayoutSettings.bonsplitLayout(.rail), .rail)
+        suite.set("  RAIL ", forKey: PanelLayoutSettings.modeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .rail)
+        suite.set("sideways", forKey: PanelLayoutSettings.modeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
     }
 
     func testTabsStillReadsAsStripFromEitherKey() {
         let suite = makeSuite()
-        suite.set("tabs", forKey: TabLayoutSettings.legacyModeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
-        suite.set("tabs", forKey: TabLayoutSettings.modeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
-        XCTAssertEqual(TabLayoutSettings.mode(for: " Tabs "), .strip)
+        suite.set("tabs", forKey: PanelLayoutSettings.legacyModeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
+        suite.set("tabs", forKey: PanelLayoutSettings.modeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
+        XCTAssertEqual(PanelLayoutSettings.mode(for: " Tabs "), .strip)
     }
 
     func testOldKeyIsHonoredWhenTheNewKeyIsAbsent() {
         let suite = makeSuite()
         suite.set("rail", forKey: "tabLayoutMode")
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .rail)
     }
 
     func testNewKeyWinsOverTheOldKey() {
         let suite = makeSuite()
-        suite.set("rail", forKey: TabLayoutSettings.legacyModeKey)
-        suite.set("strip", forKey: TabLayoutSettings.modeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
-        suite.set("tabs", forKey: TabLayoutSettings.legacyModeKey)
-        suite.set("rail", forKey: TabLayoutSettings.modeKey)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
+        suite.set("rail", forKey: PanelLayoutSettings.legacyModeKey)
+        suite.set("strip", forKey: PanelLayoutSettings.modeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
+        suite.set("tabs", forKey: PanelLayoutSettings.legacyModeKey)
+        suite.set("rail", forKey: PanelLayoutSettings.modeKey)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .rail)
     }
 
     func testSetModeWritesTheNewKeyAndLeavesTheOldOneAlone() {
         let suite = makeSuite()
-        suite.set("tabs", forKey: TabLayoutSettings.legacyModeKey)
-        TabLayoutSettings.setMode(.rail, defaults: suite)
+        suite.set("tabs", forKey: PanelLayoutSettings.legacyModeKey)
+        PanelLayoutSettings.setMode(.rail, defaults: suite)
         XCTAssertEqual(suite.string(forKey: "panelLayoutMode"), "rail")
         XCTAssertEqual(suite.string(forKey: "tabLayoutMode"), "tabs")
-        TabLayoutSettings.setMode(.strip, defaults: suite)
+        PanelLayoutSettings.setMode(.strip, defaults: suite)
         XCTAssertEqual(suite.string(forKey: "panelLayoutMode"), "strip")
         XCTAssertEqual(suite.string(forKey: "tabLayoutMode"), "tabs")
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
     }
 
     func testMigrationCopiesTheOldKeyForwardAndIsIdempotent() {
         let suite = makeSuite()
-        suite.set("rail", forKey: TabLayoutSettings.legacyModeKey)
-        TabLayoutSettings.migrateLegacyKeys(defaults: suite)
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "rail")
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.legacyModeKey), "rail", "The old key is never deleted")
+        suite.set("rail", forKey: PanelLayoutSettings.legacyModeKey)
+        PanelLayoutSettings.migrateLegacyKeys(defaults: suite)
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.modeKey), "rail")
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.legacyModeKey), "rail", "The old key is never deleted")
 
         // A later choice in the new key is not overwritten by another pass.
-        TabLayoutSettings.setMode(.strip, defaults: suite)
-        TabLayoutSettings.migrateLegacyKeys(defaults: suite)
-        TabLayoutSettings.migrateLegacyKeys(defaults: suite)
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "strip")
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .strip)
+        PanelLayoutSettings.setMode(.strip, defaults: suite)
+        PanelLayoutSettings.migrateLegacyKeys(defaults: suite)
+        PanelLayoutSettings.migrateLegacyKeys(defaults: suite)
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.modeKey), "strip")
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .strip)
     }
 
     func testMigrationMapsTabsToStripAndSkipsMissingOrUnreadableValues() {
         let suite = makeSuite()
-        TabLayoutSettings.migrateLegacyKeys(defaults: suite)
-        XCTAssertNil(suite.object(forKey: TabLayoutSettings.modeKey))
+        PanelLayoutSettings.migrateLegacyKeys(defaults: suite)
+        XCTAssertNil(suite.object(forKey: PanelLayoutSettings.modeKey))
 
-        suite.set("sideways", forKey: TabLayoutSettings.legacyModeKey)
-        TabLayoutSettings.migrateLegacyKeys(defaults: suite)
-        XCTAssertNil(suite.object(forKey: TabLayoutSettings.modeKey))
+        suite.set("sideways", forKey: PanelLayoutSettings.legacyModeKey)
+        PanelLayoutSettings.migrateLegacyKeys(defaults: suite)
+        XCTAssertNil(suite.object(forKey: PanelLayoutSettings.modeKey))
 
-        suite.set("tabs", forKey: TabLayoutSettings.legacyModeKey)
-        TabLayoutSettings.migrateLegacyKeys(defaults: suite)
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "strip")
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.legacyModeKey), "tabs")
+        suite.set("tabs", forKey: PanelLayoutSettings.legacyModeKey)
+        PanelLayoutSettings.migrateLegacyKeys(defaults: suite)
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.modeKey), "strip")
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.legacyModeKey), "tabs")
     }
 
     func testRuntimeWriteToTheOldKeyCarriesForwardToTheNewKey() {
         let suiteName = "TabLayoutSettingsTests.\(UUID().uuidString)"
         let suite = UserDefaults(suiteName: suiteName)!
         defer { suite.removePersistentDomain(forName: suiteName) }
-        let observer = TabLayoutObserver(defaults: suite) {}
+        let observer = PanelLayoutObserver(defaults: suite) {}
 
         // New key unset: an old-key write is copied forward, so Settings and the live layout agree.
-        suite.set("rail", forKey: TabLayoutSettings.legacyModeKey)
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "rail")
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
+        suite.set("rail", forKey: PanelLayoutSettings.legacyModeKey)
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.modeKey), "rail")
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .rail)
 
         // New key set: it keeps winning over later old-key writes.
-        suite.set("tabs", forKey: TabLayoutSettings.legacyModeKey)
-        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "rail")
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
+        suite.set("tabs", forKey: PanelLayoutSettings.legacyModeKey)
+        XCTAssertEqual(suite.string(forKey: PanelLayoutSettings.modeKey), "rail")
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: suite), .rail)
         withExtendedLifetime(observer) {}
     }
 

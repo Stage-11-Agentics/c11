@@ -153,40 +153,40 @@ final class BrowserImportMappingTests: XCTestCase {
 
         let presentation = BrowserImportHintSettings.presentation(defaults: defaults)
 
-        XCTAssertEqual(presentation.blankTabPlacement, .toolbarChip)
+        XCTAssertEqual(presentation.blankPanelPlacement, .toolbarChip)
         XCTAssertEqual(presentation.settingsStatus, .visible)
     }
 
     func testBrowserImportHintPresentationHidesBlankTabHintWhenDismissed() {
         let presentation = BrowserImportHintPresentation(
             variant: .floatingCard,
-            showOnBlankTabs: true,
+            showOnBlankPanels: true,
             isDismissed: true
         )
 
-        XCTAssertEqual(presentation.blankTabPlacement, .hidden)
+        XCTAssertEqual(presentation.blankPanelPlacement, .hidden)
         XCTAssertEqual(presentation.settingsStatus, .hidden)
     }
 
     func testBrowserImportHintPresentationUsesToolbarChipWhenEnabled() {
         let presentation = BrowserImportHintPresentation(
             variant: .toolbarChip,
-            showOnBlankTabs: true,
+            showOnBlankPanels: true,
             isDismissed: false
         )
 
-        XCTAssertEqual(presentation.blankTabPlacement, .toolbarChip)
+        XCTAssertEqual(presentation.blankPanelPlacement, .toolbarChip)
         XCTAssertEqual(presentation.settingsStatus, .visible)
     }
 
     func testBrowserImportHintPresentationSettingsOnlyVariantStaysInSettings() {
         let presentation = BrowserImportHintPresentation(
             variant: .settingsOnly,
-            showOnBlankTabs: true,
+            showOnBlankPanels: true,
             isDismissed: false
         )
 
-        XCTAssertEqual(presentation.blankTabPlacement, .hidden)
+        XCTAssertEqual(presentation.blankPanelPlacement, .hidden)
         XCTAssertEqual(presentation.settingsStatus, .settingsOnly)
     }
 

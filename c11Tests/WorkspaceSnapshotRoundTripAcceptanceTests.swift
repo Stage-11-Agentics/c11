@@ -180,7 +180,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         for surfaceSpec in registryPlan.surfaces {
             guard let paneMetadata = surfaceSpec.paneMetadata, !paneMetadata.isEmpty else { continue }
             guard let panelId = parseUUIDSuffix(restoreResult.surfaceRefs[surfaceSpec.id]),
-                  let paneUUID = restoredWorkspace.paneIdForTab(panelId)?.id else {
+                  let paneUUID = restoredWorkspace.paneIdForPanel(panelId)?.id else {
                 XCTFail("surface[\(surfaceSpec.id)] paneUUID not resolvable on restored workspace")
                 continue
             }

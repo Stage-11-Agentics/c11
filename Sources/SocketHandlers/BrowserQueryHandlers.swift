@@ -1335,7 +1335,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserTabList(params: [String: Any]) -> V2CallResult {
+    func v2BrowserPanelList(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1346,7 +1346,7 @@ extension TerminalController {
             let browserPanels = orderedPanels(in: ws).compactMap { panel -> BrowserPanel? in
                 panel as? BrowserPanel
             }
-            let browserTabs: [[String: Any]] = browserPanels.enumerated().map { index, panel in
+            let browserPanelPayloads: [[String: Any]] = browserPanels.enumerated().map { index, panel in
                 [
                     "id": panel.id.uuidString,
                     "ref": v2Ref(kind: .surface, uuid: panel.id),
@@ -1363,8 +1363,8 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": v2OrNull(ws.focusedPanelId?.uuidString),
                 "surface_ref": v2Ref(kind: .surface, uuid: ws.focusedPanelId),
-                "panels": browserTabs,
-                "tabs": browserTabs
+                "panels": browserPanelPayloads,
+                "tabs": browserPanelPayloads
             ]
         }
 
@@ -1374,7 +1374,7 @@ extension TerminalController {
         return .ok(payload)
     }
 
-    func v2BrowserTabNew(params: [String: Any]) -> V2CallResult {
+    func v2BrowserPanelNew(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1414,7 +1414,7 @@ extension TerminalController {
         return result
     }
 
-    func v2BrowserTabSwitch(params: [String: Any]) -> V2CallResult {
+    func v2BrowserPanelSwitch(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1456,7 +1456,7 @@ extension TerminalController {
         return result
     }
 
-    func v2BrowserTabClose(params: [String: Any]) -> V2CallResult {
+    func v2BrowserPanelClose(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1499,7 +1499,7 @@ extension TerminalController {
                 return
             }
 
-            let ok = ws.closeTab(targetId, force: true)
+            let ok = ws.closePanel(targetId, force: true)
             result = ok
                 ? .ok([
                     "workspace_id": ws.id.uuidString,
@@ -1739,7 +1739,7 @@ extension TerminalController {
 
             if let restoredURL {
                 switch v2BrowserNavigateForStateLoadOffMain(
-                    target.browserTab,
+                    target.browserPanel,
                     url: restoredURL,
                     timeout: remaining()
                 ) {

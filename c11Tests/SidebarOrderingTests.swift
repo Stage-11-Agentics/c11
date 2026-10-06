@@ -372,7 +372,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updateTabPullRequest(
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -380,7 +380,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open,
             checks: .pass
         )
-        workspace.updateTabPullRequest(
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -416,8 +416,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updateTabGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
-        workspace.updateTabPullRequest(
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",
@@ -425,7 +425,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
 
         XCTAssertNil(workspace.pullRequest)
         XCTAssertNil(workspace.panelPullRequests[panelId])
@@ -440,8 +440,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
-        workspace.updateTabPullRequest(
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",

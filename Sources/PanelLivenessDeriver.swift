@@ -140,7 +140,7 @@ enum PanelLivenessDeriver {
         let derived = activityState(for: state)
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
-            guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+            guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
             // Reconcile and realtime writes share this queue with journal projection.
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(derived: derived, workspaceId: workspaceId, surfaceId: surfaceId)
@@ -158,7 +158,7 @@ enum PanelLivenessDeriver {
             let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+                    guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                 }
@@ -181,7 +181,7 @@ enum PanelLivenessDeriver {
     ) {
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
-            if JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection == .live {
+            if JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection == .live {
                 // A Return still closes the mailbox prompt gate, but cannot invent a journal turn.
                 if source == .submit {
                     DispatchQueue.main.async {
@@ -216,7 +216,7 @@ enum PanelLivenessDeriver {
                           let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                         return
                     }
-                    guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+                    guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                     workspace.noteMailboxAgentLifecycle(
@@ -232,42 +232,42 @@ enum PanelLivenessDeriver {
     }
 
     /// Committed immutable projection. The main hop only mirrors current cache data.
-    static func onJournalProjection(tabID: UUID, snapshot: JournalSnapshot?, boundary: JournalMailboxBoundary?) {
+    static func onJournalProjection(panelID: UUID, snapshot: JournalSnapshot?, boundary: JournalMailboxBoundary?) {
         queue.async {
             let coordinator = JournalCoordinator.shared
-            guard coordinator.snapshot(tabID: tabID) == snapshot,
-                  let workspaceID = coordinator.target(tabID: tabID) else { return }
+            guard coordinator.snapshot(panelID: panelID) == snapshot,
+                  let workspaceID = coordinator.target(panelID: panelID) else { return }
             let derived: SidebarActivityState? = snapshot.flatMap {
                 $0.phase == .unknown || ($0.isHistorical && !$0.paintsAttention) ? nil : ($0.phase == .working ? .working : .idle)
             }
             if let snapshot, !snapshot.isHistorical {
-                PanelActivityTracker.shared.recordActivity(surfaceId: tabID.uuidString,
+                PanelActivityTracker.shared.recordActivity(surfaceId: panelID.uuidString,
                     at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
             }
-            let prior = currentActivityRaw(workspaceId: workspaceID, surfaceId: tabID)
-            applyToStore(derived: derived, workspaceId: workspaceID, surfaceId: tabID, journal: true)
-            let after = currentActivityRaw(workspaceId: workspaceID, surfaceId: tabID)
-            if prior != after { emitLivenessTransition(from: prior, to: after, surfaceId: tabID, workspaceId: workspaceID) }
+            let prior = currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID)
+            applyToStore(derived: derived, workspaceId: workspaceID, surfaceId: panelID, journal: true)
+            let after = currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID)
+            if prior != after { emitLivenessTransition(from: prior, to: after, surfaceId: panelID, workspaceId: workspaceID) }
             let mirrored = after.flatMap(SidebarActivityState.init(rawValue:))
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard coordinator.snapshot(tabID: tabID) == snapshot,
-                          coordinator.target(tabID: tabID) == workspaceID,
+                    guard coordinator.snapshot(panelID: panelID) == snapshot,
+                          coordinator.target(panelID: panelID) == workspaceID,
                           let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
                             .workspaces.first(where: { $0.id == workspaceID }) else { return }
-                    if journalEdgeClearsCold(prior: workspace.journalByTab[tabID], next: snapshot) {
-                        workspace.setAgentCold(false, forSurface: tabID)
+                    if journalEdgeClearsCold(prior: workspace.journalByPanel[panelID], next: snapshot) {
+                        workspace.setAgentCold(false, forSurface: panelID)
                     }
-                    workspace.setDerivedActivity(mirrored, forSurface: tabID)
-                    workspace.setJournalSnapshot(snapshot, forTab: tabID)
+                    workspace.setDerivedActivity(mirrored, forSurface: panelID)
+                    workspace.setJournalSnapshot(snapshot, forPanel: panelID)
                     // A coalesced start may already have been superseded by its ask.
                     // Closing a prior prompt gate is safe; only the live boundary below opens it.
                     if let boundary {
-                        workspace.noteMailboxAgentLifecycle(surfaceId: tabID,
+                        workspace.noteMailboxAgentLifecycle(surfaceId: panelID,
                             source: boundary.pid == nil ? .headless : .reported,
                             activity: boundary.working ? .working : .idle, at: boundary.at, agentPid: boundary.pid)
                     } else if let snapshot, [.working, .blocked, .error].contains(snapshot.phase) {
-                        workspace.noteMailboxAgentLifecycle(surfaceId: tabID, source: .reported,
+                        workspace.noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported,
                             activity: .working, at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
                     }
                 }
@@ -304,7 +304,7 @@ enum PanelLivenessDeriver {
     private static func reconcileOnQueue(surfaceId: UUID, workspaceId: UUID,
         detectedTerminalType: String?, now: Date, coldAfterSeconds: TimeInterval) {
         let promptCache = AgentModelDetector.shared.promptCacheReading(forSurface: surfaceId)
-        if let journal = JournalCoordinator.shared.snapshot(tabID: surfaceId), journal.connection == .live {
+        if let journal = JournalCoordinator.shared.snapshot(panelID: surfaceId), journal.connection == .live {
             // The journal owns a live agent's activity and has no dormancy
             // rule: only prompt cache evidence can make it cold.
             let state = journalPromptCacheState(
@@ -395,7 +395,7 @@ enum PanelLivenessDeriver {
                       let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
                 }
-                guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+                guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
                 workspace.setAgentCold(false, forSurface: surfaceId)
                 workspace.setDerivedActivity(.idle, forSurface: surfaceId)
             }
@@ -483,7 +483,7 @@ enum PanelLivenessDeriver {
                 guard let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
                         .workspaces.first(where: { $0.id == workspaceId }) else { return }
                 if state.cacheExpired {
-                    guard journalStillRests(JournalCoordinator.shared.snapshot(tabID: surfaceId), as: observed) else { return }
+                    guard journalStillRests(JournalCoordinator.shared.snapshot(panelID: surfaceId), as: observed) else { return }
                 }
                 workspace.setAgentCold(state.cold, promptCacheExpired: state.cacheExpired, forSurface: surfaceId)
             }
@@ -503,7 +503,7 @@ enum PanelLivenessDeriver {
                       let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
                 }
-                guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+                guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
                 if isCold,
                    let observedLastTouchedAt,
                    let currentLastTouchedAt = PanelActivityTracker.shared.lastActivity(
@@ -540,7 +540,7 @@ enum PanelLivenessDeriver {
         surfaceId: UUID,
         journal: Bool = false
     ) {
-        guard journal || JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+        guard journal || JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
         if let derived {
             PanelMetadataStore.shared.setInternal(
                 workspaceId: workspaceId,

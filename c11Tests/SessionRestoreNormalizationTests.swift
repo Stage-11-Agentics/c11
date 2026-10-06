@@ -128,7 +128,7 @@ final class SessionRestoreNormalizationTests: XCTestCase {
         XCTAssertEqual(result.snapshot.panels.map(\.id), [a, b, c])
         XCTAssertEqual(try encoded(result.snapshot.panels[0]), try encoded(first))
         XCTAssertEqual(result.drops.map(\.reason), [.duplicateRecord, .duplicateRecord])
-        XCTAssertEqual(result.drops.map(\.tabId), [a, a])
+        XCTAssertEqual(result.drops.map(\.panelId), [a, a])
         XCTAssertEqual(result.drops[0].diagnostic(workspaceId: input.id),
             "session.restore.drop workspace=\(input.id) tab=\(a) reason=duplicate_record")
         XCTAssertEqual(try encoded(result.snapshot.layout), try encoded(input.layout))
@@ -159,7 +159,7 @@ final class SessionRestoreNormalizationTests: XCTestCase {
         XCTAssertEqual(repaired.dividerPosition, 0.4)
         XCTAssertEqual(repaired.orientation, .horizontal)
         XCTAssertEqual(result.drops.map(\.reason), [.duplicateLayoutReference, .duplicateLayoutReference])
-        XCTAssertEqual(result.drops.map(\.tabId), [a, a])
+        XCTAssertEqual(result.drops.map(\.panelId), [a, a])
         XCTAssertEqual(try encoded(result.snapshot.panels), try encoded(input.panels))
     }
 

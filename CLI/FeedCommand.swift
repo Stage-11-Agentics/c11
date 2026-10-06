@@ -46,7 +46,7 @@ enum FeedCommand {
         reconnect: () throws -> Void,
         defaultWorkspace: () -> String?,
         resolveWorkspace: (String) throws -> String?,
-        resolveTab: (_ tab: String, _ workspace: String?) throws -> String?
+        resolvePanel: (_ panel: String, _ workspace: String?) throws -> String?
     ) throws {
         let answerValueOptions: Set<String> = arguments.first?.lowercased() == "answer" ? ["--text"] : []
         if arguments.isEmpty || CLIHelpFlagScanner.containsHelpFlag(
@@ -99,36 +99,36 @@ enum FeedCommand {
             throw CLIError(message: "feed: --scope must be attention or all")
         }
         let workspaceFlag = try take("--workspace")
-        let tabFlag = try take("--panel")
+        let panelFlag = try take("--panel")
         guard let subcommand = args.first else {
             throw CLIError(message: "feed requires list, open, or watch")
         }
         args.removeFirst()
         switch subcommand {
         case "list":
-            guard args.isEmpty, tabFlag == nil, workspaceFlag == nil else { throw CLIError(message: "usage: c11 feed list [--json] [--scope attention|all]") }
+            guard args.isEmpty, panelFlag == nil, workspaceFlag == nil else { throw CLIError(message: "usage: c11 feed list [--json] [--scope attention|all]") }
             let payload = try client.sendV2(method: "feed.list", params: ["scope": feedScope.rawValue])
             printList(payload, json: json)
         case "open":
             guard scopeFlag == nil, !args.contains(where: { $0.hasPrefix("--") }) else {
                 throw CLIError(message: "usage: c11 feed open <panel> [--workspace <id|ref>] [--json]")
             }
-            let tabRaw = tabFlag ?? args.first
-            if tabFlag == nil { args = Array(args.dropFirst()) }
-            guard let tabRaw, args.isEmpty else { throw CLIError(message: "usage: c11 feed open <panel> [--workspace <id|ref>]") }
+            let panelRaw = panelFlag ?? args.first
+            if panelFlag == nil { args = Array(args.dropFirst()) }
+            guard let panelRaw, args.isEmpty else { throw CLIError(message: "usage: c11 feed open <panel> [--workspace <id|ref>]") }
             let workspaceRaw = workspaceFlag ?? defaultWorkspace()
             guard let workspaceRaw, let workspace = try resolveWorkspace(workspaceRaw) else {
                 throw CLIError(message: "feed open requires a workspace")
             }
-            guard let tab = try resolveTab(tabRaw, workspace) else {
+            guard let panel = try resolvePanel(panelRaw, workspace) else {
                 throw CLIError(message: "feed open requires a panel")
             }
             do {
-                let payload = try client.sendV2(method: "feed.open", params: ["workspace_id": workspace, "tab_id": tab])
+                let payload = try client.sendV2(method: "feed.open", params: ["workspace_id": workspace, "tab_id": panel])
                 if json {
                     print(jsonLine(payload))
                 } else {
-                    print("focused \((payload["panel_id"] ?? payload["tab_id"]) as? String ?? tab)")
+                    print("focused \((payload["panel_id"] ?? payload["tab_id"]) as? String ?? panel)")
                 }
             } catch let error as CLIError where error.message.hasPrefix("unavailable") {
                 throw CLIError(message: "unavailable")
@@ -144,26 +144,26 @@ enum FeedCommand {
                 throw CLIError(message: "feed answer: unknown flag")
             }
             guard let text else { throw CLIError(message: "usage: c11 feed answer <panel> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]") }
-            guard !(tabFlag != nil && !args.isEmpty) else {
+            guard !(panelFlag != nil && !args.isEmpty) else {
                 throw CLIError(message: "feed answer accepts one panel target")
             }
-            let tabRaw = tabFlag ?? args.first
-            if tabFlag == nil { args = Array(args.dropFirst()) }
-            guard let tabRaw, args.isEmpty else {
+            let panelRaw = panelFlag ?? args.first
+            if panelFlag == nil { args = Array(args.dropFirst()) }
+            guard let panelRaw, args.isEmpty else {
                 throw CLIError(message: "usage: c11 feed answer <panel> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]")
             }
             let workspaceRaw = workspaceFlag ?? defaultWorkspace()
             guard let workspaceRaw, let workspace = try resolveWorkspace(workspaceRaw) else {
                 throw CLIError(message: "feed answer requires a workspace")
             }
-            guard let tab = try resolveTab(tabRaw, workspace) else {
+            guard let panel = try resolvePanel(panelRaw, workspace) else {
                 throw CLIError(message: "feed answer requires a panel")
             }
             let payload: [String: Any]
             do {
                 payload = try client.sendV2(method: "feed.answer", params: [
                     "workspace_id": workspace,
-                    "tab_id": tab,
+                    "tab_id": panel,
                     "text": text,
                     "by": actor,
                 ])
@@ -187,14 +187,14 @@ enum FeedCommand {
                 let submitted = payload["submitted"] as? Bool ?? false
                 let retry = payload["retry"] as? String ?? "unknown"
                 if payload["opened"] as? Bool == true {
-                    print("opened \(((payload["panel_id"] ?? payload["tab_id"]) as? String) ?? tab); delivered: false")
+                    print("opened \(((payload["panel_id"] ?? payload["tab_id"]) as? String) ?? panel); delivered: false")
                 } else {
                     print("answered: \(answered)  submitted: \(submitted)  retry: \(retry)")
                 }
                 fflush(stdout)
             }
         case "watch":
-            guard args.isEmpty, tabFlag == nil, workspaceFlag == nil else {
+            guard args.isEmpty, panelFlag == nil, workspaceFlag == nil else {
                 throw CLIError(message: "usage: c11 feed watch [--json] [--scope attention|all]")
             }
             guard scopeFlag == nil || FeedScope(rawValue: scope) != nil else {
@@ -210,7 +210,7 @@ enum FeedCommand {
     static func sendDisplayNote(
         client: SocketClient,
         workspaceID: String,
-        tabID: String,
+        panelID: String,
         sessionID: String?,
         eventID: String,
         requestID: String?,
@@ -221,7 +221,7 @@ enum FeedCommand {
         guard deadline > 0, let sessionID, !sessionID.isEmpty else { return }
         var params: [String: Any] = [
             "workspace_id": workspaceID,
-            "tab_id": tabID,
+            "tab_id": panelID,
             "agent_kind": "claude-code",
             "session_id": sessionID,
             "event_id": eventID,
@@ -255,8 +255,8 @@ enum FeedCommand {
             let prompt = (row["prompt_available"] as? Bool) == true ? "prompt" : "no-prompt"
             let flagPart = flag.map { "flag=\($0)" } ?? "no-flag"
             let workspace = row["workspace_id"] as? String ?? ""
-            let tab = (row["panel_id"] ?? row["tab_id"]) as? String ?? ""
-            print("\(workspace)  \(tab)  \(kind)  \(state)  \(flagPart)  \(prompt)")
+            let panel = (row["panel_id"] ?? row["tab_id"]) as? String ?? ""
+            print("\(workspace)  \(panel)  \(kind)  \(state)  \(flagPart)  \(prompt)")
         }
         fflush(stdout)
     }

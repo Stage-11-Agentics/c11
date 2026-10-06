@@ -3599,28 +3599,28 @@ final class ColdTerminalReadTests: XCTestCase {
         defer { window.close() }
         controller.workspaceManager = manager
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
-        let selectedTab = workspace.focusedPanelId
+        let selectedPanel = workspace.focusedPanelId
         let terminal = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
         defer {
-            _ = workspace.closeTab(terminal.id, force: true)
+            _ = workspace.closePanel(terminal.id, force: true)
             controller.workspaceManager = originalManager
         }
         XCTAssertNil(terminal.surface.surface, "Fixture must begin cold, before any read or send")
         XCTAssertNil(terminal.hostedView.window, "Fixture must never have been presented")
 
         let workspaceID = workspace.id.uuidString
-        let tabID = terminal.id.uuidString
+        let panelID = terminal.id.uuidString
         let result = await Task.detached {
-            controller.v2SurfaceReadText(params: ["workspace_id": workspaceID, "surface_id": tabID])
+            controller.v2PanelReadText(params: ["workspace_id": workspaceID, "surface_id": panelID])
         }.value
 
         guard case .ok(let value) = result, let payload = value as? [String: Any] else {
             return XCTFail("Cold read failed: \(result)")
         }
         XCTAssertNotNil(terminal.surface.surface)
-        XCTAssertEqual(payload["surface_id"] as? String, tabID)
+        XCTAssertEqual(payload["surface_id"] as? String, panelID)
         XCTAssertNotNil(payload["text"] as? String) // The shell may not have printed yet.
-        XCTAssertEqual(workspace.focusedPanelId, selectedTab)
+        XCTAssertEqual(workspace.focusedPanelId, selectedPanel)
         XCTAssertEqual(manager.selectedWorkspaceId, workspace.id)
     }
 
@@ -3645,13 +3645,13 @@ final class ColdTerminalReadTests: XCTestCase {
         }
         defer {
             NotificationCenter.default.removeObserver(observer)
-            _ = workspace.closeTab(terminal.id, force: true)
+            _ = workspace.closePanel(terminal.id, force: true)
             controller.workspaceManager = originalManager
         }
         let workspaceID = workspace.id.uuidString
-        let tabID = terminal.id.uuidString
+        let panelID = terminal.id.uuidString
         let result = await Task.detached {
-            controller.v2SurfaceReadText(params: ["workspace_id": workspaceID, "surface_id": tabID])
+            controller.v2PanelReadText(params: ["workspace_id": workspaceID, "surface_id": panelID])
         }.value
         XCTAssertFalse(manager.workspaces.contains { $0 === workspace }, "Read must request cold startup")
         guard case .err(let code, _, _) = result else {
@@ -3818,19 +3818,19 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
 
     func testSnapshotEligibilityUsesProcessLivenessAndPreservesCloseConfirmation() async throws {
         let surface = makeSurface()
-        let tab = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
+        let panel = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
         defer { surface.teardownSurface() }
-        XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot(), "Cold terminals have no live output")
+        XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot(), "Cold terminals have no live output")
         surface.requestBackgroundSurfaceStartIfNeeded()
         await nextMainTurn()
         _ = try XCTUnwrap(surface.surface)
         for needsConfirmation in [false, true] {
             surface.setNeedsConfirmCloseOverrideForTesting(needsConfirmation)
-            XCTAssertTrue(tab.shouldPersistScrollbackForSessionSnapshot(), "Live shells and running commands both qualify")
-            XCTAssertEqual(tab.needsConfirmClose(), needsConfirmation, "Operator close policy remains independent")
+            XCTAssertTrue(panel.shouldPersistScrollbackForSessionSnapshot(), "Live shells and running commands both qualify")
+            XCTAssertEqual(panel.needsConfirmClose(), needsConfirmation, "Operator close policy remains independent")
         }
         surface.teardownSurface()
-        XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot())
+        XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot())
     }
 
     func testExitedChildIsIneligibleForScrollbackReplay() async throws {
@@ -3848,8 +3848,8 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTAssertFalse(surface.hasLiveProcess())
-        let tab = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
-        XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot())
+        let panel = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
+        XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot())
     }
 
     func testInheritedDefaultFontStillFollowsOperatorConfigChanges() async throws {
@@ -3915,8 +3915,8 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         let observedDirectory = try XCTUnwrap(observed.count == 2 ? String(observed[1]) : nil)
         XCTAssertEqual(URL(fileURLWithPath: observedDirectory).resolvingSymlinksInPath().path,
                        directory.resolvingSymlinksInPath().path)
-        let tab = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
-        XCTAssertTrue(tab.shouldPersistScrollbackForSessionSnapshot(), "The live sleep command is eligible")
+        let panel = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
+        XCTAssertTrue(panel.shouldPersistScrollbackForSessionSnapshot(), "The live sleep command is eligible")
         // Native setFontSize updates the core scalar immediately but delivers the
         // font grid to the renderer asynchronously. quicklook_font (the accessor
         // behind cmuxCurrentSurfaceFontSizePoints) reads that renderer-owned grid.

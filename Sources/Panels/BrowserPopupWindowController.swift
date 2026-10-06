@@ -84,11 +84,11 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     init(
         configuration: WKWebViewConfiguration,
         windowFeatures: WKWindowFeatures,
-        openerPanel openerTab: BrowserPanel?,
+        openerPanel openerPanel: BrowserPanel?,
         parentPopupController: BrowserPopupWindowController? = nil,
         nestingDepth: Int = 0
     ) {
-        self.openerPanel = openerTab
+        self.openerPanel = openerPanel
         self.parentPopupController = parentPopupController
         self.nestingDepth = nestingDepth
 
@@ -112,7 +112,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         let h = max(windowFeatures.height?.doubleValue ?? defaultHeight, minHeight)
 
         // Screen-clamping: use opener's screen or main screen
-        let screen = openerTab?.webView.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let screen = openerPanel?.webView.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let contentRect = browserPopupContentRect(
             requestedWidth: w,
@@ -196,9 +196,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
 
         // Context menu "Open Link in New Tab" → open in opener's workspace,
         // not as a nested popup. Falls back to system browser if opener is gone.
-        webView.onContextMenuOpenLinkInNewTab = { [weak self] url in
+        webView.onContextMenuOpenLinkInNewPanel = { [weak self] url in
             if let opener = self?.openerPanel {
-                opener.openLinkInNewTab(url: url)
+                opener.openLinkInNewPanel(url: url)
             } else {
                 NSWorkspace.shared.open(url)
             }
@@ -224,7 +224,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         panel.delegate = self
 
         #if DEBUG
-        dlog("popup.init depth=\(nestingDepth) size=\(Int(contentRect.width))x\(Int(contentRect.height)) opener=\(openerTab?.id.uuidString.prefix(5) ?? "nil")")
+        dlog("popup.init depth=\(nestingDepth) size=\(Int(contentRect.width))x\(Int(contentRect.height)) opener=\(openerPanel?.id.uuidString.prefix(5) ?? "nil")")
         #endif
 
         panel.makeKeyAndOrderFront(self)
@@ -309,9 +309,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         return child.webView
     }
 
-    func openInOpenerTab(_ url: URL) {
+    func openInOpenerPanel(_ url: URL) {
         if let openerPanel {
-            openerPanel.openLinkInNewTab(url: url)
+            openerPanel.openLinkInNewPanel(url: url)
         } else {
             NSWorkspace.shared.open(url)
         }
@@ -415,7 +415,7 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
         }
 
         if let url = navigationAction.request.url {
-            controller?.openInOpenerTab(url)
+            controller?.openInOpenerPanel(url)
         }
         return nil
     }

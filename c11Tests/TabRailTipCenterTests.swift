@@ -7,7 +7,7 @@ import Bonsplit
 @testable import c11
 #endif
 
-private final class TipMemoryStore: TabRailTipStoring {
+private final class TipMemoryStore: PanelRailTipStoring {
     var stringsByKey: [String: [String]] = [:]
     var stringByKey: [String: String] = [:]
     var boolByKey: [String: Bool] = [:]
@@ -33,7 +33,7 @@ final class TabRailTipCenterTests: XCTestCase {
         let manager: WorkspaceManager
         let workspace: Workspace
         let paneId: PaneID
-        let center: TabRailTipCenter
+        let center: PanelRailTipCenter
         let store: TipMemoryStore
         let defaults: UserDefaults
         let suite: String
@@ -48,7 +48,7 @@ final class TabRailTipCenterTests: XCTestCase {
         let store = TipMemoryStore()
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        let center = TabRailTipCenter(policy: TabRailTipPolicy(calendar: calendar, store: store), defaults: defaults)
+        let center = PanelRailTipCenter(policy: PanelRailTipPolicy(calendar: calendar, store: store), defaults: defaults)
         center.frontAreaOverride = { [weak workspace] in workspace.map { ($0, paneId) } }
         // Registers the area's slot; the strip is not overflowing.
         center.noteOverflow(workspace: workspace, paneId: paneId, overflowing: false)
@@ -63,16 +63,16 @@ final class TabRailTipCenterTests: XCTestCase {
         rig.workspace.bonsplitController.onRailToggled = { _, open in toggles.append(open) }
 
         rig.center.performTryRail()
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .rail)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: rig.defaults), .rail)
         XCTAssertTrue(rig.workspace.bonsplitController.railOpenPaneIds.contains(rig.paneId))
 
         rig.center.performUndo()
 
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .strip)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: rig.defaults), .strip)
         XCTAssertFalse(rig.workspace.bonsplitController.railOpenPaneIds.contains(rig.paneId),
                        "Undo must not leave the area in the set session autosave persists")
         XCTAssertEqual(toggles, [true, false], "The host is told the rail closed so autosave rewrites it")
-        XCTAssertNil(rig.store.stringByKey[TabRailTipPolicy.dismissedKey], "Undo is not a dismissal")
+        XCTAssertNil(rig.store.stringByKey[PanelRailTipPolicy.dismissedKey], "Undo is not a dismissal")
     }
 
     func testCountCellTapDuringTeachingOpensTheListAndKeepsTheOffer() throws {
@@ -87,7 +87,7 @@ final class TabRailTipCenterTests: XCTestCase {
         XCTAssertEqual(controller.tabSheetRequest?.paneId, rig.paneId)
         XCTAssertEqual(controller.tabSheetRequest?.open, true)
         XCTAssertTrue(rig.center.isOfferLiveForTesting, "The offer returns after the list; it is not ended")
-        XCTAssertNil(rig.store.stringByKey[TabRailTipPolicy.lastOfferedKey], "No 30-day wait is recorded by the tap")
+        XCTAssertNil(rig.store.stringByKey[PanelRailTipPolicy.lastOfferedKey], "No 30-day wait is recorded by the tap")
     }
 
     func testCountCellTapOutsideTheTeachingOfferIsLeftToTheBar() throws {
@@ -120,23 +120,23 @@ final class TabRailTipCenterTests: XCTestCase {
         let controller = rig.workspace.bonsplitController
         XCTAssertNotNil(controller.tabLayoutSwitch, "Every workspace offers the switch")
         // As `Workspace.applyTabLayout`, but reading the test's defaults.
-        controller.tabLayoutSwitch = TabLayoutSettings.layoutSwitch(defaults: rig.defaults) { [weak controller] in
+        controller.tabLayoutSwitch = PanelLayoutSettings.layoutSwitch(defaults: rig.defaults) { [weak controller] in
             controller?.configuration.appearance.tabLayout =
-                TabLayoutSettings.bonsplitLayout(TabLayoutSettings.mode(defaults: rig.defaults))
+                PanelLayoutSettings.bonsplitLayout(PanelLayoutSettings.mode(defaults: rig.defaults))
         }
         var toggles: [Bool] = []
         controller.onRailToggled = { _, open in toggles.append(open) }
 
         // From the sheet: Rail everywhere, and this area's rail opens in the same pass.
         controller.switchTabLayout(to: .rail, fromPane: rig.paneId)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .rail)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: rig.defaults), .rail)
         XCTAssertEqual(controller.configuration.appearance.tabLayout, .rail)
         XCTAssertTrue(controller.isTabDetailVisible(inPane: rig.paneId))
 
         // From the rail: back to Tabs, with this area's rail closed, so
         // choosing Rail later does not reopen it.
         controller.switchTabLayout(to: .tabs, fromPane: rig.paneId)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .strip)
+        XCTAssertEqual(PanelLayoutSettings.mode(defaults: rig.defaults), .strip)
         XCTAssertEqual(controller.configuration.appearance.tabLayout, .tabs)
         XCTAssertFalse(controller.railOpenPaneIds.contains(rig.paneId))
         XCTAssertEqual(toggles, [true, false], "The host is told so session autosave records it")

@@ -1670,7 +1670,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let controller: TitlebarControlsAccessoryViewController
         let original: UUID
         let target: Workspace
-        let tabID: UUID
+        let panelID: UUID
     }
 
     /// A real window with the operator in workspace A, a flagged tab in background workspace B, and
@@ -1685,26 +1685,26 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertTrue(appDelegate.focusMainWindow(windowId: windowId))
         let original = try XCTUnwrap(manager.selectedWorkspaceId)
         let target = manager.addWorkspace(select: false)
-        let tabID = try XCTUnwrap(target.panels.keys.first)
+        let panelID = try XCTUnwrap(target.panels.keys.first)
         FeedProjectionBridge.shared.noteAttention(PanelAttentionSnapshot(
-            workspaceId: target.id, surfaceId: tabID, flagReason: "Synthetic quick view flag",
+            workspaceId: target.id, surfaceId: panelID, flagReason: "Synthetic quick view flag",
             flagRaisedAt: Date(), suppressed: false))
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline,
-              !FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.tabID == tabID }) {
+              !FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.panelID == panelID }) {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
         }
-        XCTAssertTrue(FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.tabID == tabID }))
+        XCTAssertTrue(FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.panelID == panelID }))
         let controller = TitlebarControlsAccessoryViewController(notificationStore: TerminalNotificationStore.shared)
         _ = controller.view
         return QuickViewFixture(appDelegate: appDelegate, windowId: windowId, window: window, manager: manager,
-                                controller: controller, original: original, target: target, tabID: tabID)
+                                controller: controller, original: original, target: target, panelID: panelID)
     }
 
     private func tearDownQuickViewFixture(_ fixture: QuickViewFixture) {
         fixture.controller.dismissNotificationsPopover()
         FeedProjectionBridge.shared.noteAttention(PanelAttentionSnapshot(
-            workspaceId: fixture.target.id, surfaceId: fixture.tabID, flagReason: nil,
+            workspaceId: fixture.target.id, surfaceId: fixture.panelID, flagReason: nil,
             flagRaisedAt: nil, suppressed: false))
         closeWindow(withId: fixture.windowId)
     }
@@ -2077,17 +2077,17 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             return
         }
 
-        let renameTabExpectation = expectation(description: "Expected rename tab request for semantic Cmd+R")
-        var observedRenameTabWindow: NSWindow?
-        let renameTabToken = NotificationCenter.default.addObserver(
-            forName: .commandPaletteRenameTabRequested,
+        let renamePanelExpectation = expectation(description: "Expected rename tab request for semantic Cmd+R")
+        var observedRenamePanelWindow: NSWindow?
+        let renamePanelToken = NotificationCenter.default.addObserver(
+            forName: .commandPaletteRenamePanelRequested,
             object: nil,
             queue: nil
         ) { notification in
-            observedRenameTabWindow = notification.object as? NSWindow
-            renameTabExpectation.fulfill()
+            observedRenamePanelWindow = notification.object as? NSWindow
+            renamePanelExpectation.fulfill()
         }
-        defer { NotificationCenter.default.removeObserver(renameTabToken) }
+        defer { NotificationCenter.default.removeObserver(renamePanelToken) }
 
         let switcherExpectation = expectation(description: "Cmd+R should not trigger command palette switcher")
         switcherExpectation.isInverted = true
@@ -2103,8 +2103,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         // C11-41 rebound the default to ⌘⇧E. The original intent of this test
         // is layout-resolution routing, not the current default, so we set the
         // legacy ⌘R binding explicitly for the duration of the test.
-        let legacyRenameTabShortcut = StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
-        withTemporaryShortcut(action: .renameTab, shortcut: legacyRenameTabShortcut) {
+        let legacyRenamePanelShortcut = StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+        withTemporaryShortcut(action: .renamePanel, shortcut: legacyRenamePanelShortcut) {
             // Dvorak: physical ANSI "O" key can produce "r".
             // This should behave as semantic Cmd+R (rename tab), not Cmd+P.
             guard let event = NSEvent.keyEvent(
@@ -2130,8 +2130,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
         }
 
-        wait(for: [renameTabExpectation, switcherExpectation], timeout: 5.0)
-        XCTAssertEqual(observedRenameTabWindow?.windowNumber, window.windowNumber)
+        wait(for: [renamePanelExpectation, switcherExpectation], timeout: 5.0)
+        XCTAssertEqual(observedRenamePanelWindow?.windowNumber, window.windowNumber)
     }
 
     func testCmdPhysicalRWithDvorakCharactersTriggersCommandPaletteSwitcher() {
@@ -2160,16 +2160,16 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(switcherToken) }
 
-        let renameTabExpectation = expectation(description: "Physical R on Dvorak should not trigger rename tab")
-        renameTabExpectation.isInverted = true
-        let renameTabToken = NotificationCenter.default.addObserver(
-            forName: .commandPaletteRenameTabRequested,
+        let renamePanelExpectation = expectation(description: "Physical R on Dvorak should not trigger rename tab")
+        renamePanelExpectation.isInverted = true
+        let renamePanelToken = NotificationCenter.default.addObserver(
+            forName: .commandPaletteRenamePanelRequested,
             object: nil,
             queue: nil
         ) { _ in
-            renameTabExpectation.fulfill()
+            renamePanelExpectation.fulfill()
         }
-        defer { NotificationCenter.default.removeObserver(renameTabToken) }
+        defer { NotificationCenter.default.removeObserver(renamePanelToken) }
 
         // Dvorak: physical ANSI "R" key can produce "p".
         // This should behave as semantic Cmd+P (palette switcher), not Cmd+R.
@@ -2195,7 +2195,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [switcherExpectation, renameTabExpectation], timeout: 5.0)
+        wait(for: [switcherExpectation, renamePanelExpectation], timeout: 5.0)
         XCTAssertEqual(observedSwitcherWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2230,16 +2230,16 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(workspaceToken) }
 
-        let renameTabExpectation = expectation(description: "Rename tab notification should not fire for Cmd+Shift+R")
-        renameTabExpectation.isInverted = true
-        let renameTabToken = NotificationCenter.default.addObserver(
-            forName: .commandPaletteRenameTabRequested,
+        let renamePanelExpectation = expectation(description: "Rename tab notification should not fire for Cmd+Shift+R")
+        renamePanelExpectation.isInverted = true
+        let renamePanelToken = NotificationCenter.default.addObserver(
+            forName: .commandPaletteRenamePanelRequested,
             object: nil,
             queue: nil
         ) { _ in
-            renameTabExpectation.fulfill()
+            renamePanelExpectation.fulfill()
         }
-        defer { NotificationCenter.default.removeObserver(renameTabToken) }
+        defer { NotificationCenter.default.removeObserver(renamePanelToken) }
 
         guard let event = makeKeyDownEvent(
             key: "r",
@@ -2257,7 +2257,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [workspaceExpectation, renameTabExpectation], timeout: 5.0)
+        wait(for: [workspaceExpectation, renamePanelExpectation], timeout: 5.0)
         XCTAssertEqual(observedWorkspaceWindow?.windowNumber, window.windowNumber)
     }
 

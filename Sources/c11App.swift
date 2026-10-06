@@ -183,7 +183,7 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.toggleSplitZoom.defaultsKey) private var toggleSplitZoomShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.openBrowser.defaultsKey) private var openBrowserShortcutData = Data()
-    @AppStorage(KeyboardShortcutSettings.Action.renameTab.defaultsKey) private var renameTabShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.renamePanel.defaultsKey) private var renamePanelShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.globalFontIncrease.defaultsKey) private var globalFontIncreaseShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.globalFontDecrease.defaultsKey) private var globalFontDecreaseShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.globalFontReset.defaultsKey) private var globalFontResetShortcutData = Data()
@@ -216,7 +216,7 @@ struct cmuxApp: App {
         UserDefaults.standard.set(AppearanceMode.dark.rawValue, forKey: AppearanceSettings.appearanceModeKey)
         Self.applyAppearance(.dark)
         // Carry the old `tabLayoutMode` forward before the Settings picker or any workspace reads it.
-        TabLayoutSettings.migrateLegacyKeys(defaults: .standard)
+        PanelLayoutSettings.migrateLegacyKeys(defaults: .standard)
         _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
@@ -995,18 +995,18 @@ struct cmuxApp: App {
                     activeWorkspaceManager.selectPreviousSurface()
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.renameTab", defaultValue: "Rename Panel"), shortcut: renameTabMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.renameTab", defaultValue: "Rename Panel"), shortcut: renamePanelMenuShortcut) {
                     let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
-                    _ = AppDelegate.shared?.requestCommandPaletteRenameTab(preferredWindow: targetWindow, source: "menu.renameTab")
+                    _ = AppDelegate.shared?.requestCommandPaletteRenamePanel(preferredWindow: targetWindow, source: "menu.renameTab")
                 }
 
                 Divider()
 
                 Button(String(localized: "menu.pane.closeOtherTabs", defaultValue: "Close Other Panels in Area")) {
-                    closeOtherTabsInFocusedPane()
+                    closeOtherPanelsInFocusedPane()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
-                .disabled(!activeWorkspaceManager.canCloseOtherTabsInFocusedPane())
+                .disabled(!activeWorkspaceManager.canCloseOtherPanelsInFocusedPane())
 
                 Divider()
 
@@ -1287,8 +1287,8 @@ struct cmuxApp: App {
         decodeShortcut(from: openBrowserShortcutData, fallback: KeyboardShortcutSettings.Action.openBrowser.defaultShortcut)
     }
 
-    private var renameTabMenuShortcut: StoredShortcut {
-        decodeShortcut(from: renameTabShortcutData, fallback: KeyboardShortcutSettings.Action.renameTab.defaultShortcut)
+    private var renamePanelMenuShortcut: StoredShortcut {
+        decodeShortcut(from: renamePanelShortcutData, fallback: KeyboardShortcutSettings.Action.renamePanel.defaultShortcut)
     }
 
     private var globalFontIncreaseMenuShortcut: StoredShortcut {
@@ -1546,8 +1546,8 @@ struct cmuxApp: App {
         activeWorkspaceManager.closeCurrentPanelWithConfirmation()
     }
 
-    private func closeOtherTabsInFocusedPane() {
-        activeWorkspaceManager.closeOtherTabsInFocusedPaneWithConfirmation()
+    private func closeOtherPanelsInFocusedPane() {
+        activeWorkspaceManager.closeOtherPanelsInFocusedPaneWithConfirmation()
     }
 
     private func closeWorkspaceOrWindow() {
@@ -2742,8 +2742,8 @@ private struct BrowserProfilePopoverDebugView: View {
 private struct BrowserImportHintDebugView: View {
     @AppStorage(BrowserImportHintSettings.variantKey)
     private var variantRaw = BrowserImportHintSettings.defaultVariant.rawValue
-    @AppStorage(BrowserImportHintSettings.showOnBlankTabsKey)
-    private var showOnBlankTabs = BrowserImportHintSettings.defaultShowOnBlankTabs
+    @AppStorage(BrowserImportHintSettings.showOnBlankPanelsKey)
+    private var showOnBlankPanels = BrowserImportHintSettings.defaultShowOnBlankPanels
     @AppStorage(BrowserImportHintSettings.dismissedKey)
     private var isDismissed = BrowserImportHintSettings.defaultDismissed
 
@@ -2758,11 +2758,11 @@ private struct BrowserImportHintDebugView: View {
         )
     }
 
-    private var showOnBlankTabsBinding: Binding<Bool> {
+    private var showOnBlankPanelsBinding: Binding<Bool> {
         Binding(
-            get: { showOnBlankTabs },
+            get: { showOnBlankPanels },
             set: { newValue in
-                showOnBlankTabs = newValue
+                showOnBlankPanels = newValue
                 if newValue {
                     isDismissed = false
                 }
@@ -2773,7 +2773,7 @@ private struct BrowserImportHintDebugView: View {
     private var presentation: BrowserImportHintPresentation {
         BrowserImportHintPresentation(
             variant: selectedVariant,
-            showOnBlankTabs: showOnBlankTabs,
+            showOnBlankPanels: showOnBlankPanels,
             isDismissed: isDismissed
         )
     }
@@ -2807,10 +2807,10 @@ private struct BrowserImportHintDebugView: View {
 
                 GroupBox("State") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Toggle("Show on blank browser tabs", isOn: showOnBlankTabsBinding)
+                        Toggle("Show on blank browser tabs", isOn: showOnBlankPanelsBinding)
                         Toggle("Pretend the user dismissed it", isOn: $isDismissed)
 
-                        Text("Current blank-tab placement: \(placementTitle(presentation.blankTabPlacement))")
+                        Text("Current blank-tab placement: \(placementTitle(presentation.blankPanelPlacement))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text("Settings status: \(settingsStatusTitle(presentation.settingsStatus))")
@@ -2886,7 +2886,7 @@ private struct BrowserImportHintDebugView: View {
         }
     }
 
-    private func placementTitle(_ placement: BrowserImportHintBlankTabPlacement) -> String {
+    private func placementTitle(_ placement: BrowserImportHintBlankPanelPlacement) -> String {
         switch placement {
         case .hidden:
             return "Hidden"
@@ -4457,16 +4457,16 @@ struct SettingsView: View {
     private var markdownSurfacesEnabled = PanelTypeAvailability.defaultEnabled
     @AppStorage(PanelTypeAvailability.markdownSpawnButtonVisibleKey)
     private var markdownSpawnButtonVisible = PanelTypeAvailability.defaultEnabled
-    @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
-    private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
-    @AppStorage(TabLayoutSettings.modeKey)
-    private var tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
+    @AppStorage(PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey)
+    private var showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
+    @AppStorage(PanelLayoutSettings.modeKey)
+    private var panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
     /// The picker's selection. An outside write can leave the stored value as the
     /// old `tabs` spelling; it resolves to `strip` so a tag always matches.
-    private var tabLayoutSelection: Binding<String> {
+    private var panelLayoutSelection: Binding<String> {
         Binding(
-            get: { TabLayoutSettings.mode(for: tabLayoutMode).rawValue },
-            set: { tabLayoutMode = $0 }
+            get: { PanelLayoutSettings.mode(for: panelLayoutMode).rawValue },
+            set: { panelLayoutMode = $0 }
         )
     }
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
@@ -4479,7 +4479,7 @@ struct SettingsView: View {
     @AppStorage(BrowserSearchSettings.searchSuggestionsEnabledKey) private var browserSearchSuggestionsEnabled = BrowserSearchSettings.defaultSearchSuggestionsEnabled
     @AppStorage(BrowserThemeSettings.modeKey) private var browserThemeMode = BrowserThemeSettings.defaultMode.rawValue
     @AppStorage(BrowserImportHintSettings.variantKey) private var browserImportHintVariantRaw = BrowserImportHintSettings.defaultVariant.rawValue
-    @AppStorage(BrowserImportHintSettings.showOnBlankTabsKey) private var showBrowserImportHintOnBlankTabs = BrowserImportHintSettings.defaultShowOnBlankTabs
+    @AppStorage(BrowserImportHintSettings.showOnBlankPanelsKey) private var showBrowserImportHintOnBlankPanels = BrowserImportHintSettings.defaultShowOnBlankPanels
     @AppStorage(BrowserImportHintSettings.dismissedKey) private var isBrowserImportHintDismissed = BrowserImportHintSettings.defaultDismissed
     @AppStorage(BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey) private var openTerminalLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenTerminalLinksInCmuxBrowser
     @AppStorage(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowserKey)
@@ -4644,16 +4644,16 @@ struct SettingsView: View {
     private var browserImportHintPresentation: BrowserImportHintPresentation {
         BrowserImportHintPresentation(
             variant: browserImportHintVariant,
-            showOnBlankTabs: showBrowserImportHintOnBlankTabs,
+            showOnBlankPanels: showBrowserImportHintOnBlankPanels,
             isDismissed: isBrowserImportHintDismissed
         )
     }
 
     private var browserImportHintVisibilityBinding: Binding<Bool> {
         Binding(
-            get: { showBrowserImportHintOnBlankTabs },
+            get: { showBrowserImportHintOnBlankPanels },
             set: { newValue in
-                showBrowserImportHintOnBlankTabs = newValue
+                showBrowserImportHintOnBlankPanels = newValue
                 if newValue {
                     isBrowserImportHintDismissed = false
                 }
@@ -5220,11 +5220,11 @@ struct SettingsView: View {
 
             SettingsCardRow(
                 String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Panel Numbers in Panel Titles"),
-                subtitle: showSurfaceIdsInTabTitles
+                subtitle: showSurfaceIdsInPanelTitles
                     ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Panels display their panel number (\"292: Build agent\"). Say the number to address a panel; agents target it as panel:N.")
                     : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Panels display their title only. Turn on to prefix every panel with its addressable panel number.")
             ) {
-                Toggle("", isOn: $showSurfaceIdsInTabTitles)
+                Toggle("", isOn: $showSurfaceIdsInPanelTitles)
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityIdentifier("SettingsShowSurfaceIdsToggle")
@@ -5234,16 +5234,16 @@ struct SettingsView: View {
 
             SettingsCardRow(
                 String(localized: "settings.app.tabLayout", defaultValue: "Panel Layout"),
-                subtitle: TabLayoutSettings.mode(for: tabLayoutMode) == .rail
+                subtitle: PanelLayoutSettings.mode(for: panelLayoutMode) == .rail
                     ? String(localized: "settings.app.tabLayout.subtitleRail", defaultValue: "A vertical panel list docks on each area's left edge; the count button toggles it.")
                     : String(localized: "settings.app.tabLayout.subtitleTabs", defaultValue: "A strip of panels across the top of each area; the count button opens the full list."),
                 controlWidth: pickerColumnWidth
             ) {
-                Picker("", selection: tabLayoutSelection) {
+                Picker("", selection: panelLayoutSelection) {
                     Text(String(localized: "settings.app.tabLayout.tabs", defaultValue: "Strip"))
-                        .tag(TabLayoutSettings.Mode.strip.rawValue)
+                        .tag(PanelLayoutSettings.Mode.strip.rawValue)
                     Text(String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"))
-                        .tag(TabLayoutSettings.Mode.rail.rawValue)
+                        .tag(PanelLayoutSettings.Mode.rail.rawValue)
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
@@ -6536,7 +6536,7 @@ struct SettingsView: View {
             ShortcutSettingsGroup(
                 id: "navigation",
                 title: String(localized: "settings.shortcuts.group.navigation", defaultValue: "Navigation"),
-                actions: [.nextSurface, .prevSurface, .nextSidebarWorkspace, .prevSidebarWorkspace, .focusHistoryBack, .focusHistoryForward, .renameTab, .renameWorkspace, .closeWorkspace, .newSurface]
+                actions: [.nextSurface, .prevSurface, .nextSidebarWorkspace, .prevSidebarWorkspace, .focusHistoryBack, .focusHistoryForward, .renamePanel, .renameWorkspace, .closeWorkspace, .newSurface]
             ),
             ShortcutSettingsGroup(
                 id: "panes",
@@ -6601,15 +6601,15 @@ struct SettingsView: View {
         socketControlMode = SocketControlSettings.defaultMode.rawValue
         internalBrowserEnabled = PanelTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = PanelTypeAvailability.defaultEnabled
-        showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
-        tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
+        showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
+        panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
         browserSearchSuggestionsEnabled = BrowserSearchSettings.defaultSearchSuggestionsEnabled
         browserThemeMode = BrowserThemeSettings.defaultMode.rawValue
         browserImportHintVariantRaw = BrowserImportHintSettings.defaultVariant.rawValue
-        showBrowserImportHintOnBlankTabs = BrowserImportHintSettings.defaultShowOnBlankTabs
+        showBrowserImportHintOnBlankPanels = BrowserImportHintSettings.defaultShowOnBlankPanels
         isBrowserImportHintDismissed = BrowserImportHintSettings.defaultDismissed
         openTerminalLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenTerminalLinksInCmuxBrowser
         interceptTerminalOpenCommandInCmuxBrowser = BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInCmuxBrowser

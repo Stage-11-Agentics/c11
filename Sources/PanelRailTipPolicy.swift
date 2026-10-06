@@ -2,7 +2,7 @@ import Foundation
 
 /// Read and write the tip keys. The app uses `UserDefaults`; tests use
 /// an in-memory store. Nothing here touches the network, logs, or the socket.
-protocol TabRailTipStoring: AnyObject {
+protocol PanelRailTipStoring: AnyObject {
     /// True when a value is stored under `key`, even `false` or an empty list.
     /// The policy uses it to let a new key shadow its old one.
     func containsValue(forKey key: String) -> Bool
@@ -15,7 +15,7 @@ protocol TabRailTipStoring: AnyObject {
 }
 
 /// The app's tip record, in the same defaults domain as `panelLayoutMode`.
-final class UserDefaultsTabRailTipStore: TabRailTipStoring {
+final class UserDefaultsPanelRailTipStore: PanelRailTipStoring {
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -57,7 +57,7 @@ final class UserDefaultsTabRailTipStore: TabRailTipStoring {
 
 /// Which panels the tip's miniature rail draws. The selected row stays inside
 /// the window, matching the prototype: a slice of at most `limit` rows.
-enum TabRailTipPreviewWindow {
+enum PanelRailTipPreviewWindow {
     static func range(count: Int, selectedIndex: Int, limit: Int = 4) -> Range<Int> {
         let capped = min(max(limit, 0), count)
         guard capped > 0 else { return 0..<0 }
@@ -91,7 +91,7 @@ enum TabRailTipPreviewWindow {
 /// key is unset; every write goes to the new key, and the old keys are never
 /// deleted. So a tip dismissed under the old key stays dismissed, and clearing
 /// `forceOffer` writes `false` to the new key, which then shadows an old `true`.
-struct TabRailTipPolicy {
+struct PanelRailTipPolicy {
     static let overflowDaysKey = "c11.panelRailTip.overflowDays"
     static let lastOfferedKey = "c11.panelRailTip.lastOffered"
     static let dismissedKey = "c11.panelRailTip.dismissed"
@@ -111,7 +111,7 @@ struct TabRailTipPolicy {
     /// Gregorian, in a chosen time zone. The app uses `localCalendar()` and
     /// refreshes it when the day or zone changes. Tests pass their own.
     var calendar: Calendar
-    let store: TabRailTipStoring
+    let store: PanelRailTipStoring
 
     /// Gregorian calendar in the current time zone. Day keys must not follow
     /// `Calendar.current`, whose identifier can be something other than Gregorian.
@@ -164,8 +164,8 @@ struct TabRailTipPolicy {
         return recordOverflow(now: now)
     }
 
-    func shouldOffer(now: Date, layoutIsTabs: Bool, areaOverflowing: Bool) -> Bool {
-        guard layoutIsTabs, areaOverflowing, !isDismissed else { return false }
+    func shouldOffer(now: Date, layoutIsStrip: Bool, areaOverflowing: Bool) -> Bool {
+        guard layoutIsStrip, areaOverflowing, !isDismissed else { return false }
         if isForceOffer { return true }
         guard spacingAllowsOffer(now: now) else { return false }
         return overflowCount(inWindowEndingAt: now) >= Self.overflowDaysRequired

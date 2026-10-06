@@ -342,8 +342,8 @@ enum WorkspaceBlueprintMarkdown {
             return
         }
         if let listKey = panelListKey(in: keys) {
-            for tabNode in node.lookup(listKey)?.asList ?? [] {
-                try reserveExplicitSurfaceIDs(in: tabNode, reserved: &reserved)
+            for panelNode in node.lookup(listKey)?.asList ?? [] {
+                try reserveExplicitSurfaceIDs(in: panelNode, reserved: &reserved)
             }
             return
         }
@@ -402,12 +402,12 @@ enum WorkspaceBlueprintMarkdown {
 
         // Multi-panel area: has a `panels:` (or legacy `tabs:`) list.
         if let listKey = panelListKey(in: keys) {
-            let tabNodes = node.lookup(listKey)?.asList ?? []
+            let panelNodes = node.lookup(listKey)?.asList ?? []
             var ids: [String] = []
-            for tabNode in tabNodes {
-                let id = surfaceID(from: tabNode, generator: &idGen)
+            for panelNode in panelNodes {
+                let id = surfaceID(from: panelNode, generator: &idGen)
                 ids.append(id)
-                surfaces.append(try buildSurfaceSpec(id: id, from: tabNode))
+                surfaces.append(try buildSurfaceSpec(id: id, from: panelNode))
             }
             let selectedIndex: Int? = node.lookup("selected")?.asScalar.flatMap { Int($0) }
             return .pane(LayoutTreeSpec.AreaSpec(

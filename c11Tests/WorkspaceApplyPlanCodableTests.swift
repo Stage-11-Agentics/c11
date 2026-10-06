@@ -67,8 +67,8 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertEqual(try decode(LayoutTreeSpec.self, from: legacy),
                        .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"], selectedIndex: 0)))
 
-        let tab = PanelSpec(id: "m", kind: .terminal, paneMetadata: ["k": .string("v")])
-        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: try encode(tab)) as? [String: Any])
+        let panel = PanelSpec(id: "m", kind: .terminal, paneMetadata: ["k": .string("v")])
+        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: try encode(panel)) as? [String: Any])
         XCTAssertNotNil(keys["paneMetadata"])
         XCTAssertNil(keys["areaMetadata"])
     }

@@ -161,7 +161,7 @@ enum WorkspaceLayoutExecutor {
         // pane. Every path below expects at least one seed; if it isn't
         // available yet, record a partial failure and return what we have.
         guard let seedPanel = workspace.focusedTerminalPanel,
-              let rootPaneId = workspace.paneIdForTab(seedPanel.id) else {
+              let rootPaneId = workspace.paneIdForPanel(seedPanel.id) else {
             let failure = ApplyFailure(
                 code: "seed_panel_missing",
                 step: "layout.walk",
@@ -400,7 +400,7 @@ enum WorkspaceLayoutExecutor {
         var paneRefs: [String: String] = [:]
         for (planSurfaceId, panelId) in walkState.planSurfaceIdToPanelId {
             surfaceRefs[planSurfaceId] = dependencies.surfaceRefMinter(panelId)
-            if let paneId = workspace.paneIdForTab(panelId) {
+            if let paneId = workspace.paneIdForPanel(panelId) {
                 paneRefs[planSurfaceId] = dependencies.paneRefMinter(paneId.id)
             }
         }
@@ -804,7 +804,7 @@ enum WorkspaceLayoutExecutor {
                     return
                 }
                 firstPanelId = replacement
-                _ = workspace.closeTab(anchor.panelId, force: true)
+                _ = workspace.closePanel(anchor.panelId, force: true)
             }
             timings.append(StepTiming(
                 step: "surface[\(firstSurface.id)].create",
@@ -817,7 +817,7 @@ enum WorkspaceLayoutExecutor {
             // the rest of surface + pane metadata land immediately after,
             // during creation (no post-hoc socket loop).
             if let title = firstSurface.title {
-                workspace.setTabCustomTitle(panelId: firstPanelId, title: title)
+                workspace.setPanelCustomTitle(panelId: firstPanelId, title: title)
             }
             writeSurfaceMetadata(firstSurface, panelId: firstPanelId)
 
@@ -839,7 +839,7 @@ enum WorkspaceLayoutExecutor {
                 ))
                 planSurfaceIdToPanelId[spec.id] = newPanelId
                 if let title = spec.title {
-                    workspace.setTabCustomTitle(panelId: newPanelId, title: title)
+                    workspace.setPanelCustomTitle(panelId: newPanelId, title: title)
                 }
                 writeSurfaceMetadata(spec, panelId: newPanelId)
             }
@@ -898,7 +898,7 @@ enum WorkspaceLayoutExecutor {
             ))
 
             guard let newPanelId,
-                  let newPaneId = workspace.paneIdForTab(newPanelId) else {
+                  let newPaneId = workspace.paneIdForPanel(newPanelId) else {
                 failures.append(ApplyFailure(
                     code: "split_failed",
                     step: "layout.split[\(label)].create",
@@ -1066,10 +1066,10 @@ enum WorkspaceLayoutExecutor {
             }
             // A blueprint's tab icon / color land in the store; paint them.
             if spec.metadata?[MetadataKey.icon] != nil {
-                workspace.syncTabIconFromMetadata(panelId: panelId)
+                workspace.syncPanelIconFromMetadata(panelId: panelId)
             }
             if spec.metadata?[MetadataKey.color] != nil {
-                workspace.syncTabColorFromMetadata(panelId: panelId)
+                workspace.syncPanelColorFromMetadata(panelId: panelId)
             }
             timings.append(StepTiming(
                 step: "metadata.surface[\(spec.id)].write",
@@ -1081,7 +1081,7 @@ enum WorkspaceLayoutExecutor {
                 return
             }
             let paneClock = StepClock()
-            guard let paneId = workspace.paneIdForTab(panelId) else {
+            guard let paneId = workspace.paneIdForPanel(panelId) else {
                 let message = "surface[\(spec.id)] pane metadata skipped: no bonsplit pane resolved for panel"
                 warnings.append(message)
                 failures.append(ApplyFailure(

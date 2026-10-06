@@ -629,7 +629,7 @@ final class ScriptTerminal: NSObject {
             return nil
         }
 
-        guard workspace.closeTab(terminalId, force: true) else {
+        guard workspace.closePanel(terminalId, force: true) else {
             command.scriptErrorNumber = errAEEventFailed
             command.scriptErrorString = AppleScriptStrings.terminalUnavailable
             return nil

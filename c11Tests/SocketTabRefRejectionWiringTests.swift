@@ -127,7 +127,7 @@ final class TerminalReadCaptureTests: XCTestCase {
         let done = DispatchSemaphore(value: 0)
         let result = TerminalReadCompletion<TerminalController.V2CallResult>(deadline: .now() + 1)
         Thread.detachNewThread {
-            result.complete(TerminalController.shared.v2SurfaceReadText(params: [:], timeout: 0.03))
+            result.complete(TerminalController.shared.v2PanelReadText(params: [:], timeout: 0.03))
             done.signal()
         }
         XCTAssertEqual(done.wait(timeout: .now() + 0.5), .success)
@@ -209,11 +209,11 @@ final class TerminalReadCaptureTests: XCTestCase {
 
     func testExplicitStaleSplitAndReadNeverFallBackToFocus() async {
         let params: [String: Any] = ["surface_id": "tab:999999999", "direction": "right"]
-        let split = TerminalController.shared.v2SurfaceSplit(params: params)
+        let split = TerminalController.shared.v2PanelSplit(params: params)
         guard case .err(let splitCode, _, _) = split else { return XCTFail("Stale split succeeded") }
         XCTAssertEqual(splitCode, "not_found")
         let read = await Task.detached {
-            TerminalController.shared.v2SurfaceReadText(params: ["surface_id": "tab:999999999"])
+            TerminalController.shared.v2PanelReadText(params: ["surface_id": "tab:999999999"])
         }.value
         guard case .err(let readCode, _, _) = read else { return XCTFail("Stale read succeeded") }
         XCTAssertEqual(readCode, "not_found")

@@ -386,7 +386,7 @@ final class MailboxDispatcher {
             let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
                 workspaceId: workspaceId,
-                tabId: recipient.surfaceId
+                panelId: recipient.surfaceId
             )
             try FileManager.default.createDirectory(
                 at: inbox,

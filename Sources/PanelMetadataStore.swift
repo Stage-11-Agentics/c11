@@ -625,7 +625,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)
+                flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -652,7 +652,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)
+                flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -760,7 +760,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)
+                flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -793,7 +793,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                     source: .explicit,
                     ts: epoch
                 )
-                if let callerPanelId = snapshot.flagCallerTabId {
+                if let callerPanelId = snapshot.flagCallerPanelId {
                     for key in MetadataKey.flagCallerKeys {
                         blob[key] = callerPanelId.uuidString
                         sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)

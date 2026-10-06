@@ -124,13 +124,13 @@ enum MailboxLayout {
     }
 
     /// The recipient tab's inbox: `<mailboxes>/<tab-uuid-lowercased>/`.
-    static func inboxURL(state: URL, workspaceId: UUID, tabId: UUID) -> URL {
+    static func inboxURL(state: URL, workspaceId: UUID, panelId: UUID) -> URL {
         mailboxesRoot(state: state, workspaceId: workspaceId)
-            .appendingPathComponent(inboxDirectoryName(tabId: tabId), isDirectory: true)
+            .appendingPathComponent(inboxDirectoryName(panelId: panelId), isDirectory: true)
     }
 
-    static func inboxDirectoryName(tabId: UUID) -> String {
-        tabId.uuidString.lowercased()
+    static func inboxDirectoryName(panelId: UUID) -> String {
+        panelId.uuidString.lowercased()
     }
 
     /// The title-keyed inbox older builds wrote. `nil` when the title could
@@ -151,13 +151,13 @@ enum MailboxLayout {
     static func recvInboxURLs(
         state: URL,
         workspaceId: UUID,
-        tabId: UUID?,
+        panelId: UUID?,
         panelName: String?,
         fileManager: FileManager = .default
     ) -> [URL] {
         var urls: [URL] = []
-        if let tabId {
-            urls.append(inboxURL(state: state, workspaceId: workspaceId, tabId: tabId))
+        if let panelId {
+            urls.append(inboxURL(state: state, workspaceId: workspaceId, panelId: panelId))
         }
         if let panelName,
            let legacy = legacyInboxURL(state: state, workspaceId: workspaceId, panelName: panelName),

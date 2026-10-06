@@ -20,7 +20,7 @@ final class TabOrdinalDisplayTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertTrue(TabOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
+        XCTAssertTrue(PanelOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
     }
 
     func testShowsSurfaceIdsRespectsExplicitValues() {
@@ -28,11 +28,11 @@ final class TabOrdinalDisplayTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        defaults.set(true, forKey: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
-        XCTAssertTrue(TabOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
+        defaults.set(true, forKey: PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey)
+        XCTAssertTrue(PanelOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
 
-        defaults.set(false, forKey: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
-        XCTAssertFalse(TabOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
+        defaults.set(false, forKey: PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey)
+        XCTAssertFalse(PanelOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
     }
 
     // MARK: - Ordinal minting
@@ -102,11 +102,11 @@ final class TabOrdinalDisplayTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let fired = expectation(description: "onChange fired")
-        let observer = TabOrdinalDisplayObserver(defaults: defaults) {
+        let observer = PanelOrdinalDisplayObserver(defaults: defaults) {
             fired.fulfill()
         }
 
-        defaults.set(true, forKey: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
+        defaults.set(true, forKey: PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey)
         wait(for: [fired], timeout: 2.0)
         _ = observer
     }

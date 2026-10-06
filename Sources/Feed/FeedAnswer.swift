@@ -16,7 +16,7 @@ enum FeedAnswerStartKind: Equatable {
 /// prevents a delayed Return from answering a later ask in the same tab.
 struct FeedAnswerIdentity: Equatable {
     let workspaceID: UUID
-    let tabID: UUID
+    let panelID: UUID
     let owner: JournalOwner
     let sequence: Int64
     let askEventID: UUID?
@@ -27,7 +27,7 @@ struct FeedAnswerIdentity: Equatable {
 enum FeedAnswerEligibility {
     static func capture(
         workspaceID: UUID,
-        tabID: UUID,
+        panelID: UUID,
         targetWorkspaceID: UUID?,
         owner: JournalOwner?,
         snapshot: JournalSnapshot?,
@@ -39,22 +39,22 @@ enum FeedAnswerEligibility {
               let snapshot,
               let projectedRow,
               owner == snapshot.owner,
-              owner.tabID == tabID,
+              owner.panelID == panelID,
               snapshot.workspaceID == workspaceID,
               projectedRow.row.workspaceID == workspaceID,
-              projectedRow.row.tabID == tabID,
+              projectedRow.row.panelID == panelID,
               projectedRow.owner == owner,
               projectedRow.sequence == snapshot.lastSequence,
               attention.isFlagged ? projectedRow.row.flag != nil : projectedRow.row.kind == .turnEnd,
               FeedProjector.blockingKind(snapshot) == nil,
               attention.workspaceId == workspaceID,
-              attention.surfaceId == tabID else { return nil }
+              attention.surfaceId == panelID else { return nil }
 
         if attention.isFlagged {
             guard let epoch = attention.flagRaisedAt else { return nil }
             return FeedAnswerIdentity(
                 workspaceID: workspaceID,
-                tabID: tabID,
+                panelID: panelID,
                 owner: owner,
                 sequence: snapshot.lastSequence,
                 askEventID: projectedRow.askEventID,
@@ -65,7 +65,7 @@ enum FeedAnswerEligibility {
         guard FeedProjector.isTurnEnd(snapshot) else { return nil }
         return FeedAnswerIdentity(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             owner: owner,
             sequence: snapshot.lastSequence,
             askEventID: projectedRow.askEventID,
@@ -91,7 +91,7 @@ enum FeedAnswerEligibility {
               snapshot.lastSequence == identity.sequence,
               FeedProjector.blockingKind(snapshot) == nil,
               attention.workspaceId == identity.workspaceID,
-              attention.surfaceId == identity.tabID else { return false }
+              attention.surfaceId == identity.panelID else { return false }
 
         switch identity.startKind {
         case .flag:
@@ -188,7 +188,7 @@ final class FeedAnswerDebugHold: @unchecked Sendable {
     static let shared = FeedAnswerDebugHold()
 
     private struct ArmedHold {
-        let tabID: UUID
+        let panelID: UUID
         let milliseconds: Int
     }
 
@@ -196,25 +196,25 @@ final class FeedAnswerDebugHold: @unchecked Sendable {
     private var armed: ArmedHold?
 
     @discardableResult
-    func arm(tabID: UUID, milliseconds: Int) -> Bool {
+    func arm(panelID: UUID, milliseconds: Int) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard armed == nil, (1...5_000).contains(milliseconds) else { return false }
-        armed = ArmedHold(tabID: tabID, milliseconds: milliseconds)
+        armed = ArmedHold(panelID: panelID, milliseconds: milliseconds)
         return true
     }
 
-    func consume(tabID: UUID) -> Int? {
+    func consume(panelID: UUID) -> Int? {
         lock.lock()
         defer { lock.unlock() }
-        guard let armed, armed.tabID == tabID else { return nil }
+        guard let armed, armed.panelID == panelID else { return nil }
         self.armed = nil
         return armed.milliseconds
     }
 
-    func clear(tabID: UUID) {
+    func clear(panelID: UUID) {
         lock.lock()
-        if armed?.tabID == tabID { armed = nil }
+        if armed?.panelID == panelID { armed = nil }
         lock.unlock()
     }
 }
@@ -248,17 +248,17 @@ enum FeedAnswerHandoff {
 /// commands retain their existing input-transaction behavior.
 enum FeedAnswerInFlight {
     private static let lock = NSLock()
-    private static var tabIDs: Set<UUID> = []
+    private static var panelIDs: Set<UUID> = []
 
-    static func begin(tabID: UUID) -> Bool {
+    static func begin(panelID: UUID) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return tabIDs.insert(tabID).inserted
+        return panelIDs.insert(panelID).inserted
     }
 
-    static func end(tabID: UUID) {
+    static func end(panelID: UUID) {
         lock.lock()
-        tabIDs.remove(tabID)
+        panelIDs.remove(panelID)
         lock.unlock()
     }
 }

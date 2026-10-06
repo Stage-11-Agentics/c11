@@ -78,8 +78,8 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         // Exercise the real capture path that reads the conversation store;
         // never execute a resume command or schedule an agent in this test.
         let captured = workspace.sessionSnapshot(includeScrollback: false)
-        let capturedTab = try XCTUnwrap(captured.panels.first { $0.id == panelId })
-        XCTAssertEqual(capturedTab.surfaceConversations?.active?.id, firstHasConversation ? firstId : nil)
+        let capturedPanel = try XCTUnwrap(captured.panels.first { $0.id == panelId })
+        XCTAssertEqual(capturedPanel.surfaceConversations?.active?.id, firstHasConversation ? firstId : nil)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("c11-startup-duplicate-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let file = root.appendingPathComponent("session.json")

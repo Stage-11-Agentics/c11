@@ -11,7 +11,7 @@ struct WorkspaceGroupHeaderSummary: Equatable {
 }
 
 /// Capture resolved attention, including plain and suppressed tabs. No agent-kind filter.
-struct WorkspaceGroupTabAttention: Equatable {
+struct WorkspaceGroupPanelAttention: Equatable {
     let isFlagged: Bool
     let isWaiting: Bool
     let isSuppressed: Bool
@@ -20,7 +20,7 @@ struct WorkspaceGroupTabAttention: Equatable {
 /// What one agent tab's sidebar pulse mark shows. Headers ignore it; a change
 /// republishes the projection so rows rebuild their pulse, since a lifecycle
 /// edge (cold above all) often arrives with no notification to do it.
-struct WorkspaceGroupTabLifecycle: Equatable {
+struct WorkspaceGroupPanelLifecycle: Equatable {
     let state: BonsplitTabActivityState
     let promptCacheExpired: Bool
 }
@@ -29,19 +29,19 @@ struct WorkspaceGroupMemberAttention: Equatable {
     let flaggedCount: Int
     let waitingCount: Int
     let unreadCount: Int
-    let lifecycleByTab: [UUID: WorkspaceGroupTabLifecycle]
+    let lifecycleByPanel: [UUID: WorkspaceGroupPanelLifecycle]
 
     init(
-        tabs: [WorkspaceGroupTabAttention] = [],
+        panels: [WorkspaceGroupPanelAttention] = [],
         unreadCount: Int = 0,
-        lifecycleByTab: [UUID: WorkspaceGroupTabLifecycle] = [:]
+        lifecycleByPanel: [UUID: WorkspaceGroupPanelLifecycle] = [:]
     ) {
-        flaggedCount = tabs.reduce(0) { $0 + ($1.isFlagged ? 1 : 0) }
-        waitingCount = tabs.reduce(0) { $0 + ($1.isWaiting && !$1.isSuppressed ? 1 : 0) }
+        flaggedCount = panels.reduce(0) { $0 + ($1.isFlagged ? 1 : 0) }
+        waitingCount = panels.reduce(0) { $0 + ($1.isWaiting && !$1.isSuppressed ? 1 : 0) }
         // Raw unread history includes suppressed and workspace-scoped entries once.
         // Do not sum per-tab notification counts or WorkspacePulse's synthetic waiting fallback.
         self.unreadCount = unreadCount
-        self.lifecycleByTab = lifecycleByTab
+        self.lifecycleByPanel = lifecycleByPanel
     }
 
     static let zero = Self()
@@ -233,25 +233,25 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
                         },
                         attention: { [weak workspace, weak notificationStore] in
                             guard let workspace, let notificationStore else { return .zero }
-                            var lifecycle: [UUID: WorkspaceGroupTabLifecycle] = [:]
-                            let tabs = workspace.panels.keys.map { tabId in
-                                let attention = workspace.attentionSnapshot(panelId: tabId)
-                                let state = workspace.resolvedSurfaceTabActivityState(
-                                    panelId: tabId,
+                            var lifecycle: [UUID: WorkspaceGroupPanelLifecycle] = [:]
+                            let panels = workspace.panels.keys.map { panelId in
+                                let attention = workspace.attentionSnapshot(panelId: panelId)
+                                let state = workspace.resolvedSurfacePanelActivityState(
+                                    panelId: panelId,
                                     hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
-                                        forWorkspaceId: workspace.id, surfaceId: tabId))
+                                        forWorkspaceId: workspace.id, surfaceId: panelId))
                                 if let state {
-                                    lifecycle[tabId] = WorkspaceGroupTabLifecycle(
+                                    lifecycle[panelId] = WorkspaceGroupPanelLifecycle(
                                         state: state,
-                                        promptCacheExpired: workspace.promptCacheExpiredAgentIds.contains(tabId))
+                                        promptCacheExpired: workspace.promptCacheExpiredAgentIds.contains(panelId))
                                 }
-                                return WorkspaceGroupTabAttention(isFlagged: attention.isFlagged,
+                                return WorkspaceGroupPanelAttention(isFlagged: attention.isFlagged,
                                                                   isWaiting: state == .waiting,
                                                                   isSuppressed: attention.suppressed)
                             }
-                            return WorkspaceGroupMemberAttention(tabs: tabs,
+                            return WorkspaceGroupMemberAttention(panels: panels,
                                 unreadCount: notificationStore.unreadCount(forWorkspaceId: workspace.id),
-                                lifecycleByTab: lifecycle)
+                                lifecycleByPanel: lifecycle)
                         })
                 }
             },
@@ -361,7 +361,7 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
             orderEntries[id] = entry
             attentionByWorkspace[id] = attention
         }
-        let pulseChanged = attentionChanges.values.contains { $0.old.lifecycleByTab != $0.new.lifecycleByTab }
+        let pulseChanged = attentionChanges.values.contains { $0.old.lifecycleByPanel != $0.new.lifecycleByPanel }
         let pulseRevision = projection.pulseRevision + (pulseChanged ? 1 : 0)
         if structureChanged {
             // Rebuild membership and canonical-index lookup only on structural changes.

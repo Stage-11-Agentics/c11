@@ -132,7 +132,7 @@ struct WorkspaceContentView: View {
                     workspace.bonsplitController.focusPane(paneId)
                 }
         }
-        .internalOnlyTabDrag()
+        .internalOnlyPanelDrag()
         // Inject a per-pane anchor view. The anchor itself draws nothing; it
         // reports its window-coord frame to the workspace's overlay controller
         // so the controller can mount the pane-close confirmation card in the
@@ -265,15 +265,15 @@ struct WorkspaceContentView: View {
             for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
                 let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id)
                 let expectedKind = panelId.flatMap { workspace.panelKind(panelId: $0) }
-                let expectedPinned = panelId.map { workspace.isTabPinned($0) } ?? false
+                let expectedPinned = panelId.map { workspace.isPanelPinned($0) } ?? false
                 let expectedActivity = panelId.flatMap {
-                    workspace.resolvedSurfaceTabActivityState(
+                    workspace.resolvedSurfacePanelActivityState(
                         panelId: $0,
                         hasExactSurfaceNotification: unreadFromNotifications.contains($0)
                     )
                 }
                 let expectedPresentation = panelId.flatMap {
-                    workspace.resolvedSurfaceTabActivityPresentation(
+                    workspace.resolvedSurfacePanelActivityPresentation(
                         panelId: $0,
                         activityState: expectedActivity
                     )
@@ -281,9 +281,9 @@ struct WorkspaceContentView: View {
                 // Same notification rule as the sync path (signal-eligible unread), not
                 // the raw-unread set the badge uses, so a suppressed agent's clock holds.
                 if let panelId {
-                    workspace.recordTabSheetStatusTransition(
+                    workspace.recordPanelSheetStatusTransition(
                         panelId: panelId,
-                        activity: workspace.resolvedSurfaceTabActivityState(panelId: panelId)
+                        activity: workspace.resolvedSurfacePanelActivityState(panelId: panelId)
                     )
                 }
                 let shouldShow = panelId.map { manualUnread.contains($0) } ?? false

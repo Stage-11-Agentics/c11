@@ -1751,9 +1751,9 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
         stack.push(makeSnapshot(index: 2))
         stack.push(makeSnapshot(index: 3))
 
-        XCTAssertEqual(stack.pop()?.originalTabIndex, 3)
-        XCTAssertEqual(stack.pop()?.originalTabIndex, 2)
-        XCTAssertEqual(stack.pop()?.originalTabIndex, 1)
+        XCTAssertEqual(stack.pop()?.originalPanelIndex, 3)
+        XCTAssertEqual(stack.pop()?.originalPanelIndex, 2)
+        XCTAssertEqual(stack.pop()?.originalPanelIndex, 1)
         XCTAssertNil(stack.pop())
     }
 
@@ -1763,9 +1763,9 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
             stack.push(makeSnapshot(index: index))
         }
 
-        XCTAssertEqual(stack.pop()?.originalTabIndex, 5)
-        XCTAssertEqual(stack.pop()?.originalTabIndex, 4)
-        XCTAssertEqual(stack.pop()?.originalTabIndex, 3)
+        XCTAssertEqual(stack.pop()?.originalPanelIndex, 5)
+        XCTAssertEqual(stack.pop()?.originalPanelIndex, 4)
+        XCTAssertEqual(stack.pop()?.originalPanelIndex, 3)
         XCTAssertNil(stack.pop())
     }
 
@@ -1775,7 +1775,7 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
             url: URL(string: "https://example.com/\(index)"),
             profileID: nil,
             originalPaneId: UUID(),
-            originalTabIndex: index,
+            originalPanelIndex: index,
             fallbackSplitOrientation: .horizontal,
             fallbackSplitInsertFirst: false,
             fallbackAnchorPaneId: UUID()

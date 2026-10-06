@@ -68,51 +68,51 @@ extension TerminalController {
     func v2DispatchSurface(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
         case "panel.list":
-            return v2Result(id: id, self.v2SurfaceList(params: params))
+            return v2Result(id: id, self.v2PanelList(params: params))
         case "panel.current":
-            return v2Result(id: id, self.v2SurfaceCurrent(params: params))
+            return v2Result(id: id, self.v2PanelCurrent(params: params))
         case "panel.set_custom_color":
-            return v2Result(id: id, self.v2SurfaceSetCustomColor(params: params))
+            return v2Result(id: id, self.v2PanelSetCustomColor(params: params))
         case "panel.focus":
-            return v2Result(id: id, self.v2SurfaceFocus(params: params))
+            return v2Result(id: id, self.v2PanelFocus(params: params))
         case "panel.split":
-            return v2Result(id: id, self.v2SurfaceSplit(params: params))
+            return v2Result(id: id, self.v2PanelSplit(params: params))
         case "panel.create":
-            return v2Result(id: id, self.v2SurfaceCreate(params: params))
+            return v2Result(id: id, self.v2PanelCreate(params: params))
         case "panel.close":
-            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2SurfaceClose(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2PanelClose(params: params))
         case "panel.move":
-            return v2Result(id: id, self.v2SurfaceMove(params: params))
+            return v2Result(id: id, self.v2PanelMove(params: params))
         case "panel.reorder":
-            return v2Result(id: id, self.v2SurfaceReorder(params: params))
+            return v2Result(id: id, self.v2PanelReorder(params: params))
         case "panel.drag_to_split":
-            return v2Result(id: id, self.v2SurfaceDragToSplit(params: params))
+            return v2Result(id: id, self.v2PanelDragToSplit(params: params))
         case "panel.refresh":
-            return v2Result(id: id, self.v2SurfaceRefresh(params: params))
+            return v2Result(id: id, self.v2PanelRefresh(params: params))
         case "panel.health":
-            return v2Result(id: id, self.v2SurfaceHealth(params: params))
+            return v2Result(id: id, self.v2PanelHealth(params: params))
         case "panel.trigger_flash":
-            return v2Result(id: id, self.v2SurfaceTriggerFlash(params: params))
+            return v2Result(id: id, self.v2PanelTriggerFlash(params: params))
         case "panel.cancel_flash":
-            return v2Result(id: id, self.v2SurfaceCancelFlash(params: params))
+            return v2Result(id: id, self.v2PanelCancelFlash(params: params))
         case "panel.set_metadata":
-            return v2Result(id: id, self.v2SurfaceSetMetadata(params: params))
+            return v2Result(id: id, self.v2PanelSetMetadata(params: params))
         case "panel.get_metadata":
-            return v2Result(id: id, self.v2SurfaceGetMetadata(params: params))
+            return v2Result(id: id, self.v2PanelGetMetadata(params: params))
         case "panel.clear_metadata":
-            return v2Result(id: id, self.v2SurfaceClearMetadata(params: params))
+            return v2Result(id: id, self.v2PanelClearMetadata(params: params))
         case "panel.get_titlebar_state":
-            return v2Result(id: id, self.v2SurfaceGetTitleBarState(params: params))
+            return v2Result(id: id, self.v2PanelGetTitleBarState(params: params))
         case "panel.set_titlebar_visibility":
-            return v2Result(id: id, self.v2SurfaceSetTitleBarVisibility(params: params))
+            return v2Result(id: id, self.v2PanelSetTitleBarVisibility(params: params))
         case "panel.set_titlebar_collapsed":
-            return v2Result(id: id, self.v2SurfaceSetTitleBarCollapsed(params: params))
+            return v2Result(id: id, self.v2PanelSetTitleBarCollapsed(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }
     }
 
-    private func v2SurfaceList(params: [String: Any]) -> V2CallResult {
+    private func v2PanelList(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -145,14 +145,14 @@ extension TerminalController {
                     "ref": v2Ref(kind: .surface, uuid: panel.id),
                     "index": index,
                     "type": panel.panelType.rawValue,
-                    "title": ws.tabTitle(panelId: panel.id) ?? panel.displayTitle,
+                    "title": ws.panelTitle(panelId: panel.id) ?? panel.displayTitle,
                     "focused": panel.id == focusedSurfaceId,
                     "pane_id": v2OrNull(paneUUID?.uuidString),
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
                     "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
                     "tty": v2OrNull(ws.panelTTYNames[panel.id]),
-                    "custom_color": v2OrNull(ws.tabCustomColor(panelId: panel.id))
+                    "custom_color": v2OrNull(ws.panelCustomColor(panelId: panel.id))
                 ]
                 v2SetSeenFields(&item, panelId: panel.id)
                 v2SetPromptCacheField(&item, panelId: panel.id)
@@ -208,7 +208,7 @@ extension TerminalController {
         return .ok(out)
     }
 
-    private func v2SurfaceCurrent(params: [String: Any]) -> V2CallResult {
+    private func v2PanelCurrent(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -233,7 +233,7 @@ extension TerminalController {
                 "surface_id": v2OrNull(surfaceId?.uuidString),
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
                 "surface_type": v2OrNull(surfaceId.flatMap { ws.panels[$0]?.panelType.rawValue }),
-                "custom_color": v2OrNull(surfaceId.flatMap { ws.tabCustomColor(panelId: $0) })
+                "custom_color": v2OrNull(surfaceId.flatMap { ws.panelCustomColor(panelId: $0) })
             ]
         }
 
@@ -243,7 +243,7 @@ extension TerminalController {
         return .ok(payload)
     }
 
-    private func v2SurfaceSetCustomColor(params: [String: Any]) -> V2CallResult {
+    private func v2PanelSetCustomColor(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -277,11 +277,11 @@ extension TerminalController {
             workspaceUUID = workspace.id
             found = true
             if clear {
-                workspace.setTabCustomColor(panelId: surfaceId, color: nil)
+                workspace.setPanelCustomColor(panelId: surfaceId, color: nil)
                 applied = nil
             } else if let hex {
-                workspace.setTabCustomColor(panelId: surfaceId, color: hex)
-                applied = workspace.tabCustomColor(panelId: surfaceId)
+                workspace.setPanelCustomColor(panelId: surfaceId, color: hex)
+                applied = workspace.panelCustomColor(panelId: surfaceId)
             }
         }
 
@@ -302,7 +302,7 @@ extension TerminalController {
         ])
     }
 
-    private func v2SurfaceFocus(params: [String: Any]) -> V2CallResult {
+    private func v2PanelFocus(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -365,7 +365,7 @@ extension TerminalController {
         }
     }
 
-    func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
+    func v2PanelSplit(params: [String: Any]) -> V2CallResult {
         v2RefreshKnownRefs()
         if let error = v2RejectUnresolvedTargetRefs(params) { return error }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
@@ -414,7 +414,7 @@ extension TerminalController {
             case .refuse(let message, let data):
                 result = .err(code: "pane_too_small", message: message, data: data)
 
-            case .tab(let paneId, let warning):
+            case .panel(let paneId, let warning):
                 guard let panel = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
@@ -433,7 +433,7 @@ extension TerminalController {
                     "type": self.v2OrNull(ws.panels[panel.id]?.panelType.rawValue)
                 ]
                 if initialInput != nil { ok["initial_input"] = "queued" }
-                self.annotateSizeOutcome(&ok, requested: direction, applied: direction, becameTab: true, warning: warning)
+                self.annotateSizeOutcome(&ok, requested: direction, applied: direction, becamePanel: true, warning: warning)
                 result = .ok(ok)
 
             case .split(let actualDirection, let requested, let warning):
@@ -454,7 +454,7 @@ extension TerminalController {
                         "type": self.v2OrNull(ws.panels[newId]?.panelType.rawValue)
                     ]
                     if initialInput != nil { ok["initial_input"] = "queued" }
-                    self.annotateSizeOutcome(&ok, requested: requested, applied: actualDirection, becameTab: false, warning: warning)
+                    self.annotateSizeOutcome(&ok, requested: requested, applied: actualDirection, becamePanel: false, warning: warning)
                     result = .ok(ok)
                 } else {
                     result = .err(code: "internal_error", message: "Failed to create split", data: nil)
@@ -464,13 +464,13 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceCreate(params: [String: Any]) -> V2CallResult {
+    private func v2PanelCreate(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         let panelType = v2PanelType(params, "type") ?? .terminal
-        if let denial = v2SurfaceTypeDenial(panelType) { return denial }
+        if let denial = v2PanelTypeDenial(panelType) { return denial }
         var initialInput: String?
         if let error = v2ResolveCreateInitialInput(params: params, panelType: panelType.rawValue, resolved: &initialInput) {
             return error
@@ -597,7 +597,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceClose(params: [String: Any]) -> V2CallResult {
+    private func v2PanelClose(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -626,13 +626,13 @@ extension TerminalController {
             }
 
             // Socket API must be non-interactive: bypass close-confirmation gating.
-            ws.closeTab(surfaceId, force: true)
+            ws.closePanel(surfaceId, force: true)
             result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
         }
         return result
     }
 
-    private func v2SurfaceDragToSplit(params: [String: Any]) -> V2CallResult {
+    private func v2PanelDragToSplit(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -680,7 +680,7 @@ extension TerminalController {
         return result
     }
 
-    func v2SurfaceMove(params: [String: Any]) -> V2CallResult {
+    func v2PanelMove(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2UUID(params, "surface_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
@@ -829,7 +829,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceReorder(params: [String: Any]) -> V2CallResult {
+    private func v2PanelReorder(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2UUID(params, "surface_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
@@ -896,7 +896,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceRefresh(params: [String: Any]) -> V2CallResult {
+    private func v2PanelRefresh(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -919,7 +919,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceHealth(params: [String: Any]) -> V2CallResult {
+    private func v2PanelHealth(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -970,7 +970,7 @@ extension TerminalController {
     // v2AwaitCallback — repointing v2AwaitCallback's many @MainActor callers is
     // out of scope per ticket non-goals; this helper avoids touching them) and
     // then re-hops to @MainActor for the actual send.
-    nonisolated func v2SurfaceSendText(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2PanelSendText(params: [String: Any]) -> V2CallResult {
         guard let text = params["text"] as? String else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
@@ -1042,8 +1042,8 @@ extension TerminalController {
             let targetIsCurrent = SendInputGuard.targetIsCurrent(
                 expectedWorkspace: resolved.workspace,
                 currentWorkspaces: resolved.workspaceManager.workspaces,
-                expectedTab: resolved.terminalPanel,
-                currentTab: resolved.workspace.terminalPanel(for: resolved.tabId)
+                expectedPanel: resolved.terminalPanel,
+                currentPanel: resolved.workspace.terminalPanel(for: resolved.panelId)
             )
             let liveSurface = targetIsCurrent ? resolved.terminalPanel.surface.surface : nil
             let observation: PromptInputObservation
@@ -1123,9 +1123,9 @@ extension TerminalController {
         envelope["queued"] = queued
         envelope["delivered"] = !queued
         for (key, value) in phaseBFields { envelope[key] = value }
-        EventEmitter.shared.emitTabInputSent(
+        EventEmitter.shared.emitPanelInputSent(
             workspace: resolved.workspaceId,
-            surface: resolved.tabId,
+            surface: resolved.panelId,
             callerPanelId: resolved.callerPanelId,
             callerTitle: resolved.callerTitle,
             targetTitle: resolved.targetTitle,
@@ -1141,7 +1141,7 @@ extension TerminalController {
     // (v2MainSync wrap → waitForTerminalSurface → v2AwaitCallback nesting
     // CFRunLoopRun on a held main queue). Migrate it to the same Phase A /
     // Phase B pattern. See `v2SurfaceSendText` for the full rationale.
-    nonisolated func v2SurfaceSendKey(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2PanelSendKey(params: [String: Any]) -> V2CallResult {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
@@ -1208,9 +1208,9 @@ extension TerminalController {
 
         switch phaseBOutcome {
         case .ok:
-            EventEmitter.shared.emitTabInputSent(
+            EventEmitter.shared.emitPanelInputSent(
                 workspace: resolved.workspaceId,
-                surface: resolved.tabId,
+                surface: resolved.panelId,
                 callerPanelId: resolved.callerPanelId,
                 callerTitle: resolved.callerTitle,
                 targetTitle: resolved.targetTitle,
@@ -1231,7 +1231,7 @@ extension TerminalController {
     // socketWorker policy for uniformity with the rest of the surface.* family.
     // Single-phase: one Task @MainActor + DispatchSemaphore wraps the whole
     // body, no Phase B waiting.
-    nonisolated func v2SurfaceClearHistory(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2PanelClearHistory(params: [String: Any]) -> V2CallResult {
         let semaphore = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "Failed to clear history", data: nil)
         Task { @MainActor in
@@ -1285,7 +1285,7 @@ extension TerminalController {
     /// Surface teardown is serialized on main, so try-lock and bounded native
     /// copying stay in one main turn. Caller-owned buffers need no native free;
     /// classification runs on this socket worker after the capture completes.
-    nonisolated func v2SurfaceInputState(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2PanelInputState(params: [String: Any]) -> V2CallResult {
         guard CapabilityFeatures.current.supports(.terminalInputState) else {
             return .err(code: "not_supported", message: String(localized: "socket.input_state.unsupported", defaultValue: "Terminal input-state inspection is unavailable."), data: nil)
         }
@@ -1318,8 +1318,8 @@ extension TerminalController {
                 guard SendInputGuard.targetIsCurrent(
                     expectedWorkspace: resolved.workspace,
                     currentWorkspaces: resolved.workspaceManager.workspaces,
-                    expectedTab: resolved.terminalPanel,
-                    currentTab: resolved.workspace.terminalPanel(for: resolved.tabId)
+                    expectedPanel: resolved.terminalPanel,
+                    currentPanel: resolved.workspace.terminalPanel(for: resolved.panelId)
                 ) else {
                     let data = PromptInputClassification(state: .unavailable, draftLength: nil)
                         .responseFields(source: nil, observedAtMs: nil)
@@ -1356,7 +1356,7 @@ extension TerminalController {
         }
     }
 
-    nonisolated func v2SurfaceReadSelection(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2PanelReadSelection(params: [String: Any]) -> V2CallResult {
         guard CapabilityFeatures.current.supports(.terminalSelection) else {
             return .err(code: "not_supported", message: String(localized: "socket.read_selection.unsupported", defaultValue: "Terminal selection reading is unavailable."), data: nil)
         }
@@ -1388,19 +1388,19 @@ extension TerminalController {
             }
             guard let manager = v2ResolveWorkspaceManager(params: params),
                   let workspace = v2ResolveWorkspace(params: params, workspaceManager: manager),
-                  let tabID = v2UUID(params, "surface_id") ?? workspace.focusedPanelId,
-                  let tab = workspace.panels[tabID] else {
+                  let panelID = v2UUID(params, "surface_id") ?? workspace.focusedPanelId,
+                  let panel = workspace.panels[panelID] else {
                 fail("not_found", String(localized: "socket.terminalRead.not_found", defaultValue: "Terminal panel not found."))
                 return
             }
-            guard let terminal = tab as? TerminalPanel else {
+            guard let terminal = panel as? TerminalPanel else {
                 fail("invalid_params", String(localized: "socket.error.tab_not_terminal", defaultValue: "Panel is not a terminal."))
                 return
             }
             // Resolve and fetch the live surface here, not on the worker or in
             // an earlier callback. A queued close/replacement cannot leak a ptr.
             guard manager.workspaces.contains(where: { $0 === workspace }),
-                  workspace.terminalPanel(for: tabID) === terminal,
+                  workspace.terminalPanel(for: panelID) === terminal,
                   let surface = terminal.surface.surface else {
                 fail("not_ready", String(localized: "socket.terminalRead.unavailable", defaultValue: "Terminal surface is not ready."))
                 return
@@ -1408,7 +1408,7 @@ extension TerminalController {
             let windowID = v2ResolveWindowId(workspaceManager: manager)
             let routing: [String: Any] = [
                 "workspace_id": workspace.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
-                "surface_id": tabID.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: tabID),
+                "surface_id": panelID.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: panelID),
                 "window_id": v2OrNull(windowID?.uuidString), "window_ref": v2Ref(kind: .window, uuid: windowID)
             ]
             var native = ghostty_text_s()
@@ -1471,7 +1471,7 @@ extension TerminalController {
     // C11-295: one five-second caller deadline covers both main hops and
     // C11-296's existing off-main startup wait. Native formatting after a
     // successful try-lock is still on main and cannot be preempted by timeout.
-    nonisolated func v2SurfaceReadText(params: [String: Any], timeout: TimeInterval = 5.0) -> V2CallResult {
+    nonisolated func v2PanelReadText(params: [String: Any], timeout: TimeInterval = 5.0) -> V2CallResult {
         let deadline = DispatchTime.now() + timeout
         let lineLimit = v2Int(params, "lines")
         if let lineLimit, lineLimit <= 0 {
@@ -1602,7 +1602,7 @@ extension TerminalController {
         return located
     }
 
-    private func v2SurfaceGetTitleBarState(params: [String: Any]) -> V2CallResult {
+    private func v2PanelGetTitleBarState(params: [String: Any]) -> V2CallResult {
         guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
             return .err(code: "surface_not_found", message: "Panel not found", data: nil)
         }
@@ -1614,7 +1614,7 @@ extension TerminalController {
         return .ok(payload)
     }
 
-    private func v2SurfaceSetTitleBarVisibility(params: [String: Any]) -> V2CallResult {
+    private func v2PanelSetTitleBarVisibility(params: [String: Any]) -> V2CallResult {
         guard let (ws, _) = v2ResolveWorkspaceForTitleBar(params: params) else {
             return .err(code: "surface_not_found", message: "Panel not found", data: nil)
         }
@@ -1625,7 +1625,7 @@ extension TerminalController {
         return .ok(["visible": visible, "workspace_id": ws.id.uuidString])
     }
 
-    private func v2SurfaceSetTitleBarCollapsed(params: [String: Any]) -> V2CallResult {
+    private func v2PanelSetTitleBarCollapsed(params: [String: Any]) -> V2CallResult {
         guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
             return .err(code: "surface_not_found", message: "Panel not found", data: nil)
         }
@@ -1674,7 +1674,7 @@ extension TerminalController {
 
     /// Shared not-found error for the surface-target verbs: distinguishes an
     /// explicit ref we couldn't locate from the no-surface-and-no-focus case.
-    private func v2SurfaceTargetNotFound(params: [String: Any]) -> V2CallResult {
+    private func v2PanelTargetNotFound(params: [String: Any]) -> V2CallResult {
         if let surfaceId = v2UUID(params, "surface_id") {
             return .err(code: "not_found", message: "Panel not found",
                         data: ["surface_id": surfaceId.uuidString])
@@ -1682,7 +1682,7 @@ extension TerminalController {
         return .err(code: "not_found", message: "No focused panel", data: nil)
     }
 
-    private func v2SurfaceTriggerFlash(params: [String: Any]) -> V2CallResult {
+    private func v2PanelTriggerFlash(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1719,7 +1719,7 @@ extension TerminalController {
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to trigger flash", data: nil)
         v2MainSync {
             guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, workspaceManager: workspaceManager) else {
-                result = v2SurfaceTargetNotFound(params: params)
+                result = v2PanelTargetNotFound(params: params)
                 return
             }
 
@@ -1743,7 +1743,7 @@ extension TerminalController {
     /// CMUX-10: cancel an in-flight persistent flash on a single surface.
     /// Idempotent — succeeds even when no flash is registered (the operator
     /// or agent doesn't need to know the current state to cancel).
-    private func v2SurfaceCancelFlash(params: [String: Any]) -> V2CallResult {
+    private func v2PanelCancelFlash(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1751,7 +1751,7 @@ extension TerminalController {
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to cancel flash", data: nil)
         v2MainSync {
             guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, workspaceManager: workspaceManager) else {
-                result = v2SurfaceTargetNotFound(params: params)
+                result = v2PanelTargetNotFound(params: params)
                 return
             }
 
@@ -1794,7 +1794,7 @@ extension TerminalController {
         }
     }
 
-    private func v2SurfaceSetMetadata(params: [String: Any]) -> V2CallResult {
+    private func v2PanelSetMetadata(params: [String: Any]) -> V2CallResult {
         guard let metadataObj = params["metadata"] as? [String: Any] else {
             return .err(code: "invalid_json", message: "metadata must be a JSON object", data: nil)
         }
@@ -1887,7 +1887,7 @@ extension TerminalController {
         }
     }
 
-    private func v2SurfaceGetMetadata(params: [String: Any]) -> V2CallResult {
+    private func v2PanelGetMetadata(params: [String: Any]) -> V2CallResult {
         let keys: [String]?
         if params["keys"] is NSNull || params["keys"] == nil {
             keys = nil
@@ -1909,7 +1909,7 @@ extension TerminalController {
         )
 
         var fullMetadata = storedMetadata
-        fullMetadata["journal"] = JournalCoordinator.shared.readback(tabID: resolved.surfaceId)
+        fullMetadata["journal"] = JournalCoordinator.shared.readback(panelID: resolved.surfaceId)
         var metadataOut: [String: Any] = fullMetadata
         var sourcesOut: [String: [String: Any]] = fullSources
         if let filterKeys = keys {
@@ -1934,7 +1934,7 @@ extension TerminalController {
         return .ok(payload)
     }
 
-    private func v2SurfaceClearMetadata(params: [String: Any]) -> V2CallResult {
+    private func v2PanelClearMetadata(params: [String: Any]) -> V2CallResult {
         let keys: [String]?
         if params["keys"] == nil || params["keys"] is NSNull {
             keys = nil

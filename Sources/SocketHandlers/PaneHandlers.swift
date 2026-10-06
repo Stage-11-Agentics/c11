@@ -175,7 +175,7 @@ extension TerminalController {
         }
 
         let panelType = v2PanelType(params, "type") ?? .terminal
-        if let denial = v2SurfaceTypeDenial(panelType) { return denial }
+        if let denial = v2PanelTypeDenial(panelType) { return denial }
         var initialInput: String?
         if let error = v2ResolveCreateInitialInput(params: params, panelType: panelType.rawValue, resolved: &initialInput) {
             return error
@@ -252,10 +252,10 @@ extension TerminalController {
                 force: force
             )
 
-            var becameTab = false
+            var becamePanel = false
             var appliedDirection = direction
             var warningText: String?
-            var targetPaneForTab: PaneID?
+            var targetPaneForPanel: PaneID?
             var newPanelId: UUID?
 
             switch plan {
@@ -263,10 +263,10 @@ extension TerminalController {
                 result = .err(code: "pane_too_small", message: message, data: data)
                 return
 
-            case .tab(let paneId, let warning):
-                becameTab = true
+            case .panel(let paneId, let warning):
+                becamePanel = true
                 warningText = warning
-                targetPaneForTab = paneId
+                targetPaneForPanel = paneId
                 switch panelType {
                 case .browser:
                     newPanelId = ws.newBrowserSurface(
@@ -309,7 +309,7 @@ extension TerminalController {
                 result = .err(code: "internal_error", message: "Failed to create area", data: nil)
                 return
             }
-            let paneUUID = becameTab ? targetPaneForTab?.id : ws.paneId(forPanelId: createdPanelId)?.id
+            let paneUUID = becamePanel ? targetPaneForPanel?.id : ws.paneId(forPanelId: createdPanelId)?.id
             // Seed pane title atomic with the pane id becoming valid: the
             // caller observes the pane (via the response) only after the seed
             // is in the store.
@@ -330,7 +330,7 @@ extension TerminalController {
                 ok["profile_id"] = browserProfileID.uuidString
             }
             if initialInput != nil { ok["initial_input"] = "queued" }
-            self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becameTab: becameTab, warning: warningText)
+            self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becamePanel: becamePanel, warning: warningText)
             result = .ok(ok)
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
@@ -537,10 +537,10 @@ extension TerminalController {
             }
 
             if let sourcePlaceholder {
-                _ = workspace.closeTab(sourcePlaceholder, force: true)
+                _ = workspace.closePanel(sourcePlaceholder, force: true)
             }
             if let targetPlaceholder {
-                _ = workspace.closeTab(targetPlaceholder, force: true)
+                _ = workspace.closePanel(targetPlaceholder, force: true)
             }
 
             if focus {
@@ -679,7 +679,7 @@ extension TerminalController {
         if let focus = v2Bool(params, "focus") {
             moveParams["focus"] = focus
         }
-        return v2SurfaceMove(params: moveParams)
+        return v2PanelMove(params: moveParams)
     }
 
     private func v2PaneLast(params: [String: Any]) -> V2CallResult {

@@ -221,7 +221,7 @@ enum BrowserImportHintVariant: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum BrowserImportHintBlankTabPlacement: Equatable {
+enum BrowserImportHintBlankPanelPlacement: Equatable {
     case hidden
     case inlineStrip
     case floatingCard
@@ -235,35 +235,35 @@ enum BrowserImportHintSettingsStatus: Equatable {
 }
 
 struct BrowserImportHintPresentation: Equatable {
-    let blankTabPlacement: BrowserImportHintBlankTabPlacement
+    let blankPanelPlacement: BrowserImportHintBlankPanelPlacement
     let settingsStatus: BrowserImportHintSettingsStatus
 
     init(
         variant: BrowserImportHintVariant,
-        showOnBlankTabs: Bool,
+        showOnBlankPanels: Bool,
         isDismissed: Bool
     ) {
         if variant == .settingsOnly {
-            blankTabPlacement = .hidden
+            blankPanelPlacement = .hidden
             settingsStatus = .settingsOnly
             return
         }
 
-        if !showOnBlankTabs || isDismissed {
-            blankTabPlacement = .hidden
+        if !showOnBlankPanels || isDismissed {
+            blankPanelPlacement = .hidden
             settingsStatus = .hidden
             return
         }
 
         switch variant {
         case .inlineStrip:
-            blankTabPlacement = .inlineStrip
+            blankPanelPlacement = .inlineStrip
         case .floatingCard:
-            blankTabPlacement = .floatingCard
+            blankPanelPlacement = .floatingCard
         case .toolbarChip:
-            blankTabPlacement = .toolbarChip
+            blankPanelPlacement = .toolbarChip
         case .settingsOnly:
-            blankTabPlacement = .hidden
+            blankPanelPlacement = .hidden
         }
         settingsStatus = .visible
     }
@@ -271,10 +271,10 @@ struct BrowserImportHintPresentation: Equatable {
 
 enum BrowserImportHintSettings {
     static let variantKey = "browserImportHintVariant"
-    static let showOnBlankTabsKey = "browserImportHintShowOnBlankTabs"
+    static let showOnBlankPanelsKey = "browserImportHintShowOnBlankTabs"
     static let dismissedKey = "browserImportHintDismissed"
     static let defaultVariant: BrowserImportHintVariant = .toolbarChip
-    static let defaultShowOnBlankTabs = true
+    static let defaultShowOnBlankPanels = true
     static let defaultDismissed = false
 
     static func variant(for rawValue: String?) -> BrowserImportHintVariant {
@@ -288,11 +288,11 @@ enum BrowserImportHintSettings {
         variant(for: defaults.string(forKey: variantKey))
     }
 
-    static func showOnBlankTabs(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: showOnBlankTabsKey) == nil {
-            return defaultShowOnBlankTabs
+    static func showOnBlankPanels(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: showOnBlankPanelsKey) == nil {
+            return defaultShowOnBlankPanels
         }
-        return defaults.bool(forKey: showOnBlankTabsKey)
+        return defaults.bool(forKey: showOnBlankPanelsKey)
     }
 
     static func isDismissed(defaults: UserDefaults = .standard) -> Bool {
@@ -305,14 +305,14 @@ enum BrowserImportHintSettings {
     static func presentation(defaults: UserDefaults = .standard) -> BrowserImportHintPresentation {
         BrowserImportHintPresentation(
             variant: variant(defaults: defaults),
-            showOnBlankTabs: showOnBlankTabs(defaults: defaults),
+            showOnBlankPanels: showOnBlankPanels(defaults: defaults),
             isDismissed: isDismissed(defaults: defaults)
         )
     }
 
     static func reset(defaults: UserDefaults = .standard) {
         defaults.set(defaultVariant.rawValue, forKey: variantKey)
-        defaults.set(defaultShowOnBlankTabs, forKey: showOnBlankTabsKey)
+        defaults.set(defaultShowOnBlankPanels, forKey: showOnBlankPanelsKey)
         defaults.set(defaultDismissed, forKey: dismissedKey)
     }
 }
@@ -2141,8 +2141,8 @@ actor BrowserSearchSuggestionService {
 /// BrowserPanel provides a WKWebView-based browser panel.
 /// All browser panels share a WKProcessPool for cookie sharing.
 private enum BrowserInsecureHTTPNavigationIntent {
-    case currentTab
-    case newTab
+    case currentPanel
+    case newPanel
 }
 
 /// Observable state for browser find-in-page. Mirrors `TerminalSurface.SearchState`.
@@ -2602,7 +2602,7 @@ final class BrowserPanel: Panel, ObservableObject {
     @Published private(set) var shouldRenderWebView: Bool = false
 
     /// True when the browser is showing the internal empty new-tab page (no WKWebView attached yet).
-    var isShowingNewTabPage: Bool {
+    var isShowingNewPanelPage: Bool {
         !shouldRenderWebView
     }
 
@@ -3003,8 +3003,8 @@ final class BrowserPanel: Panel, ObservableObject {
                 self?.endDownloadActivity()
             }
         }
-        webView.onContextMenuOpenLinkInNewTab = { [weak self] url in
-            self?.openLinkInNewTab(url: url)
+        webView.onContextMenuOpenLinkInNewPanel = { [weak self] url in
+            self?.openLinkInNewPanel(url: url)
         }
         webView.onShowSurfaceManifest = { [weak self] in
             guard let self else { return }
@@ -3170,8 +3170,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Set up navigation delegate
         let navDelegate = BrowserNavigationDelegate()
-        navDelegate.openInNewTab = { [weak self] url in
-            self?.openLinkInNewTab(url: url)
+        navDelegate.openInNewPanel = { [weak self] url in
+            self?.openLinkInNewPanel(url: url)
         }
         navDelegate.shouldBlockInsecureHTTPNavigation = { [weak self] url in
             self?.shouldBlockInsecureHTTPNavigation(to: url) ?? false
@@ -3244,9 +3244,9 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Set up UI delegate (handles cmd+click, target=_blank, and context menu)
         let browserUIDelegate = BrowserUIDelegate()
-        browserUIDelegate.openInNewTab = { [weak self] url in
+        browserUIDelegate.openInNewPanel = { [weak self] url in
             guard let self else { return }
-            self.openLinkInNewTab(url: url)
+            self.openLinkInNewPanel(url: url)
         }
         browserUIDelegate.requestNavigation = { [weak self] request, intent in
             self?.requestNavigation(request, intent: intent)
@@ -4410,7 +4410,7 @@ final class BrowserPanel: Panel, ObservableObject {
         if shouldBlockInsecureHTTPNavigation(to: url) {
             return presentInsecureHTTPAlert(
                 for: request,
-                intent: .currentTab,
+                intent: .currentPanel,
                 recordTypedNavigation: recordTypedNavigation
             )
         }
@@ -4700,10 +4700,10 @@ final class BrowserPanel: Panel, ObservableObject {
             return presentInsecureHTTPAlert(for: request, intent: intent, recordTypedNavigation: false)
         }
         switch intent {
-        case .currentTab:
+        case .currentPanel:
             navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: false)
-        case .newTab:
-            openLinkInNewTab(url: url)
+        case .newPanel:
+            openLinkInNewPanel(url: url)
         }
         return record(disposition: .proceeded)
     }
@@ -4805,11 +4805,11 @@ final class BrowserPanel: Panel, ObservableObject {
         case .alertSecondButtonReturn:
             record(disposition: .proceeded)
             switch intent {
-            case .currentTab:
+            case .currentPanel:
                 insecureHTTPBypassHostOnce = host
                 navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: recordTypedNavigation)
-            case .newTab:
-                openLinkInNewTab(url: url, bypassInsecureHTTPHostOnce: host)
+            case .newPanel:
+                openLinkInNewPanel(url: url, bypassInsecureHTTPHostOnce: host)
             }
         default:
             record(disposition: .blocked(host: host, reason: .declinedByOperator))
@@ -5035,7 +5035,7 @@ extension BrowserPanel {
     }
 
     /// Open a link in a new browser surface in the same pane
-    func openLinkInNewTab(url: URL, bypassInsecureHTTPHostOnce: String? = nil) {
+    func openLinkInNewPanel(url: URL, bypassInsecureHTTPHostOnce: String? = nil) {
 #if DEBUG
         dlog(
             "browser.newTab.open.begin panel=\(id.uuidString.prefix(5)) " +
@@ -6449,7 +6449,7 @@ extension BrowserPanel {
     ) {
         presentInsecureHTTPAlert(
             for: URLRequest(url: url),
-            intent: .currentTab,
+            intent: .currentPanel,
             recordTypedNavigation: recordTypedNavigation
         )
     }
@@ -6837,7 +6837,7 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
 
 // MARK: - Navigation Delegate
 
-func browserNavigationShouldOpenInNewTab(
+func browserNavigationShouldOpenInNewPanel(
     navigationType: WKNavigationType,
     modifierFlags: NSEvent.ModifierFlags,
     buttonNumber: Int,
@@ -6878,7 +6878,7 @@ func browserNavigationShouldCreatePopup(
     currentEventType: NSEvent.EventType? = NSApp.currentEvent?.type,
     currentEventButtonNumber: Int? = NSApp.currentEvent?.buttonNumber
 ) -> Bool {
-    let isUserNewTab = browserNavigationShouldOpenInNewTab(
+    let isUserNewPanel = browserNavigationShouldOpenInNewPanel(
         navigationType: navigationType,
         modifierFlags: modifierFlags,
         buttonNumber: buttonNumber,
@@ -6886,10 +6886,10 @@ func browserNavigationShouldCreatePopup(
         currentEventType: currentEventType,
         currentEventButtonNumber: currentEventButtonNumber
     )
-    return navigationType == .other && !isUserNewTab
+    return navigationType == .other && !isUserNewPanel
 }
 
-func browserNavigationShouldFallbackNilTargetToNewTab(
+func browserNavigationShouldFallbackNilTargetToNewPanel(
     navigationType: WKNavigationType
 ) -> Bool {
     // Scripted popups rely on WKUIDelegate.createWebViewWith returning a live
@@ -6901,7 +6901,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     var didFinish: ((WKWebView) -> Void)?
     var didFailNavigation: ((WKWebView, String) -> Void)?
     var didTerminateWebContentProcess: ((WKWebView) -> Void)?
-    var openInNewTab: ((URL) -> Void)?
+    var openInNewPanel: ((URL) -> Void)?
     var shouldBlockInsecureHTTPNavigation: ((URL) -> Bool)?
     var handleBlockedInsecureHTTPNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
     /// Fired synchronously when a main-frame navigation settles (finished or
@@ -7094,7 +7094,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         let hasRecentMiddleClickIntent = CmuxWebView.hasRecentMiddleClickIntent(for: webView)
-        let shouldOpenInNewTab = browserNavigationShouldOpenInNewTab(
+        let shouldOpenInNewPanel = browserNavigationShouldOpenInNewPanel(
             navigationType: navigationAction.navigationType,
             modifierFlags: navigationAction.modifierFlags,
             buttonNumber: navigationAction.buttonNumber,
@@ -7109,7 +7109,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
             "mods=\(navigationAction.modifierFlags.rawValue) targetNil=\(navigationAction.targetFrame == nil ? 1 : 0) " +
             "eventType=\(currentEventType) eventButton=\(currentEventButton) " +
             "recentMiddleIntent=\(hasRecentMiddleClickIntent ? 1 : 0) " +
-            "openInNewTab=\(shouldOpenInNewTab ? 1 : 0)"
+            "openInNewTab=\(shouldOpenInNewPanel ? 1 : 0)"
         )
 #endif
 
@@ -7117,14 +7117,14 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
            navigationAction.targetFrame?.isMainFrame != false,
            shouldBlockInsecureHTTPNavigation?(url) == true {
             let intent: BrowserInsecureHTTPNavigationIntent
-            if shouldOpenInNewTab || navigationAction.targetFrame == nil {
-                intent = .newTab
+            if shouldOpenInNewPanel || navigationAction.targetFrame == nil {
+                intent = .newPanel
             } else {
-                intent = .currentTab
+                intent = .currentPanel
             }
 #if DEBUG
             dlog(
-                "browser.nav.decidePolicy.action kind=blockedInsecure intent=\(intent == .newTab ? "newTab" : "currentTab") " +
+                "browser.nav.decidePolicy.action kind=blockedInsecure intent=\(intent == .newPanel ? "newTab" : "currentTab") " +
                 "url=\(url.absoluteString)"
             )
 #endif
@@ -7150,12 +7150,12 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         }
 
         // Cmd+click and middle-click on regular links should always open in a new tab.
-        if shouldOpenInNewTab,
+        if shouldOpenInNewPanel,
            let url = navigationAction.request.url {
 #if DEBUG
             dlog("browser.nav.decidePolicy.action kind=openInNewTab url=\(url.absoluteString)")
 #endif
-            openInNewTab?(url)
+            openInNewPanel?(url)
             decisionHandler(.cancel)
             return
         }
@@ -7164,14 +7164,14 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         // Scripted popups (navigationType == .other) are handled in
         // WKUIDelegate.createWebViewWith so OAuth opener linkage survives.
         if navigationAction.targetFrame == nil,
-           browserNavigationShouldFallbackNilTargetToNewTab(
+           browserNavigationShouldFallbackNilTargetToNewPanel(
                navigationType: navigationAction.navigationType
            ),
            let url = navigationAction.request.url {
 #if DEBUG
             dlog("browser.nav.decidePolicy.action kind=openInNewTabFromNilTarget url=\(url.absoluteString)")
 #endif
-            openInNewTab?(url)
+            openInNewPanel?(url)
             decisionHandler(.cancel)
             return
         }
@@ -7255,7 +7255,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
 // MARK: - UI Delegate
 
 private class BrowserUIDelegate: NSObject, WKUIDelegate {
-    var openInNewTab: ((URL) -> Void)?
+    var openInNewPanel: ((URL) -> Void)?
     var requestNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
     var openPopup: ((WKWebViewConfiguration, WKWindowFeatures) -> WKWebView?)?
 
@@ -7342,7 +7342,7 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
         // Fallback: open in new tab (no opener linkage)
         if let url = navigationAction.request.url {
             if let requestNavigation {
-                let intent: BrowserInsecureHTTPNavigationIntent = .newTab
+                let intent: BrowserInsecureHTTPNavigationIntent = .newPanel
 #if DEBUG
                 dlog(
                     "browser.nav.createWebView.action kind=requestNavigation intent=newTab " +
@@ -7354,7 +7354,7 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
 #if DEBUG
                 dlog("browser.nav.createWebView.action kind=openInNewTab url=\(url.absoluteString)")
 #endif
-                openInNewTab?(url)
+                openInNewPanel?(url)
             }
         }
         return nil

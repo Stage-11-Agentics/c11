@@ -4,7 +4,7 @@ import Foundation
 enum AttentionOrder {
     struct Target: Hashable {
         let workspaceID: UUID
-        let tabID: UUID
+        let panelID: UUID
     }
 
     struct Candidate: Equatable {
@@ -24,7 +24,7 @@ enum AttentionOrder {
             guard let rhsTime else { return true }
             return lhsTime < rhsTime
         }
-        if lhs.tabID != rhs.tabID { return lhs.tabID.uuidString < rhs.tabID.uuidString }
+        if lhs.panelID != rhs.panelID { return lhs.panelID.uuidString < rhs.panelID.uuidString }
         return lhs.workspaceID.uuidString < rhs.workspaceID.uuidString
     }
 
@@ -38,9 +38,9 @@ enum AttentionOrder {
             if tier(lhs) != tier(rhs) { return tier(lhs) < tier(rhs) }
             return precedes(
                 time: lhs.flag != nil ? lhs.flag?.raisedAtMs : lhs.openedAtMs,
-                target: Target(workspaceID: lhs.workspaceID, tabID: lhs.tabID),
+                target: Target(workspaceID: lhs.workspaceID, panelID: lhs.panelID),
                 time: rhs.flag != nil ? rhs.flag?.raisedAtMs : rhs.openedAtMs,
-                target: Target(workspaceID: rhs.workspaceID, tabID: rhs.tabID)
+                target: Target(workspaceID: rhs.workspaceID, panelID: rhs.panelID)
             )
         }
     }
@@ -65,7 +65,7 @@ enum AttentionOrder {
         var seen: Set<Target> = []
         let prefix = rows.compactMap { row -> Candidate? in
             guard row.flag != nil || isOpenAsk(row) else { return nil }
-            let target = Target(workspaceID: row.workspaceID, tabID: row.tabID)
+            let target = Target(workspaceID: row.workspaceID, panelID: row.panelID)
             guard seen.insert(target).inserted else { return nil }
             return Candidate(target: target, notificationID: nil)
         }
@@ -85,7 +85,7 @@ struct FeedProjectionSnapshot: Equatable {
         rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) }.map { row in
             guard row.kind == .turnEnd else { return row }
             // A finished turn may still carry a flag; attention presents just that flag.
-            return FeedRow(workspaceID: row.workspaceID, tabID: row.tabID, kind: nil,
+            return FeedRow(workspaceID: row.workspaceID, panelID: row.panelID, kind: nil,
                 prompt: nil, options: nil, promptAvailable: false, source: nil, sourceRank: nil,
                 openedAtMs: nil, state: nil, requestID: nil, confirmation: nil, blocking: nil, flag: row.flag)
         }

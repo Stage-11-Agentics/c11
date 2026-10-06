@@ -119,22 +119,22 @@ enum SidebarBranchLayoutSettings {
 /// "Show surface IDs in tab titles": when on, every surface tab in the bonsplit
 /// tab bar (and the surface title bar) renders its `surface:N` ordinal as an
 /// "N: " title prefix so a voice operator can address any tab by its number.
-enum TabOrdinalDisplaySettings {
-    static let showSurfaceIdsInTabTitlesKey = "showSurfaceIdsInTabTitles"
+enum PanelOrdinalDisplaySettings {
+    static let showSurfaceIdsInPanelTitlesKey = "showSurfaceIdsInTabTitles"
     static let defaultShowSurfaceIds = true
 
     static func showsSurfaceIds(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: showSurfaceIdsInTabTitlesKey) == nil {
+        if defaults.object(forKey: showSurfaceIdsInPanelTitlesKey) == nil {
             return defaultShowSurfaceIds
         }
-        return defaults.bool(forKey: showSurfaceIdsInTabTitlesKey)
+        return defaults.bool(forKey: showSurfaceIdsInPanelTitlesKey)
     }
 }
 
 /// KVO bridge so each `Workspace` (an `ObservableObject`, not an `NSObject`)
 /// can react to the "Show surface IDs in tab titles" toggle live, without an
 /// app restart. Mirrors `SurfaceAvailabilityObserver`.
-final class TabOrdinalDisplayObserver: NSObject {
+final class PanelOrdinalDisplayObserver: NSObject {
     private let onChange: () -> Void
     private let defaults: UserDefaults
 
@@ -144,7 +144,7 @@ final class TabOrdinalDisplayObserver: NSObject {
         super.init()
         defaults.addObserver(
             self,
-            forKeyPath: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey,
+            forKeyPath: PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey,
             options: [.new],
             context: nil
         )
@@ -153,7 +153,7 @@ final class TabOrdinalDisplayObserver: NSObject {
     deinit {
         defaults.removeObserver(
             self,
-            forKeyPath: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey
+            forKeyPath: PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey
         )
     }
 
@@ -163,7 +163,7 @@ final class TabOrdinalDisplayObserver: NSObject {
         change: [NSKeyValueChangeKey: Any]?,
         context: UnsafeMutableRawPointer?
     ) {
-        guard keyPath == TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey else { return }
+        guard keyPath == PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey else { return }
         let onChange = self.onChange
         Task { @MainActor in onChange() }
     }
@@ -964,7 +964,7 @@ class WorkspaceManager: ObservableObject {
         guard let context = SocketCommandContext.current else { return false }
         context.blockedTarget = target
         EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: context.method,
-            callerPanelId: TerminalController.socketCallerTabId(context))
+            callerPanelId: TerminalController.socketCallerPanelId(context))
         return true
     }
 
@@ -1021,7 +1021,7 @@ class WorkspaceManager: ObservableObject {
             guard selectedWorkspaceId != oldValue else { return }
             // C11-243: workspace switch changes what the operator is looking at.
             PanelSeenTracker.shared.refresh()
-            TabRailTipCenter.shared.scheduleRefresh()
+            PanelRailTipCenter.shared.scheduleRefresh()
             // C11-163: workspace selected → events stream. Fires on every
             // selection route (socket, keyboard, click, close-fallback) since
             // they all land here.
@@ -1248,7 +1248,7 @@ class WorkspaceManager: ObservableObject {
                 guard let workspaceId = notification.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID else { return }
                 guard let surfaceId = notification.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID else { return }
                 guard let title = notification.userInfo?[GhosttyNotificationKey.title] as? String else { return }
-                enqueueTabTitleUpdate(workspaceId: workspaceId, panelId: surfaceId, title: title)
+                enqueuePanelTitleUpdate(workspaceId: workspaceId, panelId: surfaceId, title: title)
             }
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -1260,7 +1260,7 @@ class WorkspaceManager: ObservableObject {
                 guard let self else { return }
                 guard let workspaceId = notification.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID else { return }
                 guard let surfaceId = notification.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID else { return }
-                markTabReadOnFocusIfActive(workspaceId: workspaceId, panelId: surfaceId)
+                markPanelReadOnFocusIfActive(workspaceId: workspaceId, panelId: surfaceId)
             }
         })
 
@@ -1319,8 +1319,8 @@ class WorkspaceManager: ObservableObject {
             if !keysToRemove.isEmpty {
                 for key in keysToRemove {
                     workspace.statusEntries.removeValue(forKey: key)
-                    if let tabId = workspace.removeAgentPID(key: key) {
-                        store?.clearNotifications(forWorkspaceId: workspace.id, surfaceId: tabId)
+                    if let panelId = workspace.removeAgentPID(key: key) {
+                        store?.clearNotifications(forWorkspaceId: workspace.id, surfaceId: panelId)
                     }
                 }
             }
@@ -1808,22 +1808,22 @@ class WorkspaceManager: ObservableObject {
             return
         }
 
-        workspace.updateTabDirectory(panelId: probeKey.panelId, directory: expectedDirectory)
+        workspace.updatePanelDirectory(panelId: probeKey.panelId, directory: expectedDirectory)
 
         let nextBranch = snapshot.branch
         if let nextBranch {
-            workspace.updateTabGitBranch(
+            workspace.updatePanelGitBranch(
                 panelId: probeKey.panelId,
                 branch: nextBranch,
                 isDirty: snapshot.isDirty
             )
         } else {
-            workspace.clearTabGitBranch(panelId: probeKey.panelId)
+            workspace.clearPanelGitBranch(panelId: probeKey.panelId)
         }
 
         switch snapshot.pullRequest {
         case .resolved(let pullRequest):
-            workspace.updateTabPullRequest(
+            workspace.updatePanelPullRequest(
                 panelId: probeKey.panelId,
                 number: pullRequest.number,
                 label: pullRequest.label,
@@ -1833,7 +1833,7 @@ class WorkspaceManager: ObservableObject {
             )
         case .notFound:
             if workspace.panelPullRequests[probeKey.panelId] != nil {
-                workspace.clearTabPullRequest(panelId: probeKey.panelId)
+                workspace.clearPanelPullRequest(panelId: probeKey.panelId)
             }
         case .unsupportedRepository, .transientFailure:
             break
@@ -1846,7 +1846,7 @@ class WorkspaceManager: ObservableObject {
         //      and `branch` so external readers (c11 get-metadata,
         //      future Lattice queries) see the same data without
         //      reaching into Workspace internals.
-        workspace.updateTabGitContext(
+        workspace.updatePanelGitContext(
             panelId: probeKey.panelId,
             context: snapshot.gitContext
         )
@@ -2547,7 +2547,7 @@ class WorkspaceManager: ObservableObject {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         let previousDirectory = gitProbeDirectory(for: workspace, panelId: surfaceId)
         let normalized = normalizeDirectory(directory)
-        workspace.updateTabDirectory(panelId: surfaceId, directory: normalized)
+        workspace.updatePanelDirectory(panelId: surfaceId, directory: normalized)
         workspace.adoptReportedDirectoryAsRootIfNeeded(panelId: surfaceId, directory: normalized)
         let nextDirectory = normalizedWorkingDirectory(normalized)
         if previousDirectory != nextDirectory {
@@ -2569,7 +2569,7 @@ class WorkspaceManager: ObservableObject {
         let current = workspace.panelGitBranches[surfaceId]
         let normalizedBranch = Self.normalizedBranchName(branch) ?? branch
         guard current?.branch != normalizedBranch || current?.isDirty != isDirty else { return }
-        workspace.updateTabGitBranch(panelId: surfaceId, branch: normalizedBranch, isDirty: isDirty)
+        workspace.updatePanelGitBranch(panelId: surfaceId, branch: normalizedBranch, isDirty: isDirty)
         scheduleWorkspaceGitMetadataRefreshIfPossible(
             workspaceId: workspaceId,
             panelId: surfaceId,
@@ -2655,8 +2655,8 @@ class WorkspaceManager: ObservableObject {
         let hadBranch = workspace.panelGitBranches[surfaceId] != nil
         let hadPullRequest = workspace.panelPullRequests[surfaceId] != nil
         guard hadBranch || hadPullRequest else { return }
-        workspace.clearTabGitBranch(panelId: surfaceId)
-        workspace.clearTabPullRequest(panelId: surfaceId)
+        workspace.clearPanelGitBranch(panelId: surfaceId)
+        workspace.clearPanelPullRequest(panelId: surfaceId)
         scheduleWorkspaceGitMetadataRefreshIfPossible(
             workspaceId: workspaceId,
             panelId: surfaceId,
@@ -2821,12 +2821,12 @@ class WorkspaceManager: ObservableObject {
         closePanelWithConfirmation(workspace: workspace, panelId: focusedPanelId)
     }
 
-    func canCloseOtherTabsInFocusedPane() -> Bool {
-        closeOtherTabsInFocusedAreaPlan() != nil
+    func canCloseOtherPanelsInFocusedPane() -> Bool {
+        closeOtherPanelsInFocusedAreaPlan() != nil
     }
 
-    func closeOtherTabsInFocusedPaneWithConfirmation() {
-        guard let plan = closeOtherTabsInFocusedAreaPlan() else { return }
+    func closeOtherPanelsInFocusedPaneWithConfirmation() {
+        guard let plan = closeOtherPanelsInFocusedAreaPlan() else { return }
 
         let count = plan.panelIds.count
         let titleLines = plan.titles.map { "• \($0)" }.joined(separator: "\n")
@@ -2847,7 +2847,7 @@ class WorkspaceManager: ObservableObject {
         ) else { return }
 
         for panelId in plan.panelIds {
-            _ = plan.workspace.closeTab(panelId, force: true)
+            _ = plan.workspace.closePanel(panelId, force: true)
         }
     }
 
@@ -2966,11 +2966,11 @@ class WorkspaceManager: ObservableObject {
 
     /// Closing a workspace that holds one tab is closing one tab, so its card
     /// starts on Close. A pinned workspace keeps Cancel: the pin asks for it.
-    static func workspaceCloseTakesOneTab(_ workspace: Workspace) -> Bool {
+    static func workspaceCloseTakesOnePanel(_ workspace: Workspace) -> Bool {
         !workspace.isPinned && workspace.panels.count == 1
     }
 
-    private struct CloseOtherTabsInFocusedAreaPlan {
+    private struct CloseOtherPanelsInFocusedAreaPlan {
         let workspace: Workspace
         let panelIds: [UUID]
         let titles: [String]
@@ -2982,7 +2982,7 @@ class WorkspaceManager: ObservableObject {
         let message: String
     }
 
-    private func closeOtherTabsInFocusedAreaPlan() -> CloseOtherTabsInFocusedAreaPlan? {
+    private func closeOtherPanelsInFocusedAreaPlan() -> CloseOtherPanelsInFocusedAreaPlan? {
         guard let workspace = selectedWorkspace else { return nil }
         guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
             return nil
@@ -2998,22 +2998,22 @@ class WorkspaceManager: ObservableObject {
         var targetTitles: [String] = []
         for bonsplitTab in bonsplitTabsInPane where bonsplitTab.id != selectedBonsplitTabId {
             guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
-            if workspace.isTabPinned(panelId) {
+            if workspace.isPanelPinned(panelId) {
                 continue
             }
             targetPanelIds.append(panelId)
-            targetTitles.append(closeOtherTabsDisplayTitle(workspace.tabTitle(panelId: panelId)))
+            targetTitles.append(closeOtherPanelsDisplayTitle(workspace.panelTitle(panelId: panelId)))
         }
 
         guard !targetPanelIds.isEmpty else { return nil }
-        return CloseOtherTabsInFocusedAreaPlan(
+        return CloseOtherPanelsInFocusedAreaPlan(
             workspace: workspace,
             panelIds: targetPanelIds,
             titles: targetTitles
         )
     }
 
-    private func closeOtherTabsDisplayTitle(_ title: String?) -> String {
+    private func closeOtherPanelsDisplayTitle(_ title: String?) -> String {
         let collapsed = title?
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
@@ -3112,7 +3112,7 @@ class WorkspaceManager: ObservableObject {
                 let accepted = await workspace.presentConfirmCloseWorkspace(
                     title: title,
                     message: message,
-                    defaultsToClose: WorkspaceManager.workspaceCloseTakesOneTab(workspace),
+                    defaultsToClose: WorkspaceManager.workspaceCloseTakesOnePanel(workspace),
                     source: .local
                 )
                 guard accepted else { return }
@@ -3186,7 +3186,7 @@ class WorkspaceManager: ObservableObject {
            let surfaceId = workspace.bonsplitTabIdFromTabId(panelId) {
             workspace.markExplicitClose(bonsplitTabId: surfaceId)
         }
-        let closed = workspace.closeTab(panelId)
+        let closed = workspace.closePanel(panelId)
 #if DEBUG
         dlog(
             "surface.close.shortcut tab=\(workspace.id.uuidString.prefix(5)) " +
@@ -3208,7 +3208,7 @@ class WorkspaceManager: ObservableObject {
         guard workspace.panels[surfaceId] != nil else { return }
 
         let needsConfirm = workspace.terminalPanel(for: surfaceId).map { terminalPanel in
-            workspace.tabNeedsConfirmClose(
+            workspace.panelNeedsConfirmClose(
                 panelId: surfaceId,
                 fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()
             )
@@ -3253,7 +3253,7 @@ class WorkspaceManager: ObservableObject {
 
     @MainActor
     private func performCloseRuntimeSurface(workspace: Workspace, surfaceId: UUID) {
-        _ = workspace.closeTab(surfaceId, force: true)
+        _ = workspace.closePanel(surfaceId, force: true)
         AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspace.id, surfaceId: surfaceId)
     }
 
@@ -3274,7 +3274,7 @@ class WorkspaceManager: ObservableObject {
         // If split reparenting caused a temporary model/view mismatch, fallback close logic in
         // Workspace.closePanel uses focused selection to resolve the correct tab deterministically.
         reconcileFocusedPanelFromFirstResponderForKeyboard()
-        let closed = workspace.closeTab(surfaceId, force: true)
+        let closed = workspace.closePanel(surfaceId, force: true)
 #if DEBUG
         dlog(
             "surface.close.runtime.done tab=\(workspaceId.uuidString.prefix(5)) " +
@@ -3484,7 +3484,7 @@ class WorkspaceManager: ObservableObject {
             return
         }
         pendingWorkspaceUnfocusTarget = nil
-        unfocusWorkspaceTab(workspaceId: pending.workspaceId, panelId: pending.panelId)
+        unfocusWorkspacePanel(workspaceId: pending.workspaceId, panelId: pending.panelId)
 #if DEBUG
         if let snapshot = debugCurrentWorkspaceSwitchSnapshot() {
             let dtMs = (CACurrentMediaTime() - snapshot.startedAt) * 1000
@@ -3514,7 +3514,7 @@ class WorkspaceManager: ObservableObject {
                 pendingWorkspaceId: current.workspaceId,
                 selectedWorkspaceId: selectedWorkspaceId
             ) {
-                unfocusWorkspaceTab(workspaceId: current.workspaceId, panelId: current.panelId)
+                unfocusWorkspacePanel(workspaceId: current.workspaceId, panelId: current.panelId)
 #if DEBUG
                 dlog(
                     "ws.unfocus.flush tab=\(Self.debugShortWorkspaceId(current.workspaceId)) panel=\(String(current.panelId.uuidString.prefix(5))) reason=replaced"
@@ -3545,7 +3545,7 @@ class WorkspaceManager: ObservableObject {
 #endif
     }
 
-    private func unfocusWorkspaceTab(workspaceId: UUID, panelId: UUID) {
+    private func unfocusWorkspacePanel(workspaceId: UUID, panelId: UUID) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }),
               let panel = workspace.panels[panelId] else { return }
         panel.unfocus()
@@ -3561,10 +3561,10 @@ class WorkspaceManager: ObservableObject {
         guard !shouldSuppressFlash else { return }
         guard AppFocusState.isAppActive() else { return }
         guard let panelId = focusedPanelId(for: workspaceId) else { return }
-        markTabReadOnFocusIfActive(workspaceId: workspaceId, panelId: panelId)
+        markPanelReadOnFocusIfActive(workspaceId: workspaceId, panelId: panelId)
     }
 
-    private func markTabReadOnFocusIfActive(workspaceId: UUID, panelId: UUID) {
+    private func markPanelReadOnFocusIfActive(workspaceId: UUID, panelId: UUID) {
         guard selectedWorkspaceId == workspaceId else { return }
         guard !suppressFocusFlash else { return }
         guard AppFocusState.isAppActive() else { return }
@@ -3590,7 +3590,7 @@ class WorkspaceManager: ObservableObject {
         return true
     }
 
-    private func enqueueTabTitleUpdate(workspaceId: UUID, panelId: UUID, title: String) {
+    private func enqueuePanelTitleUpdate(workspaceId: UUID, panelId: UUID, title: String) {
         // OSC titles: pass through (including empty — empty OSC clears title when current source is osc).
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = PanelTitleUpdateKey(workspaceId: workspaceId, panelId: panelId)
@@ -3605,11 +3605,11 @@ class WorkspaceManager: ObservableObject {
         let updates = pendingPanelTitleUpdates
         pendingPanelTitleUpdates.removeAll(keepingCapacity: true)
         for (key, title) in updates {
-            updateTabTitle(workspaceId: key.workspaceId, panelId: key.panelId, title: title)
+            updatePanelTitle(workspaceId: key.workspaceId, panelId: key.panelId, title: title)
         }
     }
 
-    private func updateTabTitle(workspaceId: UUID, panelId: UUID, title: String) {
+    private func updatePanelTitle(workspaceId: UUID, panelId: UUID, title: String) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
 
         // M7: route OSC title through M2 metadata store with source: .osc.
@@ -3643,7 +3643,7 @@ class WorkspaceManager: ObservableObject {
         }
         guard applied else { return }
 
-        workspace.syncTabTitleFromMetadata(panelId: panelId)
+        workspace.syncPanelTitleFromMetadata(panelId: panelId)
 
         if selectedWorkspaceId == workspaceId && workspace.focusedPanelId == panelId {
             updateWindowTitle(for: workspace)
@@ -4204,7 +4204,7 @@ class WorkspaceManager: ObservableObject {
         // A stale callback must never affect unrelated panels/workspaces.
         guard workspace.panels[surfaceId] != nil,
               workspace.bonsplitTabIdFromTabId(surfaceId) != nil else { return false }
-        workspace.closeTab(surfaceId)
+        workspace.closePanel(surfaceId)
         AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspaceId, surfaceId: surfaceId)
         return true
     }
@@ -4442,7 +4442,7 @@ class WorkspaceManager: ObservableObject {
            ) {
             let bonsplitTabCount = workspace.bonsplitController.tabs(inPane: originalPane).count
             let maxIndex = max(0, bonsplitTabCount - 1)
-            let targetIndex = min(max(snapshot.originalTabIndex, 0), maxIndex)
+            let targetIndex = min(max(snapshot.originalPanelIndex, 0), maxIndex)
             _ = workspace.reorderSurface(panelId: browserPanel.id, toIndex: targetIndex)
             return browserPanel.id
         }
@@ -4791,9 +4791,9 @@ class WorkspaceManager: ObservableObject {
 
                 // Close the two right panes via the same path as Cmd+W.
                 workspace.focusPanel(topRight.id)
-                workspace.closeTab(topRight.id, force: true)
+                workspace.closePanel(topRight.id, force: true)
                 workspace.focusPanel(bottomRight.id)
-                workspace.closeTab(bottomRight.id, force: true)
+                workspace.closePanel(bottomRight.id, force: true)
 
 
                 // Capture final state after Bonsplit/AppKit/Ghostty geometry reconciliation.
@@ -4803,7 +4803,7 @@ class WorkspaceManager: ObservableObject {
                     let bonsplitTabCount = workspace.bonsplitController.allTabIds.count
                     let panelCount = workspace.panels.count
 
-                    var missingSelectedTabCount = 0
+                    var missingSelectedPanelCount = 0
                     var missingPanelMappingCount = 0
                     var selectedTerminalCount = 0
                     var selectedTerminalAttachedCount = 0
@@ -4812,7 +4812,7 @@ class WorkspaceManager: ObservableObject {
 
                     for paneId in paneIds {
                         guard let selected = workspace.bonsplitController.selectedTab(inPane: paneId) else {
-                            missingSelectedTabCount += 1
+                            missingSelectedPanelCount += 1
                             continue
                         }
                         guard let panel = workspace.panel(for: selected.id) else {
@@ -4836,7 +4836,7 @@ class WorkspaceManager: ObservableObject {
 
                     let settled =
                         paneIds.count == 2 &&
-                        missingSelectedTabCount == 0 &&
+                        missingSelectedPanelCount == 0 &&
                         missingPanelMappingCount == 0 &&
                         DebugUIEventCounters.emptyPanelAppearCount == 0 &&
                         selectedTerminalCount == 2 &&
@@ -4849,7 +4849,7 @@ class WorkspaceManager: ObservableObject {
                             "finalAreaCount": String(paneIds.count),
                             "finalBonsplitTabCount": String(bonsplitTabCount),
                             "finalTabCount": String(panelCount),
-                            "missingSelectedTabCount": String(missingSelectedTabCount),
+                            "missingSelectedTabCount": String(missingSelectedPanelCount),
                             "missingTabMappingCount": String(missingPanelMappingCount),
                             "emptyAreaAppearCount": String(DebugUIEventCounters.emptyPanelAppearCount),
                             "selectedTerminalCount": String(selectedTerminalCount),
@@ -4918,7 +4918,7 @@ class WorkspaceManager: ObservableObject {
             workspace.focusPanel(topLeftPanelId)
             let toClose = Array(workspace.panels.keys).filter { $0 != topLeftPanelId }
             for pid in toClose {
-                workspace.closeTab(pid, force: true)
+                workspace.closePanel(pid, force: true)
             }
 
             // Create the repro layout. Most patterns use a 2x2 grid, but keep a single-split
@@ -5000,7 +5000,7 @@ class WorkspaceManager: ObservableObject {
                     return [
                         (frame: closeFrame, action: {
                             workspace.focusPanel(topRight.id)
-                            workspace.closeTab(topRight.id, force: true)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                     ]
                 case "close_bottom":
@@ -5009,11 +5009,11 @@ class WorkspaceManager: ObservableObject {
                     return [
                         (frame: closeFrame, action: {
                             workspace.focusPanel(bottomRight.id)
-                            workspace.closeTab(bottomRight.id, force: true)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
                             workspace.focusPanel(bottomLeft.id)
-                            workspace.closeTab(bottomLeft.id, force: true)
+                            workspace.closePanel(bottomLeft.id, force: true)
                         }),
                     ]
                 case "close_right_lrtd_bottom_first", "close_right_bottom_first":
@@ -5022,11 +5022,11 @@ class WorkspaceManager: ObservableObject {
                     return [
                         (frame: closeFrame, action: {
                             workspace.focusPanel(bottomRight.id)
-                            workspace.closeTab(bottomRight.id, force: true)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
                             workspace.focusPanel(topRight.id)
-                            workspace.closeTab(topRight.id, force: true)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                     ]
                 case "close_right_lrtd_unfocused":
@@ -5034,10 +5034,10 @@ class WorkspaceManager: ObservableObject {
                     closeOrder = "TR_THEN_BR_UNFOCUSED"
                     return [
                         (frame: closeFrame, action: {
-                            workspace.closeTab(topRight.id, force: true)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
-                            workspace.closeTab(bottomRight.id, force: true)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                     ]
                 default:
@@ -5046,11 +5046,11 @@ class WorkspaceManager: ObservableObject {
                     return [
                         (frame: closeFrame, action: {
                             workspace.focusPanel(topRight.id)
-                            workspace.closeTab(topRight.id, force: true)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
                             workspace.focusPanel(bottomRight.id)
-                            workspace.closeTab(bottomRight.id, force: true)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                     ]
                 }
@@ -5256,7 +5256,7 @@ class WorkspaceManager: ObservableObject {
                 // Start each iteration from a deterministic 1x1 workspace.
                 if ws.panels.count > 1 {
                     for panelId in ws.panels.keys where panelId != leftPanelId {
-                        ws.closeTab(panelId, force: true)
+                        ws.closePanel(panelId, force: true)
                     }
                     let collapsed = await self.waitForWorkspacePanelsCondition(
                         workspace: ws,
@@ -5431,9 +5431,9 @@ class WorkspaceManager: ObservableObject {
                 // Repro flow: with a 2x2 (left/right then top/down), close both right panes,
                 // then trigger Ctrl+D in top-left.
                 ws.focusPanel(rightPanel.id)
-                ws.closeTab(rightPanel.id, force: true)
+                ws.closePanel(rightPanel.id, force: true)
                 ws.focusPanel(bottomRight.id)
-                ws.closeTab(bottomRight.id, force: true)
+                ws.closePanel(bottomRight.id, force: true)
                 exitPanelId = leftPanelId
 
                 let collapsed = await self.waitForWorkspacePanelsCondition(
@@ -5474,7 +5474,7 @@ class WorkspaceManager: ObservableObject {
                 let keepPanels: Set<UUID> = [leftPanelId, topRight.id]
                 for panelId in Array(ws.panels.keys) where !keepPanels.contains(panelId) {
                     ws.focusPanel(panelId)
-                    ws.closeTab(panelId, force: true)
+                    ws.closePanel(panelId, force: true)
                     let closed = await self.waitForWorkspacePanelsCondition(
                         workspace: ws,
                         timeoutSeconds: 1.0
@@ -5972,7 +5972,7 @@ extension Notification.Name {
     static let commandPaletteSwitcherRequested = Notification.Name("cmux.commandPaletteSwitcherRequested")
     static let commandPaletteSubmitRequested = Notification.Name("cmux.commandPaletteSubmitRequested")
     static let commandPaletteDismissRequested = Notification.Name("cmux.commandPaletteDismissRequested")
-    static let commandPaletteRenameTabRequested = Notification.Name("cmux.commandPaletteRenameTabRequested")
+    static let commandPaletteRenamePanelRequested = Notification.Name("cmux.commandPaletteRenameTabRequested")
     static let commandPaletteRenameWorkspaceRequested = Notification.Name("cmux.commandPaletteRenameWorkspaceRequested")
     static let commandPaletteMoveSelection = Notification.Name("cmux.commandPaletteMoveSelection")
     static let commandPaletteRenameInputInteractionRequested = Notification.Name("cmux.commandPaletteRenameInputInteractionRequested")

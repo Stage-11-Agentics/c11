@@ -177,7 +177,7 @@ final class AgentDetector: @unchecked Sendable {
                             forSurface: key.panelId
                         )
                         if changed && !detectionChanged {
-                            workspace.syncSurfaceTabActivityStateForTab(key.panelId)
+                            workspace.syncSurfacePanelActivityStateForPanel(key.panelId)
                         }
                     }
                 }

@@ -73,7 +73,7 @@ final class AgentPIDAttentionCleanupTests: XCTestCase {
         let store = TerminalNotificationStore.shared
         defer { store.replaceNotificationsForTesting([]) }
         store.replaceNotificationsForTesting([notice(workspace.id, caller), notice(workspace.id, sibling)])
-        workspace.registerAgentPID(101, key: "caller", tabId: caller)
+        workspace.registerAgentPID(101, key: "caller", panelId: caller)
         workspace.statusEntries["caller"] = SidebarStatusEntry(key: "caller", value: "Needs input")
 
         manager.sweepStaleAgentPIDs(isRunning: { _ in false }, notificationStore: store)
@@ -92,8 +92,8 @@ final class AgentPIDAttentionCleanupTests: XCTestCase {
         let store = TerminalNotificationStore.shared
         defer { store.replaceNotificationsForTesting([]) }
         store.replaceNotificationsForTesting([notice(workspace.id, caller)])
-        workspace.registerAgentPID(101, key: "caller", tabId: caller)
-        workspace.registerAgentPID(102, key: "caller", tabId: nil)
+        workspace.registerAgentPID(101, key: "caller", panelId: caller)
+        workspace.registerAgentPID(102, key: "caller", panelId: nil)
 
         manager.sweepStaleAgentPIDs(isRunning: { _ in false }, notificationStore: store)
 
@@ -108,8 +108,8 @@ final class AgentPIDAttentionCleanupTests: XCTestCase {
         let store = TerminalNotificationStore.shared
         defer { store.replaceNotificationsForTesting([]) }
         store.replaceNotificationsForTesting([notice(workspace.id, caller)])
-        workspace.registerAgentPID(101, key: "live", tabId: caller)
-        workspace.registerAgentPID(102, key: "unknown", tabId: UUID())
+        workspace.registerAgentPID(101, key: "live", panelId: caller)
+        workspace.registerAgentPID(102, key: "unknown", panelId: UUID())
 
         manager.sweepStaleAgentPIDs(isRunning: { $0 == 101 }, notificationStore: store)
 
@@ -122,15 +122,15 @@ final class AgentPIDAttentionCleanupTests: XCTestCase {
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let caller = try XCTUnwrap(workspace.focusedPanelId)
-        workspace.registerAgentPID(101, key: "caller", tabId: caller)
+        workspace.registerAgentPID(101, key: "caller", panelId: caller)
         workspace.clearAgentPIDs()
         // A legacy writer must not inherit the prior process's tab association.
         workspace.agentPIDs["caller"] = 101
         XCTAssertNil(workspace.removeAgentPID(key: "caller"))
     }
 
-    private func notice(_ workspace: UUID, _ tab: UUID) -> TerminalNotification {
-        TerminalNotification(id: UUID(), workspaceId: workspace, surfaceId: tab,
+    private func notice(_ workspace: UUID, _ panel: UUID) -> TerminalNotification {
+        TerminalNotification(id: UUID(), workspaceId: workspace, surfaceId: panel,
                              title: "Synthetic attention", subtitle: "Waiting", body: "",
                              createdAt: Date(), isRead: false)
     }
@@ -689,7 +689,7 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         }
 
         secondWorkspace.markExplicitClose(bonsplitTabId: secondSurfaceId)
-        XCTAssertFalse(secondWorkspace.closeTab(secondPanelId))
+        XCTAssertFalse(secondWorkspace.closePanel(secondPanelId))
         drainMainQueue()
         drainMainQueue()
 
@@ -727,7 +727,7 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         }
 
         secondWorkspace.markExplicitClose(bonsplitTabId: secondSurfaceId)
-        XCTAssertFalse(secondWorkspace.closeTab(secondPanelId))
+        XCTAssertFalse(secondWorkspace.closePanel(secondPanelId))
         drainMainQueue()
         drainMainQueue()
 
@@ -749,7 +749,7 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertEqual(manager.workspaces.count, 1)
         XCTAssertEqual(workspace.panels.count, 1)
 
-        XCTAssertTrue(workspace.closeTab(initialPanelId))
+        XCTAssertTrue(workspace.closePanel(initialPanelId))
         drainMainQueue()
         drainMainQueue()
 
@@ -1149,7 +1149,7 @@ final class WorkspaceManagerReopenClosedBrowserFocusTests: XCTestCase {
         }
 
         drainMainQueue()
-        XCTAssertTrue(workspace1.closeTab(closedBrowserId, force: true))
+        XCTAssertTrue(workspace1.closePanel(closedBrowserId, force: true))
         drainMainQueue()
 
         let workspace2 = manager.addWorkspace()
@@ -1171,7 +1171,7 @@ final class WorkspaceManagerReopenClosedBrowserFocusTests: XCTestCase {
         }
 
         drainMainQueue()
-        XCTAssertTrue(originalWorkspace.closeTab(closedBrowserId, force: true))
+        XCTAssertTrue(originalWorkspace.closePanel(closedBrowserId, force: true))
         drainMainQueue()
 
         let currentWorkspace = manager.addWorkspace()
@@ -1203,7 +1203,7 @@ final class WorkspaceManagerReopenClosedBrowserFocusTests: XCTestCase {
         }
 
         drainMainQueue()
-        XCTAssertTrue(workspace1.closeTab(splitBrowserId, force: true))
+        XCTAssertTrue(workspace1.closePanel(splitBrowserId, force: true))
         drainMainQueue()
 
         let workspace2 = manager.addWorkspace()
@@ -1226,7 +1226,7 @@ final class WorkspaceManagerReopenClosedBrowserFocusTests: XCTestCase {
         }
 
         drainMainQueue()
-        XCTAssertTrue(workspace1.closeTab(closedBrowserId, force: true))
+        XCTAssertTrue(workspace1.closePanel(closedBrowserId, force: true))
         drainMainQueue()
 
         let panelIdsBeforeReopen = Set(workspace1.panels.keys)
@@ -1263,7 +1263,7 @@ final class WorkspaceManagerReopenClosedBrowserFocusTests: XCTestCase {
         }
 
         drainMainQueue()
-        XCTAssertTrue(workspace.closeTab(closedBrowserId, force: true))
+        XCTAssertTrue(workspace.closePanel(closedBrowserId, force: true))
         drainMainQueue()
 
         let panelIdsBeforeReopen = Set(workspace.panels.keys)
@@ -1398,14 +1398,14 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
         let root = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         XCTAssertNotNil(controller.v2RefByUUID[.pane]?[root.id])
 
-        var publishedTabIds: Set<UUID> = []
+        var publishedPanelIds: Set<UUID> = []
         let panelSubscription = workspace.$panels.sink { newPanels in
             for id in newPanels.keys where workspace.panels[id] == nil {
-                publishedTabIds.insert(id)
+                publishedPanelIds.insert(id)
             }
         }
         let browser = try XCTUnwrap(workspace.newBrowserSurface(inPane: root, focus: false))
-        XCTAssertTrue(publishedTabIds.contains(browser.id))
+        XCTAssertTrue(publishedPanelIds.contains(browser.id))
         XCTAssertNotNil(controller.v2RefByUUID[.surface]?[browser.id],
                         "Ref registration must consume newPanels, not the old workspace.panels")
         withExtendedLifetime((workspaceSubscription, panelSubscription)) {}
@@ -1420,20 +1420,20 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
             destination.workspaces.forEach { $0.teardownAllPanels() }
         }
         let workspace = source.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-        let initialTab = try XCTUnwrap(workspace.panels.keys.first)
-        let split = try XCTUnwrap(workspace.newTerminalSplit(from: initialTab, orientation: .horizontal))
+        let initialPanel = try XCTUnwrap(workspace.panels.keys.first)
+        let split = try XCTUnwrap(workspace.newTerminalSplit(from: initialPanel, orientation: .horizontal))
         let area = try XCTUnwrap(workspace.paneId(forPanelId: split.id))
         let areaRef = try XCTUnwrap(controller.v2RefByUUID[.pane]?[area.id])
         let panelRef = try XCTUnwrap(controller.v2RefByUUID[.surface]?[split.id])
         let workspaceRef = try XCTUnwrap(controller.v2RefByUUID[.workspace]?[workspace.id])
         let seedCount = controller.debugKnownRefSeedCount
 
-        let detachedTab = try XCTUnwrap(workspace.detachPanel(panelId: split.id))
+        let detachedPanel = try XCTUnwrap(workspace.detachPanel(panelId: split.id))
         let target = destination.workspaces[0]
         let targetPane = try XCTUnwrap(target.bonsplitController.allPaneIds.first)
-        XCTAssertEqual(target.attachDetachedPanel(detachedTab, inPane: targetPane, focus: false), split.id)
+        XCTAssertEqual(target.attachDetachedPanel(detachedPanel, inPane: targetPane, focus: false), split.id)
         XCTAssertEqual(controller.v2RefByUUID[.surface]?[split.id], panelRef)
-        XCTAssertTrue(target.closeTab(split.id, force: true))
+        XCTAssertTrue(target.closePanel(split.id, force: true))
         XCTAssertNil(target.panels[split.id])
         XCTAssertEqual(controller.v2ResolveHandleRef(panelRef), split.id,
                        "Closed refs remain tombstones instead of being recycled")
@@ -1458,20 +1458,20 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
             original.teardownAllPanels()
             restored.teardownAllPanels()
         }
-        let initialTab = try XCTUnwrap(original.panels.keys.first)
-        _ = try XCTUnwrap(original.newTerminalSplit(from: initialTab, orientation: .horizontal))
+        let initialPanel = try XCTUnwrap(original.panels.keys.first)
+        _ = try XCTUnwrap(original.newTerminalSplit(from: initialPanel, orientation: .horizontal))
         let snapshot = original.sessionSnapshot(includeScrollback: false, conversationsByPanelId: [:])
-        let tabRefs = Dictionary(uniqueKeysWithValues: try snapshot.panels.map { panel in
+        let panelRefs = Dictionary(uniqueKeysWithValues: try snapshot.panels.map { panel in
             (panel.id, try XCTUnwrap(controller.v2RefByUUID[.surface]?[panel.id]))
         })
         let seedCount = controller.debugKnownRefSeedCount
         restored.restoreSessionSnapshot(snapshot)
-        XCTAssertEqual(Set(restored.panels.keys), Set(tabRefs.keys))
+        XCTAssertEqual(Set(restored.panels.keys), Set(panelRefs.keys))
         XCTAssertEqual(restored.bonsplitController.allPaneIds.count, 2)
         for pane in restored.bonsplitController.allPaneIds {
             XCTAssertNotNil(controller.v2RefByUUID[.pane]?[pane.id])
         }
-        for (id, ref) in tabRefs {
+        for (id, ref) in panelRefs {
             XCTAssertEqual(controller.v2RefByUUID[.surface]?[id], ref)
         }
         XCTAssertEqual(controller.debugKnownRefSeedCount, seedCount)
@@ -1493,8 +1493,8 @@ final class StartupBundledReportsTests: XCTestCase {
             manager.workspaces.forEach { $0.teardownAllPanels() }
         }
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
-        let bashTab = try XCTUnwrap(workspace.focusedPanelId)
-        let zshTab = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false)).id
+        let bashPanel = try XCTUnwrap(workspace.focusedPanelId)
+        let zshPanel = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false)).id
         let controller = TerminalController.makeForTesting()
         let originalPortsCallback = PortScanner.shared.onPortsUpdated
         let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
@@ -1513,12 +1513,12 @@ final class StartupBundledReportsTests: XCTestCase {
 
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let cases: [(shell: String, resource: String, panel: UUID, tty: String)] = [
-            ("/bin/bash", "cmux-bash-integration.bash", bashTab, "ttysC11297bash"),
-            ("/bin/zsh", "cmux-zsh-integration.zsh", zshTab, "ttysC11297zsh")
+            ("/bin/bash", "cmux-bash-integration.bash", bashPanel, "ttysC11297bash"),
+            ("/bin/zsh", "cmux-zsh-integration.zsh", zshPanel, "ttysC11297zsh")
         ]
         for item in cases {
             XCTAssertNil(workspace.panelTTYNames[item.panel])
-            XCTAssertFalse(workspace.tabNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false))
+            XCTAssertFalse(workspace.panelNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false))
             let resource = repository.appendingPathComponent("Resources/shell-integration/\(item.resource)")
             XCTAssertTrue(FileManager.default.fileExists(atPath: resource.path), "Bundled source must be present")
             let output = try await runBundledReports(
@@ -1539,7 +1539,7 @@ final class StartupBundledReportsTests: XCTestCase {
                        "Both real shells must deliver one TTY and one activity report before readiness")
         for item in cases {
             XCTAssertNil(workspace.panelTTYNames[item.panel], "Pending reports must not touch the partial graph")
-            XCTAssertFalse(workspace.tabNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false),
+            XCTAssertFalse(workspace.panelNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false),
                            "Running activity must remain unapplied while restoration is pending")
         }
 
@@ -1559,7 +1559,7 @@ final class StartupBundledReportsTests: XCTestCase {
         XCTAssertEqual(controller.debugDeferredStartupReportCount, 0)
         for item in cases {
             XCTAssertEqual(workspace.panelTTYNames[item.panel], item.tty)
-            XCTAssertTrue(workspace.tabNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false),
+            XCTAssertTrue(workspace.panelNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false),
                           "The accepted running state must affect observable close policy without sender retry")
         }
 #else

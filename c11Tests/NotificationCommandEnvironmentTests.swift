@@ -76,22 +76,22 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
     private func assertAttribution(
         _ environment: [String: String],
         workspace: UUID,
-        tab: UUID?,
+        panel: UUID?,
         kind: String,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
         for prefix in ["C11", "CMUX"] {
             XCTAssertEqual(environment["\(prefix)_NOTIFICATION_WORKSPACE_ID"], workspace.uuidString, file: file, line: line)
-            XCTAssertEqual(environment["\(prefix)_NOTIFICATION_PANEL_ID"], tab?.uuidString ?? "", file: file, line: line)
-            XCTAssertEqual(environment["\(prefix)_NOTIFICATION_TAB_ID"], tab?.uuidString ?? "", file: file, line: line)
+            XCTAssertEqual(environment["\(prefix)_NOTIFICATION_PANEL_ID"], panel?.uuidString ?? "", file: file, line: line)
+            XCTAssertEqual(environment["\(prefix)_NOTIFICATION_TAB_ID"], panel?.uuidString ?? "", file: file, line: line)
             XCTAssertEqual(environment["\(prefix)_NOTIFICATION_KIND"], kind, file: file, line: line)
         }
     }
 
-    private func notification(workspace: UUID, tab: UUID?) -> TerminalNotification {
+    private func notification(workspace: UUID, panel: UUID?) -> TerminalNotification {
         TerminalNotification(
-            id: UUID(), workspaceId: workspace, surfaceId: tab,
+            id: UUID(), workspaceId: workspace, surfaceId: panel,
             title: "Synthetic completion", subtitle: "Capture test",
             body: "First line\nSecond line '$()'", createdAt: Date(), isRead: false
         )
@@ -111,12 +111,12 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         let capture = try CommandCapture()
         defer { capture.cleanUp() }
         let store = routineStore(capture: capture)
-        let notice = notification(workspace: UUID(), tab: UUID())
+        let notice = notification(workspace: UUID(), panel: UUID())
 
         store.scheduleUserNotificationForTesting(notice)
 
         let environment = try waitForCapture(capture)
-        assertAttribution(environment, workspace: notice.workspaceId, tab: notice.surfaceId, kind: "routine")
+        assertAttribution(environment, workspace: notice.workspaceId, panel: notice.surfaceId, kind: "routine")
         XCTAssertEqual(environment["CMUX_NOTIFICATION_TITLE"], notice.title)
         XCTAssertEqual(environment["CMUX_NOTIFICATION_SUBTITLE"], notice.subtitle)
         XCTAssertEqual(environment["CMUX_NOTIFICATION_BODY"], notice.body)
@@ -126,11 +126,11 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         let capture = try CommandCapture()
         defer { capture.cleanUp() }
         let store = routineStore(capture: capture)
-        let notice = notification(workspace: UUID(), tab: nil)
+        let notice = notification(workspace: UUID(), panel: nil)
 
         store.scheduleUserNotificationForTesting(notice)
 
-        assertAttribution(try waitForCapture(capture), workspace: notice.workspaceId, tab: nil, kind: "routine")
+        assertAttribution(try waitForCapture(capture), workspace: notice.workspaceId, panel: nil, kind: "routine")
     }
 
     func testAbsentTabOverwritesInheritedAttributionInRealCommand() throws {
@@ -151,7 +151,7 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
             defaults: capture.defaults, environment: inherited
         )
 
-        assertAttribution(try waitForCapture(capture), workspace: workspace, tab: nil, kind: "routine")
+        assertAttribution(try waitForCapture(capture), workspace: workspace, panel: nil, kind: "routine")
     }
 
     func testDirectFlagDeliveryExportsFlagOrigin() throws {
@@ -163,12 +163,12 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         store.configureDirectFlagAuthorizationHandlerForTesting { $0(true) }
         store.configureDirectFlagAddHandlerForTesting { _, completion in completion(nil) }
         let workspace = UUID()
-        let tab = UUID()
+        let panel = UUID()
 
-        store.deliverFlagNotification(workspaceId: workspace, surfaceId: tab, flagRaisedAt: Date(), title: "Flag test", reason: "Synthetic decision")
+        store.deliverFlagNotification(workspaceId: workspace, surfaceId: panel, flagRaisedAt: Date(), title: "Flag test", reason: "Synthetic decision")
 
         let environment = try waitForCapture(capture)
-        assertAttribution(environment, workspace: workspace, tab: tab, kind: "flag")
+        assertAttribution(environment, workspace: workspace, panel: panel, kind: "flag")
         XCTAssertEqual(environment["CMUX_NOTIFICATION_TITLE"], "Flag test")
         XCTAssertEqual(environment["CMUX_NOTIFICATION_SUBTITLE"], "")
         XCTAssertEqual(environment["CMUX_NOTIFICATION_BODY"], "Synthetic decision")
@@ -200,11 +200,11 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         store.configureDirectFlagAddHandlerForTesting { _, _ in adds += 1 }
         store.configureDirectFlagCustomCommandHandlerForTesting { _ in commands += 1 }
         let workspace = UUID()
-        let tab = UUID()
+        let panel = UUID()
         let epoch = Date()
 
-        store.deliverFlagNotification(workspaceId: workspace, surfaceId: tab, flagRaisedAt: epoch, title: "Canceled", reason: "Synthetic decision")
-        store.cancelFlagNotification(workspaceId: workspace, surfaceId: tab, flagRaisedAt: epoch)
+        store.deliverFlagNotification(workspaceId: workspace, surfaceId: panel, flagRaisedAt: epoch, title: "Canceled", reason: "Synthetic decision")
+        store.cancelFlagNotification(workspaceId: workspace, surfaceId: panel, flagRaisedAt: epoch)
         try XCTUnwrap(authorization)(true)
 
         XCTAssertEqual(adds, 0)
@@ -238,11 +238,11 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         store.configureDirectFlagAddHandlerForTesting { _, completion in completions.append(completion) }
         store.configureDirectFlagCustomCommandHandlerForTesting { commands.append($0.body) }
         let workspace = UUID()
-        let tab = UUID()
+        let panel = UUID()
         let epoch = Date()
 
-        store.deliverFlagNotification(workspaceId: workspace, surfaceId: tab, flagRaisedAt: epoch, title: "Revision", reason: "Old reason")
-        store.deliverFlagNotification(workspaceId: workspace, surfaceId: tab, flagRaisedAt: epoch, title: "Revision", reason: "Current reason")
+        store.deliverFlagNotification(workspaceId: workspace, surfaceId: panel, flagRaisedAt: epoch, title: "Revision", reason: "Old reason")
+        store.deliverFlagNotification(workspaceId: workspace, surfaceId: panel, flagRaisedAt: epoch, title: "Revision", reason: "Current reason")
         XCTAssertEqual(completions.count, 2)
         guard completions.count == 2 else { return }
         completions[0](nil)
@@ -263,7 +263,7 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
             authorization: { $0(true) },
             add: { request, _ in captured = request }
         )
-        let notice = notification(workspace: UUID(), tab: UUID())
+        let notice = notification(workspace: UUID(), panel: UUID())
 
         store.scheduleUserNotificationForTesting(notice)
 
@@ -277,7 +277,7 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
     }
 
     func testWorkspaceOnlyUserInfoHasNoPanel() {
-        let userInfo = TerminalNotificationStore.userInfo(for: notification(workspace: UUID(), tab: nil))
+        let userInfo = TerminalNotificationStore.userInfo(for: notification(workspace: UUID(), panel: nil))
         XCTAssertNil(userInfo["panelId"])
         XCTAssertNil(userInfo["surfaceId"])
         XCTAssertNil(TerminalNotificationStore.panelIdString(fromUserInfo: userInfo))

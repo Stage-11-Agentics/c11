@@ -150,7 +150,7 @@ func sidebarSelectedWorkspaceForegroundNSColor(opacity: CGFloat) -> NSColor {
 
 #if compiler(>=6.2)
 @available(macOS 26.0, *)
-enum InternalTabDragConfigurationProvider {
+enum InternalPanelDragConfigurationProvider {
     // These drags only make sense inside cmux. Outside the app, Finder should
     // reject them instead of materializing placeholder files from the payload.
     static let value = DragConfiguration(
@@ -160,12 +160,12 @@ enum InternalTabDragConfigurationProvider {
 }
 #endif
 
-private struct InternalTabDragConfigurationModifier: ViewModifier {
+private struct InternalPanelDragConfigurationModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            content.dragConfiguration(InternalTabDragConfigurationProvider.value)
+            content.dragConfiguration(InternalPanelDragConfigurationProvider.value)
         } else {
             content
         }
@@ -176,8 +176,8 @@ private struct InternalTabDragConfigurationModifier: ViewModifier {
 }
 
 extension View {
-    func internalOnlyTabDrag() -> some View {
-        modifier(InternalTabDragConfigurationModifier())
+    func internalOnlyPanelDrag() -> some View {
+        modifier(InternalPanelDragConfigurationModifier())
     }
 }
 
@@ -1597,7 +1597,7 @@ struct ContentView: View {
     private struct CommandPaletteRenameTarget: Equatable {
         enum Kind: Equatable {
             case workspace(workspaceId: UUID)
-            case tab(workspaceId: UUID, panelId: UUID)
+            case panel(workspaceId: UUID, panelId: UUID)
         }
 
         let kind: Kind
@@ -1607,7 +1607,7 @@ struct ContentView: View {
             switch kind {
             case .workspace:
                 return String(localized: "commandPalette.rename.workspaceTitle", defaultValue: "Rename Workspace")
-            case .tab:
+            case .panel:
                 return String(localized: "commandPalette.rename.tabTitle", defaultValue: "Rename Panel")
             }
         }
@@ -1616,7 +1616,7 @@ struct ContentView: View {
             switch kind {
             case .workspace:
                 return String(localized: "commandPalette.rename.workspaceDescription", defaultValue: "Choose a custom workspace name.")
-            case .tab:
+            case .panel:
                 return String(localized: "commandPalette.rename.tabDescription", defaultValue: "Pick a custom panel name.")
             }
         }
@@ -1625,7 +1625,7 @@ struct ContentView: View {
             switch kind {
             case .workspace:
                 return String(localized: "commandPalette.rename.workspacePlaceholder", defaultValue: "Workspace name")
-            case .tab:
+            case .panel:
                 return String(localized: "commandPalette.rename.tabPlaceholder", defaultValue: "Panel name")
             }
         }
@@ -2830,7 +2830,7 @@ struct ContentView: View {
             dismissCommandPalette()
         })
 
-        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteRenameTabRequested)) { notification in
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteRenamePanelRequested)) { notification in
             let requestedWindow = notification.object as? NSWindow
             guard Self.shouldHandleCommandPaletteRequest(
                 observedWindow: observedWindow,
@@ -2838,7 +2838,7 @@ struct ContentView: View {
                 keyWindow: NSApp.keyWindow,
                 mainWindow: NSApp.mainWindow
             ) else { return }
-            openCommandPaletteRenameTabInput()
+            openCommandPaletteRenamePanelInput()
         })
 
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteRenameWorkspaceRequested)) { notification in
@@ -4114,7 +4114,7 @@ struct ContentView: View {
         switch target.kind {
         case .workspace:
             return String(localized: "commandPalette.rename.workspaceInputHint", defaultValue: "Enter a workspace name. Press Enter to rename, Escape to cancel.")
-        case .tab:
+        case .panel:
             return String(localized: "commandPalette.rename.tabInputHint", defaultValue: "Type a panel name. Press Enter to rename, Escape to cancel.")
         }
     }
@@ -4123,7 +4123,7 @@ struct ContentView: View {
         switch target.kind {
         case .workspace:
             return String(localized: "commandPalette.rename.workspaceConfirmHint", defaultValue: "Press Enter to apply this workspace name, or Escape to cancel.")
-        case .tab:
+        case .panel:
             return String(localized: "commandPalette.rename.tabConfirmHint", defaultValue: "Press Enter to rename the panel. Press Escape to cancel.")
         }
     }
@@ -5131,7 +5131,7 @@ struct ContentView: View {
         case "palette.jumpUnread":
             return .jumpToUnread
         case "palette.renameTab":
-            return .renameTab
+            return .renamePanel
         case "palette.renameWorkspace":
             return .renameWorkspace
         case "palette.nextWorkspace":
@@ -5257,7 +5257,7 @@ struct ContentView: View {
             snapshot.setBool(CommandPaletteContextKeys.panelIsBrowser, panelContext.panel.panelType == .browser)
             snapshot.setBool(CommandPaletteContextKeys.panelIsTerminal, panelIsTerminal)
             snapshot.setBool(CommandPaletteContextKeys.panelHasCustomName, workspace.panelCustomTitles[panelId] != nil)
-            snapshot.setBool(CommandPaletteContextKeys.panelShouldPin, !workspace.isTabPinned(panelId))
+            snapshot.setBool(CommandPaletteContextKeys.panelShouldPin, !workspace.isPanelPinned(panelId))
             let hasUnread = workspace.manualUnreadPanelIds.contains(panelId)
                 || notificationStore.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: panelId)
             snapshot.setBool(CommandPaletteContextKeys.panelHasUnread, hasUnread)
@@ -6161,23 +6161,23 @@ struct ContentView: View {
         }
 
         registry.register(commandId: "palette.renameTab") {
-            beginRenameTabFlow()
+            beginRenamePanelFlow()
         }
         registry.register(commandId: "palette.clearTabName") {
             guard let panelContext = focusedPanelContext else {
                 NSSound.beep()
                 return
             }
-            panelContext.workspace.setTabCustomTitle(panelId: panelContext.panelId, title: nil)
+            panelContext.workspace.setPanelCustomTitle(panelId: panelContext.panelId, title: nil)
         }
         registry.register(commandId: "palette.toggleTabPin") {
             guard let panelContext = focusedPanelContext else {
                 NSSound.beep()
                 return
             }
-            panelContext.workspace.setTabPinned(
+            panelContext.workspace.setPanelPinned(
                 panelId: panelContext.panelId,
-                pinned: !panelContext.workspace.isTabPinned(panelContext.panelId)
+                pinned: !panelContext.workspace.isPanelPinned(panelContext.panelId)
             )
         }
         registry.register(commandId: "palette.toggleTabUnread") {
@@ -6188,9 +6188,9 @@ struct ContentView: View {
             let hasUnread = panelContext.workspace.manualUnreadPanelIds.contains(panelContext.panelId)
                 || notificationStore.hasUnreadNotification(forWorkspaceId: panelContext.workspace.id, surfaceId: panelContext.panelId)
             if hasUnread {
-                panelContext.workspace.markTabRead(panelContext.panelId)
+                panelContext.workspace.markPanelRead(panelContext.panelId)
             } else {
-                panelContext.workspace.markTabUnread(panelContext.panelId)
+                panelContext.workspace.markPanelUnread(panelContext.panelId)
             }
         }
         registry.register(commandId: "palette.nextTabInPane") {
@@ -6349,7 +6349,7 @@ struct ContentView: View {
     }
 
     private func panelDisplayName(workspace: Workspace, panelId: UUID, fallback: String) -> String {
-        let title = workspace.tabTitle(panelId: panelId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let title = workspace.panelTitle(panelId: panelId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty {
             return title
         }
@@ -6717,11 +6717,11 @@ struct ContentView: View {
         resetCommandPaletteListState(initialQuery: initialQuery)
     }
 
-    private func openCommandPaletteRenameTabInput() {
+    private func openCommandPaletteRenamePanelInput() {
         if !isCommandPalettePresented {
             presentCommandPalette(initialQuery: Self.commandPaletteCommandsPrefix)
         }
-        beginRenameTabFlow()
+        beginRenamePanelFlow()
     }
 
     private func openCommandPaletteRenameWorkspaceInput() {
@@ -7258,7 +7258,7 @@ struct ContentView: View {
         startRenameFlow(target)
     }
 
-    private func beginRenameTabFlow() {
+    private func beginRenamePanelFlow() {
         guard let panelContext = focusedPanelContext else {
             NSSound.beep()
             return
@@ -7269,7 +7269,7 @@ struct ContentView: View {
             fallback: panelContext.panel.displayTitle
         )
         let target = CommandPaletteRenameTarget(
-            kind: .tab(workspaceId: panelContext.workspace.id, panelId: panelContext.panelId),
+            kind: .panel(workspaceId: panelContext.workspace.id, panelId: panelContext.panelId),
             currentName: panelName
         )
         startRenameFlow(target)
@@ -7295,12 +7295,12 @@ struct ContentView: View {
         switch target.kind {
         case .workspace(let workspaceId):
             workspaceManager.setCustomTitle(workspaceId: workspaceId, title: normalizedName)
-        case .tab(let workspaceId, let panelId):
+        case .panel(let workspaceId, let panelId):
             guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                 NSSound.beep()
                 return
             }
-            workspace.setTabCustomTitle(panelId: panelId, title: normalizedName)
+            workspace.setPanelCustomTitle(panelId: panelId, title: normalizedName)
         }
 
         dismissCommandPalette()
@@ -8906,7 +8906,7 @@ struct WorkspaceSidebar: View {
             dropIndicator = nil
             return SidebarGroupDragPayload.provider(for: header.group.id)
         }
-        .internalOnlyTabDrag()
+        .internalOnlyPanelDrag()
         .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes + SidebarGroupDragPayload.dropContentTypes,
                 delegate: SidebarWorkspaceDropDelegate(
                     targetWorkspaceId: nil, targetGroupId: header.group.id, workspaceManager: workspaceManager,
@@ -8983,7 +8983,7 @@ struct WorkspaceSidebar: View {
                     }
                     continue
                 }
-                let resolved = ws.resolvedSurfaceTabActivityState(
+                let resolved = ws.resolvedSurfacePanelActivityState(
                     panelId: panelId,
                     hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
                         forWorkspaceId: ws.id,
@@ -13252,7 +13252,7 @@ private struct WorkspaceRowView: View, Equatable {
             dropIndicator = nil
             return SidebarWorkspaceDragPayload.provider(for: workspace.id)
         }
-        .internalOnlyTabDrag()
+        .internalOnlyPanelDrag()
         .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes, delegate: SidebarWorkspaceDropDelegate(
             targetWorkspaceId: workspace.id,
             workspaceManager: workspaceManager,

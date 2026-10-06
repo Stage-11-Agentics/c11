@@ -81,14 +81,14 @@ final class EventLogTests: XCTestCase {
     }
 
     func testLifecycleChangedEnvelopeUsesTheClosedTypeAndPayload() {
-        let tab = UUID(uuidString: "6f9619ff-8b86-d011-b42d-00cf4fc964ff")!
+        let panel = UUID(uuidString: "6f9619ff-8b86-d011-b42d-00cf4fc964ff")!
         let line = EventEnvelope(
             type: .lifecycleChanged,
             instance: "i",
             ts: Date(timeIntervalSince1970: 1_770_000_123),
             workspace: "9b2d4e6a-1c3f-4a5b-8d7e-2f0a1b3c4d5e",
-            surface: tab.uuidString,
-            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"]
+            surface: panel.uuidString,
+            payload: ["tab": panel.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"]
         ).serialize(seq: 12)
         let object = parse(line)
         XCTAssertEqual(object["type"] as? String, "lifecycle.changed")
@@ -199,7 +199,7 @@ final class EventLogTests: XCTestCase {
     }
 
     func testDroppedLifecycleLineRecoversFromCommittedJournalSnapshot() throws {
-        let tab = JournalTestData.tab
+        let panel = JournalTestData.panel
         let workspace = JournalTestData.workspace
         let draft = JournalTestData.draft(.questionRequested)
         let journalLayout = JournalStorageLayout(directory: tempDir.appendingPathComponent("journal", isDirectory: true))
@@ -215,17 +215,17 @@ final class EventLogTests: XCTestCase {
         }
         EventEmitter.shared.startForTesting(log: log, instance: "drop-recovery")
         EventEmitter.shared.emitMetadataChanged(
-            scope: "surface", workspace: workspace, surface: tab,
+            scope: "surface", workspace: workspace, surface: panel,
             key: "status", value: "waiting", prior: "working", source: "fixture")
         XCTAssertEqual(writerBlocked.wait(timeout: .now() + .seconds(1)), .success)
 
         EventEmitter.shared.emitLifecycleChanged(
-            workspace: workspace, tab: tab,
-            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"])
+            workspace: workspace, panel: panel,
+            payload: ["tab": panel.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"])
         for _ in 0..<8 { releaseWriter.signal() }
         log.flush()
         EventEmitter.shared.emitMetadataChanged(
-            scope: "surface", workspace: workspace, surface: tab,
+            scope: "surface", workspace: workspace, surface: panel,
             key: "status", value: "blocked", prior: "waiting", source: "fixture")
         EventEmitter.shared.flush()
 
@@ -286,7 +286,7 @@ final class EventLogTests: XCTestCase {
         let keySurface = UUID()
         let caller = UUID()
 
-        EventEmitter.shared.emitTabInputSent(
+        EventEmitter.shared.emitPanelInputSent(
             workspace: workspace,
             surface: textSurface,
             callerPanelId: nil,
@@ -296,7 +296,7 @@ final class EventLogTests: XCTestCase {
             text: "hello",
             submitted: true
         )
-        EventEmitter.shared.emitTabInputSent(
+        EventEmitter.shared.emitPanelInputSent(
             workspace: workspace,
             surface: keySurface,
             callerPanelId: caller,
@@ -329,7 +329,7 @@ final class EventLogTests: XCTestCase {
     }
 
     func testTabInputPayloadRecordsQueuedAndSubmitState() {
-        let payload = EventEmitter.tabInputPayload(
+        let payload = EventEmitter.panelInputPayload(
             callerPanelId: UUID(),
             callerTitle: "caller",
             targetTitle: "target",
@@ -345,7 +345,7 @@ final class EventLogTests: XCTestCase {
 
     func testTabInputPayloadTruncatesBodyAtUTF8Boundary() {
         let text = "a" + String(repeating: "🙂", count: 100_000)
-        let payload = EventEmitter.tabInputPayload(
+        let payload = EventEmitter.panelInputPayload(
             callerPanelId: nil,
             callerTitle: nil,
             targetTitle: "target",
@@ -601,7 +601,7 @@ extension EventLogTests {
     func testV2TypeNamesForRenamedEvents() {
         XCTAssertEqual(EventEnvelope.EventType.surfaceCreated.rawValue, "panel.created")
         XCTAssertEqual(EventEnvelope.EventType.surfaceClosed.rawValue, "panel.closed")
-        XCTAssertEqual(EventEnvelope.EventType.tabInputSent.rawValue, "panel.input_sent")
+        XCTAssertEqual(EventEnvelope.EventType.panelInputSent.rawValue, "panel.input_sent")
         // Every alias resolves to a live v2 type, and no v2 type is itself an alias.
         let live = Set(EventEnvelope.EventType.allCases.map(\.rawValue))
         for (legacy, current) in EventEnvelope.legacyTypeAliases {
@@ -632,20 +632,20 @@ extension EventLogTests {
     func testLifecycleChangedEmitterWritesPanelPayloadKey() {
         let log = EventLog(url: logURL(), instance: "lifecycle-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "lifecycle-inst")
-        let ws = UUID(), tab = UUID()
+        let ws = UUID(), panel = UUID()
         EventEmitter.shared.emitLifecycleChanged(
-            workspace: ws, tab: tab,
-            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"])
+            workspace: ws, panel: panel,
+            payload: ["tab": panel.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"])
         EventEmitter.shared.flush()
 
         let object = readLines(logURL()).map(parse).first
         XCTAssertEqual(object?["type"] as? String, "lifecycle.changed")
-        XCTAssertEqual(object?["panel"] as? String, tab.uuidString)
+        XCTAssertEqual(object?["panel"] as? String, panel.uuidString)
         let payload = object?["payload"] as? [String: Any] ?? [:]
-        XCTAssertEqual(payload["panel"] as? String, tab.uuidString)
+        XCTAssertEqual(payload["panel"] as? String, panel.uuidString)
         XCTAssertNil(payload["tab"], "v2 lifecycle payloads carry `panel`, not `tab`")
         XCTAssertEqual(payload["to"] as? String, "blocked")
-        XCTAssertEqual(EventEnvelope.lifecyclePanel(inPayload: payload), tab.uuidString)
+        XCTAssertEqual(EventEnvelope.lifecyclePanel(inPayload: payload), panel.uuidString)
         XCTAssertEqual(EventEnvelope.lifecyclePanel(inPayload: ["tab": "legacy"]), "legacy")
     }
 

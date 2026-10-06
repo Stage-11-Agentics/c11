@@ -107,7 +107,7 @@ extension TerminalController {
                             reason: validatedReason!,
                             callerPanelId: callerPanelId,
                             by: actor,
-                            title: workspace.tabTitle(panelId: surfaceId)
+                            title: workspace.panelTitle(panelId: surfaceId)
                                 ?? workspace.panels[surfaceId]?.displayTitle
                         )
                     case "flag.lower":
@@ -143,7 +143,7 @@ extension TerminalController {
                         "flag": self.v2OrNull(snapshot.flagReason),
                         "flag_raised_at": self.v2OrNull(snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp)),
                         "caller_surface_id": self.v2OrNull(
-                            snapshot.flagCallerTabId?.uuidString
+                            snapshot.flagCallerPanelId?.uuidString
                         ),
                         "suppressed": snapshot.suppressed,
                         "applied": write.applied
@@ -175,7 +175,7 @@ extension TerminalController {
                         "reason": snapshot.flagReason ?? "",
                         "raised_at": snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp) ?? "",
                         "caller_surface_id": self.v2OrNull(
-                            snapshot.flagCallerTabId?.uuidString
+                            snapshot.flagCallerPanelId?.uuidString
                         ),
                         "suppressed": snapshot.suppressed
                     ]

@@ -45,7 +45,7 @@ final class SendTextParseTests: XCTestCase {
             let parsed = try SendTextParse.parse(["--workspace", "workspace:2", flag, "panel:3",
                                                   "--json", "--no-submit", "--raw", "body"])
             XCTAssertEqual(parsed.workspace, "workspace:2")
-            XCTAssertEqual(parsed.tab, "panel:3")
+            XCTAssertEqual(parsed.panel, "panel:3")
             XCTAssertTrue(parsed.raw)
             XCTAssertTrue(parsed.json)
             XCTAssertFalse(parsed.allowUnguarded)
@@ -53,7 +53,7 @@ final class SendTextParseTests: XCTestCase {
             XCTAssertEqual(try parsed.text(), "body")
         }
         let literal = try SendTextParse.parse(["--", "--bogus", "--raw", "--tab", "tab:9"])
-        XCTAssertNil(literal.tab)
+        XCTAssertNil(literal.panel)
         XCTAssertFalse(literal.raw)
         XCTAssertEqual(try literal.text(), "--bogus --raw --tab tab:9")
 

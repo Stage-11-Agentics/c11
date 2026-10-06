@@ -12,13 +12,13 @@ import Bonsplit
 /// ends this offer and does not dismiss the tip. Undo restores Tabs and
 /// does the same.
 @MainActor
-final class TabRailTipCenter: NSObject, NSPopoverDelegate {
-    static let shared = TabRailTipCenter()
+final class PanelRailTipCenter: NSObject, NSPopoverDelegate {
+    static let shared = PanelRailTipCenter()
 
-    private var policy: TabRailTipPolicy
+    private var policy: PanelRailTipPolicy
     /// Where the Panel Layout mode (`panelLayoutMode`) lives. Tests pass an isolated suite.
     private let defaults: UserDefaults
-    private let model = TabRailTipModel()
+    private let model = PanelRailTipModel()
     private var slots: [String: Slot] = [:]
     private var phase: Phase = .idle
     /// The one area opened by Try Rail, so Undo can remove its persisted open bit.
@@ -39,7 +39,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     private var programmaticCloseGeneration: Int?
     private var userClose = false
     private var popover: NSPopover?
-    private var hosting: NSHostingController<TabRailTipView>?
+    private var hosting: NSHostingController<PanelRailTipView>?
     private var shownAnchor: NSView?
     private var refreshQueued = false
     /// Readable from `deinit`, which may not be on the main actor.
@@ -72,14 +72,14 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     var frontAreaOverride: (@MainActor () -> (workspace: Workspace, paneId: PaneID)?)?
 
     /// A center with its own policy and defaults and no window observers, for tests.
-    init(policy: TabRailTipPolicy, defaults: UserDefaults) {
+    init(policy: PanelRailTipPolicy, defaults: UserDefaults) {
         self.policy = policy
         self.defaults = defaults
         super.init()
     }
 
     private override init() {
-        policy = TabRailTipPolicy(calendar: TabRailTipPolicy.localCalendar(), store: UserDefaultsTabRailTipStore())
+        policy = PanelRailTipPolicy(calendar: PanelRailTipPolicy.localCalendar(), store: UserDefaultsPanelRailTipStore())
         defaults = .standard
         super.init()
         let center = NotificationCenter.default
@@ -166,7 +166,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         anchorBeforeSwitch = slot.anchor
         model.mode = .undo
         model.rows = []
-        TabLayoutSettings.setMode(.rail, defaults: defaults)
+        PanelLayoutSettings.setMode(.rail, defaults: defaults)
         workspace.bonsplitController.setRailOpen(true, inPane: slot.paneId)
         resizePopover()
         scheduleRefresh()
@@ -194,7 +194,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
         hidePopover()
         previewedRailSlot = nil
-        TabLayoutSettings.setMode(.strip, defaults: defaults)
+        PanelLayoutSettings.setMode(.strip, defaults: defaults)
     }
 
     func performShowList() {
@@ -213,7 +213,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// Bonsplit toggles its sheet. Consume only the active teaching action.
     func performShowListFromCountCell(workspace: Workspace, paneId: PaneID) -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard TabLayoutSettings.mode(defaults: defaults) == .strip else { return false }
+        guard PanelLayoutSettings.mode(defaults: defaults) == .strip else { return false }
         switch phase {
         case .live, .pending:
             break
@@ -328,16 +328,16 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func considerStarting() {
-        guard TabLayoutSettings.mode(defaults: defaults) == .strip else { return }
+        guard PanelLayoutSettings.mode(defaults: defaults) == .strip else { return }
         guard let slot = frontSlot(), slot.overflowing, !slot.sheetOpen, slot.anchor?.window != nil else { return }
-        guard policy.shouldOffer(now: Date(), layoutIsTabs: true, areaOverflowing: true) else { return }
+        guard policy.shouldOffer(now: Date(), layoutIsStrip: true, areaOverflowing: true) else { return }
         phase = .pending
         sawList = false
         showTeaching(slot)
     }
 
     private func updateTeaching() {
-        guard TabLayoutSettings.mode(defaults: defaults) == .strip else {
+        guard PanelLayoutSettings.mode(defaults: defaults) == .strip else {
             endOffer()
             return
         }
@@ -353,7 +353,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func updateUndo() {
-        guard TabLayoutSettings.mode(defaults: defaults) == .rail else {
+        guard PanelLayoutSettings.mode(defaults: defaults) == .rail else {
             endOffer()
             return
         }
@@ -434,7 +434,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     private func ensurePopover() -> NSPopover {
         if let popover { return popover }
-        let host = NSHostingController(rootView: TabRailTipView(model: model))
+        let host = NSHostingController(rootView: PanelRailTipView(model: model))
         host.sizingOptions = [.preferredContentSize]
         let popover = NSPopover()
         popover.behavior = .semitransient
@@ -545,7 +545,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func refreshCalendar() {
-        policy.calendar = TabRailTipPolicy.localCalendar()
+        policy.calendar = PanelRailTipPolicy.localCalendar()
     }
 
     /// Starts this area's own 2s timer. A blip in another area cannot credit it.
@@ -572,7 +572,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             }
         }
         slot.sustainItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + TabRailTipPolicy.sustain, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + PanelRailTipPolicy.sustain, execute: item)
     }
 
     /// Records today for an area that has already been overflowing for 2s.
@@ -595,14 +595,14 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
     }
 
-    private func previewRows(workspace: Workspace, paneId: PaneID) -> [TabRailTipPreviewRow] {
+    private func previewRows(workspace: Workspace, paneId: PaneID) -> [PanelRailTipPreviewRow] {
         let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
         guard !bonsplitTabs.isEmpty else { return [] }
         let selected = workspace.bonsplitController.selectedTab(inPane: paneId)?.id
         let index = bonsplitTabs.firstIndex(where: { $0.id == selected }) ?? 0
-        let range = TabRailTipPreviewWindow.range(count: bonsplitTabs.count, selectedIndex: index)
+        let range = PanelRailTipPreviewWindow.range(count: bonsplitTabs.count, selectedIndex: index)
         return bonsplitTabs[range].map { bonsplitTab in
-            TabRailTipPreviewRow(
+            PanelRailTipPreviewRow(
                 id: bonsplitTab.id.uuid.uuidString,
                 title: bonsplitTab.detail?.title.flatMap { $0.isEmpty ? nil : $0 } ?? bonsplitTab.title,
                 ordinal: bonsplitTab.displayOrdinal,
@@ -613,7 +613,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
     }
 
-    private static func statusKind(for bonsplitTab: Bonsplit.Tab) -> TabRailTipStatusKind? {
+    private static func statusKind(for bonsplitTab: Bonsplit.Tab) -> PanelRailTipStatusKind? {
         if let kind = bonsplitTab.detail?.status?.kind {
             switch kind {
             case .working: return .working
@@ -633,29 +633,29 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 }
 
-enum TabRailTipStatusKind {
+enum PanelRailTipStatusKind {
     case working, waiting, flagged, idle, cold
 }
 
-struct TabRailTipPreviewRow: Identifiable, Equatable {
+struct PanelRailTipPreviewRow: Identifiable, Equatable {
     let id: String
     let title: String
     let ordinal: Int?
-    let status: TabRailTipStatusKind?
+    let status: PanelRailTipStatusKind?
     let selected: Bool
     /// The tab mark's recolor (an expired prompt cache's blue on a cold line).
     var markColorOverrideHex: String? = nil
 }
 
-final class TabRailTipModel: ObservableObject {
+final class PanelRailTipModel: ObservableObject {
     enum Mode { case teaching, undo }
     @Published var mode: Mode = .teaching
     @Published var sawList = false
-    @Published var rows: [TabRailTipPreviewRow] = []
+    @Published var rows: [PanelRailTipPreviewRow] = []
 }
 
-struct TabRailTipView: View {
-    @ObservedObject var model: TabRailTipModel
+struct PanelRailTipView: View {
+    @ObservedObject var model: PanelRailTipModel
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -675,7 +675,7 @@ struct TabRailTipView: View {
                     fill: palette.gold,
                     ink: palette.ink
                 ) {
-                    TabRailTipCenter.shared.performUndo()
+                    PanelRailTipCenter.shared.performUndo()
                 }
             } else {
                 Text(String(localized: "tabRailTip.title", defaultValue: "More panels than fit"))
@@ -699,7 +699,7 @@ struct TabRailTipView: View {
                         fill: palette.gold,
                         ink: palette.ink
                     ) {
-                        TabRailTipCenter.shared.performTryRail()
+                        PanelRailTipCenter.shared.performTryRail()
                     }
                     tipButton(
                         String(localized: "tabRailTip.showList", defaultValue: "Show panel list"),
@@ -708,10 +708,10 @@ struct TabRailTipView: View {
                         ink: palette.text,
                         border: palette.border
                     ) {
-                        TabRailTipCenter.shared.performShowList()
+                        PanelRailTipCenter.shared.performShowList()
                     }
                 }
-                Button(action: { TabRailTipCenter.shared.performDismiss() }) {
+                Button(action: { PanelRailTipCenter.shared.performDismiss() }) {
                     Text(String(localized: "tabRailTip.dismiss", defaultValue: "Don't show again"))
                         .font(.system(size: 11))
                         .foregroundStyle(palette.faint)
@@ -800,7 +800,7 @@ struct TabRailTipView: View {
         .accessibilityIdentifier(identifier)
     }
 
-    private func statusWord(_ status: TabRailTipStatusKind?) -> String? {
+    private func statusWord(_ status: PanelRailTipStatusKind?) -> String? {
         switch status {
         case .working:
             return String(localized: "tabRailTip.status.working", defaultValue: "working")
@@ -817,7 +817,7 @@ struct TabRailTipView: View {
         }
     }
 
-    private func statusColor(_ status: TabRailTipStatusKind?, _ palette: TipPalette) -> Color {
+    private func statusColor(_ status: PanelRailTipStatusKind?, _ palette: TipPalette) -> Color {
         switch status {
         case .waiting: return palette.amber
         case .flagged: return palette.violet
@@ -825,7 +825,7 @@ struct TabRailTipView: View {
         }
     }
 
-    private func mark(_ row: TabRailTipPreviewRow, _ palette: TipPalette) -> Color {
+    private func mark(_ row: PanelRailTipPreviewRow, _ palette: TipPalette) -> Color {
         switch row.status {
         case .working: return palette.text
         case .waiting: return palette.amber

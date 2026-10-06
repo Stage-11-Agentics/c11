@@ -12,7 +12,7 @@ struct SendTextParse {
     }
 
     var workspace: String? = nil
-    var tab: String? = nil
+    var panel: String? = nil
     var raw: Bool
     var submit = true
     var json = false
@@ -43,7 +43,7 @@ struct SendTextParse {
                 if argument == "--workspace" {
                     parsed.workspace = arguments[index]
                 } else {
-                    parsed.tab = arguments[index]
+                    parsed.panel = arguments[index]
                 }
             } else if !literal && argument == "--raw" {
                 parsed.raw = true

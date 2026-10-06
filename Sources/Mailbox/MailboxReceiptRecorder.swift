@@ -228,7 +228,7 @@ final class MailboxReceiptRecorder {
             pending.removeAll { alreadyLogged.contains($0.id) }
         }
         for delivery in pending {
-            emit(workspaceId, delivery.id, delivery.recipient, receipt.tabId)
+            emit(workspaceId, delivery.id, delivery.recipient, receipt.panelId)
             remember(delivery.id)
         }
         // The events are on disk before the receipt that proves them is gone.

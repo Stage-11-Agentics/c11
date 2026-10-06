@@ -73,7 +73,7 @@ final class JournalStoreTests: XCTestCase {
         let store = try JournalStore(layout: layout, clock: { 1000 })
         let ask = JournalTestData.draft(.questionRequested)
         _ = try store.append(draft: ask, context: JournalContext(eligible: true))
-        var sibling = JournalTestData.draft(.turnStarted); sibling.tabID = UUID()
+        var sibling = JournalTestData.draft(.turnStarted); sibling.panelID = UUID()
         _ = try store.append(draft: sibling, context: JournalContext(eligible: true))
         let old = JournalTestData.draft(.turnStarted)
         let result = try store.append(draft: old, context: JournalContext(eligible: true, historical: true))
@@ -111,7 +111,7 @@ final class JournalStoreTests: XCTestCase {
         // Lower the injected budget below protected state, independently of encoding size.
         var budget = JournalBudgets(); budget.currentBytes = 1
         let store = try JournalStore(layout: layout, budgets: budget, clock: { 1000 })
-        var other = ask; other.eventID = UUID(); other.tabID = UUID()
+        var other = ask; other.eventID = UUID(); other.panelID = UUID()
         XCTAssertThrowsError(try store.append(draft: other, context: JournalContext(eligible: true))) { XCTAssertEqual($0 as? JournalError, .full) }
         XCTAssertEqual(try store.readPage(after: 0).count, 1)
         XCTAssertEqual(try store.current(owner: ask.owner!)?.phase, .blocked)
@@ -242,7 +242,7 @@ final class JournalStoreTests: XCTestCase {
         _ = try writer!.append(draft: ended, context: JournalContext(eligible: true))
         var loose = JournalTestData.draft(.stateChanged, at: clock)
         loose.eventID = UUID()
-        loose.tabID = nil
+        loose.panelID = nil
         loose.workspaceID = nil
         loose.sessionID = nil
         loose.signal = .observation
@@ -331,14 +331,14 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(try writer!.append(draft: lost, context: context).receipt.projectionEffect, .applied)
 
         var endedStart = JournalTestData.draft(.sessionStarted, at: 11_000)
-        endedStart.tabID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        endedStart.panelID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
         endedStart.sessionID = "ended-session"
         endedStart.nativeEvent = "SessionStart"
         let endedOwner = try XCTUnwrap(endedStart.owner)
         now = 11_000
         XCTAssertEqual(try writer!.append(draft: endedStart, context: context).receipt.projectionEffect, .applied)
         var endedTurn = JournalTestData.draft(.turnStarted, at: 12_000)
-        endedTurn.tabID = endedOwner.tabID
+        endedTurn.panelID = endedOwner.panelID
         endedTurn.sessionID = endedOwner.sessionID
         endedTurn.turnID = "turn-ended"
         endedTurn.timeQuality = .nativeLocal
@@ -346,7 +346,7 @@ final class JournalStoreTests: XCTestCase {
         now = 12_000
         XCTAssertEqual(try writer!.append(draft: endedTurn, context: context).receipt.projectionEffect, .applied)
         var end = JournalTestData.draft(.sessionEnded, at: 13_000)
-        end.tabID = endedOwner.tabID
+        end.panelID = endedOwner.panelID
         end.sessionID = endedOwner.sessionID
         end.nativeEvent = "SessionEnd"
         now = 13_000
@@ -468,9 +468,9 @@ final class JournalStoreTests: XCTestCase {
         let state = try jsonColumn(connection, "SELECT state FROM journal_current")
         let owner = try XCTUnwrap(state["owner"] as? [String: Any])
         XCTAssertEqual(Set(owner.keys), ["tabID", "agentKind", "sessionID"])
-        XCTAssertEqual(owner["tabID"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertEqual(owner["tabID"] as? String, JournalTestData.panel.uuidString)
         let storedDraft = try jsonColumn(connection, "SELECT draft FROM journal_events")
-        XCTAssertEqual(storedDraft["tab_id"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertEqual(storedDraft["tab_id"] as? String, JournalTestData.panel.uuidString)
         XCTAssertNil(storedDraft["panel_id"])
 
         let fixture = """
@@ -487,7 +487,7 @@ final class JournalStoreTests: XCTestCase {
 
         let reopened = try JournalStore(layout: layout, clock: { 1000 })
         let decoded = try XCTUnwrap(try reopened.current(owner: XCTUnwrap(draft.owner)))
-        XCTAssertEqual(decoded.owner, JournalOwner(tabID: JournalTestData.tab, agentKind: "claude-code", sessionID: "fixture-session"))
+        XCTAssertEqual(decoded.owner, JournalOwner(panelID: JournalTestData.panel, agentKind: "claude-code", sessionID: "fixture-session"))
         XCTAssertEqual(decoded.workspaceID, JournalTestData.workspace)
         XCTAssertEqual(decoded.phase, .blocked)
         XCTAssertEqual(decoded.requestID, "synthetic-ask")
@@ -500,21 +500,21 @@ final class JournalStoreTests: XCTestCase {
         let draft = JournalTestData.draft(.questionRequested)
         let canonical = try draft.canonicalData()
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: canonical) as? [String: Any])
-        XCTAssertEqual(object["tab_id"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertEqual(object["tab_id"] as? String, JournalTestData.panel.uuidString)
         XCTAssertNil(object["panel_id"])
 
         XCTAssertEqual(try JournalDraft.decode(canonical), draft)
 
         object["panel_id"] = object.removeValue(forKey: "tab_id")
         let panelOnly = try JournalDraft.decode(JSONSerialization.data(withJSONObject: object))
-        XCTAssertEqual(panelOnly.tabID, JournalTestData.tab)
+        XCTAssertEqual(panelOnly.panelID, JournalTestData.panel)
         XCTAssertEqual(try panelOnly.canonicalData(), canonical)
 
-        object["tab_id"] = JournalTestData.tab.uuidString
+        object["tab_id"] = JournalTestData.panel.uuidString
         XCTAssertEqual(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object)), draft)
 
         // The same UUID in a different case names the same panel.
-        object["panel_id"] = JournalTestData.tab.uuidString.lowercased()
+        object["panel_id"] = JournalTestData.panel.uuidString.lowercased()
         XCTAssertEqual(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object)), draft)
 
         object["tab_id"] = JournalTestData.workspace.uuidString

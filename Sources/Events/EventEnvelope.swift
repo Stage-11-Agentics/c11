@@ -90,7 +90,7 @@ struct EventEnvelope {
         case flagSuppressed = "flag.suppressed"
         case flagUnsuppressed = "flag.unsuppressed"
         case mailboxAccepted = "mailbox.accepted"
-        case tabInputSent = "panel.input_sent"
+        case panelInputSent = "panel.input_sent"
         case mailboxDelivered = "mailbox.delivered"
         case conversationResumeMode = "conversation.resume.mode"
         case conversationResumeDecision = "conversation.resume.decision"
@@ -250,7 +250,7 @@ struct EventEnvelope {
     static let legacyTypeAliases: [String: String] = [
         "surface.created": EventType.surfaceCreated.rawValue,
         "surface.closed": EventType.surfaceClosed.rawValue,
-        "tab.input_sent": EventType.tabInputSent.rawValue,
+        "tab.input_sent": EventType.panelInputSent.rawValue,
     ]
 
     /// The v2 spelling of an event type (identity for anything not renamed).

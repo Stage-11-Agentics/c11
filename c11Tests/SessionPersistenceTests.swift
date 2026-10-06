@@ -126,7 +126,7 @@ final class SessionPersistenceTests: XCTestCase {
             )
         )
         workspace.setCustomTitle("Docs")
-        workspace.setTabCustomTitle(panelId: panel.id, title: "Readme")
+        workspace.setPanelCustomTitle(panelId: panel.id, title: "Readme")
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
 
@@ -137,7 +137,7 @@ final class SessionPersistenceTests: XCTestCase {
         let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
         XCTAssertEqual(restoredPanel.filePath, markdownURL.path)
         XCTAssertEqual(restored.customTitle, "Docs")
-        XCTAssertEqual(restored.tabTitle(panelId: restoredPanelId), "Readme")
+        XCTAssertEqual(restored.panelTitle(panelId: restoredPanelId), "Readme")
     }
 
     func testRepairedDuplicateRecordsStayUniqueAfterSaveAndLoad() throws {
@@ -148,13 +148,13 @@ final class SessionPersistenceTests: XCTestCase {
         var app = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
         var workspace = app.windows[0].workspaceManager.workspaces[0]
         let id = UUID()
-        let tab = SessionPanelSnapshot(
+        let panel = SessionPanelSnapshot(
             id: id, type: .terminal, title: "Synthetic", customTitle: nil,
             directory: "/tmp", isPinned: false, isManuallyUnread: false,
             gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
             browser: nil, markdown: nil, metadata: nil, metadataSources: nil
         )
-        workspace.panels = [tab, tab]
+        workspace.panels = [panel, panel]
         workspace.layout = .pane(SessionAreaLayoutSnapshot(panelIds: [id, id], selectedPanelId: id))
         app.windows[0].workspaceManager.workspaces[0] = workspace
         XCTAssertTrue(SessionPersistenceStore.save(app, fileURL: url))

@@ -246,7 +246,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
         let raised = try store.mutateAttention(
             workspaceId: workspace, surfaceId: surface, flag: .raise("Synthetic decision"), callerPanelId: caller
         )
-        XCTAssertEqual(raised.after.flagCallerTabId, caller)
+        XCTAssertEqual(raised.after.flagCallerPanelId, caller)
         let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
         for key in callerKeys {
             XCTAssertEqual(metadata[key] as? String, caller.uuidString, key)
@@ -271,7 +271,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
                 values: [MetadataKey.flag: "Synthetic decision", key: caller.uuidString],
                 sources: [MetadataKey.flag: .init(source: .explicit, ts: 1_725_000_000)]
             )
-            XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerTabId, caller, key)
+            XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerPanelId, caller, key)
             let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
             for written in callerKeys {
                 XCTAssertEqual(metadata[written] as? String, caller.uuidString, "\(key) -> \(written)")
@@ -309,7 +309,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
             ],
             sources: [MetadataKey.flag: .init(source: .explicit, ts: 1_725_000_000)]
         )
-        XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerTabId, surfaceCaller)
+        XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerPanelId, surfaceCaller)
     }
 
     func testPanelCallerKeyIsReservedForTheAttentionService() {
@@ -340,27 +340,27 @@ final class TabIconColorMetadataTests: XCTestCase {
 
     private let store = PanelMetadataStore.shared
 
-    private func write(_ partial: [String: Any], ws: UUID, tab: UUID, source: MetadataSource = .explicit) throws -> PanelMetadataStore.WriteResult {
-        try store.setMetadata(workspaceId: ws, surfaceId: tab, partial: partial, mode: .merge, source: source)
+    private func write(_ partial: [String: Any], ws: UUID, panel: UUID, source: MetadataSource = .explicit) throws -> PanelMetadataStore.WriteResult {
+        try store.setMetadata(workspaceId: ws, surfaceId: panel, partial: partial, mode: .merge, source: source)
     }
 
     private func assertRejected(_ partial: [String: Any], file: StaticString = #filePath, line: UInt = #line) {
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        XCTAssertThrowsError(try write(partial, ws: ws, tab: tab), file: file, line: line) { error in
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        XCTAssertThrowsError(try write(partial, ws: ws, panel: panel), file: file, line: line) { error in
             XCTAssertEqual((error as? PanelMetadataStore.WriteError)?.code, "reserved_key_invalid_type", file: file, line: line)
         }
     }
 
     func testIconIsStoredTrimmedAndReadBack() throws {
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        let result = try write(["icon": "  🚀 "], ws: ws, tab: tab)
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        let result = try write(["icon": "  🚀 "], ws: ws, panel: panel)
         XCTAssertEqual(result.applied["icon"], true)
-        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "🚀")
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: panel, key: "icon") as? String, "🚀")
 
-        _ = try write(["icon": "sf:hammer.fill"], ws: ws, tab: tab)
-        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "sf:hammer.fill")
+        _ = try write(["icon": "sf:hammer.fill"], ws: ws, panel: panel)
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: panel, key: "icon") as? String, "sf:hammer.fill")
     }
 
     func testIconRejectsOverlongMultilineAndNonString() {
@@ -368,21 +368,21 @@ final class TabIconColorMetadataTests: XCTestCase {
         assertRejected(["icon": "a\nb"])
         assertRejected(["icon": 7])
         // 32 grapheme clusters is the cap, counted as characters, not bytes.
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        XCTAssertNoThrow(try write(["icon": String(repeating: "👩‍💻", count: 32)], ws: ws, tab: tab))
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        XCTAssertNoThrow(try write(["icon": String(repeating: "👩‍💻", count: 32)], ws: ws, panel: panel))
     }
 
     func testColorNormalizesHexAndPaletteNames() throws {
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
 
-        _ = try write(["color": "c0392b"], ws: ws, tab: tab)
-        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "color") as? String, "#C0392B")
+        _ = try write(["color": "c0392b"], ws: ws, panel: panel)
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: panel, key: "color") as? String, "#C0392B")
 
-        _ = try write(["color": "  Teal "], ws: ws, tab: tab)
+        _ = try write(["color": "  Teal "], ws: ws, panel: panel)
         XCTAssertEqual(
-            store.metadataValue(workspaceId: ws, surfaceId: tab, key: "color") as? String,
+            store.metadataValue(workspaceId: ws, surfaceId: panel, key: "color") as? String,
             WorkspaceColorSettings.defaultColorHex(named: "Teal")
         )
         XCTAssertEqual(WorkspaceColorSettings.resolvedColorHex("BLUE"), WorkspaceColorSettings.defaultColorHex(named: "Blue"))
@@ -396,15 +396,15 @@ final class TabIconColorMetadataTests: XCTestCase {
     }
 
     func testBlankWriteClearsIconAndColor() throws {
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        _ = try write(["icon": "🧪", "color": "#196F3D"], ws: ws, tab: tab)
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        _ = try write(["icon": "🧪", "color": "#196F3D"], ws: ws, panel: panel)
 
-        let result = try write(["icon": "", "color": "   "], ws: ws, tab: tab)
+        let result = try write(["icon": "", "color": "   "], ws: ws, panel: panel)
         XCTAssertEqual(result.applied["icon"], true)
         XCTAssertEqual(result.applied["color"], true)
         XCTAssertEqual(result.removedKeys, ["icon", "color"])
-        let snapshot = store.getMetadata(workspaceId: ws, surfaceId: tab)
+        let snapshot = store.getMetadata(workspaceId: ws, surfaceId: panel)
         XCTAssertNil(snapshot.metadata["icon"])
         XCTAssertNil(snapshot.metadata["color"])
         XCTAssertNil(snapshot.sources["icon"])
@@ -412,22 +412,22 @@ final class TabIconColorMetadataTests: XCTestCase {
     }
 
     func testBlankWriteRespectsPrecedence() throws {
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        _ = try write(["icon": "🧪"], ws: ws, tab: tab, source: .explicit)
-        let result = try write(["icon": ""], ws: ws, tab: tab, source: .declare)
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        _ = try write(["icon": "🧪"], ws: ws, panel: panel, source: .explicit)
+        let result = try write(["icon": ""], ws: ws, panel: panel, source: .declare)
         XCTAssertEqual(result.applied["icon"], false)
         XCTAssertEqual(result.reasons["icon"], "lower_precedence")
-        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "🧪")
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: panel, key: "icon") as? String, "🧪")
     }
 
     func testIconRejectsUnknownSFSymbolAcceptsKnownOne() throws {
         assertRejected(["icon": "sf:not.a.real.symbol.name"])
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        XCTAssertNoThrow(try write(["icon": "sf:star.fill"], ws: ws, tab: tab))
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        XCTAssertNoThrow(try write(["icon": "sf:star.fill"], ws: ws, panel: panel))
         // A plain glyph that merely starts with "sf" is not a symbol reference.
-        XCTAssertNoThrow(try write(["icon": "sfx"], ws: ws, tab: tab))
+        XCTAssertNoThrow(try write(["icon": "sfx"], ws: ws, panel: panel))
     }
 
     func testDefaultPaletteIsTheSharedListAndEveryNameResolves() {
@@ -443,10 +443,10 @@ final class TabIconColorMetadataTests: XCTestCase {
     }
 
     func testInternalWriteNormalizesColor() {
-        let ws = UUID(), tab = UUID()
-        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
-        XCTAssertTrue(store.setInternal(workspaceId: ws, surfaceId: tab, key: "color", value: "#aabbcc", source: .explicit))
-        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "color") as? String, "#AABBCC")
-        XCTAssertFalse(store.setInternal(workspaceId: ws, surfaceId: tab, key: "color", value: "", source: .explicit))
+        let ws = UUID(), panel = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: panel) }
+        XCTAssertTrue(store.setInternal(workspaceId: ws, surfaceId: panel, key: "color", value: "#aabbcc", source: .explicit))
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: panel, key: "color") as? String, "#AABBCC")
+        XCTAssertFalse(store.setInternal(workspaceId: ws, surfaceId: panel, key: "color", value: "", source: .explicit))
     }
 }

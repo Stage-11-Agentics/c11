@@ -1145,7 +1145,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
 
         XCTAssertEqual(panel.displayTitle, "New tab")
         XCTAssertFalse(panel.shouldRenderWebView)
-        XCTAssertTrue(panel.isShowingNewTabPage)
+        XCTAssertTrue(panel.isShowingNewPanelPage)
         XCTAssertNil(panel.webView.url)
         XCTAssertNil(panel.currentURL)
     }
@@ -1153,9 +1153,9 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     func testBrowserPanelLeavesNewTabPageStateWhenNavigationStarts() {
         let panel = BrowserPanel(workspaceId: UUID())
 
-        XCTAssertTrue(panel.isShowingNewTabPage)
+        XCTAssertTrue(panel.isShowingNewPanelPage)
         panel.navigate(to: URL(string: "https://example.com")!)
-        XCTAssertFalse(panel.isShowingNewTabPage)
+        XCTAssertFalse(panel.isShowingNewPanelPage)
     }
 
     func testBrowserTabThemeModeUpdatesWebViewAppearance() {
@@ -1403,7 +1403,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
 final class BrowserNavigationNewTabDecisionTests: XCTestCase {
     func testLinkActivatedCmdClickOpensInNewTab() {
         XCTAssertTrue(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
                 modifierFlags: [.command],
                 buttonNumber: 0
@@ -1413,7 +1413,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testLinkActivatedMiddleClickOpensInNewTab() {
         XCTAssertTrue(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
                 modifierFlags: [],
                 buttonNumber: 2
@@ -1423,7 +1423,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testLinkActivatedPlainLeftClickStaysInCurrentTab() {
         XCTAssertFalse(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
                 modifierFlags: [],
                 buttonNumber: 0
@@ -1433,7 +1433,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testOtherNavigationMiddleClickOpensInNewTab() {
         XCTAssertTrue(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .other,
                 modifierFlags: [],
                 buttonNumber: 2
@@ -1443,7 +1443,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testOtherNavigationLeftClickStaysInCurrentTab() {
         XCTAssertFalse(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .other,
                 modifierFlags: [],
                 buttonNumber: 0
@@ -1453,7 +1453,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testLinkActivatedButtonFourWithoutMiddleIntentStaysInCurrentTab() {
         XCTAssertFalse(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
                 modifierFlags: [],
                 buttonNumber: 4,
@@ -1464,7 +1464,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testLinkActivatedButtonFourWithRecentMiddleIntentOpensInNewTab() {
         XCTAssertTrue(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
                 modifierFlags: [],
                 buttonNumber: 4,
@@ -1475,7 +1475,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testLinkActivatedUsesCurrentEventFallbackForMiddleClick() {
         XCTAssertTrue(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
                 modifierFlags: [],
                 buttonNumber: 0,
@@ -1487,7 +1487,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testCurrentEventFallbackDoesNotAffectNonLinkNavigation() {
         XCTAssertFalse(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .reload,
                 modifierFlags: [],
                 buttonNumber: 0,
@@ -1499,7 +1499,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
 
     func testNonLinkNavigationNeverForcesNewTab() {
         XCTAssertFalse(
-            browserNavigationShouldOpenInNewTab(
+            browserNavigationShouldOpenInNewPanel(
                 navigationType: .reload,
                 modifierFlags: [.command],
                 buttonNumber: 2
@@ -1555,7 +1555,7 @@ final class BrowserPopupDecisionTests: XCTestCase {
 final class BrowserNilTargetFallbackDecisionTests: XCTestCase {
     func testOtherNavigationDoesNotFallbackToNewTab() {
         XCTAssertFalse(
-            browserNavigationShouldFallbackNilTargetToNewTab(
+            browserNavigationShouldFallbackNilTargetToNewPanel(
                 navigationType: .other
             )
         )
@@ -1563,7 +1563,7 @@ final class BrowserNilTargetFallbackDecisionTests: XCTestCase {
 
     func testLinkActivatedNavigationFallsBackToNewTab() {
         XCTAssertTrue(
-            browserNavigationShouldFallbackNilTargetToNewTab(
+            browserNavigationShouldFallbackNilTargetToNewPanel(
                 navigationType: .linkActivated
             )
         )
@@ -1851,8 +1851,8 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
             timestamp: Date()
         )
         workspace.progress = SidebarProgressState(value: 0.5, label: "Loading")
-        workspace.updateTabGitBranch(panelId: contextPanelId, branch: "issue-1208", isDirty: false)
-        workspace.updateTabPullRequest(
+        workspace.updatePanelGitBranch(panelId: contextPanelId, branch: "issue-1208", isDirty: false)
+        workspace.updatePanelPullRequest(
             panelId: contextPanelId,
             number: 1208,
             label: "PR",

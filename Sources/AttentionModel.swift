@@ -36,7 +36,7 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
     let surfaceId: UUID
     let flagReason: String?
     let flagRaisedAt: Date?
-    let flagCallerTabId: UUID?
+    let flagCallerPanelId: UUID?
     let suppressed: Bool
 
     init(
@@ -44,14 +44,14 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
         surfaceId: UUID,
         flagReason: String?,
         flagRaisedAt: Date?,
-        flagCallerTabId: UUID? = nil,
+        flagCallerPanelId: UUID? = nil,
         suppressed: Bool
     ) {
         self.workspaceId = workspaceId
         self.surfaceId = surfaceId
         self.flagReason = flagReason
         self.flagRaisedAt = flagRaisedAt
-        self.flagCallerTabId = flagCallerTabId
+        self.flagCallerPanelId = flagCallerPanelId
         self.suppressed = suppressed
     }
 
@@ -73,9 +73,9 @@ enum AttentionJumpSelector {
         snapshots.filter(\.isFlagged).sorted {
             AttentionOrder.precedes(
                 time: $0.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
-                target: .init(workspaceID: $0.workspaceId, tabID: $0.surfaceId),
+                target: .init(workspaceID: $0.workspaceId, panelID: $0.surfaceId),
                 time: $1.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
-                target: .init(workspaceID: $1.workspaceId, tabID: $1.surfaceId)
+                target: .init(workspaceID: $1.workspaceId, panelID: $1.surfaceId)
             )
         }
     }
@@ -346,7 +346,7 @@ final class PanelAttentionService {
         )
         PanelMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
         PanelAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
-        feedProjection.removeTab(workspaceID: workspaceId, tabID: surfaceId)
+        feedProjection.removePanel(workspaceID: workspaceId, panelID: surfaceId)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces.first(where: { $0.id == workspaceId })?
             .setAttentionSnapshot(nil, forSurface: surfaceId)
@@ -378,7 +378,7 @@ final class PanelAttentionService {
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
-        feedProjection.pruneWorkspace(workspaceID: workspaceId, validTabIDs: validSurfaceIds)
+        feedProjection.pruneWorkspace(workspaceID: workspaceId, validPanelIDs: validSurfaceIds)
     }
 
     private func mutate(
@@ -414,7 +414,7 @@ final class PanelAttentionService {
                     workspace: workspaceId,
                     surface: surfaceId,
                     reason: reason,
-                    callerPanelId: transaction.after.flagCallerTabId,
+                    callerPanelId: transaction.after.flagCallerPanelId,
                     by: actor
                 )
                 // Operator decision 2026-07-28: direct flag delivery pierces

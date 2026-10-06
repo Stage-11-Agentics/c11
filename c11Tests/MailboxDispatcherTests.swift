@@ -91,11 +91,11 @@ final class MailboxDispatcherTests: XCTestCase {
         try MailboxIO.atomicWrite(data: data, to: target)
     }
 
-    private func readInboxFile(tab: UUID, id: String) throws -> Data {
+    private func readInboxFile(panel: UUID, id: String) throws -> Data {
         let inbox = MailboxLayout.inboxURL(
             state: tempState,
             workspaceId: workspaceId,
-            tabId: tab
+            panelId: panel
         )
         return try Data(
             contentsOf: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
@@ -147,7 +147,7 @@ final class MailboxDispatcherTests: XCTestCase {
         dispatcher.log.flush()
 
         // Inbox contains a byte-identical envelope copy.
-        let inboxBytes = try readInboxFile(tab: watcher, id: envelope.id)
+        let inboxBytes = try readInboxFile(panel: watcher, id: envelope.id)
         XCTAssertEqual(inboxBytes, try envelope.encode())
 
         // Outbox and processing are both empty.
@@ -193,7 +193,7 @@ final class MailboxDispatcherTests: XCTestCase {
         )
         dispatcher.log.flush()
 
-        XCTAssertEqual(try readInboxFile(tab: recipient, id: envelope.id), try envelope.encode())
+        XCTAssertEqual(try readInboxFile(panel: recipient, id: envelope.id), try envelope.encode())
         let log = try readLog()
         XCTAssertEqual(log.compactMap { $0["event"] as? String },
                        ["received", "resolved", "copied", "handler", "cleaned"])

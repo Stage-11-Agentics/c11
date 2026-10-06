@@ -962,18 +962,18 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
 
     func testSuppressedUnflaggedNoticesAreQuietWithoutChangingRoutineHistory() {
         let workspaceId = UUID()
-        let suppressedTab = UUID()
-        let flaggedTab = UUID()
+        let suppressedPanel = UUID()
+        let flaggedPanel = UUID()
         let suppressed = PanelAttentionSnapshot(
-            workspaceId: workspaceId, surfaceId: suppressedTab, flagReason: nil,
+            workspaceId: workspaceId, surfaceId: suppressedPanel, flagReason: nil,
             flagRaisedAt: nil, suppressed: true
         )
         let flagged = PanelAttentionSnapshot(
-            workspaceId: workspaceId, surfaceId: flaggedTab, flagReason: "Human action needed",
+            workspaceId: workspaceId, surfaceId: flaggedPanel, flagReason: "Human action needed",
             flagRaisedAt: Date(), suppressed: true
         )
-        let notificationTabs: [UUID?] = [suppressedTab, flaggedTab, nil]
-        let notifications = notificationTabs.map { surfaceId in
+        let notificationPanels: [UUID?] = [suppressedPanel, flaggedPanel, nil]
+        let notifications = notificationPanels.map { surfaceId in
             TerminalNotification(
                 id: UUID(), workspaceId: workspaceId, surfaceId: surfaceId,
                 title: "Completed", subtitle: "", body: "", createdAt: Date(), isRead: false
@@ -1208,24 +1208,24 @@ final class MenuBarExtraAttentionTests: XCTestCase {
         let defaultJump = KeyboardShortcutSettings.Action.jumpToUnread.defaultShortcut
         XCTAssertEqual(defaultJump.key, "\r")
         XCTAssertEqual(defaultJump.modifierFlags, [.command, .control])
-        let ask = JournalSnapshot(owner: .init(tabID: UUID(), agentKind: "claude-code", sessionID: "synthetic-menu"),
+        let ask = JournalSnapshot(owner: .init(panelID: UUID(), agentKind: "claude-code", sessionID: "synthetic-menu"),
             workspaceID: UUID(), phase: .blocked, reason: .question, requestID: "synthetic-menu-ask",
             source: .hook, adapter: .claudeHook, sinceMs: 10, appInstanceID: UUID(), confirmation: .confirmed)
         let jump = try XCTUnwrap(items(controller, action: "jumpToUnreadAction").first)
         XCTAssertFalse(jump.isEnabled)
-        feed.noteJournal(tabID: ask.owner.tabID, snapshot: ask)
+        feed.noteJournal(panelID: ask.owner.panelID, snapshot: ask)
         XCTAssertTrue(waitUntil { controller.menuForTesting.items.first?.title.contains("0 flags · 1 open ask") == true })
         XCTAssertTrue(jump.isEnabled)
         XCTAssertEqual(jump.keyEquivalent, "j")
         XCTAssertEqual(jump.keyEquivalentModifierMask, [.command, .shift])
         XCTAssertEqual(defaults.data(forKey: key), encoded)
         XCTAssertTrue(store.notifications.isEmpty)
-        feed.removeTab(workspaceID: try XCTUnwrap(ask.workspaceID), tabID: ask.owner.tabID)
+        feed.removePanel(workspaceID: try XCTUnwrap(ask.workspaceID), panelID: ask.owner.panelID)
         XCTAssertTrue(waitUntil { controller.menuForTesting.items.first?.title.contains("No flags · no open asks") == true })
         XCTAssertFalse(jump.isEnabled)
         XCTAssertEqual(jump.keyEquivalent, "j")
         controller.removeFromMenuBar()
-        feed.noteJournal(tabID: ask.owner.tabID, snapshot: ask)
+        feed.noteJournal(panelID: ask.owner.panelID, snapshot: ask)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         XCTAssertFalse(jump.isEnabled)
     }

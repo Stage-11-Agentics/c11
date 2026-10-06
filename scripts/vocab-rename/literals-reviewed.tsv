@@ -65,14 +65,14 @@ Sources/SocketHandlers/PaneHandlers.swift	TabManager	msg	message text naming a t
 Sources/SocketHandlers/PaneHandlers.swift	v2PaneConfirm	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/SocketHandlers/SnapshotHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/SocketHandlers/SocketDispatch.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-Sources/SocketHandlers/SurfaceHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceClearHistory	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceRefresh	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceSendKey	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceSendText	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/PanelHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/PanelHandlers.swift	v2SurfaceClearHistory	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/PanelHandlers.swift	v2SurfaceRefresh	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/PanelHandlers.swift	v2SurfaceSendKey	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/PanelHandlers.swift	v2SurfaceSendText	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/SocketHandlers/WindowHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/SocketHandlers/WorkspaceHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-Sources/SurfaceLifecycle.swift	SurfaceLifecycleController	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/PanelLifecycle.swift	SurfaceLifecycleController	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/PanelManifestView.swift	surfaceUUID	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/PanelTypeAvailability.swift	markdownSurfacesEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/Panels/AreaInteractionOverlayHost.swift	paneInteraction	log	debug/diagnostic log text, never looked up: leave

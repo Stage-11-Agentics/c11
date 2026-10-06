@@ -479,8 +479,8 @@ final class AgentModelDetectionTests: XCTestCase {
         let now = Date()
         let sessionID = uuidV7(now)
         let workspaceID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        let tabID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-        let target = AgentModelDetector.Target(workspaceId: workspaceID, surfaceId: tabID, kind: "codex")
+        let panelID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let target = AgentModelDetector.Target(workspaceId: workspaceID, surfaceId: panelID, kind: "codex")
         let conversation = ref("codex", id: sessionID)
         let text = """
         {"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\(sessionID)"}}
@@ -500,9 +500,9 @@ final class AgentModelDetectionTests: XCTestCase {
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         let store = try JournalStore(layout: JournalStorageLayout(directory: journalDirectory), clock: { nowMs })
         let coordinator = JournalCoordinator(store: store)
-        coordinator.register(tabID: tabID, workspaceID: workspaceID)
-        coordinator.setOwner(tabID: tabID, owner: JournalOwner(tabID: tabID, agentKind: "codex", sessionID: sessionID))
-        defer { coordinator.remove(tabID: tabID) }
+        coordinator.register(panelID: panelID, workspaceID: workspaceID)
+        coordinator.setOwner(panelID: panelID, owner: JournalOwner(panelID: panelID, agentKind: "codex", sessionID: sessionID))
+        defer { coordinator.remove(panelID: panelID) }
         let emittedAt = Date()
         func appendTranscript(_ observations: [TranscriptLifecycleObservation]) throws -> [JournalAppendResult] {
             try observations.map { observation in
@@ -526,13 +526,13 @@ final class AgentModelDetectionTests: XCTestCase {
 
         let firstAppend = try appendTranscript(observed.lifecycle)
         XCTAssertEqual(firstAppend.map(\.receipt.projectionEffect), Array(repeating: .applied, count: 4))
-        let prior = try XCTUnwrap(store.current(owner: JournalOwner(tabID: tabID, agentKind: "codex", sessionID: sessionID)))
+        let prior = try XCTUnwrap(store.current(owner: JournalOwner(panelID: panelID, agentKind: "codex", sessionID: sessionID)))
         XCTAssertEqual(prior.phase, .idle)
         XCTAssertEqual(prior.turnID, "turn-B")
         XCTAssertEqual(prior.nativeWatermarks["codex_transcript:\(JournalNativeClockEvidence.codexTranscriptVersion)"],
                        Int64(t("09:00:04").timeIntervalSince1970 * 1000))
 
-        var notify = JournalDraft(kind: .turnCompleted, emittedAtMs: nowMs, tabID: tabID,
+        var notify = JournalDraft(kind: .turnCompleted, emittedAtMs: nowMs, panelID: panelID,
                                   workspaceID: workspaceID, sessionID: sessionID, agentKind: "codex",
                                   source: .hook, adapter: .codexNotify, nativeEvent: "agent-turn-complete")
         notify.turnID = "turn-B"
@@ -890,7 +890,7 @@ final class AgentModelDetectionTests: XCTestCase {
 
     func testAgentLabelUsesDetectedModelWhenNothingDeclared() {
         XCTAssertEqual(
-            TabSheetDetailBuilder.agentLabel(terminalKind: "codex", model: "gpt-5.5", modelLabel: nil),
+            PanelSheetDetailBuilder.agentLabel(terminalKind: "codex", model: "gpt-5.5", modelLabel: nil),
             "Codex · gpt-5.5"
         )
     }

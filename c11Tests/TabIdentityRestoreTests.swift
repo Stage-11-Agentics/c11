@@ -152,9 +152,9 @@ final class TabIdentityRestoreTests: XCTestCase {
 
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
-        let initialTabId = try XCTUnwrap(workspace.panels.keys.first)
-        let terminalTab = try XCTUnwrap(workspace.newTerminalSplit(
-            from: initialTabId, orientation: .horizontal, insertFirst: false, focus: false
+        let initialPanelId = try XCTUnwrap(workspace.panels.keys.first)
+        let terminalPanel = try XCTUnwrap(workspace.newTerminalSplit(
+            from: initialPanelId, orientation: .horizontal, insertFirst: false, focus: false
         ))
         let browserPanel = try XCTUnwrap(
             workspace.newBrowserSurface(
@@ -168,7 +168,7 @@ final class TabIdentityRestoreTests: XCTestCase {
         )
 
         let expected = Set(workspace.panels.keys)
-        XCTAssertTrue(expected.contains(terminalTab.id))
+        XCTAssertTrue(expected.contains(terminalPanel.id))
         XCTAssertTrue(expected.contains(browserPanel.id))
         XCTAssertTrue(expected.contains(markdownPanel.id))
 
@@ -179,9 +179,9 @@ final class TabIdentityRestoreTests: XCTestCase {
 
         XCTAssertEqual(Set(restored.panels.keys), expected)
         XCTAssertEqual(restored.bonsplitController.allPaneIds.count, 2)
-        XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: markdownPanel.id))
-        XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: browserPanel.id))
-        XCTAssertNotEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: terminalTab.id))
+        XCTAssertEqual(restored.paneId(forPanelId: initialPanelId), restored.paneId(forPanelId: markdownPanel.id))
+        XCTAssertEqual(restored.paneId(forPanelId: initialPanelId), restored.paneId(forPanelId: browserPanel.id))
+        XCTAssertNotEqual(restored.paneId(forPanelId: initialPanelId), restored.paneId(forPanelId: terminalPanel.id))
         XCTAssertEqual(restored.focusedPanelId, snapshot.focusedPanelId)
     }
 }

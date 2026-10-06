@@ -878,7 +878,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             guard let panelId = parseUUIDSuffix(result.surfaceRefs[surfaceSpec.id]) else {
                 continue
             }
-            let paneUUID = workspace.paneIdForTab(panelId)?.id
+            let paneUUID = workspace.paneIdForPanel(panelId)?.id
 
             // Surface-level metadata.
             let (surfaceMetadata, _) = PanelMetadataStore.shared.getMetadata(

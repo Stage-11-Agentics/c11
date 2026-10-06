@@ -51,7 +51,7 @@ extension TerminalController {
     struct V2BrowserOffMainTarget {
         let workspaceId: UUID
         let surfaceId: UUID
-        let browserTab: BrowserPanel
+        let browserPanel: BrowserPanel
         let webView: WKWebView
         let cookieStore: WKHTTPCookieStore
         let currentURL: URL?
@@ -91,13 +91,13 @@ extension TerminalController {
         case "browser.frame.main":
             return v2Result(id: id, self.v2BrowserFrameMain(params: params))
         case "browser.panel.new":
-            return v2Result(id: id, self.v2BrowserTabNew(params: params))
+            return v2Result(id: id, self.v2BrowserPanelNew(params: params))
         case "browser.panel.list":
-            return v2Result(id: id, self.v2BrowserTabList(params: params))
+            return v2Result(id: id, self.v2BrowserPanelList(params: params))
         case "browser.panel.switch":
-            return v2Result(id: id, self.v2BrowserTabSwitch(params: params))
+            return v2Result(id: id, self.v2BrowserPanelSwitch(params: params))
         case "browser.panel.close":
-            return v2Result(id: id, self.v2BrowserTabClose(params: params))
+            return v2Result(id: id, self.v2BrowserPanelClose(params: params))
         case "browser.viewport.set":
             return v2Result(id: id, self.v2BrowserViewportSet(params: params))
         case "browser.geolocation.set":
@@ -608,7 +608,7 @@ extension TerminalController {
         return .ready(V2BrowserOffMainTarget(
             workspaceId: ws.id,
             surfaceId: surfaceId,
-            browserTab: browserPanel,
+            browserPanel: browserPanel,
             webView: browserPanel.webView,
             cookieStore: browserPanel.webView.configuration.websiteDataStore.httpCookieStore,
             currentURL: browserPanel.currentURL,
@@ -2555,7 +2555,7 @@ extension TerminalController {
             let snapshotResult: Data?? = v2AwaitCallback(timeout: 5.0) { finish in
                 Task { @MainActor in
                     guard gate.begin() else { return }
-                    target.browserTab.takeSnapshot { image in
+                    target.browserPanel.takeSnapshot { image in
                         guard gate.complete() else { return }
                         finish(image.flatMap { self.v2PNGData(from: $0) })
                     }

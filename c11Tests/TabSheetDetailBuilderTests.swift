@@ -24,7 +24,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         markdownPath: String? = nil,
         activity: BonsplitTabActivityState? = nil,
         isFlagged: Bool = false
-    ) -> TabSheetDetailBuilder.Inputs {
+    ) -> PanelSheetDetailBuilder.Inputs {
         .init(
             panelType: panelType,
             title: title,
@@ -50,49 +50,49 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     func testAgentLabelIsHarnessAndModel() {
         XCTAssertEqual(
-            TabSheetDetailBuilder.agentLabel(terminalKind: "claude-code", model: "claude-sonnet-4-6", modelLabel: nil),
+            PanelSheetDetailBuilder.agentLabel(terminalKind: "claude-code", model: "claude-sonnet-4-6", modelLabel: nil),
             "Claude Code · Sonnet 4.6"
         )
     }
 
     func testAgentLabelPrefersModelLabelHint() {
         XCTAssertEqual(
-            TabSheetDetailBuilder.agentLabel(terminalKind: "codex", model: nil, modelLabel: "gpt-5.5"),
+            PanelSheetDetailBuilder.agentLabel(terminalKind: "codex", model: nil, modelLabel: "gpt-5.5"),
             "Codex · gpt-5.5"
         )
     }
 
     func testAgentLabelIsHarnessAloneWhenModelUnknown() {
         XCTAssertEqual(
-            TabSheetDetailBuilder.agentLabel(terminalKind: "claude-code", model: nil, modelLabel: nil),
+            PanelSheetDetailBuilder.agentLabel(terminalKind: "claude-code", model: nil, modelLabel: nil),
             "Claude Code"
         )
         XCTAssertEqual(
-            TabSheetDetailBuilder.agentLabel(terminalKind: "claude-code", model: "  ", modelLabel: nil),
+            PanelSheetDetailBuilder.agentLabel(terminalKind: "claude-code", model: "  ", modelLabel: nil),
             "Claude Code"
         )
     }
 
     func testNoAgentMeansNoLabel() {
-        XCTAssertNil(TabSheetDetailBuilder.agentLabel(terminalKind: nil, model: "claude-opus-4-7", modelLabel: nil))
-        XCTAssertNil(TabSheetDetailBuilder.agentLabel(terminalKind: "shell", model: nil, modelLabel: nil))
-        XCTAssertNil(TabSheetDetailBuilder.agentLabel(terminalKind: "unknown", model: nil, modelLabel: nil))
+        XCTAssertNil(PanelSheetDetailBuilder.agentLabel(terminalKind: nil, model: "claude-opus-4-7", modelLabel: nil))
+        XCTAssertNil(PanelSheetDetailBuilder.agentLabel(terminalKind: "shell", model: nil, modelLabel: nil))
+        XCTAssertNil(PanelSheetDetailBuilder.agentLabel(terminalKind: "unknown", model: nil, modelLabel: nil))
     }
 
     // MARK: Type
 
     func testTypeLabelNamesTheTabKind() {
-        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(panelType: .terminal)).typeLabel, "Terminal")
-        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(panelType: .browser)).typeLabel, "Browser")
-        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(panelType: .markdown)).typeLabel, "Markdown")
-        let agent = TabSheetDetailBuilder.build(inputs(terminalKind: "codex", modelLabel: "gpt-5.5"))
+        XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(panelType: .terminal)).typeLabel, "Terminal")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(panelType: .browser)).typeLabel, "Browser")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(panelType: .markdown)).typeLabel, "Markdown")
+        let agent = PanelSheetDetailBuilder.build(inputs(terminalKind: "codex", modelLabel: "gpt-5.5"))
         XCTAssertEqual(agent.agentLabel, "Codex · gpt-5.5")
         XCTAssertEqual(agent.typeLabel, "Terminal")
     }
 
     func testAgentTintFollowsTheModelFamily() {
         func tint(_ kind: String?, _ model: String?, _ label: String? = nil) -> String? {
-            TabSheetDetailBuilder.agentTintHex(terminalKind: kind, model: model, modelLabel: label)
+            PanelSheetDetailBuilder.agentTintHex(terminalKind: kind, model: model, modelLabel: label)
         }
         XCTAssertEqual(tint("claude-code", "claude-fable-5-1"), "#AF5FFF")
         XCTAssertEqual(tint("claude-code", "claude-opus-5-5"), "#FFFFFF")
@@ -101,8 +101,8 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         XCTAssertEqual(tint("codex", "gpt-5.5"), "#5FD7D7")
         XCTAssertEqual(tint("claude-code", nil), "#5FD7D7")
         XCTAssertNil(tint(nil, "claude-opus-5-5"))
-        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(terminalKind: "claude-code", model: "claude-opus-5-5")).agentTintHex, "#FFFFFF")
-        XCTAssertNil(TabSheetDetailBuilder.build(inputs(panelType: .browser)).agentTintHex)
+        XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(terminalKind: "claude-code", model: "claude-opus-5-5")).agentTintHex, "#FFFFFF")
+        XCTAssertNil(PanelSheetDetailBuilder.build(inputs(panelType: .browser)).agentTintHex)
     }
 
     // MARK: Status
@@ -115,7 +115,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         raised: Date? = nil,
         lastActivity: Date? = nil
     ) -> BonsplitTabDetail.Status? {
-        TabSheetDetailBuilder.status(
+        PanelSheetDetailBuilder.status(
             activity: activity, isFlagged: flagged, enteredAt: entered,
             stateStartedAt: started, flagRaisedAt: raised, lastActivityAt: lastActivity
         )
@@ -144,29 +144,29 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         let now = t0.addingTimeInterval(3 * 3600)
         let lastActivity = t0, exact = t0.addingTimeInterval(600)
         // An agent idle for three hours reads three hours after a relaunch.
-        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
-        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .working, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
-        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .waiting, now: now, lastActivityAt: lastActivity, exactStart: exact), exact)
-        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .cold, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
+        XCTAssertEqual(PanelSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
+        XCTAssertEqual(PanelSheetDetailBuilder.seededEnteredAt(kind: .working, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
+        XCTAssertEqual(PanelSheetDetailBuilder.seededEnteredAt(kind: .waiting, now: now, lastActivityAt: lastActivity, exactStart: exact), exact)
+        XCTAssertEqual(PanelSheetDetailBuilder.seededEnteredAt(kind: .cold, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
         // Nothing known: now. A future timestamp never runs the clock backwards.
-        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: nil, exactStart: nil), now)
-        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: now.addingTimeInterval(90), exactStart: nil), now)
+        XCTAssertEqual(PanelSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: nil, exactStart: nil), now)
+        XCTAssertEqual(PanelSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: now.addingTimeInterval(90), exactStart: nil), now)
     }
 
     func testNoActivityMeansNoStatus() {
         XCTAssertNil(status(nil, flagged: true, entered: t0, raised: t0))
-        XCTAssertNil(TabSheetDetailBuilder.baseKind(activity: nil))
+        XCTAssertNil(PanelSheetDetailBuilder.baseKind(activity: nil))
         // The recorded kind ignores the flag: a flag toggle must not reset the clock.
-        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .waiting), .waiting)
-        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .running), .working)
-        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .idle), .idle)
-        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .cold), .cold)
+        XCTAssertEqual(PanelSheetDetailBuilder.baseKind(activity: .waiting), .waiting)
+        XCTAssertEqual(PanelSheetDetailBuilder.baseKind(activity: .running), .working)
+        XCTAssertEqual(PanelSheetDetailBuilder.baseKind(activity: .idle), .idle)
+        XCTAssertEqual(PanelSheetDetailBuilder.baseKind(activity: .cold), .cold)
     }
 
     // MARK: Subtitle
 
     func testDescriptionWinsAndFlattensToOneLine() {
-        let detail = TabSheetDetailBuilder.build(inputs(
+        let detail = PanelSheetDetailBuilder.build(inputs(
             description: "Auditing retry admission.\n\nNext: verify cancellation.",
             directory: "/tmp/x"
         ))
@@ -175,18 +175,18 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     func testSubtitleFallsBackPerKind() {
         XCTAssertEqual(
-            TabSheetDetailBuilder.build(inputs(directory: NSHomeDirectory() + "/Projects/x")).subtitle,
+            PanelSheetDetailBuilder.build(inputs(directory: NSHomeDirectory() + "/Projects/x")).subtitle,
             "~/Projects/x"
         )
         XCTAssertEqual(
-            TabSheetDetailBuilder.build(inputs(panelType: .browser, browserURL: URL(string: "http://localhost:8799/a/b"))).subtitle,
+            PanelSheetDetailBuilder.build(inputs(panelType: .browser, browserURL: URL(string: "http://localhost:8799/a/b"))).subtitle,
             "localhost"
         )
         XCTAssertEqual(
-            TabSheetDetailBuilder.build(inputs(panelType: .markdown, markdownPath: NSHomeDirectory() + "/notes/A.md")).subtitle,
+            PanelSheetDetailBuilder.build(inputs(panelType: .markdown, markdownPath: NSHomeDirectory() + "/notes/A.md")).subtitle,
             "~/notes/A.md"
         )
-        XCTAssertNil(TabSheetDetailBuilder.build(inputs()).subtitle)
+        XCTAssertNil(PanelSheetDetailBuilder.build(inputs()).subtitle)
     }
 
     // MARK: Title
@@ -194,16 +194,16 @@ final class TabSheetDetailBuilderTests: XCTestCase {
     func testFullTitleIsKeptWhole() {
         let long = "Tests on Atlas with a deliberately   very long tab title that the tab strip shortens"
         XCTAssertEqual(
-            TabSheetDetailBuilder.build(inputs(title: long)).title,
+            PanelSheetDetailBuilder.build(inputs(title: long)).title,
             "Tests on Atlas with a deliberately very long tab title that the tab strip shortens"
         )
-        XCTAssertNil(TabSheetDetailBuilder.build(inputs(title: "  ")).title)
+        XCTAssertNil(PanelSheetDetailBuilder.build(inputs(title: "  ")).title)
     }
 
     // MARK: Clocks
 
     func testBuildFillsActiveAndLaunchedAndLeavesSeenBlankWhenNeverSeen() {
-        let detail = TabSheetDetailBuilder.build(inputs())
+        let detail = PanelSheetDetailBuilder.build(inputs())
         XCTAssertEqual(detail.clocks["active"], t0.addingTimeInterval(60))
         XCTAssertEqual(detail.clocks["launched"], t0.addingTimeInterval(-3600))
         XCTAssertNil(detail.clocks["seen"])
@@ -212,50 +212,50 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     func testClockOrderAcceptsAnArrayToo() {
         let suite = UserDefaults(suiteName: "TabSheetDetailBuilderTests.\(UUID().uuidString)")!
-        suite.set(["launched", "active"], forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
+        suite.set(["launched", "active"], forKey: PanelSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
     }
 
     func testClockOrderSettingRoundTrips() {
         let suite = UserDefaults(suiteName: "TabSheetDetailBuilderTests.\(UUID().uuidString)")!
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
-        suite.set("launched,active", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
-        suite.set("active, seen launched", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
-        suite.set("", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+        suite.set("launched,active", forKey: PanelSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
+        suite.set("active, seen launched", forKey: PanelSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+        suite.set("", forKey: PanelSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
     }
 
     func testClockOrderFallsBackToTheOldKeyAndTheNewKeyWins() {
         let suite = UserDefaults(suiteName: "TabSheetDetailBuilderTests.\(UUID().uuidString)")!
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrderDefaultsKey, "c11.panelSheet.clocks")
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrderDefaultsKey, "c11.panelSheet.clocks")
         suite.set("launched,active", forKey: "c11.tabSheet.clocks")
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
         suite.set(["touched", "seen"], forKey: "c11.tabSheet.clocks")
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["touched", "seen"])
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["touched", "seen"])
 
-        suite.set("seen,launched", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["seen", "launched"])
+        suite.set("seen,launched", forKey: PanelSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["seen", "launched"])
         // A set-but-empty new key still shadows the old one: back to the default order.
-        suite.set("", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+        suite.set("", forKey: PanelSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(PanelSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
     }
 
     func testIgnoringClocksComparesEverythingElse() {
-        var a = TabSheetDetailBuilder.build(inputs(description: "x"))
+        var a = PanelSheetDetailBuilder.build(inputs(description: "x"))
         var b = a
         b.clocks["active"] = t0.addingTimeInterval(999)
         XCTAssertNotEqual(a, b)
-        XCTAssertEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
+        XCTAssertEqual(PanelSheetDetailBuilder.ignoringClocks(a), PanelSheetDetailBuilder.ignoringClocks(b))
         // A state's start time is stable, so a different one is a real change.
         a.status = .init(kind: .waiting, since: t0)
         b.status = .init(kind: .waiting, since: t0.addingTimeInterval(5))
-        XCTAssertNotEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
+        XCTAssertNotEqual(PanelSheetDetailBuilder.ignoringClocks(a), PanelSheetDetailBuilder.ignoringClocks(b))
         b.status = a.status
-        XCTAssertEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
+        XCTAssertEqual(PanelSheetDetailBuilder.ignoringClocks(a), PanelSheetDetailBuilder.ignoringClocks(b))
         a.subtitle = "changed"
-        XCTAssertNotEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
+        XCTAssertNotEqual(PanelSheetDetailBuilder.ignoringClocks(a), PanelSheetDetailBuilder.ignoringClocks(b))
     }
 
     func testTurnClockFreezesWhenTheTurnHasEnded() {
@@ -263,34 +263,34 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         input.turnStartedAt = t0
         input.turnEndedAt = t0.addingTimeInterval(12)
         input.now = t0.addingTimeInterval(12)
-        let early = TabSheetDetailBuilder.build(input).clockTexts["turn"]
+        let early = PanelSheetDetailBuilder.build(input).clockTexts["turn"]
         input.now = t0.addingTimeInterval(90)
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).clockTexts["turn"], early)
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).clockTexts["turn"], early)
         input.turnEndedAt = nil
-        let later = TabSheetDetailBuilder.build(input).clockTexts["turn"]
+        let later = PanelSheetDetailBuilder.build(input).clockTexts["turn"]
         input.now = t0.addingTimeInterval(12)
-        XCTAssertNotEqual(TabSheetDetailBuilder.build(input).clockTexts["turn"], later)
+        XCTAssertNotEqual(PanelSheetDetailBuilder.build(input).clockTexts["turn"], later)
     }
 
     func testJournalPhaseSinceReplacesTheActivityClockAndCanStayBlank() {
         var input = inputs(activity: .running)
         input.journalPhaseSinceApplies = true
         input.journalPhaseSince = nil
-        let blank = TabSheetDetailBuilder.build(input).status
+        let blank = PanelSheetDetailBuilder.build(input).status
         XCTAssertEqual(blank?.kind, .working)
         XCTAssertNil(blank?.since)
         input.journalPhaseSince = t0.addingTimeInterval(5)
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).status?.since, t0.addingTimeInterval(5))
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).status?.since, t0.addingTimeInterval(5))
         input.activity = .idle
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).status?.since, t0.addingTimeInterval(5))
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).status?.since, t0.addingTimeInterval(5))
         input.isFlagged = true
-        let flagged = TabSheetDetailBuilder.build(input).status
+        let flagged = PanelSheetDetailBuilder.build(input).status
         XCTAssertEqual(flagged?.kind, .flagged)
         XCTAssertEqual(flagged?.since, t0.addingTimeInterval(30))
         var waiting = inputs(activity: .waiting)
         waiting.journalPhaseSinceApplies = false
         waiting.journalPhaseSince = t0.addingTimeInterval(99)
-        let unread = TabSheetDetailBuilder.build(waiting).status
+        let unread = PanelSheetDetailBuilder.build(waiting).status
         XCTAssertEqual(unread?.kind, .waiting)
         XCTAssertEqual(unread?.since, t0)
     }
@@ -298,7 +298,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
     func testUnconfirmedEvidenceNoteJoinsTheSubtitle() {
         var input = inputs(description: "synthetic")
         input.evidenceNote = "Unconfirmed"
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed")
     }
 
 
@@ -307,38 +307,38 @@ final class TabSheetDetailBuilderTests: XCTestCase {
     func testCacheClockCountsDownWholeMinutesThenReadsCold() {
         let en = Locale(identifier: "en_US")
         let exact = PromptCacheObservation(requestAt: t0, basis: .ttl(3_600), promptTokens: 1_000)
-        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(22 * 60 + 5), locale: en), "38m")
-        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(3_600 - 20), locale: en), "<1m")
-        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(3_600), locale: en), "cold")
+        XCTAssertEqual(PanelSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(22 * 60 + 5), locale: en), "38m")
+        XCTAssertEqual(PanelSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(3_600 - 20), locale: en), "<1m")
+        XCTAssertEqual(PanelSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(3_600), locale: en), "cold")
 
         let estimate = PromptCacheObservation(requestAt: t0, basis: .estimate(7_200), promptTokens: nil)
-        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(estimate, now: t0.addingTimeInterval(30 * 60), locale: en), "~1h 30m")
+        XCTAssertEqual(PanelSheetDetailBuilder.promptCacheClockText(estimate, now: t0.addingTimeInterval(30 * 60), locale: en), "~1h 30m")
     }
 
     func testCacheClockIsOptInAndOnlyForAgentsWithEvidence() {
-        XCTAssertTrue(TabSheetDetailBuilder.optInClocks.contains("cache"))
-        XCTAssertFalse(TabSheetDetailBuilder.defaultClockOrder.contains("cache"))
-        XCTAssertEqual(TabSheetDetailBuilder.clockTitle("cache"), "Cache")
+        XCTAssertTrue(PanelSheetDetailBuilder.optInClocks.contains("cache"))
+        XCTAssertFalse(PanelSheetDetailBuilder.defaultClockOrder.contains("cache"))
+        XCTAssertEqual(PanelSheetDetailBuilder.clockTitle("cache"), "Cache")
 
         var input = inputs(terminalKind: "claude-code", activity: .idle)
         input.now = t0
-        XCTAssertNil(TabSheetDetailBuilder.build(input).clockTexts["cache"])
+        XCTAssertNil(PanelSheetDetailBuilder.build(input).clockTexts["cache"])
         input.promptCache = PromptCacheObservation(requestAt: t0.addingTimeInterval(-3_600), basis: .ttl(300), promptTokens: nil)
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).clockTexts["cache"], "cold")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).clockTexts["cache"], "cold")
     }
 
     func testAWaitingAgentsExpiredCacheJoinsTheSubtitle() {
         var input = inputs(terminalKind: "claude-code", description: "synthetic", activity: .waiting)
         input.now = t0
         input.promptCache = PromptCacheObservation(requestAt: t0.addingTimeInterval(-3_600), basis: .ttl(300), promptTokens: nil)
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · cache expired")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "synthetic · cache expired")
         input.evidenceNote = "Unconfirmed"
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed · cache expired")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed · cache expired")
         input.evidenceNote = nil
         input.activity = .cold
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic", "a cold mark says it in blue")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "synthetic", "a cold mark says it in blue")
         input.activity = .waiting
         input.promptCache = PromptCacheObservation(requestAt: t0, basis: .ttl(300), promptTokens: nil)
-        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic", "a warm cache adds nothing")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "synthetic", "a warm cache adds nothing")
     }
 }

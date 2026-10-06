@@ -1515,7 +1515,7 @@ final class AgentModelDetector: @unchecked Sendable {
             MainActor.assumeIsolated {
                 guard let manager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
                       let workspace = manager.workspaces.first(where: { $0.id == workspaceId }) else { return }
-                workspace.syncSurfaceTabDetailForTab(surfaceId)
+                workspace.syncSurfacePanelDetailForPanel(surfaceId)
             }
         }
     }

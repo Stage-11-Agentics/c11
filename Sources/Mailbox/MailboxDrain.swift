@@ -37,8 +37,8 @@ enum MailboxDrain {
     /// The pinned C5 inbox of one tab: `<mailboxes>/<tab-uuid-lowercased>/`.
     /// The hook drain computes it from `C11_TAB_ID` alone, so a turn boundary
     /// never waits on the socket to learn which inbox is its own.
-    static func tabInboxURL(mailboxesRoot: URL, tabId: UUID) -> URL {
-        mailboxesRoot.appendingPathComponent(tabId.uuidString.lowercased(), isDirectory: true)
+    static func panelInboxURL(mailboxesRoot: URL, panelId: UUID) -> URL {
+        mailboxesRoot.appendingPathComponent(panelId.uuidString.lowercased(), isDirectory: true)
     }
 
     /// Every existing inbox of one tab, from the filesystem alone.
@@ -54,10 +54,10 @@ enum MailboxDrain {
     /// between. A moved tab's turn-boundary drain therefore finds its new
     /// inbox within one interval; the stdin push reaches it meanwhile, since
     /// the app knows where the tab lives.
-    static func tabInboxURLs(
+    static func panelInboxURLs(
         workspacesRoot: URL,
         preferredWorkspaceId: UUID?,
-        tabId: UUID,
+        panelId: UUID,
         scanCache: URL?,
         scanInterval: TimeInterval = 300,
         now: Date = Date(),
@@ -71,7 +71,7 @@ enum MailboxDrain {
             workspacesRoot
                 .appendingPathComponent(workspace, isDirectory: true)
                 .appendingPathComponent(MailboxLayout.mailboxesDirectoryName, isDirectory: true)
-                .appendingPathComponent(tabId.uuidString.lowercased(), isDirectory: true)
+                .appendingPathComponent(panelId.uuidString.lowercased(), isDirectory: true)
         }
 
         var result: [URL] = []
@@ -430,13 +430,13 @@ struct MailboxDeliveryReceipt: Equatable {
 
     /// The recipient tab, when the drain knows it (a hook always does; `recv
     /// --tab <name>` may not). Never the caller's tab by default.
-    let tabId: UUID?
+    let panelId: UUID?
     let deliveries: [Delivery]
     let via: String
     let ts: String
 
-    init(tabId: UUID?, deliveries: [Delivery], via: String = "drain", ts: String = MailboxEnvelope.currentRFC3339()) {
-        self.tabId = tabId
+    init(panelId: UUID?, deliveries: [Delivery], via: String = "drain", ts: String = MailboxEnvelope.currentRFC3339()) {
+        self.panelId = panelId
         self.deliveries = deliveries
         self.via = via
         self.ts = ts
@@ -477,10 +477,10 @@ struct MailboxDeliveryReceipt: Equatable {
             "ts": ts,
             "deliveries": deliveries.map { ["id": $0.id, "recipient": $0.recipient] }
         ]
-        if let tabId {
-            object["panel_id"] = tabId.uuidString
+        if let panelId {
+            object["panel_id"] = panelId.uuidString
             // C11-337: legacy spelling, still written so an older reader keeps the panel.
-            object["tab_id"] = tabId.uuidString
+            object["tab_id"] = panelId.uuidString
         }
         return object
     }
@@ -505,14 +505,14 @@ struct MailboxDeliveryReceipt: Equatable {
               let via = object["via"] as? String, via == "drain",
               let rawDeliveries = object["deliveries"] as? [Any] else { return nil }
         var dropped: [Any] = []
-        var tabId: UUID?
+        var panelId: UUID?
         // C11-337: `tab_id` is the legacy spelling, accepted forever.
         let panelKey = object["panel_id"] != nil ? "panel_id" : "tab_id"
-        if let rawTab = object[panelKey] {
-            if let string = rawTab as? String, let uuid = UUID(uuidString: string) {
-                tabId = uuid
+        if let rawPanel = object[panelKey] {
+            if let string = rawPanel as? String, let uuid = UUID(uuidString: string) {
+                panelId = uuid
             } else {
-                dropped.append([panelKey: rawTab])
+                dropped.append([panelKey: rawPanel])
             }
         }
         var deliveries: [Delivery] = []
@@ -527,7 +527,7 @@ struct MailboxDeliveryReceipt: Equatable {
         }
         let ts = (object["ts"] as? String).flatMap { $0.isEmpty || $0.utf8.count > 64 ? nil : $0 }
             ?? MailboxEnvelope.currentRFC3339()
-        return Decoded(receipt: MailboxDeliveryReceipt(tabId: tabId, deliveries: deliveries, via: via, ts: ts), dropped: dropped)
+        return Decoded(receipt: MailboxDeliveryReceipt(panelId: panelId, deliveries: deliveries, via: via, ts: ts), dropped: dropped)
     }
 
     // MARK: Write
@@ -559,7 +559,7 @@ struct MailboxDeliveryReceipt: Equatable {
             bytes += (chunks[chunks.count - 1].isEmpty ? 0 : 1) + size
             chunks[chunks.count - 1].append(entry)
         }
-        return chunks.filter { !$0.isEmpty }.map { MailboxDeliveryReceipt(tabId: tabId, deliveries: $0, via: via, ts: ts) }
+        return chunks.filter { !$0.isEmpty }.map { MailboxDeliveryReceipt(panelId: panelId, deliveries: $0, via: via, ts: ts) }
     }
 
     /// Writes the deliveries as one or more receipts (see `chunked`) and

@@ -192,7 +192,7 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
         let profileID = profile.id
         let profileIDString = profileID.uuidString
         let otherProfileID = otherProfile.id
-        let existingTabIDs = Set(workspace.panels.keys)
+        let existingPanelIDs = Set(workspace.panels.keys)
         let response = await Task.detached(priority: .utility) {
             controller.v2BrowserProfileCommand(
                 method: method,
@@ -226,16 +226,16 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
             return XCTFail("Expected browser open to refuse a reserved profile: \(open)")
         }
         XCTAssertEqual(openCode, "busy")
-        XCTAssertEqual(Set(workspace.panels.keys), existingTabIDs, "A reserved profile open must not create a tab")
+        XCTAssertEqual(Set(workspace.panels.keys), existingPanelIDs, "A reserved profile open must not create a tab")
 
-        let switchTab = BrowserPanel(
+        let switchPanel = BrowserPanel(
             workspaceId: workspace.id,
             profileID: store.builtInDefaultProfileID,
             sticksAsPreferred: false
         )
-        XCTAssertFalse(switchTab.switchToProfile(profile.id), "A tab must not switch into a reserved profile")
-        XCTAssertEqual(switchTab.profileID, store.builtInDefaultProfileID)
-        XCTAssertTrue(switchTab.switchToProfile(otherProfileID), "A separate profile should remain usable")
+        XCTAssertFalse(switchPanel.switchToProfile(profile.id), "A tab must not switch into a reserved profile")
+        XCTAssertEqual(switchPanel.profileID, store.builtInDefaultProfileID)
+        XCTAssertTrue(switchPanel.switchToProfile(otherProfileID), "A separate profile should remain usable")
         XCTAssertTrue(store.isReserved(profileID), "The second profile must not release the held target reservation")
 
         // The worker has already returned operation_pending. Completing the
@@ -248,7 +248,7 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
             XCTAssertNil(store.profileDefinition(id: profileID), "Late delete completion must remove the definition")
         } else {
             XCTAssertNotNil(store.profileDefinition(id: profileID), "Clear must preserve the profile definition")
-            XCTAssertTrue(switchTab.switchToProfile(profileID), "Clear completion must release profile admission")
+            XCTAssertTrue(switchPanel.switchToProfile(profileID), "Clear completion must release profile admission")
         }
     }
 

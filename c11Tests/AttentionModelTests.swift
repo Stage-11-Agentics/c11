@@ -73,7 +73,7 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(raised.after.flagReason, "Needs review")
         XCTAssertEqual(raised.after.flagRaisedAt, raisedAt)
-        XCTAssertEqual(raised.after.flagCallerTabId, originalCaller)
+        XCTAssertEqual(raised.after.flagCallerPanelId, originalCaller)
         XCTAssertTrue(raised.after.suppressed)
         XCTAssertEqual(raised.result.applied[MetadataKey.flag], true)
         XCTAssertEqual(raised.result.applied[MetadataKey.suppressed], true)
@@ -88,7 +88,7 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(revised.after.flagReason, "Needs operator decision")
         XCTAssertEqual(revised.after.flagRaisedAt, raisedAt)
         XCTAssertEqual(
-            revised.after.flagCallerTabId,
+            revised.after.flagCallerPanelId,
             originalCaller,
             "Reason revisions must retain the caller that opened the active flag epoch"
         )
@@ -110,7 +110,7 @@ final class AttentionModelTests: XCTestCase {
             now: Date(timeIntervalSince1970: 3_000)
         )
         XCTAssertNil(lowered.after.flagRaisedAt)
-        XCTAssertNil(lowered.after.flagCallerTabId)
+        XCTAssertNil(lowered.after.flagCallerPanelId)
         let reraised = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
@@ -119,7 +119,7 @@ final class AttentionModelTests: XCTestCase {
             now: Date(timeIntervalSince1970: 4_000)
         )
         XCTAssertEqual(reraised.after.flagRaisedAt, Date(timeIntervalSince1970: 4_000))
-        XCTAssertEqual(reraised.after.flagCallerTabId, revisingCaller)
+        XCTAssertEqual(reraised.after.flagCallerPanelId, revisingCaller)
         XCTAssertNotEqual(
             TerminalNotificationStore.flagNotificationIdentifier(
                 workspaceId: workspace,
@@ -225,7 +225,7 @@ final class AttentionModelTests: XCTestCase {
         )
         let snapshot = store.attentionSnapshot(workspaceId: workspace, surfaceId: surface)
         XCTAssertEqual(snapshot.flagReason, "Need a deployment decision")
-        XCTAssertEqual(snapshot.flagCallerTabId, caller)
+        XCTAssertEqual(snapshot.flagCallerPanelId, caller)
         XCTAssertTrue(snapshot.suppressed)
         XCTAssertEqual(snapshot.flagRaisedAt?.timeIntervalSince1970, raisedAt)
         XCTAssertEqual(
@@ -477,7 +477,7 @@ final class AttentionModelTests: XCTestCase {
                 surfaceId: olderSurface,
                 flagReason: "older",
                 flagRaisedAt: Date(timeIntervalSince1970: 10),
-                flagCallerTabId: olderCaller,
+                flagCallerPanelId: olderCaller,
                 suppressed: true
             )
         )

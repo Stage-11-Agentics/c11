@@ -2273,14 +2273,14 @@ class TerminalController {
 
     /// Attribution is resolved only for a switch attempt, already on main.
     /// Telemetry connections do not incur a new synchronous main hop.
-    static func socketCallerTabId(_ context: SocketCommandContext) -> UUID? {
+    static func socketCallerPanelId(_ context: SocketCommandContext) -> UUID? {
         if let device = context.callerTTYDevice, let app = AppDelegate.shared {
             for summary in app.listMainWindowSummaries() {
                 guard let manager = app.workspaceManagerFor(windowId: summary.windowId) else { continue }
                 for workspace in manager.workspaces {
                     for (panelId, tty) in workspace.panelTTYNames {
-                        if let tabDevice = TerminalPIDResolver.ttyDevice(for: tty),
-                           UInt32(bitPattern: tabDevice) == device { return panelId }
+                        if let panelDevice = TerminalPIDResolver.ttyDevice(for: tty),
+                           UInt32(bitPattern: panelDevice) == device { return panelId }
                     }
                 }
             }
@@ -2634,10 +2634,10 @@ class TerminalController {
         for paneId in paneIds {
             let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
             let selectedBonsplitTab = workspace.bonsplitController.selectedTab(inPane: paneId)
-            for (tabIndex, bonsplitTab) in bonsplitTabs.enumerated() {
+            for (panelIndex, bonsplitTab) in bonsplitTabs.enumerated() {
                 guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
                 paneByPanelId[panelId] = paneId.id
-                indexInPaneByPanelId[panelId] = tabIndex
+                indexInPaneByPanelId[panelId] = panelIndex
                 selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selectedBonsplitTab?.id)
             }
         }
@@ -2653,7 +2653,7 @@ class TerminalController {
                 "ref": v2Ref(kind: .surface, uuid: panel.id),
                 "index": surfaceIndex,
                 "type": panel.panelType.rawValue,
-                "title": workspace.tabTitle(panelId: panel.id) ?? panel.displayTitle,
+                "title": workspace.panelTitle(panelId: panel.id) ?? panel.displayTitle,
                 "focused": panel.id == focusedSurfaceId,
                 "selected": selectedInPane,
                 "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
@@ -2949,7 +2949,7 @@ class TerminalController {
         return v2EnsureHandleRef(kind: kind, uuid: uuid)
     }
 
-    func v2TabRef(uuid: UUID?) -> Any {
+    func v2PanelRef(uuid: UUID?) -> Any {
         guard let uuid else { return NSNull() }
         return v2EnsureHandleRef(kind: .surface, uuid: uuid)
     }
@@ -3302,7 +3302,7 @@ class TerminalController {
     /// `surface_type_disabled` error envelope when blocked, or `nil` to proceed.
     /// Terminal is never gated. Restore/snapshot bypasses this by calling the
     /// low-level `Workspace.newBrowser*`/`newMarkdown*` methods directly.
-    func v2SurfaceTypeDenial(_ type: PanelType) -> V2CallResult? {
+    func v2PanelTypeDenial(_ type: PanelType) -> V2CallResult? {
         guard !PanelTypeAvailability.isEnabled(type) else { return nil }
         return .err(
             code: "surface_type_disabled",
@@ -3503,7 +3503,7 @@ class TerminalController {
         /// Create the split on `direction` (may differ from `requested` if flipped).
         case split(direction: SplitDirection, requested: SplitDirection, warning: String?)
         /// Add a tab to `paneId` instead of splitting.
-        case tab(paneId: PaneID, warning: String?)
+        case panel(paneId: PaneID, warning: String?)
         /// Refuse with an actionable message.
         case refuse(message: String, data: [String: Any])
     }
@@ -3534,7 +3534,7 @@ class TerminalController {
             let applied = (axis == requestedAxis) ? requested : flippedSplitDirection(requested)
             return .split(direction: applied, requested: requested, warning: warning)
         case .addTab:
-            return .tab(paneId: eval.targetPaneId, warning: warning)
+            return .panel(paneId: eval.targetPaneId, warning: warning)
         case .refuse:
             let paneRef = v2EnsureHandleRef(kind: .pane, uuid: eval.targetPaneId.id)
             let msg = AreaSizePolicy.refusalMessage(for: decision, kindLabel: eval.kindLabel, paneRefLabel: paneRef)
@@ -3559,12 +3559,12 @@ class TerminalController {
         _ result: inout [String: Any],
         requested: SplitDirection,
         applied: SplitDirection,
-        becameTab: Bool,
+        becamePanel: Bool,
         warning: String?
     ) {
         result["requested_direction"] = splitDirectionString(requested)
         result["applied_direction"] = splitDirectionString(applied)
-        result["size_outcome"] = becameTab ? "panel" : (requested == applied ? "split" : "flipped")
+        result["size_outcome"] = becamePanel ? "panel" : (requested == applied ? "split" : "flipped")
         result["size_warning"] = v2OrNull(warning)
     }
 
@@ -3590,7 +3590,7 @@ class TerminalController {
         let terminalPanel: TerminalPanel
         let initialSurface: ghostty_surface_t?
         let workspaceId: UUID
-        let tabId: UUID
+        let panelId: UUID
         let workspaceIdString: String
         let panelIdString: String
         let callerPanelId: UUID?
@@ -3694,14 +3694,14 @@ class TerminalController {
                 preferredWorkspaceId: nil
             )
             callerTitle = caller.map {
-                $0.workspace.tabTitle(panelId: callerPanelId)
+                $0.workspace.panelTitle(panelId: callerPanelId)
                     ?? $0.workspace.panels[callerPanelId]?.displayTitle
             } ?? nil
         } else {
             callerTitle = nil
         }
 
-        let targetTitle = targetWorkspace.tabTitle(panelId: surfaceId) ?? terminalPanel.displayTitle
+        let targetTitle = targetWorkspace.panelTitle(panelId: surfaceId) ?? terminalPanel.displayTitle
         let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
         let envelope: [String: Any] = [
             "workspace_id": targetWorkspace.id.uuidString,
@@ -3717,7 +3717,7 @@ class TerminalController {
             terminalPanel: terminalPanel,
             initialSurface: terminalPanel.surface.surface,
             workspaceId: targetWorkspace.id,
-            tabId: surfaceId,
+            panelId: surfaceId,
             workspaceIdString: targetWorkspace.id.uuidString,
             panelIdString: surfaceId.uuidString,
             callerPanelId: callerPanelId,
@@ -3765,7 +3765,7 @@ class TerminalController {
                 terminalPanel: terminalPanel,
                 workspaceId: workspace.id,
                 surfaceId: terminalPanel.id,
-                targetTitle: workspace.tabTitle(panelId: terminalPanel.id) ?? terminalPanel.displayTitle
+                targetTitle: workspace.panelTitle(panelId: terminalPanel.id) ?? terminalPanel.displayTitle
             ))
         }
 
@@ -3778,7 +3778,7 @@ class TerminalController {
             terminalPanel: terminalPanel,
             workspaceId: workspace.id,
             surfaceId: terminalPanel.id,
-            targetTitle: workspace.tabTitle(panelId: terminalPanel.id) ?? terminalPanel.displayTitle
+            targetTitle: workspace.panelTitle(panelId: terminalPanel.id) ?? terminalPanel.displayTitle
         ))
     }
 
@@ -3867,7 +3867,7 @@ class TerminalController {
             }
             semaphore.wait()
             if didSend, let eventKind {
-                EventEmitter.shared.emitTabInputSent(
+                EventEmitter.shared.emitPanelInputSent(
                     workspace: resolved.workspaceId,
                     surface: resolved.surfaceId,
                     callerPanelId: nil,
@@ -4360,7 +4360,7 @@ class TerminalController {
         v2MainSync {
             guard let ws = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else { return }
             if titleApplied {
-                ws.syncTabTitleFromMetadata(panelId: surfaceId)
+                ws.syncPanelTitleFromMetadata(panelId: surfaceId)
             }
             if descriptionApplied {
                 // The bar (and its height) follows the description; publish so it
@@ -4374,16 +4374,16 @@ class TerminalController {
                 ws.setDerivedActivity(resolvedActivity, forSurface: surfaceId)
             }
             if terminalTypeApplied {
-                ws.syncSurfaceTabActivityStateForTab(surfaceId)
+                ws.syncSurfacePanelActivityStateForPanel(surfaceId)
             }
             if descriptionApplied || modelApplied || titleApplied {
-                ws.syncSurfaceTabDetailForTab(surfaceId)
+                ws.syncSurfacePanelDetailForPanel(surfaceId)
             }
             if iconApplied {
-                ws.syncTabIconFromMetadata(panelId: surfaceId)
+                ws.syncPanelIconFromMetadata(panelId: surfaceId)
             }
             if colorApplied {
-                ws.syncTabColorFromMetadata(panelId: surfaceId)
+                ws.syncPanelColorFromMetadata(panelId: surfaceId)
             }
         }
     }
@@ -5432,7 +5432,7 @@ class TerminalController {
         return seedDragPasteboardTypes("fileurl")
     }
 
-    func seedDragPasteboardTabTransfer() -> String {
+    func seedDragPasteboardPanelTransfer() -> String {
         return seedDragPasteboardTypes("tabtransfer")
     }
 
@@ -8816,7 +8816,7 @@ class TerminalController {
                 }
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
-                    workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
+                    workspace.registerAgentPID(pidValue, key: key, panelId: explicitSurfaceId)
                 }
                 return
             }
@@ -8831,7 +8831,7 @@ class TerminalController {
                 timestamp: Date()
             )
             if let pidValue {
-                workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
+                workspace.registerAgentPID(pidValue, key: key, panelId: explicitSurfaceId)
             }
         }
         return "OK"
@@ -8874,7 +8874,7 @@ class TerminalController {
             .flatMap { UUID(uuidString: $0) }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.registerAgentPID(pid, key: key, tabId: explicitSurfaceId)
+            workspace.registerAgentPID(pid, key: key, panelId: explicitSurfaceId)
         }
         return "OK"
     }
@@ -9344,7 +9344,7 @@ class TerminalController {
                 return
             }
 
-            workspace.updateTabPullRequest(
+            workspace.updatePanelPullRequest(
                 panelId: surfaceId,
                 number: number,
                 label: label,
@@ -9363,7 +9363,7 @@ class TerminalController {
             options: parsed.options,
             missingPanelUsage: "clear_pr [--tab=X] [--panel=Y]"
         ) { workspace, surfaceId in
-            workspace.clearTabPullRequest(panelId: surfaceId)
+            workspace.clearPanelPullRequest(panelId: surfaceId)
         }
     }
 
@@ -10095,7 +10095,7 @@ class TerminalController {
             }
 
             // Socket commands must be non-interactive: bypass close-confirmation gating.
-            workspace.closeTab(targetSurfaceId, force: true)
+            workspace.closePanel(targetSurfaceId, force: true)
             result = "OK"
         }
         return result

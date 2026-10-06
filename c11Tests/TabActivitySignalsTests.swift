@@ -76,44 +76,44 @@ final class TabActivitySignalsTests: XCTestCase {
     private let en = Locale(identifier: "en_US")
 
     func testDurationText() {
-        XCTAssertEqual(TabSheetClockText.duration(0, locale: en), "0s")
-        XCTAssertEqual(TabSheetClockText.duration(42, locale: en), "42s")
-        XCTAssertEqual(TabSheetClockText.duration(252, locale: en), "4m 12s")
-        XCTAssertEqual(TabSheetClockText.duration(3900, locale: en), "1h 5m")
-        XCTAssertEqual(TabSheetClockText.duration(-5, locale: en), "0s")
+        XCTAssertEqual(PanelSheetClockText.duration(0, locale: en), "0s")
+        XCTAssertEqual(PanelSheetClockText.duration(42, locale: en), "42s")
+        XCTAssertEqual(PanelSheetClockText.duration(252, locale: en), "4m 12s")
+        XCTAssertEqual(PanelSheetClockText.duration(3900, locale: en), "1h 5m")
+        XCTAssertEqual(PanelSheetClockText.duration(-5, locale: en), "0s")
     }
 
     func testCountText() {
-        XCTAssertEqual(TabSheetClockText.count(0, locale: en), "0")
-        XCTAssertEqual(TabSheetClockText.count(999, locale: en), "999")
-        XCTAssertTrue(TabSheetClockText.count(48_200, locale: en).hasPrefix("48"))
-        XCTAssertEqual(TabSheetClockText.count(1_250_000, locale: en), "1.2M")
+        XCTAssertEqual(PanelSheetClockText.count(0, locale: en), "0")
+        XCTAssertEqual(PanelSheetClockText.count(999, locale: en), "999")
+        XCTAssertTrue(PanelSheetClockText.count(48_200, locale: en).hasPrefix("48"))
+        XCTAssertEqual(PanelSheetClockText.count(1_250_000, locale: en), "1.2M")
     }
 
     func testTextFollowsTheGivenLocaleNotTheRegion() {
-        XCTAssertNotEqual(TabSheetClockText.duration(252, locale: Locale(identifier: "ru")), "4m 12s")
-        XCTAssertNotEqual(TabSheetClockText.count(1_250_000, locale: Locale(identifier: "de")), "1.2M")
+        XCTAssertNotEqual(PanelSheetClockText.duration(252, locale: Locale(identifier: "ru")), "4m 12s")
+        XCTAssertNotEqual(PanelSheetClockText.count(1_250_000, locale: Locale(identifier: "de")), "1.2M")
     }
 
     // MARK: - Terminal Active
 
     func testTerminalActiveNeverIncludesOperatorInput() {
         let output = later(10), edge = later(20), agent = later(5)
-        XCTAssertEqual(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: output, commandEdgeAt: edge), edge)
-        XCTAssertEqual(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: agent, outputGrowthAt: output, commandEdgeAt: edge), agent)
+        XCTAssertEqual(PanelSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: output, commandEdgeAt: edge), edge)
+        XCTAssertEqual(PanelSheetDetailBuilder.terminalActiveAt(agentLastEventAt: agent, outputGrowthAt: output, commandEdgeAt: edge), agent)
         // An agent whose files say nothing (Kimi, Copilot, no transcript yet) falls
         // through to the plain-terminal computation; with no signal at all: nil.
-        XCTAssertEqual(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: output, commandEdgeAt: nil), output)
-        XCTAssertNil(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: nil, commandEdgeAt: nil))
+        XCTAssertEqual(PanelSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: output, commandEdgeAt: nil), output)
+        XCTAssertNil(PanelSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: nil, commandEdgeAt: nil))
     }
 
     // MARK: - Clock assembly
 
     private func inputs(
         activity: BonsplitTabActivityState? = .idle,
-        configure: (inout TabSheetDetailBuilder.Inputs) -> Void = { _ in }
-    ) -> TabSheetDetailBuilder.Inputs {
-        var input = TabSheetDetailBuilder.Inputs(
+        configure: (inout PanelSheetDetailBuilder.Inputs) -> Void = { _ in }
+    ) -> PanelSheetDetailBuilder.Inputs {
+        var input = PanelSheetDetailBuilder.Inputs(
             panelType: .terminal, title: nil, terminalKind: "claude-code", model: nil, modelLabel: nil,
             description: nil, directory: nil, browserURL: nil, markdownPath: nil,
             activity: activity, isFlagged: false, stateEnteredAt: nil, stateStartedAt: nil,
@@ -126,7 +126,7 @@ final class TabActivitySignalsTests: XCTestCase {
 
     func testClocksAndTextsAreBuiltFromTheSignals() {
         let now = Date(timeIntervalSince1970: 10_000)
-        let detail = TabSheetDetailBuilder.build(inputs(activity: .idle) {
+        let detail = PanelSheetDetailBuilder.build(inputs(activity: .idle) {
             $0.now = now
             $0.activeAt = now.addingTimeInterval(-30)
             $0.touchedAt = now.addingTimeInterval(-90)
@@ -144,7 +144,7 @@ final class TabActivitySignalsTests: XCTestCase {
 
     func testAWorkingTurnKeepsCounting() {
         let now = Date(timeIntervalSince1970: 10_000)
-        let detail = TabSheetDetailBuilder.build(inputs(activity: .running) {
+        let detail = PanelSheetDetailBuilder.build(inputs(activity: .running) {
             $0.now = now
             $0.turnStartedAt = now.addingTimeInterval(-125)
             $0.lastAgentEventAt = now.addingTimeInterval(-100)
@@ -153,43 +153,43 @@ final class TabActivitySignalsTests: XCTestCase {
     }
 
     func testClocksWithoutSignalsAreAbsent() {
-        let detail = TabSheetDetailBuilder.build(inputs())
+        let detail = PanelSheetDetailBuilder.build(inputs())
         XCTAssertTrue(detail.clocks.isEmpty)
         XCTAssertTrue(detail.clockTexts.isEmpty)
     }
 
     func testIgnoringClocksAlsoIgnoresClockTexts() {
-        var a = TabSheetDetailBuilder.build(inputs())
+        var a = PanelSheetDetailBuilder.build(inputs())
         var b = a
         b.clockTexts["tokens"] = "9K"
         b.clocks["active"] = Date()
-        XCTAssertEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
+        XCTAssertEqual(PanelSheetDetailBuilder.ignoringClocks(a), PanelSheetDetailBuilder.ignoringClocks(b))
         a.title = "x"
-        XCTAssertNotEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
+        XCTAssertNotEqual(PanelSheetDetailBuilder.ignoringClocks(a), PanelSheetDetailBuilder.ignoringClocks(b))
     }
 
     func testDefaultOrderExcludesTheOptInClocksButTheSettingCanAddThem() {
-        XCTAssertEqual(TabSheetDetailBuilder.defaultClockOrder, ["active", "seen", "launched"])
-        XCTAssertEqual(TabSheetDetailBuilder.parseClockOrder("active,touched,turn,tools,tokens"),
+        XCTAssertEqual(PanelSheetDetailBuilder.defaultClockOrder, ["active", "seen", "launched"])
+        XCTAssertEqual(PanelSheetDetailBuilder.parseClockOrder("active,touched,turn,tools,tokens"),
                        ["active", "touched", "turn", "tools", "tokens"])
-        for name in TabSheetDetailBuilder.optInClocks {
-            XCTAssertNotNil(TabSheetDetailBuilder.clockTitle(name), name)
+        for name in PanelSheetDetailBuilder.optInClocks {
+            XCTAssertNotNil(PanelSheetDetailBuilder.clockTitle(name), name)
         }
-        XCTAssertNil(TabSheetDetailBuilder.clockTitle("active"), "bonsplit's built-in titles cover the rest")
+        XCTAssertNil(PanelSheetDetailBuilder.clockTitle("active"), "bonsplit's built-in titles cover the rest")
     }
 
     func testSeenShowsTheStoredStampOrNowWhileBeingLookedAt() {
         let stamp = Date(timeIntervalSince1970: 9_000)
-        let away = TabSheetDetailBuilder.build(inputs { $0.seenAt = stamp })
+        let away = PanelSheetDetailBuilder.build(inputs { $0.seenAt = stamp })
         XCTAssertEqual(away.clocks["seen"], stamp)
         XCTAssertNil(away.clockTexts["seen"])
 
         // While being seen the stored stamp is stale: show "now", not an age.
-        let looking = TabSheetDetailBuilder.build(inputs { $0.seenAt = stamp; $0.isBeingSeen = true })
+        let looking = PanelSheetDetailBuilder.build(inputs { $0.seenAt = stamp; $0.isBeingSeen = true })
         XCTAssertNil(looking.clocks["seen"])
         XCTAssertEqual(looking.clockTexts["seen"], "now")
 
         // Looked-at for the first time: nothing stored yet, still "now".
-        XCTAssertEqual(TabSheetDetailBuilder.build(inputs { $0.isBeingSeen = true }).clockTexts["seen"], "now")
+        XCTAssertEqual(PanelSheetDetailBuilder.build(inputs { $0.isBeingSeen = true }).clockTexts["seen"], "now")
     }
 }

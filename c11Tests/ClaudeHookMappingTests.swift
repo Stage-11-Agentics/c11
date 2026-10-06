@@ -7,42 +7,42 @@ import XCTest
 #endif
 
 final class ClaudeHookMappingTests: XCTestCase {
-    private let tabA = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
-    private let tabB = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
+    private let panelA = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
+    private let panelB = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
 
     func testBypassAskStaysBlockedUntilMatchingResume() throws {
-        let ask = try owned("pre-tool-use", base(tool: "AskUserQuestion", request: "request-a"), tab: tabA)
+        let ask = try owned("pre-tool-use", base(tool: "AskUserQuestion", request: "request-a"), panel: panelA)
         XCTAssertEqual(ask.kind, .questionRequested)
         XCTAssertNil(ClaudeHookMapping.map(subcommand: "permission-request", object: base(tool: "AskUserQuestion", request: "request-a")))
-        let note = try owned("notification", ["session_id": "sess-1", "notification_type": "permission_prompt"], tab: tabA)
+        let note = try owned("notification", ["session_id": "sess-1", "notification_type": "permission_prompt"], panel: panelA)
         XCTAssertEqual(note.kind, .approvalRequested)
         XCTAssertNil(note.toolClass)
         let blocked = try XCTUnwrap(JournalTestData.fold(nil, ask, seq: 1).snapshot)
         XCTAssertEqual(blocked.phase, .blocked)
         XCTAssertEqual(blocked.reason, .question)
-        let stopped = JournalTestData.fold(blocked, try owned("stop", base(), tab: tabA), seq: 2)
+        let stopped = JournalTestData.fold(blocked, try owned("stop", base(), panel: panelA), seq: 2)
         XCTAssertEqual(stopped.snapshot, blocked)
         XCTAssertNotEqual(stopped.effect, .applied)
 
-        let prompt = try owned("prompt-submit", base(request: "request-a"), tab: tabA)
+        let prompt = try owned("prompt-submit", base(request: "request-a"), panel: panelA)
         XCTAssertEqual(prompt.kind, .turnStarted)
         XCTAssertNil(prompt.requestID)
         XCTAssertNotEqual(prompt.eventID, ask.eventID)
 
         XCTAssertNil(ClaudeHookMapping.map(subcommand: "post-tool-use", object: base(tool: "AskUserQuestion", request: nil)))
         XCTAssertNil(ClaudeHookMapping.map(subcommand: "post-tool-use", object: base(tool: "AskUserQuestion", request: String(repeating: "x", count: 129))))
-        let other = JournalTestData.fold(blocked, try owned("post-tool-use", base(tool: "Bash", request: "request-a"), tab: tabA), seq: 3)
+        let other = JournalTestData.fold(blocked, try owned("post-tool-use", base(tool: "Bash", request: "request-a"), panel: panelA), seq: 3)
         XCTAssertEqual(other.snapshot, blocked)
-        let mismatch = JournalTestData.fold(blocked, try owned("post-tool-use", base(tool: "AskUserQuestion", request: "request-b"), tab: tabA), seq: 4)
+        let mismatch = JournalTestData.fold(blocked, try owned("post-tool-use", base(tool: "AskUserQuestion", request: "request-b"), panel: panelA), seq: 4)
         XCTAssertEqual(mismatch.snapshot, blocked)
 
-        let resumed = try owned("post-tool-use", base(tool: "AskUserQuestion", request: "request-a"), tab: tabA)
+        let resumed = try owned("post-tool-use", base(tool: "AskUserQuestion", request: "request-a"), panel: panelA)
         XCTAssertEqual(resumed.kind, .attentionResolved)
         XCTAssertEqual(resumed.resolution, .resumed)
         XCTAssertNil(resumed.signal)
         let working = try XCTUnwrap(JournalTestData.fold(blocked, resumed, seq: 5).snapshot)
         XCTAssertEqual(working.phase, .working)
-        let completed = try XCTUnwrap(JournalTestData.fold(working, try owned("stop", base(), tab: tabA), seq: 6).snapshot)
+        let completed = try XCTUnwrap(JournalTestData.fold(working, try owned("stop", base(), panel: panelA), seq: 6).snapshot)
         XCTAssertEqual(completed.phase, .idle)
         XCTAssertEqual(completed.turnOutcome, "completed")
         let repeated = JournalTestData.fold(completed, resumed, seq: 7)
@@ -50,12 +50,12 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertEqual(repeated.snapshot?.terminalBarrier, true)
         XCTAssertNotEqual(repeated.effect, .applied)
 
-        let plan = try owned("pre-tool-use", base(tool: "ExitPlanMode", request: "plan-a"), tab: tabA)
+        let plan = try owned("pre-tool-use", base(tool: "ExitPlanMode", request: "plan-a"), panel: panelA)
         XCTAssertEqual(plan.kind, .planReviewRequested)
         XCTAssertNil(ClaudeHookMapping.map(subcommand: "permission-request", object: base(tool: "ExitPlanMode", request: "plan-a")))
         let planBlocked = try XCTUnwrap(JournalTestData.fold(nil, plan, seq: 1).snapshot)
         XCTAssertEqual(planBlocked.reason, .planReview)
-        let planWorking = try XCTUnwrap(JournalTestData.fold(planBlocked, try owned("post-tool-use", base(tool: "ExitPlanMode", request: "plan-a"), tab: tabA), seq: 2).snapshot)
+        let planWorking = try XCTUnwrap(JournalTestData.fold(planBlocked, try owned("post-tool-use", base(tool: "ExitPlanMode", request: "plan-a"), panel: panelA), seq: 2).snapshot)
         XCTAssertEqual(planWorking.phase, .working)
     }
 
@@ -64,16 +64,16 @@ final class ClaudeHookMappingTests: XCTestCase {
             ("AskUserQuestion", "request-ask", JournalReason.question),
             ("ExitPlanMode", "request-plan", JournalReason.planReview),
         ] {
-            let ask = try owned("pre-tool-use", base(tool: tool, request: request), tab: tabA)
+            let ask = try owned("pre-tool-use", base(tool: tool, request: request), panel: panelA)
             XCTAssertEqual(ask.kind, expectedReason == .question ? .questionRequested : .planReviewRequested)
             let blocked = try XCTUnwrap(JournalTestData.fold(nil, ask, seq: 1).snapshot)
             XCTAssertEqual(blocked.reason, expectedReason)
 
-            let stop = JournalTestData.fold(blocked, try owned("stop", base(), tab: tabA), seq: 2)
+            let stop = JournalTestData.fold(blocked, try owned("stop", base(), panel: panelA), seq: 2)
             XCTAssertEqual(stop.snapshot, blocked, "Stop must not pass the unresolved blocking request for \(tool)")
             XCTAssertNotEqual(stop.effect, .applied)
 
-            let resolved = try owned("post-tool-use", base(tool: tool, request: request), tab: tabA)
+            let resolved = try owned("post-tool-use", base(tool: tool, request: request), panel: panelA)
             let working = try XCTUnwrap(JournalTestData.fold(blocked, resolved, seq: 3).snapshot)
             XCTAssertEqual(working.phase, .working)
             XCTAssertNil(working.reason)
@@ -81,11 +81,11 @@ final class ClaudeHookMappingTests: XCTestCase {
     }
 
     func testStopFailureChildAndPreCompactDoNotInventParentTransitions() throws {
-        let working = try XCTUnwrap(JournalTestData.fold(nil, try owned("prompt-submit", base(), tab: tabA), seq: 1).snapshot)
+        let working = try XCTUnwrap(JournalTestData.fold(nil, try owned("prompt-submit", base(), panel: panelA), seq: 1).snapshot)
         var failure = try XCTUnwrap(ClaudeHookMapping.map(subcommand: "stop-failure", object: [
             "session_id": "sess-1", "error": "SENTINEL-ERROR", "last_assistant_message": "SENTINEL-ASSISTANT"
         ]))
-        failure.tabID = tabA
+        failure.panelID = panelA
         failure.workspaceID = JournalTestData.workspace
         XCTAssertEqual(failure.kind, .errorReported)
         XCTAssertEqual(failure.reasonCode, .sessionFailure)
@@ -100,7 +100,7 @@ final class ClaudeHookMappingTests: XCTestCase {
         var child = try XCTUnwrap(ClaudeHookMapping.map(subcommand: "subagent-start", object: [
             "session_id": "sess-1", "agent_id": "child-1", "last_assistant_message": "SENTINEL-ASSISTANT"
         ]))
-        child.tabID = tabA
+        child.panelID = panelA
         child.workspaceID = JournalTestData.workspace
         XCTAssertEqual(child.kind, .childSpawned)
         XCTAssertEqual(child.sessionID, "child-1")
@@ -113,7 +113,7 @@ final class ClaudeHookMappingTests: XCTestCase {
             var stop = try XCTUnwrap(ClaudeHookMapping.map(subcommand: "subagent-stop", object: [
                 "session_id": "sess-1", "agent_id": "child-1", "last_assistant_message": "SENTINEL-ASSISTANT"
             ]))
-            stop.tabID = tabA
+            stop.panelID = panelA
             stop.workspaceID = JournalTestData.workspace
             return stop
         }(), seq: 4)
@@ -127,22 +127,22 @@ final class ClaudeHookMappingTests: XCTestCase {
 
         let compact = JournalTestData.fold(working, try owned("pre-compact", [
             "session_id": "sess-1", "custom_instructions": "SENTINEL-INSTRUCTIONS"
-        ], tab: tabA), seq: 5)
+        ], panel: panelA), seq: 5)
         XCTAssertEqual(compact.effect, .observation)
         XCTAssertEqual(compact.snapshot?.phase, working.phase)
     }
 
     func testSessionEndIgnoresAnUnrelatedPromptID() throws {
-        let start = try owned("session-start", base(), tab: tabA)
+        let start = try owned("session-start", base(), panel: panelA)
         let working = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1).snapshot)
-        let turn = try owned("prompt-submit", base(), tab: tabA)
+        let turn = try owned("prompt-submit", base(), panel: panelA)
         let running = try XCTUnwrap(JournalTestData.fold(working, turn, seq: 2).snapshot)
-        let stop = try owned("stop", base(), tab: tabA)
+        let stop = try owned("stop", base(), panel: panelA)
         let idle = try XCTUnwrap(JournalTestData.fold(running, stop, seq: 3).snapshot)
 
         var sessionEnd = base()
         sessionEnd["prompt_id"] = "unrelated-next-prompt"
-        let endedDraft = try owned("session-end", sessionEnd, tab: tabA)
+        let endedDraft = try owned("session-end", sessionEnd, panel: panelA)
         XCTAssertEqual(endedDraft.kind, .sessionEnded)
         XCTAssertNil(endedDraft.turnID)
         let ended = JournalTestData.fold(idle, endedDraft, seq: 4)
@@ -152,16 +152,16 @@ final class ClaudeHookMappingTests: XCTestCase {
     }
 
     func testLateToolAndSiblingToolLeaveTheOtherState() throws {
-        let working = try XCTUnwrap(JournalTestData.fold(nil, try owned("prompt-submit", base(), tab: tabA), seq: 1).snapshot)
-        let completed = try XCTUnwrap(JournalTestData.fold(working, try owned("stop", base(), tab: tabA), seq: 2).snapshot)
+        let working = try XCTUnwrap(JournalTestData.fold(nil, try owned("prompt-submit", base(), panel: panelA), seq: 1).snapshot)
+        let completed = try XCTUnwrap(JournalTestData.fold(working, try owned("stop", base(), panel: panelA), seq: 2).snapshot)
         for tool in ["pre-tool-use", "post-tool-use"] {
-            let late = JournalTestData.fold(completed, try owned(tool, base(tool: "Bash", request: "tool-9"), tab: tabA), seq: 3)
+            let late = JournalTestData.fold(completed, try owned(tool, base(tool: "Bash", request: "tool-9"), panel: panelA), seq: 3)
             XCTAssertEqual(late.snapshot?.phase, .idle)
             XCTAssertEqual(late.snapshot?.turnOutcome, "completed")
             XCTAssertNotEqual(late.effect, .applied)
         }
-        let blocked = try XCTUnwrap(JournalTestData.fold(nil, try owned("pre-tool-use", base(tool: "AskUserQuestion", request: "request-a"), tab: tabA), seq: 1).snapshot)
-        let siblingDraft = try owned("pre-tool-use", base(tool: "Bash", request: "tool-b", session: "sess-2"), tab: tabB)
+        let blocked = try XCTUnwrap(JournalTestData.fold(nil, try owned("pre-tool-use", base(tool: "AskUserQuestion", request: "request-a"), panel: panelA), seq: 1).snapshot)
+        let siblingDraft = try owned("pre-tool-use", base(tool: "Bash", request: "tool-b", session: "sess-2"), panel: panelB)
         XCTAssertNotEqual(siblingDraft.owner, blocked.owner)
         let sibling = JournalTestData.fold(blocked, siblingDraft, seq: 2)
         XCTAssertEqual(sibling.snapshot, blocked)
@@ -174,7 +174,7 @@ final class ClaudeHookMappingTests: XCTestCase {
         let approval = try owned("permission-request", [
             "session_id": "sess-1", "tool_name": "Bash", "tool_use_id": "tool-1",
             "tool_input": ["command": "SENTINEL-INPUT"], "tool_response": "SENTINEL-RESPONSE"
-        ], tab: tabA)
+        ], panel: panelA)
         XCTAssertEqual(approval.kind, .approvalRequested)
         XCTAssertEqual(approval.nativeEvent, "PermissionRequest")
         XCTAssertEqual(approval.toolClass, .other)
@@ -184,9 +184,9 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertEqual(blocked.reason, .approval)
         let oversized = try owned("permission-request", [
             "session_id": "sess-1", "tool_name": "Bash", "tool_use_id": String(repeating: "y", count: 129)
-        ], tab: tabA)
+        ], panel: panelA)
         XCTAssertNil(oversized.requestID)
-        let ordinary = try owned("post-tool-use", base(tool: "Bash", request: String(repeating: "z", count: 129)), tab: tabA)
+        let ordinary = try owned("post-tool-use", base(tool: "Bash", request: String(repeating: "z", count: 129)), panel: panelA)
         XCTAssertEqual(ordinary.kind, .stateChanged)
         XCTAssertEqual(ordinary.signal, .toolActivity)
         XCTAssertNil(ordinary.requestID)
@@ -194,11 +194,11 @@ final class ClaudeHookMappingTests: XCTestCase {
             "session_id": "sess-1", "prompt_id": "turn-a", "tool_name": "AskUserQuestion", "tool_use_id": "request-a",
             "tool_input": ["question": "SENTINEL-QUESTION"], "tool_response": ["answer": "SENTINEL-RESPONSE"],
             "last_assistant_message": "SENTINEL-ASSISTANT", "custom_instructions": "SENTINEL-INSTRUCTIONS"
-        ], tab: tabA))
-        let first = try owned("pre-tool-use", base(tool: "Bash", request: "tool-1"), tab: tabA)
+        ], panel: panelA))
+        let first = try owned("pre-tool-use", base(tool: "Bash", request: "tool-1"), panel: panelA)
         let retry = first
         XCTAssertEqual(try first.canonicalData(), try retry.canonicalData())
-        XCTAssertNotEqual(first.eventID, try owned("pre-tool-use", base(tool: "Bash", request: "tool-1"), tab: tabA).eventID)
+        XCTAssertNotEqual(first.eventID, try owned("pre-tool-use", base(tool: "Bash", request: "tool-1"), panel: panelA).eventID)
     }
 
     func testSharedFixtureCorpusReplaysValidatorCasesAndKeepsProvenance() throws {
@@ -258,7 +258,7 @@ final class ClaudeHookMappingTests: XCTestCase {
                 let seed = try owned(
                     "pre-tool-use",
                     base(tool: "AskUserQuestion", request: "tool-1", session: "sess-1"),
-                    tab: tabA
+                    panel: panelA
                 )
                 let blocked = try XCTUnwrap(JournalTestData.fold(nil, seed, seq: 1).snapshot, label)
                 states[try XCTUnwrap(seed.owner, label)] = blocked
@@ -280,10 +280,10 @@ final class ClaudeHookMappingTests: XCTestCase {
                     XCTAssertNotNil(oracle["activity"], label)
                     observedOracleCount += 1
                     let checkpoint = "\(label), checkpoint \(event["name"] ?? "unknown")"
-                    let captureTab = try XCTUnwrap(event["tab"] as? String, checkpoint)
-                    let checkpointTab = captureTab == "tab-sibling" ? tabB : tabA
+                    let capturePanel = try XCTUnwrap(event["tab"] as? String, checkpoint)
+                    let checkpointPanel = capturePanel == "tab-sibling" ? panelB : panelA
                     let projected = try XCTUnwrap(states.values.first {
-                        $0.owner.tabID == checkpointTab
+                        $0.owner.panelID == checkpointPanel
                     }, checkpoint)
                     if name == "claude-normal-tool-stop" {
                         // The captured oracle is the old working symptom. The executable
@@ -302,7 +302,7 @@ final class ClaudeHookMappingTests: XCTestCase {
                     if let attrs = event["attrs"] as? [String: Any],
                        let siblingMark = attrs["sibling_mark"] as? String {
                         let sibling = try XCTUnwrap(states.values.first {
-                            $0.owner.tabID == tabB
+                            $0.owner.panelID == panelB
                         }, checkpoint)
                         XCTAssertEqual(siblingMark, "working", checkpoint)
                         XCTAssertEqual(sibling.phase, .working, checkpoint)
@@ -322,8 +322,8 @@ final class ClaudeHookMappingTests: XCTestCase {
                     XCTAssertEqual(native, "PermissionRequest", label)
                     continue
                 }
-                let captureTab = try XCTUnwrap(event["tab"] as? String, label)
-                draft.tabID = captureTab == "tab-sibling" ? tabB : tabA
+                let capturePanel = try XCTUnwrap(event["tab"] as? String, label)
+                draft.panelID = capturePanel == "tab-sibling" ? panelB : panelA
                 draft.workspaceID = JournalTestData.workspace
                 try draft.validate()
                 let owner = try XCTUnwrap(draft.owner, label)
@@ -344,18 +344,18 @@ final class ClaudeHookMappingTests: XCTestCase {
             if name != "derived-late-pretool-after-stop" {
                 XCTAssertGreaterThan(observedOracleCount, 0, label)
             }
-            let tabAStates = states.values.filter { $0.owner.tabID == tabA }
-            let tabBStates = states.values.filter { $0.owner.tabID == tabB }
+            let panelAStates = states.values.filter { $0.owner.panelID == panelA }
+            let panelBStates = states.values.filter { $0.owner.panelID == panelB }
             switch name {
             case "claude-bypass-ask":
-                XCTAssertTrue(tabAStates.contains { $0.phase == .blocked }, label)
+                XCTAssertTrue(panelAStates.contains { $0.phase == .blocked }, label)
             case "claude-bypass-ask-answered":
-                XCTAssertTrue(tabAStates.contains { $0.phase == .idle && $0.terminalBarrier }, label)
+                XCTAssertTrue(panelAStates.contains { $0.phase == .idle && $0.terminalBarrier }, label)
             case "claude-normal-tool-stop", "derived-late-pretool-after-stop":
-                XCTAssertTrue(tabAStates.contains { $0.phase == .idle && $0.terminalBarrier }, label)
+                XCTAssertTrue(panelAStates.contains { $0.phase == .idle && $0.terminalBarrier }, label)
             case "claude-sibling-tool-while-waiting":
-                XCTAssertTrue(tabAStates.contains { $0.phase == .blocked }, label)
-                XCTAssertTrue(tabBStates.contains { $0.phase == .working }, label)
+                XCTAssertTrue(panelAStates.contains { $0.phase == .blocked }, label)
+                XCTAssertTrue(panelBStates.contains { $0.phase == .working }, label)
             default:
                 XCTFail("\(label): unhandled validator case")
             }
@@ -369,9 +369,9 @@ final class ClaudeHookMappingTests: XCTestCase {
         return object
     }
 
-    private func owned(_ subcommand: String, _ object: [String: Any], tab: UUID) throws -> JournalDraft {
+    private func owned(_ subcommand: String, _ object: [String: Any], panel: UUID) throws -> JournalDraft {
         var draft = try XCTUnwrap(ClaudeHookMapping.map(subcommand: subcommand, object: object))
-        draft.tabID = tab
+        draft.panelID = panel
         draft.workspaceID = JournalTestData.workspace
         try draft.validate()
         XCTAssertNotEqual(draft.signal, .operatorResponse)

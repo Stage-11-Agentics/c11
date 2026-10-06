@@ -55,7 +55,7 @@ final class CmuxWebView: WKWebView {
     var onContextMenuDownloadStateChanged: ((Bool) -> Void)?
     /// Called when "Open Link in New Tab" context menu is selected.
     /// Bypasses createWebViewWith so the link opens as a tab, not a popup.
-    var onContextMenuOpenLinkInNewTab: ((URL) -> Void)?
+    var onContextMenuOpenLinkInNewPanel: ((URL) -> Void)?
     var onShowSurfaceManifest: (() -> Void)?
     var contextMenuLinkURLProvider: ((CmuxWebView, NSPoint, @escaping (URL?) -> Void) -> Void)?
     var contextMenuDefaultBrowserOpener: ((URL) -> Bool)?
@@ -1316,7 +1316,7 @@ final class CmuxWebView: WKWebView {
                 || item.title.contains("Open Link in New Window") {
                 item.title = String(localized: "browser.contextMenu.openLinkInNewTab", defaultValue: "Open Link in New Panel")
                 item.target = self
-                item.action = #selector(contextMenuOpenLinkInNewTab(_:))
+                item.action = #selector(contextMenuOpenLinkInNewPanel(_:))
             }
 
             if isDownloadImageMenuItem(item) {
@@ -1393,11 +1393,11 @@ final class CmuxWebView: WKWebView {
         }
     }
 
-    @objc private func contextMenuOpenLinkInNewTab(_ sender: Any?) {
+    @objc private func contextMenuOpenLinkInNewPanel(_ sender: Any?) {
         let point = lastContextMenuPoint
         resolveContextMenuLinkURL(at: point) { [weak self] url in
             guard let self, let url else { return }
-            self.onContextMenuOpenLinkInNewTab?(url)
+            self.onContextMenuOpenLinkInNewPanel?(url)
         }
     }
 

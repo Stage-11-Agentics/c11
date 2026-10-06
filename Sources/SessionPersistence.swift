@@ -611,11 +611,11 @@ enum SessionRestoreNormalization {
             case duplicateLayoutReference = "duplicate_layout_reference"
         }
 
-        let tabId: UUID
+        let panelId: UUID
         let reason: Reason
 
         func diagnostic(workspaceId: UUID) -> String {
-            "session.restore.drop workspace=\(workspaceId) tab=\(tabId) reason=\(reason.rawValue)"
+            "session.restore.drop workspace=\(workspaceId) tab=\(panelId) reason=\(reason.rawValue)"
         }
     }
 
@@ -625,7 +625,7 @@ enum SessionRestoreNormalization {
         var knownIds = Set<UUID>()
         snapshot.panels = input.panels.filter { panel in
             guard knownIds.insert(panel.id).inserted else {
-                drops.append(Drop(tabId: panel.id, reason: .duplicateRecord))
+                drops.append(Drop(panelId: panel.id, reason: .duplicateRecord))
                 return false
             }
             return true
@@ -640,7 +640,7 @@ enum SessionRestoreNormalization {
                     // references alone rather than broadening this repair.
                     guard knownIds.contains(id) else { return true }
                     guard placedIds.insert(id).inserted else {
-                        drops.append(Drop(tabId: id, reason: .duplicateLayoutReference))
+                        drops.append(Drop(panelId: id, reason: .duplicateLayoutReference))
                         return false
                     }
                     return true

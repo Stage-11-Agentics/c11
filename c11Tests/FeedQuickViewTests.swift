@@ -10,36 +10,36 @@ import XCTest
 final class FeedQuickViewTests: XCTestCase {
     private func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))! }
     private func row(_ n: Int, kind: FeedKind? = .question, flag: Bool = false, prompt: String? = nil) -> FeedRow {
-        .init(workspaceID: id(99), tabID: id(n), kind: kind, prompt: prompt, options: nil,
+        .init(workspaceID: id(99), panelID: id(n), kind: kind, prompt: prompt, options: nil,
             promptAvailable: prompt != nil, source: "hook", sourceRank: 4, openedAtMs: Int64(n),
             state: kind == .turnEnd ? nil : "open", requestID: "synthetic", confirmation: "unconfirmed",
             blocking: kind == .turnEnd ? false : true,
-            flag: flag ? .init(reason: "Synthetic flag", raisedAtMs: Int64(n), callerTabID: nil) : nil)
+            flag: flag ? .init(reason: "Synthetic flag", raisedAtMs: Int64(n), callerPanelID: nil) : nil)
     }
 
     func testFiltersUseProjectionCountsAndNeverReplaceJumpSequence() {
         let projection = FeedProjectionSnapshot(rows: AttentionOrder.ordered([
             row(1, flag: true), row(2, kind: .permission), row(3, kind: .turnEnd), row(4, kind: .turnEnd, flag: true)]))
-        let tail = [AttentionOrder.Candidate(target: .init(workspaceID: id(99), tabID: id(3)), notificationID: id(103)),
-                    .init(target: .init(workspaceID: id(99), tabID: id(5)), notificationID: id(105))]
+        let tail = [AttentionOrder.Candidate(target: .init(workspaceID: id(99), panelID: id(3)), notificationID: id(103)),
+                    .init(target: .init(workspaceID: id(99), panelID: id(5)), notificationID: id(105))]
         let jump = AttentionOrder.candidates(rows: projection.attentionRows, unreadTail: tail)
         let model = FeedQuickViewModel()
         var opened: [AttentionOrder.Target] = []
         model.onOpen = { opened.append($0); return true }
         model.apply(.init(projection: projection, loading: false))
         XCTAssertEqual(model.rows, projection.attentionRows)
-        XCTAssertEqual(model.rows.map(\.tabID), [id(1), id(4), id(2)])
+        XCTAssertEqual(model.rows.map(\.panelID), [id(1), id(4), id(2)])
         XCTAssertFalse(model.rows.contains { $0.kind == .turnEnd })
         XCTAssertEqual(model.snapshot.projection.openAskCount, 2)
         XCTAssertEqual(model.snapshot.projection.flagCount, 2)
         model.move(1)
         model.switchFilter(.turns)
-        XCTAssertEqual(model.selection.selectedTabID, id(4))
-        XCTAssertEqual(Set(model.rows.map(\.tabID)), Set([id(3), id(4)]))
+        XCTAssertEqual(model.selection.selectedPanelID, id(4))
+        XCTAssertEqual(Set(model.rows.map(\.panelID)), Set([id(3), id(4)]))
         model.switchFilter(.asks)
         model.apply(.init(projection: .init(rows: Array(projection.rows.dropFirst())), loading: false))
         XCTAssertTrue(opened.isEmpty)
-        XCTAssertEqual(jump.map { $0.target.tabID }, [id(1), id(4), id(2), id(3), id(5)])
+        XCTAssertEqual(jump.map { $0.target.panelID }, [id(1), id(4), id(2), id(3), id(5)])
         XCTAssertEqual(AttentionOrder.candidates(rows: projection.attentionRows, unreadTail: tail), jump)
     }
 
@@ -49,14 +49,14 @@ final class FeedQuickViewTests: XCTestCase {
         model.onOpen = { _ in opened += 1; return true }
         model.apply(.init(projection: .init(rows: [row(1), row(2, kind: .turnEnd)]), loading: false))
         XCTAssertEqual(model.selection.filter, .asks)
-        XCTAssertEqual(model.rows.map(\.tabID), [id(1)])
+        XCTAssertEqual(model.rows.map(\.panelID), [id(1)])
         model.toggleFilter()
         XCTAssertEqual(model.selection.filter, .turns)
-        XCTAssertEqual(model.rows.map(\.tabID), [id(2)])
-        XCTAssertEqual(model.selection.selectedTabID, id(2))
+        XCTAssertEqual(model.rows.map(\.panelID), [id(2)])
+        XCTAssertEqual(model.selection.selectedPanelID, id(2))
         model.toggleFilter()
         XCTAssertEqual(model.selection.filter, .asks)
-        XCTAssertEqual(model.selection.selectedTabID, id(1))
+        XCTAssertEqual(model.selection.selectedPanelID, id(1))
         XCTAssertEqual(opened, 0)
     }
 
@@ -69,11 +69,11 @@ final class FeedQuickViewTests: XCTestCase {
         model.onOpened = { dismissed += 1 }
         model.onOpen = { attempts.append($0); return false }
         model.openSelected()
-        XCTAssertEqual(attempts, [.init(workspaceID: id(99), tabID: id(2))])
+        XCTAssertEqual(attempts, [.init(workspaceID: id(99), panelID: id(2))])
         XCTAssertEqual(dismissed, 0)
         // The English text lives in the catalog (C11-337: R5 syncs it), so compare the lookup.
         XCTAssertEqual(model.status, String(localized: "feed.quick.unavailable", defaultValue: "That panel is unavailable"))
-        XCTAssertEqual(model.selection.selectedTabID, id(2))
+        XCTAssertEqual(model.selection.selectedPanelID, id(2))
         model.onOpen = { attempts.append($0); return true }
         model.openSelected()
         XCTAssertEqual(dismissed, 1)

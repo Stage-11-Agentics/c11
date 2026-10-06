@@ -4369,7 +4369,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     ) {
         let delayMs: Int
 #if DEBUG
-        let feedAnswerHoldMs = feedAnswerGate == nil ? 0 : FeedAnswerDebugHold.shared.consume(tabID: id) ?? 0
+        let feedAnswerHoldMs = feedAnswerGate == nil ? 0 : FeedAnswerDebugHold.shared.consume(panelID: id) ?? 0
         if feedAnswerGate != nil {
             delayMs = FeedAnswerTiming.returnDelayMilliseconds(
                 baseDelayMs: TextBoxBehavior.returnKeyDelayMs,
@@ -4909,7 +4909,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         .fileURL,
         .URL
     ]
-    private static let tabTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    private static let panelTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
     private static let sidebarWorkspaceReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
     private static let shellEscapeCharacters = "\\ ()[]{}<>\"'`!#$&;|*?\t"
 
@@ -5315,7 +5315,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     private static func hasTabDragPasteboardTypes() -> Bool {
         let types = NSPasteboard(name: .drag).types ?? []
-        return types.contains(tabTransferPasteboardType) || types.contains(sidebarWorkspaceReorderPasteboardType)
+        return types.contains(panelTransferPasteboardType) || types.contains(sidebarWorkspaceReorderPasteboardType)
     }
 
     private static func isDragResizeEvent(_ eventType: NSEvent.EventType?) -> Bool {
@@ -6669,7 +6669,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
            !markedTextBefore, markedText.length == 0 {
             let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             JournalCoordinator.shared.noteOperatorSubmit(
-                tabID: terminalSurface.id,
+                panelID: terminalSurface.id,
                 keyCode: event.keyCode,
                 modifierRaw: submitFlags.rawValue,
                 isRepeat: event.isARepeat,
@@ -7719,7 +7719,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var lastDropZoneOverlayLogSignature: String?
     private var lastDragGeometryLogSignature: String?
     private var dragLayoutLogSequence: UInt64 = 0
-    private static let tabTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    private static let panelTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
     private static let sidebarWorkspaceReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
     private static var flashCounts: [UUID: Int] = [:]
     private static var drawCounts: [UUID: Int] = [:]
@@ -8316,7 +8316,7 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func hasActiveDragLoggingContext() -> Bool {
         let pasteboardTypes = NSPasteboard(name: .drag).types
-        let hasTabDrag = pasteboardTypes?.contains(Self.tabTransferPasteboardType) == true
+        let hasTabDrag = pasteboardTypes?.contains(Self.panelTransferPasteboardType) == true
         let hasSidebarDrag = pasteboardTypes?.contains(Self.sidebarWorkspaceReorderPasteboardType) == true
         let eventType = NSApp.currentEvent?.type
         return activeDropZone != nil ||
@@ -8346,7 +8346,7 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func logLayoutDuringActiveDrag(targetSize: CGSize) {
         let pasteboardTypes = NSPasteboard(name: .drag).types
-        let hasTabDrag = pasteboardTypes?.contains(Self.tabTransferPasteboardType) == true
+        let hasTabDrag = pasteboardTypes?.contains(Self.panelTransferPasteboardType) == true
         let hasSidebarDrag = pasteboardTypes?.contains(Self.sidebarWorkspaceReorderPasteboardType) == true
         let eventType = NSApp.currentEvent?.type
         let hasActiveDrag =

@@ -140,7 +140,7 @@ struct AgentActivityHelpProjection: Equatable {
 
     /// What expired and what the next message costs. Static text: the
     /// state label already carries how long ago.
-    static func promptCacheLines(_ cache: PromptCacheObservation, locale: Locale = TabSheetClockText.appLocale) -> [String] {
+    static func promptCacheLines(_ cache: PromptCacheObservation, locale: Locale = PanelSheetClockText.appLocale) -> [String] {
         var lines: [String] = []
         switch (cache.reset, cache.basis) {
         case (.modelSwitch?, _):
@@ -159,7 +159,7 @@ struct AgentActivityHelpProjection: Equatable {
                 defaultValue: "Prompt cache reset by compaction"
             ))
         case (nil, .ttl(let seconds)):
-            let ttl = TabSheetClockText.duration(seconds, locale: locale)
+            let ttl = PanelSheetClockText.duration(seconds, locale: locale)
             lines.append(String(
                 localized: "surface.activity.promptCache.expired",
                 defaultValue: "Prompt cache expired (\(ttl) cache)"
@@ -171,7 +171,7 @@ struct AgentActivityHelpProjection: Equatable {
             ))
         }
         if let tokens = cache.promptTokens, tokens > 0 {
-            let count = TabSheetClockText.count(tokens, locale: locale)
+            let count = PanelSheetClockText.count(tokens, locale: locale)
             lines.append(String(
                 localized: "surface.activity.promptCache.recache",
                 defaultValue: "Next message re-caches about \(count) tokens"

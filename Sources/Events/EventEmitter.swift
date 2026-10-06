@@ -180,13 +180,13 @@ final class EventEmitter {
     }
 
     /// The journal builds the payload with a `tab` key; v2 writes it as `panel`.
-    func emitLifecycleChanged(workspace: UUID, tab: UUID, payload: [String: Any]) {
+    func emitLifecycleChanged(workspace: UUID, panel: UUID, payload: [String: Any]) {
         var payload = payload
         if let legacy = payload.removeValue(forKey: EventEnvelope.PayloadKey.legacyTab),
            payload[EventEnvelope.PayloadKey.panel] == nil {
             payload[EventEnvelope.PayloadKey.panel] = legacy
         }
-        emit(.lifecycleChanged, workspace: workspace, surface: tab, payload: payload)
+        emit(.lifecycleChanged, workspace: workspace, surface: panel, payload: payload)
     }
 
     func emitFlagRaised(
@@ -244,7 +244,7 @@ final class EventEmitter {
     /// C11-257 C1: build the stable payload for a successful socket send. This
     /// is intentionally pure so the truncation and null-attribution contract
     /// can be exercised without constructing a workspace or terminal.
-    static func tabInputPayload(
+    static func panelInputPayload(
         callerPanelId: UUID?,
         callerTitle: String?,
         targetTitle: String,
@@ -273,7 +273,7 @@ final class EventEmitter {
     }
 
     @discardableResult
-    func emitTabInputSent(
+    func emitPanelInputSent(
         workspace: UUID,
         surface: UUID,
         callerPanelId: UUID?,
@@ -285,10 +285,10 @@ final class EventEmitter {
         queued: Bool = false
     ) -> Bool {
         emit(
-            .tabInputSent,
+            .panelInputSent,
             workspace: workspace,
             surface: surface,
-            payload: Self.tabInputPayload(
+            payload: Self.panelInputPayload(
                 callerPanelId: callerPanelId,
                 callerTitle: callerTitle,
                 targetTitle: targetTitle,

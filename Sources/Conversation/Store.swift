@@ -266,11 +266,11 @@ actor ConversationStore {
         didSet {
             guard self === Self.shared, !ConversationStorePolicy.isDisabled else { return }
             for key in Set(oldValue.keys).union(bySurface.keys) {
-                guard oldValue[key]?.active != bySurface[key]?.active, let tabID = UUID(uuidString: key) else { continue }
+                guard oldValue[key]?.active != bySurface[key]?.active, let panelID = UUID(uuidString: key) else { continue }
                 let ref = bySurface[key]?.active
                 let owner = ref.flatMap { $0.isEligibleCausalOwner
-                    ? JournalOwner(tabID: tabID, agentKind: $0.kind, sessionID: $0.id) : nil }
-                JournalCoordinator.shared.setOwner(tabID: tabID, owner: owner)
+                    ? JournalOwner(panelID: panelID, agentKind: $0.kind, sessionID: $0.id) : nil }
+                JournalCoordinator.shared.setOwner(panelID: panelID, owner: owner)
             }
         }
     }

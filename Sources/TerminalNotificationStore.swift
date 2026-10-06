@@ -772,8 +772,8 @@ final class TerminalNotificationStore: ObservableObject {
         let notifications = notifications
         Self.attentionOrderQueue.async { [weak self] in
             let facts = notifications.compactMap { notification -> AttentionOrder.UnreadFact? in
-                guard !notification.isRead, let tabID = notification.surfaceId else { return nil }
-                return .init(target: .init(workspaceID: notification.workspaceId, tabID: tabID),
+                guard !notification.isRead, let panelID = notification.surfaceId else { return nil }
+                return .init(target: .init(workspaceID: notification.workspaceId, panelID: panelID),
                              notificationID: notification.id, createdAt: notification.createdAt)
             }
             let tail = AttentionOrder.unreadTail(facts)
@@ -1038,7 +1038,7 @@ final class TerminalNotificationStore: ObservableObject {
         for workspaceId in Set(previous.keys).union(indexes.unreadCountByWorkspaceId.keys) {
             AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
                 .workspaces.first(where: { $0.id == workspaceId })?
-                .syncSurfaceTabActivityStates()
+                .syncSurfacePanelActivityStates()
         }
     }
 

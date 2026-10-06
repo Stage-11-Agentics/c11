@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// C11-238: the operator-facing edits of a workspace's root directory, shared
@@ -106,6 +107,64 @@ enum WorkspaceRootActions {
         let tail = (maxLength * 2) / 3
         let head = maxLength - tail - 1
         return String(display.prefix(head)) + "…" + String(display.suffix(tail))
+    }
+}
+
+/// Follows one workspace's root directory through a narrow `$rootDirectory`
+/// subscription, so the title bar label re-renders only when the root changes
+/// (not on every `Workspace` publish).
+@MainActor
+final class WorkspaceRootLabelModel: ObservableObject {
+    @Published private(set) var root: String?
+    private var cancellable: AnyCancellable?
+
+    init(workspace: Workspace) {
+        root = workspace.rootDirectory
+        cancellable = workspace.$rootDirectory
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.root = $0 }
+    }
+}
+
+/// C11-238: the selected workspace's root directory, shown dimmed in the empty
+/// title bar space left of the info button. Renders nothing when there is no
+/// root; the title bar's Spacer absorbs the width, and the label has the lowest
+/// layout priority so it truncates (middle) before anything else moves.
+struct WorkspaceRootTitlebarLabel: View {
+    let workspace: Workspace?
+    let foregroundColor: Color
+
+    var body: some View {
+        if let workspace {
+            // Identity per workspace: selection change swaps the model.
+            Content(workspace: workspace, foregroundColor: foregroundColor)
+                .id(workspace.id)
+        }
+    }
+
+    private struct Content: View {
+        let foregroundColor: Color
+        @StateObject private var model: WorkspaceRootLabelModel
+
+        init(workspace: Workspace, foregroundColor: Color) {
+            self.foregroundColor = foregroundColor
+            _model = StateObject(wrappedValue: WorkspaceRootLabelModel(workspace: workspace))
+        }
+
+        var body: some View {
+            if let root = model.root {
+                Text(WorkspaceRootActions.displayPath(root))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(foregroundColor.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+                    .safeHelp(root)
+                    .accessibilityIdentifier("WorkspaceRootTitlebarLabel")
+            }
+        }
     }
 }
 

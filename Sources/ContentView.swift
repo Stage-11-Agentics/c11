@@ -2351,7 +2351,12 @@ struct ContentView: View {
                     .lineLimit(1)
                     .allowsHitTesting(false)
 
-                Spacer()
+                Spacer(minLength: 8)
+
+                WorkspaceRootTitlebarLabel(
+                    workspace: selectedTitlebarWorkspace,
+                    foregroundColor: fakeTitlebarTextColor
+                )
 
                 // C11-238: fixed trailing slot so it never moves with the title.
                 WorkspaceRootInfoButton(

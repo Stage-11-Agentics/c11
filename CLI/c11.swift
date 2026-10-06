@@ -21589,7 +21589,7 @@ extension CMUXCLI {
 
         Examples:
           c11 events tail
-          c11 events tail -f --filter type=surface.closed
+          c11 events tail -f --filter type=panel.closed
           c11 events tail --since 5m
         """
     }

@@ -85,7 +85,7 @@ c11 mailbox send --to watcher --body "build green sha=abc"
 
 # In panel "watcher":
 c11 set-title "watcher"
-c11 set-metadata mailbox.delivery stdin   # opt in to PTY injection
+c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to PTY injection
 # The framed block lands in the PTY the next time builder sends. An agent at
 # its prompt gets it as a new turn at once; mid-turn, it lands when the turn
 # ends (see "When the push lands" below).
@@ -427,7 +427,7 @@ Stage 2 fan-out happens two ways. **Topic-driven fan-out is not one of them.**
 `mailbox.delivery` is a comma-separated list. The dispatcher invokes each handler in order on the same envelope.
 
 ```bash
-c11 set-metadata mailbox.delivery stdin,silent
+c11 set-metadata --key mailbox.delivery --value stdin,silent --type string
 ```
 
 `stdin` injects the framed block into the PTY; `silent` is a no-op that just records `ok` in the dispatch log. The handler set registered in production is exactly `{stdin, silent}`. Anything else logged as `eio` with reason "unknown handler".
@@ -595,7 +595,7 @@ What does not work yet (and how the system fails when you try):
 | Per-panel inbox caps                  | None. A slow drainer can accumulate envelopes without limit.             |
 | `body_ref` read-through                 | Schema accepts it, dispatcher stores it; recipient must read the file.   |
 | Real PTY write-error propagation        | `stdin` handler returns `ok` whenever `sendText` returns. EIO not surfaced.|
-| `c11 mailbox configure` convenience     | Use `c11 set-metadata mailbox.delivery stdin` directly.                  |
+| `c11 mailbox configure` convenience     | Use `c11 set-metadata --key mailbox.delivery --value stdin --type string` directly. |
 
 What is steady-state durable today:
 
@@ -669,7 +669,7 @@ sequenceDiagram
 | Atomic write helper               | `Sources/Mailbox/MailboxIO.swift`               |
 | ULID generator                    | `Sources/Mailbox/MailboxULID.swift`             |
 | Outbox fsevent watcher            | `Sources/Mailbox/MailboxOutboxWatcher.swift`    |
-| Panel-name resolver             | `Sources/Mailbox/MailboxSurfaceResolver.swift`  |
+| Panel-name resolver               | `Sources/Mailbox/MailboxTabResolver.swift`      |
 | Dispatcher (orchestrator)         | `Sources/Mailbox/MailboxDispatcher.swift`       |
 | Dispatch log NDJSON               | `Sources/Mailbox/MailboxDispatchLog.swift`      |
 | `stdin` handler (PTY injection)   | `Sources/Mailbox/StdinMailboxHandler.swift`     |

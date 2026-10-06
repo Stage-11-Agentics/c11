@@ -250,17 +250,17 @@ A few cross-cutting rules worth knowing before you reach for those:
 defaults write com.stage11.c11 c11.panelSheet.clocks -string "launched,active"
 defaults write com.stage11.c11 c11.panelSheet.clocks -array launched active     # same
 defaults write com.stage11.c11 c11.panelSheet.clocks -string "active,touched,turn,tools,tokens"
-defaults delete com.stage11.c11 c11.panelSheet.clocks                           # back to active,seen,launched
+defaults write com.stage11.c11 c11.panelSheet.clocks -string "active,seen,launched"   # back to the default
 ```
 
 **Panel Layout** is a setting: `strip` (default) or `rail`. In `rail` the count cell toggles a vertical panel list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible panel's `Panel N · title`, and each area remembers its rail open or closed across relaunch. The panel sheet's footer and the rail's header both carry a `Strip | Rail` switch for the same setting: Rail from the sheet closes the sheet and opens that area's rail; Strip from the rail closes that area's rail first, so a later Rail starts it closed. It is also in Settings > General > Areas & Panels > Panel Layout. Change it in one command:
 
 ```bash
 defaults write com.stage11.c11 panelLayoutMode -string rail     # or: strip
-defaults delete com.stage11.c11 panelLayoutMode                 # back to strip
+defaults write com.stage11.c11 panelLayoutMode -string strip    # back to the default
 ```
 
-When the panel bar overflows on 4 days inside 14 and Panel Layout is still Strip, c11 may offer one tip under the count cell: the number opens the panel list, Try Rail switches Panel Layout to Rail for every area and the tip becomes Undo (Undo puts Strip back and is not a dismissal), and Don't show again retires it. Leaving the tip alone waits 30 days. To force one showing without those waits, `defaults write <domain> c11.panelRailTip.forceOffer -bool true` (same domain as `panelLayoutMode`). That write takes effect at the next panel change, window switch, or app switch. The next overflowing area offers the tip once, then that flag clears itself. It does not override Don't show again. Reset the recorded days, the last offer, and a dismissal with `defaults delete` on `c11.panelRailTip.overflowDays`, `c11.panelRailTip.lastOffered`, and `c11.panelRailTip.dismissed`.
+When the panel bar overflows on 4 days inside 14 and Panel Layout is still Strip, c11 may offer one tip under the count cell: the number opens the panel list, Try Rail switches Panel Layout to Rail for every area and the tip becomes Undo (Undo puts Strip back and is not a dismissal), and Don't show again retires it. Leaving the tip alone waits 30 days. To force one showing without those waits, `defaults write <domain> c11.panelRailTip.forceOffer -bool true` (same domain as `panelLayoutMode`). That write takes effect at the next panel change, window switch, or app switch. The next overflowing area offers the tip once, then that flag clears itself. It does not override Don't show again. Reset the recorded days, the last offer, and a dismissal by writing their defaults: `c11.panelRailTip.overflowDays -array`, `c11.panelRailTip.lastOffered -string ""`, and `c11.panelRailTip.dismissed -bool false`. Reset by writing, not `defaults delete`: on a machine upgraded from 0.67, a deleted key falls back to the pre-1.0 value.
 
 A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `panel-bar-round-five` is `com.stage11.c11.debug.panel.bar.round.five`).
 
@@ -268,7 +268,7 @@ The bar under the panels shows only the panel's description (`c11 set-descriptio
 
 ## Editing this skill
 
-It installs as a **one-time copy** into each agent harness's skills folder (`~/.claude/skills/c11/`, `~/.codex/skills/c11/`, …); the app does not track the repo source after install. After any source edit, run `scripts/sync-installed-skills.sh c11` or the live copy agents load stays stale. This is the skill-editing equivalent of `reload.sh` after a code change.
+It installs as a **one-time copy** into each agent harness's skills folder (`~/.claude/skills/c11/`, `~/.codex/skills/c11/`, …); the app does not track the repo source after install. After any source edit, run `scripts/sync-installed-skills.sh c11` or the live copy agents load stays stale (until 1.0 is installed, follow the sync hold in the repo's CLAUDE.md). This is the skill-editing equivalent of `reload.sh` after a code change.
 
 ## Troubleshooting
 

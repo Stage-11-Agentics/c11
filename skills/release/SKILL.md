@@ -146,7 +146,7 @@ This is a checklist trigger, not a CI gate.
 
 12. Lift a skill-sync hold:
 - If `CLAUDE.md` carries a "Hold until c11 1.0 is installed" line under the skill-sync hard rule, wait until the maintainer has installed this release, then run `scripts/sync-installed-skills.sh` and check one live copy (`~/.claude/skills/c11/SKILL.md` matches `skills/c11/SKILL.md`).
-- Delete the hold line from `CLAUDE.md` in a text-only commit to `main`.
+- Delete the hold line from `CLAUDE.md` and the matching "(until 1.0 is installed, follow the sync hold in the repo's CLAUDE.md)" clause from `skills/c11/SKILL.md` (Editing this skill) in one PR; after it merges, sync `c11` again.
 
 ## Changelog Rules
 

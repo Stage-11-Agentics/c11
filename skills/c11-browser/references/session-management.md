@@ -1,6 +1,6 @@
 # Session Management
 
-c11 uses isolated browser contexts per panel. Treat each browser panel as its own session.
+Cookies and site storage belong to the browser profile, not the panel: panels on one profile share them. Use a separate profile when you need an isolated session.
 
 **Related**: [authentication.md](authentication.md), [SKILL.md](../SKILL.md)
 
@@ -30,10 +30,12 @@ c11 browser panel:8 get url
 
 ## Isolation Properties
 
-Each panel has independent:
+Each profile has independent:
 - cookies
 - localStorage/sessionStorage
-- its current page
+
+Each panel has its own:
+- current page
 - navigation history
 
 ## State Persistence

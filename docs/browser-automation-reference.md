@@ -29,7 +29,7 @@ c11 browser identify                           # focused browser metadata
 c11 browser identify --panel panel:2       # specific panel
 ```
 
-**Flag ordering:** `--panel` and `--workspace` go BEFORE the subcommand, not after.
+**Flag ordering:** `--panel` goes BEFORE the subcommand. `--workspace` and `--window` apply only to `open`, `open-split` and `new`, after the subcommand.
 
 ## Navigation
 
@@ -83,7 +83,7 @@ c11 browser panel:2 uncheck "#newsletter"
 ### Text Input
 
 ```bash
-c11 browser panel:2 type "#search" "cmux"                     # keystroke-by-keystroke
+c11 browser panel:2 type "#search" "c11"                     # keystroke-by-keystroke
 c11 browser panel:2 fill "#email" --text "ops@example.com"    # set value directly
 c11 browser panel:2 fill "#email" --text ""                   # clear field
 ```
@@ -111,7 +111,7 @@ c11 browser panel:2 scroll --selector "#log-view" --dx 0 --dy 400
 ```bash
 c11 browser panel:2 snapshot --interactive --compact
 c11 browser panel:2 snapshot --selector "main" --max-depth 5
-c11 browser panel:2 screenshot --out /tmp/cmux-page.png
+c11 browser panel:2 screenshot --out /tmp/c11-page.png
 ```
 
 ### Getters
@@ -163,7 +163,7 @@ c11 browser panel:2 highlight "#checkout"    # visually highlight element
 c11 browser panel:2 eval "document.title"
 c11 browser panel:2 eval --script "window.location.href"
 
-c11 browser panel:2 addinitscript "window.__cmuxReady = true;"   # runs on every navigation
+c11 browser panel:2 addinitscript "window.__c11Ready = true;"   # runs on every navigation
 c11 browser panel:2 addscript "document.querySelector('#name')?.focus()"
 c11 browser panel:2 addstyle "#debug-banner { display: none !important; }"
 ```
@@ -265,7 +265,7 @@ c11 browser panel:2 is visible "#dashboard"
 ```bash
 c11 browser panel:2 console list
 c11 browser panel:2 errors list
-c11 browser panel:2 screenshot --out /tmp/cmux-failure.png
+c11 browser panel:2 screenshot --out /tmp/c11-failure.png
 c11 browser panel:2 snapshot --interactive --compact
 ```
 

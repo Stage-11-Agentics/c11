@@ -2,7 +2,7 @@
 
 The **v2 JSON socket protocol** for programmatically controlling c11 over a Unix domain socket. Every workspace, area, panel, browser, and theme is addressable from outside the process, so agents can compose their own environment without the operator in the loop.
 
-> This reference is generated against the v2 method dispatch in `Sources/TerminalController.swift`. The **method index** below lists every dotted v2 method the running app accepts. Cross-check a live instance with `c11 capabilities`.
+> This reference is generated against the v2 method dispatch in `Sources/TerminalController.swift`. The **method index** below groups the dotted v2 methods; `c11 capabilities` is authoritative for what a running app accepts.
 
 ## Socket configuration
 
@@ -70,7 +70,7 @@ The `c11` CLI wraps these methods: e.g. `c11 list-workspaces` → `workspace.lis
 
 ## Method index
 
-All dotted v2 methods, grouped by domain. Method names are stable identifiers; arguments travel in `params` and results in `result`. The `debug.*` domain is a set of test/automation hooks and is only meaningful on debug/tagged builds.
+Dotted v2 methods, grouped by domain. Method names are stable identifiers; arguments travel in `params` and results in `result`. The `debug.*` domain is a set of test/automation hooks and is only meaningful on debug/tagged builds.
 
 ### Agents (`agent.*`) — 1
 

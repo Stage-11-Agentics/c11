@@ -118,7 +118,7 @@ c11 browser panel:7 snapshot --interactive
 ### Clear an Input
 
 ```bash
-c11 browser panel:7 fill e11 "" --snapshot-after --json
+c11 browser panel:7 fill e11 --text "" --snapshot-after --json
 c11 browser panel:7 get value e11 --json
 ```
 

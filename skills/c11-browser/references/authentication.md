@@ -122,6 +122,6 @@ fi
 3. Clear state/cookies after sensitive tasks:
 
 ```bash
-c11 browser panel:7 cookies clear
+c11 browser panel:7 cookies clear --all
 rm -f ./auth-state.json
 ```

@@ -52,7 +52,7 @@ struct WorkspaceGroupHeaderView: View, Equatable {
 
     private var summaryLabel: String {
         String(localized: "workspaceGroup.accessibility.summary",
-               defaultValue: "\(group.name): \(summary.memberCount) workspaces, \(summary.flaggedCount) flagged tabs, \(summary.waitingCount) waiting tabs, \(summary.unreadCount) unread notifications")
+               defaultValue: "\(group.name): \(summary.memberCount) workspaces, \(summary.flaggedCount) flagged panels, \(summary.waitingCount) waiting panels, \(summary.unreadCount) unread notifications")
     }
 
     private var collapseLabel: String {
@@ -127,9 +127,9 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                 badge("square.stack", count: summary.memberCount, color: .secondary,
                       label: String(localized: "workspaceGroup.memberCount", defaultValue: "\(summary.memberCount) workspaces"))
                 badge("flag.fill", count: summary.flaggedCount, color: tint,
-                      label: String(localized: "workspaceGroup.flaggedCount", defaultValue: "\(summary.flaggedCount) flagged tabs"))
+                      label: String(localized: "workspaceGroup.flaggedCount", defaultValue: "\(summary.flaggedCount) flagged panels"))
                 badge("hourglass", count: summary.waitingCount, color: .orange,
-                      label: String(localized: "workspaceGroup.waitingCount", defaultValue: "\(summary.waitingCount) waiting tabs"))
+                      label: String(localized: "workspaceGroup.waitingCount", defaultValue: "\(summary.waitingCount) waiting panels"))
                 badge("envelope.badge", count: summary.unreadCount, color: .accentColor,
                       label: String(localized: "workspaceGroup.unreadCount", defaultValue: "\(summary.unreadCount) unread notifications"))
                 Spacer(minLength: 0)

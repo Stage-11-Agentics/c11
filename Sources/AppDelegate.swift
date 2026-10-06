@@ -11598,8 +11598,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let closeConfirmationTitles = [
             String(localized: "dialog.closeWorkspace.title", defaultValue: "Close workspace?"),
             String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?"),
-            String(localized: "dialog.closeTab.title", defaultValue: "Close tab?"),
-            String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other tabs?"),
+            String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
+            String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other panels?"),
             String(localized: "dialog.closeWindow.title", defaultValue: "Close window?"),
         ]
         let closeConfirmationPanel = NSApp.windows
@@ -14161,7 +14161,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
     private var notificationItems: [NSMenuItem] = []
     private var flagItems: [NSMenuItem] = []
-    private let flaggedSectionItem = NSMenuItem(title: String(localized: "statusMenu.flagged", defaultValue: "Flagged Tabs"), action: nil, keyEquivalent: "")
+    private let flaggedSectionItem = NSMenuItem(title: String(localized: "statusMenu.flagged", defaultValue: "Flagged Panels"), action: nil, keyEquivalent: "")
     private let flagSectionSeparator = NSMenuItem.separator()
     private let maxInlineNotificationItems = 6
 

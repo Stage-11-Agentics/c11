@@ -16,7 +16,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     static let shared = TabRailTipCenter()
 
     private var policy: TabRailTipPolicy
-    /// Where the Tab Layout mode lives. Tests pass an isolated suite.
+    /// Where the Panel Layout mode (`panelLayoutMode`) lives. Tests pass an isolated suite.
     private let defaults: UserDefaults
     private let model = TabRailTipModel()
     private var slots: [String: Slot] = [:]
@@ -194,7 +194,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
         hidePopover()
         previewedRailSlot = nil
-        TabLayoutSettings.setMode(.tabs, defaults: defaults)
+        TabLayoutSettings.setMode(.strip, defaults: defaults)
     }
 
     func performShowList() {
@@ -213,7 +213,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// Bonsplit toggles its sheet. Consume only the active teaching action.
     func performShowListFromCountCell(workspace: Workspace, paneId: PaneID) -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else { return false }
+        guard TabLayoutSettings.mode(defaults: defaults) == .strip else { return false }
         switch phase {
         case .live, .pending:
             break
@@ -328,7 +328,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func considerStarting() {
-        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else { return }
+        guard TabLayoutSettings.mode(defaults: defaults) == .strip else { return }
         guard let slot = frontSlot(), slot.overflowing, !slot.sheetOpen, slot.anchor?.window != nil else { return }
         guard policy.shouldOffer(now: Date(), layoutIsTabs: true, areaOverflowing: true) else { return }
         phase = .pending
@@ -337,7 +337,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func updateTeaching() {
-        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else {
+        guard TabLayoutSettings.mode(defaults: defaults) == .strip else {
             endOffer()
             return
         }
@@ -662,10 +662,10 @@ struct TabRailTipView: View {
         let palette = TipPalette.resolve(colorScheme)
         VStack(alignment: .leading, spacing: 8) {
             if model.mode == .undo {
-                Text(String(localized: "tabRailTip.undoTitle", defaultValue: "Tab Layout is Rail"))
+                Text(String(localized: "tabRailTip.undoTitle", defaultValue: "Panel Layout is Rail"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.text)
-                Text(String(localized: "tabRailTip.undoBody", defaultValue: "This area's tab list stays open on the left. Undo puts Tabs back."))
+                Text(String(localized: "tabRailTip.undoBody", defaultValue: "This area's panel list stays open on the left. Undo puts Strip back."))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.dim)
                     .fixedSize(horizontal: false, vertical: true)
@@ -678,16 +678,16 @@ struct TabRailTipView: View {
                     TabRailTipCenter.shared.performUndo()
                 }
             } else {
-                Text(String(localized: "tabRailTip.title", defaultValue: "More tabs than fit"))
+                Text(String(localized: "tabRailTip.title", defaultValue: "More panels than fit"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.text)
                 Text(model.sawList
                     ? String(localized: "tabRailTip.bodyAfterList", defaultValue: "That list is the number on the bar. Rail keeps it open on the left.")
-                    : String(localized: "tabRailTip.body", defaultValue: "The number opens every tab in this area. Rail keeps that list on the left."))
+                    : String(localized: "tabRailTip.body", defaultValue: "The number opens every panel in this area. Rail keeps that list on the left."))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.dim)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(String(localized: "tabRailTip.previewLabel", defaultValue: "Tab Layout: Rail"))
+                Text(String(localized: "tabRailTip.previewLabel", defaultValue: "Panel Layout: Rail"))
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(palette.faint)
                     .textCase(.uppercase)
@@ -702,7 +702,7 @@ struct TabRailTipView: View {
                         TabRailTipCenter.shared.performTryRail()
                     }
                     tipButton(
-                        String(localized: "tabRailTip.showList", defaultValue: "Show tab list"),
+                        String(localized: "tabRailTip.showList", defaultValue: "Show panel list"),
                         identifier: "tabRailTip.showList",
                         fill: palette.count,
                         ink: palette.text,
@@ -750,7 +750,7 @@ struct TabRailTipView: View {
                     }
                     Spacer(minLength: 4)
                     if let ordinal = row.ordinal {
-                        Text(String(format: String(localized: "tabRailTip.tabOrdinal", defaultValue: "Tab %lld"), Int64(ordinal)))
+                        Text(String(format: String(localized: "tabRailTip.tabOrdinal", defaultValue: "Panel %lld"), Int64(ordinal)))
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(row.selected ? palette.gold : palette.faint)
                     }

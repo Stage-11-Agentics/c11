@@ -222,24 +222,24 @@ struct WorkspaceRootPopover: View {
         if rootMissing {
             return String(
                 localized: "workspaceRoot.caption.missing",
-                defaultValue: "This folder no longer exists. New terminals start in the focused tab's directory."
+                defaultValue: "This folder no longer exists. New terminals start in the focused panel's directory."
             )
         }
         if root == nil {
             return String(
                 localized: "workspaceRoot.caption.none",
-                defaultValue: "New terminals start in the focused tab's directory until a root is set."
+                defaultValue: "New terminals start in the focused panel's directory until a root is set."
             )
         }
         return String(
             localized: "workspaceRoot.caption",
-            defaultValue: "New tabs, splits, and agents start here."
+            defaultValue: "New panels, splits, and agents start here."
         )
     }
 
     private var driftText: String {
         let path = drifted.map(WorkspaceRootActions.displayPath) ?? ""
-        return String(localized: "workspaceRoot.focusedSurface", defaultValue: "Focused tab: \(path)")
+        return String(localized: "workspaceRoot.focusedSurface", defaultValue: "Focused panel: \(path)")
     }
 
     var body: some View {

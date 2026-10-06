@@ -1314,7 +1314,7 @@ final class CmuxWebView: WKWebView {
             // popup request.
             if item.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow"
                 || item.title.contains("Open Link in New Window") {
-                item.title = String(localized: "browser.contextMenu.openLinkInNewTab", defaultValue: "Open Link in New Tab")
+                item.title = String(localized: "browser.contextMenu.openLinkInNewTab", defaultValue: "Open Link in New Panel")
                 item.target = self
                 item.action = #selector(contextMenuOpenLinkInNewTab(_:))
             }
@@ -1369,7 +1369,7 @@ final class CmuxWebView: WKWebView {
             let manifestItem = NSMenuItem(
                 title: String(
                     localized: "surfaceManifest.menuItem",
-                    defaultValue: "Tab Details"
+                    defaultValue: "Panel Details"
                 ),
                 action: #selector(contextMenuShowSurfaceManifest(_:)),
                 keyEquivalent: ""

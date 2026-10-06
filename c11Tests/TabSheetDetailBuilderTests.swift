@@ -227,6 +227,21 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
     }
 
+    func testClockOrderFallsBackToTheOldKeyAndTheNewKeyWins() {
+        let suite = UserDefaults(suiteName: "TabSheetDetailBuilderTests.\(UUID().uuidString)")!
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrderDefaultsKey, "c11.panelSheet.clocks")
+        suite.set("launched,active", forKey: "c11.tabSheet.clocks")
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
+        suite.set(["touched", "seen"], forKey: "c11.tabSheet.clocks")
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["touched", "seen"])
+
+        suite.set("seen,launched", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["seen", "launched"])
+        // A set-but-empty new key still shadows the old one: back to the default order.
+        suite.set("", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+    }
+
     func testIgnoringClocksComparesEverythingElse() {
         var a = TabSheetDetailBuilder.build(inputs(description: "x"))
         var b = a

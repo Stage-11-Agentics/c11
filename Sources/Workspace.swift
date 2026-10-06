@@ -5217,7 +5217,7 @@ final class Workspace: Identifiable, ObservableObject {
             splitDown: KeyboardShortcutSettings.Action.splitDown.tooltip(
                 String(localized: "workspace.tooltip.splitDown", defaultValue: "Split Down")
             ),
-            newTab: String(localized: "workspace.tooltip.newTab", defaultValue: "New Tab"),
+            newTab: String(localized: "workspace.tooltip.newTab", defaultValue: "New Panel"),
             closePane: String(localized: "workspace.tooltip.closePane", defaultValue: "Close Area")
         )
     }
@@ -6736,7 +6736,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func resolvedTabTitle(panelId: UUID, fallback: String) -> String {
         let trimmedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackTitle = trimmedFallback.isEmpty ? "Tab" : trimmedFallback
+        let fallbackTitle = trimmedFallback.isEmpty ? String(localized: "panel.displayName.fallback", defaultValue: "Panel") : trimmedFallback
         if let custom = tabCustomTitles[panelId]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !custom.isEmpty {
             return custom
@@ -11442,16 +11442,16 @@ final class Workspace: Identifiable, ObservableObject {
                     panelId: panelId,
                     title: String(
                         localized: "dialog.renameTab.title",
-                        defaultValue: "Rename Tab"
+                        defaultValue: "Rename Panel"
                     ),
                     message: String(
                         localized: "dialog.renameTab.message",
-                        defaultValue: "Any text works. Longer titles are easier to find when many tabs are open."
+                        defaultValue: "Any text works. Longer titles are easier to find when many panels are open."
                     ),
                     defaultValue: currentTitle,
                     placeholder: String(
                         localized: "dialog.renameTab.placeholder",
-                        defaultValue: "Tab name"
+                        defaultValue: "Panel name"
                     ),
                     confirmLabel: String(
                         localized: "alert.renameWorkspace.rename",
@@ -11471,16 +11471,16 @@ final class Workspace: Identifiable, ObservableObject {
         let alert = NSAlert()
         alert.messageText = String(
             localized: "dialog.renameTab.title",
-            defaultValue: "Rename Tab"
+            defaultValue: "Rename Panel"
         )
         alert.informativeText = String(
             localized: "dialog.renameTab.message",
-            defaultValue: "Any text works. Longer titles are easier to find when many tabs are open."
+            defaultValue: "Any text works. Longer titles are easier to find when many panels are open."
         )
         let input = NSTextField(string: currentTitle)
         input.placeholderString = String(
             localized: "dialog.renameTab.placeholder",
-            defaultValue: "Tab name"
+            defaultValue: "Panel name"
         )
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
         alert.accessoryView = input
@@ -11520,24 +11520,24 @@ final class Workspace: Identifiable, ObservableObject {
         )
 
         var options: [(title: String, destination: TabMoveDestination)] = [
-            ("New Workspace in Current Window", .newWorkspaceInCurrentWindow),
-            ("Selected Workspace in New Window", .selectedWorkspaceInNewWindow),
+            (String(localized: "dialog.moveTab.newWorkspaceCurrentWindow", defaultValue: "New Workspace in This Window"), .newWorkspaceInCurrentWindow),
+            (String(localized: "dialog.moveTab.selectedWorkspaceNewWindow", defaultValue: "New Window"), .selectedWorkspaceInNewWindow),
         ]
         options.append(contentsOf: workspaceTargets.map { target in
             (target.label, .existingWorkspace(target.workspaceId))
         })
 
         let alert = NSAlert()
-        alert.messageText = "Move Tab"
-        alert.informativeText = "Choose a destination for this tab."
+        alert.messageText = String(localized: "dialog.moveTab.title", defaultValue: "Move Panel")
+        alert.informativeText = String(localized: "dialog.moveTab.message", defaultValue: "Pick a destination.")
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26), pullsDown: false)
         for option in options {
             popup.addItem(withTitle: option.title)
         }
         popup.selectItem(at: 0)
         alert.accessoryView = popup
-        alert.addButton(withTitle: "Move")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(localized: "dialog.moveTab.move", defaultValue: "Move"))
+        alert.addButton(withTitle: String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel"))
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let selectedIndex = max(0, min(popup.indexOfSelectedItem, options.count - 1))
@@ -11583,9 +11583,9 @@ final class Workspace: Identifiable, ObservableObject {
         if !moved {
             let failure = NSAlert()
             failure.alertStyle = .warning
-            failure.messageText = "Move Failed"
-            failure.informativeText = "cmux could not move this tab to the selected destination."
-            failure.addButton(withTitle: "OK")
+            failure.messageText = String(localized: "dialog.moveFailed.title", defaultValue: "Move Failed")
+            failure.informativeText = String(localized: "dialog.moveFailed.message", defaultValue: "c11 couldn't move this panel where you asked.")
+            failure.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
             _ = failure.runModal()
         }
     }
@@ -11672,8 +11672,8 @@ extension Workspace: BonsplitDelegate {
            let panelId = tabIdFromBonsplitTabId(bonsplitTabId) {
             return await presentConfirmClose(
                 panelId: panelId,
-                title: String(localized: "dialog.closeTab.title", defaultValue: "Close tab?"),
-                message: String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab."),
+                title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
+                message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
                 source: .local
             )
         }
@@ -11681,8 +11681,8 @@ extension Workspace: BonsplitDelegate {
         // Legacy NSAlert path — kept as a rollback/fallback. Cancel is the
         // first button, so Return and Escape keep the tab; closing takes a click.
         let alert = NSAlert()
-        alert.messageText = String(localized: "dialog.closeTab.title", defaultValue: "Close tab?")
-        alert.informativeText = String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab.")
+        alert.messageText = String(localized: "dialog.closeTab.title", defaultValue: "Close panel?")
+        alert.informativeText = String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel.")
         alert.alertStyle = .warning
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
         alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
@@ -12914,7 +12914,7 @@ extension Workspace: BonsplitDelegate {
             case .surfaceCreationFailed:
                 return String(
                     localized: "agentLaunch.decline.surfaceFailed",
-                    defaultValue: "Couldn't open a terminal tab for the agent — try again, or use a different area."
+                    defaultValue: "Couldn't open a terminal panel for the agent — try again, or use a different area."
                 )
             case .unresolvableRecipe(let harness):
                 return String(
@@ -13448,7 +13448,7 @@ extension Workspace: BonsplitDelegate {
         if !trimmed.isEmpty { return trimmed }
         return String(
             localized: "workspace.closePane.alert.tab.untitled",
-            defaultValue: "Untitled tab"
+            defaultValue: "Untitled panel"
         )
     }
 
@@ -13488,18 +13488,18 @@ extension Workspace: BonsplitDelegate {
             if tabCount <= 0 {
                 return String(
                     localized: "workspace.closePane.alert.body.only.empty",
-                    defaultValue: "This area has no tabs. A new terminal will replace it."
+                    defaultValue: "This area has no panels. A new terminal will replace it."
                 )
             }
             if tabCount == 1 {
                 return String(
                     localized: "workspace.closePane.alert.body.only.one",
-                    defaultValue: "Current tab that will be closed (a new terminal will replace it):"
+                    defaultValue: "Current panel that will be closed (a new terminal will replace it):"
                 )
             }
             return String(
                 localized: "workspace.closePane.alert.body.only.many",
-                defaultValue: "Current tabs that will be closed (a new terminal will replace them):"
+                defaultValue: "Current panels that will be closed (a new terminal will replace them):"
             )
         }
 
@@ -13512,12 +13512,12 @@ extension Workspace: BonsplitDelegate {
         if tabCount == 1 {
             return String(
                 localized: "workspace.closePane.alert.body.one",
-                defaultValue: "Current tab that will be closed:"
+                defaultValue: "Current panel that will be closed:"
             )
         }
         return String(
             localized: "workspace.closePane.alert.body.many",
-            defaultValue: "Current tabs that will be closed:"
+            defaultValue: "Current panels that will be closed:"
         )
     }
 
@@ -13654,7 +13654,7 @@ extension Workspace: BonsplitDelegate {
         let alert = NSAlert()
         alert.messageText = String(
             localized: "alert.tabColor.title",
-            defaultValue: "Custom Tab Color"
+            defaultValue: "Custom Panel Color"
         )
         alert.informativeText = String(
             localized: "alert.tabColor.message",

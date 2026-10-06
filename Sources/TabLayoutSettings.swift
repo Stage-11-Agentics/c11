@@ -1,44 +1,73 @@
 import Foundation
 import Bonsplit
 
-/// "Tab layout": how every area shows its tabs. `tabs` (default) is the
-/// browser-style horizontal strip, with the count cell opening the tab sheet.
-/// `rail` docks a vertical tab list on each area's left edge, toggled by the
+/// "Panel layout": how every area shows its panels. `strip` (default) is the
+/// browser-style horizontal strip, with the count cell opening the panel sheet.
+/// `rail` docks a vertical panel list on each area's left edge, toggled by the
 /// count cell. Change it in one command:
-/// `defaults write com.stage11.c11 tabLayoutMode -string rail`
+/// `defaults write com.stage11.c11 panelLayoutMode -string rail`
 /// (`com.stage11.c11.debug.<tag>` for a tagged dev build).
+///
+/// The setting used to live under `tabLayoutMode`, with `tabs` as the strip's
+/// spelling. Reads prefer `panelLayoutMode` and fall back to the old key, and
+/// `tabs` still reads as `strip` from either key. Writes go to the new key
+/// only; the old key is never deleted.
 enum TabLayoutSettings {
-    static let modeKey = "tabLayoutMode"
+    static let modeKey = "panelLayoutMode"
+    /// The pre-rename key. Read as a fallback and copied forward; never written or deleted.
+    static let legacyModeKey = "tabLayoutMode"
 
     enum Mode: String, CaseIterable {
-        case tabs
+        case strip
         case rail
     }
 
-    static let defaultMode: Mode = .tabs
+    static let defaultMode: Mode = .strip
+
+    /// `tabs` is the old spelling of `strip`.
+    private static func parse(_ rawValue: String?) -> Mode? {
+        let value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if value == "tabs" { return .strip }
+        return Mode(rawValue: value)
+    }
 
     static func mode(for rawValue: String?) -> Mode {
-        Mode(rawValue: rawValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "") ?? defaultMode
+        parse(rawValue) ?? defaultMode
     }
 
+    /// The new key if it is set, else the old key, else the default.
     static func mode(defaults: UserDefaults = .standard) -> Mode {
-        mode(for: defaults.string(forKey: modeKey))
+        if let current = defaults.string(forKey: modeKey) {
+            return mode(for: current)
+        }
+        return mode(for: defaults.string(forKey: legacyModeKey))
     }
 
-    /// Writes the same key the Settings picker and `defaults write` use.
-    /// The per-workspace observer applies it. This does not touch the rail tip.
+    /// Copies the old key's value to the new key when the new key is absent,
+    /// mapping `tabs` to `strip`. Idempotent; leaves the old key in place and
+    /// skips values it cannot read. Run once early at launch so the Settings
+    /// picker, which reads the new key directly, shows the carried-over value.
+    static func migrateLegacyKeys(defaults: UserDefaults = .standard) {
+        guard defaults.object(forKey: modeKey) == nil,
+              let legacy = parse(defaults.string(forKey: legacyModeKey)) else { return }
+        defaults.set(legacy.rawValue, forKey: modeKey)
+    }
+
+    /// Writes the new key, the one the Settings picker and `defaults write` use.
+    /// The per-workspace observer applies it. This does not touch the rail tip
+    /// or the old key.
     static func setMode(_ mode: Mode, defaults: UserDefaults = .standard) {
         defaults.set(mode.rawValue, forKey: modeKey)
     }
 
     static func bonsplitLayout(_ mode: Mode) -> BonsplitTabLayout {
         switch mode {
-        case .tabs: return .tabs
+        case .strip: return .tabs
         case .rail: return .rail
         }
     }
 
-    /// The Tabs | Rail switch in each area's tab sheet and rail. It writes this
+    /// The Tabs | Rail switch in each area's panel sheet and rail. It writes this
     /// same setting, so it and the Settings picker never disagree; bonsplit has
     /// already opened or closed the area's rail. `applied` runs right after the
     /// write, so the switching workspace changes layout in the same pass as its
@@ -48,21 +77,23 @@ enum TabLayoutSettings {
         applied: @escaping () -> Void = {}
     ) -> BonsplitController.TabLayoutSwitch {
         BonsplitController.TabLayoutSwitch(
-            tabsLabel: String(localized: "settings.app.tabLayout.tabs", defaultValue: "Tabs"),
+            tabsLabel: String(localized: "settings.app.tabLayout.tabs", defaultValue: "Strip"),
             railLabel: String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"),
-            accessibilityLabel: String(localized: "settings.app.tabLayout", defaultValue: "Tab Layout"),
-            help: String(localized: "tabBar.layoutSwitch.help", defaultValue: "Switch Tab Layout for every area. Also in Settings > General > Tabs & Areas."),
+            accessibilityLabel: String(localized: "settings.app.tabLayout", defaultValue: "Panel Layout"),
+            help: String(localized: "tabBar.layoutSwitch.help", defaultValue: "Switch Panel Layout for every area. Also in Settings > General > Areas & Panels."),
             apply: { layout, _ in
-                setMode(layout == .rail ? .rail : .tabs, defaults: defaults)
+                setMode(layout == .rail ? .rail : .strip, defaults: defaults)
                 applied()
             }
         )
     }
 }
 
-/// KVO bridge so each `Workspace` can react to the tab layout setting live.
-/// Mirrors `TabOrdinalDisplayObserver`.
+/// KVO bridge so each `Workspace` can react to the panel layout setting live.
+/// Mirrors `TabOrdinalDisplayObserver`. It watches the old key too, so a write
+/// to it still applies while the new key is unset.
 final class TabLayoutObserver: NSObject {
+    private static let observedKeys = [TabLayoutSettings.modeKey, TabLayoutSettings.legacyModeKey]
     private let onChange: () -> Void
     private let defaults: UserDefaults
 
@@ -70,11 +101,15 @@ final class TabLayoutObserver: NSObject {
         self.defaults = defaults
         self.onChange = onChange
         super.init()
-        defaults.addObserver(self, forKeyPath: TabLayoutSettings.modeKey, options: [.new], context: nil)
+        for key in Self.observedKeys {
+            defaults.addObserver(self, forKeyPath: key, options: [.new], context: nil)
+        }
     }
 
     deinit {
-        defaults.removeObserver(self, forKeyPath: TabLayoutSettings.modeKey)
+        for key in Self.observedKeys {
+            defaults.removeObserver(self, forKeyPath: key)
+        }
     }
 
     override func observeValue(
@@ -83,7 +118,7 @@ final class TabLayoutObserver: NSObject {
         change: [NSKeyValueChangeKey: Any]?,
         context: UnsafeMutableRawPointer?
     ) {
-        guard keyPath == TabLayoutSettings.modeKey else { return }
+        guard let keyPath, Self.observedKeys.contains(keyPath) else { return }
         let onChange = self.onChange
         Task { @MainActor in onChange() }
     }

@@ -192,6 +192,8 @@ jobs:
             c11Tests/AppDelegateShortcutRoutingTests/testAddWorkspaceInPreferredMainWindowPrunesOrphanedContextWithoutLiveWindow
             # C11-332 product bug: same unpruned orphaned window context, reached through a remapped New Workspace shortcut.
             c11Tests/AppDelegateShortcutRoutingTests/testCustomCmdTNewWorkspacePrunesOrphanedContextWithoutLiveWindow
+            # C11-335: wall-clock budget, not correctness; shared 3-core macos-15 measures 1.8x it. Time it on a quiet host.
+            c11Tests/ThemeResolverBenchmarks/testResolverP95PerformanceBudget
           )
           SKIP_ARGS=()
           for test_id in "${HOST_TEST_QUARANTINE[@]}"; do

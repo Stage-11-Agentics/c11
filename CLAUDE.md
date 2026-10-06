@@ -4,15 +4,15 @@
 
 ## Mission
 
-c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown tabs composed in one window: addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace as the atom of work.
+c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown panels composed in one window: addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace as the atom of work.
 
 **Who it's for.** The operator running eight, thirty, two hundred agents at once, tired of `cmd-tab` roulette across a screen of terminal windows. Not less work, just enough shape that the whole orchestra stays legible while the agents drive.
 
-**What that implies for this codebase.** Every tab has a handle. Every handle is scriptable from outside the process. The CLI and socket exist so agents compose their own environment without the operator in the loop for routine moves.
+**What that implies for this codebase.** Every panel has a handle. Every handle is scriptable from outside the process. The CLI and socket exist so agents compose their own environment without the operator in the loop for routine moves.
 
 ### Host and primitive, never configurator
 
-c11 provides workspaces, areas, tabs, a socket, a CLI, and a metadata seam, all scoped to its own runtime. The operator's tenant config (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files) is off-limits: c11 never installs hooks, persists configuration, or injects behavior into a TUI's on-disk state. `c11 install <tui>` stays rejected, consent prompts or not.
+c11 provides workspaces, areas, panels, a socket, a CLI, and a metadata seam, all scoped to its own runtime. The operator's tenant config (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files) is off-limits: c11 never installs hooks, persists configuration, or injects behavior into a TUI's on-disk state. `c11 install <tui>` stays rejected, consent prompts or not.
 
 The one exception is the **session-resume wrappers** in `Resources/bin/` (`claude` is the reference; `codex`, `grok`, `opencode`, `pi`, `copilot`, `omp` follow it). A wrapper must:
 
@@ -27,7 +27,7 @@ Outside that bounded wrapper exception, lifecycle remains agent-reported: agents
 
 ## Vocabulary
 
-**window → workspace → area → tab.** An area is a split region; a tab is a terminal, browser, or markdown viewer inside it; a sidebar entry is a workspace, never a tab. Use these words everywhere. Old names (commands, flags, refs, socket methods, env vars, JSON keys) keep working as hidden aliases that never appear in help, skills, or docs.
+**window → workspace → area → panel.** An area is a split region; a panel is a terminal, browser, or markdown viewer inside it; a sidebar entry is a workspace, never a panel. The Tab key and the tmux-compat names are not the c11 panel. Use these words everywhere. Old names (commands, flags, refs, socket methods, env vars, JSON keys) keep working as hidden aliases that never appear in help, skills, or docs.
 
 - Say **workspace**, never "room", in c11 copy.
 - Ghostty-facing code keeps Ghostty's names (`TerminalSurface`, `GhosttySurfaceScrollView`, `ghostty_surface_*`), as do the tmux-compat commands (`--pane`, `--surface`).
@@ -60,7 +60,7 @@ Never `open` an untagged `c11 DEV.app`. Full build workflow and remote variants:
 
 ## Lineage
 
-tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. cmux (manaflow-ai) gave us the Ghostty embed, the browser substrate, and the CLI shape; [Bonsplit](https://github.com/almonk/bonsplit) (almonk, forked in `vendor/bonsplit/`) gave us the tab and split chrome. c11 adds the operator:agent primitives: markdown tabs, addressable handles, the skill system, agent-written sidebar telemetry.
+tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. cmux (manaflow-ai) gave us the Ghostty embed, the browser substrate, and the CLI shape; [Bonsplit](https://github.com/almonk/bonsplit) (almonk, forked in `vendor/bonsplit/`) gave us the panel and split chrome. c11 adds the operator:agent primitives: markdown panels, addressable handles, the skill system, agent-written sidebar telemetry.
 
 - **Pull freely.** Cherry-pick or merge upstream fixes cleanly with original authorship, so provenance stays obvious (`upstream-triage` skill). Divergence is deliberate; don't push for a resync.
 - **Never write upstream.** No push, branch, issue, or PR against `manaflow-ai/*`. If a c11 fix would help cmux, tell Atin in one line.
@@ -68,7 +68,7 @@ tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. cmux (manaflow-ai)
 
 ## The skill is the contract
 
-c11's value to an agent is `skills/c11/SKILL.md` and its peers (`c11-browser`, `c11-markdown`, `c11-fanout`, `c11-debug-windows`, `c11-computer-use`, `c11-hotload`, `release`). The bar: an agent that read the skill drives a whole c11 session (spawn, dissolve, report, recover) without the operator stepping in. **A change to the CLI, socket protocol, metadata schema, or tab model is incomplete until the skill matches it.**
+c11's value to an agent is `skills/c11/SKILL.md` and its peers (`c11-browser`, `c11-markdown`, `c11-fanout`, `c11-debug-windows`, `c11-computer-use`, `c11-hotload`, `release`). The bar: an agent that read the skill drives a whole c11 session (spawn, dissolve, report, recover) without the operator stepping in. **A change to the CLI, socket protocol, metadata schema, or panel model is incomplete until the skill matches it.**
 
 **Syncing the installed copy is part of the edit (HARD RULE).** c11 installs skills as one-time copies in every agent harness's skills folder (`~/.claude/skills/<name>/`, `~/.codex/skills/<name>/`, `~/.pi/agent/skills/<name>/`, …; stamped `.c11-skill.json`) and never tracks the repo afterward. The sync script refreshes every harness copy that exists. Editing or committing a skill under `skills/` changes nothing an agent loads. For any skill in `skills/MANIFEST.json`, the edit is done only after `scripts/sync-installed-skills.sh [name]` and a check of the live copy.
 
@@ -107,7 +107,7 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 
 **Threading.** Never `DispatchQueue.main.sync` on high-frequency telemetry (`report_*`, `ports_kick`, status/progress/log/metadata). Parse, validate, and coalesce off-main; hop to main with `async` only for the minimal mutation. Commands that manipulate AppKit/Ghostty state (focus, select, open, close, send key/input, exact snapshot queries) may run on main. New socket commands default to off-main; main-thread execution needs a comment explaining why.
 
-**Focus.** Socket/CLI commands never activate c11 or raise a window. Agents cannot change any window's selected workspace: the selection setter returns `workspace_switch_blocked`, with no setting or override. `tab.focus` / `area.focus` update their target workspace's local focus, including hidden workspaces. Background creation, sends, browser automation and metadata remain allowed. Operator sidebar, shortcut, palette, notification, jump, menu and restore paths switch normally. Request focus policy is thread-local and explicitly propagated over main hops; never share a connection-wide or process-wide allowance stack. `workspace.selected` records cause; `workspace.switch_blocked` records target, method and caller tab.
+**Focus.** Socket/CLI commands never activate c11 or raise a window. Agents cannot change any window's selected workspace: the selection setter returns `workspace_switch_blocked`, with no setting or override. `panel.focus` / `area.focus` update their target workspace's local focus, including hidden workspaces. Background creation, sends, browser automation and metadata remain allowed. Operator sidebar, shortcut, palette, notification, jump, menu and restore paths switch normally. Request focus policy is thread-local and explicitly propagated over main hops; never share a connection-wide or process-wide allowance stack. `workspace.selected` records cause; `workspace.switch_blocked` records target, method and caller panel.
 
 ## Pitfalls
 
@@ -123,7 +123,7 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 - **Custom drag-and-drop UTTypes** are declared in `Resources/Info.plist` under `UTExportedTypeDeclarations`.
 - **Submodule commits are pushed to the Stage 11 fork's `main` first**, then the parent pointer. Never commit on a detached HEAD. For `vendor/bonsplit` verify with `merge-base --is-ancestor HEAD origin/main`; for `ghostty`, against `stage11/main` (its `origin` is manaflow-ai).
 - **pbxproj edits via the `xcodeproj` gem reformat the whole file.** Review them with `xcodebuild -list`, file-membership counts, and `-showBuildSettings` spot-checks, not line diffs. Don't hand-restore whitespace.
-- **A locked screen blocks every new terminal** in every c11 build: tabs stay unattached and the ghostty log shows `error initializing surface err=error.OutOfMemory`. It is WindowServer refusing the GPU surface, not memory. Park the work and ask Atin to unlock; queued sends flush on attach. Don't reboot or reset anything.
+- **A locked screen blocks every new terminal** in every c11 build: panels stay unattached and the ghostty log shows `error initializing surface err=error.OutOfMemory`. It is WindowServer refusing the GPU surface, not memory. Park the work and ask Atin to unlock; queued sends flush on attach. Don't reboot or reset anything.
 - **CLI says `Socket not found` while c11 is still running:** the socket file was unlinked under a live listener. Run **Restart CLI Listener** from the command palette (Cmd+Shift+P); it rebinds without touching workspaces or PTYs. `tools/socket-watcher/` and `docs/c11-socket-unlink-diagnostic.md` catch any new unlink source.
 - **Attention state stays simple.** A ticket that reaches for launch epochs, crash-durable markers, or transactional launch coordinators to track attention has hit the C11-188 failure signature (`docs/aar-c11-188-attention-loop.md`): stop and escalate.
 - **Sidebar analytics are getting dense.** Before stacking more onto the workspace cards, raise a dedicated analytics screen with Atin.

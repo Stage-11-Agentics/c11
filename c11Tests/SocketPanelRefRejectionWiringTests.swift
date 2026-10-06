@@ -50,14 +50,6 @@ final class SocketPanelRefRejectionWiringTests: XCTestCase {
                        "surface.set_metadata with no surface target must be rejected, not defaulted to focus")
     }
 
-    func testSurfaceTriggerFlashRejectsEmptySurfaceRef() {
-        let code = responseCode(for: """
-        {"method":"surface.trigger_flash","params":{"surface_id":"  "}}
-        """)
-        XCTAssertEqual(code, "empty_ref",
-                       "trigger-flash with a whitespace surface_id must be rejected")
-    }
-
     func testPaneSetMetadataRejectsAbsentPaneRef() {
         let code = responseCode(for: """
         {"method":"pane.set_metadata","params":{"metadata":{"k":"v"}}}

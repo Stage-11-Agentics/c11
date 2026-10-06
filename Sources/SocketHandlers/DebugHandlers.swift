@@ -62,7 +62,7 @@ extension TerminalController {
                 if let holdFlush = v2Bool(params, "hold_flush") {
                     fixture.surface.debugHoldPendingFlush(holdFlush)
                 }
-                return .ok(["held": hold, "maximum_seconds": 10, "tab_id": fixture.id.uuidString])
+                return .ok(["held": hold, "maximum_seconds": 10, "panel_id": fixture.id.uuidString])
             })
         case "debug.feed_answer.hold_after_paste":
             return v2Result(id: id, self.v2DebugFeedAnswerHoldAfterPaste(params: params))
@@ -429,7 +429,7 @@ extension TerminalController {
             guard FeedAnswerDebugHold.shared.arm(panelID: panelID, milliseconds: holdMilliseconds) else {
                 return .err(code: "invalid_state", message: "A feed-answer hold is already armed", data: nil)
             }
-            return .ok(["armed": true, "tab_id": panelID.uuidString, "hold_ms": holdMilliseconds])
+            return .ok(["armed": true, "panel_id": panelID.uuidString, "hold_ms": holdMilliseconds])
         }
     }
 #endif

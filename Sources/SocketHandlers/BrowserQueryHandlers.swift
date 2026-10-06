@@ -1363,8 +1363,7 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": v2OrNull(ws.focusedPanelId?.uuidString),
                 "surface_ref": v2Ref(kind: .surface, uuid: ws.focusedPanelId),
-                "panels": browserPanelPayloads,
-                "tabs": browserPanelPayloads
+                "panels": browserPanelPayloads
             ]
         }
 

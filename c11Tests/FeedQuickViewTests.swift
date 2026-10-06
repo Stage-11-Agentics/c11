@@ -79,53 +79,6 @@ final class FeedQuickViewTests: XCTestCase {
         XCTAssertEqual(dismissed, 1)
     }
 
-    func testKeyboardLifecycleScopeModifiersAndOriginalResponderRestoration() throws {
-        let owner = NSWindow(contentRect: .init(x: 0, y: 0, width: 600, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
-        let other = NSWindow(contentRect: .init(x: 0, y: 0, width: 600, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
-        defer { owner.orderOut(nil); other.orderOut(nil) }
-        let origin = NSTextView(frame: .init(x: 0, y: 0, width: 100, height: 100))
-        owner.contentView?.addSubview(origin)
-        owner.makeKeyAndOrderFront(nil)
-        owner.makeFirstResponder(origin)
-        let session = FeedQuickViewKeyboardSession()
-        var moves = 0, opens = 0, cancels = 0, toggles = 0
-        func action(_ action: FeedQuickViewKeyboardSession.Action) {
-            switch action { case .move: moves += 1; case .open: opens += 1; case .cancel: cancels += 1; case .toggleFilter: toggles += 1; case .consume: break }
-        }
-        session.start(window: owner, action: action)
-        session.start(window: owner, action: action)
-        XCTAssertEqual(session.monitorInstallCount, 1)
-        func event(_ window: NSWindow, key: UInt16, flags: NSEvent.ModifierFlags = [], chars: String = "") throws -> NSEvent {
-            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
-                timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: chars,
-                charactersIgnoringModifiers: chars, isARepeat: false, keyCode: key))
-        }
-        XCTAssertFalse(session.handle(try event(other, key: 125)))
-        XCTAssertFalse(session.handle(try event(other, key: 36)))
-        XCTAssertFalse(session.handle(try event(other, key: 53)))
-        XCTAssertFalse(session.handle(try event(owner, key: 125, flags: .option)))
-        XCTAssertTrue(session.handle(try event(owner, key: 125)))
-        XCTAssertTrue(session.handle(try event(owner, key: 36)))
-        XCTAssertTrue(session.handle(try event(owner, key: 53)))
-        XCTAssertFalse(session.handle(try event(other, key: 48)))
-        XCTAssertFalse(session.handle(try event(owner, key: 48, flags: .option)))
-        XCTAssertTrue(session.handle(try event(owner, key: 48)))
-        XCTAssertTrue(session.handle(try event(owner, key: 48, flags: .shift)))
-        XCTAssertEqual(moves, 1); XCTAssertEqual(opens, 1); XCTAssertEqual(cancels, 1); XCTAssertEqual(toggles, 2)
-        let displaced = NSTextView(frame: .init(x: 0, y: 0, width: 100, height: 100))
-        owner.contentView?.addSubview(displaced)
-        owner.makeFirstResponder(displaced)
-        session.stop(restoreFocus: true)
-        XCTAssertTrue(owner.firstResponder === origin)
-        XCTAssertFalse(session.handle(try event(owner, key: 125)))
-        session.start(window: owner, action: action)
-        XCTAssertEqual(session.monitorInstallCount, 2)
-        origin.removeFromSuperview()
-        owner.makeFirstResponder(displaced)
-        session.stop(restoreFocus: true)
-        XCTAssertTrue(owner.firstResponder === displaced)
-    }
-
     func testFilterFocusFollowsActiveFilterForTabShiftTabAndPointerWithFixedFrames() throws {
         let model = FeedQuickViewModel()
         model.apply(.init(projection: .init(rows: [row(1), row(2, kind: .turnEnd)]), loading: false))

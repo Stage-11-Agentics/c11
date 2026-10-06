@@ -132,7 +132,7 @@ def probe(path: str, workspace: str, tab: str, allow_startup_wait: float = 0) ->
     require(str(caller.get("workspace_id", "")).lower() == workspace, "identify returned wrong workspace")
     require(str(caller.get("panel_id", "")).lower() == tab, "identify returned wrong tab")
     retry_ready(path, "panel.read_text", {"workspace_id": workspace, "panel_id": tab}, deadline, evidence)
-    evidence.update(result="PASS", completed_at=time.time(), tab_ref=tabs[tab]["ref"], tree=tree)
+    evidence.update(result="PASS", completed_at=time.time(), panel_ref=tabs[tab]["ref"], tree=tree)
     return evidence
 
 

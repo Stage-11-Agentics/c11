@@ -134,7 +134,7 @@ def main():
         assert offline.returncode == 0, offline.stderr
         offline_document = json.loads(offline.stdout)
         candidates = offline_document['restore_candidates']
-        crash_live = next(row for row in candidates if row['tab_id'] == tabs[1])
+        crash_live = next(row for row in candidates if row['panel_id'] == tabs[1])
         assert crash_live['label'] == 'historical_candidate', crash_live
         assert crash_live['confirmation'] == 'unconfirmed'
         with sqlite3.connect(root / 'lifecycle.sqlite3') as database:
@@ -158,7 +158,7 @@ def main():
             attached_turn['committed_at_ms'] / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         attached = {}
         pre_attach = client._call('agents.list', {})
-        pre_attach_row = next(row for row in pre_attach['tabs'] if row['tab_id'] == tabs[1])
+        pre_attach_row = next(row for row in pre_attach['panels'] if row['panel_id'] == tabs[1])
         assert pre_attach_row['session_id'] is None and pre_attach_row['turn_started_at'] is None, \
             'fixture owner and its turn cache must be absent after startup cache pass'
         client._call('conversation.push', {
@@ -167,7 +167,7 @@ def main():
 
         def restored_caches_attached():
             document = client._call('agents.list', {})
-            row = next(row for row in document['tabs'] if row['tab_id'] == tabs[1])
+            row = next(row for row in document['panels'] if row['panel_id'] == tabs[1])
             if row['state'] == 'blocked' and row['turn_started_at'] == expected_turn_start:
                 attached.update(document=document, row=row)
                 return True
@@ -179,7 +179,7 @@ def main():
                    and state(1)['confirmation'] == 'unconfirmed'
                    and state(1)['connection'] == 'disconnected',
                    'late owner attaches the offline baseline', timeout=15)
-        live_candidate = next(row for row in live_roster['restore_candidates'] if row['tab_id'] == tabs[1])
+        live_candidate = next(row for row in live_roster['restore_candidates'] if row['panel_id'] == tabs[1])
         assert live_candidate['label'] == 'historical_candidate', live_candidate
         assert restored_deferred['state'] == 'blocked', restored_deferred
         assert restored_deferred['turn_started_at'] == expected_turn_start, restored_deferred

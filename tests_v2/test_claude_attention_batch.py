@@ -77,7 +77,7 @@ def main():
                 return [item for item in client.list_notifications() if item["workspace_id"] == workspace]
 
             def unread(tab):
-                return [item for item in notices() if item.get("tab_id") == tab and not item["is_read"]]
+                return [item for item in notices() if item.get("panel_id") == tab and not item["is_read"]]
 
             def seed():
                 for tab in (caller, sibling):

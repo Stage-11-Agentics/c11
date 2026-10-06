@@ -21,14 +21,15 @@ public enum MetadataKey {
     public static let lifecycleState = "lifecycle_state"
     public static let flag = "flag"
     public static let legacyFlagCallerSurfaceId = "flag_caller_surface_id"
-    /// C11-248: canonical spelling of the flag caller key. Written beside the
-    /// legacy `flag_caller_surface_id` (both hold the same UUID) and read in
-    /// either spelling, for one release.
+    /// C11-248 / C11-345: the v0.67 spelling of the flag caller key. Read-only:
+    /// still read (and cleared) when an older session restores it, never written.
     public static let flagCallerTabId = "flag_caller_tab_id"
     /// C11-337: the panel spelling of the flag caller key, written beside the
-    /// permanent `flag_caller_surface_id` (which wins on read) and
-    /// `flag_caller_tab_id` (written for one more release).
+    /// permanent `flag_caller_surface_id` (which wins on read).
     public static let flagCallerPanelId = "flag_caller_panel_id"
+    /// The caller keys a flag write sets (both hold the same UUID).
+    static let flagCallerWriteKeys = [flagCallerPanelId, legacyFlagCallerSurfaceId]
+    /// Every caller spelling: read and cleared, including the read-only tab key.
     static let flagCallerKeys = [flagCallerPanelId, flagCallerTabId, legacyFlagCallerSurfaceId]
     public static let suppressed = "suppressed"
 
@@ -606,8 +607,8 @@ final class PanelMetadataStore: @unchecked Sendable {
     }
 
     /// C11-248 / C11-337: the flag caller UUID string, read from any key spelling. The permanent
-    /// surface key wins, then panel, then tab: all are written together, so a stale custom value
-    /// in a newer spelling never outranks it.
+    /// surface key wins, then panel, then the read-only tab key (older sessions), so a stale
+    /// custom value in another spelling never outranks it.
     static func flagCallerValue(_ blob: [String: Any]) -> String? {
         (blob[MetadataKey.legacyFlagCallerSurfaceId] as? String)
             ?? (blob[MetadataKey.flagCallerPanelId] as? String)
@@ -677,7 +678,9 @@ final class PanelMetadataStore: @unchecked Sendable {
                     let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
                     sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
                     if let callerPanelId, existingCaller == nil {
-                        for key in MetadataKey.flagCallerKeys {
+                        blob.removeValue(forKey: MetadataKey.flagCallerTabId)
+                        sourceBlob.removeValue(forKey: MetadataKey.flagCallerTabId)
+                        for key in MetadataKey.flagCallerWriteKeys {
                             blob[key] = callerPanelId.uuidString
                             sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
                         }
@@ -695,9 +698,12 @@ final class PanelMetadataStore: @unchecked Sendable {
                     result.priorValues[MetadataKey.flag] = prior
                     sourceBlob.removeValue(forKey: MetadataKey.flag)
                     for key in MetadataKey.flagCallerKeys {
-                        blob.removeValue(forKey: key)
+                        let hadValue = blob.removeValue(forKey: key) != nil
                         sourceBlob.removeValue(forKey: key)
-                        result.removedKeys.insert(key)
+                        // The read-only tab key is reported only when an older session left it.
+                        if hadValue || MetadataKey.flagCallerWriteKeys.contains(key) {
+                            result.removedKeys.insert(key)
+                        }
                     }
                     result.removedKeys.insert(MetadataKey.flag)
                     result.applied[MetadataKey.flag] = true
@@ -794,7 +800,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                     ts: epoch
                 )
                 if let callerPanelId = snapshot.flagCallerPanelId {
-                    for key in MetadataKey.flagCallerKeys {
+                    for key in MetadataKey.flagCallerWriteKeys {
                         blob[key] = callerPanelId.uuidString
                         sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
                     }
@@ -985,8 +991,10 @@ final class PanelMetadataStore: @unchecked Sendable {
                 ts: flagTimestamp
             )
             if let caller = flagCallerValue(values),
-               validateReservedKey(MetadataKey.flagCallerTabId, caller) == nil {
-                for key in MetadataKey.flagCallerKeys {
+               validateReservedKey(MetadataKey.flagCallerPanelId, caller) == nil {
+                values.removeValue(forKey: MetadataKey.flagCallerTabId)
+                sources.removeValue(forKey: MetadataKey.flagCallerTabId)
+                for key in MetadataKey.flagCallerWriteKeys {
                     values[key] = caller
                     sources[key] = SourceRecord(source: .explicit, ts: flagTimestamp)
                 }

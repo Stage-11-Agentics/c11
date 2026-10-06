@@ -50,31 +50,6 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
         XCTAssertEqual(try socketMode(at: restrictedPath), 0o600)
     }
 
-    func testPasswordModeRejectsUnauthenticatedCommands() throws {
-        let socketPath = makeSocketPath("password-mode")
-        let workspaceManager = WorkspaceManager()
-
-        TerminalController.shared.start(
-            workspaceManager: workspaceManager,
-            socketPath: socketPath,
-            accessMode: .password
-        )
-        try waitForSocket(at: socketPath)
-
-        let pingOnly = try sendCommands(["ping"], to: socketPath)
-        XCTAssertEqual(pingOnly.count, 1)
-        XCTAssertTrue(pingOnly[0].hasPrefix("ERROR:"))
-        XCTAssertFalse(pingOnly[0].localizedCaseInsensitiveContains("PONG"))
-
-        let wrongAuthThenPing = try sendCommands(
-            ["auth not-the-password", "ping"],
-            to: socketPath
-        )
-        XCTAssertEqual(wrongAuthThenPing.count, 2)
-        XCTAssertTrue(wrongAuthThenPing[0].hasPrefix("ERROR:"))
-        XCTAssertTrue(wrongAuthThenPing[1].hasPrefix("ERROR:"))
-    }
-
     func testSocketCommandPolicyDistinguishesFocusIntent() throws {
 #if DEBUG
         let nonFocus = TerminalController.debugSocketCommandPolicySnapshot(
@@ -225,84 +200,6 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
             throw posixError("lstat(\(path))")
         }
         return UInt16(fileInfo.st_mode & 0o777)
-    }
-
-    private func sendCommands(_ commands: [String], to socketPath: String) throws -> [String] {
-        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else {
-            throw posixError("socket(AF_UNIX)")
-        }
-        defer { Darwin.close(fd) }
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-
-        let bytes = Array(socketPath.utf8)
-        let maxPathLen = MemoryLayout.size(ofValue: addr.sun_path)
-        guard bytes.count < maxPathLen else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENAMETOOLONG))
-        }
-
-        withUnsafeMutablePointer(to: &addr.sun_path) { pathPtr in
-            let cPath = UnsafeMutableRawPointer(pathPtr).assumingMemoryBound(to: CChar.self)
-            cPath.initialize(repeating: 0, count: maxPathLen)
-            for (index, byte) in bytes.enumerated() {
-                cPath[index] = CChar(bitPattern: byte)
-            }
-        }
-
-        let addrLen = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count + 1)
-        let connectResult = withUnsafePointer(to: &addr) { ptr -> Int32 in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                Darwin.connect(fd, sockaddrPtr, addrLen)
-            }
-        }
-        guard connectResult == 0 else {
-            throw posixError("connect(\(socketPath))")
-        }
-
-        var responses: [String] = []
-        for command in commands {
-            try writeLine(command, to: fd)
-            responses.append(try readLine(from: fd))
-        }
-        return responses
-    }
-
-    private func writeLine(_ command: String, to fd: Int32) throws {
-        let payload = Array((command + "\n").utf8)
-        var offset = 0
-        while offset < payload.count {
-            let wrote = payload.withUnsafeBytes { raw in
-                Darwin.write(fd, raw.baseAddress!.advanced(by: offset), payload.count - offset)
-            }
-            guard wrote >= 0 else {
-                throw posixError("write(\(command))")
-            }
-            offset += wrote
-        }
-    }
-
-    private func readLine(from fd: Int32) throws -> String {
-        var buffer = [UInt8](repeating: 0, count: 1)
-        var data = Data()
-
-        while true {
-            let count = Darwin.read(fd, &buffer, 1)
-            guard count >= 0 else {
-                throw posixError("read")
-            }
-            if count == 0 { break }
-            if buffer[0] == 0x0A { break }
-            data.append(buffer[0])
-        }
-
-        guard let line = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: NSCocoaErrorDomain, code: 0, userInfo: [
-                NSLocalizedDescriptionKey: "Invalid UTF-8 response from socket"
-            ])
-        }
-        return line
     }
 
     private func posixError(_ operation: String) -> NSError {

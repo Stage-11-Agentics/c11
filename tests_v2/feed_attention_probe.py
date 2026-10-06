@@ -88,7 +88,7 @@ class FeedProbe(Probe):
         self.rpc('flag.raise', {'tab_id': flagged, 'reason': 'Synthetic priority decision', 'by': 'operator'})
         self.eventually(lambda: '1 flag · 3 open asks' in str(self.status()['help']), 'Live ask count not published')
         rows = self.rpc('feed.list')['rows']
-        self.check([r['tab_id'] for r in rows] == [flagged, older, newer], 'Feed flags then oldest asks')
+        self.check([r['panel_id'] for r in rows] == [flagged, older, newer], 'Feed flags then oldest asks')
         self.ui('background')
         self.ui('open')
         self.check(any('1 flag · 3 open asks' in r['name'] for r in self.status()['rows']), 'Actual menu shows separate flag/ask counts')
@@ -120,7 +120,7 @@ class FeedProbe(Probe):
         def resolve(tab):
             self.rpc('agent.event.append', {'event': dict(drafts[tab], event_id=str(uuid.uuid4()),
                 kind='agent.attention.resolved', resolution='resumed', native_event='PostToolUse')})
-            self.eventually(lambda: not any(r['tab_id'] == tab for r in self.rpc('feed.list')['rows']), 'Resolved ask stayed in Feed')
+            self.eventually(lambda: not any(r['panel_id'] == tab for r in self.rpc('feed.list')['rows']), 'Resolved ask stayed in Feed')
 
         resolve(older)
         jump(newer, 'Configured shortcut continues to next ask')
@@ -145,12 +145,12 @@ class FeedProbe(Probe):
             workspace_id=self.workspace, session_id=completion_session, agent_kind='claude-code', source='hook',
             adapter='claude_hook', native_event='Stop')})
         self.eventually(lambda: not self.rpc('feed.list')['rows'], 'Suppressed ask remained in jump prefix')
-        self.check(any(r['tab_id'] == completion and r['kind'] == 'turn_end' and r['blocking'] is False
+        self.check(any(r['panel_id'] == completion and r['kind'] == 'turn_end' and r['blocking'] is False
                        for r in self.rpc('feed.list', {'scope': 'all'})['rows']), 'Finished turn is not a blocking ask')
         jump(completion, 'Completion-only unread tail remains reachable oldest first')
-        self.eventually(lambda: all(n['is_read'] for n in self.rpc('notification.list')['notifications'] if n.get('tab_id') == completion),
+        self.eventually(lambda: all(n['is_read'] for n in self.rpc('notification.list')['notifications'] if n.get('panel_id') == completion),
                         'Successful unread-tail jump did not mark exact notification read')
-        self.check(any(not n['is_read'] and n.get('tab_id') == newer for n in self.rpc('notification.list')['notifications']),
+        self.check(any(not n['is_read'] and n.get('panel_id') == newer for n in self.rpc('notification.list')['notifications']),
                    'Unread-tail jump leaves sibling unread untouched')
         jump(newer, 'Second unread completion remains reachable')
         self.screenshot('03-shortcut-completion-target')

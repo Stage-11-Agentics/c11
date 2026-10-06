@@ -103,7 +103,6 @@ extension TerminalController {
             return .ok([
                 "workspace_id": workspaceID.uuidString,
                 "panel_id": panelID.uuidString,
-                "tab_id": panelID.uuidString,
             ])
         }
     }

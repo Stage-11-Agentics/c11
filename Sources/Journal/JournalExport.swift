@@ -162,8 +162,6 @@ enum JournalExport {
             "source": draft.source.rawValue,
             "adapter": draft.adapter.rawValue,
             "panel_id": draft.panelID?.uuidString as Any? ?? NSNull(),
-            // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": draft.panelID?.uuidString as Any? ?? NSNull(),
             "workspace_id": draft.workspaceID?.uuidString as Any? ?? NSNull(),
             "agent_kind": draft.agentKind,
             "model_id": event.modelID as Any? ?? NSNull(),
@@ -189,8 +187,6 @@ enum JournalExport {
         [
             "record_type": "current_state",
             "panel_id": baseline.owner.panelID.uuidString,
-            // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": baseline.owner.panelID.uuidString,
             "agent_kind": baseline.owner.agentKind,
             "session_id": baseline.owner.sessionID,
             "workspace_id": baseline.workspaceID?.uuidString as Any? ?? NSNull(),

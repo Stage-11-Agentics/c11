@@ -93,8 +93,8 @@ final class JournalExportTests: XCTestCase {
         XCTAssertNil(eventObject["prompt"])
     }
 
-    // C11-337: export records carry the panel spelling beside the legacy tab spelling.
-    func testExportEventAndCurrentStateEmitPanelIdBesideTabId() throws {
+    // C11-345: export records carry only the panel spelling.
+    func testExportEventAndCurrentStateEmitPanelIdOnly() throws {
         let event = JournalAnalyticsFixture.lifecycleEvents()[3]
         var baseline = JournalSnapshot(owner: JournalOwner(panelID: JournalAnalyticsFixture.panel,
                                                             agentKind: "claude-code", sessionID: "analytics-session"),
@@ -111,7 +111,7 @@ final class JournalExportTests: XCTestCase {
         for recordType in ["event", "current_state"] {
             let record = try XCTUnwrap(objects.first { $0["record_type"] as? String == recordType }, recordType)
             XCTAssertEqual(record["panel_id"] as? String, JournalAnalyticsFixture.panel.uuidString, recordType)
-            XCTAssertEqual(record["tab_id"] as? String, JournalAnalyticsFixture.panel.uuidString, recordType)
+            XCTAssertNil(record["tab_id"], recordType)
             XCTAssertNil(record["surface_id"], recordType)
         }
     }

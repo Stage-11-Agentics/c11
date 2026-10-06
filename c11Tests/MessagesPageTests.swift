@@ -81,7 +81,8 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertTrue(send.queued == true)
         XCTAssertEqual(send.status, "queued")
         XCTAssertTrue(send.jsonObject["caller_title"] is NSNull)
-        XCTAssertTrue(send.jsonObject["caller_tab_id"] is NSNull)
+        XCTAssertTrue(send.jsonObject["caller_panel_id"] is NSNull)
+        XCTAssertNil(send.jsonObject["caller_tab_id"], "C11-345: the record writes only caller_panel_id")
         XCTAssertEqual(send.jsonObject["queued"] as? Bool, true)
     }
 

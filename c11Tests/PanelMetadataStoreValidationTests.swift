@@ -233,11 +233,14 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
         }
     }
 
-    // MARK: - C11-337 flag caller keys
+    // MARK: - C11-337 / C11-345 flag caller keys
 
+    /// Every spelling read on restore.
     private let callerKeys = ["flag_caller_surface_id", "flag_caller_panel_id", "flag_caller_tab_id"]
+    /// The spellings a flag write sets; `flag_caller_tab_id` is read-only.
+    private let writtenCallerKeys = ["flag_caller_surface_id", "flag_caller_panel_id"]
 
-    func testRaisingAFlagWritesAllThreeCallerKeys() throws {
+    func testRaisingAFlagWritesPanelAndSurfaceCallerKeysOnly() throws {
         let workspace = UUID()
         let surface = UUID()
         let caller = UUID()
@@ -248,14 +251,16 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
         )
         XCTAssertEqual(raised.after.flagCallerPanelId, caller)
         let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
-        for key in callerKeys {
+        for key in writtenCallerKeys {
             XCTAssertEqual(metadata[key] as? String, caller.uuidString, key)
         }
+        XCTAssertNil(metadata["flag_caller_tab_id"])
 
-        _ = try store.mutateAttention(workspaceId: workspace, surfaceId: surface, flag: .lower)
-        let lowered = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
+        let lowered = try store.mutateAttention(workspaceId: workspace, surfaceId: surface, flag: .lower)
+        XCTAssertEqual(lowered.result.removedKeys.intersection(callerKeys), Set(writtenCallerKeys))
+        let loweredMetadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
         for key in callerKeys {
-            XCTAssertNil(lowered[key], key)
+            XCTAssertNil(loweredMetadata[key], key)
         }
     }
 
@@ -273,9 +278,10 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
             )
             XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerPanelId, caller, key)
             let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
-            for written in callerKeys {
+            for written in writtenCallerKeys {
                 XCTAssertEqual(metadata[written] as? String, caller.uuidString, "\(key) -> \(written)")
             }
+            XCTAssertNil(metadata["flag_caller_tab_id"], "\(key): the tab key is never written back")
         }
     }
 

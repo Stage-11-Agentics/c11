@@ -5,8 +5,8 @@ The bundled CLI is driven against an in-process fake that speaks the v2 socket p
 (and the v1 text protocol), as three generations of app, one per version-skew tier:
 
 - panel:   advertises the feature `vocabulary.workspace_area_panel`. Knows `panel.*` /
-           `area.*` (and lists `tab.list` so a v0.67 CLI keeps its tab tier). Emits `panel_*`
-           beside `tab_*` keys, `panels` beside `tabs`, `panel:N` / `area:N` refs.
+           `area.*` (and lists `tab.list` so a v0.67 CLI keeps its tab tier). Emits only
+           `panel_*` / `area_*` keys, `panels` / `areas`, `panel:N` / `area:N` refs.
 - tab:     v0.67.0 and pre-panel nightlies. Methods include `tab.list`, no panel feature.
            Knows `tab.*` / `area.*` and the `surface.*` / `pane.*` aliases, rejects `panel.*`
            with method_not_found, and silently IGNORES `panel_*` param keys (the danger the CLI
@@ -82,7 +82,7 @@ def _must(cond: bool, msg: str) -> None:
 # The wire contract, written out independently of the CLI (spec sections 1, 3, 5)
 # ---------------------------------------------------------------------------
 
-# (panel_*, tab_*, surface_*): the 37 triples. App output carries panel + tab; surface is input only.
+# (panel_*, tab_*, surface_*): the 37 triples. App output carries panel only; tab and surface are input only.
 PANEL_KEYS: List[Tuple[str, str, str]] = [
     ("panel_id", "tab_id", "surface_id"),
     ("panel_ref", "tab_ref", "surface_ref"),
@@ -392,8 +392,7 @@ class FakeApp:
     def panel_fields(self, uuid: str, n: int, prefix: str = "") -> Dict[str, Any]:
         """The panel's id and ref keys the way this tier's app emits them."""
         if self.tier == "panel":
-            return {f"{prefix}panel_id": uuid, f"{prefix}panel_ref": f"panel:{n}",
-                    f"{prefix}tab_id": uuid, f"{prefix}tab_ref": f"tab:{n}"}
+            return {f"{prefix}panel_id": uuid, f"{prefix}panel_ref": f"panel:{n}"}
         if self.tier == "tab":
             return {f"{prefix}tab_id": uuid, f"{prefix}tab_ref": f"tab:{n}",
                     f"{prefix}surface_id": uuid, f"{prefix}surface_ref": f"surface:{n}"}
@@ -409,7 +408,7 @@ class FakeApp:
 
     def panel_list_payload(self, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         if self.tier == "panel":
-            return {"panels": rows, "tabs": rows}
+            return {"panels": rows}
         if self.tier == "tab":
             return {"tabs": rows, "surfaces": rows}
         return {"surfaces": rows}
@@ -489,8 +488,7 @@ class FakeApp:
         row: Dict[str, Any] = {"id": aid, "ref": f"{self.area_prefix}:{n}", "index": index}
         uuids, ordinals = [p[0] for p in panels], [p[1] for p in panels]
         if self.tier == "panel":
-            row.update({"panel_ids": uuids, "tab_ids": uuids,
-                        "panel_refs": [f"panel:{o}" for o in ordinals], "tab_refs": [f"tab:{o}" for o in ordinals]})
+            row.update({"panel_ids": uuids, "panel_refs": [f"panel:{o}" for o in ordinals]})
         elif self.tier == "tab":
             row.update({"tab_ids": uuids, "surface_ids": uuids,
                         "tab_refs": [f"tab:{o}" for o in ordinals], "surface_refs": [f"surface:{o}" for o in ordinals]})
@@ -508,7 +506,7 @@ class FakeApp:
         block.update(self.area_fields(area[0], area[1]))
         block.update(self.panel_fields(panel[0], panel[1]))
         if self.tier == "panel":
-            block.update({"panel_type": "terminal", "tab_type": "terminal"})
+            block["panel_type"] = "terminal"
         elif self.tier == "tab":
             block.update({"tab_type": "terminal", "surface_type": "terminal"})
         else:
@@ -651,7 +649,7 @@ class FakeApp:
             return True, {"url": "https://example.test/"}
         if method == "browser.panel.list":
             rows = [{"id": T3, "ref": f"{self.panel_prefix}:3", "title": "page", "url": "https://example.test/"}]
-            return True, {"workspace_id": WS, "tabs": rows, **({"panels": rows} if self.tier == "panel" else {})}
+            return True, {"workspace_id": WS, **({"panels": rows} if self.tier == "panel" else {"tabs": rows})}
         if method.startswith("browser.panel.") or method == "notification.create_for_panel":
             return True, self._echo(params)
         self.unhandled.append(method)
@@ -1110,6 +1108,21 @@ def _assert_canonical_refs(payload: Any, what: str) -> None:
             stack.extend(node)
 
 
+def _assert_no_tab_keys(payload: Any, what: str) -> None:
+    """Against a panel app the CLI prints no `tab_*` / `tabs` key of its own (C11-345)."""
+    stack = [payload]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            for key, child in node.items():
+                _must(re.search(r"(^|_)tabs?(_|$)", key) is None and key not in ("tabRefs", "tabIds"),
+                      f"{what}: output must not carry the old key `{key}`")
+                if key not in ("metadata", "value"):
+                    stack.append(child)
+        elif isinstance(node, list):
+            stack.extend(node)
+
+
 def test_canonical_output(cli: str, run: Running) -> None:
     app, tier = run.app, run.tier
     app.reset()
@@ -1123,6 +1136,8 @@ def test_canonical_output(cli: str, run: Running) -> None:
         _must(row.get("area_id") in (A1, A2, NEW_A) and str(row.get("area_ref", "")).startswith("area:"),
               f"[{tier}] list-panels row should carry area_id/area_ref (area:N): {row}")
     _assert_canonical_refs(out, f"[{tier}] list-panels --json")
+    if tier == "panel":
+        _assert_no_tab_keys(out, f"[{tier}] list-panels --json")
     _no_violations(run, "list-panels")
 
     app.reset()
@@ -1135,6 +1150,8 @@ def test_canonical_output(cli: str, run: Running) -> None:
         if "panel_refs" in row:
             _must(all(str(r).startswith("panel:") for r in row["panel_refs"]), f"[{tier}] panel_refs should be panel:N: {row}")
     _assert_canonical_refs(out, f"[{tier}] list-areas --json")
+    if tier == "panel":
+        _assert_no_tab_keys(out, f"[{tier}] list-areas --json")
     _no_violations(run, "list-areas")
 
     app.reset()
@@ -1152,6 +1169,8 @@ def test_canonical_output(cli: str, run: Running) -> None:
         _must(block.get("area_id") in (A1, A2), f"[{tier}] identify {scope} should carry area_id: {block}")
     _must((out.get("caller") or {}).get("panel_id") == T2, f"[{tier}] identify --panel panel:2 should resolve the caller to {T2}: {out}")
     _assert_canonical_refs(out, f"[{tier}] identify --json")
+    if tier == "panel":
+        _assert_no_tab_keys(out, f"[{tier}] identify --json")
     _no_violations(run, "identify")
 
     # Text output prints panel:N / area:N whatever the app minted.

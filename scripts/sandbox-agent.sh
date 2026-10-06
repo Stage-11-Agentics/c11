@@ -587,8 +587,9 @@ import json, shlex, sys
 d = json.load(sys.stdin)
 if not d.get("ok", True):
     sys.exit("launch-agent: %s" % d)
-for k in ("tab_ref", "workspace_ref", "tab_id", "workspace_id", "startup"):
-    print("%s=%s" % (k, shlex.quote(str(d.get(k) or ""))))
+for k, keys in (("tab_ref", ("panel_ref", "tab_ref")), ("workspace_ref", ("workspace_ref",)),
+                ("tab_id", ("panel_id", "tab_id")), ("workspace_id", ("workspace_id",)), ("startup", ("startup",))):
+    print("%s=%s" % (k, shlex.quote(str(next((d[x] for x in keys if d.get(x)), "")))))
 ')"
 [[ -n "\$tab_ref" && -n "\$workspace_ref" ]] || { print -u2 -- "launch-agent returned no tab: \$out"; exit 1 }
 c set-metadata --workspace "\$workspace_ref" --tab "\$tab_ref" --key mailbox.address --value "\$address" --type string >/dev/null

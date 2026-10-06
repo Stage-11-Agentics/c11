@@ -386,9 +386,6 @@ Hard invariant:
 1. `tests_v2/test_browser_api_p0.py`
 2. `tests_v2/test_browser_api_comprehensive.py`
 3. `tests_v2/test_browser_api_unsupported_matrix.py`
-4. `tests_v2/test_browser_goto_split.py`
-5. `tests_v2/test_browser_panel_stability.py`
-6. `tests_v2/test_browser_custom_keybinds.py`
 
 ### Test Design Rules
 

@@ -372,14 +372,14 @@ final class MailboxDrainTests: XCTestCase {
 
     private let receiptPanel = UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!
 
-    func testReceiptWritesPanelIdBesideLegacyTabId() throws {
+    func testReceiptWritesOnlyPanelId() throws {
         let receipt = MailboxDeliveryReceipt(
             panelId: receiptPanel, deliveries: [.init(id: idA, recipient: "watcher")], ts: "t"
         )
         let data = try XCTUnwrap(receipt.encode())
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["panel_id"] as? String, receiptPanel.uuidString)
-        XCTAssertEqual(object["tab_id"] as? String, receiptPanel.uuidString)
+        XCTAssertNil(object["tab_id"], "C11-345: tab_id is read, never written")
         XCTAssertEqual(MailboxDeliveryReceipt.decode(data)?.receipt, receipt)
     }
 

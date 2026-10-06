@@ -510,7 +510,7 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(flags.first?["suppressed"] as? Bool, true)
         XCTAssertEqual(flags.first?["workspace_id"] as? String, workspace.uuidString)
         XCTAssertEqual(flags.first?["panel_id"] as? String, olderSurface.uuidString)
-        XCTAssertEqual(flags.first?["tab_id"] as? String, olderSurface.uuidString)
+        XCTAssertNil(flags.first?["tab_id"], "C11-345: tab_* keys are no longer emitted")
         XCTAssertNil(flags.first?["surface_id"], "C11-337: surface_* keys are no longer emitted")
         XCTAssertEqual(
             flags.first?["caller_panel_id"] as? String,

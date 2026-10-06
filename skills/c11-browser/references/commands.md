@@ -74,6 +74,7 @@ c11 browser <panel> eval '<js>'
 c11 browser <panel> click|dblclick|hover|focus <selector-or-ref>
 c11 browser <panel> fill <selector-or-ref> [text]   # empty text clears
 c11 browser <panel> type <selector-or-ref> <text>
+c11 browser <panel> type <selector-or-ref> -- --literal   # after --, flag-like words are text
 c11 browser <panel> press|keydown|keyup <key>
 c11 browser <panel> select <selector-or-ref> <value>
 c11 browser <panel> check|uncheck <selector-or-ref>

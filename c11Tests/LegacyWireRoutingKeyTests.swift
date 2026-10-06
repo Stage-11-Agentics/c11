@@ -219,6 +219,29 @@ final class LegacyWireCompletionTests: XCTestCase {
         XCTAssertEqual(LegacyWireAliases.canonicalParams(["panel_id": "x"])["tab_id"] as? String, "x")
     }
 
+    func testOldSpellingRequestsGetGenericRefsInTheirSpelling() throws {
+        XCTAssertEqual(LegacyWireAliases.legacyRefPrefix(forRawMethod: "tab.list"), "tab:")
+        XCTAssertEqual(LegacyWireAliases.legacyRefPrefix(forRawMethod: "area.tabs"), "tab:")
+        XCTAssertEqual(LegacyWireAliases.legacyRefPrefix(forRawMethod: "surface.list"), "surface:")
+        XCTAssertNil(LegacyWireAliases.legacyRefPrefix(forRawMethod: "panel.list"))
+        XCTAssertNil(LegacyWireAliases.legacyRefPrefix(forRawMethod: "system.tree"))
+
+        let response = #"{"id":7,"ok":true,"result":{"panels":[{"ref":"panel:3","panel_ref":"panel:3","tab_ref":"tab:3"}],"workspace_ref":"workspace:1","metadata":{"ref":"panel:9"}}}"#
+        let echoed = LegacyWireAliases.echoLegacyRefs(response, prefix: "tab:")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(echoed.utf8)) as? [String: Any])
+        XCTAssertEqual(object["id"] as? Int, 7)
+        let result = try XCTUnwrap(object["result"] as? [String: Any])
+        let row = try XCTUnwrap((result["panels"] as? [[String: Any]])?.first)
+        XCTAssertEqual(row["ref"] as? String, "tab:3")
+        XCTAssertEqual(row["panel_ref"] as? String, "panel:3", "paired keys keep their own spelling")
+        XCTAssertEqual(row["tab_ref"] as? String, "tab:3")
+        XCTAssertEqual(result["workspace_ref"] as? String, "workspace:1")
+        XCTAssertEqual((result["metadata"] as? [String: Any])?["ref"] as? String, "panel:9", "user data is untouched")
+        // Errors and responses with nothing to echo pass through byte-for-byte.
+        let error = #"{"id":1,"ok":false,"error":{"code":"not_found","message":"Panel not found"}}"#
+        XCTAssertEqual(LegacyWireAliases.echoLegacyRefs(error, prefix: "tab:"), error)
+    }
+
     func testCapabilityFeatureIdsSayPanel() {
         let ids = Set(CapabilityFeatures.current.payload.compactMap { $0["id"] as? String })
         XCTAssertTrue(ids.contains("vocabulary.workspace_area_panel"))

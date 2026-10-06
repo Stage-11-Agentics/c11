@@ -65,7 +65,8 @@ extension TerminalController {
         return V2SocketRequest(
             id: dict["id"],
             method: LegacyWireAliases.canonicalMethod(method),
-            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
+            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:]),
+            legacyRefPrefix: LegacyWireAliases.legacyRefPrefix(forRawMethod: method)
         )
     }
 
@@ -192,7 +193,10 @@ extension TerminalController {
             callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
         )
         return SocketCommandContext.withContext(context) {
-            let response = executeSocketCommand(command)
+            var response = executeSocketCommand(command)
+            if let prefix = request?.legacyRefPrefix {
+                response = LegacyWireAliases.echoLegacyRefs(response, prefix: prefix)
+            }
             guard let target = context.blockedTarget else { return response }
             if let request {
                 return v2Error(id: request.id, code: "workspace_switch_blocked", message: SocketCommandContext.blockedMessage,

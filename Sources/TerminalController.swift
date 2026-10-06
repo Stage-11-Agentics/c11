@@ -2358,6 +2358,9 @@ class TerminalController {
         let id: Any?
         let method: String
         let params: [String: Any]
+        /// C11-337: set when the request used an old method spelling; the
+        /// response's generic `ref` values are echoed in that spelling.
+        var legacyRefPrefix: String? = nil
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [

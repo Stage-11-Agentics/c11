@@ -102,6 +102,50 @@ enum LegacyWireAliases {
         return canonical
     }
 
+    /// The ref spelling an old client expects back, from the method name it
+    /// sent: `tab.*` (v0.67) -> `tab:`, `surface.*` (older) -> `surface:`.
+    /// Canonical method names return nil.
+    nonisolated static func legacyRefPrefix(forRawMethod method: String) -> String? {
+        if method.hasPrefix("tab.") || method == "area.tabs" || method.hasPrefix("browser.tab.") {
+            return "tab:"
+        }
+        if method.hasPrefix("surface.") || method == "pane.surfaces" {
+            return "surface:"
+        }
+        return nil
+    }
+
+    /// Old CLIs resolve `--tab tab:N` client-side by matching the generic `ref`
+    /// of `tab.list` items, so a response to an old-spelling request carries its
+    /// generic `ref` values (`panel:N`) in that spelling. Paired keys already
+    /// carry `tab:N` in `tab_*`. Only old clients pay for the re-encode.
+    nonisolated static func echoLegacyRefs(_ response: String, prefix: String) -> String {
+        guard response.contains("\"panel:"),
+              let data = response.data(using: .utf8),
+              var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let result = object["result"] else { return response }
+        object["result"] = echoGenericRefs(result, prefix: prefix)
+        guard JSONSerialization.isValidJSONObject(object),
+              let encoded = try? JSONSerialization.data(withJSONObject: object),
+              let text = String(data: encoded, encoding: .utf8) else { return response }
+        return text
+    }
+
+    nonisolated private static func echoGenericRefs(_ value: Any, prefix: String) -> Any {
+        if let array = value as? [Any] {
+            return array.map { echoGenericRefs($0, prefix: prefix) }
+        }
+        guard var dict = value as? [String: Any] else { return value }
+        for (key, child) in dict where !opaqueKeys.contains(key) {
+            if key == "ref", let ref = child as? String, ref.hasPrefix("panel:") {
+                dict[key] = prefix + ref.dropFirst("panel:".count)
+            } else {
+                dict[key] = echoGenericRefs(child, prefix: prefix)
+            }
+        }
+        return dict
+    }
+
     // MARK: - Key table
 
     /// `new` is canonical and always emitted. `old` is the previous spelling:

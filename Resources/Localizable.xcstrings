@@ -152,15 +152,15 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the tab."
+            "value": "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the panel."
           }
         },
-        "ja": {"stringUnit": {"state": "translated", "value": "c11 1.0 ではフィードへの複数行の回答に対応していません。何も送信されていません。タブで回答するには c11 feed open を使用してください。"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "У c11 1.0 відповіді на запити через стрічку з кількох рядків не підтримуються. Нічого не надіслано; щоб відповісти у вкладці, скористайтеся c11 feed open."}},
-        "ko": {"stringUnit": {"state": "translated", "value": "c11 1.0에서는 피드 답변에 여러 줄을 사용할 수 없습니다. 아무것도 전송되지 않았습니다. 탭에서 답변하려면 c11 feed open을 사용하세요."}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 1.0 不支持在信息流中提交多行回答。未发送任何内容；如需在标签页中回答，请使用 c11 feed open。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 1.0 不支援在資訊流中提交多行回答。未傳送任何內容；如需在分頁中回答，請使用 c11 feed open。"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "В c11 1.0 нельзя отправлять ответы в ленте из нескольких строк. Ничего не отправлено; чтобы ответить во вкладке, используйте c11 feed open."}}
+        "ja": {"stringUnit": {"state": "needs_review", "value": "c11 1.0 ではフィードへの複数行の回答に対応していません。何も送信されていません。タブで回答するには c11 feed open を使用してください。"}},
+        "uk": {"stringUnit": {"state": "needs_review", "value": "У c11 1.0 відповіді на запити через стрічку з кількох рядків не підтримуються. Нічого не надіслано; щоб відповісти у вкладці, скористайтеся c11 feed open."}},
+        "ko": {"stringUnit": {"state": "needs_review", "value": "c11 1.0에서는 피드 답변에 여러 줄을 사용할 수 없습니다. 아무것도 전송되지 않았습니다. 탭에서 답변하려면 c11 feed open을 사용하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "needs_review", "value": "c11 1.0 不支持在信息流中提交多行回答。未发送任何内容；如需在标签页中回答，请使用 c11 feed open。"}},
+        "zh-Hant": {"stringUnit": {"state": "needs_review", "value": "c11 1.0 不支援在資訊流中提交多行回答。未傳送任何內容；如需在分頁中回答，請使用 c11 feed open。"}},
+        "ru": {"stringUnit": {"state": "needs_review", "value": "В c11 1.0 нельзя отправлять ответы в ленте из нескольких строк. Ничего не отправлено; чтобы ответить во вкладке, используйте c11 feed open."}}
       }
     },
     "feed.quick.title": {
@@ -238,13 +238,13 @@
     "feed.quick.unavailable": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "That tab is unavailable" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "そのタブは利用できません" } },
-        "uk": { "stringUnit": { "state": "translated", "value": "Ця вкладка недоступна" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "해당 탭을 사용할 수 없습니다" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该标签页不可用" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "該分頁無法使用" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Эта вкладка недоступна" } }
+        "en": { "stringUnit": { "state": "translated", "value": "That panel is unavailable" } },
+        "ja": { "stringUnit": { "state": "needs_review", "value": "そのタブは利用できません" } },
+        "uk": { "stringUnit": { "state": "needs_review", "value": "Ця вкладка недоступна" } },
+        "ko": { "stringUnit": { "state": "needs_review", "value": "해당 탭을 사용할 수 없습니다" } },
+        "zh-Hans": { "stringUnit": { "state": "needs_review", "value": "该标签页不可用" } },
+        "zh-Hant": { "stringUnit": { "state": "needs_review", "value": "該分頁無法使用" } },
+        "ru": { "stringUnit": { "state": "needs_review", "value": "Эта вкладка недоступна" } }
       }
     },
     "feed.quick.hint": {
@@ -454,13 +454,13 @@
     "socket.error.workspaceSwitchBlocked": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "エージェントはオペレーターのワークスペースを切り替えられません。切り替えが必要な場合はフラグを立ててください。バックグラウンドのタブもすべて操作できます。" } },
-        "uk": { "stringUnit": { "state": "translated", "value": "Агенти не можуть змінювати робочий простір оператора. Якщо оператору потрібно перейти до іншого простору, підніміть прапорець; фоновими вкладками можна повноцінно керувати." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "에이전트는 운영자의 작업 공간을 변경할 수 없습니다. 운영자가 전환해야 한다면 플래그를 설정해 알리세요. 백그라운드 탭은 모두 조작할 수 있습니다." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体无法更改操作员的工作区。如需操作员切换，请发出标记提醒；后台标签页仍可完整操作。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "代理程式無法更改操作員的工作區。如需操作員切換，請發出標記提醒；背景分頁仍可完整操作。" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Агенты не могут менять рабочее пространство оператора. Если оператору нужно переключиться, поднимите флаг; вкладками в фоне можно полноценно управлять." } }
+        "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background panels remain fully drivable." } },
+        "ja": { "stringUnit": { "state": "needs_review", "value": "エージェントはオペレーターのワークスペースを切り替えられません。切り替えが必要な場合はフラグを立ててください。バックグラウンドのタブもすべて操作できます。" } },
+        "uk": { "stringUnit": { "state": "needs_review", "value": "Агенти не можуть змінювати робочий простір оператора. Якщо оператору потрібно перейти до іншого простору, підніміть прапорець; фоновими вкладками можна повноцінно керувати." } },
+        "ko": { "stringUnit": { "state": "needs_review", "value": "에이전트는 운영자의 작업 공간을 변경할 수 없습니다. 운영자가 전환해야 한다면 플래그를 설정해 알리세요. 백그라운드 탭은 모두 조작할 수 있습니다." } },
+        "zh-Hans": { "stringUnit": { "state": "needs_review", "value": "智能体无法更改操作员的工作区。如需操作员切换，请发出标记提醒；后台标签页仍可完整操作。" } },
+        "zh-Hant": { "stringUnit": { "state": "needs_review", "value": "代理程式無法更改操作員的工作區。如需操作員切換，請發出標記提醒；背景分頁仍可完整操作。" } },
+        "ru": { "stringUnit": { "state": "needs_review", "value": "Агенты не могут менять рабочее пространство оператора. Если оператору нужно переключиться, поднимите флаг; вкладками в фоне можно полноценно управлять." } }
       }
     },
     "socket.send.guard_refused": {

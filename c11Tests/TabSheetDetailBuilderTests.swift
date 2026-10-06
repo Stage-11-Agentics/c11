@@ -311,4 +311,19 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         input.promptCache = PromptCacheObservation(requestAt: t0.addingTimeInterval(-3_600), basis: .ttl(300), promptTokens: nil)
         XCTAssertEqual(TabSheetDetailBuilder.build(input).clockTexts["cache"], "cold")
     }
+
+    func testAWaitingAgentsExpiredCacheJoinsTheSubtitle() {
+        var input = inputs(terminalKind: "claude-code", description: "synthetic", activity: .waiting)
+        input.now = t0
+        input.promptCache = PromptCacheObservation(requestAt: t0.addingTimeInterval(-3_600), basis: .ttl(300), promptTokens: nil)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · cache expired")
+        input.evidenceNote = "Unconfirmed"
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed · cache expired")
+        input.evidenceNote = nil
+        input.activity = .cold
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic", "a cold mark says it in blue")
+        input.activity = .waiting
+        input.promptCache = PromptCacheObservation(requestAt: t0, basis: .ttl(300), promptTokens: nil)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic", "a warm cache adds nothing")
+    }
 }

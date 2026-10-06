@@ -84,11 +84,6 @@ struct TranscriptSignals: Equatable, Sendable {
             turnTokens = 0
             messageTokens = [:]
             noteLine(at)
-            // A prompt sends a request that reads the cache, even one
-            // interrupted before its response wrote a line.
-            if let at, let cache = promptCache, at > cache.requestAt {
-                promptCache?.requestAt = at
-            }
         case .agent(let at, let tools, let tokens, let messageKey):
             if let at { lastEventAt = max(lastEventAt ?? at, at) }
             turnToolCalls += tools
@@ -118,11 +113,31 @@ struct TranscriptSignals: Equatable, Sendable {
         noteLine(at)
     }
 
-    /// A compaction replaces the cached prefix: until the next request writes
-    /// the new one, c11 has no cache to describe.
-    mutating func resetPromptCache() {
-        promptCache = nil
+    /// A prompt sends a request that reads the cache, even one interrupted
+    /// before its response wrote a line, and writes a fresh one after a reset.
+    /// Not for lines that send nothing (slash commands, `!` shell lines).
+    mutating func notePromptSent(_ at: Date?) {
+        guard let at, var cache = promptCache, at > cache.requestAt else { return }
+        cache.requestAt = at
+        cache.reset = nil
+        cache.resetAt = nil
+        promptCache = cache
+    }
+
+    /// Something replaced the cached prefix (a model switch, a compaction):
+    /// cold from that moment, until the next request writes a new cache.
+    mutating func resetPromptCache(_ line: PromptCacheResetLine) {
+        guard let at = line.at else { return }
+        let basis = promptCacheBasis ?? .ttl(PromptCachePolicy.anthropicDefaultTTL)
+        promptCache = PromptCacheObservation(
+            requestAt: promptCache?.requestAt ?? at,
+            basis: basis,
+            promptTokens: line.promptTokens ?? promptCache?.promptTokens,
+            reset: line.reason,
+            resetAt: at
+        )
         promptCacheRequestKey = nil
+        noteLine(at)
     }
 
     private mutating func noteLine(_ at: Date?) {
@@ -151,6 +166,14 @@ struct PromptCacheObservation: Equatable, Sendable {
     /// The prompt the next request re-caches once this goes cold; nil when the
     /// harness does not record it.
     var promptTokens: Int?
+    /// Set when something replaced the cached prefix before its lifetime ran out.
+    var reset: Reset? = nil
+    var resetAt: Date? = nil
+
+    enum Reset: Equatable, Sendable {
+        case modelSwitch
+        case compaction
+    }
 
     var isEstimate: Bool {
         if case .estimate = basis { return true }
@@ -158,6 +181,7 @@ struct PromptCacheObservation: Equatable, Sendable {
     }
 
     func coldAt(estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride) -> Date {
+        if let resetAt { return resetAt }
         switch basis {
         case .ttl(let seconds):
             return requestAt.addingTimeInterval(seconds)
@@ -169,6 +193,14 @@ struct PromptCacheObservation: Equatable, Sendable {
     func isCold(at now: Date, estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride) -> Bool {
         now >= coldAt(estimateOverride: estimateOverride)
     }
+}
+
+/// A line that replaced the cached prefix without a request of its own.
+struct PromptCacheResetLine: Equatable, Sendable {
+    var reason: PromptCacheObservation.Reset
+    var at: Date?
+    /// The prompt the next request re-caches (compaction's post-compact size).
+    var promptTokens: Int?
 }
 
 /// One model request's cache use, as a transcript line records it.
@@ -225,7 +257,10 @@ struct ParsedTranscriptLine: Equatable, Sendable {
     var sessionID: String? = nil
     var sessionMetaIdentity = false
     var promptCache: PromptCacheUsage? = nil
-    var resetsPromptCache = false
+    var promptCacheReset: PromptCacheResetLine? = nil
+    /// A user line the harness echoes for a local command or `!` shell line:
+    /// no model request went out.
+    var sendsNoRequest = false
 }
 
 /// A structural lifecycle record found in a harness transcript. This type is
@@ -630,9 +665,12 @@ struct AgentModelProbe: Sendable {
         // well as to the journal. A response/tool line alone is not a turn edge.
         if acceptedLifecycle || parsed.lifecycle == nil {
             if let model = parsed.model { state.model = model }
-            if parsed.resetsPromptCache { state.signals.resetPromptCache() }
+            if let reset = parsed.promptCacheReset { state.signals.resetPromptCache(reset) }
             if let usage = parsed.promptCache { state.signals.notePromptCache(usage) }
-            if let event = parsed.event { state.signals.apply(event) }
+            if let event = parsed.event {
+                state.signals.apply(event)
+                if case .prompt(let at) = event, !parsed.sendsNoRequest { state.signals.notePromptSent(at) }
+            }
         }
     }
 
@@ -675,7 +713,9 @@ struct AgentModelProbe: Sendable {
             state.grokPendingStart = nil
             guard primary, sessionID == expectedSessionID, let turnID, let at else { return false }
             state.grokPendingStart = GrokPendingTurn(turnID: turnID, occurredAt: at)
-            // The turn's first model call reads the cache; its end records the last.
+            // The turn's first model call reads the cache; its end records the
+            // last. A subagent's start clears the pending turn, so a long turn
+            // that ran a subagent counts from its start and can read cold early.
             state.signals.notePromptCache(Self.grokPromptCache(at: at, key: "start:\(turnID)"))
             observations.append(.init(kind: .turnStarted, occurredAt: at,
                                        nativeEvent: "turn.started", turnID: turnID, isChild: false))
@@ -734,6 +774,8 @@ struct AgentModelProbe: Sendable {
         coverage: inout TranscriptCoverage
     ) {
         resetLifecycleState(&state, preserveCoverage: true)
+        // The line before a response may sit in the skipped span.
+        state.signals.lastLineAt = nil
         guard !state.coverageDegraded else { return }
         state.coverageDegraded = true
         coverage = .gap(skippedBytes: max(1, skippedBytes))
@@ -797,7 +839,12 @@ struct AgentModelProbe: Sendable {
 
     private static func parseClaude(_ line: Data) -> ParsedTranscriptLine {
         if hasType(line, "system"), contains(line, "\"compact_boundary\""), !contains(line, "\"isSidechain\":true") {
-            return ParsedTranscriptLine(resetsPromptCache: true)
+            let object = line.count <= maxParseBytes ? parseObject(line) : nil
+            let at = (object?["timestamp"] as? String).flatMap(parseISO) ?? timestamp(in: line, last: true)
+            let post = int((object?["compactMetadata"] as? [String: Any])?["postTokens"])
+            return ParsedTranscriptLine(promptCacheReset: PromptCacheResetLine(
+                reason: .compaction, at: at, promptTokens: post > 0 ? post : nil
+            ))
         }
         guard hasType(line, "assistant") || hasType(line, "user") else { return ParsedTranscriptLine() }
         guard line.count <= maxParseBytes, let object = parseObject(line) else { return parseClaudeOversize(line) }
@@ -810,6 +857,15 @@ struct AgentModelProbe: Sendable {
             let blocks = message?["content"] as? [[String: Any]]
             if blocks?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true {
                 return ParsedTranscriptLine(event: .toolResult(at: at))
+            }
+            let text = (message?["content"] as? String)
+                ?? blocks?.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String
+            if let text, localCommandEchoPrefixes.contains(where: { text.hasPrefix($0) }) {
+                // `/model` swaps the model the cache belongs to.
+                let reset = text.hasPrefix("<local-command-stdout>Set model to ")
+                    ? PromptCacheResetLine(reason: .modelSwitch, at: at)
+                    : nil
+                return ParsedTranscriptLine(event: .prompt(at: at), promptCacheReset: reset, sendsNoRequest: true)
             }
             return ParsedTranscriptLine(event: .prompt(at: at))
         case "assistant":
@@ -835,6 +891,15 @@ struct AgentModelProbe: Sendable {
             return ParsedTranscriptLine()
         }
     }
+
+    /// How Claude Code records a slash command, its output, and `!` shell lines.
+    /// A skill command (`<command-message>` first) does send a prompt; its
+    /// response records the request, so only an interrupted one is missed.
+    private static let localCommandEchoPrefixes = [
+        "<command-name>", "<command-message>", "<command-args>",
+        "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>",
+        "<bash-input>", "<bash-stdout>", "<bash-stderr>",
+    ]
 
     /// A request that read or wrote the cache. `cache_creation` names the tier
     /// of what it wrote; a pure read names none and keeps the earlier tier.

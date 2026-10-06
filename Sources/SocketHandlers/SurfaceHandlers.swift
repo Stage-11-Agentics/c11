@@ -36,14 +36,15 @@ extension TerminalController {
     /// `prompt_cache`: the agent's prompt cache as of its last model request,
     /// or null when c11 has no evidence (no agent, no request yet, or a harness
     /// whose files say nothing). `basis` is `ttl` for a provider-published
-    /// lifetime (Anthropic) and `estimate` for an idle span c11 measured.
+    /// lifetime (Anthropic) and `estimate` for an idle span c11 measured;
+    /// `reset` names what replaced the cached prefix early, if anything.
     static func promptCacheField(_ cache: PromptCacheObservation?, now: Date) -> Any {
         guard let cache else { return NSNull() }
         let coldAt = cache.coldAt()
         let seconds: TimeInterval
         switch cache.basis {
         case .ttl(let ttl): seconds = ttl
-        case .estimate: seconds = coldAt.timeIntervalSince(cache.requestAt)
+        case .estimate(let span): seconds = PromptCachePolicy.estimateOverride ?? span
         }
         return [
             "state": now >= coldAt ? "cold" : "warm",
@@ -51,6 +52,12 @@ extension TerminalController {
             "lifetime_seconds": Int(seconds),
             "requested_at": seenTimestampFormatter.string(from: cache.requestAt),
             "cold_at": seenTimestampFormatter.string(from: coldAt),
+            "reset": cache.reset.map { reset -> Any in
+                switch reset {
+                case .modelSwitch: return "model_switch"
+                case .compaction: return "compaction"
+                }
+            } ?? NSNull(),
             "prompt_tokens": cache.promptTokens.map { $0 as Any } ?? NSNull()
         ] as [String: Any]
     }

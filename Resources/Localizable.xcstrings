@@ -2,6 +2,42 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "surface.activity.promptCache.resetModelSwitch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache reset by a model switch"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "モデルの切り替えによりプロンプトキャッシュがリセットされました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту скинуто через перемикання моделі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "모델 전환으로 프롬프트 캐시가 초기화됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换模型已重置提示词缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換模型已重置提示詞快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта сброшен из-за смены модели"}}
+      }
+    },
+    "surface.activity.promptCache.resetCompaction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache reset by compaction"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "コンパクションによりプロンプトキャッシュがリセットされました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту скинуто через ущільнення історії"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "컴팩션으로 프롬프트 캐시가 초기화됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "压缩对话历史已重置提示词缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "壓縮對話歷史已重置提示詞快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта сброшен из-за сжатия истории"}}
+      }
+    },
+    "tabSheet.subtitle.cacheExpired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "cache expired"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "キャッシュ期限切れ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "кеш прострочено"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "캐시 만료됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "缓存已过期"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "快取已過期"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "кэш истёк"}}
+      }
+    },
     "surface.activity.promptCache.expired": {
       "extractionState": "manual",
       "localizations": {

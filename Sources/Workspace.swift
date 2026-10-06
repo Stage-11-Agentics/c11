@@ -5060,9 +5060,11 @@ final class Workspace: Identifiable, ObservableObject {
     /// Live-agent dormancy is a reversible presentation projection, kept
     /// separate from the durable working/idle metadata truth.
     @Published private(set) var coldAgentSurfaceIds: Set<UUID> = []
-    /// Cold agents whose prompt cache expired, as last published. Only a
-    /// change detector: the mark's color is resolved from the cache itself.
-    private var promptCacheColdAgentIds: Set<UUID> = []
+    /// Resting agents (cold or waiting) whose prompt cache expired, as the
+    /// liveness sweep last published. Published so the sidebar re-renders
+    /// when the cause of a cold mark changes; the color and text themselves
+    /// are resolved from the cache.
+    @Published private(set) var promptCacheExpiredAgentIds: Set<UUID> = []
     /// Foreground-process classifications from `AgentDetector`. Durable
     /// `terminal_type` metadata describes resumable identity; this live map
     /// decides whether that identity is currently an agent or a plain shell.
@@ -5246,8 +5248,21 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Dark blue: the cold line of an agent whose prompt cache expired, so the
     /// next message re-caches its whole context. Darker than the flag violet
-    /// (`#9D8AD9`) so the two differ in lightness as well as hue.
-    nonisolated static let promptCacheColdHex = "#3D6DB3"
+    /// (`#9D8AD9`) so the two differ in lightness as well as hue; each theme's
+    /// value keeps a 2pt line above 3:1 against its chrome.
+    nonisolated static func promptCacheColdHex(lightBackground: Bool) -> String {
+        lightBackground ? "#2C5597" : "#4677C4"
+    }
+
+    /// The mark's recolor: the flag's violet wins, then an expired prompt cache.
+    nonisolated static func activityColorOverrideHex(
+        isFlagged: Bool,
+        promptCacheExpired: Bool,
+        lightBackground: Bool
+    ) -> String? {
+        if isFlagged { return "#9D8AD9" }
+        return promptCacheExpired ? promptCacheColdHex(lightBackground: lightBackground) : nil
+    }
 
     /// Agent-state palette shared by sidebar workspace pulse marks, the card
     /// agent rollup bar, and bonsplit surface-tab activity chips.
@@ -5530,6 +5545,10 @@ final class Workspace: Identifiable, ObservableObject {
         var nextConfiguration = bonsplitController.configuration
         nextConfiguration.appearance = nextAppearance
         bonsplitController.configuration = nextConfiguration
+        // Mark recolors are resolved per theme; a light/dark flip re-resolves them.
+        if !activityColorsMatch {
+            syncSurfaceTabActivityStates()
+        }
 
         if GhosttyApp.shared.backgroundLogEnabled {
             GhosttyApp.shared.logBackground(
@@ -6798,9 +6817,12 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
         return BonsplitTabActivityPresentation(
-            colorOverrideHex: attention.isFlagged
-                ? "#9D8AD9"
-                : (help?.promptCacheExpired == true ? Self.promptCacheColdHex : nil),
+            colorOverrideHex: Self.activityColorOverrideHex(
+                isFlagged: attention.isFlagged,
+                promptCacheExpired: help?.promptCacheExpired == true,
+                lightBackground: bonsplitController.configuration.appearance.chromeColors.backgroundHex
+                    .flatMap { NSColor(hex: $0) }?.isLightColor ?? false
+            ),
             motion: attention.isFlagged
                 ? (activityState == .waiting ? .binaryFlash : .breathe)
                 : nil,
@@ -6844,7 +6866,7 @@ final class Workspace: Identifiable, ObservableObject {
             flagRaisedAt: attention.flagRaisedAt,
             suppressed: attention.suppressed,
             journal: journalByTab[panelId],
-            promptCache: state == .cold
+            promptCache: state == .cold || state == .waiting
                 ? AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache
                 : nil
         )
@@ -7385,8 +7407,9 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    /// Update the live cold projection for one agent surface. `promptCacheExpired`
-    /// says the cache caused it, so a switch from dormancy to cache repaints.
+    /// Update the live cold projection for one agent surface.
+    /// `promptCacheExpired` is independent of cold: a waiting agent's cache
+    /// expires too (text only), and a switch from dormancy to cache repaints.
     func setAgentCold(_ isCold: Bool, promptCacheExpired: Bool = false, forSurface surfaceId: UUID) {
         var changed: Bool
         if isCold {
@@ -7394,10 +7417,10 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             changed = coldAgentSurfaceIds.remove(surfaceId) != nil
         }
-        if isCold && promptCacheExpired {
-            changed = promptCacheColdAgentIds.insert(surfaceId).inserted || changed
+        if promptCacheExpired {
+            changed = promptCacheExpiredAgentIds.insert(surfaceId).inserted || changed
         } else {
-            changed = promptCacheColdAgentIds.remove(surfaceId) != nil || changed
+            changed = promptCacheExpiredAgentIds.remove(surfaceId) != nil || changed
         }
         if changed {
             syncSurfaceTabActivityStateForTab(surfaceId)
@@ -8055,7 +8078,7 @@ final class Workspace: Identifiable, ObservableObject {
         derivedActivityByTab = derivedActivityByTab.filter { validSurfaceIds.contains($0.key) }
         attentionByTab = attentionByTab.filter { validSurfaceIds.contains($0.key) }
         coldAgentSurfaceIds = coldAgentSurfaceIds.filter { validSurfaceIds.contains($0) }
-        promptCacheColdAgentIds = promptCacheColdAgentIds.filter { validSurfaceIds.contains($0) }
+        promptCacheExpiredAgentIds = promptCacheExpiredAgentIds.filter { validSurfaceIds.contains($0) }
         detectedTerminalTypesByTab = detectedTerminalTypesByTab.filter {
             validSurfaceIds.contains($0.key)
         }
@@ -12390,6 +12413,7 @@ extension Workspace: BonsplitDelegate {
         derivedActivityByTab.removeValue(forKey: panelId)
         attentionByTab.removeValue(forKey: panelId)
         coldAgentSurfaceIds.remove(panelId)
+        promptCacheExpiredAgentIds.remove(panelId)
         detectedTerminalTypesByTab.removeValue(forKey: panelId)
         mailboxStdinBuffer.removeSurface(panelId)
         tabTTYNames.removeValue(forKey: panelId)
@@ -12582,6 +12606,7 @@ extension Workspace: BonsplitDelegate {
                 tabShellEdgeAt.removeValue(forKey: panelId)
                 derivedActivityByTab.removeValue(forKey: panelId)
                 coldAgentSurfaceIds.remove(panelId)
+                promptCacheExpiredAgentIds.remove(panelId)
                 detectedTerminalTypesByTab.removeValue(forKey: panelId)
                 mailboxStdinBuffer.removeSurface(panelId)
                 tabTTYNames.removeValue(forKey: panelId)

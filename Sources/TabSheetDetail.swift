@@ -174,9 +174,18 @@ enum TabSheetDetailBuilder {
                 base = abbreviatedPath(input.markdownPath)
             }
         }
-        guard let note = oneLine(input.evidenceNote) else { return base }
+        let notes = [oneLine(input.evidenceNote), promptCacheNote(input)].compactMap { $0 }
+        guard !notes.isEmpty else { return base }
+        let note = notes.joined(separator: " · ")
         guard let base else { return note }
         return "\(base) · \(note)"
+    }
+
+    /// A waiting agent keeps its gold mark; its expired cache shows here.
+    private static func promptCacheNote(_ input: Inputs) -> String? {
+        guard input.activity == .waiting,
+              let cache = input.promptCache, cache.isCold(at: input.now) else { return nil }
+        return String(localized: "tabSheet.subtitle.cacheExpired", defaultValue: "cache expired")
     }
 
     /// The state word and how long the state has held. Waiting counts from the

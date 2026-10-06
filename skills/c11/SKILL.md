@@ -62,10 +62,12 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 ## Flags and suppression (the attention model)
 
 Your tab's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
-Cold means you are still at your prompt but your next message starts cold: a **dark blue**
-line when your prompt cache expired (read from Claude Code, Codex and Grok Build
-transcripts; Codex and Grok are estimates), a gray line when c11 has no cache data and you
-sat idle past the dormancy threshold (10 minutes by default).
+Cold means you are still at your prompt but your next message starts cold. For Claude Code,
+Codex and Grok Build, cold follows the prompt cache only: a **dark blue** line once it
+expires (read from their transcripts; Codex and Grok are estimates; a `/model` switch or a
+compaction resets it at once), and no cold without cache data. Other agents go to a gray
+line after the dormancy threshold (10 minutes idle by default). A waiting agent whose cache
+expired keeps its gold mark and says so in its tooltip and tab sheet row.
 Two independent modifiers sit over it. A flag is **attention** priority, not scheduling
 priority; suppression reroutes routine attention, it never blocks escalation.
 

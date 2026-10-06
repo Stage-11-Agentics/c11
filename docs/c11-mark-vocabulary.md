@@ -17,22 +17,24 @@ what is inside the cell — full of output, holding a payload, empty, or collaps
 | `working` | 3×3 grid of dots over a faint base square | a cell full of typed output; identically the end state of the animated fill |
 | `waiting` (needs attention) | heavy hollow frame holding a solid core | a stopped frame — same family as idle — with a payload inside for the operator; waiting is literally derived from an unread notification, and the core is the unread thing |
 | `idle` | thin hollow frame | a stopped, empty cell: process present, nothing inside |
-| `cold` | flat line | the collapsed cell: the agent is still at its prompt, but its context has gone cold |
+| `cold` | flat line | the collapsed cell: the agent is still at its prompt, but has gone cold (its prompt cache expired, or it sat dormant) |
 
 **What makes an agent cold.** Cold is a live agent at rest whose next message starts from
 cold. A process that exits leaves no mark at all: the tab becomes a plain terminal.
 
-- **Prompt cache, where c11 can read it.** The mark goes cold when the agent's prompt cache
-  expires, so the next message re-caches its whole context. The cache comes from the
-  harness's own transcript: Claude Code names its tier on every request (5 minutes, or 1 hour
-  on a subscription within plan), counted from when the last request went out; Codex and
-  Grok Build publish no lifetime, so c11 estimates one (Codex 2 hours, Grok 1 hour) from
-  measured reuse. A warm 1-hour agent stays an idle frame for the whole hour.
-- **Dormancy, everywhere else.** An agent with no cache evidence (other harnesses, or before
-  its first request) goes cold after the dormancy threshold: idle and untouched for
-  `sidebarAgentColdThresholdSeconds` (default 10 minutes, 1-60, env
-  `C11_AGENT_COLD_SECONDS`). An agent whose lifecycle comes from its journal (hooks or
-  transcript lifecycle) has no dormancy rule and goes cold only from cache evidence.
+- **Prompt cache: Claude Code, Codex and Grok Build.** These agents' lifecycle comes from
+  their journal (hooks or transcript), and they go cold only when their prompt cache
+  expires, so the next message re-caches its whole context; without cache data they never
+  go cold. The cache comes from the harness's own transcript: Claude Code names its tier on
+  every request (5 minutes, or 1 hour on a subscription within plan), counted from when the
+  last request or prompt went out, and a `/model` switch or a compaction resets it at once;
+  slash commands and `!` shell lines send no request and leave it alone. Codex and Grok
+  Build publish no lifetime, so c11 estimates one (Codex 2 hours, Grok 1 hour) from measured
+  reuse. A warm 1-hour agent stays an idle frame for the whole hour.
+- **Dormancy: every other agent.** An agent outside the journal (other harnesses) goes cold
+  after the dormancy threshold: idle and untouched for `sidebarAgentColdThresholdSeconds`
+  (default 10 minutes, 1-60, env `C11_AGENT_COLD_SECONDS`). Where such an agent does have
+  cache evidence, the cache decides instead.
 
 Priority order for any UI that ranks states: **needs attention · working · idle · cold.**
 
@@ -60,13 +62,14 @@ working `#E8E8E8`, waiting `#D0AA45` gold, idle `#9AA0A9`, cold `#62676F`.
 Color remains the fast day-to-day read — redundant reinforcement rather than the
 load-bearing channel.
 
-**Expired prompt cache: dark blue `#3D6DB3`** (`Workspace.promptCacheColdHex`), on the cold
-line only, in both themes. It marks a cold that is a cost: the next message re-caches the
-context. A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two
-differ in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent
-keeps its gold mark: its cache shows in text only (the tab sheet `cache` clock). The tooltip
-names what expired, whether it is an estimate, and how many tokens the next message
-re-caches.
+**Expired prompt cache: dark blue**, `#4677C4` on a dark theme and `#2C5597` on a light one
+(`Workspace.promptCacheColdHex`), on the cold line only; each keeps a 2pt line above 3:1
+against its chrome. It marks a cold that is a cost: the next message re-caches the context.
+A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two differ
+in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent keeps its
+gold mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its
+tab sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
+many tokens the next message re-caches.
 
 ## Behavior under the modifiers
 

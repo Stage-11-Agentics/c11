@@ -941,13 +941,17 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(state.signals.promptCache?.basis, .ttl(PromptCachePolicy.anthropicDefaultTTL))
         XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:00:00"), "a subagent's request does not touch the main cache")
 
-        try append(#"{"type":"system","subtype":"compact_boundary","isSidechain":false,"timestamp":"2026-01-01T10:01:00.000Z"}"# + "\n", to: url)
+        try append(#"{"type":"system","subtype":"compact_boundary","isSidechain":false,"timestamp":"2026-01-01T10:01:00.000Z","compactMetadata":{"trigger":"manual","preTokens":900000,"postTokens":18858}}"# + "\n", to: url)
         _ = detect("claude-code", r, &state)
-        XCTAssertNil(state.signals.promptCache, "compaction replaces the cached prefix")
+        let compacted = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(compacted.reset, .compaction, "compaction replaces the cached prefix")
+        XCTAssertEqual(compacted.coldAt(estimateOverride: nil), t("10:01:00"), "cold at once")
+        XCTAssertEqual(compacted.promptTokens, 18_858, "the next message re-caches the compacted context")
 
         try append(claudeUser("10:01:20") + "\n" + claudeAssistant("m2", "10:01:30", read: 0, written: 400, fiveMinute: 400) + "\n", to: url)
         _ = detect("claude-code", r, &state)
         XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:01:20"))
+        XCTAssertNil(state.signals.promptCache?.reset)
     }
 
     func testClaudeWithoutCacheUseSaysNothingAboutTheCache() throws {
@@ -1054,5 +1058,65 @@ final class AgentModelDetectionTests: XCTestCase {
         var state = ModelTailState()
         _ = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
         XCTAssertEqual(state.signals.promptCache?.requestAt, AgentModelProbe.parseISO("2026-01-01T06:20:00.000Z"))
+    }
+
+    private func claudeLocal(_ hms: String, _ content: String) -> String {
+        let escaped = content.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n")
+        return #"{"type":"user","isSidechain":false,"timestamp":"2026-01-01T\#(hms).000Z","message":{"role":"user","content":"\#(escaped)"}}"#
+    }
+
+    func testSlashCommandsAndShellLinesSendNoRequestAndDoNotRewarmTheCache() throws {
+        let lines = [
+            claudeUser("10:00:00"),
+            claudeAssistant("m1", "10:00:10", read: 0, written: 500, oneHour: 500),
+            claudeLocal("10:30:00", "<command-name>/context</command-name>\n<command-message>context</command-message>\n<command-args></command-args>"),
+            claudeLocal("10:30:01", "<local-command-stdout>Context usage: 12%</local-command-stdout>"),
+            claudeLocal("10:31:00", "<bash-input>ls</bash-input>"),
+            claudeLocal("10:31:01", "<bash-stdout>README.md</bash-stdout><bash-stderr></bash-stderr>"),
+            claudeLocal("10:32:00", "<local-command-stderr>Unknown command</local-command-stderr>"),
+        ]
+        try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        let cache = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(cache.requestAt, t("10:00:00"), "/context, its output and ! shell lines send no request")
+        XCTAssertNil(cache.reset)
+    }
+
+    func testModelSwitchResetsTheCacheUntilTheNextPrompt() throws {
+        let lines = [
+            claudeUser("10:00:00"),
+            claudeAssistant("m1", "10:00:10", read: 0, written: 500, oneHour: 500),
+            claudeLocal("10:20:00", "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args></command-args>"),
+            claudeLocal("10:20:01", "<local-command-stdout>Set model to `Sonnet 5.5` and saved as your default for new sessions</local-command-stdout>"),
+        ]
+        let url = try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let r = ref("claude-code", id: claudeId)
+        _ = detect("claude-code", r, &state)
+        let switched = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(switched.reset, .modelSwitch)
+        XCTAssertEqual(switched.coldAt(estimateOverride: nil), t("10:20:01"), "the cache belongs to the old model: cold at once")
+        XCTAssertEqual(switched.promptTokens, 2 + 500, "the next message re-caches the whole context")
+
+        try append(claudeUser("10:25:00") + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        let prompted = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertNil(prompted.reset, "the next prompt's request writes a fresh cache")
+        XCTAssertEqual(prompted.requestAt, t("10:25:00"))
+        XCTAssertEqual(prompted.basis, .ttl(PromptCachePolicy.anthropicExtendedTTL))
+    }
+
+    @MainActor
+    func testPromptCacheFieldNamesAReset() throws {
+        let at = Date(timeIntervalSince1970: 2_000_000)
+        let cache = PromptCacheObservation(
+            requestAt: at.addingTimeInterval(-60), basis: .ttl(3_600), promptTokens: 10,
+            reset: .modelSwitch, resetAt: at
+        )
+        let field = try XCTUnwrap(TerminalController.promptCacheField(cache, now: at.addingTimeInterval(1)) as? [String: Any])
+        XCTAssertEqual(field["state"] as? String, "cold")
+        XCTAssertEqual(field["reset"] as? String, "model_switch")
+        XCTAssertEqual(field["lifetime_seconds"] as? Int, 3_600)
     }
 }

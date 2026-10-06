@@ -669,7 +669,7 @@ sequenceDiagram
 | Atomic write helper               | `Sources/Mailbox/MailboxIO.swift`               |
 | ULID generator                    | `Sources/Mailbox/MailboxULID.swift`             |
 | Outbox fsevent watcher            | `Sources/Mailbox/MailboxOutboxWatcher.swift`    |
-| Panel-name resolver               | `Sources/Mailbox/MailboxTabResolver.swift`      |
+| Panel-name resolver               | `Sources/Mailbox/MailboxPanelResolver.swift`    |
 | Dispatcher (orchestrator)         | `Sources/Mailbox/MailboxDispatcher.swift`       |
 | Dispatch log NDJSON               | `Sources/Mailbox/MailboxDispatchLog.swift`      |
 | `stdin` handler (PTY injection)   | `Sources/Mailbox/StdinMailboxHandler.swift`     |

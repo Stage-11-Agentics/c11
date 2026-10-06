@@ -61,7 +61,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 | File | Role |
 |---|---|
-| `TabManager.swift` | Workspace lifecycle |
+| `WorkspaceManager.swift` | Workspace lifecycle |
 | `Workspace.swift`, `WorkspaceContentView.swift`, `WorkspaceMetadataKeys.swift` | Workspace model & view |
 | `SessionPersistence.swift`, `PersistedMetadata.swift` | Restore across launches |
 

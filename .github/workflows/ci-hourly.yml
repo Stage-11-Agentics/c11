@@ -1,25 +1,75 @@
-name: CI hourly (macOS)
+name: CI main (macOS)
 
+# Native backstop for main: the app build, logic tests and host tests. It runs
+# when main changes, not on a clock. The concurrency group never cancels a
+# running build and holds at most one pending run, which each newer push
+# replaces. GitHub can admit an older push's run after a newer one, so a run
+# does not test its trigger: once admitted, it resolves the ref's tip once and
+# tests that commit. Every push is therefore followed by a run that starts after
+# it and tests a main that contains it. A pass posts a "CI main (macOS)" success
+# status on the tested commit; a run whose tip already has one skips the build.
+# If the tip cannot be resolved the run fails; if the green record cannot be
+# read the tip builds.
 on:
-  schedule:
-    - cron: '0 * * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if this commit already passed
+        type: boolean
+        default: false
 
 concurrency:
-  group: ci-hourly-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-main-macos-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  GREEN_STATUS_CONTEXT: CI main (macOS)
+
 jobs:
-  build:
-    runs-on: macos-15-xlarge
-    timeout-minutes: 45
+  target:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: read
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      tested: ${{ steps.select.outputs.tested }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          sparse-checkout: scripts/ci-backstop-target.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the ref's tip and its green record
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci-backstop-target.sh "$GITHUB_REPOSITORY" "$GITHUB_REF" "$GITHUB_SHA" "$GREEN_STATUS_CONTEXT" | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    needs: target
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    # Free standard runner (3 cores); the XLarge build took about 10 minutes.
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
           submodules: recursive
 
       - name: Select Xcode
@@ -157,6 +207,8 @@ jobs:
             c11Tests/AppDelegateShortcutRoutingTests/testAddWorkspaceInPreferredMainWindowPrunesOrphanedContextWithoutLiveWindow
             # C11-332 product bug: same unpruned orphaned window context, reached through a remapped New Workspace shortcut.
             c11Tests/AppDelegateShortcutRoutingTests/testCustomCmdTNewWorkspacePrunesOrphanedContextWithoutLiveWindow
+            # C11-335: wall-clock budget, not correctness; shared 3-core macos-15 measures 1.8x it. Time it on a quiet host.
+            c11Tests/ThemeResolverBenchmarks/testResolverP95PerformanceBudget
           )
           SKIP_ARGS=()
           for test_id in "${HOST_TEST_QUARANTINE[@]}"; do
@@ -179,3 +231,16 @@ jobs:
           # leave on the main queue starves later classes' deferred-mount waits.
           host_tests -only-testing:c11Tests -skip-testing:c11Tests/AppDelegateShortcutRoutingTests
           host_tests -only-testing:c11Tests/AppDelegateShortcutRoutingTests
+
+      - name: Record green for the tested commit
+        # Best effort: without the status the next run rebuilds this commit.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=success \
+            -f context="$GREEN_STATUS_CONTEXT" \
+            -f description="Native build, logic and host tests passed" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

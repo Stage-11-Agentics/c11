@@ -23,7 +23,8 @@ class Handler(socketserver.StreamRequestHandler):
             request = json.loads(line)
             self.server.requests.append(request)
             if request["method"] == "system.capabilities":
-                result = {"methods": ["tab.list", "feed.answer"]}
+                result = {"methods": ["panel.list", "feed.answer"],
+                          "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
             else:
                 result = {"answered": False, "delivered": False, "submitted": False, "retry": "safe"}
             response = {"id": request["id"], "ok": True, "result": result}

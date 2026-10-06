@@ -3732,22 +3732,23 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_WORKSPACE_ID", workspaceId.uuidString)
-        // Canonical tab id is C11_TAB_ID (the C11_ twin of CMUX_TAB_ID). CMUX_PANEL_ID,
-        // CMUX_SURFACE_ID / C11_SURFACE_ID and C11_PANEL_ID hold the same UUID as hidden
-        // aliases; the rename-tab CLI and tests_v2/test_rename_tab_cli_parity.py expect
-        // CMUX_TAB_ID to resolve to a tab (accepts `tab:<n>` or `surface:<n>`).
+        // Canonical panel id is C11_PANEL_ID (the C11_ twin of CMUX_PANEL_ID).
+        // C11_TAB_ID / CMUX_TAB_ID and C11_SURFACE_ID / CMUX_SURFACE_ID hold the
+        // same UUID as hidden aliases, exported forever so older agents and
+        // scripts keep resolving their own panel.
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
-        // The integer N of this tab's `tab:N` handle — the number the tab bar
-        // displays when "Show tab IDs in tab titles" is on. C11_-only (no CMUX
-        // twin), like C11_SOCKET_PATH. Address yourself as `tab:$C11_TAB_NUM`;
-        // a bare integer is a positional index. `C11_SURFACE_NUM` carries the
-        // same value as a hidden alias. (`C11_AREA_ID` is deliberately not
-        // set: a tab's area changes when it moves, so a launch-time value
-        // would go stale.)
+        // The integer N of this panel's `panel:N` handle: the number the panel
+        // bar displays when panel numbers are shown. C11_-only (no CMUX twin),
+        // like C11_SOCKET_PATH. Address yourself as `panel:$C11_PANEL_NUM`; a
+        // bare integer is a positional index. `C11_TAB_NUM` and
+        // `C11_SURFACE_NUM` carry the same value as hidden aliases. (`C11_AREA_ID`
+        // is deliberately not set: a panel's area changes when it moves, so a
+        // launch-time value would go stale.)
         let surfaceNum = MainActor.assumeIsolated {
             TerminalController.shared.surfaceOrdinal(forSurfaceUUID: id)
         }
+        setManagedEnvironmentValue("C11_PANEL_NUM", String(surfaceNum))
         setManagedEnvironmentValue("C11_TAB_NUM", String(surfaceNum))
         setManagedEnvironmentValue("C11_SURFACE_NUM", String(surfaceNum))
         // Inject the *actually-bound* socket path (not the recomputed resolution

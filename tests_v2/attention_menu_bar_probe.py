@@ -337,10 +337,10 @@ class Probe:
         self.preflight()
         self.workspace = self.rpc('workspace.create')['workspace_id']
         self.rpc('workspace.rename', {"workspace_id": self.workspace, "title": 'Synthetic menu probe'})
-        target = self.rpc('tab.list', {"workspace_id": self.workspace})['tabs'][0]['id']
-        sibling = self.rpc('tab.create', {"workspace_id": self.workspace, "type": 'terminal'})['tab_id']
+        target = self.rpc('panel.list', {"workspace_id": self.workspace})['panels'][0]['id']
+        sibling = self.rpc('panel.create', {"workspace_id": self.workspace, "type": 'terminal'})['panel_id']
         self.rpc('workspace.select', {"workspace_id": self.workspace})
-        self.rpc('tab.focus', {"workspace_id": self.workspace, "tab_id": sibling})
+        self.rpc('panel.focus', {"workspace_id": self.workspace, "panel_id": sibling})
         self.eventually(lambda: len(self.ui('inspect')['candidates']) == 1,
                         'Tagged status extra did not appear; set showMenuBarExtra before launching')
         baseline_size = self.status()['size']
@@ -364,7 +364,7 @@ class Probe:
                    'Suppressed flag stays visible in actual menu')
         self.screenshot('03-suppressed-flag-menu')
         self.ui('click-flag', reason)
-        focused = self.eventually(lambda: (self.rpc('system.identify').get('focused') or {}).get('tab_id') == target,
+        focused = self.eventually(lambda: (self.rpc('system.identify').get('focused') or {}).get('panel_id') == target,
                                   'Actual flag-row click did not select exact target tab')
         self.check(bool(focused), 'Flag-row click selected exact target tab')
         selected = self.rpc('system.identify')['focused']
@@ -381,7 +381,7 @@ class Probe:
         self.screenshot('05-lowered-menu')
         self.dismiss()
         self.screenshot('06-dismissed-after')
-        self.rpc('tab.focus', {"workspace_id": self.workspace, "tab_id": sibling})
+        self.rpc('panel.focus', {"workspace_id": self.workspace, "panel_id": sibling})
         finder = self.ui('background')
         self.eventually(lambda: self.ui('foreground') == finder, 'Guest Finder did not become frontmost')
         selection = self.rpc('system.identify')['focused']
@@ -397,7 +397,7 @@ class Probe:
                    'Background flag appears in actual menu')
         self.screenshot('07-background-flag-menu')
         self.ui('click-flag', reason)
-        self.eventually(lambda: (self.rpc('system.identify').get('focused') or {}).get('tab_id') == target,
+        self.eventually(lambda: (self.rpc('system.identify').get('focused') or {}).get('panel_id') == target,
                         'Background flag-row click did not select exact target tab')
         self.check(self.ui('foreground') == self.args.pid, 'Explicit background flag-row click activates tagged app')
         self.screenshot('08-background-exact-target')

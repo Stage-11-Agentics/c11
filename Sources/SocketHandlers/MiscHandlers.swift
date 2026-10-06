@@ -14,7 +14,7 @@ extension TerminalController {
         switch method {
         case "settings.open":
             return v2Result(id: id, self.v2SettingsOpen(params: params))
-        case "tab.action":
+        case "panel.action":
             return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2TabAction(params: params))
         case "session.save":
             return v2Result(id: id, self.v2SessionSave(params: params))
@@ -125,7 +125,7 @@ extension TerminalController {
         guard let pane = targetWorkspace.bonsplitController.focusedPaneId
                     ?? targetWorkspace.bonsplitController.allPaneIds.first,
               let tab = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: false) else {
-            return .err(code: "unavailable", message: "No pane available for messages page", data: nil)
+            return .err(code: "unavailable", message: "No area available for messages page", data: nil)
         }
         return .ok([
             "url": pageURL.absoluteString,
@@ -165,7 +165,7 @@ extension TerminalController {
             "pin", "unpin", "mark_read", "mark_unread"
         ]
 
-        var result: V2CallResult = .err(code: "invalid_params", message: "Unknown tab action", data: [
+        var result: V2CallResult = .err(code: "invalid_params", message: "Unknown panel action", data: [
             "action": action,
             "supported_actions": supportedActions
         ])
@@ -178,11 +178,11 @@ extension TerminalController {
 
             let surfaceId = v2UUID(params, "surface_id") ?? v2UUID(params, "tab_id") ?? workspace.focusedPanelId
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused tab", data: nil)
+                result = .err(code: "not_found", message: "No focused panel", data: nil)
                 return
             }
             guard workspace.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Tab not found", data: [
+                result = .err(code: "not_found", message: "Panel not found", data: [
                     "surface_id": surfaceId.uuidString,
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
                     "tab_id": surfaceId.uuidString,
@@ -284,19 +284,19 @@ extension TerminalController {
                 workspace.markTabUnread(surfaceId)
                 finish()
 
-            case "reload", "reload_tab":
+            case "reload", "reload_panel", "reload_tab":
                 guard let browserPanel = workspace.browserPanel(for: surfaceId) else {
-                    result = .err(code: "invalid_state", message: "Reload is only available for browser tabs", data: nil)
+                    result = .err(code: "invalid_state", message: "Reload is only available for browser panels", data: nil)
                     return
                 }
                 browserPanel.reload()
                 finish()
 
-            case "duplicate", "duplicate_tab":
+            case "duplicate", "duplicate_panel", "duplicate_tab":
                 guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId),
                       let browserPanel = workspace.browserPanel(for: surfaceId) else {
-                    result = .err(code: "invalid_state", message: "Duplicate is only available for browser tabs", data: nil)
+                    result = .err(code: "invalid_state", message: "Duplicate is only available for browser panels", data: nil)
                     return
                 }
 
@@ -306,7 +306,7 @@ extension TerminalController {
                     url: browserPanel.currentURL,
                     focus: true
                 ) else {
-                    result = .err(code: "internal_error", message: "Failed to duplicate tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to duplicate panel", data: nil)
                     return
                 }
                 _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
@@ -317,16 +317,16 @@ extension TerminalController {
                     "created_tab_ref": v2TabRef(uuid: newTab.id)
                 ])
 
-            case "new_terminal_right", "new_terminal_to_right", "new_terminal_tab_to_right":
+            case "new_terminal_right", "new_terminal_to_right", "new_terminal_panel_to_right", "new_terminal_tab_to_right":
                 guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Area for tab not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
                 guard let newTab = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
-                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
                 _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
@@ -337,10 +337,10 @@ extension TerminalController {
                     "created_tab_ref": v2TabRef(uuid: newTab.id)
                 ])
 
-            case "new_browser_right", "new_browser_to_right", "new_browser_tab_to_right":
+            case "new_browser_right", "new_browser_to_right", "new_browser_panel_to_right", "new_browser_tab_to_right":
                 guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Area for tab not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
 
@@ -353,7 +353,7 @@ extension TerminalController {
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
                 guard let newTab = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
-                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
                 _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
@@ -367,12 +367,12 @@ extension TerminalController {
             case "close_left", "close_to_left":
                 guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Area for tab not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
                 let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
                 guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else {
-                    result = .err(code: "not_found", message: "Tab not found in area", data: nil)
+                    result = .err(code: "not_found", message: "Panel not found in area", data: nil)
                     return
                 }
                 let targetIds = Array(bonsplitTabs.prefix(index).map(\.id))
@@ -382,22 +382,22 @@ extension TerminalController {
             case "close_right", "close_to_right":
                 guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Area for tab not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
                 let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
                 guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else {
-                    result = .err(code: "not_found", message: "Tab not found in area", data: nil)
+                    result = .err(code: "not_found", message: "Panel not found in area", data: nil)
                     return
                 }
                 let targetIds = (index + 1 < bonsplitTabs.count) ? Array(bonsplitTabs.suffix(from: index + 1).map(\.id)) : []
                 let closeResult = closeTabs(targetIds)
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
-            case "close_others", "close_other_tabs":
+            case "close_others", "close_other_panels", "close_other_tabs":
                 guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Area for tab not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
                 let targetIds = workspace.bonsplitController.tabs(inPane: paneId)
@@ -407,7 +407,7 @@ extension TerminalController {
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
             default:
-                result = .err(code: "invalid_params", message: "Unknown tab action", data: [
+                result = .err(code: "invalid_params", message: "Unknown panel action", data: [
                     "action": action,
                     "supported_actions": supportedActions
                 ])
@@ -582,7 +582,7 @@ extension TerminalController {
                 || v2UUID(params, "tab_id") != nil else {
             return .err(
                 code: "missing_ref",
-                message: String(localized: "socket.sidebar.state.targetRequired", defaultValue: "sidebar.state requires a workspace or tab target; selected-workspace fallback is disabled"),
+                message: String(localized: "socket.sidebar.state.targetRequired", defaultValue: "sidebar.state requires a workspace or panel target; selected-workspace fallback is disabled"),
                 data: nil
             )
         }

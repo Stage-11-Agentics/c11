@@ -50,7 +50,7 @@ def command(cli, socket_path, *args):
 
 
 def tab_ids(client, workspace):
-    return client._call("tab.list", {"workspace_id": workspace})["tabs"]
+    return client._call("panel.list", {"workspace_id": workspace})["panels"]
 
 
 def read_state(path, socket_path):
@@ -85,12 +85,12 @@ def snapshot(client, state, cli, socket_path):
         tabs = tab_ids(client, wid)
         waiting = flagged = 0
         for tab in tabs:
-            md = client._call("tab.get_metadata", {"workspace_id": wid, "tab_id": tab["id"]})["metadata"]
+            md = client._call("panel.get_metadata", {"workspace_id": wid, "panel_id": tab["id"]})["metadata"]
             tab_metadata[tab["id"]] = md
             is_flagged = bool(md.get("flag"))
             suppressed = md.get("suppressed") is True
             exact_unread = any(n["workspace_id"] == wid and
-                               (n.get("tab_id") or n.get("surface_id")) == tab["id"] and
+                               (n.get("panel_id")) == tab["id"] and
                                not n["is_read"] for n in relevant_notices)
             flagged += int(is_flagged)
             # The seeded terminal demands use exact unread notices. This is an
@@ -98,7 +98,7 @@ def snapshot(client, state, cli, socket_path):
             # socket claim that the header actually shows its resolved state.
             waiting += int(exact_unread and not suppressed)
         workspaces[wid] = {
-            "window_id": live[wid], "record": row, "tabs": tabs,
+            "window_id": live[wid], "record": row, "panels": tabs,
             "expected_attention": {
                 "flaggedCount": flagged, "waitingCount": waiting,
                 "unreadCount": sum(not n["is_read"] for n in relevant_notices if n["workspace_id"] == wid),
@@ -119,8 +119,8 @@ def snapshot(client, state, cli, socket_path):
             "violet_expected": counts["flaggedCount"] > 0,
             "collapsed": group["is_collapsed"],
         }
-    identity = {wid: [tab["id"] for tab in record["tabs"]] for wid, record in workspaces.items()}
-    seed_identity = {record["id"]: record["tab_ids"] for record in state["workspaces"].values()}
+    identity = {wid: [tab["id"] for tab in record["panels"]] for wid, record in workspaces.items()}
+    seed_identity = {record["id"]: record["panel_ids"] for record in state["workspaces"].values()}
     missing_workspaces = sorted(set(seed_identity) - set(identity))
     missing_tabs = {wid: sorted(set(tabs) - set(identity.get(wid, [])))
                     for wid, tabs in seed_identity.items() if set(tabs) - set(identity.get(wid, []))}
@@ -149,11 +149,11 @@ def assert_baseline(report, state):
     require(actual["collapsed"] and actual["violet_expected"], "Attention group must be collapsed with a flag")
     require(report["selection"].get(state["window"]) == state["workspaces"]["active"]["id"],
             "Expected the active terminal to remain selected inside its collapsed group")
-    plain = state["workspaces"]["flagged_plain"]["tab_ids"][0]
+    plain = state["workspaces"]["flagged_plain"]["panel_ids"][0]
     md = report["tab_metadata"][plain]
     require(md.get("terminal_type") in (None, "shell", "terminal"), "Plain flagged terminal became an agent")
     require(md.get("suppressed") is True and bool(md.get("flag")), "Plain flag/suppression fixture changed")
-    suppressed = state["workspaces"]["suppressed"]["tab_ids"][0]
+    suppressed = state["workspaces"]["suppressed"]["panel_ids"][0]
     require(report["tab_metadata"][suppressed].get("suppressed") is True, "Suppressed demand not suppressed")
 
 
@@ -176,9 +176,9 @@ def prepare(client, state_path, socket_path, cli, extra):
         for index, role in enumerate(roles):
             wid = initial[0]["id"] if index == 0 else client._call(
                 "workspace.create", {"window_id": state["window"], "focus": False})["workspace_id"]
-            state["workspaces"][role] = {"id": wid, "tab_ids": []}
+            state["workspaces"][role] = {"id": wid, "panel_ids": []}
             save(state_path, state)
-            state["workspaces"][role]["tab_ids"] = [tab["id"] for tab in tab_ids(client, wid)]
+            state["workspaces"][role]["panel_ids"] = [tab["id"] for tab in tab_ids(client, wid)]
             save(state_path, state)
             client._call("workspace.rename", {"window_id": state["window"], "workspace_id": wid,
                                                "title": f"S260 {role.replace('_', ' ')}"})
@@ -201,15 +201,15 @@ def prepare(client, state_path, socket_path, cli, extra):
         client._call("workspace.select", {"window_id": state["window"], "workspace_id": state["workspaces"]["active"]["id"]})
         for role in ("suppressed", "flagged_plain"):
             record = state["workspaces"][role]
-            client._call("flag.suppress", {"workspace_id": record["id"], "tab_id": record["tab_ids"][0], "by": "agent"})
+            client._call("flag.suppress", {"workspace_id": record["id"], "panel_id": record["panel_ids"][0], "by": "agent"})
         record = state["workspaces"]["flagged_plain"]
-        client._call("flag.raise", {"workspace_id": record["id"], "tab_id": record["tab_ids"][0],
-                                    "caller_tab_id": state["workspaces"]["active"]["tab_ids"][0],
+        client._call("flag.raise", {"workspace_id": record["id"], "panel_id": record["panel_ids"][0],
+                                    "caller_panel_id": state["workspaces"]["active"]["panel_ids"][0],
                                     "by": "agent", "reason": "Synthetic C11-260 validation flag; no operator action"})
         for role in ("waiting", "suppressed", "flagged_plain"):
             record = state["workspaces"][role]
-            client._call("notification.create_for_tab", {
-                "workspace_id": record["id"], "tab_id": record["tab_ids"][0],
+            client._call("notification.create_for_panel", {
+                "workspace_id": record["id"], "panel_id": record["panel_ids"][0],
                 "title": f"Synthetic S260 {role}", "subtitle": state["token"],
                 "body": "Disposable sidebar fixture; not a real agent request"})
         for role in ("attention", "active", "empty"):
@@ -245,7 +245,7 @@ def cleanup(client, state, path):
     if state["window"] in live_window_ids:
         rows = client._call("workspace.list", {"window_id": state["window"]})["workspaces"]
         groups = client._call("workspace.group.list", {"window_id": state["window"]})["workspace_groups"]
-        owned = {record["id"]: set(record["tab_ids"]) for record in state["workspaces"].values()}
+        owned = {record["id"]: set(record["panel_ids"]) for record in state["workspaces"].values()}
         only_owned = not groups and all(
             row["id"] in owned and all(tab["id"] in owned[row["id"]] for tab in tab_ids(client, row["id"]))
             for row in rows)
@@ -261,7 +261,7 @@ def cleanup(client, state, path):
         tabs = tab_ids(client, wid)
         # If a validator dropped an unowned tab into an owned workspace, retain
         # the containing workspace rather than closing somebody else's tab.
-        if any(tab["id"] not in record["tab_ids"] for tab in tabs):
+        if any(tab["id"] not in record["panel_ids"] for tab in tabs):
             retained.append({"workspace_id": wid, "reason": "contains unowned tabs"})
             continue
         client._call("workspace.close", {"workspace_id": wid, "window_id": owners[wid]})

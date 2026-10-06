@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M7: Title write/read via tab.set_metadata + tab.get_titlebar_state."""
+"""M7: Title write/read via panel.set_metadata + panel.get_titlebar_state."""
 
 import os
 import sys
@@ -25,7 +25,7 @@ def main() -> int:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
         _must(
-            "tab.set_metadata" in methods and "tab.get_titlebar_state" in methods,
+            "panel.set_metadata" in methods and "panel.get_titlebar_state" in methods,
             f"Required M2/M7 methods missing. methods={sorted(methods)[:60]}",
         )
 
@@ -34,16 +34,16 @@ def main() -> int:
         _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
 
         c._call("workspace.select", {"workspace_id": ws_id})
-        current = c._call("tab.current", {"workspace_id": ws_id}) or {}
-        surface_id = str(current.get("tab_id") or "")
-        _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
+        current = c._call("panel.current", {"workspace_id": ws_id}) or {}
+        surface_id = str(current.get("panel_id") or "")
+        _must(bool(surface_id), f"panel.current returned no panel_id: {current}")
 
         # Write title with source=explicit.
         title = f"Running smoke tests {stamp}"
         res = c._call(
-            "tab.set_metadata",
+            "panel.set_metadata",
             {
-                "tab_id": surface_id,
+                "panel_id": surface_id,
                 "mode": "merge",
                 "source": "explicit",
                 "metadata": {"title": title},
@@ -53,7 +53,7 @@ def main() -> int:
         _must(applied is True, f"set_metadata title not applied: {res}")
 
         # Read back.
-        state = c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
+        state = c._call("panel.get_titlebar_state", {"panel_id": surface_id}) or {}
         _must(state.get("title") == title, f"title mismatch: {state}")
         _must(state.get("title_source") == "explicit", f"title_source mismatch: {state}")
         _must(isinstance(state.get("title_ts"), (int, float)), f"title_ts missing: {state}")
@@ -67,9 +67,9 @@ def main() -> int:
         raised = False
         try:
             c._call(
-                "tab.set_metadata",
+                "panel.set_metadata",
                 {
-                    "tab_id": surface_id,
+                    "panel_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {"title": oversize},
@@ -80,16 +80,16 @@ def main() -> int:
         _must(raised, "Expected reserved_key_invalid_type for title > 256 chars")
 
         # Invariant: title unchanged after rejection.
-        state_after = c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
+        state_after = c._call("panel.get_titlebar_state", {"panel_id": surface_id}) or {}
         _must(state_after.get("title") == title, f"title should be unchanged: {state_after}")
 
         # Invalid: control char in title rejected.
         raised = False
         try:
             c._call(
-                "tab.set_metadata",
+                "panel.set_metadata",
                 {
-                    "tab_id": surface_id,
+                    "panel_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {"title": "bad\ntitle"},

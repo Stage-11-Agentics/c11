@@ -8,7 +8,7 @@ Verifies the pane-metadata RPC family added in Phase 2:
   read-then-write-by-convention norm)
 - Cap enforcement (64 KiB per pane)
 - CLI `--area area:N` short-ref targeting
-- CLI `--tab` + `--area` together → usage error
+- CLI `--panel` + `--area` together → usage error
 
 No UI assertions — this is a mechanism-layer test. Requires a running
 c11mux instance; set CMUX_SOCKET to target a tagged build's socket
@@ -58,10 +58,10 @@ def _cli(args: list[str], check: bool = True, env_extra: dict | None = None) -> 
 def _fresh_workspace_and_pane(c: cmux) -> tuple[str, str]:
     """Create a workspace and split once so we have a second pane to target."""
     workspace_id = c.new_workspace()
-    # surface.split always creates a new pane; grab the new pane's id.
-    split_res = c._call("tab.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
+    # panel.split always creates a new pane; grab the new pane's id.
+    split_res = c._call("panel.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
     pane_id = split_res.get("area_id")
-    _must(bool(pane_id), f"tab.split returned no area_id: {split_res}")
+    _must(bool(pane_id), f"panel.split returned no area_id: {split_res}")
     return workspace_id, str(pane_id)
 
 
@@ -235,10 +235,10 @@ def _test_cli_pane_short_ref(c: cmux) -> None:
 
 
 def _test_cli_surface_and_pane_mutually_exclusive() -> None:
-    """`--tab` + `--area` on metadata commands must error."""
+    """`--panel` + `--area` on metadata commands must error."""
     res = _cli([
         "set-metadata",
-        "--tab", "tab:1",
+        "--panel", "panel:1",
         "--area", "area:1",
         "--key", "title",
         "--value", "nope",

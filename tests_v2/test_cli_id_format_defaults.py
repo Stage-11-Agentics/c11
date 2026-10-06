@@ -104,21 +104,21 @@ def main() -> int:
     # ------------------------------------------------------------------
 
     # list-panels
-    panels_default = _run_cli_json(cli, ["list-tabs"])
-    surfaces = panels_default.get("tabs", [])
+    panels_default = _run_cli_json(cli, ["list-panels"])
+    surfaces = panels_default.get("panels", [])
     if surfaces:
         _must(
             _has_any_key(panels_default, lambda k: k.endswith("_ref") or k == "ref"),
-            f"list-tabs default should include refs: {panels_default}",
+            f"list-panels default should include refs: {panels_default}",
         )
         _must(
             len(_id_ref_pairs(panels_default)) == 0,
-            f"list-tabs default should suppress id when ref exists; pairs={_id_ref_pairs(panels_default)}",
+            f"list-panels default should suppress id when ref exists; pairs={_id_ref_pairs(panels_default)}",
         )
 
-    panels_both = _run_cli_json(cli, ["list-tabs"], extra_flags=["--id-format", "both"])
-    if panels_both.get("tabs"):
-        _must(len(_id_ref_pairs(panels_both)) > 0, f"list-tabs --id-format both should include pairs: {panels_both}")
+    panels_both = _run_cli_json(cli, ["list-panels"], extra_flags=["--id-format", "both"])
+    if panels_both.get("panels"):
+        _must(len(_id_ref_pairs(panels_both)) > 0, f"list-panels --id-format both should include pairs: {panels_both}")
 
     # list-panes
     panes_default = _run_cli_json(cli, ["list-areas"])
@@ -143,8 +143,8 @@ def main() -> int:
         )
 
     # surface-health
-    health_default = _run_cli_json(cli, ["tab-health"])
-    health_surfaces = health_default.get("tabs", [])
+    health_default = _run_cli_json(cli, ["panel-health"])
+    health_surfaces = health_default.get("panels", [])
     if health_surfaces:
         _must(
             _has_any_key(health_default, lambda k: k.endswith("_ref") or k == "ref"),

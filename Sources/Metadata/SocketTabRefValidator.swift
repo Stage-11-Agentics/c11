@@ -78,7 +78,7 @@ internal enum SocketTabRefValidator {
             if case .empty = classify(params[key]) {
                 return Rejection(
                     code: emptyRefCode,
-                    message: String(localized: "socket.tabRef.empty.noSelectedFallback", defaultValue: "A tab reference was provided but empty; pass a concrete id (no selected-context fallback).")
+                    message: String(localized: "socket.tabRef.empty.noSelectedFallback", defaultValue: "A panel reference was provided but empty; pass a concrete id (no selected-context fallback).")
                 )
             }
         }
@@ -90,7 +90,7 @@ internal enum SocketTabRefValidator {
         if !hasTarget {
             return Rejection(
                 code: missingRefCode,
-                message: String(localized: "socket.tabRef.missing.noSelectedFallback", defaultValue: "No tab target was provided; pass an explicit tab or workspace id (no selected-context fallback).")
+                message: String(localized: "socket.tabRef.missing.noSelectedFallback", defaultValue: "No panel target was provided; pass an explicit panel or workspace id (no selected-context fallback).")
             )
         }
         return nil

@@ -41,7 +41,8 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: List[str], *, expect_ok: bool = True) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    for name in ("C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"):
+        env.pop(name, None)
     cmd = [cli, "--socket", SOCKET_PATH] + args
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
     if expect_ok and proc.returncode != 0:
@@ -66,7 +67,7 @@ def _pane_surface_ids(c: cmux, pane_id: str) -> List[str]:
 
 
 def _surface_has(c: cmux, workspace_id: str, surface_id: str, token: str) -> bool:
-    payload = c._call("surface.read_text", {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True}) or {}
+    payload = c._call("panel.read_text", {"workspace_id": workspace_id, "panel_id": surface_id, "scrollback": True}) or {}
     return token in str(payload.get("text") or "")
 
 
@@ -80,7 +81,7 @@ def _layout_panes(c: cmux) -> List[dict]:
 def _pane_extent(c: cmux, pane_id: str, axis: str) -> float:
     panes = _layout_panes(c)
     for pane in panes:
-        pid = str(pane.get("paneId") or pane.get("pane_id") or "")
+        pid = str(pane.get("paneId") or pane.get("area_id") or "")
         if pid != pane_id:
             continue
         frame = pane.get("frame") or {}
@@ -89,7 +90,7 @@ def _pane_extent(c: cmux, pane_id: str, axis: str) -> float:
 
 
 def _pick_resize_target(c: cmux, pane_ids: List[str]) -> Tuple[str, str, str]:
-    panes = [p for p in _layout_panes(c) if str(p.get("paneId") or p.get("pane_id") or "") in pane_ids]
+    panes = [p for p in _layout_panes(c) if str(p.get("paneId") or p.get("area_id") or "") in pane_ids]
     if len(panes) < 2:
         raise cmuxError(f"Need >=2 panes for resize test, got {panes}")
 
@@ -104,10 +105,10 @@ def _pick_resize_target(c: cmux, pane_ids: List[str]) -> Tuple[str, str, str]:
 
     if x_span >= y_span:
         target = min(panes, key=x_of)
-        return str(target.get("paneId") or target.get("pane_id") or ""), "-R", "width"
+        return str(target.get("paneId") or target.get("area_id") or ""), "-R", "width"
 
     target = min(panes, key=y_of)
-    return str(target.get("paneId") or target.get("pane_id") or ""), "-D", "height"
+    return str(target.get("paneId") or target.get("area_id") or ""), "-D", "height"
 
 
 def main() -> int:
@@ -125,7 +126,7 @@ def main() -> int:
             "area.break",
             "area.join",
             "area.last",
-            "tab.clear_history",
+            "panel.clear_history",
         ]:
             _must(method in methods, f"Missing capability {method!r}")
 
@@ -161,7 +162,7 @@ def main() -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env={k: v for k, v in os.environ.items() if k not in {"CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID"}},
+            env={k: v for k, v in os.environ.items() if k not in {"CMUX_WORKSPACE_ID", "C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"}},
         )
         time.sleep(0.2)
         _run_cli(cli, ["wait-for", "-S", wait_name])
@@ -219,7 +220,7 @@ def main() -> int:
         ident = c.identify()
         focused = ident.get("focused") or {}
         _must(
-            str(focused.get("pane_id") or "") == lp_source,
+            str(focused.get("area_id") or "") == lp_source,
             f"last-pane should focus previous pane {lp_source}, focused={focused}",
         )
 

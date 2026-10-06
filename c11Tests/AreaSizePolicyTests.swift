@@ -180,7 +180,7 @@ final class AreaSizePolicyTests: XCTestCase {
         let d = AreaSizePolicy.decide(paneFrame: frame, requested: .horizontal, minPoints: min, mode: .balance, force: false)
         let msg = AreaSizePolicy.refusalMessage(for: d, kindLabel: "claude-code", paneRefLabel: "area:3")
         XCTAssertTrue(msg.contains("area:3"))
-        XCTAssertTrue(msg.contains("new-tab"))
+        XCTAssertTrue(msg.contains("new-panel"))
         XCTAssertTrue(msg.contains("--allow-undersized"))
         XCTAssertTrue(msg.contains("claude-code"))
     }
@@ -200,6 +200,8 @@ final class AreaSizePolicyTests: XCTestCase {
     func testModeParsing() {
         XCTAssertEqual(AreaSizeMode.parse("balance"), .balance)
         XCTAssertEqual(AreaSizeMode.parse(" TAB "), .tab)
+        XCTAssertEqual(AreaSizeMode.parse("panel"), .tab)
+        XCTAssertEqual(AreaSizeMode.tab.rawValue, "tab")
         XCTAssertEqual(AreaSizeMode.parse("off"), .off)
         XCTAssertNil(AreaSizeMode.parse("nonsense"))
         XCTAssertNil(AreaSizeMode.parse(nil))

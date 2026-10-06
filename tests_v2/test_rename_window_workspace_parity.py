@@ -31,10 +31,12 @@ def _run_cli(cli: str, args: List[str], env_overrides: Optional[Dict[str, str]] 
     env = dict(os.environ)
     # Keep this test deterministic when running from inside another cmux shell.
     env.pop("CMUX_WORKSPACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
     env.pop("C11_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
     if env_overrides:
         env.update(env_overrides)
     cmd = [cli, "--socket", SOCKET_PATH] + args
@@ -99,10 +101,12 @@ def main() -> int:
 
         env = dict(os.environ)
         env.pop("CMUX_WORKSPACE_ID", None)
+        env.pop("C11_PANEL_ID", None)
         env.pop("C11_TAB_ID", None)
-        env.pop("C11_TAB_ID", None)
+        env.pop("C11_SURFACE_ID", None)
+        env.pop("CMUX_PANEL_ID", None)
         env.pop("CMUX_TAB_ID", None)
-        env.pop("C11_TAB_ID", None)
+        env.pop("CMUX_SURFACE_ID", None)
         invalid = subprocess.run(
             [cli, "--socket", SOCKET_PATH, "rename-window", "--workspace", ws_id],
             capture_output=True,

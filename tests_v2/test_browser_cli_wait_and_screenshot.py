@@ -42,7 +42,7 @@ def main() -> int:
 
     with cmux(SOCKET_PATH) as c:
         opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
-        target = str(opened.get("tab_id") or opened.get("tab_ref") or "")
+        target = str(opened.get("panel_id") or opened.get("panel_ref") or "")
         _must(target != "", f"browser.open_split returned no surface handle: {opened}")
 
         html = """
@@ -58,7 +58,7 @@ def main() -> int:
 </html>
 """.strip()
         data_url = "data:text/html;charset=utf-8," + urllib.parse.quote(html)
-        c._call("browser.navigate", {"tab_id": target, "url": data_url})
+        c._call("browser.navigate", {"panel_id": target, "url": data_url})
 
         wait_proc = _run_cli(
             cli,
@@ -72,7 +72,7 @@ def main() -> int:
         )
         _must(wait_proc.stdout.strip() == "OK", f"Expected browser wait OK output: {wait_proc.stdout!r}")
 
-        snapshot_payload = c._call("browser.snapshot", {"tab_id": target}) or {}
+        snapshot_payload = c._call("browser.snapshot", {"panel_id": target}) or {}
         refs = snapshot_payload.get("refs") or {}
         _must(isinstance(refs, dict) and len(refs) > 0, f"Expected snapshot refs for ref-based wait coverage: {snapshot_payload}")
         ref_selector = str(next(iter(refs.keys())))

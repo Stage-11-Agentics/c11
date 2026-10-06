@@ -49,8 +49,8 @@ final class TabOrdinalDisplayTests: XCTestCase {
         XCTAssertEqual(second, 2, "Ordinals are minted in creation order")
         XCTAssertEqual(controller.surfaceOrdinal(forSurfaceUUID: a), first,
                        "Re-asking for a surface's ordinal must not re-mint")
-        XCTAssertEqual(controller.surfaceRefOnly(forSurfaceUUID: a), "tab:\(first)",
-                       "The displayed number is the N of the tab:N handle")
+        XCTAssertEqual(controller.surfaceRefOnly(forSurfaceUUID: a), "panel:\(first)",
+                       "The displayed number is the N of the panel:N handle")
     }
 
     func testSurfaceOrdinalMatchesRefResolution() {
@@ -62,6 +62,8 @@ final class TabOrdinalDisplayTests: XCTestCase {
                        "The spoken number must resolve back to the same surface")
         XCTAssertEqual(controller.v2ResolveHandleRef("tab:\(ordinal)"), uuid,
                        "tab:N and the legacy surface:N are the same handle")
+        XCTAssertEqual(controller.v2ResolveHandleRef("panel:\(ordinal)"), uuid,
+                       "panel:N is the canonical spelling of the same handle")
     }
 
     // MARK: - Prefix composition

@@ -95,12 +95,12 @@ class JournalProbe(base.Probe):
         for workspace in self.rpc('workspace.list')['workspaces']:
             if workspace['id'] != self.workspace:
                 self.rpc('workspace.close', {'workspace_id': workspace['id']})
-        target = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        sibling = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal'})['tab_id']
+        target = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
+        sibling = self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal'})['panel_id']
         self.rpc('workspace.select', {'workspace_id': self.workspace})
         for tab, title in ((target, 'Blocked agent'), (sibling, 'Control terminal')):
-            self.rpc('tab.set_metadata', {'tab_id': tab, 'metadata': {'title': title}})
-            self.rpc('tab.send_text', {'tab_id': tab,
+            self.rpc('panel.set_metadata', {'panel_id': tab, 'metadata': {'title': title}})
+            self.rpc('panel.send_text', {'panel_id': tab,
                 'text': "unset precmd_functions; PROMPT='$ '; RPROMPT=''; printf '\\033[2J\\033[H'\n"})
         time.sleep(.5)
         owner = str(uuid.uuid4())
@@ -110,34 +110,34 @@ class JournalProbe(base.Probe):
                      session_id=owner, agent_kind='claude-code', source='hook', adapter='claude_hook',
                      native_event='PreToolUse', request_id='synthetic-ui-ask')
         self.rpc('agent.event.append', {'event': draft})
-        self.eventually(lambda: self.rpc('tab.get_metadata', {'tab_id': target})['metadata']['journal']['phase'] == 'blocked', 'blocked projection')
+        self.eventually(lambda: self.rpc('panel.get_metadata', {'panel_id': target})['metadata']['journal']['phase'] == 'blocked', 'blocked projection')
         self.check(not self.rpc('notification.list')['notifications'], 'Journal ask needs no routine unread notification')
-        self.rpc('tab.focus', {'tab_id': sibling})
+        self.rpc('panel.focus', {'panel_id': sibling})
         self.ui('activate')
         self.screenshot('01-blocked-with-no-unread')
         self.check(self.ui('notifications-menu')['enabled'], 'Real menu enables Jump for journal-only attention')
         self.screenshot('02-journal-jump-menu')
         self.dismiss()
         self.ui('jump-key')
-        self.eventually(lambda: self.rpc('system.identify')['focused']['tab_id'] == target, 'Option-V selects blocked target')
-        self.check(self.rpc('tab.get_metadata', {'tab_id': target})['metadata']['journal']['phase'] == 'blocked', 'Seeing target does not resolve its ask')
+        self.eventually(lambda: self.rpc('system.identify')['focused']['panel_id'] == target, 'Option-V selects blocked target')
+        self.check(self.rpc('panel.get_metadata', {'panel_id': target})['metadata']['journal']['phase'] == 'blocked', 'Seeing target does not resolve its ask')
         self.screenshot('03-seen-still-blocked')
         params = {'workspace_id': self.workspace, 'tab_id': target, 'by': 'operator'}
         self.rpc('flag.suppress', params)
-        self.rpc('tab.focus', {'tab_id': sibling})
+        self.rpc('panel.focus', {'panel_id': sibling})
         self.ui('jump-key')
         time.sleep(.2)
-        self.check(self.rpc('system.identify')['focused']['tab_id'] == sibling, 'Suppressed ask is excluded from Option-V')
+        self.check(self.rpc('system.identify')['focused']['panel_id'] == sibling, 'Suppressed ask is excluded from Option-V')
         self.rpc('flag.raise', dict(params, reason='Synthetic decision'))
         self.ui('jump-key')
-        self.eventually(lambda: self.rpc('system.identify')['focused']['tab_id'] == target, 'Flag overrides suppression')
+        self.eventually(lambda: self.rpc('system.identify')['focused']['panel_id'] == target, 'Flag overrides suppression')
         self.check(True, 'Operator flag retains precedence over journal suppression')
         self.screenshot('04-flag-precedence')
         self.rpc('flag.lower', params)
         self.rpc('flag.unsuppress', params)
-        self.rpc('tab.focus', {'tab_id': sibling})
+        self.rpc('panel.focus', {'panel_id': sibling})
         self.ui('jump-menu')
-        self.eventually(lambda: self.rpc('system.identify')['focused']['tab_id'] == target, 'Actual Jump menu selects target')
+        self.eventually(lambda: self.rpc('system.identify')['focused']['panel_id'] == target, 'Actual Jump menu selects target')
         self.check(True, 'Actual Jump menu click selects the journal target')
         self.dismiss()
         topology = self.run([self.args.cli, '--socket', self.args.socket, 'tree', '--no-layout']).stdout
@@ -156,15 +156,15 @@ class JournalProbe(base.Probe):
                 env=env, stdout=output, stderr=output, start_new_session=True)
         self.args.pid = process.pid
         self.eventually(lambda: Path(self.args.socket).is_socket(), 'Replay UI socket')
-        self.eventually(lambda: self.rpc('tab.get_metadata', {'tab_id': target})['metadata']['journal']['confirmation'] == 'unconfirmed', 'Unconfirmed restored ask')
+        self.eventually(lambda: self.rpc('panel.get_metadata', {'panel_id': target})['metadata']['journal']['confirmation'] == 'unconfirmed', 'Unconfirmed restored ask')
         self.ui('activate')
         windows = self.ui('displays')['windows']
         self.check(len(windows) == 1, 'Restored tagged window is uniquely identified on the guest display')
         self.window_id = windows[0]['kCGWindowNumber']
         for tab in (target, sibling):
-            self.rpc('tab.send_text', {'tab_id': tab,
+            self.rpc('panel.send_text', {'panel_id': tab,
                 'text': "unset precmd_functions; PROMPT='$ '; RPROMPT=''; printf '\\033[2J\\033[H'\n"})
-        self.rpc('tab.focus', {'tab_id': target})
+        self.rpc('panel.focus', {'panel_id': target})
         self.eventually(lambda: bool(self.ui('unconfirmed-help')), 'Actual accessibility help exposes Unconfirmed')
         self.check(True, 'Restored waiting mark exposes Unconfirmed in actual UI accessibility help')
         self.screenshot('06-restored-unconfirmed')

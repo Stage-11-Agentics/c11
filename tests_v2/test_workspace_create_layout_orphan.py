@@ -91,10 +91,12 @@ def test_bad_blueprint_no_orphan_cli(cli: str, c: cmux) -> None:
 
     try:
         env = dict(os.environ)
+        env.pop("C11_PANEL_ID", None)
         env.pop("C11_TAB_ID", None)
-        env.pop("C11_TAB_ID", None)
+        env.pop("C11_SURFACE_ID", None)
+        env.pop("CMUX_PANEL_ID", None)
         env.pop("CMUX_TAB_ID", None)
-        env.pop("C11_TAB_ID", None)
+        env.pop("CMUX_SURFACE_ID", None)
         env.pop("CMUX_WORKSPACE_ID", None)
         env["CMUX_SOCKET"] = SOCKET_PATH
         proc = subprocess.run(

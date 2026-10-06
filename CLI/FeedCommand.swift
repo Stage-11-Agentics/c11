@@ -70,11 +70,13 @@ enum FeedCommand {
             }
         }
         func take(_ name: String, allowFlagValue: Bool = false) throws -> String? {
+            // Any spelling in the flag's alias group (`--panel` / `--tab` / `--surface`).
+            let spellings = CMUXCLI.flagSpellings(name)
             var index = args.startIndex
             while index < args.endIndex {
                 if name != "--text", args[index] == "--text" {
                     index = args.index(index, offsetBy: 2, limitedBy: args.endIndex) ?? args.endIndex
-                } else if args[index] == name {
+                } else if spellings.contains(args[index]) {
                     break
                 } else {
                     index = args.index(after: index)
@@ -97,7 +99,7 @@ enum FeedCommand {
             throw CLIError(message: "feed: --scope must be attention or all")
         }
         let workspaceFlag = try take("--workspace")
-        let tabFlag = try take("--tab")
+        let tabFlag = try take("--panel")
         guard let subcommand = args.first else {
             throw CLIError(message: "feed requires list, open, or watch")
         }

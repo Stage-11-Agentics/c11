@@ -23,8 +23,8 @@ def entry(number: int, current: bool = False) -> dict:
     return {
         "workspace_id": "11111111-1111-4111-8111-111111111111",
         "workspace_ref": "workspace:1", "workspace_title": "Example workspace",
-        "tab_id": f"22222222-2222-4222-8222-{number:012d}",
-        "tab_ref": f"tab:{number}", "title": f"Example {number}",
+        "panel_id": f"22222222-2222-4222-8222-{number:012d}",
+        "panel_ref": f"panel:{number}", "title": f"Example {number}",
         "type": "terminal", "seen_at": "2026-10-01T22:00:00Z",
         "dwell_seconds": 2.0, "current": current,
     }
@@ -43,7 +43,8 @@ class Handler(socketserver.StreamRequestHandler):
                 self.server.calls.append((method, params))
                 ok = True
                 if method == "system.capabilities":
-                    payload = {"methods": ["tab.list", "history.list", "history.back", "history.forward"]}
+                    payload = {"methods": ["panel.list", "history.list", "history.back", "history.forward"],
+                               "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                 elif method == "history.list":
                     payload = copy.deepcopy(self.server.history)
                     payload["entries"] = payload["entries"][-params.get("limit", 50):]
@@ -106,11 +107,11 @@ def main() -> int:
                 assert server.calls[-1] == ("history.list", {"limit": 2}), server.calls
             out = run("history", "--limit", "2").stdout.splitlines()
             assert out == ["3 entries, showing 2, position 1",
-                           "tab:2  Example 2  2.0s  2026-10-01T22:00:00Z  ←",
-                           "tab:3  Example 3  2.0s  2026-10-01T22:00:00Z"], out
+                           "panel:2  Example 2  2.0s  2026-10-01T22:00:00Z  ←",
+                           "panel:3  Example 3  2.0s  2026-10-01T22:00:00Z"], out
             for action in ("back", "forward"):
                 out = run("--window", "window:99", "history", action).stdout
-                assert out == "tab:2  Example 2\n", out
+                assert out == "panel:2  Example 2\n", out
                 assert server.calls[-1] == (f"history.{action}", {}), server.calls
                 assert json.loads(run("history", action, "--json").stdout) == {**entry(2, True), "position": 1}
                 out = run("history", action, "--limit", "2", success=False)

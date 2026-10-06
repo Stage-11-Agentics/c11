@@ -89,7 +89,7 @@ def main():
             ask_workspace = client.new_workspace(window)
             other_workspace = client.new_workspace(window)
             ask_tab = client.list_surfaces(ask_workspace)[0][1]
-            client._call("tab.create", {"workspace_id": ask_workspace, "type": "terminal", "focus": False})
+            client._call("panel.create", {"workspace_id": ask_workspace, "type": "terminal", "focus": False})
             other_tab = client.list_surfaces(other_workspace)[0][1]
             session = str(uuid.uuid4())
             client._call("conversation.push", {
@@ -107,7 +107,7 @@ def main():
             receipt = client._call("agent.event.append", {"event": draft})
 
             def blocked():
-                journal = client._call("tab.get_metadata", {"tab_id": ask_tab})["metadata"]["journal"]
+                journal = client._call("panel.get_metadata", {"panel_id": ask_tab})["metadata"]["journal"]
                 return journal.get("phase") == "blocked" and journal.get("reason") == "question"
             eventually(blocked, "question projection")
             noted = client._call("feed.note_display", {
@@ -160,7 +160,7 @@ def main():
                 watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("kind") == "question" for item in value.get("rows", [])))
                 client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
                     "kind": "agent.state.changed", "signal": "tool_activity", "native_event": "PreToolUse"}})
-                client._call("notification.create_for_tab", {"workspace_id": ask_workspace, "tab_id": ask_tab,
+                client._call("notification.create_for_panel", {"workspace_id": ask_workspace, "panel_id": ask_tab,
                     "title": "Synthetic telemetry", "body": "Unrelated update"})
                 assert any(item.get("tab_id") == ask_tab for item in client._call("feed.list")["rows"])
                 client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
@@ -169,7 +169,7 @@ def main():
                 assert client.identify().get("focused") == before, "feed watch lifecycle updates moved focus"
                 client._call("flag.raise", {"surface_id": ask_tab, "reason": "closure", "by": "operator"})
                 watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("flag") for item in value.get("rows", [])))
-                client._call("tab.close", {"workspace_id": ask_workspace, "tab_id": ask_tab})
+                client._call("panel.close", {"workspace_id": ask_workspace, "panel_id": ask_tab})
                 watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
                 client._call("flag.raise", {"surface_id": other_tab, "reason": "workspace-closure", "by": "operator"})
                 watch.until(lambda value: any(item.get("tab_id") == other_tab for item in value.get("rows", [])))

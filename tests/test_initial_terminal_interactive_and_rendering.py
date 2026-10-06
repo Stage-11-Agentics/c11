@@ -53,7 +53,7 @@ def _wait_for_surface_focus(c: cmux, panel_id: str, timeout_s: float = 5.0) -> N
         try:
             ident = c.identify()
             focused = (ident or {}).get("focused") or {}
-            sid = str(focused.get("surface_id") or "").lower()
+            sid = str(focused.get("panel_id") or "").lower()
             if sid and sid == panel_lower:
                 return
         except Exception:

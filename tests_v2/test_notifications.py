@@ -236,7 +236,7 @@ def test_mark_read_on_focus_change(client: cmux) -> TestResult:
         time.sleep(0.1)
 
         items = client.list_notifications()
-        target = next((n for n in items if n["tab_id"] == other[1]), None)
+        target = next((n for n in items if n["panel_id"] == other[1]), None)
         if target is None:
             result.failure("Expected notification for target surface")
         elif not target["is_read"]:

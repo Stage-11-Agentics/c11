@@ -16,7 +16,7 @@ extension TerminalController {
             return v2Result(id: id, self.v2PaneList(params: params))
         case "area.focus":
             return v2Result(id: id, self.v2PaneFocus(params: params))
-        case "area.tabs":
+        case "area.panels":
             return v2Result(id: id, self.v2PaneSurfaces(params: params))
         case "area.create":
             return v2Result(id: id, self.v2PaneCreate(params: params))
@@ -76,7 +76,6 @@ extension TerminalController {
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "areas": panes,
-                "panes": panes,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
             ]
@@ -153,8 +152,8 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": paneId.id.uuidString,
                 "pane_ref": v2Ref(kind: .pane, uuid: paneId.id),
+                "panels": surfaces,
                 "tabs": surfaces,
-                "surfaces": surfaces,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
             ]
@@ -189,7 +188,7 @@ extension TerminalController {
         if hasProfileArgument, panelType != .browser {
             return .err(
                 code: "invalid_params",
-                message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"),
+                message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser panels"),
                 data: nil
             )
         }
@@ -197,7 +196,7 @@ extension TerminalController {
         // Validate and resolve markdown file path
         var resolvedMarkdownPath: String?
         if panelType == .markdown {
-            if let err = v2ValidateMarkdownPath(filePath, context: "pane", resolved: &resolvedMarkdownPath) {
+            if let err = v2ValidateMarkdownPath(filePath, context: "panel", resolved: &resolvedMarkdownPath) {
                 return err
             }
         }
@@ -241,7 +240,7 @@ extension TerminalController {
             self.v2MaybeFocusWindow(for: workspaceManager)
             self.v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
             guard let focusedPanelId = ws.focusedPanelId else {
-                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
+                result = .err(code: "not_found", message: "No focused panel to split", data: nil)
                 return
             }
 
@@ -506,7 +505,7 @@ extension TerminalController {
                   let selectedTargetBonsplitTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
                   let sourceTabId = workspace.tabIdFromBonsplitTabId(selectedSourceBonsplitTab.id),
                   let targetTabId = workspace.tabIdFromBonsplitTabId(selectedTargetBonsplitTab.id) else {
-                result = .err(code: "invalid_state", message: "Both areas must have a selected tab", data: nil)
+                result = .err(code: "invalid_state", message: "Both areas must have a selected panel", data: nil)
                 return
             }
 
@@ -516,24 +515,24 @@ extension TerminalController {
             if workspace.bonsplitController.tabs(inPane: sourcePane).count <= 1 {
                 sourcePlaceholder = workspace.newTerminalSurface(inPane: sourcePane, focus: false)?.id
                 if sourcePlaceholder == nil {
-                    result = .err(code: "internal_error", message: "Failed to create source placeholder tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create source placeholder panel", data: nil)
                     return
                 }
             }
             if workspace.bonsplitController.tabs(inPane: targetPane).count <= 1 {
                 targetPlaceholder = workspace.newTerminalSurface(inPane: targetPane, focus: false)?.id
                 if targetPlaceholder == nil {
-                    result = .err(code: "internal_error", message: "Failed to create target placeholder tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create target placeholder panel", data: nil)
                     return
                 }
             }
 
             guard workspace.moveSurface(panelId: sourceTabId, toPane: targetPane, focus: false) else {
-                result = .err(code: "internal_error", message: "Failed moving source tab into target area", data: nil)
+                result = .err(code: "internal_error", message: "Failed moving source panel into target area", data: nil)
                 return
             }
             guard workspace.moveSurface(panelId: targetTabId, toPane: sourcePane, focus: false) else {
-                result = .err(code: "internal_error", message: "Failed moving target tab into source area", data: nil)
+                result = .err(code: "internal_error", message: "Failed moving target panel into source area", data: nil)
                 return
             }
 
@@ -596,18 +595,18 @@ extension TerminalController {
                 return sourceWorkspace.focusedPanelId
             }()
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No source tab to break", data: nil)
+                result = .err(code: "not_found", message: "No source panel to break", data: nil)
                 return
             }
             guard sourceWorkspace.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "not_found", message: "Panel not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             let sourceIndex = sourceWorkspace.indexInPane(forPanelId: surfaceId)
             let sourcePaneForRollback = sourceWorkspace.paneId(forPanelId: surfaceId)
 
             guard let detached = sourceWorkspace.detachTab(panelId: surfaceId) else {
-                result = .err(code: "internal_error", message: "Failed to detach source tab", data: nil)
+                result = .err(code: "internal_error", message: "Failed to detach source panel", data: nil)
                 return
             }
 
@@ -635,7 +634,7 @@ extension TerminalController {
                         focus: true
                     )
                 }
-                result = .err(code: "internal_error", message: "Failed to attach tab to new workspace", data: nil)
+                result = .err(code: "internal_error", message: "Failed to attach panel to new workspace", data: nil)
                 return
             }
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
@@ -663,14 +662,14 @@ extension TerminalController {
             guard let sourceLocated = v2LocatePane(sourcePaneUUID),
                   let selected = sourceLocated.workspace.bonsplitController.selectedTab(inPane: sourceLocated.paneId),
                   let selectedSurface = sourceLocated.workspace.tabIdFromBonsplitTabId(selected.id) else {
-                return .err(code: "not_found", message: "Unable to resolve selected tab in source area", data: [
+                return .err(code: "not_found", message: "Unable to resolve selected panel in source area", data: [
                     "pane_id": sourcePaneUUID.uuidString
                 ])
             }
             surfaceId = selectedSurface
         }
         guard let surfaceId else {
-            return .err(code: "invalid_params", message: "Missing tab_id (or area_id with selected tab)", data: nil)
+            return .err(code: "invalid_params", message: "Missing panel_id (or area_id with selected panel)", data: nil)
         }
 
         var moveParams: [String: Any] = [
@@ -1005,7 +1004,7 @@ extension TerminalController {
                 return
             }
             guard let panelId = v2UUID(params, "panel_id") ?? v2UUID(params, "surface_id") else {
-                resolveError = .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+                resolveError = .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
                 return
             }
             resolvedPanelId = panelId
@@ -1037,7 +1036,7 @@ extension TerminalController {
 
         if let resolveError { return resolveError }
         guard presented, let panelId = resolvedPanelId else {
-            return .err(code: "unknown_panel", message: "Tab not found",
+            return .err(code: "unknown_panel", message: "Panel not found",
                         data: ["panel_id": resolvedPanelId?.uuidString ?? ""])
         }
 

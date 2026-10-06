@@ -4,8 +4,8 @@ import Foundation
 /// Enable a pending entry only in the commit that implements its behavior.
 struct CapabilityFeatures {
     enum ID: String, CaseIterable {
-        case workspaceAreaTab = "vocabulary.workspace_area_tab"
-        case explicitTab = "send.explicit_tab"
+        case workspaceAreaPanel = "vocabulary.workspace_area_panel"
+        case explicitPanel = "send.explicit_panel"
         case offlineEvents = "events.offline"
         case canonicalRoutingKeys = "routing.canonical_keys"
         case initialInput = "create.initial_input"
@@ -33,8 +33,8 @@ struct CapabilityFeatures {
     // Adding an id does not change this version. Changing an id's meaning does.
     static let schemaVersion = 1
     static let current = CapabilityFeatures(entries: [
-        Entry(id: .workspaceAreaTab, version: 1, enabled: true),
-        Entry(id: .explicitTab, version: 1, enabled: true),
+        Entry(id: .workspaceAreaPanel, version: 1, enabled: true),
+        Entry(id: .explicitPanel, version: 1, enabled: true),
         Entry(id: .offlineEvents, version: 1, enabled: true),
         Entry(id: .canonicalRoutingKeys, version: 1, enabled: true),
         Entry(id: .initialInput, version: 1, enabled: true),

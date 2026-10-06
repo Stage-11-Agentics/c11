@@ -48,10 +48,12 @@ def _run_cli_json(cli: str, args: list[str]) -> dict:
     # Explicitly address the test app socket.
     env.pop("CMUX_SOCKET_PATH", None)
     env.pop("CMUX_WORKSPACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
     env.pop("C11_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", "--id-format", "both", *args], env=env)
     try:

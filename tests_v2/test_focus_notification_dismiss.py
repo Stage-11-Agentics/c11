@@ -19,7 +19,7 @@ def wait_for_notification(client: cmux, surface_id: str, is_read: bool, timeout:
     while time.time() < deadline:
         items = client.list_notifications()
         for item in items:
-            if item["tab_id"] == surface_id and item["is_read"] == is_read:
+            if item["panel_id"] == surface_id and item["is_read"] == is_read:
                 return True
         time.sleep(0.05)
     return False

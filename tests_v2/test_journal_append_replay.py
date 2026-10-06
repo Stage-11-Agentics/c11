@@ -35,7 +35,7 @@ def main():
         eventually(session_ready, 'session restoration readiness', timeout=30)
         workspace = client.new_workspace()
         tab = client.list_surfaces(workspace)[0][1]
-        sibling = client._call('tab.create', {'workspace_id': workspace, 'type': 'terminal'})['tab_id']
+        sibling = client._call('panel.create', {'workspace_id': workspace, 'type': 'terminal'})['panel_id']
         env = {k: v for k, v in os.environ.items() if not k.startswith(('C11_', 'CMUX_'))}
         env.update(CMUX_WORKSPACE_ID=workspace, CMUX_SURFACE_ID=tab,
                    CMUX_CLAUDE_HOOK_STATE_PATH=str(Path(temporary) / 'sessions.json'))
@@ -55,7 +55,7 @@ def main():
             assert result.returncode == 0, result.stderr
 
         def state(target=tab):
-            return client._call('tab.get_metadata', {'tab_id': target})['metadata']['journal']
+            return client._call('panel.get_metadata', {'panel_id': target})['metadata']['journal']
 
         def phase(expected, target=tab):
             eventually(lambda: state(target)['phase'] == expected, f'{target}: {expected}; got {state(target)}')
@@ -141,7 +141,7 @@ def main():
             eventually(lambda: state()['connection'] == 'disconnected', 'ended journal projection')
             for activity in ('working', 'idle'):
                 legacy(path, f'report_agent_activity {activity} --tab={workspace} --panel={tab}')
-                eventually(lambda: client._call('tab.get_metadata', {'tab_id': tab})['metadata'].get('activity') == activity,
+                eventually(lambda: client._call('panel.get_metadata', {'panel_id': tab})['metadata'].get('activity') == activity,
                            'legacy activity after session end: ' + activity)
             assert state()['phase'] == 'blocked', 'historical attention must remain visible'
             print('PASS disconnected journal retains attention and releases legacy activity writes')

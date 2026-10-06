@@ -170,7 +170,8 @@ def main() -> None:
                         request = json.loads(command)
                         if request["method"] == "system.capabilities":
                             response = {"id": request["id"], "ok": True, "result": {
-                                "methods": ["tab.list", "agent.event.append"]}}
+                                "methods": ["panel.list", "agent.event.append"],
+                                "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}}
                             self.wfile.write((json.dumps(response) + "\n").encode())
                             self.wfile.flush()
                             continue

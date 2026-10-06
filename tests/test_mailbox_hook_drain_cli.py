@@ -119,7 +119,8 @@ class FakeC11:
                 time.sleep(self.delay)
                 result: dict = {}
                 if req.get("method") == "system.capabilities":
-                    result = {"methods": ["tab.list", "mailbox.report_delivered"]}
+                    result = {"methods": ["panel.list", "mailbox.report_delivered"],
+                              "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                 conn.sendall(json.dumps({"id": req.get("id"), "ok": True, "result": result}).encode() + b"\n")
 
     def close(self) -> None:

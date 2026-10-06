@@ -7,8 +7,8 @@ claude/codex/kimi/opencode installed, tests copy `/bin/sleep` to a temp path
 with the desired name and exec it inside the surface; `comm` on Darwin is the
 exec'd file's basename, which satisfies the heuristic's binary-match table.
 
-The helpers also wrap tab.set_metadata / tab.get_metadata /
-tab.clear_metadata so the individual test files stay compact.
+The helpers also wrap panel.set_metadata / panel.get_metadata /
+panel.clear_metadata so the individual test files stay compact.
 """
 
 from __future__ import annotations
@@ -57,11 +57,11 @@ def spawn_mock_in_surface(client, surface_id: str, mock_bin: Path, duration_seco
     # Foreground the mock so `pid == tpgid`. Use exec so the shell becomes the mock
     # process and the process-tree heuristic picks it up as the foreground.
     line = f"exec {mock_bin} {duration_seconds}\n"
-    client._call("tab.send_text", {"tab_id": surface_id, "text": line})
+    client._call("panel.send_text", {"panel_id": surface_id, "text": line})
 
 
 def send_ctrl_c_to_surface(client, surface_id: str) -> None:
-    client._call("tab.send_key", {"tab_id": surface_id, "key": "ctrl-c"})
+    client._call("panel.send_key", {"panel_id": surface_id, "key": "ctrl-c"})
 
 
 # ---------------------------------------------------------------------------
@@ -81,8 +81,8 @@ def set_metadata(
     if workspace_id is not None:
         params["workspace_id"] = workspace_id
     if surface_id is not None:
-        params["tab_id"] = surface_id
-    return client._call("tab.set_metadata", params) or {}
+        params["panel_id"] = surface_id
+    return client._call("panel.set_metadata", params) or {}
 
 
 def get_metadata(
@@ -97,12 +97,12 @@ def get_metadata(
     if workspace_id is not None:
         params["workspace_id"] = workspace_id
     if surface_id is not None:
-        params["tab_id"] = surface_id
+        params["panel_id"] = surface_id
     if keys is not None:
         params["keys"] = keys
     if include_sources:
         params["include_sources"] = True
-    return client._call("tab.get_metadata", params) or {}
+    return client._call("panel.get_metadata", params) or {}
 
 
 def clear_metadata(
@@ -117,10 +117,10 @@ def clear_metadata(
     if workspace_id is not None:
         params["workspace_id"] = workspace_id
     if surface_id is not None:
-        params["tab_id"] = surface_id
+        params["panel_id"] = surface_id
     if keys is not None:
         params["keys"] = keys
-    return client._call("tab.clear_metadata", params) or {}
+    return client._call("panel.clear_metadata", params) or {}
 
 
 def set_agent(

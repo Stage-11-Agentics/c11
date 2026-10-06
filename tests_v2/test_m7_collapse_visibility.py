@@ -27,26 +27,26 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _state(c, surface_id: str) -> dict:
-    return c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
+    return c._call("panel.get_titlebar_state", {"panel_id": surface_id}) or {}
 
 
 def _set_description(c, surface_id: str, desc: str, auto_expand: bool = True) -> dict:
     params = {
-        "tab_id": surface_id,
+        "panel_id": surface_id,
         "mode": "merge",
         "source": "explicit",
         "metadata": {"description": desc},
     }
     if not auto_expand:
         params["auto_expand"] = False
-    return c._call("tab.set_metadata", params) or {}
+    return c._call("panel.set_metadata", params) or {}
 
 
 def _set_title(c, surface_id: str, title: str) -> dict:
     return c._call(
-        "tab.set_metadata",
+        "panel.set_metadata",
         {
-            "tab_id": surface_id,
+            "panel_id": surface_id,
             "mode": "merge",
             "source": "explicit",
             "metadata": {"title": title},
@@ -59,9 +59,9 @@ def _fresh_surface(c) -> tuple[str, str]:
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     c._call("workspace.select", {"workspace_id": ws_id})
-    current = c._call("tab.current", {"workspace_id": ws_id}) or {}
-    surface_id = str(current.get("tab_id") or "")
-    _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
+    current = c._call("panel.current", {"workspace_id": ws_id}) or {}
+    surface_id = str(current.get("panel_id") or "")
+    _must(bool(surface_id), f"panel.current returned no panel_id: {current}")
     return ws_id, surface_id
 
 
@@ -72,10 +72,10 @@ def main() -> int:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
         _must(
-            "tab.set_metadata" in methods
-            and "tab.get_titlebar_state" in methods
-            and "tab.set_titlebar_collapsed" in methods
-            and "tab.set_titlebar_visibility" in methods,
+            "panel.set_metadata" in methods
+            and "panel.get_titlebar_state" in methods
+            and "panel.set_titlebar_collapsed" in methods
+            and "panel.set_titlebar_visibility" in methods,
             f"Required M2/M7 methods missing. methods={sorted(methods)[:80]}",
         )
 
@@ -98,8 +98,8 @@ def main() -> int:
             # Case 3: user-initiated collapse latches; subsequent description writes
             # should NOT auto-expand.
             c._call(
-                "tab.set_titlebar_collapsed",
-                {"tab_id": surface_id, "collapsed": True, "user": True},
+                "panel.set_titlebar_collapsed",
+                {"panel_id": surface_id, "collapsed": True, "user": True},
             )
             s = _state(c, surface_id)
             _must(s.get("collapsed") is True, f"user collapse should stick: {s}")
@@ -126,9 +126,9 @@ def main() -> int:
             # follow description emptiness so render does not show a multi-line
             # title with a disabled chevron.
             c._call(
-                "tab.set_metadata",
+                "panel.set_metadata",
                 {
-                    "tab_id": surface_id,
+                    "panel_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {"description": ""},
@@ -143,8 +143,8 @@ def main() -> int:
             # Expand via user intent; with empty description, render still
             # effectively collapses even though the flag is False.
             c._call(
-                "tab.set_titlebar_collapsed",
-                {"tab_id": surface_id, "collapsed": False, "user": True},
+                "panel.set_titlebar_collapsed",
+                {"panel_id": surface_id, "collapsed": False, "user": True},
             )
             s = _state(c, surface_id)
             _must(
@@ -161,7 +161,7 @@ def main() -> int:
         # Case 4: visibility toggle at workspace scope.
         ws_id, surface_id = _fresh_surface(c)
         try:
-            c._call("tab.set_titlebar_visibility", {"tab_id": surface_id, "visible": False})
+            c._call("panel.set_titlebar_visibility", {"panel_id": surface_id, "visible": False})
             s = _state(c, surface_id)
             _must(s.get("visible") is False, f"after hide, visible should be False: {s}")
 
@@ -177,7 +177,7 @@ def main() -> int:
             _must(s.get("visible") is False, f"visibility should remain False: {s}")
 
             # Re-show; title should reappear.
-            c._call("tab.set_titlebar_visibility", {"tab_id": surface_id, "visible": True})
+            c._call("panel.set_titlebar_visibility", {"panel_id": surface_id, "visible": True})
             s = _state(c, surface_id)
             _must(s.get("visible") is True, f"after show, visible should be True: {s}")
             _must(s.get("title") == hidden_title, f"title should remain after toggle: {s}")

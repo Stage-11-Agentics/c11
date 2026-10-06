@@ -46,7 +46,7 @@ def main():
                 "workspace_id": workspace_id,
                 "url": f"http://127.0.0.1:{server.server_port}/",
             })
-            params = {"workspace_id": workspace_id, "tab_id": target["tab_id"]}
+            params = {"workspace_id": workspace_id, "panel_id": target["panel_id"]}
             client._call("browser.wait", {**params, "function": "document.readyState === 'complete'", "timeout_ms": 5000})
             client._call("browser.cookies.set", {**params, "name": "fixture", "value": "saved", "path": "/"})
             cookies = client._call("browser.cookies.get", {**params, "name": "fixture"})["cookies"]

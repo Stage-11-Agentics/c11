@@ -2,13 +2,13 @@
 """C11-25 surface lifecycle smoke test.
 
 Validates that the canonical `lifecycle_state` metadata key is wired
-through the tab.set_metadata / tab.get_metadata socket path:
+through the panel.set_metadata / panel.get_metadata socket path:
 
   - Accepted values: active, throttled, hibernated.
   - Rejected values: 'suspended' (reserved-only per review fix I4),
     anything else outside the enum, and any non-string.
   - Round-trips through the metadata store and is readable via
-    tab.get_metadata.
+    panel.get_metadata.
 
 Does NOT exercise the runtime hibernate dispatch end-to-end — that
 requires triggering the operator menu, which lives outside the socket
@@ -46,9 +46,9 @@ def _must(cond: bool, msg: str) -> None:
 
 def _fresh_surface(c) -> tuple[str, str]:
     workspace_id = c.new_workspace()
-    current = c._call("tab.current", {"workspace_id": workspace_id}) or {}
-    surface_id = str(current.get("tab_id") or "")
-    _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
+    current = c._call("panel.current", {"workspace_id": workspace_id}) or {}
+    surface_id = str(current.get("panel_id") or "")
+    _must(bool(surface_id), f"panel.current returned no panel_id: {current}")
     return workspace_id, surface_id
 
 
@@ -58,9 +58,9 @@ def _run_legal_values(c) -> None:
         for state in LEGAL_STATES:
             res = (
                 c._call(
-                    "tab.set_metadata",
+                    "panel.set_metadata",
                     {
-                        "tab_id": surface_id,
+                        "panel_id": surface_id,
                         "mode": "merge",
                         "source": "explicit",
                         "metadata": {"lifecycle_state": state},
@@ -75,7 +75,7 @@ def _run_legal_values(c) -> None:
             )
 
             got = (
-                c._call("tab.get_metadata", {"tab_id": surface_id})
+                c._call("panel.get_metadata", {"panel_id": surface_id})
                 or {}
             )
             md = got.get("metadata") or {}
@@ -93,9 +93,9 @@ def _run_rejects_unknown_value(c) -> None:
         # The validator rejects anything outside the four enum values.
         try:
             c._call(
-                "tab.set_metadata",
+                "panel.set_metadata",
                 {
-                    "tab_id": surface_id,
+                    "panel_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {"lifecycle_state": "frozen"},
@@ -120,9 +120,9 @@ def _run_rejects_non_string(c) -> None:
     try:
         try:
             c._call(
-                "tab.set_metadata",
+                "panel.set_metadata",
                 {
-                    "tab_id": surface_id,
+                    "panel_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {"lifecycle_state": 1},
@@ -150,9 +150,9 @@ def _run_rejects_suspended(c) -> None:
         try:
             try:
                 c._call(
-                    "tab.set_metadata",
+                    "panel.set_metadata",
                     {
-                        "tab_id": surface_id,
+                        "panel_id": surface_id,
                         "mode": "merge",
                         "source": "explicit",
                         "metadata": {"lifecycle_state": state},
@@ -182,8 +182,8 @@ def _surface_for_id(surfaces: list, surface_id: str) -> dict | None:
 
 def _run_metrics_in_surface_list(c) -> None:
     """C11-25 fix DoD #5: a freshly-spawned terminal surface must expose
-    a `metrics` block with cpu_pct + rss_mb in tab.list once the
-    sampler converges. tab.list is the wire source `c11 tree --json`
+    a `metrics` block with cpu_pct + rss_mb in panel.list once the
+    sampler converges. panel.list is the wire source `c11 tree --json`
     decorates from, so this covers the tree-json contract too.
     """
     workspace_id, surface_id = _fresh_surface(c)
@@ -194,10 +194,10 @@ def _run_metrics_in_surface_list(c) -> None:
         deadline = time.monotonic() + 8.0
         last_metrics: dict | None = None
         while time.monotonic() < deadline:
-            res = c._call("tab.list", {"workspace_id": workspace_id}) or {}
-            surfaces = res.get("tabs") or []
+            res = c._call("panel.list", {"workspace_id": workspace_id}) or {}
+            surfaces = res.get("panels") or []
             surface = _surface_for_id(surfaces, surface_id)
-            _must(surface is not None, f"tab.list missing surface {surface_id}: {res}")
+            _must(surface is not None, f"panel.list missing surface {surface_id}: {res}")
             assert surface is not None
             _must(
                 surface.get("type") == "terminal",
@@ -206,7 +206,7 @@ def _run_metrics_in_surface_list(c) -> None:
             metrics = surface.get("metrics")
             _must(
                 isinstance(metrics, dict),
-                f"terminal tab.list payload missing `metrics` block: {surface}",
+                f"terminal panel.list payload missing `metrics` block: {surface}",
             )
             assert isinstance(metrics, dict)
             _must(
@@ -240,7 +240,7 @@ def main() -> int:
         _run_rejects_non_string(client)
         _run_rejects_suspended(client)
         _run_metrics_in_surface_list(client)
-    print("OK c11-25 surface lifecycle metadata roundtrip + metrics tab.list exposure")
+    print("OK c11-25 surface lifecycle metadata roundtrip + metrics panel.list exposure")
     return 0
 
 

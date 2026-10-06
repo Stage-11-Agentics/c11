@@ -46,10 +46,12 @@ def _find_cli_binary() -> str:
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
     env.pop("C11_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", *args], env=env)
     try:
@@ -105,7 +107,7 @@ def _resolve_workspace_id(client: cmux, payload: dict, *, before_workspace_ids: 
 def _focused_surface_id(client: cmux) -> str:
     ident = client.identify()
     focused = ident.get("focused") or {}
-    surface_id = str(focused.get("tab_id") or "")
+    surface_id = str(focused.get("panel_id") or "")
     if not surface_id:
         raise cmuxError(f"Missing focused surface in identify payload: {ident}")
     return surface_id

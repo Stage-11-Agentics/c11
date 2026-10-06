@@ -138,7 +138,7 @@ def graph(path: str) -> dict:
         workspaces = {}
         for workspace in window.get('workspaces', []):
             areas = {area['id']: {'ref': area['ref'],
-                                  'tabs': {tab['id']: tab['ref'] for tab in area.get('tabs', [])}}
+                                  'panels': {tab['id']: tab['ref'] for tab in area.get('panels', [])}}
                      for area in workspace.get('areas', [])}
             workspaces[workspace['id']] = {'ref': workspace['ref'], 'areas': areas}
         identities[window['id']] = {'ref': window['ref'], 'workspaces': workspaces}
@@ -188,12 +188,12 @@ def shell_probe(args: argparse.Namespace, phase: str) -> dict:
     command = (f"if kill -0 {args.child_pid} 2>/dev/null; then "
                f"printf 'C11_YIELD_{nonce} %s %s\\n' "
                '"$$" "$C11_SINGLE_INSTANCE_SENTINEL"; fi\n')
-    params = {'workspace_id': args.workspace_id, 'tab_id': args.tab_id}
-    request(args.socket, 'tab.send_text', {**params, 'text': command})
+    params = {'workspace_id': args.workspace_id, 'panel_id': args.tab_id}
+    request(args.socket, 'panel.send_text', {**params, 'text': command})
     pattern = re.compile(rf'C11_YIELD_{nonce} {args.shell_pid} {re.escape(args.marker)}(?:\s|$)')
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
-        result = request(args.socket, 'tab.read_text', params,
+        result = request(args.socket, 'panel.read_text', params,
                          timeout=max(0.01, min(3, deadline - time.monotonic())))
         text = result.get('text')
         if text is None:
@@ -339,7 +339,7 @@ def main() -> None:
                       [('incumbent', args.incumbent_pid), ('shell', args.shell_pid), ('child', args.child_pid)]}
         identities['incumbent_executable'] = app['executable']
         baseline = graph(args.socket)
-        fixture_tabs = request(args.socket, 'tab.list', {'workspace_id': args.workspace_id}).get('tabs', [])
+        fixture_tabs = request(args.socket, 'panel.list', {'workspace_id': args.workspace_id}).get('panels', [])
         terminal_ids = {tab['id'].lower() for tab in fixture_tabs if tab.get('type') == 'terminal'}
         require({args.tab_id.lower(), args.second_tab_id.lower()} <= terminal_ids, 'fixture terminals missing')
         require(args.session_file.is_file(), 'outer runner must establish the saved session before this oracle')

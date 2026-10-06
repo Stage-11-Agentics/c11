@@ -57,7 +57,7 @@ def _wait_for(pred, timeout_s: float = 6.0, step_s: float = 0.05) -> None:
 
 def _wait_selector(c: cmux, surface_id: str, selector: str, timeout_s: float = 6.0) -> None:
     timeout_ms = max(1, int(timeout_s * 1000.0))
-    c._call("browser.wait", {"tab_id": surface_id, "selector": selector, "timeout_ms": timeout_ms})
+    c._call("browser.wait", {"panel_id": surface_id, "selector": selector, "timeout_ms": timeout_ms})
 
 
 def _open_server() -> tuple[str, socketserver.TCPServer, threading.Thread, tempfile.TemporaryDirectory[str]]:
@@ -107,18 +107,18 @@ def main() -> int:
         with cmux(SOCKET_PATH) as c:
             opened = c._call("browser.open_split", {"url": f"{base_url}/index.html"}) or {}
             workspace_id = str(opened.get("workspace_id") or "")
-            surface_id = str(opened.get("tab_id") or "")
-            _must(bool(surface_id), f"browser.open_split returned no tab_id: {opened}")
+            surface_id = str(opened.get("panel_id") or "")
+            _must(bool(surface_id), f"browser.open_split returned no panel_id: {opened}")
 
             _wait_selector(c, surface_id, "#ready", timeout_s=7.0)
-            c._call("browser.eval", {"tab_id": surface_id, "script": "window.emitLogs()"})
+            c._call("browser.eval", {"panel_id": surface_id, "script": "window.emitLogs()"})
 
             def console_ready() -> bool:
-                payload = c._call("browser.console.list", {"tab_id": surface_id}) or {}
+                payload = c._call("browser.console.list", {"panel_id": surface_id}) or {}
                 return int(payload.get("count") or 0) >= 1
 
             def errors_ready() -> bool:
-                payload = c._call("browser.errors.list", {"tab_id": surface_id}) or {}
+                payload = c._call("browser.errors.list", {"panel_id": surface_id}) or {}
                 return int(payload.get("count") or 0) >= 1
 
             _wait_for(console_ready, timeout_s=7.0)

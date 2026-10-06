@@ -27,7 +27,7 @@ def require_guest():
 
 def focused_tab(client):
     focused = client.identify().get("focused") or {}
-    return focused.get("workspace_id"), focused.get("tab_id") or focused.get("surface_id")
+    return focused.get("workspace_id"), focused.get("panel_id") or focused.get("tab_id")
 
 
 def aqua(command):
@@ -53,10 +53,10 @@ def main():
 
             # Leave a partial terminal command on the target. Opening Feed must
             # not type an answer, submit it, or activate c11 over Finder.
-            client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})
+            client._call("panel.read_text", {"workspace_id": ask_workspace, "panel_id": ask_tab})
             client.send_surface(ask_tab, "SYNTHETIC_UNSUBMITTED_264")
-            eventually(lambda: "SYNTHETIC_UNSUBMITTED_264" in client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"], "partial input visible")
-            before_text = client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"]
+            eventually(lambda: "SYNTHETIC_UNSUBMITTED_264" in client._call("panel.read_text", {"workspace_id": ask_workspace, "panel_id": ask_tab})["text"], "partial input visible")
+            before_text = client._call("panel.read_text", {"workspace_id": ask_workspace, "panel_id": ask_tab})["text"]
             artifacts = "/Volumes/My Shared Files/out"
             subprocess.run(aqua(["/usr/sbin/screencapture", "-x", f"{artifacts}/feed-open-before.png"]), check=True)
             subprocess.run(aqua(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate']), check=True)
@@ -71,13 +71,13 @@ def main():
             assert opened.returncode == 0, opened.stderr
             payload = json.loads(opened.stdout)
             assert payload["workspace_id"] == ask_workspace and payload["tab_id"] == ask_tab
-            target_tabs = client._call("tab.list", {"workspace_id": ask_workspace, "window_id": window})["tabs"]
+            target_tabs = client._call("panel.list", {"workspace_id": ask_workspace, "window_id": window})["panels"]
             assert any(row["id"] == ask_tab and row["focused"] for row in target_tabs), target_tabs
             target_workspaces = client.list_workspaces(window)
             assert any(row[1] == ask_workspace and row[3] for row in target_workspaces)
             assert frontmost() == "Finder", "feed open activated or raised c11"
             subprocess.run(aqua(["/usr/sbin/screencapture", "-x", f"{artifacts}/feed-open-after.png"]), check=True)
-            assert client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"] == before_text, "feed open sent terminal input"
+            assert client._call("panel.read_text", {"workspace_id": ask_workspace, "panel_id": ask_tab})["text"] == before_text, "feed open sent terminal input"
             unchanged_focus = focused_tab(client)
 
             unknown = str(uuid.uuid4())

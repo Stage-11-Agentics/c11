@@ -39,7 +39,7 @@ def _expect_error_contains(label: str, fn, needle: str) -> None:
 def _wait_selector(c: cmux, surface_id: str, selector: str, timeout_s: float = 6.0) -> None:
     timeout_ms = max(1, int(timeout_s * 1000.0))
     try:
-        c._call("browser.wait", {"tab_id": surface_id, "selector": selector, "timeout_ms": timeout_ms})
+        c._call("browser.wait", {"panel_id": surface_id, "selector": selector, "timeout_ms": timeout_ms})
         return
     except cmuxError as exc:
         if "timeout" not in str(exc):
@@ -48,7 +48,7 @@ def _wait_selector(c: cmux, surface_id: str, selector: str, timeout_s: float = 6
     deadline = time.time() + timeout_s
     script = f"document.querySelector({selector!r}) !== null"
     while time.time() < deadline:
-        probe = c._call("browser.eval", {"tab_id": surface_id, "script": script}) or {}
+        probe = c._call("browser.eval", {"panel_id": surface_id, "script": script}) or {}
         if bool(probe.get("value")):
             return
         time.sleep(0.05)
@@ -58,7 +58,7 @@ def _wait_selector(c: cmux, surface_id: str, selector: str, timeout_s: float = 6
 def _wait_function(c: cmux, surface_id: str, expression: str, timeout_s: float = 6.0) -> None:
     timeout_ms = max(1, int(timeout_s * 1000.0))
     try:
-        c._call("browser.wait", {"tab_id": surface_id, "function": expression, "timeout_ms": timeout_ms})
+        c._call("browser.wait", {"panel_id": surface_id, "function": expression, "timeout_ms": timeout_ms})
         return
     except cmuxError as exc:
         if "timeout" not in str(exc):
@@ -66,7 +66,7 @@ def _wait_function(c: cmux, surface_id: str, expression: str, timeout_s: float =
 
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        probe = c._call("browser.eval", {"tab_id": surface_id, "script": expression}) or {}
+        probe = c._call("browser.eval", {"panel_id": surface_id, "script": expression}) or {}
         if bool(probe.get("value")):
             return
         time.sleep(0.05)
@@ -225,17 +225,17 @@ def main() -> int:
 
         with cmux(SOCKET_PATH) as c:
             opened = _open_browser_when_ready(c)
-            sid = str(opened.get("tab_id") or "")
-            _must(bool(sid), f"browser.open_split returned no tab_id: {opened}")
+            sid = str(opened.get("panel_id") or "")
+            _must(bool(sid), f"browser.open_split returned no panel_id: {opened}")
 
-            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            c._call("browser.navigate", {"panel_id": sid, "url": index_url})
             _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
 
-            find_role = c._call("browser.find.role", {"tab_id": sid, "role": "button", "name": "submit"}) or {}
+            find_role = c._call("browser.find.role", {"panel_id": sid, "role": "button", "name": "submit"}) or {}
             role_ref = str(find_role.get("element_ref") or "")
             _must(role_ref.startswith("@e"), f"Expected element_ref from find.role: {find_role}")
-            c._call("browser.click", {"tab_id": sid, "selector": role_ref})
-            status = c._call("browser.get.text", {"tab_id": sid, "selector": "#status"}) or {}
+            c._call("browser.click", {"panel_id": sid, "selector": role_ref})
+            status = c._call("browser.get.text", {"panel_id": sid, "selector": "#status"}) or {}
             _must(str(status.get("value") or "") == "clicked", f"Expected clicked status via element ref: {status}")
 
             find_cases = [
@@ -250,40 +250,40 @@ def main() -> int:
                 ("browser.find.nth", {"selector": "li.row", "index": 1}),
             ]
             for method, extra in find_cases:
-                params = {"tab_id": sid}
+                params = {"panel_id": sid}
                 params.update(extra)
                 payload = c._call(method, params) or {}
                 ref = str(payload.get("element_ref") or "")
                 _must(ref.startswith("@e"), f"Expected element_ref from {method}: {payload}")
 
-            c._call("browser.frame.select", {"tab_id": sid, "selector": "#frame-a"})
+            c._call("browser.frame.select", {"panel_id": sid, "selector": "#frame-a"})
             _wait_function(c, sid, "document.querySelector('#frame-text') !== null", timeout_s=7.0)
-            frame_text = c._call("browser.get.text", {"tab_id": sid, "selector": "#frame-text"}) or {}
+            frame_text = c._call("browser.get.text", {"panel_id": sid, "selector": "#frame-text"}) or {}
             _must(str(frame_text.get("value") or "") == "frame-ready", f"Expected frame text: {frame_text}")
-            c._call("browser.click", {"tab_id": sid, "selector": "#frame-btn"})
-            c._call("browser.frame.main", {"tab_id": sid})
-            frame_clicks = c._call("browser.eval", {"tab_id": sid, "script": "window.frameClicks || 0"}) or {}
+            c._call("browser.click", {"panel_id": sid, "selector": "#frame-btn"})
+            c._call("browser.frame.main", {"panel_id": sid})
+            frame_clicks = c._call("browser.eval", {"panel_id": sid, "script": "window.frameClicks || 0"}) or {}
             _must(int(frame_clicks.get("value") or 0) >= 1, f"Expected frame click count >= 1: {frame_clicks}")
 
-            c._call("browser.console.list", {"tab_id": sid})
+            c._call("browser.console.list", {"panel_id": sid})
             _expect_error_contains(
                 "dialog bootstrap on empty queue",
-                lambda: c._call("browser.dialog.dismiss", {"tab_id": sid}),
+                lambda: c._call("browser.dialog.dismiss", {"panel_id": sid}),
                 "not_found",
             )
             c._call(
                 "browser.addscript",
-                {"tab_id": sid, "script": "window.triggerDialogs(); true;"},
+                {"panel_id": sid, "script": "window.triggerDialogs(); true;"},
             )
-            d1 = c._call("browser.dialog.accept", {"tab_id": sid, "text": "agent-text"}) or {}
-            d2 = c._call("browser.dialog.dismiss", {"tab_id": sid}) or {}
-            d3 = c._call("browser.dialog.accept", {"tab_id": sid}) or {}
+            d1 = c._call("browser.dialog.accept", {"panel_id": sid, "text": "agent-text"}) or {}
+            d2 = c._call("browser.dialog.dismiss", {"panel_id": sid}) or {}
+            d3 = c._call("browser.dialog.accept", {"panel_id": sid}) or {}
             _must(bool(d1.get("accepted")) is True, f"Expected first dialog accepted: {d1}")
             _must(bool(d2.get("accepted")) is False, f"Expected second dialog dismissed: {d2}")
             _must(bool(d3.get("accepted")) is True, f"Expected third dialog accepted: {d3}")
             _expect_error_contains(
                 "dialog queue empty",
-                lambda: c._call("browser.dialog.dismiss", {"tab_id": sid}),
+                lambda: c._call("browser.dialog.dismiss", {"panel_id": sid}),
                 "not_found",
             )
 
@@ -296,35 +296,35 @@ def main() -> int:
 
             t = threading.Thread(target=_write_download, daemon=True)
             t.start()
-            dl = c._call("browser.download.wait", {"tab_id": sid, "path": download_path, "timeout_ms": 5000}) or {}
+            dl = c._call("browser.download.wait", {"panel_id": sid, "path": download_path, "timeout_ms": 5000}) or {}
             _must(bool(dl.get("downloaded")) is True, f"Expected download wait success: {dl}")
 
             c._call(
                 "browser.cookies.set",
                 {
-                    "tab_id": sid,
+                    "panel_id": sid,
                     "name": "cmux_cookie",
                     "value": "cookie_value",
                     "url": index_url,
                 },
             )
-            got_cookie = c._call("browser.cookies.get", {"tab_id": sid, "name": "cmux_cookie"}) or {}
+            got_cookie = c._call("browser.cookies.get", {"panel_id": sid, "name": "cmux_cookie"}) or {}
             cookies = got_cookie.get("cookies") or []
             _must(any(str(row.get("name")) == "cmux_cookie" for row in cookies), f"Expected cmux_cookie in cookies.get: {got_cookie}")
-            c._call("browser.cookies.clear", {"tab_id": sid, "name": "cmux_cookie"})
-            got_after_clear = c._call("browser.cookies.get", {"tab_id": sid, "name": "cmux_cookie"}) or {}
+            c._call("browser.cookies.clear", {"panel_id": sid, "name": "cmux_cookie"})
+            got_after_clear = c._call("browser.cookies.get", {"panel_id": sid, "name": "cmux_cookie"}) or {}
             _must(len(got_after_clear.get("cookies") or []) == 0, f"Expected cookie cleared: {got_after_clear}")
 
             target_origin_url = index_url
             other_origin_url = index_url.replace("127.0.0.1", "localhost")
             c._call(
                 "browser.cookies.set",
-                {"tab_id": sid, "name": "scoped_target", "value": "target", "url": target_origin_url},
+                {"panel_id": sid, "name": "scoped_target", "value": "target", "url": target_origin_url},
             )
             c._call(
                 "browser.cookies.set",
                 {
-                    "tab_id": sid,
+                    "panel_id": sid,
                     "name": "scoped_other",
                     "value": "other",
                     "url": other_origin_url,
@@ -332,10 +332,10 @@ def main() -> int:
                 },
             )
             target_cookie_before = c._call(
-                "browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}
+                "browser.cookies.get", {"panel_id": sid, "name": "scoped_target"}
             ) or {}
             other_cookie_before = c._call(
-                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+                "browser.cookies.get", {"panel_id": sid, "name": "scoped_other"}
             ) or {}
             target_rows_before = target_cookie_before.get("cookies") or []
             other_rows_before = other_cookie_before.get("cookies") or []
@@ -351,14 +351,14 @@ def main() -> int:
             )
             _expect_error_contains(
                 "unscoped cookie clear",
-                lambda: c._call("browser.cookies.clear", {"tab_id": sid}),
+                lambda: c._call("browser.cookies.clear", {"panel_id": sid}),
                 "invalid_params",
             )
             target_cookie_after_rejected_clear = c._call(
-                "browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}
+                "browser.cookies.get", {"panel_id": sid, "name": "scoped_target"}
             ) or {}
             other_cookie_after_rejected_clear = c._call(
-                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+                "browser.cookies.get", {"panel_id": sid, "name": "scoped_other"}
             ) or {}
             _must(
                 bool(target_cookie_after_rejected_clear.get("cookies") or []),
@@ -368,9 +368,9 @@ def main() -> int:
                 bool(other_cookie_after_rejected_clear.get("cookies") or []),
                 f"Rejected unscoped clear deleted other-origin cookie: {other_cookie_after_rejected_clear}",
             )
-            c._call("browser.cookies.clear", {"tab_id": sid, "url": target_origin_url})
-            target_cookie_after = c._call("browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}) or {}
-            other_cookie_after = c._call("browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}) or {}
+            c._call("browser.cookies.clear", {"panel_id": sid, "url": target_origin_url})
+            target_cookie_after = c._call("browser.cookies.get", {"panel_id": sid, "name": "scoped_target"}) or {}
+            other_cookie_after = c._call("browser.cookies.get", {"panel_id": sid, "name": "scoped_other"}) or {}
             _must(
                 not (target_cookie_after.get("cookies") or []),
                 f"URL-scoped clear left target cookie: {target_cookie_after}",
@@ -379,71 +379,71 @@ def main() -> int:
                 bool(other_cookie_after.get("cookies") or []),
                 f"URL-scoped clear touched another origin: {other_cookie_after}",
             )
-            c._call("browser.cookies.clear", {"tab_id": sid, "all": True})
+            c._call("browser.cookies.clear", {"panel_id": sid, "all": True})
             other_cookie_after_all_clear = c._call(
-                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+                "browser.cookies.get", {"panel_id": sid, "name": "scoped_other"}
             ) or {}
             _must(
                 not (other_cookie_after_all_clear.get("cookies") or []),
                 f"Explicit all:true did not clear the other-origin cookie: {other_cookie_after_all_clear}",
             )
 
-            c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "alpha", "value": "one"})
-            c._call("browser.storage.set", {"tab_id": sid, "type": "session", "key": "beta", "value": "two"})
-            storage_local = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "alpha"}) or {}
-            storage_session = c._call("browser.storage.get", {"tab_id": sid, "type": "session", "key": "beta"}) or {}
+            c._call("browser.storage.set", {"panel_id": sid, "type": "local", "key": "alpha", "value": "one"})
+            c._call("browser.storage.set", {"panel_id": sid, "type": "session", "key": "beta", "value": "two"})
+            storage_local = c._call("browser.storage.get", {"panel_id": sid, "type": "local", "key": "alpha"}) or {}
+            storage_session = c._call("browser.storage.get", {"panel_id": sid, "type": "session", "key": "beta"}) or {}
             _must(str(storage_local.get("value") or "") == "one", f"Expected local storage value: {storage_local}")
             _must(str(storage_session.get("value") or "") == "two", f"Expected session storage value: {storage_session}")
-            c._call("browser.storage.clear", {"tab_id": sid, "type": "session"})
-            storage_session_after = c._call("browser.storage.get", {"tab_id": sid, "type": "session", "key": "beta"}) or {}
+            c._call("browser.storage.clear", {"panel_id": sid, "type": "session"})
+            storage_session_after = c._call("browser.storage.get", {"panel_id": sid, "type": "session", "key": "beta"}) or {}
             _must(storage_session_after.get("value") is None, f"Expected session key cleared: {storage_session_after}")
 
-            tabs_before = c._call("browser.tab.list", {"surface_id": sid}) or {}
-            before_count = len(tabs_before.get("tabs") or [])
-            tab_new = c._call("browser.tab.new", {"surface_id": sid, "url": second_url}) or {}
-            sid2 = str(tab_new.get("tab_id") or "")
-            _must(bool(sid2), f"Expected tab_id from browser.tab.new: {tab_new}")
+            tabs_before = c._call("browser.panel.list", {"panel_id": sid}) or {}
+            before_count = len(tabs_before.get("panels") or [])
+            tab_new = c._call("browser.panel.new", {"panel_id": sid, "url": second_url}) or {}
+            sid2 = str(tab_new.get("panel_id") or "")
+            _must(bool(sid2), f"Expected panel_id from browser.panel.new: {tab_new}")
             _wait_selector(c, sid2, "#second", timeout_s=7.0)
-            tabs_after = c._call("browser.tab.list", {"surface_id": sid2}) or {}
-            ids_after = {str(item.get("id") or "") for item in (tabs_after.get("tabs") or [])}
+            tabs_after = c._call("browser.panel.list", {"panel_id": sid2}) or {}
+            ids_after = {str(item.get("id") or "") for item in (tabs_after.get("panels") or [])}
             _must(sid2 in ids_after and len(ids_after) >= before_count + 1, f"Expected new tab in list: {tabs_after}")
-            c._call("browser.tab.switch", {"surface_id": sid2, "target_surface_id": sid})
-            c._call("browser.tab.close", {"surface_id": sid, "target_surface_id": sid2})
+            c._call("browser.panel.switch", {"panel_id": sid2, "target_panel_id": sid})
+            c._call("browser.panel.close", {"panel_id": sid, "target_panel_id": sid2})
 
-            addscript_payload = c._call("browser.addscript", {"tab_id": sid, "script": "1 + 2"}) or {}
+            addscript_payload = c._call("browser.addscript", {"panel_id": sid, "script": "1 + 2"}) or {}
             _must(int(addscript_payload.get("value") or 0) == 3, f"Expected addscript value=3: {addscript_payload}")
 
-            c._call("browser.addstyle", {"tab_id": sid, "css": "#style-target { color: rgb(0, 128, 0); }"})
-            style_color = c._call("browser.get.styles", {"tab_id": sid, "selector": "#style-target", "property": "color"}) or {}
+            c._call("browser.addstyle", {"panel_id": sid, "css": "#style-target { color: rgb(0, 128, 0); }"})
+            style_color = c._call("browser.get.styles", {"panel_id": sid, "selector": "#style-target", "property": "color"}) or {}
             _must("0, 128, 0" in str(style_color.get("value") or ""), f"Expected updated style color: {style_color}")
 
-            c._call("browser.addinitscript", {"tab_id": sid, "script": "window.__cmuxInitMarker = 'init-ok';"})
-            c._call("browser.navigate", {"tab_id": sid, "url": second_url})
+            c._call("browser.addinitscript", {"panel_id": sid, "script": "window.__cmuxInitMarker = 'init-ok';"})
+            c._call("browser.navigate", {"panel_id": sid, "url": second_url})
             _wait_selector(c, sid, "#second", timeout_s=7.0)
-            init_value = c._call("browser.eval", {"tab_id": sid, "script": "window.__cmuxInitMarker || ''"}) or {}
+            init_value = c._call("browser.eval", {"panel_id": sid, "script": "window.__cmuxInitMarker || ''"}) or {}
             _must(str(init_value.get("value") or "") == "init-ok", f"Expected init script marker after navigation: {init_value}")
 
-            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            c._call("browser.navigate", {"panel_id": sid, "url": index_url})
             _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
-            c._call("browser.console.list", {"tab_id": sid})
-            c._call("browser.addscript", {"tab_id": sid, "script": "window.emitConsoleAndError();"})
+            c._call("browser.console.list", {"panel_id": sid})
+            c._call("browser.addscript", {"panel_id": sid, "script": "window.emitConsoleAndError();"})
             time.sleep(0.35)
-            console_entries = c._call("browser.console.list", {"tab_id": sid}) or {}
-            errors_entries = c._call("browser.errors.list", {"tab_id": sid}) or {}
+            console_entries = c._call("browser.console.list", {"panel_id": sid}) or {}
+            errors_entries = c._call("browser.errors.list", {"panel_id": sid}) or {}
             _must(int(console_entries.get("count") or 0) >= 1, f"Expected console entries: {console_entries}")
             _must(int(errors_entries.get("count") or 0) >= 1, f"Expected error entries: {errors_entries}")
-            c._call("browser.console.clear", {"tab_id": sid})
-            console_after = c._call("browser.console.list", {"tab_id": sid}) or {}
+            c._call("browser.console.clear", {"panel_id": sid})
+            console_after = c._call("browser.console.list", {"panel_id": sid}) or {}
             _must(int(console_after.get("count") or 0) == 0, f"Expected cleared console entries: {console_after}")
 
-            c._call("browser.highlight", {"tab_id": sid, "selector": "#action-btn"})
+            c._call("browser.highlight", {"panel_id": sid, "selector": "#action-btn"})
 
             state_path = tempfile.NamedTemporaryFile(delete=False, prefix="cmux-state-", suffix=".json").name
-            c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "persist", "value": "yes"})
-            c._call("browser.state.save", {"tab_id": sid, "path": state_path})
-            c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "persist", "value": "no"})
-            c._call("browser.state.load", {"tab_id": sid, "path": state_path})
-            persisted = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "persist"}) or {}
+            c._call("browser.storage.set", {"panel_id": sid, "type": "local", "key": "persist", "value": "yes"})
+            c._call("browser.state.save", {"panel_id": sid, "path": state_path})
+            c._call("browser.storage.set", {"panel_id": sid, "type": "local", "key": "persist", "value": "no"})
+            c._call("browser.state.load", {"panel_id": sid, "path": state_path})
+            persisted = c._call("browser.storage.get", {"panel_id": sid, "type": "local", "key": "persist"}) or {}
             _must(str(persisted.get("value") or "") == "yes", f"Expected state.load to restore storage key: {persisted}")
 
             # B080: loading a state file for a different origin must wait for
@@ -467,32 +467,32 @@ def main() -> int:
                 ),
                 encoding="utf-8",
             )
-            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            c._call("browser.navigate", {"panel_id": sid, "url": index_url})
             _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
-            c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "old-only", "value": "old"})
-            c._call("browser.state.load", {"tab_id": sid, "path": delayed_state_path})
-            loaded_url = c._call("browser.url.get", {"tab_id": sid}) or {}
+            c._call("browser.storage.set", {"panel_id": sid, "type": "local", "key": "old-only", "value": "old"})
+            c._call("browser.state.load", {"panel_id": sid, "path": delayed_state_path})
+            loaded_url = c._call("browser.url.get", {"panel_id": sid}) or {}
             _must(str(loaded_url.get("url") or "").startswith(state_target_url), f"State load returned before target navigation: {loaded_url}")
-            state_value = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "state-key"}) or {}
-            old_value = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "old-only"}) or {}
-            session_value = c._call("browser.storage.get", {"tab_id": sid, "type": "session", "key": "state-session"}) or {}
+            state_value = c._call("browser.storage.get", {"panel_id": sid, "type": "local", "key": "state-key"}) or {}
+            old_value = c._call("browser.storage.get", {"panel_id": sid, "type": "local", "key": "old-only"}) or {}
+            session_value = c._call("browser.storage.get", {"panel_id": sid, "type": "session", "key": "state-session"}) or {}
             _must(str(state_value.get("value") or "") == "state-value", f"Expected delayed state storage on target origin: {state_value}")
             _must(old_value.get("value") is None, f"Old-origin storage leaked into target state: {old_value}")
             _must(str(session_value.get("value") or "") == "session-value", f"Expected delayed session storage: {session_value}")
-            state_cookie = c._call("browser.cookies.get", {"tab_id": sid, "name": "state_cookie"}) or {}
+            state_cookie = c._call("browser.cookies.get", {"panel_id": sid, "name": "state_cookie"}) or {}
             _must(bool(state_cookie.get("cookies") or []), f"Expected state cookie on target origin: {state_cookie}")
             _must(
                 any("state_cookie=state" in header for header in server.state_target_cookie_headers),
                 f"Expected target request to receive restored state cookie: {server.state_target_cookie_headers}",
             )
 
-            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            c._call("browser.navigate", {"panel_id": sid, "url": index_url})
             _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
             old_origin_value = c._call(
-                "browser.storage.get", {"tab_id": sid, "type": "local", "key": "old-only"}
+                "browser.storage.get", {"panel_id": sid, "type": "local", "key": "old-only"}
             ) or {}
             target_value_on_old_origin = c._call(
-                "browser.storage.get", {"tab_id": sid, "type": "local", "key": "state-key"}
+                "browser.storage.get", {"panel_id": sid, "type": "local", "key": "state-key"}
             ) or {}
             _must(
                 str(old_origin_value.get("value") or "") == "old",
@@ -515,10 +515,10 @@ def main() -> int:
             )
             _expect_error_contains(
                 "wrong-origin state redirect",
-                lambda: c._call("browser.state.load", {"tab_id": sid, "path": redirect_state_path}),
+                lambda: c._call("browser.state.load", {"panel_id": sid, "path": redirect_state_path}),
                 "navigation_failed",
             )
-            rejected_value = c._call("browser.storage.get", {"tab_id": sid, "type": "local", "key": "must-not-apply"}) or {}
+            rejected_value = c._call("browser.storage.get", {"panel_id": sid, "type": "local", "key": "must-not-apply"}) or {}
             _must(rejected_value.get("value") is None, f"Wrong-origin state load wrote storage: {rejected_value}")
 
     print("PASS: extended browser parity families are green")

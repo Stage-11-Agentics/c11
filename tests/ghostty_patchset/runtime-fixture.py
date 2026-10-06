@@ -329,10 +329,10 @@ def controller(args):
     def workspace(initial_command="/bin/sleep 1"):
         ws = call("workspace.create", {"initial_command": initial_command})["workspace_id"]
         workspaces.append(ws)
-        tab = call("tab.list", {"workspace_id": ws})["tabs"][0]["id"]
+        tab = call("panel.list", {"workspace_id": ws})["panels"][0]["id"]
         return ws, tab
     def params(pair):
-        return {"workspace_id": pair[0], "tab_id": pair[1]}
+        return {"workspace_id": pair[0], "panel_id": pair[1]}
     def launch(mode, name):
         directory = out / (run_token + "-" + name)
         command = shlex.join([sys.executable, str(HERE), "worker", "--mode", mode, "--out", str(directory)])
@@ -343,7 +343,7 @@ def controller(args):
         workers.append((directory, identity))
         return pair, directory, identity
     def read(pair):
-        return call("tab.read_text", params(pair)).get("text", "")
+        return call("panel.read_text", params(pair)).get("text", "")
     def switch(workspace_id):
         began = shared_ns()
         call("workspace.select", {"workspace_id": workspace_id})
@@ -430,7 +430,7 @@ def controller(args):
             # refuses mismatched PID/tag/window/AX focus before posting to PID.
             driver_evidence = [ui_event("text", token), ui_event("key", "return")]
         else:
-            call("tab.send_text", {**params(pair), "text": token + "\n", "submit": False})
+            call("panel.send_text", {**params(pair), "text": token + "\n", "submit": False})
         key_post_ns = None
         if driver:
             key_post_ns = driver_evidence[-1].get("first_post_ns")
@@ -483,7 +483,7 @@ def controller(args):
         save(out / "result.json", result)
         probe_pair, probe_dir, _ = launch("probe", "probe")
         call("workspace.select", {"workspace_id": probe_pair[0]})
-        call("tab.focus", params(probe_pair))
+        call("panel.focus", params(probe_pair))
         samples = []
         start = time.monotonic()
         result["stream_output_start"] = stream_progress()
@@ -511,7 +511,7 @@ def controller(args):
                     switch(probe_pair[0])
                 else:
                     call("workspace.select", {"workspace_id": probe_pair[0]})
-                call("tab.focus", params(probe_pair))
+                call("panel.focus", params(probe_pair))
             # A minimum interval after every probe keeps all streaming workers
             # active across at least the requested autosave observation window.
             time.sleep(max(args.sample_pause, args.min_sample_seconds / max(1, args.samples - 1)))
@@ -550,17 +550,17 @@ def controller(args):
         for _ in range(10):
             call("workspace.select", {"workspace_id": stream_ws})
             call("workspace.select", {"workspace_id": probe_pair[0]})
-            call("tab.focus", params(probe_pair))
+            call("panel.focus", params(probe_pair))
         final = call("workspace.current")
-        result["focus_state"] = {"current": final, "tabs": call("tab.list", {"workspace_id": probe_pair[0]}),
+        result["focus_state"] = {"current": final, "panels": call("panel.list", {"workspace_id": probe_pair[0]}),
                                  "probe": probe(probe_pair, probe_dir, args.samples)}
-        selected = next((tab for tab in result["focus_state"]["tabs"]["tabs"] if tab.get("id") == probe_pair[1]), {})
+        selected = next((tab for tab in result["focus_state"]["panels"]["panels"] if tab.get("id") == probe_pair[1]), {})
         if (final.get("workspace_id") != probe_pair[0] or not selected.get("focused")
                 or not selected.get("selected_in_area") or result["focus_state"]["probe"].get("missed")):
             raise RuntimeError("final workspace/tab focus/probe state failed")
         # Explicit bundled CLI is exercised as a separate, timed observation.
         cli = subprocess.run([str(rpc.cli), "--socket", args.socket, "read-screen", "--workspace", probe_pair[0],
-                              "--tab", probe_pair[1]], env=env, text=True, capture_output=True, timeout=5)
+                              "--panel", probe_pair[1]], env=env, text=True, capture_output=True, timeout=5)
         (out / "cli-read-screen.txt").write_text(cli.stdout + cli.stderr)
         if cli.returncode or f"ACK:p{args.samples:06d}" not in cli.stdout:
             raise RuntimeError("explicit bundled CLI read-screen failed")
@@ -573,7 +573,7 @@ def controller(args):
             time.sleep(.02)
         payload = ("".join(f"line-{i:05d}: café αβ\n" for i in range(6000)) + "END-OF-SYNTHETIC-PASTE").encode()
         (out / "paste-input.bin").write_bytes(payload)
-        call("tab.send_text", {**params(paste_pair), "text": payload.decode(), "submit": False})
+        call("panel.send_text", {**params(paste_pair), "text": payload.decode(), "submit": False})
         done = wait_file(paste_dir / "done.json", 30)
         raw = (paste_dir / "received.bin").read_bytes()
         begin, end = raw.find(START), raw.find(END)
@@ -594,7 +594,7 @@ def controller(args):
             result["shutdown"].append(record)
             save(out / "result.json", result)
             start = time.monotonic()
-            # A fixture workspace contains its sole terminal; tab.close
+            # A fixture workspace contains its sole terminal; panel.close
             # deliberately rejects closing the last tab in an area.
             call("workspace.close", {"workspace_id": pair[0]}, timeout=20)
             close_return_ns = shared_ns()

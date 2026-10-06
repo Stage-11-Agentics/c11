@@ -57,7 +57,7 @@ def verify_saved(path: Path) -> None:
 
 def verify_live(client: cmux) -> dict:
     params = {"workspace_id": WORKSPACE}
-    tabs = client._call("tab.list", params)["tabs"]
+    tabs = client._call("panel.list", params)["panels"]
     ids = [t["id"].upper() for t in tabs]
     require(len(ids) == 3 and set(ids) == {A, B, C}, f"live tabs: {ids}")
     areas = client._call("area.list", params)["areas"]
@@ -67,11 +67,11 @@ def verify_live(client: cmux) -> dict:
         group = sorted((t for t in tabs if t["area_id"] == area["id"]), key=lambda t: t["index_in_area"])
         groups.append([t["id"].upper() for t in group])
     require(groups == [[A, B], [C]], f"live placement/order: {groups}")
-    require([a["selected_tab_id"].upper() for a in sorted(areas, key=lambda a: a["index"])] == [B, C], "live area selections")
+    require([a["selected_panel_id"].upper() for a in sorted(areas, key=lambda a: a["index"])] == [B, C], "live area selections")
     require([t["id"].upper() for t in tabs if t["focused"]] == [C], "live focus")
-    metadata = client._call("tab.get_metadata", {**params, "tab_id": A})["metadata"]
+    metadata = client._call("panel.get_metadata", {**params, "panel_id": A})["metadata"]
     require(metadata.get("fixture") == "first", "later duplicate overwrote metadata")
-    return {"tabs": tabs, "areas": areas, "metadata": metadata}
+    return {"panels": tabs, "areas": areas, "metadata": metadata}
 
 
 def main() -> int:

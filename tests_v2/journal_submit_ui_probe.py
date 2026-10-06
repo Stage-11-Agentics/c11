@@ -139,7 +139,7 @@ class SubmitProbe(base.Probe):
 
     def send_key(self, tab, key):
         result = self.run([self.args.cli, '--socket', self.args.socket, 'send-key',
-                           '--workspace', self.workspace, '--tab', tab, key])
+                           '--workspace', self.workspace, '--panel', tab, key])
         self.check(result.returncode == 0, 'Synthetic c11 send-key delivered without a response observation')
 
     def launch_pinned_picker(self):
@@ -152,7 +152,7 @@ class SubmitProbe(base.Probe):
             'case': 'claude-bypass-ask', 'provider_version': '2.1.287 (Claude Code)'
         }
 
-        before = {tab['id'] for tab in self.rpc('tab.list', {'workspace_id': self.workspace})['tabs']}
+        before = {tab['id'] for tab in self.rpc('panel.list', {'workspace_id': self.workspace})['panels']}
         prompt = ('Use AskUserQuestion exactly once. Ask one single-choice question with two options: '
                   '"Synthetic option A" and "Synthetic option B". Do not call any other tool. '
                   'Wait after asking for my answer.')
@@ -167,7 +167,7 @@ class SubmitProbe(base.Probe):
             raise AssertionError('Tagged launch-agent did not return machine-readable refs') from error
         tab = payload.get('tab_id') or payload.get('surface_id')
         if not tab:
-            after = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs']
+            after = self.rpc('panel.list', {'workspace_id': self.workspace})['panels']
             created = [item['id'] for item in after if item['id'] not in before]
             if len(created) != 1:
                 raise AssertionError('Could not uniquely identify the pinned fixture tab')
@@ -185,13 +185,13 @@ class SubmitProbe(base.Probe):
         if not request:
             raise AssertionError('Pinned ask hook did not carry its correlation id')
         self.requests['picker'] = request
-        self.eventually(lambda: self.rpc('tab.get_metadata', {'tab_id': tab})
+        self.eventually(lambda: self.rpc('panel.get_metadata', {'panel_id': tab})
                         ['metadata']['journal']['phase'] == 'blocked', 'Pinned ask is visibly blocked')
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': tab})
         self.ui('activate')
         def picker_screen():
             value = self.run([self.args.cli, '--socket', self.args.socket, 'read-screen',
-                              '--workspace', self.workspace, '--tab', tab, '--lines', '50']).stdout
+                              '--workspace', self.workspace, '--panel', tab, '--lines', '50']).stdout
             return value if 'Synthetic option A' in value and 'Synthetic option B' in value else None
 
         screen = self.eventually(picker_screen, 'Pinned AskUserQuestion choices reached the terminal screen', seconds=30)
@@ -227,7 +227,7 @@ class SubmitProbe(base.Probe):
         else:
             self.append(tab, owner, 'agent.plan_review.requested', request_id=request,
                         turn_id='synthetic-' + name + '-turn', tool_class='exit_plan_mode')
-        self.eventually(lambda: self.rpc('tab.get_metadata', {'tab_id': tab})
+        self.eventually(lambda: self.rpc('panel.get_metadata', {'panel_id': tab})
                         ['metadata']['journal']['phase'] == 'blocked', name + ' synthetic ask blocked')
         self.check(not self.responses(tab, request), name + ' ask starts without operator-response evidence')
 
@@ -237,16 +237,16 @@ class SubmitProbe(base.Probe):
         self.rpc('conversation.push', {'tab_id': tab, 'kind': 'claude-code', 'id': owner, 'source': 'hook'})
         self.append(tab, owner, 'agent.session.started')
         self.append(tab, owner, 'agent.turn.started', turn_id=turn)
-        self.eventually(lambda: self.rpc('tab.get_metadata', {'tab_id': tab})
+        self.eventually(lambda: self.rpc('panel.get_metadata', {'panel_id': tab})
                         ['metadata']['journal']['phase'] == 'working', 'Synthetic completion turn starts')
         self.append(tab, owner, 'agent.turn.completed', turn_id=turn)
 
         def completed_state():
-            journal = self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']
+            journal = self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']
             return journal if journal['phase'] == 'idle' and journal['turn_outcome'] == 'completed' else None
 
         completed = self.eventually(completed_state, 'Committed journal completion is idle', seconds=10)
-        self.rpc('notification.create_for_tab', {
+        self.rpc('notification.create_for_panel', {
             'workspace_id': self.workspace, 'surface_id': tab,
             'title': 'Synthetic completion', 'subtitle': 'Agent finished', 'body': 'Synthetic fixture'
         })
@@ -268,7 +268,7 @@ class SubmitProbe(base.Probe):
         self.screenshot('05-unread-completion')
 
         journal_event_count = len(self.events(tab))
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': tab})
         self.ui('activate')
 
         def read_completion():
@@ -277,7 +277,7 @@ class SubmitProbe(base.Probe):
                          and row['title'] == 'Synthetic completion' and row['is_read']), None)
 
         read = self.eventually(read_completion, 'Opening the completed tab clears only its unread mark', seconds=10)
-        opened = self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']
+        opened = self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']
         self.check(read is not None, 'Opening the completed tab marks its existing notification read')
         self.check(opened['phase'] == 'idle' and opened['turn_outcome'] == 'completed'
                    and opened['sequence'] == completed['sequence'],
@@ -292,7 +292,7 @@ class SubmitProbe(base.Probe):
         tab, request = self.tabs['copy'], self.requests['copy']
         params = {'workspace_id': self.workspace, 'tab_id': tab, 'by': 'operator'}
         self.rpc('flag.suppress', params)
-        self.rpc('notification.create_for_tab', {
+        self.rpc('notification.create_for_panel', {
             'workspace_id': self.workspace, 'surface_id': tab,
             'title': 'Synthetic legacy unread', 'subtitle': 'Compatibility edge', 'body': 'Synthetic fixture'
         })
@@ -300,13 +300,13 @@ class SubmitProbe(base.Probe):
             unread = self.eventually(lambda: next((row for row in self.rpc('notification.list')['notifications']
                                                    if row['surface_id'] == tab and not row['is_read']), None),
                                      'Legacy unread appears beside the blocked journal ask')
-            before = self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']
+            before = self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']
             event_count = len(self.events(tab))
             response_count = len(self.responses(tab, request))
             self.check(before['phase'] == 'blocked' and unread is not None,
                        'Unread compatibility attention remains distinct from blocked journal state')
             self.rpc('notification.clear')
-            after = self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']
+            after = self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']
             self.check(after['phase'] == 'blocked' and after['sequence'] == before['sequence'],
                        'Clearing unread does not resolve or rewrite the blocked ask')
             self.check(not any(not row['is_read'] for row in self.rpc('notification.list')['notifications']),
@@ -325,12 +325,12 @@ class SubmitProbe(base.Probe):
         for workspace in self.rpc('workspace.list')['workspaces']:
             if workspace['id'] != self.workspace:
                 self.rpc('workspace.close', {'workspace_id': workspace['id']})
-        self.tabs['copy'] = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
+        self.tabs['copy'] = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
         for name in ('input', 'picker', 'textbox', 'completion'):
-            self.tabs[name] = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal'})['tab_id']
+            self.tabs[name] = self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal'})['panel_id']
         for name, tab in self.tabs.items():
-            self.rpc('tab.set_metadata', {'tab_id': tab, 'metadata': {'title': 'Synthetic ' + name}})
-            self.rpc('tab.send_text', {'tab_id': tab, 'text': 'exec /bin/cat >/dev/null\n'})
+            self.rpc('panel.set_metadata', {'panel_id': tab, 'metadata': {'title': 'Synthetic ' + name}})
+            self.rpc('panel.send_text', {'panel_id': tab, 'text': 'exec /bin/cat >/dev/null\n'})
         topology = self.run([self.args.cli, '--socket', self.args.socket, 'tree', '--no-layout']).stdout
         self.check(all('Synthetic ' + name in topology for name in self.tabs),
                    'All synthetic validation tabs remain named and visible in workspace topology')
@@ -343,7 +343,7 @@ class SubmitProbe(base.Probe):
         # autorepeat Return, c11 send-key and an IME/dead-key composition commit all come
         # before the one real Return on this same still-open ask.
         tab, request = self.tabs['input'], self.requests['input']
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': tab})
         self.ui('activate')
         self.ui('target-type', 'synthetic draft')
         self.check(not self.responses(tab, request), 'Typing a draft produces no response')
@@ -359,19 +359,19 @@ class SubmitProbe(base.Probe):
         self.ui('target-key', '36', '0')
         time.sleep(.5)
         self.check(not self.responses(tab, request), 'Return that commits an IME composition produces no response')
-        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+        self.check(self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']['phase'] == 'blocked',
                    'Negative inputs leave the plan-review ask blocked')
         self.ui('target-key', '36', '0')
         self.eventually(lambda: len(self.responses(tab, request)) == 1,
                         'One real Return records exactly one response on the same ask')
         time.sleep(.5)
         self.check(len(self.responses(tab, request)) == 1, 'No further response rows follow the single real Return')
-        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+        self.check(self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']['phase'] == 'blocked',
                    'Real Return leaves the ask blocked')
 
         # An AskUserQuestion picker has no known commit key, so Return records nothing.
         tab, request = self.tabs['picker'], self.requests['picker']
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': tab})
         self.ui('activate')
         self.ui('target-key', '36', '0')
         time.sleep(.5)
@@ -381,7 +381,7 @@ class SubmitProbe(base.Probe):
         # Copy-mode Return is consumed locally; Escape exits; a real Return then
         # records exactly once while the journal phase remains blocked.
         tab, request = self.tabs['copy'], self.requests['copy']
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': tab})
         self.ui('activate')
         self.ui('target-key', '46', str((1 << 20) | (1 << 17)))  # Command-Shift-M
         self.copy_mode = True
@@ -396,13 +396,13 @@ class SubmitProbe(base.Probe):
         self.eventually(lambda: len(self.responses(tab, request)) == 1, 'real Return records one correlated response')
         self.ui('target-key', '36', '0')
         self.check(len(self.responses(tab, request)) == 1, 'Repeated real submit remains once per ask event')
-        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+        self.check(self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']['phase'] == 'blocked',
                    'Operator response leaves the committed ask blocked')
         self.screenshot('02-return-response-stays-blocked')
 
         # TextBox editing is not a submit; clicking its actual Send button is.
         tab, request = self.tabs['textbox'], self.requests['textbox']
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': tab})
         self.ui('activate')
         self.ui('target-key', '11', str((1 << 20) | (1 << 19)))  # Command-Option-B
         self.textbox_visible = True
@@ -412,7 +412,7 @@ class SubmitProbe(base.Probe):
         self.screenshot('03-textbox-editing-no-submit')
         self.ui('press-textbox-send')
         self.eventually(lambda: len(self.responses(tab, request)) == 1, 'TextBox Send records one correlated response')
-        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+        self.check(self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']['phase'] == 'blocked',
                    'TextBox response leaves the committed ask blocked')
         self.screenshot('04-textbox-send-response')
         self.ui('target-key', '11', str((1 << 20) | (1 << 19)))
@@ -435,7 +435,7 @@ class SubmitProbe(base.Probe):
         self.ui('target-key', str(navigation_key), '0')
         time.sleep(.25)
         self.check(not self.responses(tab, request), 'Pinned picker navigation key produces no response event')
-        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+        self.check(self.rpc('panel.get_metadata', {'panel_id': tab})['metadata']['journal']['phase'] == 'blocked',
                    'Navigating the pinned picker leaves its committed ask blocked')
         self.screenshot('08-pinned-picker-navigation')
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""CMUX-11 Phase 2: area.create / tab.split --title seeding.
+"""CMUX-11 Phase 2: area.create / panel.split --title seeding.
 
-Verifies that when `area.create` (and `tab.split`) is called with a
+Verifies that when `area.create` (and `panel.split`) is called with a
 `title` parameter, the new pane's metadata is seeded with
 `{title: <value>, source: "explicit"}` atomically with the pane id
 becoming valid — no window between "pane exists" and "title set."
@@ -80,20 +80,20 @@ def _test_surface_split_with_title(c: cmux) -> None:
     workspace_id = c.new_workspace()
     try:
         title = "Parent :: Split-Seed"
-        res = c._call("tab.split", {
+        res = c._call("panel.split", {
             "workspace_id": workspace_id,
             "direction": "down",
             "title": title,
         }) or {}
         pane_id = res.get("area_id")
-        _must(bool(pane_id), f"tab.split returned no area_id: {res}")
+        _must(bool(pane_id), f"panel.split returned no area_id: {res}")
 
         got = c._call("area.get_metadata", {
             "workspace_id": workspace_id,
             "area_id": str(pane_id),
         }) or {}
         _must(got.get("metadata", {}).get("title") == title,
-              f"tab.split title seed missing: {got}")
+              f"panel.split title seed missing: {got}")
     finally:
         c._call("workspace.close", {"workspace_id": workspace_id})
 

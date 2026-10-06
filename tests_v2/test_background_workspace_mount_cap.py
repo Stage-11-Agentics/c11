@@ -53,7 +53,7 @@ def main():
     created = []
     with cmux(socket_path) as client:
         original = client._call("workspace.current")["workspace_id"]
-        original_tab = client._call("tab.current", {"workspace_id": original})
+        original_tab = client._call("panel.current", {"workspace_id": original})
         try:
             started = time.monotonic()
             for _ in range(count):
@@ -67,17 +67,17 @@ def main():
             # already progressed while the socket created the batch.
             mounted = set(check_mounts(2)[-1][1])
             target = next(ws for ws in reversed(created) if ws[:5].upper() not in mounted)
-            tabs = client._call("tab.list", {"workspace_id": target})["tabs"]
+            tabs = client._call("panel.list", {"workspace_id": target})["panels"]
             tab = tabs[0]["id"]
-            params = {"workspace_id": target, "tab_id": tab}
-            client._call("tab.read_text", params)  # C11-296: read before send.
-            client._call("tab.send_text", {**params, "text": "printf 'MOUNT_CAP_%s\\n' 'HEADLESS'"})
+            params = {"workspace_id": target, "panel_id": tab}
+            client._call("panel.read_text", params)  # C11-296: read before send.
+            client._call("panel.send_text", {**params, "text": "printf 'MOUNT_CAP_%s\\n' 'HEADLESS'"})
             deadline = time.monotonic() + 5
-            while "MOUNT_CAP_HEADLESS" not in client._call("tab.read_text", params)["text"]:
+            while "MOUNT_CAP_HEADLESS" not in client._call("panel.read_text", params)["text"]:
                 require(time.monotonic() < deadline, "Unmounted sibling did not execute command")
                 time.sleep(0.05)
             require(client._call("workspace.current")["workspace_id"] == original, "Headless demand stole selection")
-            require(client._call("tab.current", {"workspace_id": original}) == original_tab, "Headless demand changed focused tab")
+            require(client._call("panel.current", {"workspace_id": original}) == original_tab, "Headless demand changed focused tab")
 
             # Every finite queue member must finish, including a startup timeout.
             prefixes = {ws[:5].upper() for ws in created}

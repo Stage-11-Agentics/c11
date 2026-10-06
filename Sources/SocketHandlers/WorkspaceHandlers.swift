@@ -930,7 +930,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         guard let relayPort = v2StrictInt(params, "relay_port"),
               relayPort > 0,
@@ -1053,10 +1053,10 @@ extension TerminalController {
                     self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
                 },
                 surfaceRefMinter: { [weak self] uuid in
-                    self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "surface:\(uuid.uuidString)"
+                    self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "panel:\(uuid.uuidString)"
                 },
                 paneRefMinter: { [weak self] uuid in
-                    self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "pane:\(uuid.uuidString)"
+                    self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "area:\(uuid.uuidString)"
                 }
             )
             result = WorkspaceLayoutExecutor.apply(plan, options: effectiveOptions, dependencies: deps)

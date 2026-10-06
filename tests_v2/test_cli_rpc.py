@@ -46,20 +46,20 @@ def main():
             c.select_workspace(ws)
             tab = c.list_surfaces(ws)[0][1]
             command = "printf 'C11_RPC_%s\\n' 'receipt'\r"
-            success(["rpc", "tab.send_text", json.dumps({"workspace_id": ws, "tab_id": tab, "text": command})])
+            success(["rpc", "panel.send_text", json.dumps({"workspace_id": ws, "panel_id": tab, "text": command})])
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
-                screen = run(["read-screen", "--workspace", ws, "--tab", tab]).stdout
+                screen = run(["read-screen", "--workspace", ws, "--panel", tab]).stdout
                 if "C11_RPC_receipt" in screen:
                     break
                 time.sleep(0.2)
             else:
                 raise AssertionError("raw send receipt missing")
-            friendly = run(["send", "--workspace", ws, "--tab", tab, "printf 'C11_FRIENDLY_%s\\n' 'receipt'"])
+            friendly = run(["send", "--workspace", ws, "--panel", tab, "printf 'C11_FRIENDLY_%s\\n' 'receipt'"])
             assert friendly.returncode == 0, friendly.stderr
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
-                if "C11_FRIENDLY_receipt" in run(["read-screen", "--workspace", ws, "--tab", tab]).stdout:
+                if "C11_FRIENDLY_receipt" in run(["read-screen", "--workspace", ws, "--panel", tab]).stdout:
                     break
                 time.sleep(0.2)
             else:
@@ -67,7 +67,7 @@ def main():
         finally:
             c.close_workspace(ws)
     print("PASS: tagged rpc ping preserves window; cli.rpc advertised; unknown and invalid calls rejected")
-    print("PASS: raw tab.send_text and existing friendly send both produce shell receipts")
+    print("PASS: raw panel.send_text and existing friendly send both produce shell receipts")
 
 
 if __name__ == "__main__":

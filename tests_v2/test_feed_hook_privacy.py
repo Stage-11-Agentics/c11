@@ -30,7 +30,8 @@ def main():
                     request = json.loads(command)
                     calls.append(request)
                     if request["method"] == "system.capabilities":
-                        response = {"ok": True, "result": {"methods": ["tab.list", "agent.event.append"]}}
+                        response = {"ok": True, "result": {"methods": ["panel.list", "agent.event.append"],
+                                                           "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}}
                     elif request["method"] == "agent.event.append":
                         if mode == "lost":
                             return

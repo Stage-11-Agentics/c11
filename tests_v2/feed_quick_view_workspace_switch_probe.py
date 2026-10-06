@@ -42,7 +42,7 @@ class WorkspaceSwitchProbe(KeyboardProbe):
         self.safe = True
         origin = self.rpc('workspace.current')['workspace_id']
         self.workspace = self.rpc('workspace.create')['workspace_id']  # Background: agents cannot select it.
-        tab = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['tab_id']
+        tab = self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['panel_id']
         self.check(self.rpc('workspace.current')['workspace_id'] == origin, 'Setup left the operator workspace selected')
         self.rpc('flag.raise', {'tab_id': tab, 'reason': 'Synthetic cross-workspace flag', 'by': 'operator'})
         self.pause(0.8)

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """SSH transport for a self-contained worktree snapshot and existing c11 build scripts."""
 import argparse
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -12,9 +14,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 SUBMODULES = ("ghostty", "vendor/bonsplit")
+# Host mirror name -> checkout path; the host keeps one bare mirror per repository.
+REPOS = {"parent": "", "ghostty": "ghostty", "vendor-bonsplit": "vendor/bonsplit"}
 EXCLUDED = (".git", ".lattice", ".etch", "DerivedData", "build", "build-*",
             "GhosttyKit.xcframework", "ghostty/zig-out", "ghostty/.zig-cache",
             "c11d/zig-out", "c11d/.zig-cache", "web/node_modules")
@@ -68,7 +73,8 @@ def entry(root, name):
             "mode": path.stat().st_mode & 0o777}
 
 
-def snapshot(root, payload, args):
+def snapshot(root, payload, args, held=None):
+    held = held or {}
     head = git(root, "rev-parse", "HEAD")
     modules = {}
     for name in SUBMODULES:
@@ -102,11 +108,12 @@ def snapshot(root, payload, args):
             dst.symlink_to(item["target"])
         if entry(root, name) != item:
             raise ValueError(f"source changed during snapshot: {name!r}")
-    run(["git", "-c", "pack.threads=2", "-C", root, "bundle", "create", payload / "parent.bundle", "HEAD"])
-    for index, name in enumerate(SUBMODULES):
-        run(["git", "-c", "pack.threads=2", "-C", root / name, "bundle", "create", payload / f"module-{index}.bundle", "HEAD"])
-    manifest = {"invocation": uuid.uuid4().hex, "head": head,
-                "parent_head": git(root, "rev-parse", "HEAD^"),
+    bundles = {}
+    for repo, path in REPOS.items():
+        kind = bundle(root / path, payload / (repo + ".bundle"), held.get(repo, []))
+        if kind:
+            bundles[repo] = kind
+    manifest = {"invocation": uuid.uuid4().hex, "head": head, "bundles": bundles,
                 "branch": git(root, "branch", "--show-current"), "submodules": modules,
                 "overlay": overlays, "dirty": bool(overlays), "tag": args.tag,
                 "slug": slug(args.tag), "mode": args.mode, "extra": args.extra,
@@ -121,36 +128,102 @@ def slug(tag):
     return re.sub(r"[^a-z0-9]+", "-", tag.lower()).strip("-")
 
 
-def bundle_cache(ssh, relative, manifest, populate=False):
-    """Reuse complete, SHA-addressed Git bundles; never upload history on every test."""
-    bundles = {"parent.bundle": "parent-" + manifest["head"] + ".bundle"}
-    for i, name in enumerate(SUBMODULES):
-        bundles[f"module-{i}.bundle"] = "module-" + manifest["submodules"][name] + ".bundle"
-    # Atomic hard links publish complete uploaded files. Concurrent identical commits
-    # may populate the same cache key; remote checkout still verifies the pinned SHA.
-    code = """import json,os,sys
-from pathlib import Path
-payload=Path(sys.argv[1]); cache=Path.home()/'c11-builds/bundles'
-cache.mkdir(parents=True,exist_ok=True); hits=[]
-for name,key in json.loads(sys.argv[2]).items():
-    src,dst=payload/name,cache/key
-    if sys.argv[3]=='populate':
-        try: os.link(src,dst)
-        except FileExistsError: pass
-    elif dst.is_file():
-        try: os.link(dst,src)
-        except FileExistsError: pass
-        hits.append(name)
-    elif name=='parent.bundle':
-        seed=cache/('parent-'+sys.argv[4]+'.bundle')
-        if seed.is_file():
-            try: os.link(seed,src)
-            except FileExistsError: pass
-print(json.dumps(hits))
-"""
-    response = run([*ssh, shlex.join(["python3", "-c", code, relative, json.dumps(bundles),
-                                     "populate" if populate else "prepare", manifest["parent_head"]])], stdout=subprocess.PIPE)
+def bundle(repo, path, held):
+    """Bundle HEAD minus everything reachable from heads the host already holds.
+
+    Returns "full", "incremental", or None when the host already has HEAD."""
+    shas = [s for s in held if re.fullmatch(r"[0-9a-f]{40}", s)]
+    known = []
+    if shas:
+        # Only commits this clone has can bound the bundle; the rest are unknown here.
+        check = run(["git", "-C", repo, "cat-file", "--batch-check=%(objecttype)"],
+                    input="".join(s + "\n" for s in shas).encode(), stdout=subprocess.PIPE)
+        known = [s for s, kind in zip(shas, check.stdout.decode().splitlines()) if kind == "commit"]
+    revs = "".join(["HEAD\n", *("^" + s + "\n" for s in known)]).encode()
+    missing = run(["git", "-C", repo, "rev-list", "--count", "--stdin"], input=revs, stdout=subprocess.PIPE)
+    if int(missing.stdout) == 0:
+        return None
+    # Prerequisites are commits the host mirror holds; its fetch refuses the bundle otherwise.
+    run(["git", "-c", "pack.threads=2", "-C", repo, "bundle", "create", "--quiet", path, "--stdin"], input=revs)
+    return "incremental" if known else "full"
+
+
+@contextlib.contextmanager
+def mirror_lock(repo):
+    """Hold the host's lock for one repository mirror; the kernel drops it if the process dies."""
+    mirrors = Path.home() / "c11-builds" / "mirrors"
+    mirrors.mkdir(parents=True, exist_ok=True)
+    with (mirrors / (repo + ".lock")).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield mirrors / (repo + ".git")
+
+
+def ready_mirror(mirror, subpath):
+    """Make the mirror a usable bare repository. Caller holds its lock.
+
+    An interrupted first use can leave a directory that is not a repository; it is
+    rebuilt. A new mirror adopts the heads of the host's existing per-tag checkouts,
+    so moving onto mirrors does not re-upload history the host already has."""
+    check = subprocess.run(["git", "--git-dir", str(mirror), "rev-parse", "--is-bare-repository"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if check.returncode == 0 and check.stdout.strip() == b"true":
+        return
+    staging = mirror.with_name(mirror.name + ".init")
+    shutil.rmtree(staging, ignore_errors=True)
+    run(["git", "init", "--quiet", "--bare", staging])
+    for checkout in sorted((Path.home() / "c11-builds").glob("*/source")):
+        repo = checkout / subpath
+        head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
+        if (repo / ".git").exists() and head:
+            # Best effort: a checkout that cannot be read only means less is adopted.
+            subprocess.run(["git", "--git-dir", str(staging), "fetch", "--quiet", "--no-recurse-submodules",
+                            str(repo), "+HEAD:refs/c11/" + head], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    shutil.rmtree(mirror, ignore_errors=True)
+    staging.rename(mirror)
+
+
+def host_held_heads():
+    """Host side of held_heads: every head each mirror holds, by repository."""
+    held = {}
+    for repo, subpath in REPOS.items():
+        with mirror_lock(repo) as mirror:
+            ready_mirror(mirror, subpath)
+            refs = run(["git", "--git-dir", mirror, "for-each-ref", "--format=%(objectname)", "refs/c11/"],
+                       stdout=subprocess.PIPE)
+        held[repo] = refs.stdout.decode().split()
+    return held
+
+
+def held_heads(ssh):
+    """Ask the host which commits each repository mirror holds.
+
+    The host runs this script from stdin, so the probe shares mirror_head's locking
+    and readiness checks; any host failure fails staging instead of reading as empty."""
+    response = run([*ssh, shlex.join(["python3", "-", "--held-heads"])],
+                   input=Path(__file__).read_bytes(), stdout=subprocess.PIPE)
     return json.loads(response.stdout)
+
+
+def mirror_head(payload, manifest, repo, sha):
+    """Publish one exact commit in the host's shared mirror; return the mirror and ref."""
+    ref = "refs/c11/" + sha
+    # Initialization, publication and verification are serialized per mirror, so two
+    # tags staging one new head never contend for its ref lock inside Git.
+    with mirror_lock(repo) as mirror:
+        ready_mirror(mirror, REPOS[repo])
+        if repo in manifest["bundles"]:
+            # Fetch verifies the bundle's prerequisite commits are already in the mirror.
+            command = ["git", "--git-dir", mirror, "fetch", "--quiet", "--no-recurse-submodules",
+                       payload / (repo + ".bundle"), "+HEAD:" + ref]
+        else:
+            command = ["git", "--git-dir", mirror, "update-ref", ref, sha + "^{commit}"]
+        attempt = subprocess.run([str(a) for a in command], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        held = subprocess.run(["git", "--git-dir", str(mirror), "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
+                              stdout=subprocess.PIPE).stdout.decode().strip()
+    if attempt.returncode or held != sha:
+        raise ValueError(f"host mirror {repo} lacks {sha}: {attempt.stderr.decode().strip()}")
+    return mirror, ref
 
 
 def apply_overlay(root, payload, manifest):
@@ -194,25 +267,21 @@ def remote(payload, locked=False):
                 path = safe_path(source, item["path"])
                 if path.is_file() or path.is_symlink():
                     path.unlink()
-        if not (source / ".git").is_dir():
-            run(["git", "clone", "--quiet", payload / "parent.bundle", source])
-        else:
-            # Pinned module bundles are fetched below. Recursive fetch would ask
-            # their old bundle origins for unrelated historical gitlinks.
-            run(["git", "-C", source, "fetch", "--no-recurse-submodules", "--quiet", payload / "parent.bundle", "HEAD"])
-        run(["git", "-C", source, "reset", "--hard", manifest["head"]], stdout=subprocess.DEVNULL)
-        # Clear old overlays without deleting build caches or required submodule repositories.
-        run(["git", "-C", source, "clean", "-fd", "-e", "ghostty", "-e", "vendor/bonsplit"],
-            stdout=subprocess.DEVNULL)
-        for index, name in enumerate(SUBMODULES):
-            module = source / name
-            if not (module / ".git").is_dir():
-                if module.exists():
-                    shutil.rmtree(module)
-                run(["git", "clone", "--quiet", payload / f"module-{index}.bundle", module])
-            else:
-                run(["git", "-C", module, "fetch", "--no-recurse-submodules", "--quiet", payload / f"module-{index}.bundle", "HEAD"])
-            run(["git", "-C", module, "reset", "--hard", manifest["submodules"][name]], stdout=subprocess.DEVNULL)
+        for repo, path in REPOS.items():
+            sha = manifest["submodules"].get(path, manifest["head"])
+            mirror, ref = mirror_head(payload, manifest, repo, sha)
+            checkout = source / path
+            if not (checkout / ".git").exists():
+                if checkout.exists():
+                    shutil.rmtree(checkout)
+                run(["git", "init", "--quiet", checkout])
+            # Recursive fetch would ask old origins for unrelated historical gitlinks.
+            run(["git", "-C", checkout, "fetch", "--no-recurse-submodules", "--quiet", mirror, ref])
+            run(["git", "-C", checkout, "reset", "--hard", sha], stdout=subprocess.DEVNULL)
+            if not path:
+                # Clear old overlays without deleting build caches or required submodule repositories.
+                run(["git", "-C", source, "clean", "-fd", "-e", "ghostty", "-e", "vendor/bonsplit"],
+                    stdout=subprocess.DEVNULL)
         apply_overlay(source, payload, manifest)
         prior_overlay.write_text(json.dumps(manifest["overlay"]) + "\n")
         if git(source, "rev-parse", "HEAD") != manifest["head"] or any(
@@ -294,19 +363,19 @@ def client(args):
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="c11-remote-source-") as tmp:
         payload = Path(tmp)
-        manifest = snapshot(root, payload, args)
+        host = args.host
+        ssh = ["ssh", "-o", "BatchMode=yes", host]
+        started = time.monotonic()
+        manifest = snapshot(root, payload, args, held_heads(ssh))
         for name in ("remote_build.py", "atlas_build_slots.py", "with-build-lock.sh"):
             shutil.copy2(root / "scripts" / name, payload / name)
-        host = args.host
         relative = f"c11-builds/{manifest['slug']}/incoming/{manifest['invocation']}"
-        ssh = ["ssh", "-o", "BatchMode=yes", host]
         run([*ssh, shlex.join(["mkdir", "-p", relative])])
-        cached = bundle_cache(ssh, relative, manifest)
-        excludes = [arg for name in cached for arg in ("--exclude", name)]
-        # Default rsync temp+rename preserves the hard-linked cache seed while
-        # sending only changed bundle blocks. Never use --inplace here.
-        run(["rsync", "-a", "--checksum", "-e", "ssh -o BatchMode=yes", *excludes, str(payload) + "/", host + ":" + relative + "/"])
-        bundle_cache(ssh, relative, manifest, populate=True)
+        run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", str(payload) + "/", host + ":" + relative + "/"])
+        sent = sum(f.stat().st_size for f in payload.rglob("*") if f.is_file() and not f.is_symlink())
+        print(f"[remote-build] staged {sent / 1e6:.2f} MB in {time.monotonic() - started:.1f}s; bundles: " +
+              (", ".join(f"{r}={k}" for r, k in manifest["bundles"].items()) or "none, host holds every head"),
+              flush=True)
         command = shlex.join(["python3", relative + "/remote_build.py", "--remote", relative])
         print(f"[remote-build] host={host} tag={args.tag} invocation={manifest['invocation']} head={manifest['head']}", flush=True)
         print(f"[remote-build] remote log: ~/c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/build.log", flush=True)
@@ -379,6 +448,9 @@ def client(args):
 
 
 def main():
+    if sys.argv[1:] == ["--held-heads"]:
+        print(json.dumps(host_held_heads()))
+        return 0
     if len(sys.argv) == 3 and sys.argv[1] in ("--remote", "--remote-locked"):
         return remote(Path(sys.argv[2]).resolve(), locked=sys.argv[1] == "--remote-locked")
     parser = argparse.ArgumentParser(description=__doc__)

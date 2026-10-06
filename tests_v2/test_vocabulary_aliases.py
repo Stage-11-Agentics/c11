@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""Vocabulary alias regression: workspace > area > tab.
+"""Vocabulary regression: workspace > area > panel, with silent tab/surface/pane aliases.
 
-The canonical names are `tab.*` / `area.*` socket methods, `tab_id` / `area_id`
-params, `tab:N` / `area:N` refs, `new-tab` / `list-areas` CLI commands and
-`C11_TAB_ID`. Every older spelling (`surface.*` / `pane.*`, `surface_id` /
-`pane_id` / `panel_id`, `surface:N` / `pane:N`, `new-surface` / `list-panes`,
-`--surface` / `--panel` / `--pane`, `C11_SURFACE_ID` / `CMUX_*`) must keep
-resolving to the same object and behavior, and JSON responses carry both the
-canonical keys and the older keys (older `*_ref` values keep their old prefix).
+The canonical names are `panel.*` / `area.*` socket methods, `panel_id` / `area_id`
+params, `panel:N` / `area:N` refs, `new-panel` / `list-areas` CLI commands and
+`C11_PANEL_ID`. Every older spelling must keep resolving to the same object and
+behavior:
 
-Runs against a live tagged build, like the rest of tests_v2.
+- methods: `tab.*` and `surface.*` (for `panel.*`), `pane.*` and `pane.surfaces` /
+  `area.tabs` (for `area.*` / `area.panels`), `notification.create_for_tab|surface`,
+  `browser.tab.*`, `debug.tab_snapshot` and the other debug renames.
+- params: `tab_id` / `surface_id` / `*_ref` (and `pane_id` / `pane_ref`), refs
+  `tab:N` / `surface:N` / `pane:N` with any prefix case.
+- CLI: `new-tab` / `new-surface` / `list-tabs` / `focus-tab` ... , flags `--tab` /
+  `--surface` / `--pane`, env `C11_TAB_ID` / `C11_SURFACE_ID` / `CMUX_*`.
+
+Results carry `panel_*` beside the v0.67 `tab_*` spelling (the `tab_*` ref values
+keep `tab:N`), `area_*` alone, `panels` + `tabs` arrays, and never `surface_*` /
+`pane_*` / `surfaces` / `panes`.
+
+Runs against a live tagged build, like the rest of tests_v2:
+
+    C11_SOCKET=/tmp/c11-debug-<tag>.sock python3 tests_v2/test_vocabulary_aliases.py
 """
 
 from __future__ import annotations
@@ -22,18 +33,49 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent))
 from cmux import cmux, cmuxError, find_cli_binary  # type: ignore[import]
 
 
-SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
+def _socket_path() -> str:
+    for key in ("C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET", "CMUX_SOCKET_PATH"):
+        value = os.environ.get(key)
+        if value:
+            return value
+    return "/tmp/cmux-debug.sock"
+
+
+SOCKET_PATH = _socket_path()
 
 ID_ENV_KEYS = (
-    "C11_TAB_ID", "C11_SURFACE_ID", "C11_PANEL_ID",
-    "CMUX_TAB_ID", "CMUX_SURFACE_ID", "CMUX_PANEL_ID",
+    "C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID",
+    "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID",
+    "C11_PANEL_NUM", "C11_TAB_NUM", "C11_SURFACE_NUM",
+    "CMUX_PANEL_NUM", "CMUX_TAB_NUM", "CMUX_SURFACE_NUM",
     "C11_WORKSPACE_ID", "CMUX_WORKSPACE_ID",
+)
+
+# Every spelling of a panel (the c11 leaf) and of an area.
+PANEL_FAMILIES = ("panel", "tab", "surface")
+AREA_FAMILIES = ("area", "pane")
+
+# Result subtrees that hold user or page data: their keys are not ours.
+OPAQUE_KEYS = {
+    "value", "metadata", "metadata_sources", "payload", "headers", "request_headers",
+    "response_headers", "cookies", "storage", "entries", "plan",
+    "configs", "config", "recent", "removed", "pinned",
+}
+
+# Old methods and the canonical method each must reach.
+CANONICAL_METHOD_NAMES = (
+    "list", "current", "focus", "split", "create", "close", "move", "reorder",
+    "drag_to_split", "refresh", "health", "action", "send_text", "send_key",
+    "read_text", "read_selection", "input_state", "clear_history", "trigger_flash",
+    "cancel_flash", "set_metadata", "get_metadata", "clear_metadata",
+    "set_custom_color", "get_titlebar_state", "set_titlebar_visibility",
+    "set_titlebar_collapsed",
 )
 
 
@@ -90,11 +132,72 @@ def _call(c: cmux, method: str, params: Optional[Dict[str, Any]] = None) -> Dict
     return dict(c._call(method, params or {}) or {})
 
 
+def _wait_for(pred, timeout: float = 6.0, step: float = 0.15) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return True
+        time.sleep(step)
+    return pred()
+
+
+def _walk(value: Any) -> Iterator[Dict[str, Any]]:
+    """Every dict in a JSON-shaped value."""
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk(child)
+
+
+def _walk_keys(value: Any, path: str = "") -> Iterator[Tuple[str, str]]:
+    """(path, key) for every key, skipping opaque user-data subtrees."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield (path, key)
+            if key not in OPAQUE_KEYS:
+                yield from _walk_keys(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for idx, child in enumerate(value):
+            yield from _walk_keys(child, f"{path}[{idx}]")
+
+
+def _is_legacy_key(key: str) -> bool:
+    """`surface_*` / `pane_*` spellings (and their camelCase and array forms) are never emitted."""
+    low = key.lower()
+    if "surface" in low:
+        return True
+    if low in ("panes", "panerefs", "paneids"):
+        return True
+    return re.search(r"(^|_)pane(_|$)", low) is not None
+
+
+def _assert_wire_clean(payload: Any, what: str) -> None:
+    bad = [f"{path}.{key}" for path, key in _walk_keys(payload) if _is_legacy_key(key)]
+    _must(not bad, f"{what}: results must not emit surface_*/pane_* keys, found {bad[:6]}")
+
+
+def _check_dual_panel(block: Dict[str, Any], what: str, prefix: str = "") -> None:
+    """`<prefix>panel_id` == `<prefix>tab_id`; `panel_ref` says panel:N, `tab_ref` says tab:N."""
+    _same(block.get(f"{prefix}panel_id"), block.get(f"{prefix}tab_id"), f"{what}: {prefix}panel_id/{prefix}tab_id")
+    if f"{prefix}panel_ref" in block or f"{prefix}tab_ref" in block:
+        _same_ref(block.get(f"{prefix}panel_ref"), "panel", block.get(f"{prefix}tab_ref"), "tab",
+                  f"{what}: {prefix}panel_ref/{prefix}tab_ref")
+
+
+def _check_area_keys(block: Dict[str, Any], what: str) -> None:
+    _must(bool(block.get("area_id")), f"{what}: area_id missing in {sorted(block)}")
+    _ordinal(block.get("area_ref"), "area")
+
+
 def _cli_env(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     env = dict(os.environ)
     for key in ID_ENV_KEYS:
         env.pop(key, None)
-    env["CMUX_SOCKET"] = SOCKET_PATH
+    for key in ("C11_SOCKET", "CMUX_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH"):
+        env[key] = SOCKET_PATH
     env.update(extra or {})
     if "C11_WORKSPACE_ID" in env:
         env["CMUX_WORKSPACE_ID"] = env["C11_WORKSPACE_ID"]
@@ -103,7 +206,7 @@ def _cli_env(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 def _cli(cli: str, args: Sequence[str], env: Optional[Dict[str, str]] = None, check: bool = True) -> subprocess.CompletedProcess:
     cmd = [cli, "--socket", SOCKET_PATH, *args]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env or _cli_env())
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env or _cli_env(), timeout=60)
     if check and proc.returncode != 0:
         merged = f"{proc.stdout}\n{proc.stderr}".strip()
         raise cmuxError(f"CLI failed ({' '.join(cmd)}): {merged}")
@@ -118,8 +221,13 @@ def _cli_json(cli: str, args: Sequence[str], env: Optional[Dict[str, str]] = Non
         raise cmuxError(f"invalid JSON from `{' '.join(args)}`: {proc.stdout!r} ({exc})")
 
 
-def _tabs(c: cmux, ws: str) -> List[Dict[str, Any]]:
-    return _rows(_call(c, "tab.list", {"workspace_id": ws}), "tabs")
+def _cli_text(cli: str, args: Sequence[str], env: Optional[Dict[str, str]] = None) -> str:
+    proc = _cli(cli, ["--id-format", "refs", *args], env=env)
+    return proc.stdout
+
+
+def _panels(c: cmux, ws: str) -> List[Dict[str, Any]]:
+    return _rows(_call(c, "panel.list", {"workspace_id": ws}), "panels")
 
 
 def _areas(c: cmux, ws: str) -> List[Dict[str, Any]]:
@@ -127,219 +235,420 @@ def _areas(c: cmux, ws: str) -> List[Dict[str, Any]]:
 
 
 def _focused_area_id(c: cmux, ws: str) -> str:
-    return str(_call(c, "tab.current", {"workspace_id": ws}).get("area_id") or "")
+    return str(_call(c, "panel.current", {"workspace_id": ws}).get("area_id") or "")
 
 
-def _tab_row(c: cmux, ws: str, tab_id: str) -> Dict[str, Any]:
-    for row in _tabs(c, ws):
-        if row.get("id") == tab_id:
+def _focused_panel_id(c: cmux, ws: str) -> str:
+    return str(_call(c, "panel.current", {"workspace_id": ws}).get("panel_id") or "")
+
+
+def _panel_row(c: cmux, ws: str, panel_id: str) -> Dict[str, Any]:
+    for row in _panels(c, ws):
+        if row.get("id") == panel_id:
             return row
-    raise cmuxError(f"tab {tab_id} is not in workspace {ws}")
+    raise cmuxError(f"panel {panel_id} is not in workspace {ws}")
 
 
-def _focused_tab_id(c: cmux, ws: str) -> str:
-    return str(_call(c, "tab.current", {"workspace_id": ws}).get("tab_id") or "")
+def _area_of(c: cmux, ws: str, panel_id: str) -> str:
+    return str(_panel_row(c, ws, panel_id).get("area_id") or "")
 
 
-def _metadata(c: cmux, ws: str, tab_id: str) -> Dict[str, Any]:
-    res = _call(c, "tab.get_metadata", {"workspace_id": ws, "tab_id": tab_id})
+def _index_of(c: cmux, ws: str, panel_id: str) -> int:
+    row = _panel_row(c, ws, panel_id)
+    value = row.get("index_in_area")
+    _must(isinstance(value, int), f"panel {panel_id} has no index_in_area: {row}")
+    return int(value)
+
+
+def _metadata(c: cmux, ws: str, panel_id: str) -> Dict[str, Any]:
+    res = _call(c, "panel.get_metadata", {"workspace_id": ws, "panel_id": panel_id})
     return dict(res.get("metadata") or {})
 
 
+def _set_title_metadata(c: cmux, ws: str, panel_id: str, token: str) -> None:
+    _call(c, "panel.set_metadata", {
+        "workspace_id": ws, "panel_id": panel_id, "mode": "merge", "source": "explicit",
+        "metadata": {"title": token},
+    })
+
+
+def _spare_panel(c: cmux, ws: str, area_id: str) -> str:
+    created = _call(c, "panel.create", {"workspace_id": ws, "area_id": area_id, "focus": False})
+    panel_id = str(created.get("panel_id") or "")
+    _must(bool(panel_id), f"panel.create returned no panel_id: {created}")
+    time.sleep(0.2)
+    return panel_id
+
+
+def _screen_text(c: cmux, ws: str, panel_id: str) -> str:
+    return str(_call(c, "panel.read_text", {"workspace_id": ws, "panel_id": panel_id}).get("text") or "")
+
+
+def _last_screen_line(c: cmux, ws: str, panel_id: str) -> str:
+    lines = [ln.rstrip() for ln in _screen_text(c, ws, panel_id).splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
+
+
 class Fixture:
-    """A scratch workspace: area A holds tabs `t1`,`t2`; area B (a split) holds `t3`."""
+    """A scratch workspace: area A holds panels `p1`,`p2`; area B (a split) holds `p3`."""
 
     def __init__(self, c: cmux) -> None:
         self.c = c
-        self.ws = c.new_workspace()
-        c.select_workspace(self.ws)
+        self.ws = str(_call(c, "workspace.create").get("workspace_id") or "")
+        _must(bool(self.ws), "workspace.create returned no workspace_id")
+        _call(c, "workspace.select", {"workspace_id": self.ws})
         time.sleep(0.3)
-        self.t1 = _focused_tab_id(c, self.ws)
-        _must(bool(self.t1), "fresh workspace has no focused tab")
-        self.t3 = str(_call(c, "tab.split", {"workspace_id": self.ws, "tab_id": self.t1, "direction": "right"}).get("tab_id") or "")
-        _must(bool(self.t3), "tab.split returned no tab_id")
+        self.p1 = _focused_panel_id(c, self.ws)
+        _must(bool(self.p1), "fresh workspace has no focused panel")
+        self.p3 = str(_call(c, "panel.split", {"workspace_id": self.ws, "panel_id": self.p1, "direction": "right"}).get("panel_id") or "")
+        _must(bool(self.p3), "panel.split returned no panel_id")
         time.sleep(0.3)
         areas = _areas(c, self.ws)
         _must(len(areas) == 2, f"expected 2 areas after split, got {areas}")
-        self.area_a = next(a["id"] for a in areas if self.t1 in (a.get("tab_ids") or []))
-        self.area_b = next(a["id"] for a in areas if self.t3 in (a.get("tab_ids") or []))
-        self.t2 = str(_call(c, "tab.create", {"workspace_id": self.ws, "area_id": self.area_a}).get("tab_id") or "")
-        _must(bool(self.t2), "tab.create returned no tab_id")
-        time.sleep(0.2)
+        self.area_a = next(a["id"] for a in areas if self.p1 in (a.get("panel_ids") or []))
+        self.area_b = next(a["id"] for a in areas if self.p3 in (a.get("panel_ids") or []))
+        self.p2 = _spare_panel(c, self.ws, self.area_a)
+
+    def panel_ref(self, prefix: str = "panel") -> str:
+        ordinal = _ordinal(_panel_row(self.c, self.ws, self.p2).get("ref"), "panel")
+        return f"{prefix}:{ordinal}"
+
+    def area_ref(self, area_id: str, prefix: str = "area") -> str:
+        row = next(r for r in _areas(self.c, self.ws) if r["id"] == area_id)
+        return f"{prefix}:{_ordinal(row.get('ref'), 'area')}"
 
     def close(self) -> None:
         try:
-            self.c.close_workspace(self.ws)
+            _call(self.c, "workspace.close", {"workspace_id": self.ws})
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Capabilities
+# ---------------------------------------------------------------------------
+
+def test_capabilities_advertise_panel_vocabulary(c: cmux) -> None:
+    caps = _call(c, "system.capabilities")
+    methods = set(caps.get("methods") or [])
+    _must(bool(methods), f"system.capabilities returned no methods: {sorted(caps)}")
+
+    for name in CANONICAL_METHOD_NAMES:
+        # read_selection / input_state are feature-gated; the rest are always listed.
+        if name in ("read_selection", "input_state"):
+            continue
+        _must(f"panel.{name}" in methods, f"capabilities should list panel.{name}")
+    # Methods that were callable but never advertised before this vocabulary change.
+    for name in ("panel.set_custom_color", "panel.get_titlebar_state", "panel.set_titlebar_visibility",
+                 "panel.set_titlebar_collapsed", "area.confirm"):
+        _must(name in methods, f"capabilities should now advertise {name}")
+    for name in ("area.list", "area.panels", "notification.create_for_panel"):
+        _must(name in methods, f"capabilities should list {name}")
+    _must("browser.panel.list" in methods, "capabilities should list browser.panel.list")
+
+    # `tab.list` stays so a v0.67 CLI keeps probing its tab tier; no other old spelling is listed.
+    _must("tab.list" in methods, "capabilities must keep `tab.list` for older CLIs")
+    stale = sorted(
+        m for m in methods
+        if m != "tab.list" and (
+            m.startswith(("tab.", "surface.", "pane.", "browser.tab."))
+            or m in ("area.tabs", "notification.create_for_tab", "notification.create_for_surface")
+            or re.match(r"debug\.(tab_|empty_panel)", m)
+            or m == "debug.command_palette.rename_tab.open"
+        )
+    )
+    _must(not stale, f"capabilities must list canonical names only (plus tab.list), found {stale}")
+
+    ids = {str(item.get("id")) for item in (caps.get("features") or [])}
+    _must("vocabulary.workspace_area_panel" in ids, f"feature vocabulary.workspace_area_panel missing: {sorted(ids)}")
+    _must("send.explicit_panel" in ids, f"feature send.explicit_panel missing: {sorted(ids)}")
+    old = sorted(i for i in ids if i in ("vocabulary.workspace_area_tab", "send.explicit_tab"))
+    _must(not old, f"the old feature ids are gone, found {old}")
+    print("PASS: capabilities list panel.* + tab.list only, the 5 newly advertised methods, and the panel feature ids")
 
 
 # ---------------------------------------------------------------------------
 # Socket methods and params
 # ---------------------------------------------------------------------------
 
-def test_read_methods_resolve_to_same_objects(c: cmux, f: Fixture) -> None:
+def test_read_methods_resolve_to_same_handlers(c: cmux, f: Fixture) -> None:
     ws = f.ws
-    pairs = [
-        ("surface.list", "tab.list", ("surfaces", "tabs")),
-        ("pane.list", "area.list", ("panes", "areas")),
-        ("surface.health", "tab.health", ("surfaces", "tabs")),
-    ]
-    for old, new, (old_key, new_key) in pairs:
-        old_rows = _rows(_call(c, old, {"workspace_id": ws}), old_key)
-        new_rows = _rows(_call(c, new, {"workspace_id": ws}), new_key)
-        _must(len(new_rows) > 0 and _ids(old_rows) == _ids(new_rows), f"{old} vs {new} disagree: {_ids(old_rows)} != {_ids(new_rows)}")
+    # Every spelling of the panel methods answers identically and with panel-shaped results.
+    baseline_ids: Optional[List[str]] = None
+    for family in PANEL_FAMILIES:
+        res = _call(c, f"{family}.list", {"workspace_id": ws})
+        rows = _rows(res, "panels")
+        _must(len(rows) == 3, f"{family}.list should list 3 panels: {_ids(rows)}")
+        if baseline_ids is None:
+            baseline_ids = _ids(rows)
+        _must(_ids(rows) == baseline_ids, f"{family}.list disagrees: {_ids(rows)} != {baseline_ids}")
+        _must(_ids(_rows(res, "tabs")) == baseline_ids, f"{family}.list `tabs` array should mirror `panels`")
+        _assert_wire_clean(res, f"{family}.list")
 
-    old_cur = _call(c, "surface.current", {"workspace_id": ws})
-    new_cur = _call(c, "tab.current", {"workspace_id": ws})
-    _same(new_cur.get("tab_id"), old_cur.get("surface_id"), f"surface.current vs tab.current: {old_cur} {new_cur}")
+        cur = _call(c, f"{family}.current", {"workspace_id": ws})
+        _same(cur.get("panel_id"), cur.get("tab_id"), f"{family}.current panel_id/tab_id")
+        _assert_wire_clean(cur, f"{family}.current")
 
-    old_surfaces = _rows(_call(c, "pane.surfaces", {"workspace_id": ws, "pane_id": f.area_a}), "surfaces")
-    new_tabs = _rows(_call(c, "area.tabs", {"workspace_id": ws, "area_id": f.area_a}), "tabs")
-    _must(_ids(old_surfaces) == _ids(new_tabs) and len(new_tabs) == 2, f"pane.surfaces vs area.tabs: {old_surfaces} {new_tabs}")
+        health = _call(c, f"{family}.health", {"workspace_id": ws})
+        _must(_ids(_rows(health, "panels")) == baseline_ids, f"{family}.health panels differ: {health}")
+        _assert_wire_clean(health, f"{family}.health")
 
-    old_md = _call(c, "surface.get_metadata", {"workspace_id": ws, "surface_id": f.t1})
-    new_md = _call(c, "tab.get_metadata", {"workspace_id": ws, "tab_id": f.t1})
-    _must(isinstance(old_md.get("metadata"), dict) and isinstance(new_md.get("metadata"), dict),
-          f"get_metadata must return a metadata object: {old_md} {new_md}")
-    _same(new_md.get("metadata"), old_md.get("metadata"), "surface/tab get_metadata differ")
+        md = _call(c, f"{family}.get_metadata", {"workspace_id": ws, f"{family}_id": f.p1})
+        _must(isinstance(md.get("metadata"), dict), f"{family}.get_metadata must return a metadata object: {md}")
+        _same_md = _metadata(c, ws, f.p1)
+        _same(md.get("metadata"), _same_md, f"{family}.get_metadata differs from panel.get_metadata")
 
-    old_pmd = _call(c, "pane.get_metadata", {"workspace_id": ws, "pane_id": f.area_a})
-    new_pmd = _call(c, "area.get_metadata", {"workspace_id": ws, "area_id": f.area_a})
-    _must(isinstance(old_pmd.get("metadata"), dict) and isinstance(new_pmd.get("metadata"), dict),
-          f"area get_metadata must return a metadata object: {old_pmd} {new_pmd}")
-    _same(new_pmd.get("metadata"), old_pmd.get("metadata"), "pane/area get_metadata differ")
+        tb = _call(c, f"{family}.get_titlebar_state", {"workspace_id": ws, f"{family}_id": f.p1})
+        _must(len(tb) > 0, f"{family}.get_titlebar_state returned nothing")
+        _assert_wire_clean(tb, f"{family}.get_titlebar_state")
 
-    old_tb = _call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.t1})
-    new_tb = _call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.t1})
-    _must(len(new_tb) > 0 and sorted(old_tb) == sorted(new_tb), f"titlebar state keys differ: {sorted(old_tb)} {sorted(new_tb)}")
+        rt = _call(c, f"{family}.read_text", {"workspace_id": ws, f"{family}_id": f.p1})
+        _must("text" in rt, f"{family}.read_text missing text: {sorted(rt)}")
 
-    old_rt = _call(c, "surface.read_text", {"workspace_id": ws, "surface_id": f.t1})
-    new_rt = _call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t1})
-    _must("text" in old_rt and "text" in new_rt, f"read_text missing text: {sorted(old_rt)} {sorted(new_rt)}")
-    print("PASS: read methods (surface.*/pane.* == tab.*/area.*)")
+    # Areas: area.* and pane.*; the panel listing is area.panels, area.tabs or pane.surfaces.
+    a_ids = _ids(_rows(_call(c, "area.list", {"workspace_id": ws}), "areas"))
+    pane_res = _call(c, "pane.list", {"workspace_id": ws})
+    _must(_ids(_rows(pane_res, "areas")) == a_ids and len(a_ids) == 2, f"pane.list vs area.list: {pane_res}")
+    _assert_wire_clean(pane_res, "pane.list")
+    _must("panes" not in _call(c, "area.list", {"workspace_id": ws}), "area.list must emit `areas` only, not `panes`")
+
+    for method, key in (("area.panels", "area_id"), ("area.tabs", "area_id"), ("pane.surfaces", "pane_id")):
+        res = _call(c, method, {"workspace_id": ws, key: f.area_a})
+        _must(_ids(_rows(res, "panels")) == sorted([f.p1, f.p2]), f"{method} should list the area's two panels: {res}")
+        _must(_ids(_rows(res, "tabs")) == sorted([f.p1, f.p2]), f"{method} `tabs` array should mirror `panels`: {res}")
+        _same(res.get("area_id"), f.area_a, f"{method} area_id")
+        _assert_wire_clean(res, method)
+
+    new_md = _call(c, "area.get_metadata", {"workspace_id": ws, "area_id": f.area_a})
+    old_md = _call(c, "pane.get_metadata", {"workspace_id": ws, "pane_id": f.area_a})
+    _must(isinstance(new_md.get("metadata"), dict) and isinstance(old_md.get("metadata"), dict),
+          f"area get_metadata must return a metadata object: {new_md} {old_md}")
+    _same(new_md.get("metadata"), old_md.get("metadata"), "area/pane get_metadata differ")
+    print("PASS: read methods (panel.* == tab.* == surface.*, area.* == pane.*, area.panels == area.tabs == pane.surfaces)")
 
 
-def test_old_param_names_address_the_same_tab(c: cmux, f: Fixture) -> None:
+def test_param_spellings_address_the_same_panel(c: cmux, f: Fixture) -> None:
     ws = f.ws
     token = f"alias-{uuid.uuid4().hex[:8]}"
-    _call(c, "tab.set_metadata", {
-        "workspace_id": ws, "tab_id": f.t2, "mode": "merge", "source": "explicit",
-        "metadata": {"title": token},
-    })
-    for key in ("tab_id", "surface_id", "panel_id"):
-        res = _call(c, "tab.get_metadata", {"workspace_id": ws, key: f.t2})
-        _must((res.get("metadata") or {}).get("title") == token, f"param {key} did not resolve tab {f.t2}: {res}")
+    _set_title_metadata(c, ws, f.p2, token)
 
+    # Every id key resolves the panel.
+    for key in ("panel_id", "tab_id", "surface_id"):
+        res = _call(c, "panel.get_metadata", {"workspace_id": ws, key: f.p2})
+        _same((res.get("metadata") or {}).get("title"), token, f"param {key} should address panel {f.p2}")
+
+    # Every ref key and every ref prefix (any case) resolves the same panel.
+    ordinal = _ordinal(_panel_row(c, ws, f.p2).get("ref"), "panel")
+    ref_values = [f"{p}:{ordinal}" for p in ("panel", "tab", "surface", "PANEL", "TAB", "Tab", "SURFACE", "Surface")]
+    for key in ("panel_ref", "tab_ref", "surface_ref", "panel_id", "tab_id", "surface_id"):
+        for ref in ref_values:
+            res = _call(c, "panel.get_metadata", {"workspace_id": ws, key: ref})
+            _same((res.get("metadata") or {}).get("title"), token, f"{key}={ref} should address panel {f.p2}")
+    # The same through the old method names.
+    for method in ("tab.get_metadata", "surface.get_metadata"):
+        for ref in (f"panel:{ordinal}", f"TAB:{ordinal}", f"surface:{ordinal}"):
+            res = _call(c, method, {"workspace_id": ws, "panel_id": ref})
+            _same((res.get("metadata") or {}).get("title"), token, f"{method} with {ref}")
+
+    # Areas: area_id / pane_id / area_ref / pane_ref with area:N, pane:N, PANE:N.
     for key in ("area_id", "pane_id"):
-        res = _call(c, "area.tabs", {"workspace_id": ws, key: f.area_a})
-        _must(f.t2 in _ids(_rows(res, "tabs")), f"param {key} did not resolve area {f.area_a}: {res}")
-
-    # Refs: tab:N and surface:N (and area:N / pane:N) are interchangeable on input.
-    t2_row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
-    ordinal = _ordinal(t2_row["ref"], "tab")
-    for ref in (f"tab:{ordinal}", f"surface:{ordinal}"):
-        res = _call(c, "tab.get_metadata", {"workspace_id": ws, "tab_id": ref})
-        _must((res.get("metadata") or {}).get("title") == token, f"ref {ref} did not resolve tab {f.t2}: {res}")
-    a_row = next(r for r in _areas(c, ws) if r["id"] == f.area_a)
-    a_ordinal = _ordinal(a_row["ref"], "area")
-    for ref in (f"area:{a_ordinal}", f"pane:{a_ordinal}"):
-        res = _call(c, "area.tabs", {"workspace_id": ws, "area_id": ref})
-        _must(f.t2 in _ids(_rows(res, "tabs")), f"ref {ref} did not resolve area {f.area_a}: {res}")
-    print("PASS: old param names and ref prefixes address the same objects")
+        res = _call(c, "area.panels", {"workspace_id": ws, key: f.area_a})
+        _must(f.p2 in _ids(_rows(res, "panels")), f"param {key} should address area {f.area_a}: {res}")
+    a_ordinal = _ordinal(next(r for r in _areas(c, ws) if r["id"] == f.area_a).get("ref"), "area")
+    for key in ("area_ref", "pane_ref", "area_id", "pane_id"):
+        for ref in (f"area:{a_ordinal}", f"pane:{a_ordinal}", f"AREA:{a_ordinal}", f"PANE:{a_ordinal}"):
+            res = _call(c, "area.panels", {"workspace_id": ws, key: ref})
+            _must(f.p2 in _ids(_rows(res, "panels")), f"{key}={ref} should address area {f.area_a}: {res}")
+    print("PASS: panel_id/tab_id/surface_id (+_ref) and area_id/pane_id (+_ref), with panel:N/tab:N/surface:N/TAB:N/pane:N refs, address the same objects")
 
 
 def test_write_methods_cross_over(c: cmux, f: Fixture) -> None:
     ws = f.ws
-    # Metadata written through the old method is readable through the new one, and back.
-    old_token = f"old-{uuid.uuid4().hex[:6]}"
-    _call(c, "surface.set_metadata", {
-        "workspace_id": ws, "surface_id": f.t3, "mode": "merge", "source": "explicit",
-        "metadata": {"title": old_token},
-    })
-    _must(_metadata(c, ws, f.t3).get("title") == old_token, "surface.set_metadata not visible via tab.get_metadata")
-    new_token = f"new-{uuid.uuid4().hex[:6]}"
-    _call(c, "tab.set_metadata", {
-        "workspace_id": ws, "tab_id": f.t3, "mode": "merge", "source": "explicit",
-        "metadata": {"title": new_token},
-    })
-    res = _call(c, "surface.get_metadata", {"workspace_id": ws, "surface_id": f.t3})
-    _must((res.get("metadata") or {}).get("title") == new_token, "tab.set_metadata not visible via surface.get_metadata")
+    # Metadata written through one spelling is readable through every other.
+    tokens: Dict[str, str] = {}
+    for family in PANEL_FAMILIES:
+        tokens[family] = f"{family}-{uuid.uuid4().hex[:6]}"
+        _call(c, f"{family}.set_metadata", {
+            "workspace_id": ws, f"{family}_id": f.p3, "mode": "merge", "source": "explicit",
+            "metadata": {"title": tokens[family]},
+        })
+        for reader in PANEL_FAMILIES:
+            res = _call(c, f"{reader}.get_metadata", {"workspace_id": ws, f"{reader}_id": f.p3})
+            _same((res.get("metadata") or {}).get("title"), tokens[family], f"{family}.set_metadata not visible via {reader}.get_metadata")
 
-    pane_token = f"pane-{uuid.uuid4().hex[:6]}"
-    _call(c, "pane.set_metadata", {
-        "workspace_id": ws, "pane_id": f.area_b, "mode": "merge", "source": "explicit",
-        "metadata": {"role": pane_token},
-    })
-    res = _call(c, "area.get_metadata", {"workspace_id": ws, "area_id": f.area_b})
-    _must((res.get("metadata") or {}).get("role") == pane_token, "pane.set_metadata not visible via area.get_metadata")
+    for set_family, get_family in (("pane", "area"), ("area", "pane")):
+        role = f"{set_family}-{uuid.uuid4().hex[:6]}"
+        _call(c, f"{set_family}.set_metadata", {
+            "workspace_id": ws, f"{set_family}_id": f.area_b, "mode": "merge", "source": "explicit",
+            "metadata": {"role": role},
+        })
+        res = _call(c, f"{get_family}.get_metadata", {"workspace_id": ws, f"{get_family}_id": f.area_b})
+        _same((res.get("metadata") or {}).get("role"), role, f"{set_family}.set_metadata not visible via {get_family}.get_metadata")
     _call(c, "area.clear_metadata", {"workspace_id": ws, "area_id": f.area_b, "keys": ["role"], "source": "explicit"})
     res = _call(c, "pane.get_metadata", {"workspace_id": ws, "pane_id": f.area_b})
     _must("role" not in (res.get("metadata") or {}), "area.clear_metadata not visible via pane.get_metadata")
 
-    # Text sent through either method lands in the same tab.
-    for method, key in (("surface.send_text", "surface_id"), ("tab.send_text", "tab_id")):
-        token = f"echo vocab_{uuid.uuid4().hex[:8]}"
-        _call(c, method, {"workspace_id": ws, key: f.t3, "text": token + "\n"})
-        marker = token.split(" ", 1)[1]
-        deadline = time.time() + 6.0
-        seen = False
-        while time.time() < deadline and not seen:
-            text = str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t3}).get("text") or "")
-            seen = marker in text
-            if not seen:
-                time.sleep(0.15)
-        _must(seen, f"{method} text never reached tab {f.t3}")
+    # Text sent through any spelling lands in the same panel.
+    for family in PANEL_FAMILIES:
+        marker = f"vocab_{uuid.uuid4().hex[:8]}"
+        _call(c, f"{family}.send_text", {"workspace_id": ws, f"{family}_id": f.p3, "text": f"echo {marker}\n"})
+        _must(_wait_for(lambda m=marker: m in _screen_text(c, ws, f.p3)), f"{family}.send_text never reached panel {f.p3}")
 
-    # Focus through the old and the new method.
-    _call(c, "surface.focus", {"workspace_id": ws, "surface_id": f.t2})
-    _must(_focused_tab_id(c, ws) == f.t2, "surface.focus did not focus the tab")
-    _call(c, "tab.focus", {"workspace_id": ws, "tab_id": f.t1})
-    _must(_focused_tab_id(c, ws) == f.t1, "tab.focus did not focus the tab")
-    _call(c, "tab.focus", {"workspace_id": ws, "panel_id": f.t2})
-    _must(_focused_tab_id(c, ws) == f.t2, "tab.focus with panel_id did not focus the tab")
+    # Focus through every method and key spelling.
+    for family in PANEL_FAMILIES:
+        _call(c, f"{family}.focus", {"workspace_id": ws, f"{family}_id": f.p2})
+        _same(_focused_panel_id(c, ws), f.p2, f"{family}.focus did not focus the panel")
+        _call(c, f"{family}.focus", {"workspace_id": ws, f"{family}_id": f.p1})
+        _same(_focused_panel_id(c, ws), f.p1, f"{family}.focus did not refocus p1")
+    _call(c, "panel.focus", {"workspace_id": ws, "surface_id": f.p2})
+    _same(_focused_panel_id(c, ws), f.p2, "panel.focus with surface_id did not focus the panel")
     _call(c, "pane.focus", {"workspace_id": ws, "pane_id": f.area_b})
     _same(_focused_area_id(c, ws), f.area_b, "pane.focus did not focus the area")
-    _must(_focused_tab_id(c, ws) == f.t3, "pane.focus should land on the area's only tab")
+    _same(_focused_panel_id(c, ws), f.p3, "pane.focus should land on the area's only panel")
     _call(c, "area.focus", {"workspace_id": ws, "area_id": f.area_a})
     _same(_focused_area_id(c, ws), f.area_a, "area.focus did not focus the area")
     _call(c, "pane.focus", {"workspace_id": ws, "pane_id": f.area_b})
     _call(c, "area.focus", {"workspace_id": ws, "pane_id": f.area_a})
-    _same(_focused_area_id(c, ws), f.area_a, "area.focus with the older pane_id key did not focus the area")
+    _same(_focused_area_id(c, ws), f.area_a, "area.focus with the pane_id key did not focus the area")
 
-    # Create and close through the old and the new method.
-    before = len(_tabs(c, ws))
-    old_created = _call(c, "surface.create", {"workspace_id": ws, "pane_id": f.area_a, "focus": False})
-    new_created = _call(c, "tab.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
-    _must(len(_tabs(c, ws)) == before + 2, "surface.create / tab.create should each add one tab")
-    _call(c, "surface.close", {"workspace_id": ws, "surface_id": old_created["surface_id"]})
-    _call(c, "tab.close", {"workspace_id": ws, "tab_id": new_created["tab_id"]})
+    # Create and close through every spelling; each result carries both id keys.
+    before_ids = {r["id"] for r in _panels(c, ws)}
+    created = []
+    for family in PANEL_FAMILIES:
+        res = _call(c, f"{family}.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
+        _check_dual_panel(res, f"{family}.create")
+        _assert_wire_clean(res, f"{family}.create")
+        created.append((family, str(res["panel_id"])))
+    via_pane_key = _call(c, "panel.create", {"workspace_id": ws, "pane_id": f.area_a, "focus": False})
+    _same(via_pane_key.get("area_id"), f.area_a, "panel.create with pane_id should land in the area")
+    created.append(("area-key", str(via_pane_key["panel_id"])))
+    _must(len({pid for _, pid in created}) == 4, f"each create should make a distinct panel: {created}")
+    _must({r["id"] for r in _panels(c, ws)} == before_ids | {pid for _, pid in created},
+          "panel/tab/surface.create should each add one panel")
+    for family, panel_id in created[:3]:
+        _call(c, f"{family}.close", {"workspace_id": ws, f"{family}_id": panel_id})
+    _call(c, "panel.close", {"workspace_id": ws, "panel_id": created[3][1]})
     time.sleep(0.2)
-    _must(len(_tabs(c, ws)) == before, "surface.close / tab.close should each remove one tab")
-    print("PASS: write methods cross over (old and new share state)")
+    _must({r["id"] for r in _panels(c, ws)} == before_ids, "close through each spelling should remove the created panels")
+    print("PASS: write methods cross over (panel.* / tab.* / surface.* and area.* / pane.* share state)")
 
 
 def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
     ws = f.ws
-    _call(c, "tab.focus", {"workspace_id": ws, "tab_id": f.t1})  # notify a tab that is not focused
-    for method, key in (("notification.create_for_surface", "surface_id"), ("notification.create_for_tab", "tab_id")):
-        # A tab holds one notification at a time, so check each alias on its own.
-        title = f"vocab {method}"
-        _call(c, method, {key: f.t3, "title": title, "subtitle": "", "body": "alias check"})
+    _call(c, "panel.focus", {"workspace_id": ws, "panel_id": f.p1})  # notify a panel that is not focused
+    for method, key in (("notification.create_for_panel", "panel_id"), ("notification.create_for_tab", "tab_id"),
+                        ("notification.create_for_surface", "surface_id"),
+                        ("notification.create_for_panel", "surface_id"), ("notification.create_for_tab", "panel_id")):
+        # A panel holds one notification at a time, so check each spelling on its own.
+        title = f"vocab {method} {key}"
+        _call(c, method, {key: f.p3, "title": title, "subtitle": "", "body": "alias check"})
         items = list(_call(c, "notification.list").get("notifications") or [])
         mine = [n for n in items if n.get("title") == title]
-        _must(len(mine) == 1, f"{method} should create a notification, got {mine}")
-        _same(mine[0].get("tab_id"), f.t3, f"notification tab_id for {method}")
-        _same(mine[0].get("surface_id"), f.t3, f"notification surface_id for {method}")
+        _must(len(mine) == 1, f"{method} ({key}) should create a notification, got {mine}")
+        _same(mine[0].get("panel_id"), f.p3, f"notification panel_id for {method} ({key})")
+        _same(mine[0].get("tab_id"), f.p3, f"notification tab_id for {method} ({key})")
+        _assert_wire_clean(mine[0], f"notification row for {method}")
         try:
-            c.clear_notifications()
+            _call(c, "notification.clear")
         except Exception:
             pass
     try:
-        c.clear_notifications()
+        _call(c, "notification.clear")
     except Exception:
         pass
-    print("PASS: notification.create_for_surface == notification.create_for_tab")
+    print("PASS: notification.create_for_panel == create_for_tab == create_for_surface; rows carry panel_id + tab_id")
+
+
+def test_panel_action_values(c: cmux, f: Fixture) -> None:
+    ws = f.ws
+    # rename and pin through every method spelling.
+    for family in PANEL_FAMILIES:
+        title = f"{family}-{uuid.uuid4().hex[:6]}"
+        res = _call(c, f"{family}.action", {"workspace_id": ws, f"{family}_id": f.p2, "action": "rename", "title": title})
+        _check_dual_panel(res, f"{family}.action result")
+        _assert_wire_clean(res, f"{family}.action result")
+        _same(_panel_row(c, ws, f.p2).get("title"), title, f"{family}.action rename should retitle the panel")
+        pinned = _call(c, f"{family}.action", {"workspace_id": ws, f"{family}_id": f.p2, "action": "pin"})
+        _must(pinned.get("pinned") is True, f"{family}.action pin: {pinned}")
+        unpinned = _call(c, f"{family}.action", {"workspace_id": ws, f"{family}_id": f.p2, "action": "unpin"})
+        _must(unpinned.get("pinned") is False, f"{family}.action unpin: {unpinned}")
+
+    # new_terminal_panel_to_right, its tab spelling and the short form each add one panel.
+    for action in ("new_terminal_panel_to_right", "new_terminal_tab_to_right", "new_terminal_to_right", "new_terminal_right"):
+        before = len(_panels(c, ws))
+        _call(c, "panel.action", {"workspace_id": ws, "panel_id": f.p1, "action": action})
+        time.sleep(0.2)
+        rows = _panels(c, ws)
+        _must(len(rows) == before + 1, f"panel.action {action} should add one panel")
+        for row in rows:
+            if row["id"] not in (f.p1, f.p2, f.p3) and row.get("area_id") == f.area_a:
+                _call(c, "panel.close", {"workspace_id": ws, "panel_id": row["id"]})
+        time.sleep(0.2)
+
+    # close_other_panels, close_other_tabs, close_others: each leaves only the anchor (and pinned panels).
+    for action in ("close_other_panels", "close_other_tabs", "close_others"):
+        _spare_panel(c, ws, f.area_b)
+        _spare_panel(c, ws, f.area_b)
+        _call(c, "panel.action", {"workspace_id": ws, "panel_id": f.p3, "action": action})
+        time.sleep(0.3)
+        remaining = [r["id"] for r in _panels(c, ws) if r.get("area_id") == f.area_b]
+        _must(remaining == [f.p3], f"panel.action {action} should close the area's other panels, left {remaining}")
+
+    # An unknown action is still an error; the three spellings do not share one by accident.
+    err = _error_of(c, "panel.action", {"workspace_id": ws, "panel_id": f.p3, "action": "no_such_action_xyz"})
+    _must(err.startswith("invalid_params"), f"unknown panel action should be invalid_params: {err!r}")
+    print("PASS: panel.action accepts *_panel*, *_tab* and short action values through panel.* / tab.* / surface.*")
+
+
+def test_browser_panel_aliases(c: cmux, f: Fixture) -> None:
+    ws = f.ws
+    try:
+        created = _call(c, "panel.create", {"workspace_id": ws, "area_id": f.area_b, "type": "browser",
+                                            "url": "about:blank", "focus": False})
+    except cmuxError as exc:
+        print(f"SKIP: browser panel could not be created here ({exc})")
+        return
+    browser_id = str(created.get("panel_id") or "")
+    _must(bool(browser_id), f"browser panel.create returned no panel_id: {created}")
+    try:
+        time.sleep(0.5)
+        baseline: Optional[List[str]] = None
+        for method, key in (("browser.panel.list", "panel_id"), ("browser.tab.list", "tab_id"),
+                            ("browser.tab.list", "surface_id"), ("browser.panel.list", "surface_id")):
+            res = _call(c, method, {"workspace_id": ws, key: browser_id})
+            rows = _rows(res, "panels", "tabs")
+            _must(browser_id in _ids(rows), f"{method} ({key}) should list the browser panel: {res}")
+            if baseline is None:
+                baseline = _ids(rows)
+            _must(_ids(rows) == baseline, f"{method} ({key}) disagrees: {_ids(rows)} != {baseline}")
+            _assert_wire_clean(res, method)
+
+        # reload and duplicate through every action spelling; duplicates carry both id keys.
+        for action in ("reload_panel", "reload_tab", "reload"):
+            _call(c, "panel.action", {"workspace_id": ws, "panel_id": browser_id, "action": action})
+        duplicates: List[str] = []
+        for action in ("duplicate_panel", "duplicate_tab", "duplicate"):
+            res = _call(c, "panel.action", {"workspace_id": ws, "panel_id": browser_id, "action": action})
+            _same(res.get("created_panel_id"), res.get("created_tab_id"), f"{action} created_panel_id/created_tab_id")
+            _same_ref(res.get("created_panel_ref"), "panel", res.get("created_tab_ref"), "tab", f"{action} created refs")
+            _assert_wire_clean(res, f"panel.action {action}")
+            duplicates.append(str(res["created_panel_id"]))
+        for action in ("new_browser_panel_to_right", "new_browser_tab_to_right"):
+            before = {r["id"] for r in _panels(c, ws)}
+            _call(c, "panel.action", {"workspace_id": ws, "panel_id": browser_id, "action": action})
+            duplicates.extend(r["id"] for r in _panels(c, ws) if r["id"] not in before)
+        for panel_id in duplicates:
+            try:
+                _call(c, "panel.close", {"workspace_id": ws, "panel_id": panel_id})
+            except cmuxError:
+                pass
+    finally:
+        try:
+            _call(c, "panel.close", {"workspace_id": ws, "panel_id": browser_id})
+        except cmuxError:
+            pass
+        time.sleep(0.2)
+    print("PASS: browser.panel.list == browser.tab.list; reload/duplicate/new_browser_* action spellings agree")
 
 
 def test_debug_method_aliases(c: cmux, f: Fixture) -> None:
@@ -349,519 +658,291 @@ def test_debug_method_aliases(c: cmux, f: Fixture) -> None:
     _same(new_count.get("count"), old_count.get("count"), "empty_area.count vs empty_panel.count")
     _call(c, "debug.empty_area.reset")
     _call(c, "debug.empty_panel.reset")
-    for method in ("debug.tab_snapshot", "debug.panel_snapshot"):
-        # t3 is the selected tab of its area, so its hosted view is on screen and capturable.
-        snap = _call(c, method, {"tab_id": f.t3, "label": "vocab"})
-        _same(snap.get("tab_id"), f.t3, f"{method} tab_id")
-    for method in ("debug.tab_snapshot.reset", "debug.panel_snapshot.reset"):
-        _call(c, method, {"tab_id": f.t3})
-    print("PASS: debug.empty_panel / debug.panel_snapshot == debug.empty_area / debug.tab_snapshot")
+    for method, key in (("debug.panel_snapshot", "panel_id"), ("debug.tab_snapshot", "tab_id"), ("debug.tab_snapshot", "surface_id")):
+        # p3 is the selected panel of its area, so its hosted view is on screen and capturable.
+        snap = _call(c, method, {key: f.p3, "label": "vocab"})
+        _check_dual_panel(snap, method)
+        _same(snap.get("panel_id"), f.p3, f"{method} panel_id")
+        _assert_wire_clean(snap, method)
+    for method in ("debug.panel_snapshot.reset", "debug.tab_snapshot.reset"):
+        _call(c, method, {"panel_id": f.p3})
+    print("PASS: debug.panel_snapshot == debug.tab_snapshot; debug.empty_area == debug.empty_panel")
 
 
 # ---------------------------------------------------------------------------
-# Dual-key JSON
+# Result keys
 # ---------------------------------------------------------------------------
 
-def _check_tab_row(row: Dict[str, Any], what: str) -> None:
-    _same(row.get("area_id"), row.get("pane_id"), f"{what}: area_id/pane_id")
-    _same_ref(row.get("area_ref"), "area", row.get("pane_ref"), "pane", f"{what} area_ref/pane_ref")
-    _same(row.get("index_in_area"), row.get("index_in_pane"), f"{what}: index_in_area/index_in_pane")
-    _same(row.get("selected_in_area"), row.get("selected_in_pane"), f"{what}: selected_in_area/selected_in_pane")
-    _ordinal(row.get("ref"), "tab")
+def _check_panel_row(row: Dict[str, Any], what: str) -> None:
+    _check_area_keys(row, what)
+    _must(isinstance(row.get("index_in_area"), int), f"{what}: index_in_area missing: {sorted(row)}")
+    _must("selected_in_area" in row, f"{what}: selected_in_area missing: {sorted(row)}")
+    _ordinal(row.get("ref"), "panel")
 
 
-def test_dual_keys_in_list_responses(c: cmux, f: Fixture) -> None:
+def test_results_carry_panel_and_tab_keys(c: cmux, f: Fixture) -> None:
     ws = f.ws
-    res = _call(c, "tab.list", {"workspace_id": ws})
-    tabs, surfaces = _rows(res, "tabs"), _rows(res, "surfaces")
-    _must(_ids(tabs) == _ids(surfaces) and len(tabs) == 3, f"tab.list tabs/surfaces arrays differ: {res}")
-    for row in tabs:
-        _check_tab_row(row, "tab.list row")
-    for row in _rows(_call(c, "surface.list", {"workspace_id": ws}), "tabs", "surfaces"):
-        _check_tab_row(row, "surface.list row")
+    res = _call(c, "panel.list", {"workspace_id": ws})
+    panels, tabs = _rows(res, "panels"), _rows(res, "tabs")
+    _must(_ids(panels) == _ids(tabs) and len(panels) == 3, f"panel.list panels/tabs arrays differ: {res}")
+    for row in panels:
+        _check_panel_row(row, "panel.list row")
+    _must("surfaces" not in res and "panes" not in res, f"panel.list must not emit surfaces/panes: {sorted(res)}")
+    _assert_wire_clean(res, "panel.list")
 
     res = _call(c, "area.list", {"workspace_id": ws})
-    areas, panes = _rows(res, "areas"), _rows(res, "panes")
-    _must(_ids(areas) == _ids(panes) and len(areas) == 2, f"area.list areas/panes arrays differ: {res}")
+    areas = _rows(res, "areas")
+    _must(len(areas) == 2 and "panes" not in res, f"area.list should carry `areas` only: {sorted(res)}")
     for row in areas:
-        _same(row.get("tab_ids"), row.get("surface_ids"), "area row tab_ids/surface_ids")
-        _must(len(row["tab_ids"]) > 0, f"area row should list its tabs: {row}")
-        _must(len(row["tab_refs"]) == len(row["surface_refs"]) == len(row["tab_ids"]), f"area row refs mismatch: {row}")
-        for new_ref, old_ref in zip(row["tab_refs"], row["surface_refs"]):
-            _same_ref(new_ref, "tab", old_ref, "surface", "area row tab_refs/surface_refs")
-        _same(row.get("tab_count"), row.get("surface_count"), "area row tab_count/surface_count")
-        _same(row.get("tab_count"), len(row["tab_ids"]), "area row tab_count vs tab_ids")
-        _same(row.get("selected_tab_id"), row.get("selected_surface_id"), "selected_tab_id/selected_surface_id")
-        _same_ref(row.get("selected_tab_ref"), "tab", row.get("selected_surface_ref"), "surface", "selected refs")
+        _same(row.get("panel_ids"), row.get("tab_ids"), "area row panel_ids/tab_ids")
+        _must(len(row["panel_ids"]) > 0, f"area row should list its panels: {row}")
+        _must(len(row["panel_refs"]) == len(row["tab_refs"]) == len(row["panel_ids"]), f"area row refs mismatch: {row}")
+        for new_ref, old_ref in zip(row["panel_refs"], row["tab_refs"]):
+            _same_ref(new_ref, "panel", old_ref, "tab", "area row panel_refs/tab_refs")
+        _same(row.get("panel_count"), row.get("tab_count"), "area row panel_count/tab_count")
+        _same(row.get("panel_count"), len(row["panel_ids"]), "area row panel_count vs panel_ids")
+        _same(row.get("selected_panel_id"), row.get("selected_tab_id"), "selected_panel_id/selected_tab_id")
+        _same_ref(row.get("selected_panel_ref"), "panel", row.get("selected_tab_ref"), "tab", "selected refs")
         _ordinal(row.get("ref"), "area")
+    _assert_wire_clean(res, "area.list")
 
-    res = _call(c, "area.tabs", {"workspace_id": ws, "area_id": f.area_a})
-    _must(_ids(_rows(res, "tabs")) == _ids(_rows(res, "surfaces")), f"area.tabs tabs/surfaces differ: {res}")
-    _same(res.get("area_id"), res.get("pane_id"), "area.tabs area_id/pane_id")
-    _same(res.get("area_id"), f.area_a, "area.tabs area_id")
-    _same_ref(res.get("area_ref"), "area", res.get("pane_ref"), "pane", "area.tabs area_ref/pane_ref")
+    res = _call(c, "area.panels", {"workspace_id": ws, "area_id": f.area_a})
+    _must(_ids(_rows(res, "panels")) == _ids(_rows(res, "tabs")), f"area.panels panels/tabs differ: {res}")
+    _same(res.get("area_id"), f.area_a, "area.panels area_id")
+    _ordinal(res.get("area_ref"), "area")
 
-    res = _call(c, "tab.current", {"workspace_id": ws})
-    _same(res.get("tab_id"), res.get("surface_id"), "tab.current tab_id/surface_id")
-    _same_ref(res.get("tab_ref"), "tab", res.get("surface_ref"), "surface", "tab.current refs")
-    _same(res.get("area_id"), res.get("pane_id"), "tab.current area_id/pane_id")
-    _same_ref(res.get("area_ref"), "area", res.get("pane_ref"), "pane", "tab.current area/pane refs")
-    _same(res.get("tab_type"), res.get("surface_type"), "tab.current tab_type/surface_type")
-    print("PASS: list/current responses carry canonical and older keys")
+    res = _call(c, "panel.current", {"workspace_id": ws})
+    _check_dual_panel(res, "panel.current")
+    _check_area_keys(res, "panel.current")
+    _same(res.get("panel_type"), res.get("tab_type"), "panel.current panel_type/tab_type")
+    _assert_wire_clean(res, "panel.current")
 
+    created = _call(c, "panel.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
+    _check_dual_panel(created, "panel.create")
+    _check_area_keys(created, "panel.create")
+    _same(created.get("area_id"), f.area_a, "panel.create area_id")
+    _assert_wire_clean(created, "panel.create")
+    _call(c, "panel.close", {"workspace_id": ws, "panel_id": created["panel_id"]})
 
-def test_dual_keys_in_create_split_identify(c: cmux, f: Fixture) -> None:
-    ws = f.ws
-    created = _call(c, "tab.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
-    _same(created.get("tab_id"), created.get("surface_id"), "tab.create tab_id/surface_id")
-    _same_ref(created.get("tab_ref"), "tab", created.get("surface_ref"), "surface", "tab.create refs")
-    _same(created.get("area_id"), created.get("pane_id"), "tab.create area_id/pane_id")
-    _same(created.get("area_id"), f.area_a, "tab.create area_id")
-    _same_ref(created.get("area_ref"), "area", created.get("pane_ref"), "pane", "tab.create area/pane refs")
-    _call(c, "tab.close", {"workspace_id": ws, "tab_id": created["tab_id"]})
-
-    split = _call(c, "tab.split", {"workspace_id": ws, "tab_id": f.t3, "direction": "down"})
-    _same(split.get("tab_id"), split.get("surface_id"), "tab.split tab_id/surface_id")
-    _call(c, "tab.close", {"workspace_id": ws, "tab_id": split["tab_id"]})
+    split = _call(c, "panel.split", {"workspace_id": ws, "panel_id": f.p3, "direction": "down"})
+    _check_dual_panel(split, "panel.split")
+    _assert_wire_clean(split, "panel.split")
+    _call(c, "panel.close", {"workspace_id": ws, "panel_id": split["panel_id"]})
     time.sleep(0.2)
 
-    ident = _call(c, "system.identify", {"caller": {"workspace_id": ws, "tab_id": f.t2}})
+    ident = _call(c, "system.identify", {"caller": {"workspace_id": ws, "panel_id": f.p2}})
     for scope in ("focused", "caller"):
         block = ident.get(scope) or {}
-        _same(block.get("tab_id"), block.get("surface_id"), f"identify.{scope} tab_id/surface_id")
-        _same_ref(block.get("tab_ref"), "tab", block.get("surface_ref"), "surface", f"identify.{scope} tab refs")
-        _same(block.get("area_id"), block.get("pane_id"), f"identify.{scope} area_id/pane_id")
-        _same_ref(block.get("area_ref"), "area", block.get("pane_ref"), "pane", f"identify.{scope} area refs")
-    _must((ident.get("caller") or {}).get("tab_id") == f.t2, f"identify did not resolve the caller tab: {ident}")
-
-    # Older spelling of the caller block is still accepted on input.
-    ident_old = _call(c, "system.identify", {"caller": {"workspace_id": ws, "surface_id": f.t2}})
-    _must((ident_old.get("caller") or {}).get("tab_id") == f.t2, f"identify caller.surface_id not resolved: {ident_old}")
-    print("PASS: create/split/identify carry canonical and older keys")
-
-
-def _walk(value: Any):
-    if isinstance(value, dict):
-        yield value
-        for child in value.values():
-            yield from _walk(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _walk(child)
+        _check_dual_panel(block, f"identify.{scope}")
+        _check_area_keys(block, f"identify.{scope}")
+    _same((ident.get("caller") or {}).get("panel_id"), f.p2, "identify did not resolve the caller panel")
+    _assert_wire_clean(ident, "system.identify")
+    # Every spelling of the caller block is accepted on input.
+    for key in ("tab_id", "surface_id"):
+        ident_old = _call(c, "system.identify", {"caller": {"workspace_id": ws, key: f.p2}})
+        _same((ident_old.get("caller") or {}).get("panel_id"), f.p2, f"identify caller.{key} not resolved")
+    print("PASS: panel.list/area.list/current/create/split/identify carry panel_* + tab_* (and area_*), never surface_*/pane_*")
 
 
-def test_dual_keys_in_tree_json(cli: str, f: Fixture) -> None:
-    payload = _cli_json(cli, ["tree", "--workspace", f.ws])
-    workspaces = [w for d in _walk(payload) for w in (d.get("workspaces") or []) if isinstance(w, dict)]
-    ws_node = next((w for w in workspaces if w.get("id") == f.ws or w.get("ref") == f.ws), None)
-    _must(ws_node is not None, f"tree --json has no node for workspace {f.ws}: {[w.get('id') for w in workspaces]}")
-    areas, panes = ws_node.get("areas"), ws_node.get("panes")
-    _must(isinstance(areas, list) and isinstance(panes, list) and len(areas) == len(panes) == 2,
-          f"tree workspace node should carry both `areas` and `panes`: {sorted(ws_node)}")
-    for area, pane in zip(areas, panes):
-        tabs, surfaces = area.get("tabs"), area.get("surfaces")
-        _must(isinstance(tabs, list) and isinstance(surfaces, list) and len(tabs) == len(surfaces) > 0,
-              f"tree area node should carry both `tabs` and `surfaces`: {sorted(area)}")
-        # `ref` has no legacy twin: both arrays hold the canonical `area:N` / `tab:N` value.
+def test_tree_results(c: cmux, cli: str, f: Fixture) -> None:
+    ws = f.ws
+    # Socket system.tree.
+    tree = _call(c, "system.tree", {"workspace_id": ws})
+    _assert_wire_clean(tree, "system.tree")
+    ws_nodes = [n for n in _walk(tree) if "areas" in n and n.get("id") == ws]
+    _must(len(ws_nodes) == 1, f"system.tree has no node for workspace {ws}")
+    _check_tree_node(ws_nodes[0], "system.tree")
+
+    # CLI tree --json.
+    payload = _cli_json(cli, ["tree", "--workspace", ws])
+    _assert_wire_clean(payload, "tree --json")
+    nodes = [n for n in _walk(payload) if "areas" in n and ws in (n.get("id"), n.get("ref"))]
+    _must(len(nodes) == 1, f"tree --json has no node for workspace {ws}")
+    _check_tree_node(nodes[0], "tree --json")
+    print("PASS: system.tree and tree --json carry areas, panels + tabs, panel_count + tab_count")
+
+
+def _check_tree_node(ws_node: Dict[str, Any], what: str) -> None:
+    areas = ws_node.get("areas")
+    _must(isinstance(areas, list) and len(areas) == 2, f"{what}: workspace node should carry two `areas`: {sorted(ws_node)}")
+    _must("panes" not in ws_node, f"{what}: workspace node must not carry `panes`")
+    for area in areas:
+        panels, tabs = area.get("panels"), area.get("tabs")
+        _must(isinstance(panels, list) and isinstance(tabs, list) and len(panels) == len(tabs) > 0,
+              f"{what}: area node should carry both `panels` and `tabs`: {sorted(area)}")
+        _must("surfaces" not in area, f"{what}: area node must not carry `surfaces`")
         _ordinal(area.get("ref"), "area")
-        _same(area.get("id"), pane.get("id"), "tree areas/panes entries should be the same area")
-        _same(area.get("ref"), pane.get("ref"), "tree areas/panes entries should share one ref")
-        _same(area.get("tab_count"), area.get("surface_count"), "tree area tab_count/surface_count")
-        _same(area.get("tab_count"), len(tabs), "tree area tab_count vs tabs")
-        for tab, surface in zip(tabs, surfaces):
-            _ordinal(tab.get("ref"), "tab")
-            _same(tab.get("id"), surface.get("id"), "tree tabs/surfaces entries should be the same tab")
-            _same(tab.get("ref"), surface.get("ref"), "tree tabs/surfaces entries should share one ref")
-            _check_tab_row(tab, "tree tab")
-            _check_tab_row(surface, "tree surface")
-    print("PASS: tree --json carries areas/panes and tabs/surfaces")
+        _same(area.get("panel_count"), area.get("tab_count"), f"{what}: area panel_count/tab_count")
+        _same(area.get("panel_count"), len(panels), f"{what}: area panel_count vs panels")
+        for panel, tab in zip(panels, tabs):
+            _same(panel.get("id"), tab.get("id"), f"{what}: panels/tabs entries should be the same panel")
+            # `ref` has no legacy twin: both arrays hold the canonical `panel:N` value.
+            _ordinal(panel.get("ref"), "panel")
+            _same(panel.get("ref"), tab.get("ref"), f"{what}: panels/tabs entries should share one ref")
+            _check_area_keys(panel, f"{what} panel")
 
 
-def test_flag_caller_metadata_keys(c: cmux, cli: str, f: Fixture) -> None:
-    env = _cli_env({"C11_TAB_ID": f.t2, "C11_WORKSPACE_ID": f.ws})
+def test_old_ref_params_and_caller_keys(c: cmux, f: Fixture) -> None:
+    ws = f.ws
+    # `area` is the older `pane` placement param (config.launch). Placement conflicts are
+    # rejected before anything launches, so a throwaway saved config exercises the key safely.
+    a_row = next(r for r in _areas(c, ws) if r["id"] == f.area_a)
+    a_ordinal = _ordinal(a_row["ref"], "area")
+    name = f"c11-vocab-{uuid.uuid4().hex[:8]}"
+    _call(c, "config.save", {"name": name, "harness": "claude"})
     try:
-        _cli(cli, ["raise-flag", "--tab", f.t2, "vocabulary alias check"], env=env)
-        md = _metadata(c, f.ws, f.t2)
-        _must(md.get("flag_caller_tab_id") == f.t2, f"flag_caller_tab_id missing or wrong: {md}")
-        _must(md.get("flag_caller_surface_id") == f.t2, f"flag_caller_surface_id missing or wrong: {md}")
-        cli_md = _cli_json(cli, ["get-metadata", "--tab", f.t2], env=env)
-        _must((cli_md.get("metadata") or {}).get("flag_caller_tab_id") == f.t2, f"get-metadata lost flag_caller_tab_id: {cli_md}")
+        for label, params in (("area", {"area": a_row["ref"]}), ("pane", {"pane": f"pane:{a_ordinal}"}),
+                              ("area_id", {"area_id": f.area_a}), ("pane_id", {"pane_id": f.area_a})):
+            err = _error_of(c, "config.launch", {"config": name, "new_workspace": True, **params})
+            _must(err.startswith("placement_conflict"),
+                  f"config.launch with {label} and new_workspace should be a placement conflict: {err!r}")
     finally:
-        lowered = _cli(cli, ["lower-flag", "--tab", f.t2], env=env, check=False)
-    _must(lowered.returncode == 0, f"lower-flag failed: {lowered.stdout!r} {lowered.stderr!r}")
-    md = _metadata(c, f.ws, f.t2)
-    for key in ("flag", "flag_caller_tab_id", "flag_caller_surface_id"):
-        _must(key not in md, f"lower-flag left {key} behind: {md}")
-    print("PASS: flag_caller_tab_id and flag_caller_surface_id are both written, and both cleared by lower-flag")
+        try:
+            _call(c, "config.rm", {"config": name})
+        except cmuxError:
+            pass
+
+    # flag.raise takes the caller as caller_panel_id, caller_tab_id or caller_surface_id and the
+    # target under any id key. The result carries the panel + tab spellings only. The
+    # `flag_caller_*` metadata the handler stores keeps the tab spelling older readers use.
+    for caller_key in ("caller_panel_id", "caller_tab_id", "caller_surface_id"):
+        for panel_key in ("panel_id", "tab_id", "surface_id"):
+            reason = f"vocab {caller_key} {panel_key}"
+            raised = _call(c, "flag.raise", {"workspace_id": ws, panel_key: f.p2, "reason": reason, caller_key: f.p1})
+            _same(raised.get("flag"), reason, "flag.raise result flag")
+            _same(raised.get("caller_panel_id"), f.p1, f"flag.raise result caller_panel_id ({caller_key})")
+            _same(raised.get("caller_tab_id"), f.p1, f"flag.raise result caller_tab_id ({caller_key})")
+            _assert_wire_clean(raised, "flag.raise result")
+            md = _metadata(c, ws, f.p2)
+            _same(md.get("flag_caller_tab_id"), f.p1, f"flag_caller_tab_id after raise ({caller_key}, {panel_key})")
+            _call(c, "flag.lower", {"workspace_id": ws, panel_key: f.p2})
+            md = _metadata(c, ws, f.p2)
+            for key in ("flag", "flag_caller_panel_id", "flag_caller_tab_id", "flag_caller_surface_id"):
+                _must(key not in md, f"flag.lower left {key} behind ({caller_key}, {panel_key}): {md}")
+    print("PASS: area->pane placement keys, caller_panel_id/caller_tab_id/caller_surface_id, flag_caller_* clearing")
 
 
-# ---------------------------------------------------------------------------
-# CLI commands, flags, env
-# ---------------------------------------------------------------------------
-
-def test_cli_read_command_aliases(cli: str, f: Fixture) -> None:
-    ws = f.ws
-    pairs: List[Tuple[List[str], List[str], Tuple[str, ...]]] = [
-        (["list-areas", "--workspace", ws], ["list-panes", "--workspace", ws], ("areas", "panes")),
-        (["list-tabs", "--workspace", ws], ["list-panels", "--workspace", ws], ("tabs", "surfaces")),
-        (["tab-health", "--workspace", ws], ["surface-health", "--workspace", ws], ("tabs", "surfaces")),
-        (["list-area-tabs", "--workspace", ws, "--area", f.area_a],
-         ["list-pane-surfaces", "--workspace", ws, "--pane", f.area_a], ("tabs", "surfaces")),
-    ]
-    for new_args, old_args, keys in pairs:
-        new_rows = _rows(_cli_json(cli, new_args, id_format="uuids"), *keys)
-        old_rows = _rows(_cli_json(cli, old_args, id_format="uuids"), *keys)
-        _must(_ids(new_rows) == _ids(old_rows) and new_rows, f"`{new_args[0]}` vs `{old_args[0]}` disagree: {new_rows} {old_rows}")
-    _cli(cli, ["refresh-tabs"])
-    _cli(cli, ["refresh-surfaces"])
-    print("PASS: read-only CLI commands (new == old)")
-
-
-def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
-    ws = f.ws
-
-    # new-tab / new-surface, close-tab / close-surface (+ --area/--pane, --tab/--surface/--panel).
-    before = len(_tabs(c, ws))
-    new_tab = _cli_json(cli, ["new-tab", "--workspace", ws, "--area", f.area_a, "--no-focus"], id_format="uuids")
-    old_tab = _cli_json(cli, ["new-surface", "--workspace", ws, "--pane", f.area_a, "--no-focus"], id_format="uuids")
-    _must(len(_tabs(c, ws)) == before + 2, f"new-tab / new-surface should each add a tab: {new_tab} {old_tab}")
-    new_id = str(new_tab.get("tab_id") or new_tab.get("surface_id"))
-    old_id = str(old_tab.get("tab_id") or old_tab.get("surface_id"))
-    _cli(cli, ["close-tab", "--workspace", ws, "--tab", new_id])
-    _cli(cli, ["close-surface", "--workspace", ws, "--surface", old_id])
-    time.sleep(0.2)
-    _must(len(_tabs(c, ws)) == before, "close-tab / close-surface should each remove a tab")
-    extra = _cli_json(cli, ["new-tab", "--workspace", ws, "--area", f.area_a, "--no-focus"], id_format="uuids")
-    _cli(cli, ["close-tab", "--workspace", ws, "--panel", str(extra.get("tab_id") or extra.get("surface_id"))])
-    time.sleep(0.2)
-    _must(len(_tabs(c, ws)) == before, "close-tab --panel should remove the tab")
-
-    # focus-tab / focus-panel, focus-area / focus-pane.
-    _cli(cli, ["focus-tab", "--workspace", ws, "--tab", f.t2])
-    _must(_focused_tab_id(c, ws) == f.t2, "focus-tab --tab did not focus")
-    _cli(cli, ["focus-panel", "--workspace", ws, "--panel", f.t1])
-    _must(_focused_tab_id(c, ws) == f.t1, "focus-panel --panel did not focus")
-    _cli(cli, ["focus-tab", "--workspace", ws, "--surface", f.t2])
-    _must(_focused_tab_id(c, ws) == f.t2, "focus-tab --surface did not focus")
-    _cli(cli, ["focus-area", "--workspace", ws, "--area", f.area_b])
-    _must(_focused_tab_id(c, ws) == f.t3, "focus-area --area did not focus the area's tab")
-    _cli(cli, ["focus-pane", "--workspace", ws, "--pane", f.area_a])
-    _same(_focused_area_id(c, ws), f.area_a, "focus-pane --pane did not focus the area")
-    _cli(cli, ["focus-area", f.area_b, "--workspace", ws])  # positional comes first
-    _same(_focused_area_id(c, ws), f.area_b, "focus-area <area> (positional) did not focus the area")
-    _cli(cli, ["focus-pane", f.area_a, "--workspace", ws])
-    _same(_focused_area_id(c, ws), f.area_a, "focus-pane <area> (positional) did not focus the area")
-    _cli(cli, ["focus-tab", f.t3, "--workspace", ws])
-    _must(_focused_tab_id(c, ws) == f.t3, "focus-tab <tab> (positional) did not focus the tab")
-    _cli(cli, ["focus-panel", f.t1, "--workspace", ws])
-    _must(_focused_tab_id(c, ws) == f.t1, "focus-panel <tab> (positional) did not focus the tab")
-
-    # send-tab / send-panel, send-key-tab / send-key-panel.
-    for cmd, flag in (("send-tab", "--tab"), ("send-panel", "--panel")):
-        token = f"vocab_{uuid.uuid4().hex[:8]}"
-        _cli(cli, [cmd, "--workspace", ws, flag, f.t3, f"echo {token}\\n"])
-        deadline = time.time() + 6.0
-        seen = False
-        while time.time() < deadline and not seen:
-            seen = token in str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t3}).get("text") or "")
-            if not seen:
-                time.sleep(0.15)
-        _must(seen, f"{cmd} text never reached the tab")
-    _cli(cli, ["send-key-tab", "--workspace", ws, "--tab", f.t3, "enter"])
-    _cli(cli, ["send-key-panel", "--workspace", ws, "--panel", f.t3, "enter"])
-
-    # tab-color / surface-color.
-    _cli(cli, ["--json", "tab-color", "set", "#336699", "--workspace", ws, "--tab", f.t2])
-    got_new = _cli_json(cli, ["tab-color", "get", "--workspace", ws, "--tab", f.t2])
-    got_old = _cli_json(cli, ["surface-color", "get", "--workspace", ws, "--surface", f.t2])
-    _must(got_new.get("custom_color") == got_old.get("custom_color") == "#336699", f"tab-color/surface-color disagree: {got_new} {got_old}")
-    _cli(cli, ["surface-color", "clear", "--workspace", ws, "--surface", f.t2])
-
-    # move-tab / move-surface, reorder-tab / reorder-surface (+ --before-tab / --before-surface).
-    _cli(cli, ["move-tab", "--workspace", ws, "--tab", f.t2, "--area", f.area_b, "--focus", "false"])
-    row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
-    _must(row["area_id"] == f.area_b, f"move-tab --area did not move the tab: {row}")
-    _cli(cli, ["move-surface", "--workspace", ws, "--surface", f.t2, "--pane", f.area_a, "--before-surface", f.t1, "--focus", "false"])
-    row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
-    _must(row["area_id"] == f.area_a, f"move-surface --pane did not move the tab: {row}")
-    _must(row["index_in_area"] == 0, f"move-surface --before-surface did not place the tab first: {row}")
-    _cli(cli, ["reorder-tab", "--workspace", ws, "--tab", f.t2, "--after-tab", f.t1])
-    row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
-    _must(row["index_in_area"] == 1, f"reorder-tab --after-tab did not place the tab second: {row}")
-    _cli(cli, ["reorder-surface", "--workspace", ws, "--surface", f.t2, "--before-surface", f.t1])
-    row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
-    _must(row["index_in_area"] == 0, f"reorder-surface --before-surface did not place the tab first: {row}")
-
-    # new-area / new-pane, drag-tab-to-split / drag-surface-to-split.
-    areas_before = len(_areas(c, ws))
-    made_new = _cli_json(cli, ["new-area", "--workspace", ws, "--direction", "down"], id_format="uuids")
-    made_old = _cli_json(cli, ["new-pane", "--workspace", ws, "--direction", "down"], id_format="uuids")
-    _must(len(_areas(c, ws)) == areas_before + 2, f"new-area / new-pane should each add an area: {made_new} {made_old}")
-    for made in (made_new, made_old):
-        tab_id = str(made.get("tab_id") or made.get("surface_id"))
-        _call(c, "tab.close", {"workspace_id": ws, "tab_id": tab_id})
-    time.sleep(0.3)
-    _must(len(_areas(c, ws)) == areas_before, "closing the new areas' tabs should remove them")
-
-    # Each dragged tab needs a sibling in its area, or the drag has nothing to split off.
-    _call(c, "tab.create", {"workspace_id": ws, "area_id": f.area_b, "focus": False})
-    areas_before = len(_areas(c, ws))
-    _cli(cli, ["drag-tab-to-split", "--tab", f.t2, "right"], env=_cli_env({"C11_WORKSPACE_ID": ws}))
-    _must(len(_areas(c, ws)) == areas_before + 1, "drag-tab-to-split should create an area")
-    _cli(cli, ["drag-surface-to-split", "--surface", f.t3, "down"], env=_cli_env({"C11_WORKSPACE_ID": ws}))
-    _must(len(_areas(c, ws)) == areas_before + 2, "drag-surface-to-split should create an area")
-
-    # area-confirm / pane-confirm open a modal; only check both names are recognized.
-    for cmd in ("area-confirm", "pane-confirm"):
-        proc = _cli(cli, [cmd, "--help"], check=False)
-        _must(proc.returncode == 0, f"`{cmd} --help` should succeed: {proc.stdout!r} {proc.stderr!r}")
-    print("PASS: action CLI commands and flags (new == old)")
-
-
-def test_cli_env_vars_target_the_same_tab(c: cmux, cli: str, f: Fixture) -> None:
-    ws = f.ws
-    token = f"env-{uuid.uuid4().hex[:8]}"
-    _call(c, "tab.set_metadata", {
-        "workspace_id": ws, "tab_id": f.t2, "mode": "merge", "source": "explicit",
-        "metadata": {"title": token},
-    })
-    # Without a flag the command targets the tab named by the environment.
-    for name in ("C11_TAB_ID", "C11_SURFACE_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"):
-        env = _cli_env({name: f.t2, "C11_WORKSPACE_ID": ws, "CMUX_WORKSPACE_ID": ws})
-        out = _cli_json(cli, ["get-metadata"], env=env)
-        _must((out.get("metadata") or {}).get("title") == token, f"{name} did not target tab {f.t2}: {out}")
-    # Flags win over the environment, in every spelling.
-    env = _cli_env({"C11_TAB_ID": f.t1, "C11_WORKSPACE_ID": ws})
-    for flag in ("--tab", "--surface", "--panel"):
-        proc = _cli(cli, ["--json", "get-metadata", flag, f.t2], env=env, check=False)
-        _must(proc.returncode == 0, f"get-metadata {flag} must be accepted: {proc.stdout!r} {proc.stderr!r}")
-        out = json.loads(proc.stdout or "{}")
-        _must((out.get("metadata") or {}).get("title") == token, f"{flag} did not override the environment: {out}")
-
-    # `c11 mailbox tab-name` and `surface-name` print the same caller title.
-    env = _cli_env({"C11_TAB_ID": f.t2, "C11_WORKSPACE_ID": ws})
-    new_name = _cli(cli, ["mailbox", "tab-name"], env=env).stdout.strip()
-    old_name = _cli(cli, ["mailbox", "surface-name"], env=env).stdout.strip()
-    _must(new_name == old_name, f"mailbox tab-name {new_name!r} != surface-name {old_name!r}")
-
-    # Metadata scope flags: --area and --pane address the same area.
-    pane_token = f"area-{uuid.uuid4().hex[:6]}"
-    env = _cli_env({"C11_WORKSPACE_ID": ws})
-    _cli(cli, ["set-metadata", "--area", f.area_a, "--key", "role", "--value", pane_token], env=env)
-    for flag in ("--area", "--pane"):
-        out = _cli_json(cli, ["get-metadata", flag, f.area_a], env=env)
-        _must((out.get("metadata") or {}).get("role") == pane_token, f"{flag} did not read the area metadata: {out}")
-    _cli(cli, ["clear-metadata", "--pane", f.area_a, "--key", "role"], env=env)
-    print("PASS: C11_TAB_ID / C11_SURFACE_ID / CMUX_* and --tab/--surface/--panel/--area/--pane agree")
-
-
-def _last_screen_line(c: cmux, ws: str, tab_id: str) -> str:
-    text = str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": tab_id}).get("text") or "")
-    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
-    return lines[-1] if lines else ""
-
-
-def test_free_text_is_never_rewritten(c: cmux, cli: str, f: Fixture) -> None:
-    """Text typed into a tab is data: flag-looking words arrive literally, old or new spelling."""
-    ws = f.ws
-    for token in ("--surface", "--pane", "--panel", "--tab", "--area"):
-        for form in ("after --", "positional"):
-            _cli(cli, ["send-key", "--workspace", ws, "--tab", f.t3, "ctrl+u"])
-            if form == "after --":
-                args = ["send", "--workspace", ws, "--tab", f.t3, "--no-submit", "--", token]
-                env = None
-            else:
-                args = ["send", "--no-submit", token]
-                env = _cli_env({"C11_TAB_ID": f.t3, "C11_WORKSPACE_ID": ws})
-            _cli(cli, args, env=env)
-            deadline = time.time() + 6.0
-            line = ""
-            while time.time() < deadline:
-                line = _last_screen_line(c, ws, f.t3)
-                if line.endswith(token):
-                    break
-                time.sleep(0.15)
-            _must(line.endswith(token), f"send ({form}) of {token!r} did not arrive literally; last line {line!r}")
-    _cli(cli, ["send-key", "--workspace", ws, "--tab", f.t3, "ctrl+u"])
-    print("PASS: flag-looking free text reaches the tab literally")
-
-
-# ---------------------------------------------------------------------------
-# Older socket methods, params and refs beyond the basics
-# ---------------------------------------------------------------------------
-
-def _wait_for(pred, timeout: float = 6.0, step: float = 0.15) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if pred():
-            return True
-        time.sleep(step)
-    return pred()
-
-
-def _area_of(c: cmux, ws: str, tab_id: str) -> str:
-    return str(_tab_row(c, ws, tab_id).get("area_id") or "")
-
-
-def _index_of(c: cmux, ws: str, tab_id: str) -> int:
-    value = _tab_row(c, ws, tab_id).get("index_in_area")
-    _must(isinstance(value, int), f"tab {tab_id} has no index_in_area: {_tab_row(c, ws, tab_id)}")
-    return int(value)
-
-
-def _spare_tab(c: cmux, ws: str, area_id: str) -> str:
-    created = _call(c, "tab.create", {"workspace_id": ws, "area_id": area_id, "focus": False})
-    tab_id = str(created.get("tab_id") or "")
-    _must(bool(tab_id), f"tab.create returned no tab_id: {created}")
-    time.sleep(0.2)
-    return tab_id
-
-
-def test_tab_action_and_send_key_old_methods(c: cmux, f: Fixture) -> None:
-    ws = f.ws
-    # surface.action (routed to the Misc domain) and tab.action are one handler.
-    old_title, new_title = f"old-{uuid.uuid4().hex[:6]}", f"new-{uuid.uuid4().hex[:6]}"
-    res = _call(c, "surface.action", {"workspace_id": ws, "surface_id": f.t2, "action": "rename", "title": old_title})
-    _same(res.get("tab_id"), f.t2, "surface.action result tab_id")
-    _same(res.get("surface_id"), f.t2, "surface.action result surface_id")
-    _same(_tab_row(c, ws, f.t2).get("title"), old_title, "surface.action rename should retitle the tab")
-    res = _call(c, "tab.action", {"workspace_id": ws, "tab_id": f.t2, "action": "rename", "title": new_title})
-    _same(res.get("surface_id"), f.t2, "tab.action result surface_id")
-    _same(_tab_row(c, ws, f.t2).get("title"), new_title, "tab.action rename should retitle the tab")
-    for method, key in (("surface.action", "surface_id"), ("tab.action", "tab_id")):
-        pinned = _call(c, method, {"workspace_id": ws, key: f.t2, "action": "pin"})
-        _must(pinned.get("pinned") is True, f"{method} pin: {pinned}")
-        unpinned = _call(c, method, {"workspace_id": ws, key: f.t2, "action": "unpin"})
-        _must(unpinned.get("pinned") is False, f"{method} unpin: {unpinned}")
-
-    # Off-main methods under the old names: surface.send_key and surface.clear_history.
-    # `$((6*7))` makes the marker appear only in the command's output, never in its echo.
-    marker = f"vk{uuid.uuid4().hex[:6]}"
-    _call(c, "surface.send_text", {"workspace_id": ws, "surface_id": f.t3, "text": f"echo $((6*7)){marker}"})
-    _call(c, "surface.send_key", {"workspace_id": ws, "surface_id": f.t3, "key": "enter"})
-    _must(
-        _wait_for(lambda: f"42{marker}" in str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t3}).get("text") or "")),
-        "surface.send_key enter never ran the typed command",
-    )
-    marker = f"vk{uuid.uuid4().hex[:6]}"
-    _call(c, "tab.send_text", {"workspace_id": ws, "tab_id": f.t3, "text": f"echo $((6*7)){marker}"})
-    _call(c, "tab.send_key", {"workspace_id": ws, "tab_id": f.t3, "key": "enter"})
-    _must(
-        _wait_for(lambda: f"42{marker}" in str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t3}).get("text") or "")),
-        "tab.send_key enter never ran the typed command",
-    )
-    for method, key in (("surface.clear_history", "surface_id"), ("tab.clear_history", "tab_id")):
-        res = _call(c, method, {"workspace_id": ws, key: f.t3})
-        _same(res.get("tab_id"), f.t3, f"{method} result tab_id")
-        _same(res.get("surface_id"), f.t3, f"{method} result surface_id")
-
-    # pane.confirm is an off-main method that opens a modal; a call without a title fails
-    # before any dialog, so reaching that error proves the old name routes to the handler.
-    old_err = _error_of(c, "pane.confirm", {"workspace_id": ws, "pane_id": f.area_a})
-    new_err = _error_of(c, "area.confirm", {"workspace_id": ws, "area_id": f.area_a})
-    _must(old_err.startswith("invalid_params") and "title" in old_err, f"pane.confirm without a title: {old_err!r}")
-    _same(new_err, old_err, "pane.confirm and area.confirm should fail the same way")
-    print("PASS: surface.action / surface.send_key / surface.clear_history / pane.confirm resolve to the new handlers")
-
-
-def test_old_tab_layout_methods(c: cmux) -> None:
+def test_old_panel_layout_methods(c: cmux) -> None:
     f = Fixture(c)
     try:
         ws = f.ws
-        # surface.split / tab.split
-        before = len(_areas(c, ws))
-        old_split = _call(c, "surface.split", {"workspace_id": ws, "surface_id": f.t1, "direction": "down"})
-        _same(old_split.get("tab_id"), old_split.get("surface_id"), "surface.split tab_id/surface_id")
-        time.sleep(0.3)
-        _must(len(_areas(c, ws)) == before + 1, "surface.split should add an area")
-        _call(c, "surface.close", {"workspace_id": ws, "surface_id": old_split["surface_id"]})
-        time.sleep(0.3)
-        _must(len(_areas(c, ws)) == before, "closing the split's only tab should remove its area")
+        # split through every method spelling
+        for family in PANEL_FAMILIES:
+            before = len(_areas(c, ws))
+            split = _call(c, f"{family}.split", {"workspace_id": ws, f"{family}_id": f.p1, "direction": "down"})
+            _check_dual_panel(split, f"{family}.split")
+            time.sleep(0.3)
+            _must(len(_areas(c, ws)) == before + 1, f"{family}.split should add an area")
+            _call(c, f"{family}.close", {"workspace_id": ws, f"{family}_id": split["panel_id"]})
+            time.sleep(0.3)
+            _must(len(_areas(c, ws)) == before, "closing the split's only panel should remove its area")
 
-        # surface.reorder / tab.reorder with before/after anchors in both spellings.
-        steps = [
-            ("surface.reorder", {"surface_id": f.t2, "before_surface_id": f.t1}, 0),
-            ("tab.reorder", {"tab_id": f.t2, "after_tab_id": f.t1}, 1),
-            ("tab.reorder", {"tab_id": f.t2, "before_tab_id": f.t1}, 0),
-            ("surface.reorder", {"surface_id": f.t2, "after_surface_id": f.t1}, 1),
-            ("tab.reorder", {"surface_id": f.t2, "before_tab_id": f.t1}, 0),
-            ("surface.reorder", {"tab_id": f.t2, "after_surface_id": f.t1}, 1),
+        # reorder with before/after anchors in every spelling.
+        steps: List[Tuple[str, Dict[str, Any], int]] = [
+            ("panel.reorder", {"panel_id": f.p2, "before_panel_id": f.p1}, 0),
+            ("tab.reorder", {"tab_id": f.p2, "after_tab_id": f.p1}, 1),
+            ("surface.reorder", {"surface_id": f.p2, "before_surface_id": f.p1}, 0),
+            ("panel.reorder", {"panel_id": f.p2, "after_panel_id": f.p1}, 1),
+            ("tab.reorder", {"surface_id": f.p2, "before_tab_id": f.p1}, 0),
+            ("surface.reorder", {"tab_id": f.p2, "after_surface_id": f.p1}, 1),
+            ("panel.reorder", {"tab_id": f.p2, "before_surface_id": f.p1}, 0),
+            ("panel.reorder", {"panel_ref": f.panel_ref("TAB"), "after_panel_id": f.p1}, 1),
         ]
         for method, params, want in steps:
             _call(c, method, {"workspace_id": ws, **params})
-            _same(_index_of(c, ws, f.t2), want, f"{method} {sorted(params)} should place the tab at index {want}")
+            _same(_index_of(c, ws, f.p2), want, f"{method} {sorted(params)} should place the panel at index {want}")
 
-        # surface.move / tab.move across areas, with before/after anchors and old/new area keys.
-        mover = _spare_tab(c, ws, f.area_b)
+        # move across areas, with before/after anchors and area/pane keys.
+        mover = _spare_panel(c, ws, f.area_b)
         _call(c, "surface.move", {"workspace_id": ws, "surface_id": mover, "pane_id": f.area_a,
-                                  "before_surface_id": f.t1, "focus": False})
-        _same(_area_of(c, ws, mover), f.area_a, "surface.move should move the tab into the area")
-        _same(_index_of(c, ws, mover), 0, "surface.move before_surface_id should place the tab first")
-        _call(c, "tab.move", {"workspace_id": ws, "tab_id": mover, "area_id": f.area_b, "focus": False})
-        _same(_area_of(c, ws, mover), f.area_b, "tab.move should move the tab back")
+                                  "before_surface_id": f.p1, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_a, "surface.move should move the panel into the area")
+        _same(_index_of(c, ws, mover), 0, "surface.move before_surface_id should place the panel first")
+        _call(c, "panel.move", {"workspace_id": ws, "panel_id": mover, "area_id": f.area_b, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_b, "panel.move should move the panel back")
         _call(c, "tab.move", {"workspace_id": ws, "tab_id": mover, "area_id": f.area_a,
-                              "after_tab_id": f.t1, "focus": False})
-        _same(_area_of(c, ws, mover), f.area_a, "tab.move with after_tab_id should move the tab")
-        _same(_index_of(c, ws, mover), _index_of(c, ws, f.t1) + 1, "tab.move after_tab_id should place the tab after the anchor")
-        _call(c, "surface.move", {"workspace_id": ws, "surface_id": mover, "pane_id": f.area_b, "focus": False})
-        _same(_area_of(c, ws, mover), f.area_b, "surface.move should move the tab back")
+                              "after_tab_id": f.p1, "focus": False})
+        _same(_index_of(c, ws, mover), _index_of(c, ws, f.p1) + 1, "tab.move after_tab_id should place the panel after the anchor")
+        _call(c, "panel.move", {"workspace_id": ws, "panel_id": mover, "area_id": f.area_b,
+                                "before_panel_id": f.p3, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_b, "panel.move with before_panel_id should move the panel")
+        _call(c, "surface.move", {"workspace_id": ws, "surface_id": mover, "pane_id": f.area_a, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_a, "surface.move should move the panel again")
 
-        # surface.drag_to_split / tab.drag_to_split need a sibling in the source area.
-        for method, key, direction in (("surface.drag_to_split", "surface_id", "right"), ("tab.drag_to_split", "tab_id", "down")):
-            sibling = _spare_tab(c, ws, f.area_b)
+        # drag_to_split needs a sibling in the source area.
+        for family, direction in (("panel", "right"), ("tab", "down"), ("surface", "right")):
+            sibling = _spare_panel(c, ws, f.area_b)
             before = len(_areas(c, ws))
-            _call(c, method, {"workspace_id": ws, key: sibling, "direction": direction})
+            res = _call(c, f"{family}.drag_to_split", {"workspace_id": ws, f"{family}_id": sibling, "direction": direction})
+            _assert_wire_clean(res, f"{family}.drag_to_split")
             time.sleep(0.3)
-            _must(len(_areas(c, ws)) == before + 1, f"{method} should split the tab off into a new area")
-            _must(_area_of(c, ws, sibling) not in (f.area_a, f.area_b), f"{method} should leave the tab in a new area")
-        print("PASS: surface.split / reorder / move / drag_to_split resolve to the new handlers")
+            _must(len(_areas(c, ws)) == before + 1, f"{family}.drag_to_split should split the panel off into a new area")
+            _must(_area_of(c, ws, sibling) not in (f.area_a, f.area_b), f"{family}.drag_to_split should leave the panel in a new area")
+        print("PASS: split / reorder / move / drag_to_split resolve to the same handlers in every spelling")
     finally:
         f.close()
 
 
-def test_old_tab_presentation_methods(c: cmux, f: Fixture) -> None:
+def test_old_panel_presentation_methods(c: cmux, f: Fixture) -> None:
     ws = f.ws
-    for method, key in (("surface.trigger_flash", "surface_id"), ("tab.trigger_flash", "tab_id")):
-        res = _call(c, method, {"workspace_id": ws, key: f.t1})
-        _same(res.get("tab_id"), f.t1, f"{method} result tab_id")
-        _same(res.get("surface_id"), f.t1, f"{method} result surface_id")
-    for method, key in (("surface.cancel_flash", "surface_id"), ("tab.cancel_flash", "tab_id")):
-        res = _call(c, method, {"workspace_id": ws, key: f.t1})
-        _same(res.get("surface_id"), f.t1, f"{method} result surface_id")
+    for family in PANEL_FAMILIES:
+        res = _call(c, f"{family}.trigger_flash", {"workspace_id": ws, f"{family}_id": f.p1})
+        _check_dual_panel(res, f"{family}.trigger_flash")
+        _assert_wire_clean(res, f"{family}.trigger_flash")
+        res = _call(c, f"{family}.cancel_flash", {"workspace_id": ws, f"{family}_id": f.p1})
+        _same(res.get("panel_id"), f.p1, f"{family}.cancel_flash panel_id")
 
-    for method, key, hex_ in (("surface.set_custom_color", "surface_id", "#336699"), ("tab.set_custom_color", "tab_id", "#996633")):
-        res = _call(c, method, {"workspace_id": ws, key: f.t2, "hex": hex_})
-        _same(res.get("custom_color"), hex_, f"{method} custom_color")
-        _same(res.get("tab_id"), f.t2, f"{method} result tab_id")
-    cleared = _call(c, "surface.set_custom_color", {"workspace_id": ws, "surface_id": f.t2, "clear": True})
+    for family, hex_ in (("panel", "#336699"), ("tab", "#996633"), ("surface", "#669933")):
+        res = _call(c, f"{family}.set_custom_color", {"workspace_id": ws, f"{family}_id": f.p2, "hex": hex_})
+        _same(res.get("custom_color"), hex_, f"{family}.set_custom_color custom_color")
+        _check_dual_panel(res, f"{family}.set_custom_color")
+    cleared = _call(c, "surface.set_custom_color", {"workspace_id": ws, "surface_id": f.p2, "clear": True})
     _must(cleared.get("cleared") is True and cleared.get("custom_color") is None, f"clear through the old method: {cleared}")
 
-    # Title bar: visibility is workspace-wide, collapsed is per tab.
+    # Title bar: visibility is workspace-wide, collapsed is per panel.
     try:
-        _call(c, "surface.set_titlebar_visibility", {"workspace_id": ws, "surface_id": f.t1, "visible": False})
-        _must(_call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.t1}).get("visible") is False,
+        _call(c, "surface.set_titlebar_visibility", {"workspace_id": ws, "surface_id": f.p1, "visible": False})
+        _must(_call(c, "panel.get_titlebar_state", {"workspace_id": ws, "panel_id": f.p1}).get("visible") is False,
               "surface.set_titlebar_visibility should hide the title bar")
-        _call(c, "tab.set_titlebar_visibility", {"workspace_id": ws, "tab_id": f.t1, "visible": True})
-        _must(_call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.t1}).get("visible") is True,
+        _call(c, "tab.set_titlebar_visibility", {"workspace_id": ws, "tab_id": f.p1, "visible": True})
+        _must(_call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.p1}).get("visible") is True,
               "tab.set_titlebar_visibility should show the title bar")
     finally:
-        _call(c, "tab.set_titlebar_visibility", {"workspace_id": ws, "tab_id": f.t1, "visible": True})
-    _call(c, "surface.set_titlebar_collapsed", {"workspace_id": ws, "surface_id": f.t3, "collapsed": False})
-    _must(_call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.t3}).get("collapsed") is False,
+        _call(c, "panel.set_titlebar_visibility", {"workspace_id": ws, "panel_id": f.p1, "visible": True})
+    _call(c, "surface.set_titlebar_collapsed", {"workspace_id": ws, "surface_id": f.p3, "collapsed": False})
+    _must(_call(c, "panel.get_titlebar_state", {"workspace_id": ws, "panel_id": f.p3}).get("collapsed") is False,
           "surface.set_titlebar_collapsed should expand the title bar")
-    _call(c, "tab.set_titlebar_collapsed", {"workspace_id": ws, "tab_id": f.t3, "collapsed": True})
-    _must(_call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.t3}).get("collapsed") is True,
-          "tab.set_titlebar_collapsed should collapse the title bar")
+    _call(c, "panel.set_titlebar_collapsed", {"workspace_id": ws, "panel_id": f.p3, "collapsed": True})
+    _must(_call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.p3}).get("collapsed") is True,
+          "panel.set_titlebar_collapsed should collapse the title bar")
 
-    # surface.clear_metadata / tab.clear_metadata
-    for method, key in (("surface.clear_metadata", "surface_id"), ("tab.clear_metadata", "tab_id")):
+    for family in PANEL_FAMILIES:
         marker = f"clr-{uuid.uuid4().hex[:6]}"
-        _call(c, "tab.set_metadata", {"workspace_id": ws, "tab_id": f.t3, "mode": "merge", "source": "explicit",
-                                      "metadata": {"vocab_clear": marker}})
-        _same(_metadata(c, ws, f.t3).get("vocab_clear"), marker, "metadata should be set before clearing")
-        _call(c, method, {"workspace_id": ws, key: f.t3, "keys": ["vocab_clear"], "source": "explicit"})
-        _must("vocab_clear" not in _metadata(c, ws, f.t3), f"{method} did not clear the key")
-    print("PASS: surface.trigger_flash / set_custom_color / set_titlebar_* / clear_metadata resolve to the new handlers")
+        _call(c, "panel.set_metadata", {"workspace_id": ws, "panel_id": f.p3, "mode": "merge", "source": "explicit",
+                                        "metadata": {"vocab_clear": marker}})
+        _same(_metadata(c, ws, f.p3).get("vocab_clear"), marker, "metadata should be set before clearing")
+        _call(c, f"{family}.clear_metadata", {"workspace_id": ws, f"{family}_id": f.p3, "keys": ["vocab_clear"], "source": "explicit"})
+        _must("vocab_clear" not in _metadata(c, ws, f.p3), f"{family}.clear_metadata did not clear the key")
+
+    # send_key, clear_history and read_text under every spelling. `$((6*7))` makes the marker
+    # appear only in the command's output, never in its echo.
+    for family in PANEL_FAMILIES:
+        marker = f"vk{uuid.uuid4().hex[:6]}"
+        _call(c, f"{family}.send_text", {"workspace_id": ws, f"{family}_id": f.p3, "text": f"echo $((6*7)){marker}"})
+        _call(c, f"{family}.send_key", {"workspace_id": ws, f"{family}_id": f.p3, "key": "enter"})
+        _must(_wait_for(lambda m=marker: f"42{m}" in _screen_text(c, ws, f.p3)),
+              f"{family}.send_key enter never ran the typed command")
+        res = _call(c, f"{family}.clear_history", {"workspace_id": ws, f"{family}_id": f.p3})
+        _check_dual_panel(res, f"{family}.clear_history")
+        _assert_wire_clean(res, f"{family}.clear_history")
+
+    # area.confirm / pane.confirm are off-main methods that open a modal; a call without a title fails
+    # before any dialog, so reaching that error proves both names route to the handler.
+    old_err = _error_of(c, "pane.confirm", {"workspace_id": ws, "pane_id": f.area_a})
+    new_err = _error_of(c, "area.confirm", {"workspace_id": ws, "area_id": f.area_a})
+    _must(old_err.startswith("invalid_params") and "title" in old_err, f"pane.confirm without a title: {old_err!r}")
+    _same(new_err, old_err, "pane.confirm and area.confirm should fail the same way")
+    print("PASS: flash / custom_color / titlebar / clear_metadata / send_key / clear_history / area.confirm resolve in every spelling")
 
 
 def test_old_area_methods(c: cmux) -> None:
@@ -869,30 +950,32 @@ def test_old_area_methods(c: cmux) -> None:
     try:
         ws = f.ws
 
-        # pane.create / area.create
+        # pane.create / area.create: the result carries area_* and panel_* + tab_*, never pane_*/surface_*.
         before = len(_areas(c, ws))
-        old_made = _call(c, "pane.create", {"workspace_id": ws, "direction": "down"})
-        new_made = _call(c, "area.create", {"workspace_id": ws, "direction": "down"})
+        made_all = [_call(c, "pane.create", {"workspace_id": ws, "direction": "down"}),
+                    _call(c, "area.create", {"workspace_id": ws, "direction": "down"})]
         time.sleep(0.3)
-        _must(len(_areas(c, ws)) == before + 2, f"pane.create / area.create should each add an area: {old_made} {new_made}")
-        for made in (old_made, new_made):
-            _same(made.get("area_id"), made.get("pane_id"), "area create area_id/pane_id")
-            _call(c, "tab.close", {"workspace_id": ws, "tab_id": str(made.get("tab_id") or made.get("surface_id"))})
+        _must(len(_areas(c, ws)) == before + 2, f"pane.create / area.create should each add an area: {made_all}")
+        for made in made_all:
+            _check_area_keys(made, "area create")
+            _check_dual_panel(made, "area create")
+            _assert_wire_clean(made, "area create")
+            _call(c, "panel.close", {"workspace_id": ws, "panel_id": str(made["panel_id"])})
         time.sleep(0.3)
-        _must(len(_areas(c, ws)) == before, "closing the created areas' tabs should remove them")
+        _must(len(_areas(c, ws)) == before, "closing the created areas' panels should remove them")
 
         # pane.resize / area.resize: the divider between the two side-by-side areas moves.
         grown = _call(c, "pane.resize", {"workspace_id": ws, "pane_id": f.area_a, "direction": "right", "amount": 40})
         _same(grown.get("area_id"), f.area_a, "pane.resize result area_id")
-        _same(grown.get("pane_id"), f.area_a, "pane.resize result pane_id")
+        _assert_wire_clean(grown, "pane.resize")
         _must(float(grown["new_divider_position"]) > float(grown["old_divider_position"]), f"pane.resize right should grow the area: {grown}")
         shrunk = _call(c, "area.resize", {"workspace_id": ws, "area_id": f.area_a, "direction": "left", "amount": 40})
         _must(float(shrunk["new_divider_position"]) < float(shrunk["old_divider_position"]), f"area.resize left should shrink the area: {shrunk}")
 
         # pane.swap / area.swap with every spelling of the area and target keys. Each swap
-        # trades the two areas' selected tabs, so the owner of a given tab flips every time.
+        # trades the two areas' selected panels, so the owner of a given panel flips every time.
         rows = {str(r["id"]): r for r in _areas(c, ws)}
-        sel_a = str(rows[f.area_a].get("selected_tab_id"))
+        sel_a = str(rows[f.area_a].get("selected_panel_id"))
         area_ref = {r["id"]: r["ref"] for r in _areas(c, ws)}
         old_ref = {k: f"pane:{_ordinal(v, 'area')}" for k, v in area_ref.items()}
         variants = [
@@ -907,34 +990,35 @@ def test_old_area_methods(c: cmux) -> None:
         for method, params in variants:
             res = _call(c, method, {"workspace_id": ws, "focus": False, **params})
             expected_area = f.area_b if expected_area == f.area_a else f.area_a
-            _same(_area_of(c, ws, sel_a), expected_area, f"{method} {sorted(params)} should move the selected tab")
-            _same(res.get("source_area_id"), res.get("source_pane_id"), f"{method} result source_area_id/source_pane_id")
-            _same(res.get("target_area_id"), res.get("target_pane_id"), f"{method} result target_area_id/target_pane_id")
-            _same(res.get("source_tab_id"), res.get("source_surface_id"), f"{method} result source_tab_id/source_surface_id")
-            _same(res.get("target_tab_id"), res.get("target_surface_id"), f"{method} result target_tab_id/target_surface_id")
+            _same(_area_of(c, ws, sel_a), expected_area, f"{method} {sorted(params)} should move the selected panel")
+            _must(bool(res.get("source_area_id")) and bool(res.get("target_area_id")), f"{method} result needs source/target area ids: {res}")
+            _check_dual_panel(res, f"{method} result", "source_")
+            _check_dual_panel(res, f"{method} result", "target_")
+            _assert_wire_clean(res, method)
 
-        # pane.join / area.join: surface_id or area_id picks the tab, target_* the destination.
-        joiner = _spare_tab(c, ws, f.area_b)
+        # pane.join / area.join: any panel key picks the panel, target_* the destination.
+        joiner = _spare_panel(c, ws, f.area_b)
         _call(c, "pane.join", {"workspace_id": ws, "surface_id": joiner, "target_pane_id": f.area_a, "focus": False})
-        _same(_area_of(c, ws, joiner), f.area_a, "pane.join should move the tab into the target area")
+        _same(_area_of(c, ws, joiner), f.area_a, "pane.join should move the panel into the target area")
         _call(c, "area.join", {"workspace_id": ws, "tab_id": joiner, "target_area_id": f.area_b, "focus": False})
-        _same(_area_of(c, ws, joiner), f.area_b, "area.join should move the tab into the target area")
-        _call(c, "pane.join", {"workspace_id": ws, "surface_id": joiner, "target_area_ref": area_ref[f.area_a], "focus": False})
-        _same(_area_of(c, ws, joiner), f.area_a, "pane.join with target_area_ref should move the tab")
-        _call(c, "area.join", {"workspace_id": ws, "tab_id": joiner, "target_pane_ref": old_ref[f.area_b], "focus": False})
-        _same(_area_of(c, ws, joiner), f.area_b, "area.join with target_pane_ref should move the tab")
+        _same(_area_of(c, ws, joiner), f.area_b, "area.join should move the panel into the target area")
+        _call(c, "pane.join", {"workspace_id": ws, "panel_id": joiner, "target_area_ref": area_ref[f.area_a], "focus": False})
+        _same(_area_of(c, ws, joiner), f.area_a, "pane.join with target_area_ref should move the panel")
+        _call(c, "area.join", {"workspace_id": ws, "panel_id": joiner, "target_pane_ref": old_ref[f.area_b], "focus": False})
+        _same(_area_of(c, ws, joiner), f.area_b, "area.join with target_pane_ref should move the panel")
 
-        # pane.break / area.break detach a tab into a new workspace.
-        for method, key in (("pane.break", "surface_id"), ("area.break", "tab_id")):
-            breaker = _spare_tab(c, ws, f.area_b)
+        # pane.break / area.break detach a panel into a new workspace.
+        for method, key in (("pane.break", "surface_id"), ("area.break", "panel_id"), ("area.break", "tab_id")):
+            breaker = _spare_panel(c, ws, f.area_b)
             res = _call(c, method, {"workspace_id": ws, key: breaker, "focus": False})
             new_ws = str(res.get("workspace_id") or "")
-            _must(bool(new_ws) and new_ws != ws, f"{method} should move the tab into another workspace: {res}")
+            _must(bool(new_ws) and new_ws != ws, f"{method} should move the panel into another workspace: {res}")
+            _assert_wire_clean(res, method)
             try:
-                _must(breaker not in [r["id"] for r in _tabs(c, ws)], f"{method} left the tab in the source workspace")
+                _must(breaker not in [r["id"] for r in _panels(c, ws)], f"{method} left the panel in the source workspace")
             finally:
                 try:
-                    c.close_workspace(new_ws)
+                    _call(c, "workspace.close", {"workspace_id": new_ws})
                 except Exception:
                     pass
 
@@ -942,73 +1026,19 @@ def test_old_area_methods(c: cmux) -> None:
         _call(c, "area.focus", {"workspace_id": ws, "area_id": f.area_a})
         res = _call(c, "pane.last", {"workspace_id": ws})
         _same(res.get("area_id"), f.area_b, "pane.last should target the other area")
-        _same(res.get("pane_id"), f.area_b, "pane.last result pane_id")
+        _assert_wire_clean(res, "pane.last")
         _same(_focused_area_id(c, ws), f.area_b, "pane.last should focus the other area")
         res = _call(c, "area.last", {"workspace_id": ws})
         _same(res.get("area_id"), f.area_a, "area.last should target the other area")
         _same(_focused_area_id(c, ws), f.area_a, "area.last should focus the other area")
-        print("PASS: pane.create / resize / swap / join / break / last resolve to the new handlers")
+        print("PASS: pane.create / resize / swap / join / break / last resolve to the area.* handlers; results carry area_* only")
     finally:
         f.close()
 
 
-def test_old_ref_params_and_caller_keys(c: cmux, f: Fixture) -> None:
-    ws = f.ws
-    token = f"ref-{uuid.uuid4().hex[:8]}"
-    _call(c, "tab.set_metadata", {"workspace_id": ws, "tab_id": f.t2, "mode": "merge", "source": "explicit", "metadata": {"title": token}})
-    t2_row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
-    ordinal = _ordinal(t2_row["ref"], "tab")
-    # *_ref params: the canonical name and the older one, with either ref prefix.
-    for key, value in (("tab_ref", f"tab:{ordinal}"), ("surface_ref", f"surface:{ordinal}"),
-                       ("tab_ref", f"surface:{ordinal}"), ("surface_ref", f"tab:{ordinal}"),
-                       ("panel_ref", f"tab:{ordinal}")):
-        res = _call(c, "tab.get_metadata", {"workspace_id": ws, key: value})
-        _same((res.get("metadata") or {}).get("title"), token, f"{key}={value} should address tab {f.t2}")
-    a_row = next(r for r in _areas(c, ws) if r["id"] == f.area_a)
-    a_ordinal = _ordinal(a_row["ref"], "area")
-    for key, value in (("area_ref", f"area:{a_ordinal}"), ("pane_ref", f"pane:{a_ordinal}"),
-                       ("area_ref", f"pane:{a_ordinal}"), ("pane_ref", f"area:{a_ordinal}")):
-        res = _call(c, "area.tabs", {"workspace_id": ws, key: value})
-        _must(f.t2 in _ids(_rows(res, "tabs")), f"{key}={value} should address area {f.area_a}: {res}")
-
-    # `area` is the older `pane` placement param (config.launch). Placement conflicts are
-    # rejected before anything launches, so a throwaway saved config exercises the key safely.
-    name = f"c11-vocab-{uuid.uuid4().hex[:8]}"
-    _call(c, "config.save", {"name": name, "harness": "claude"})
-    try:
-        errors = {}
-        for label, params in (("area", {"area": a_row["ref"]}), ("pane", {"pane": f"pane:{a_ordinal}"}),
-                              ("area_id", {"area_id": f.area_a}), ("pane_id", {"pane_id": f.area_a})):
-            errors[label] = _error_of(c, "config.launch", {"config": name, "new_workspace": True, **params})
-            _must(errors[label].startswith("placement_conflict"),
-                  f"config.launch with {label} and new_workspace should be a placement conflict: {errors[label]!r}")
-    finally:
-        try:
-            _call(c, "config.rm", {"config": name})
-        except cmuxError:
-            pass
-
-    # flag.raise takes the caller as caller_surface_id or caller_tab_id; both keys are
-    # written, and flag.lower clears both.
-    for caller_key in ("caller_surface_id", "caller_tab_id"):
-        for tab_key in ("surface_id", "tab_id"):
-            reason = f"vocab {caller_key} {tab_key}"
-            raised = _call(c, "flag.raise", {"workspace_id": ws, tab_key: f.t2, "reason": reason, caller_key: f.t1})
-            _same(raised.get("flag"), reason, "flag.raise result flag")
-            _same(raised.get("caller_surface_id"), f.t1, f"flag.raise result caller_surface_id ({caller_key})")
-            _same(raised.get("caller_tab_id"), f.t1, f"flag.raise result caller_tab_id ({caller_key})")
-            md = _metadata(c, ws, f.t2)
-            _same(md.get("flag_caller_surface_id"), f.t1, f"flag_caller_surface_id after raise ({caller_key}, {tab_key})")
-            _same(md.get("flag_caller_tab_id"), f.t1, f"flag_caller_tab_id after raise ({caller_key}, {tab_key})")
-            _call(c, "flag.lower", {"workspace_id": ws, tab_key: f.t2})
-            md = _metadata(c, ws, f.t2)
-            for key in ("flag", "flag_caller_surface_id", "flag_caller_tab_id"):
-                _must(key not in md, f"flag.lower left {key} behind ({caller_key}, {tab_key}): {md}")
-    print("PASS: *_ref params, area->pane, caller_surface_id/caller_tab_id, flag_caller_* clearing")
-
-
 def test_workspace_apply_ref_maps(c: cmux) -> None:
-    """workspace.apply returns tabRefs/areaRefs (canonical) beside surfaceRefs/paneRefs (older), value-converted."""
+    """workspace.apply returns panelRefs (panel:N) beside tabRefs (tab:N), and areaRefs; never surfaceRefs/paneRefs."""
+    # The plan schema's own words (`surfaces`, `surfaceIds`) are input, not wire keys.
     plan = {
         "version": 1,
         "workspace": {"title": f"vocab-apply-{uuid.uuid4().hex[:6]}"},
@@ -1022,23 +1052,374 @@ def test_workspace_apply_ref_maps(c: cmux) -> None:
     ws_ref = str(res.get("workspaceRef") or "")
     try:
         _must(bool(ws_ref), f"workspace.apply returned no workspaceRef: {res}")
-        maps = {name: res.get(name) for name in ("tabRefs", "surfaceRefs", "areaRefs", "paneRefs")}
+        maps = {name: res.get(name) for name in ("panelRefs", "tabRefs", "areaRefs")}
         for name, value in maps.items():
             _must(isinstance(value, dict) and sorted(value) == ["a", "b"], f"workspace.apply {name} should map both plan ids: {value!r}")
         for plan_id in ("a", "b"):
-            _same(_ordinal(maps["tabRefs"][plan_id], "tab"), _ordinal(maps["surfaceRefs"][plan_id], "surface"),
-                  f"tabRefs/surfaceRefs ordinal for plan id {plan_id}")
-            _same(_ordinal(maps["areaRefs"][plan_id], "area"), _ordinal(maps["paneRefs"][plan_id], "pane"),
-                  f"areaRefs/paneRefs ordinal for plan id {plan_id}")
-        _must(_ordinal(maps["tabRefs"]["a"], "tab") != _ordinal(maps["tabRefs"]["b"], "tab"), "the two tabs should have distinct refs")
-        _same(maps["areaRefs"]["a"], maps["areaRefs"]["b"], "both plan tabs live in one area")
+            _same(_ordinal(maps["panelRefs"][plan_id], "panel"), _ordinal(maps["tabRefs"][plan_id], "tab"),
+                  f"panelRefs/tabRefs ordinal for plan id {plan_id}")
+            _ordinal(maps["areaRefs"][plan_id], "area")
+        _must(_ordinal(maps["panelRefs"]["a"], "panel") != _ordinal(maps["panelRefs"]["b"], "panel"), "the two panels should have distinct refs")
+        _same(maps["areaRefs"]["a"], maps["areaRefs"]["b"], "both plan panels live in one area")
+        for legacy in ("surfaceRefs", "paneRefs"):
+            _must(legacy not in res, f"workspace.apply must not emit {legacy}: {sorted(res)}")
     finally:
         if ws_ref:
             try:
                 _call(c, "workspace.close", {"workspace_id": ws_ref})
             except cmuxError:
                 pass
-    print("PASS: workspace.apply carries tabRefs/surfaceRefs and areaRefs/paneRefs with matching ordinals and prefixes")
+    print("PASS: workspace.apply carries panelRefs/tabRefs and areaRefs with matching ordinals and prefixes")
+
+
+# ---------------------------------------------------------------------------
+# CLI commands, flags, refs, output
+# ---------------------------------------------------------------------------
+
+def test_cli_help_names_panels(cli: str) -> None:
+    help_text = _cli(cli, ["--help"]).stdout
+    for command in ("new-panel", "close-panel", "rename-panel", "list-panels", "focus-panel",
+                    "move-panel", "reorder-panel", "panel-action", "send-panel", "send-key-panel"):
+        _must(re.search(rf"(?<![\w-]){re.escape(command)}(?![\w-])", help_text) is not None,
+              f"`--help` should mention `{command}`")
+    old = ("new-tab", "new-surface", "rename-tab", "close-tab", "close-surface", "list-tabs",
+           "focus-tab", "list-area-tabs", "list-pane-surfaces", "send-tab", "send-key-tab",
+           "tab-health", "surface-health", "tab-color", "surface-color", "move-tab", "move-surface",
+           "reorder-tab", "reorder-surface", "drag-tab-to-split", "drag-surface-to-split",
+           "refresh-tabs", "refresh-surfaces", "tab-action", "new-pane", "focus-pane", "pane-confirm")
+    leaked = [name for name in old if re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", help_text)]
+    _must(not leaked, f"`--help` must not mention old command names: {leaked}")
+
+    # Per-command usage: panel names only, and the old names reach the same usage text.
+    for command, old_name in (("rename-panel", "rename-tab"), ("focus-panel", "focus-tab"),
+                              ("new-panel", "new-tab"), ("close-panel", "close-surface")):
+        text = _cli(cli, [command, "--help"], check=False)
+        _must(text.returncode == 0, f"`{command} --help` should succeed: {text.stdout!r} {text.stderr!r}")
+        usage = text.stdout
+        _must("--panel" in usage or command == "new-panel", f"`{command} --help` should document --panel: {usage!r}")
+        for stale in ("--surface", "--tab ", "--tab<", "--pane", "tab:", "surface:", "C11_TAB_ID", "C11_SURFACE_ID"):
+            _must(stale not in usage, f"`{command} --help` must not mention {stale!r}: {usage!r}")
+        alias = _cli(cli, [old_name, "--help"], check=False)
+        _must(alias.returncode == 0 and alias.stdout == usage,
+              f"`{old_name} --help` should print the same usage as `{command} --help`")
+    print("PASS: --help documents panel commands and none of the old command names")
+
+
+def test_cli_read_command_aliases(cli: str, f: Fixture) -> None:
+    ws = f.ws
+    pairs: List[Tuple[List[str], List[str], Tuple[str, ...]]] = [
+        (["list-areas", "--workspace", ws], ["list-panes", "--workspace", ws], ("areas",)),
+        (["list-panels", "--workspace", ws], ["list-tabs", "--workspace", ws], ("panels",)),
+        (["panel-health", "--workspace", ws], ["tab-health", "--workspace", ws], ("panels",)),
+        (["panel-health", "--workspace", ws], ["surface-health", "--workspace", ws], ("panels",)),
+        (["list-area-panels", "--workspace", ws, "--area", f.area_a],
+         ["list-area-tabs", "--workspace", ws, "--area", f.area_a], ("panels",)),
+        (["list-area-panels", "--workspace", ws, "--area", f.area_a],
+         ["list-pane-surfaces", "--workspace", ws, "--pane", f.area_a], ("panels",)),
+    ]
+    for new_args, old_args, keys in pairs:
+        new_out = _cli_json(cli, new_args, id_format="uuids")
+        old_out = _cli_json(cli, old_args, id_format="uuids")
+        new_rows, old_rows = _rows(new_out, *keys), _rows(old_out, *keys)
+        _must(_ids(new_rows) == _ids(old_rows) and new_rows, f"`{new_args[0]}` vs `{old_args[0]}` disagree: {new_rows} {old_rows}")
+        _assert_wire_clean(new_out, f"{new_args[0]} --json")
+        _assert_wire_clean(old_out, f"{old_args[0]} --json")
+    listing = _cli_json(cli, ["list-panels", "--workspace", f.ws])
+    _must(_ids(_rows(listing, "panels")) == _ids(_rows(listing, "tabs")), f"list-panels --json should carry panels and tabs: {sorted(listing)}")
+    for command in ("refresh-panels", "refresh-tabs", "refresh-surfaces"):
+        _cli(cli, [command])
+
+    # Ref-format output says panel:N / area:N and never the old prefixes.
+    refs_out = _cli_json(cli, ["list-panels", "--workspace", ws], id_format="refs")
+    for row in _rows(refs_out, "panels"):
+        _ordinal(row.get("ref") or row.get("id"), "panel")
+    text = _cli_text(cli, ["list-panels", "--workspace", ws])
+    _must(re.search(r"\bpanel:\d+", text) is not None, f"list-panels text output should print panel:N refs: {text!r}")
+    _must(re.search(r"\b(surface|pane|tab):\d+", text) is None, f"list-panels text output must not print old ref prefixes: {text!r}")
+    text = _cli_text(cli, ["list-areas", "--workspace", ws])
+    _must(re.search(r"\barea:\d+", text) is not None and re.search(r"\bpane:\d+", text) is None, f"list-areas text output: {text!r}")
+
+    # identify --json: panel_* + tab_* (and area_*), no surface_*/pane_*.
+    env = _cli_env({"C11_WORKSPACE_ID": ws})
+    ident = _cli_json(cli, ["identify", "--workspace", ws, "--panel", f.p2], env=env)
+    _assert_wire_clean(ident, "identify --json")
+    for scope in ("focused", "caller"):
+        block = ident.get(scope) or {}
+        if block:
+            _check_dual_panel(block, f"identify --json {scope}")
+    print("PASS: read-only CLI commands (panel == tab == surface names) with panel:N output and no surface/pane keys")
+
+
+def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
+    ws = f.ws
+
+    # new-panel / new-tab / new-surface and close-panel / close-tab / close-surface, with every flag spelling.
+    before = len(_panels(c, ws))
+    out = _cli_text(cli, ["new-panel", "--workspace", ws, "--area", f.area_a, "--no-focus"])
+    _must(re.search(r"OK\s+panel:\d+", out) is not None, f"new-panel should print `OK panel:N ...`: {out!r}")
+    _must(re.search(r"\b(surface|pane|tab):\d+", out) is None, f"new-panel output must not print old ref prefixes: {out!r}")
+    created = [
+        _cli_json(cli, ["new-tab", "--workspace", ws, "--area", f.area_a, "--no-focus"], id_format="uuids"),
+        _cli_json(cli, ["new-surface", "--workspace", ws, "--pane", f.area_a, "--no-focus"], id_format="uuids"),
+        _cli_json(cli, ["new-panel", "--workspace", ws, "--area", f.area_a, "--no-focus"], id_format="uuids"),
+    ]
+    _must(len(_panels(c, ws)) == before + 4, f"new-panel / new-tab / new-surface should each add a panel: {created}")
+    ids = [str(x.get("panel_id") or x.get("tab_id")) for x in created]
+    _must(all(ids), f"create results should carry panel_id: {created}")
+    for x in created:
+        _assert_wire_clean(x, "new-panel --json")
+    extra = [r["id"] for r in _panels(c, ws) if r["id"] not in (f.p1, f.p2, f.p3) and r["id"] not in ids]
+    _cli(cli, ["close-panel", "--workspace", ws, "--panel", ids[0]])
+    _cli(cli, ["close-tab", "--workspace", ws, "--tab", ids[1]])
+    _cli(cli, ["close-surface", "--workspace", ws, "--surface", ids[2]])
+    for panel_id in extra:
+        _cli(cli, ["close-panel", "--workspace", ws, "--panel", panel_id])
+    time.sleep(0.2)
+    _must(len(_panels(c, ws)) == before, "close-panel / close-tab / close-surface should each remove a panel")
+
+    # rename-panel / rename-tab with every target flag.
+    for command, flag in (("rename-panel", "--panel"), ("rename-tab", "--tab"), ("rename-tab", "--surface"),
+                          ("rename-panel", "--tab")):
+        title = f"cli-{uuid.uuid4().hex[:6]}"
+        _cli(cli, [command, "--workspace", ws, flag, f.p2, title])
+        _same(_panel_row(c, ws, f.p2).get("title"), title, f"{command} {flag} should retitle the panel")
+
+    # focus-panel / focus-tab with every flag spelling and a positional handle.
+    for command, flag in (("focus-panel", "--panel"), ("focus-tab", "--tab"), ("focus-tab", "--surface"),
+                          ("focus-panel", "--surface")):
+        _cli(cli, [command, "--workspace", ws, flag, f.p2])
+        _same(_focused_panel_id(c, ws), f.p2, f"{command} {flag} did not focus")
+        _cli(cli, ["focus-panel", "--workspace", ws, "--panel", f.p1])
+        _same(_focused_panel_id(c, ws), f.p1, "focus-panel --panel did not refocus p1")
+    for command in ("focus-panel", "focus-tab"):
+        _cli(cli, [command, f.p3, "--workspace", ws])
+        _same(_focused_panel_id(c, ws), f.p3, f"{command} <panel> (positional) did not focus the panel")
+        _cli(cli, ["focus-panel", f.p1, "--workspace", ws])
+    # Ref prefixes on the command line: panel:N, tab:N, surface:N.
+    for prefix in ("panel", "tab", "surface"):
+        _cli(cli, ["focus-panel", "--workspace", ws, "--panel", f.panel_ref(prefix)])
+        _same(_focused_panel_id(c, ws), f.p2, f"focus-panel --panel {prefix}:N did not focus the panel")
+        _cli(cli, ["focus-panel", "--workspace", ws, "--panel", f.p1])
+
+    # focus-area / focus-pane
+    _cli(cli, ["focus-area", "--workspace", ws, "--area", f.area_b])
+    _same(_focused_panel_id(c, ws), f.p3, "focus-area --area did not focus the area's panel")
+    _cli(cli, ["focus-pane", "--workspace", ws, "--pane", f.area_a])
+    _same(_focused_area_id(c, ws), f.area_a, "focus-pane --pane did not focus the area")
+    _cli(cli, ["focus-area", f.area_b, "--workspace", ws])  # positional comes first
+    _same(_focused_area_id(c, ws), f.area_b, "focus-area <area> (positional) did not focus the area")
+    _cli(cli, ["focus-pane", f.area_a, "--workspace", ws])
+    _same(_focused_area_id(c, ws), f.area_a, "focus-pane <area> (positional) did not focus the area")
+
+    # send-panel / send-tab, send-key-panel / send-key-tab.
+    for cmd, flag in (("send-panel", "--panel"), ("send-tab", "--tab"), ("send-panel", "--surface")):
+        token = f"vocab_{uuid.uuid4().hex[:8]}"
+        _cli(cli, [cmd, "--workspace", ws, flag, f.p3, f"echo {token}\\n"])
+        _must(_wait_for(lambda t=token: t in _screen_text(c, ws, f.p3)), f"{cmd} {flag} text never reached the panel")
+    _cli(cli, ["send-key-panel", "--workspace", ws, "--panel", f.p3, "enter"])
+    _cli(cli, ["send-key-tab", "--workspace", ws, "--tab", f.p3, "enter"])
+
+    # panel-color / tab-color / surface-color.
+    _cli(cli, ["--json", "panel-color", "set", "#336699", "--workspace", ws, "--panel", f.p2])
+    got_new = _cli_json(cli, ["panel-color", "get", "--workspace", ws, "--panel", f.p2])
+    got_old = _cli_json(cli, ["tab-color", "get", "--workspace", ws, "--tab", f.p2])
+    got_older = _cli_json(cli, ["surface-color", "get", "--workspace", ws, "--surface", f.p2])
+    _must(got_new.get("custom_color") == got_old.get("custom_color") == got_older.get("custom_color") == "#336699",
+          f"panel-color/tab-color/surface-color disagree: {got_new} {got_old} {got_older}")
+    _cli(cli, ["surface-color", "clear", "--workspace", ws, "--surface", f.p2])
+
+    # panel-action / tab-action.
+    for command, flag in (("panel-action", "--panel"), ("tab-action", "--tab")):
+        _cli(cli, [command, "--workspace", ws, flag, f.p2, "--action", "pin"])
+        _cli(cli, [command, "--workspace", ws, flag, f.p2, "--action", "unpin"])
+
+    # move-panel / move-tab / move-surface and reorder-*, with --before-panel/--before-tab/--before-surface.
+    _cli(cli, ["move-panel", "--workspace", ws, "--panel", f.p2, "--area", f.area_b, "--focus", "false"])
+    _same(_area_of(c, ws, f.p2), f.area_b, "move-panel --area did not move the panel")
+    _cli(cli, ["move-tab", "--workspace", ws, "--tab", f.p2, "--pane", f.area_a, "--before-tab", f.p1, "--focus", "false"])
+    _same(_area_of(c, ws, f.p2), f.area_a, "move-tab --pane did not move the panel")
+    _same(_index_of(c, ws, f.p2), 0, "move-tab --before-tab did not place the panel first")
+    _cli(cli, ["move-surface", "--workspace", ws, "--surface", f.p2, "--area", f.area_b, "--focus", "false"])
+    _same(_area_of(c, ws, f.p2), f.area_b, "move-surface --area did not move the panel")
+    _cli(cli, ["move-surface", "--workspace", ws, "--surface", f.p2, "--pane", f.area_a, "--before-surface", f.p1, "--focus", "false"])
+    _same(_index_of(c, ws, f.p2), 0, "move-surface --before-surface did not place the panel first")
+    _cli(cli, ["move-panel", "--workspace", ws, "--panel", f.p2, "--area", f.area_b, "--focus", "false"])
+    _cli(cli, ["move-panel", "--workspace", ws, "--panel", f.p2, "--area", f.area_a, "--after-panel", f.p1, "--focus", "false"])
+    _same(_index_of(c, ws, f.p2), 1, "move-panel --after-panel did not place the panel second")
+    for command, target_flag, before_flag, after_flag in (
+        ("reorder-panel", "--panel", "--before-panel", "--after-panel"),
+        ("reorder-tab", "--tab", "--before-tab", "--after-tab"),
+        ("reorder-surface", "--surface", "--before-surface", "--after-surface"),
+    ):
+        _cli(cli, [command, "--workspace", ws, target_flag, f.p2, before_flag, f.p1])
+        _same(_index_of(c, ws, f.p2), 0, f"{command} {before_flag} did not place the panel first")
+        _cli(cli, [command, "--workspace", ws, target_flag, f.p2, after_flag, f.p1])
+        _same(_index_of(c, ws, f.p2), 1, f"{command} {after_flag} did not place the panel second")
+    _cli(cli, ["reorder-panel", "--workspace", ws, "--panel", f.p2, "--before-tab", f.p1])
+    _same(_index_of(c, ws, f.p2), 0, "reorder-panel --before-tab (an older flag on the canonical command) did not place the panel first")
+
+    # new-area / new-pane.
+    areas_before = len(_areas(c, ws))
+    made_new = _cli_json(cli, ["new-area", "--workspace", ws, "--direction", "down"], id_format="uuids")
+    made_old = _cli_json(cli, ["new-pane", "--workspace", ws, "--direction", "down"], id_format="uuids")
+    _must(len(_areas(c, ws)) == areas_before + 2, f"new-area / new-pane should each add an area: {made_new} {made_old}")
+    for made in (made_new, made_old):
+        _assert_wire_clean(made, "new-area --json")
+        _call(c, "panel.close", {"workspace_id": ws, "panel_id": str(made.get("panel_id") or made.get("tab_id"))})
+    time.sleep(0.3)
+    _must(len(_areas(c, ws)) == areas_before, "closing the new areas' panels should remove them")
+
+    # drag-panel-to-split / drag-tab-to-split / drag-surface-to-split. Each dragged panel needs a sibling.
+    for command, flag, panel_id, direction in (
+        ("drag-panel-to-split", "--panel", f.p2, "right"),
+        ("drag-tab-to-split", "--tab", f.p3, "down"),
+    ):
+        _spare_panel(c, ws, _area_of(c, ws, panel_id))
+        areas_before = len(_areas(c, ws))
+        _cli(cli, [command, flag, panel_id, direction], env=_cli_env({"C11_WORKSPACE_ID": ws}))
+        _must(len(_areas(c, ws)) == areas_before + 1, f"{command} should create an area")
+    sibling = _spare_panel(c, ws, f.area_a)
+    _spare_panel(c, ws, _area_of(c, ws, sibling))
+    areas_before = len(_areas(c, ws))
+    _cli(cli, ["drag-surface-to-split", "--surface", sibling, "right"], env=_cli_env({"C11_WORKSPACE_ID": ws}))
+    _must(len(_areas(c, ws)) == areas_before + 1, "drag-surface-to-split should create an area")
+
+    # area-confirm / pane-confirm open a modal; only check both names are recognized.
+    for cmd in ("area-confirm", "pane-confirm"):
+        proc = _cli(cli, [cmd, "--help"], check=False)
+        _must(proc.returncode == 0, f"`{cmd} --help` should succeed: {proc.stdout!r} {proc.stderr!r}")
+    print("PASS: action CLI commands and flags (panel names == tab == surface == pane names)")
+
+
+def test_flag_caller_metadata_keys(c: cmux, cli: str, f: Fixture) -> None:
+    for flag in ("--panel", "--tab", "--surface"):
+        env = _cli_env({"C11_PANEL_ID": f.p2, "C11_WORKSPACE_ID": f.ws})
+        try:
+            _cli(cli, ["raise-flag", flag, f.p2, "vocabulary alias check"], env=env)
+            md = _metadata(c, f.ws, f.p2)
+            _same(md.get("flag_caller_tab_id"), f.p2, f"flag_caller_tab_id after raise-flag {flag}")
+            cli_md = _cli_json(cli, ["get-metadata", flag, f.p2], env=env)
+            _same((cli_md.get("metadata") or {}).get("flag_caller_tab_id"), f.p2, f"get-metadata {flag} lost flag_caller_tab_id")
+        finally:
+            lowered = _cli(cli, ["lower-flag", flag, f.p2], env=env, check=False)
+        _must(lowered.returncode == 0, f"lower-flag {flag} failed: {lowered.stdout!r} {lowered.stderr!r}")
+        md = _metadata(c, f.ws, f.p2)
+        for key in ("flag", "flag_caller_panel_id", "flag_caller_tab_id", "flag_caller_surface_id"):
+            _must(key not in md, f"lower-flag {flag} left {key} behind: {md}")
+    print("PASS: raise-flag / lower-flag accept --panel, --tab and --surface and clear every flag_caller_* key")
+
+
+def test_cli_env_vars_target_the_same_panel(c: cmux, cli: str, f: Fixture) -> None:
+    ws = f.ws
+    token = f"env-{uuid.uuid4().hex[:8]}"
+    other = f"other-{uuid.uuid4().hex[:8]}"
+    _set_title_metadata(c, ws, f.p2, token)
+    _set_title_metadata(c, ws, f.p1, other)
+
+    def title_for(env_extra: Dict[str, str]) -> Optional[str]:
+        env = _cli_env({"C11_WORKSPACE_ID": ws, "CMUX_WORKSPACE_ID": ws, **env_extra})
+        out = _cli_json(cli, ["get-metadata"], env=env)
+        return (out.get("metadata") or {}).get("title")
+
+    # Without a flag the command targets the panel named by the environment, whichever spelling it uses.
+    for name in ("C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"):
+        _same(title_for({name: f.p2}), token, f"{name} should target panel {f.p2}")
+
+    # C11_PANEL_ID wins over a conflicting C11_TAB_ID / C11_SURFACE_ID; C11_TAB_ID wins over C11_SURFACE_ID.
+    _same(title_for({"C11_PANEL_ID": f.p2, "C11_TAB_ID": f.p1}), token, "C11_PANEL_ID should win over a conflicting C11_TAB_ID")
+    _same(title_for({"C11_PANEL_ID": f.p2, "C11_SURFACE_ID": f.p1}), token, "C11_PANEL_ID should win over a conflicting C11_SURFACE_ID")
+    _same(title_for({"C11_PANEL_ID": f.p2, "C11_TAB_ID": f.p1, "C11_SURFACE_ID": f.p1}), token,
+          "C11_PANEL_ID should win over both older spellings")
+    _same(title_for({"C11_TAB_ID": f.p2, "C11_SURFACE_ID": f.p1}), token, "C11_TAB_ID should win over C11_SURFACE_ID")
+
+    # Flags win over the environment, in every spelling.
+    env = _cli_env({"C11_PANEL_ID": f.p1, "C11_WORKSPACE_ID": ws})
+    for flag in ("--panel", "--tab", "--surface"):
+        proc = _cli(cli, ["--json", "get-metadata", flag, f.p2], env=env, check=False)
+        _must(proc.returncode == 0, f"get-metadata {flag} must be accepted: {proc.stdout!r} {proc.stderr!r}")
+        out = json.loads(proc.stdout or "{}")
+        _same((out.get("metadata") or {}).get("title"), token, f"{flag} did not override the environment")
+    # Refs with any of the three prefixes work as flag values too.
+    for prefix in ("panel", "tab", "surface"):
+        out = _cli_json(cli, ["get-metadata", "--panel", f.panel_ref(prefix)], env=env)
+        _same((out.get("metadata") or {}).get("title"), token, f"--panel {prefix}:N did not target the panel")
+
+    # `c11 mailbox panel-name` and the older `tab-name` / `surface-name` print the same caller title.
+    env = _cli_env({"C11_PANEL_ID": f.p2, "C11_WORKSPACE_ID": ws})
+    names = [_cli(cli, ["mailbox", sub], env=env).stdout.strip() for sub in ("panel-name", "tab-name", "surface-name")]
+    _must(names[0] == names[1] == names[2], f"mailbox panel-name/tab-name/surface-name disagree: {names}")
+
+    # Metadata scope flags: --area and --pane address the same area.
+    role = f"area-{uuid.uuid4().hex[:6]}"
+    env = _cli_env({"C11_WORKSPACE_ID": ws})
+    _cli(cli, ["set-metadata", "--area", f.area_a, "--key", "role", "--value", role], env=env)
+    for flag in ("--area", "--pane"):
+        out = _cli_json(cli, ["get-metadata", flag, f.area_a], env=env)
+        _same((out.get("metadata") or {}).get("role"), role, f"{flag} did not read the area metadata")
+    _cli(cli, ["clear-metadata", "--pane", f.area_a, "--key", "role"], env=env)
+    print("PASS: C11_PANEL_ID / C11_TAB_ID / C11_SURFACE_ID / CMUX_* resolve the caller (panel wins), flags override, refs of any prefix work")
+
+
+def test_terminal_exports_panel_env(c: cmux) -> None:
+    """A live terminal exports C11_PANEL_ID/NUM beside every older twin."""
+    ws = str(_call(c, "workspace.create").get("workspace_id") or "")
+    _must(bool(ws), "workspace.create returned no workspace_id")
+    try:
+        _call(c, "workspace.select", {"workspace_id": ws})
+        time.sleep(0.4)
+        panel_id = _focused_panel_id(c, ws)
+        _must(bool(panel_id), "fresh workspace has no focused panel")
+        names = ("C11_PANEL_ID", "C11_PANEL_NUM", "C11_TAB_ID", "C11_TAB_NUM", "C11_SURFACE_ID")
+        # The echoed command contains a literal `$`, so only real output lines match ENVCHK_NAME=value.
+        command = 'for v in ' + " ".join(names) + '; do eval "echo ENVCHK_$v=\\${$v}"; done\n'
+        _call(c, "panel.send_text", {"workspace_id": ws, "panel_id": panel_id, "text": command})
+
+        def parsed() -> Dict[str, str]:
+            found: Dict[str, str] = {}
+            for line in _screen_text(c, ws, panel_id).splitlines():
+                m = re.fullmatch(r"ENVCHK_(C11_[A-Z_]+)=(\S+)", line.strip())
+                if m:
+                    found[m.group(1)] = m.group(2)
+            return found
+
+        _must(_wait_for(lambda: len(parsed()) == len(names), timeout=10.0),
+              f"terminal did not print its panel env: {parsed()} screen={_screen_text(c, ws, panel_id)[-400:]!r}")
+        env = parsed()
+        for name in ("C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID"):
+            _same(env[name].lower(), panel_id.lower(), f"{name} should hold the panel's id")
+        _must(env["C11_PANEL_NUM"].isdigit(), f"C11_PANEL_NUM should be a number: {env['C11_PANEL_NUM']!r}")
+        _same(env["C11_PANEL_NUM"], env["C11_TAB_NUM"], "C11_PANEL_NUM and C11_TAB_NUM should match")
+    finally:
+        try:
+            _call(c, "workspace.close", {"workspace_id": ws})
+        except Exception:
+            pass
+    print("PASS: a new terminal exports C11_PANEL_ID, C11_PANEL_NUM, C11_TAB_ID, C11_TAB_NUM and C11_SURFACE_ID")
+
+
+def test_free_text_is_never_rewritten(c: cmux, cli: str, f: Fixture) -> None:
+    """Text typed into a panel is data: flag-looking words arrive literally, old or new spelling."""
+    ws = f.ws
+    for token in ("--surface", "--pane", "--panel", "--tab", "--area"):
+        for form in ("after --", "positional"):
+            _cli(cli, ["send-key", "--workspace", ws, "--panel", f.p3, "ctrl+u"])
+            if form == "after --":
+                args = ["send", "--workspace", ws, "--panel", f.p3, "--no-submit", "--", token]
+                env = None
+            else:
+                args = ["send", "--no-submit", token]
+                env = _cli_env({"C11_PANEL_ID": f.p3, "C11_WORKSPACE_ID": ws})
+            _cli(cli, args, env=env)
+            deadline = time.time() + 6.0
+            line = ""
+            while time.time() < deadline:
+                line = _last_screen_line(c, ws, f.p3)
+                if line.endswith(token):
+                    break
+                time.sleep(0.15)
+            _must(line.endswith(token), f"send ({form}) of {token!r} did not arrive literally; last line {line!r}")
+    _cli(cli, ["send-key", "--workspace", ws, "--panel", f.p3, "ctrl+u"])
+    print("PASS: flag-looking free text reaches the panel literally")
 
 
 # ---------------------------------------------------------------------------
@@ -1046,28 +1427,31 @@ def test_workspace_apply_ref_maps(c: cmux) -> None:
 def main() -> int:
     cli = find_cli_binary()
     with cmux(SOCKET_PATH) as c:
+        test_capabilities_advertise_panel_vocabulary(c)
         fixture = Fixture(c)
         try:
-            test_read_methods_resolve_to_same_objects(c, fixture)
-            test_old_param_names_address_the_same_tab(c, fixture)
+            test_read_methods_resolve_to_same_handlers(c, fixture)
+            test_param_spellings_address_the_same_panel(c, fixture)
             test_write_methods_cross_over(c, fixture)
             test_notification_create_aliases(c, fixture)
             test_debug_method_aliases(c, fixture)
-            test_tab_action_and_send_key_old_methods(c, fixture)
-            test_old_tab_presentation_methods(c, fixture)
+            test_panel_action_values(c, fixture)
+            test_old_panel_presentation_methods(c, fixture)
             test_old_ref_params_and_caller_keys(c, fixture)
-            test_dual_keys_in_list_responses(c, fixture)
-            test_dual_keys_in_create_split_identify(c, fixture)
-            test_dual_keys_in_tree_json(cli, fixture)
+            test_results_carry_panel_and_tab_keys(c, fixture)
+            test_tree_results(c, cli, fixture)
+            test_browser_panel_aliases(c, fixture)
             test_flag_caller_metadata_keys(c, cli, fixture)
+            test_cli_help_names_panels(cli)
             test_cli_read_command_aliases(cli, fixture)
-            test_cli_env_vars_target_the_same_tab(c, cli, fixture)
+            test_cli_env_vars_target_the_same_panel(c, cli, fixture)
             test_cli_action_command_aliases(c, cli, fixture)
             test_free_text_is_never_rewritten(c, cli, fixture)
         finally:
             fixture.close()
-        # These reshape the layout, so each gets a workspace of its own.
-        test_old_tab_layout_methods(c)
+        # These reshape the layout or need a fresh terminal, so each gets a workspace of its own.
+        test_terminal_exports_panel_env(c)
+        test_old_panel_layout_methods(c)
         test_old_area_methods(c)
         test_workspace_apply_ref_maps(c)
     print("PASS: vocabulary aliases")

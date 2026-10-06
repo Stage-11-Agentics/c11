@@ -607,7 +607,8 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
                 title: bonsplitTab.detail?.title.flatMap { $0.isEmpty ? nil : $0 } ?? bonsplitTab.title,
                 ordinal: bonsplitTab.displayOrdinal,
                 status: Self.statusKind(for: bonsplitTab),
-                selected: bonsplitTab.id == selected
+                selected: bonsplitTab.id == selected,
+                markColorOverrideHex: bonsplitTab.activityPresentation?.colorOverrideHex
             )
         }
     }
@@ -642,6 +643,8 @@ struct TabRailTipPreviewRow: Identifiable, Equatable {
     let ordinal: Int?
     let status: TabRailTipStatusKind?
     let selected: Bool
+    /// The tab mark's recolor (an expired prompt cache's blue on a cold line).
+    var markColorOverrideHex: String? = nil
 }
 
 final class TabRailTipModel: ObservableObject {
@@ -731,7 +734,7 @@ struct TabRailTipView: View {
             ForEach(model.rows) { row in
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(mark(row.status, palette))
+                        .fill(mark(row, palette))
                         .frame(width: 7, height: 7)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(row.title)
@@ -822,12 +825,14 @@ struct TabRailTipView: View {
         }
     }
 
-    private func mark(_ status: TabRailTipStatusKind?, _ palette: TipPalette) -> Color {
-        switch status {
+    private func mark(_ row: TabRailTipPreviewRow, _ palette: TipPalette) -> Color {
+        switch row.status {
         case .working: return palette.text
         case .waiting: return palette.amber
         case .flagged: return palette.violet
-        case .idle, .cold: return palette.faint
+        case .cold:
+            return row.markColorOverrideHex.flatMap { NSColor(hex: $0) }.map { Color(nsColor: $0) } ?? palette.faint
+        case .idle: return palette.faint
         case nil: return Color.clear
         }
     }

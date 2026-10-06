@@ -12438,7 +12438,10 @@ private struct WorkspaceRowView: View, Equatable {
     private func workspacePulseMark(for agent: WorkspacePulseAgent) -> some View {
         WorkspacePulseMark(
             state: agent.state,
-            lifecycleColor: workspacePulseColor(for: agent.presentedState),
+            lifecycleColor: agent.showsPromptCacheColor
+                ? Color(nsColor: NSColor(hex: Workspace.promptCacheColdHex(lightBackground: colorScheme == .light))
+                    ?? .secondaryLabelColor)
+                : workspacePulseColor(for: agent.presentedState),
             phaseId: agent.surfaceId,
             flagged: agent.flagged,
             suppressed: agent.suppressed,

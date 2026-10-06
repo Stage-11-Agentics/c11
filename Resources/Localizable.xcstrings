@@ -2,6 +2,138 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "surface.activity.promptCache.resetEffortChange": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache reset by an effort change"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "推論の負荷レベルの変更によりプロンプトキャッシュがリセットされました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту скинуто через зміну рівня зусиль"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "추론 강도 변경으로 프롬프트 캐시가 초기화됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "更改推理强度已重置提示词缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "更改推理強度已重置提示詞快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта сброшен из-за смены уровня усилий"}}
+      }
+    },
+    "surface.activity.promptCache.resetModelSwitch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache reset by a model switch"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "モデルの切り替えによりプロンプトキャッシュがリセットされました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту скинуто через перемикання моделі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "모델 전환으로 프롬프트 캐시가 초기화됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换模型已重置提示词缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換模型已重置提示詞快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта сброшен из-за смены модели"}}
+      }
+    },
+    "surface.activity.promptCache.resetCompaction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache reset by compaction"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "コンパクションによりプロンプトキャッシュがリセットされました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту скинуто через ущільнення історії"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "컴팩션으로 프롬프트 캐시가 초기화됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "压缩对话历史已重置提示词缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "壓縮對話歷史已重置提示詞快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта сброшен из-за сжатия истории"}}
+      }
+    },
+    "tabSheet.subtitle.cacheExpired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "cache expired"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "キャッシュ期限切れ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "кеш прострочено"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "캐시 만료됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "缓存已过期"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "快取已過期"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "кэш истёк"}}
+      }
+    },
+    "surface.activity.promptCache.expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache expired (%@ cache)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "プロンプトキャッシュの期限切れ（キャッシュ保持 %@）"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту прострочено (кеш %@)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "프롬프트 캐시 만료됨 (캐시 %@)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "提示词缓存已过期（缓存时长 %@）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "提示詞快取已過期（快取時長 %@）"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта истёк (кэш %@)"}}
+      }
+    },
+    "surface.activity.promptCache.likelyExpired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache likely expired (estimated)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "プロンプトキャッシュはおそらく期限切れ（推定）"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту, імовірно, прострочено (оцінка)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "프롬프트 캐시가 만료된 것으로 보임 (추정)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "提示词缓存可能已过期（估算）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "提示詞快取可能已過期（估算）"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта, вероятно, истёк (оценка)"}}
+      }
+    },
+    "surface.activity.promptCache.recache": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Next message re-caches about %@ tokens"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "次のメッセージで約 %@ トークンを再キャッシュします"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Наступне повідомлення повторно кешує приблизно %@ токенів"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "다음 메시지에서 약 %@ 토큰을 다시 캐시합니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "下一条消息将重新缓存约 %@ 个词元"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "下一則訊息將重新快取約 %@ 個詞元"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Следующее сообщение заново закэширует около %@ токенов"}}
+      }
+    },
+    "tabSheet.clock.cache": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Cache"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "キャッシュ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "캐시"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш"}}
+      }
+    },
+    "tabSheet.clock.cacheCold": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "cold"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "コールド"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "холодний"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "콜드"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "冷态"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "冷態"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "холодный"}}
+      }
+    },
+    "tabSheet.clock.cacheUnderMinute": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "<1m"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "<1分"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "<1 хв"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "<1분"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "<1分钟"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "<1分鐘"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "<1 мин"}}
+      }
+    },
+    "tabSheet.clock.cacheEstimate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "~%@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "~%@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "~%@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "~%@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "~%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "~%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "~%@"}}
+      }
+    },
     "tabBar.layoutSwitch.help": {
       "extractionState": "manual",
       "localizations": {
@@ -39023,43 +39155,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A live agent becomes Cold after this long without a submitted task or lifecycle activity."
+            "value": "Claude Code, Codex and Grok Build go Cold when their prompt cache expires. Other agents go Cold after this long without a submitted task or lifecycle activity."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "稼働中のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
+            "value": "Claude Code、Codex、Grok Build は、プロンプトキャッシュの期限が切れるとコールドになります。その他のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行中的代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
+            "value": "Claude Code、Codex 和 Grok Build 会在提示词缓存过期时进入冷态。其他代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "執行中的代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
+            "value": "Claude Code、Codex 和 Grok Build 會在提示詞快取過期時進入冷態。其他代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "실행 중인 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
+            "value": "Claude Code, Codex, Grok Build는 프롬프트 캐시가 만료되면 콜드 상태가 됩니다. 다른 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Запущенный агент переходит в состояние «Холодная», если за это время не было ни новых задач, ни событий жизненного цикла."
+            "value": "Claude Code, Codex и Grok Build переходят в состояние «Холодная», когда истекает их кэш промпта. Остальные агенты переходят в это состояние, если за это время не было ни новых задач, ни событий жизненного цикла."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Запущений агент переходить у стан «Холодна», якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
+            "value": "Claude Code, Codex і Grok Build переходять у стан «Холодна», коли спливає їхній кеш промпту. Інші агенти переходять у цей стан, якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
           }
         }
       }

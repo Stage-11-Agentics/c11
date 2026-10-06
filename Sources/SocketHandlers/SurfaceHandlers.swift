@@ -25,6 +25,44 @@ extension TerminalController {
         item["being_seen"] = tracker.isBeingSeen(panelId: panelId)
     }
 
+    /// Set `prompt_cache` on a surface item from the last transcript sweep.
+    func v2SetPromptCacheField(_ item: inout [String: Any], panelId: UUID) {
+        item["prompt_cache"] = Self.promptCacheField(
+            AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache,
+            now: Date()
+        )
+    }
+
+    /// `prompt_cache`: the agent's prompt cache as of its last model request,
+    /// or null when c11 has no evidence (no agent, no request yet, or a harness
+    /// whose files say nothing). `basis` is `ttl` for a provider-published
+    /// lifetime (Anthropic) and `estimate` for an idle span c11 measured;
+    /// `reset` names what replaced the cached prefix early, if anything.
+    static func promptCacheField(_ cache: PromptCacheObservation?, now: Date) -> Any {
+        guard let cache else { return NSNull() }
+        let coldAt = cache.coldAt()
+        let seconds: TimeInterval
+        switch cache.basis {
+        case .ttl(let ttl): seconds = ttl
+        case .estimate(let span): seconds = PromptCachePolicy.estimateOverride ?? span
+        }
+        return [
+            "state": now >= coldAt ? "cold" : "warm",
+            "basis": cache.isEstimate ? "estimate" : "ttl",
+            "lifetime_seconds": Int(seconds),
+            "requested_at": seenTimestampFormatter.string(from: cache.requestAt),
+            "cold_at": seenTimestampFormatter.string(from: coldAt),
+            "reset": cache.reset.map { reset -> Any in
+                switch reset {
+                case .modelSwitch: return "model_switch"
+                case .effortChange: return "effort_change"
+                case .compaction: return "compaction"
+                }
+            } ?? NSNull(),
+            "prompt_tokens": cache.promptTokens.map { $0 as Any } ?? NSNull()
+        ] as [String: Any]
+    }
+
     /// v2 dispatch slice for the `surface.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchSurface(_ method: String, id: Any?, params: [String: Any]) -> String {
@@ -117,6 +155,7 @@ extension TerminalController {
                     "custom_color": v2OrNull(ws.tabCustomColor(panelId: panel.id))
                 ]
                 v2SetSeenFields(&item, panelId: panel.id)
+                v2SetPromptCacheField(&item, panelId: panel.id)
                 if let browserTab = panel as? BrowserTab {
                     item["developer_tools_visible"] = browserTab.isDeveloperToolsVisible()
                     item["profile_id"] = browserTab.profileID.uuidString

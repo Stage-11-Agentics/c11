@@ -18,8 +18,9 @@ import SQLite3
 // - Off-main. Polls run on the AgentDetector's 10 s sweep via the detector's own
 //   utility queue; only a changed value hops to main, for a UI refresh.
 // - What is retained, exactly: the model id; event timestamps (last agent event,
-//   turn start); a tool-call count and a token count for the current turn; and
-//   message ids, held only as dedupe keys for that turn's token count. NO message
+//   turn start); a tool-call count and a token count for the current turn; the
+//   last model request's time, cache tier and prompt size (for the prompt cache
+//   estimate); and message ids, held only as dedupe keys. NO message
 //   text, prompt, tool input or tool output is kept, logged or published: lines
 //   are scanned in memory and dropped.
 // - Honest about gaps. A harness whose session files carry no model (Kimi,
@@ -62,6 +63,18 @@ struct TranscriptSignals: Equatable, Sendable {
     var messageTokens: [String: Int] = [:]
     /// Whole-session token total where a harness records one (opencode).
     var sessionTokens: Int?
+    /// The agent's prompt cache as of its last model request; nil when the
+    /// transcript says nothing c11 can use (see `PromptCacheObservation`).
+    var promptCache: PromptCacheObservation?
+    /// Latest time of any line read, so a response can anchor on the line
+    /// written just before its request went out.
+    var lastLineAt: Date?
+    /// The request behind `promptCache`; a response written over several lines
+    /// keeps the anchor of its first line.
+    var promptCacheRequestKey: String?
+    /// Claude names its cache tier only on requests that write to the cache;
+    /// a pure read keeps the tier of the request before it.
+    var promptCacheBasis: PromptCacheObservation.Basis?
 
     mutating func apply(_ event: TranscriptEvent) {
         switch event {
@@ -70,6 +83,7 @@ struct TranscriptSignals: Equatable, Sendable {
             turnToolCalls = 0
             turnTokens = 0
             messageTokens = [:]
+            noteLine(at)
         case .agent(let at, let tools, let tokens, let messageKey):
             if let at { lastEventAt = max(lastEventAt ?? at, at) }
             turnToolCalls += tools
@@ -79,9 +93,157 @@ struct TranscriptSignals: Equatable, Sendable {
             } else {
                 turnTokens += tokens
             }
+            noteLine(at)
         case .toolResult(let at):
             if let at { lastEventAt = max(lastEventAt ?? at, at) }
+            noteLine(at)
         }
+    }
+
+    /// Record one request's cache use. Call before `apply` for the same line,
+    /// so `lastLineAt` still holds the line before it.
+    mutating func notePromptCache(_ usage: PromptCacheUsage) {
+        guard let at = usage.at else { return }
+        if let key = usage.requestKey, key == promptCacheRequestKey { return }
+        let basis = usage.basis ?? promptCacheBasis ?? usage.fallbackBasis
+        promptCacheBasis = basis
+        promptCacheRequestKey = usage.requestKey
+        let requestAt = usage.anchorsOnPriorLine ? min(at, lastLineAt ?? at) : at
+        promptCache = PromptCacheObservation(requestAt: requestAt, basis: basis, promptTokens: usage.promptTokens)
+        noteLine(at)
+    }
+
+    /// A prompt sends a request that reads the cache, even one interrupted
+    /// before its response wrote a line, and writes a fresh one after a reset.
+    /// Not for lines that send nothing (slash commands, `!` shell lines).
+    mutating func notePromptSent(_ at: Date?) {
+        guard let at, var cache = promptCache, at > cache.requestAt else { return }
+        if let resetAt = cache.resetAt, at <= resetAt { return }
+        cache.requestAt = at
+        cache.reset = nil
+        cache.resetAt = nil
+        promptCache = cache
+    }
+
+    /// Something replaced the cached prefix (a model switch, a compaction):
+    /// cold from that moment, until the next request writes a new cache.
+    mutating func resetPromptCache(_ line: PromptCacheResetLine) {
+        // Before any request there is no cache to reset.
+        guard let at = line.at, let prior = promptCache else { return }
+        promptCache = PromptCacheObservation(
+            requestAt: prior.requestAt,
+            basis: promptCacheBasis ?? prior.basis,
+            promptTokens: line.promptTokens ?? prior.promptTokens,
+            reset: line.reason,
+            resetAt: at
+        )
+        promptCacheRequestKey = nil
+        noteLine(at)
+    }
+
+    private mutating func noteLine(_ at: Date?) {
+        if let at { lastLineAt = max(lastLineAt ?? at, at) }
+    }
+}
+
+/// When an agent's prompt cache goes cold, from the last model request it made.
+///
+/// Anthropic publishes the lifetime (5 minutes by default, 1 hour on the
+/// extended tier), counted from the start of each request that reads or writes
+/// the cache, so a Claude Code expiry is computed. OpenAI and xAI publish no
+/// fixed lifetime; c11 calls those caches cold after an idle span measured on
+/// real sessions and labels the result an estimate.
+struct PromptCacheObservation: Equatable, Sendable {
+    enum Basis: Equatable, Sendable {
+        /// The provider's published lifetime, in seconds.
+        case ttl(TimeInterval)
+        /// No published lifetime: treat as cold after this much idle time.
+        case estimate(TimeInterval)
+    }
+
+    /// When the last request that read or wrote the cache was sent.
+    var requestAt: Date
+    var basis: Basis
+    /// The prompt the next request re-caches once this goes cold; nil when the
+    /// harness does not record it.
+    var promptTokens: Int?
+    /// Set when something replaced the cached prefix before its lifetime ran out.
+    var reset: Reset? = nil
+    var resetAt: Date? = nil
+
+    enum Reset: Equatable, Sendable {
+        case modelSwitch
+        /// A thinking-effort change moves the prompt's cache breakpoints.
+        case effortChange
+        case compaction
+    }
+
+    var isEstimate: Bool {
+        if case .estimate = basis { return true }
+        return false
+    }
+
+    func coldAt(estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride) -> Date {
+        if let resetAt { return resetAt }
+        switch basis {
+        case .ttl(let seconds):
+            return requestAt.addingTimeInterval(seconds)
+        case .estimate(let seconds):
+            return requestAt.addingTimeInterval(estimateOverride ?? seconds)
+        }
+    }
+
+    func isCold(at now: Date, estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride) -> Bool {
+        now >= coldAt(estimateOverride: estimateOverride)
+    }
+}
+
+/// A line that replaced the cached prefix without a request of its own.
+struct PromptCacheResetLine: Equatable, Sendable {
+    var reason: PromptCacheObservation.Reset
+    var at: Date?
+    /// The prompt the next request re-caches (compaction's post-compact size).
+    var promptTokens: Int?
+}
+
+/// One model request's cache use, as a transcript line records it.
+struct PromptCacheUsage: Equatable, Sendable {
+    var at: Date?
+    /// Identifies the request, so a response written across several lines counts once.
+    var requestKey: String?
+    /// nil: the same tier as the previous request.
+    var basis: PromptCacheObservation.Basis?
+    /// The tier to assume when neither this request nor an earlier one named one.
+    var fallbackBasis: PromptCacheObservation.Basis
+    var promptTokens: Int?
+    /// The line is written when the response finishes; the request went out
+    /// at the line before it.
+    var anchorsOnPriorLine: Bool
+}
+
+enum PromptCachePolicy {
+    /// Anthropic's two published lifetimes.
+    static let anthropicDefaultTTL: TimeInterval = 5 * 60
+    static let anthropicExtendedTTL: TimeInterval = 60 * 60
+    /// Codex: OpenAI documents a sliding 30-minute minimum and no guarantee.
+    /// Over 115k measured response pairs, reuse held to about an hour and a
+    /// miss first became likelier than a hit at about two hours.
+    static let codexColdAfter: TimeInterval = 2 * 60 * 60
+    /// Grok Build: xAI documents automatic caching and no lifetime. Implicit
+    /// caches measured here keep little past an hour.
+    static let grokColdAfter: TimeInterval = 60 * 60
+
+    /// Replaces every estimated span (not a published TTL), so a validation
+    /// run can watch an estimate go cold without waiting hours.
+    static let estimateOverrideEnvironmentKey = "C11_PROMPT_CACHE_ESTIMATE_SECONDS"
+    static let estimateOverride: TimeInterval? = parseEstimateOverride(
+        environment: ProcessInfo.processInfo.environment
+    )
+
+    static func parseEstimateOverride(environment: [String: String]) -> TimeInterval? {
+        guard let raw = environment[estimateOverrideEnvironmentKey],
+              let value = TimeInterval(raw), value.isFinite else { return nil }
+        return min(max(value, 60), 24 * 60 * 60)
     }
 }
 
@@ -97,6 +259,11 @@ struct ParsedTranscriptLine: Equatable, Sendable {
     var lifecycle: ParsedTranscriptLifecycle? = nil
     var sessionID: String? = nil
     var sessionMetaIdentity = false
+    var promptCache: PromptCacheUsage? = nil
+    var promptCacheReset: PromptCacheResetLine? = nil
+    /// A user line the harness echoes for a local command or `!` shell line:
+    /// no model request went out.
+    var sendsNoRequest = false
 }
 
 /// A structural lifecycle record found in a harness transcript. This type is
@@ -501,7 +668,12 @@ struct AgentModelProbe: Sendable {
         // well as to the journal. A response/tool line alone is not a turn edge.
         if acceptedLifecycle || parsed.lifecycle == nil {
             if let model = parsed.model { state.model = model }
-            if let event = parsed.event { state.signals.apply(event) }
+            if let reset = parsed.promptCacheReset { state.signals.resetPromptCache(reset) }
+            if let usage = parsed.promptCache { state.signals.notePromptCache(usage) }
+            if let event = parsed.event {
+                state.signals.apply(event)
+                if case .prompt(let at) = event, !parsed.sendsNoRequest { state.signals.notePromptSent(at) }
+            }
         }
     }
 
@@ -544,10 +716,19 @@ struct AgentModelProbe: Sendable {
             state.grokPendingStart = nil
             guard primary, sessionID == expectedSessionID, let turnID, let at else { return false }
             state.grokPendingStart = GrokPendingTurn(turnID: turnID, occurredAt: at)
+            // The turn's first model call reads the cache; its end records the
+            // last. A subagent's start clears the pending turn, so a long turn
+            // that ran a subagent counts from its start and can read cold early.
+            state.signals.notePromptCache(Self.grokPromptCache(at: at, key: "start:\(turnID)"))
             observations.append(.init(kind: .turnStarted, occurredAt: at,
                                        nativeEvent: "turn.started", turnID: turnID, isChild: false))
             return false
         case .grokEnd(let at, let outcome):
+            // Any end of a verified primary turn follows its last model call.
+            if let pending = state.grokPendingStart, let at,
+               pending.occurredAt.map({ at >= $0 }) ?? true {
+                state.signals.notePromptCache(Self.grokPromptCache(at: at, key: "end:\(pending.turnID)"))
+            }
             guard outcome == "completed", let pending = state.grokPendingStart,
                   let at else {
                 state.grokPendingStart = nil
@@ -565,6 +746,16 @@ struct AgentModelProbe: Sendable {
             state.grokPendingStart = nil
             return false
         }
+    }
+
+    /// xAI caches automatically and publishes no lifetime: an estimate.
+    private static func grokPromptCache(at: Date, key: String) -> PromptCacheUsage {
+        PromptCacheUsage(
+            at: at, requestKey: key,
+            basis: .estimate(PromptCachePolicy.grokColdAfter),
+            fallbackBasis: .estimate(PromptCachePolicy.grokColdAfter),
+            promptTokens: nil, anchorsOnPriorLine: false
+        )
     }
 
     private static func rememberCodexChild(_ turnID: String, state: inout ModelTailState) {
@@ -586,6 +777,8 @@ struct AgentModelProbe: Sendable {
         coverage: inout TranscriptCoverage
     ) {
         resetLifecycleState(&state, preserveCoverage: true)
+        // The line before a response may sit in the skipped span.
+        state.signals.lastLineAt = nil
         guard !state.coverageDegraded else { return }
         state.coverageDegraded = true
         coverage = .gap(skippedBytes: max(1, skippedBytes))
@@ -648,6 +841,14 @@ struct AgentModelProbe: Sendable {
     private static let maxParseBytes = 1_048_576
 
     private static func parseClaude(_ line: Data) -> ParsedTranscriptLine {
+        if hasType(line, "system"), contains(line, "\"compact_boundary\""), !contains(line, "\"isSidechain\":true") {
+            let object = line.count <= maxParseBytes ? parseObject(line) : nil
+            let at = (object?["timestamp"] as? String).flatMap(parseISO) ?? timestamp(in: line, last: true)
+            let post = int((object?["compactMetadata"] as? [String: Any])?["postTokens"])
+            return ParsedTranscriptLine(promptCacheReset: PromptCacheResetLine(
+                reason: .compaction, at: at, promptTokens: post > 0 ? post : nil
+            ))
+        }
         guard hasType(line, "assistant") || hasType(line, "user") else { return ParsedTranscriptLine() }
         guard line.count <= maxParseBytes, let object = parseObject(line) else { return parseClaudeOversize(line) }
         if (object["isSidechain"] as? Bool) == true { return ParsedTranscriptLine() }
@@ -656,11 +857,30 @@ struct AgentModelProbe: Sendable {
         switch object["type"] as? String {
         case "user":
             if (object["isMeta"] as? Bool) == true { return ParsedTranscriptLine() }
+            // The summary a compaction writes, and other transcript-only lines,
+            // are not prompts the model received.
+            let transcriptOnly = (object["isCompactSummary"] as? Bool) == true
+                || (object["isVisibleInTranscriptOnly"] as? Bool) == true
             let blocks = message?["content"] as? [[String: Any]]
             if blocks?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true {
                 return ParsedTranscriptLine(event: .toolResult(at: at))
             }
-            return ParsedTranscriptLine(event: .prompt(at: at))
+            let text = (message?["content"] as? String)
+                ?? blocks?.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String
+            if let text, localCommandEchoPrefixes.contains(where: { text.hasPrefix($0) }) {
+                // `/model` swaps the model the cache belongs to; `/effort`
+                // moves its breakpoints.
+                let reset: PromptCacheResetLine?
+                if text.hasPrefix("<local-command-stdout>Set model to ") {
+                    reset = PromptCacheResetLine(reason: .modelSwitch, at: at)
+                } else if text.hasPrefix("<local-command-stdout>Set effort level to ") {
+                    reset = PromptCacheResetLine(reason: .effortChange, at: at)
+                } else {
+                    reset = nil
+                }
+                return ParsedTranscriptLine(event: .prompt(at: at), promptCacheReset: reset, sendsNoRequest: true)
+            }
+            return ParsedTranscriptLine(event: .prompt(at: at), sendsNoRequest: transcriptOnly)
         case "assistant":
             guard let message else { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
             // Claude's placeholder assistant lines ("No response requested") are not the agent adding anything.
@@ -670,16 +890,54 @@ struct AgentModelProbe: Sendable {
                 tools = content.filter { ($0["type"] as? String) == "tool_use" }.count
             }
             var tokens = 0
+            var cache: PromptCacheUsage?
             if let usage = message["usage"] as? [String: Any] {
                 tokens = int(usage["input_tokens"]) + int(usage["cache_creation_input_tokens"]) + int(usage["output_tokens"])
+                cache = claudePromptCache(usage: usage, at: at, requestKey: message["id"] as? String)
             }
             return ParsedTranscriptLine(
                 model: normalized(message["model"] as? String),
-                event: .agent(at: at, tools: tools, tokens: tokens, messageKey: message["id"] as? String)
+                event: .agent(at: at, tools: tools, tokens: tokens, messageKey: message["id"] as? String),
+                promptCache: cache
             )
         default:
             return ParsedTranscriptLine()
         }
+    }
+
+    /// How Claude Code records a slash command, its output, and `!` shell lines.
+    /// A skill command (`<command-message>` first) does send a prompt; its
+    /// response records the request, so only an interrupted one is missed.
+    private static let localCommandEchoPrefixes = [
+        "<command-name>", "<command-message>", "<command-args>",
+        "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>",
+        "<bash-input>", "<bash-stdout>", "<bash-stderr>",
+    ]
+
+    /// A request that read or wrote the cache. `cache_creation` names the tier
+    /// of what it wrote; a pure read names none and keeps the earlier tier.
+    /// A request that touched no cache at all (caching off) says nothing.
+    private static func claudePromptCache(usage: [String: Any], at: Date?, requestKey: String?) -> PromptCacheUsage? {
+        let read = int(usage["cache_read_input_tokens"])
+        let written = int(usage["cache_creation_input_tokens"])
+        guard read + written > 0 else { return nil }
+        let tiers = usage["cache_creation"] as? [String: Any]
+        let basis: PromptCacheObservation.Basis?
+        // Longer TTLs must precede shorter ones in a prompt, so when a request
+        // writes both, the 5-minute part is the conversation's tail.
+        if int(tiers?["ephemeral_5m_input_tokens"]) > 0 {
+            basis = .ttl(PromptCachePolicy.anthropicDefaultTTL)
+        } else if int(tiers?["ephemeral_1h_input_tokens"]) > 0 {
+            basis = .ttl(PromptCachePolicy.anthropicExtendedTTL)
+        } else {
+            basis = nil
+        }
+        return PromptCacheUsage(
+            at: at, requestKey: requestKey, basis: basis,
+            fallbackBasis: .ttl(PromptCachePolicy.anthropicDefaultTTL),
+            promptTokens: int(usage["input_tokens"]) + written + read,
+            anchorsOnPriorLine: true
+        )
     }
 
     /// A line too large to parse: classify by substring. The timestamp is the
@@ -691,7 +949,11 @@ struct AgentModelProbe: Sendable {
         if hasType(line, "user") {
             if contains(line, "\"tool_result\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
             if contains(line, "\"isMeta\":true") { return ParsedTranscriptLine() }
-            return ParsedTranscriptLine(event: .prompt(at: at))
+            // A huge `!` output or compaction summary sends no request either.
+            let sendsNoRequest = contains(line, "\"isCompactSummary\":true")
+                || contains(line, "\"isVisibleInTranscriptOnly\":true")
+                || localCommandEchoPrefixes.contains { Self.contains(line, "\"content\":\"\($0)") }
+            return ParsedTranscriptLine(event: .prompt(at: at), sendsNoRequest: sendsNoRequest)
         }
         return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
     }
@@ -743,6 +1005,7 @@ struct AgentModelProbe: Sendable {
         if hasType(line, "token_count") {
             var tokens = 0
             var key: String?
+            var cache: PromptCacheUsage?
             if line.count <= maxParseBytes, let object = parseObject(line),
                let info = (object["payload"] as? [String: Any])?["info"] as? [String: Any] {
                 if let last = info["last_token_usage"] as? [String: Any] {
@@ -753,8 +1016,20 @@ struct AgentModelProbe: Sendable {
                 if let total = (info["total_token_usage"] as? [String: Any])?["total_tokens"] as? NSNumber {
                     key = "total:\(total.intValue)"
                 }
+                // OpenAI caches automatically and publishes no fixed lifetime. A
+                // line without usage (rate limits only) is not a request.
+                if let last = info["last_token_usage"] as? [String: Any] {
+                    let input = int(last["input_tokens"])
+                    cache = PromptCacheUsage(
+                        at: at, requestKey: key,
+                        basis: .estimate(PromptCachePolicy.codexColdAfter),
+                        fallbackBasis: .estimate(PromptCachePolicy.codexColdAfter),
+                        promptTokens: input > 0 ? input : nil,
+                        anchorsOnPriorLine: false
+                    )
+                }
             }
-            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: key))
+            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: key), promptCache: cache)
         }
         guard hasType(line, "response_item") else { return ParsedTranscriptLine() }
         if hasType(line, "custom_tool_call") || hasType(line, "function_call") || hasType(line, "local_shell_call") {
@@ -1101,6 +1376,14 @@ struct AgentModelProbe: Sendable {
 
 // MARK: - Live detector
 
+/// One sweep's view of an agent's prompt cache.
+struct PromptCacheReading: Equatable, Sendable {
+    /// nil: the transcript says nothing usable about the cache.
+    let observation: PromptCacheObservation?
+    /// When that sweep began reading the harness's files.
+    let scannedAt: Date
+}
+
 /// Runs `AgentModelProbe` for agent surfaces from the AgentDetector sweep and
 /// publishes changes to the surface metadata store.
 final class AgentModelDetector: @unchecked Sendable {
@@ -1122,6 +1405,7 @@ final class AgentModelDetector: @unchecked Sendable {
     private var inFlight = false
     private let publishedLock = NSLock()
     private var publishedSignals: [UUID: TranscriptSignals] = [:]
+    private var publishedScanStartedAt: [UUID: Date] = [:]
 
     /// The latest agent signals for a surface (from the last sweep), or nil.
     /// Cheap and safe from any thread; the sheet reads it when it opens.
@@ -1131,10 +1415,20 @@ final class AgentModelDetector: @unchecked Sendable {
         return publishedSignals[surfaceId]
     }
 
-    private func setSignals(_ signals: TranscriptSignals?, forSurface surfaceId: UUID) {
+    /// The prompt cache from the last sweep, with the moment that sweep began
+    /// reading. Anything the harness wrote before `scannedAt` is reflected.
+    func promptCacheReading(forSurface surfaceId: UUID) -> PromptCacheReading? {
+        publishedLock.lock()
+        defer { publishedLock.unlock() }
+        guard let scannedAt = publishedScanStartedAt[surfaceId] else { return nil }
+        return PromptCacheReading(observation: publishedSignals[surfaceId]?.promptCache, scannedAt: scannedAt)
+    }
+
+    private func setSignals(_ signals: TranscriptSignals?, scannedAt: Date? = nil, forSurface surfaceId: UUID) {
         publishedLock.lock()
         defer { publishedLock.unlock() }
         publishedSignals[surfaceId] = signals
+        publishedScanStartedAt[surfaceId] = signals == nil ? nil : scannedAt
     }
 
     /// Called from the 10 s sweep. `agents` are surfaces running a recognized
@@ -1154,14 +1448,16 @@ final class AgentModelDetector: @unchecked Sendable {
                     states = states.filter { live.contains($0.key) }
                     publishedLock.lock()
                     publishedSignals = publishedSignals.filter { live.contains($0.key) }
+                    publishedScanStartedAt = publishedScanStartedAt.filter { live.contains($0.key) }
                     publishedLock.unlock()
                     for target in agents {
                         let ref = refs[target.surfaceId.uuidString]?.active
                         var state = states[target.surfaceId] ?? ModelTailState()
                         let hadModel = state.model != nil
+                        let scanStartedAt = Date()
                         let detection = probe.detectWithObservations(kind: target.kind, ref: ref, state: &state)
                         states[target.surfaceId] = state
-                        setSignals(state.signals, forSurface: target.surfaceId)
+                        setSignals(state.signals, scannedAt: scanStartedAt, forSurface: target.surfaceId)
                         if let ref {
                             JournalTranscriptProducer.shared.submit(
                                 target: target, ref: ref, lifecycle: detection.lifecycle,

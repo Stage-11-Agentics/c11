@@ -18,7 +18,9 @@ enum TabActivityResolver {
         guard AreaSizePolicy.isAgentKind(terminalType) else {
             return nil
         }
-        if isCold {
+        // Cold only ever describes an agent at rest; a sweep that landed after
+        // the agent started working again cannot show it cold.
+        if isCold, derivedActivity != .working {
             return .cold
         }
         switch derivedActivity {
@@ -98,6 +100,10 @@ enum TabLivenessDeriver {
     /// `idle` on the coarse reconcile sweep. Chosen comfortably larger than
     /// the 10 s sweep interval so a single missed sweep never trips a decay.
     static let idleDecayThreshold: TimeInterval = 45
+
+    /// Journal-backed agents this deriver last published with an expired
+    /// prompt cache. Touched only on `queue`.
+    private nonisolated(unsafe) static var journalCacheExpiredSurfaceIds = Set<UUID>()
 
     // MARK: - Mapping (TEL-3/4)
 
@@ -249,7 +255,9 @@ enum TabLivenessDeriver {
                           coordinator.target(tabID: tabID) == workspaceID,
                           let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
                             .workspaces.first(where: { $0.id == workspaceID }) else { return }
-                    workspace.setAgentCold(false, forSurface: tabID)
+                    if journalEdgeClearsCold(prior: workspace.journalByTab[tabID], next: snapshot) {
+                        workspace.setAgentCold(false, forSurface: tabID)
+                    }
                     workspace.setDerivedActivity(mirrored, forSurface: tabID)
                     workspace.setJournalSnapshot(snapshot, forTab: tabID)
                     // A coalesced start may already have been superseded by its ask.
@@ -295,7 +303,29 @@ enum TabLivenessDeriver {
 
     private static func reconcileOnQueue(surfaceId: UUID, workspaceId: UUID,
         detectedTerminalType: String?, now: Date, coldAfterSeconds: TimeInterval) {
-        guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
+        let promptCache = AgentModelDetector.shared.promptCacheReading(forSurface: surfaceId)
+        if let journal = JournalCoordinator.shared.snapshot(tabID: surfaceId), journal.connection == .live {
+            // The journal owns a live agent's activity and has no dormancy
+            // rule: only prompt cache evidence can make it cold.
+            let state = journalPromptCacheState(
+                phase: journal.phase,
+                restingSince: Date(timeIntervalSince1970: Double(journal.sinceMs) / 1000),
+                promptCache: promptCache,
+                now: now
+            )
+            // Journal projections clear cold on every edge, so a warm sweep
+            // hops to main only to undo what this deriver published.
+            if state.cacheExpired || journalCacheExpiredSurfaceIds.contains(surfaceId) {
+                publishJournalCold(state, workspaceId: workspaceId, surfaceId: surfaceId, observed: journal)
+            }
+            if state.cacheExpired {
+                journalCacheExpiredSurfaceIds.insert(surfaceId)
+            } else {
+                journalCacheExpiredSurfaceIds.remove(surfaceId)
+            }
+            return
+        }
+        journalCacheExpiredSurfaceIds.remove(surfaceId)
         let snap = TabMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
@@ -313,13 +343,17 @@ enum TabLivenessDeriver {
         let lastTouched = [last, metadataTouch].compactMap { $0 }.max()
 
         if current == SidebarActivityState.idle.rawValue {
+            // Cold follows the prompt cache where the transcript describes it;
+            // otherwise it is the dormancy threshold.
+            let cacheCold = isPromptCacheCold(promptCache, restingSince: metadataTouch, now: now)
             publishCold(
-                Self.isCold(
+                cacheCold ?? Self.isCold(
                     activity: .idle,
                     lastTouchedAt: lastTouched,
                     now: now,
                     coldAfterSeconds: coldAfterSeconds
                 ),
+                promptCacheExpired: cacheCold == true,
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 observedLastTouchedAt: lastTouched
@@ -381,8 +415,84 @@ enum TabLivenessDeriver {
         return now.timeIntervalSince(lastTouchedAt) >= max(0, coldAfterSeconds)
     }
 
+    /// Whether the agent's prompt cache has gone cold, or nil when c11 has no
+    /// cache evidence and the caller falls back to dormancy. A reading taken
+    /// before the agent came to rest may predate its last request, so it fails
+    /// warm until the next sweep reads the transcript again.
+    static func isPromptCacheCold(
+        _ reading: PromptCacheReading?,
+        restingSince: Date?,
+        now: Date,
+        estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride
+    ) -> Bool? {
+        guard let reading, let observation = reading.observation else { return nil }
+        if let restingSince, reading.scannedAt < restingSince { return false }
+        return observation.isCold(at: now, estimateOverride: estimateOverride)
+    }
+
+    /// A journal-backed agent has no dormancy rule. At rest (idle, or blocked
+    /// on the operator) its cache can expire; only an idle one shows cold, and
+    /// a blocked one keeps its waiting mark with the expiry in text.
+    static func journalPromptCacheState(
+        phase: JournalPhase,
+        restingSince: Date,
+        promptCache: PromptCacheReading?,
+        now: Date,
+        estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride
+    ) -> (cold: Bool, cacheExpired: Bool) {
+        guard phase == .idle || phase == .blocked else { return (false, false) }
+        let expired = isPromptCacheCold(
+            promptCache, restingSince: restingSince, now: now, estimateOverride: estimateOverride
+        ) == true
+        return (phase == .idle && expired, expired)
+    }
+
+    /// Whether a journal projection is an edge that clears cold. One that
+    /// leaves the agent resting where it was (a health or evidence publish)
+    /// keeps it.
+    static func journalEdgeClearsCold(prior: JournalSnapshot?, next: JournalSnapshot?) -> Bool {
+        guard let prior, let next else { return true }
+        return !(isResting(prior.phase) && prior.phase == next.phase && prior.sinceMs == next.sinceMs)
+    }
+
+    /// Whether the journal still shows the resting state a sweep read.
+    static func journalStillRests(_ current: JournalSnapshot?, as observed: JournalSnapshot) -> Bool {
+        guard let current, current.connection == .live, isResting(current.phase) else { return false }
+        return current.phase == observed.phase && current.sinceMs == observed.sinceMs
+    }
+
+    private static func isResting(_ phase: JournalPhase) -> Bool {
+        phase == .idle || phase == .blocked
+    }
+
+    /// Forget published state for surfaces the sweep no longer sees.
+    static func retainPromptCacheState(forLiveSurfaces live: Set<UUID>) {
+        queue.sync { journalCacheExpiredSurfaceIds.formIntersection(live) }
+    }
+
+    /// A journal-backed agent's cache state, published only while the journal
+    /// still shows the resting state this sweep read.
+    private static func publishJournalCold(
+        _ state: (cold: Bool, cacheExpired: Bool),
+        workspaceId: UUID,
+        surfaceId: UUID,
+        observed: JournalSnapshot
+    ) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
+                        .workspaces.first(where: { $0.id == workspaceId }) else { return }
+                if state.cacheExpired {
+                    guard journalStillRests(JournalCoordinator.shared.snapshot(tabID: surfaceId), as: observed) else { return }
+                }
+                workspace.setAgentCold(state.cold, promptCacheExpired: state.cacheExpired, forSurface: surfaceId)
+            }
+        }
+    }
+
     private static func publishCold(
         _ isCold: Bool,
+        promptCacheExpired: Bool = false,
         workspaceId: UUID,
         surfaceId: UUID,
         observedLastTouchedAt: Date? = nil
@@ -405,7 +515,7 @@ enum TabLivenessDeriver {
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     return
                 }
-                workspace.setAgentCold(isCold, forSurface: surfaceId)
+                workspace.setAgentCold(isCold, promptCacheExpired: promptCacheExpired, forSurface: surfaceId)
             }
         }
     }

@@ -37,6 +37,9 @@ struct AgentActivityHelpProjection: Equatable {
     let flagReason: String?
     let flagRaisedAt: Date?
     let suppressed: Bool
+    /// Cold because the agent's prompt cache expired, not because it sat
+    /// past the dormancy threshold. The mark carries it as a color.
+    var promptCacheExpired = false
 
     static func project(
         state: WorkspacePulseState,
@@ -47,7 +50,8 @@ struct AgentActivityHelpProjection: Equatable {
         flagRaisedAt: Date?,
         suppressed: Bool,
         now: Date = Date(),
-        journal: JournalSnapshot? = nil
+        journal: JournalSnapshot? = nil,
+        promptCache: PromptCacheObservation? = nil
     ) -> AgentActivityHelpProjection {
         var stateStartedAt: Date?
         switch state {
@@ -99,6 +103,16 @@ struct AgentActivityHelpProjection: Equatable {
             default: break
             }
         }
+        // Cold from the cache paints the mark blue; a waiting agent keeps its
+        // gold mark and carries the expiry in text only.
+        var promptCacheExpired = false
+        if state == .cold || state == .waiting, let promptCache, promptCache.isCold(at: now) {
+            detailLines.append(contentsOf: promptCacheLines(promptCache))
+            if state == .cold {
+                promptCacheExpired = true
+                stateStartedAt = promptCache.coldAt()
+            }
+        }
         let help = BonsplitTabActivityHelp(
             stateLabel: label,
             startedAt: stateStartedAt,
@@ -119,8 +133,51 @@ struct AgentActivityHelpProjection: Equatable {
             lastActivityAt: lastActivityAt,
             flagReason: normalizedReason.flatMap { $0.isEmpty ? nil : $0 },
             flagRaisedAt: flagRaisedAt,
-            suppressed: suppressed
+            suppressed: suppressed,
+            promptCacheExpired: promptCacheExpired
         )
+    }
+
+    /// What expired and what the next message costs. Static text: the
+    /// state label already carries how long ago.
+    static func promptCacheLines(_ cache: PromptCacheObservation, locale: Locale = TabSheetClockText.appLocale) -> [String] {
+        var lines: [String] = []
+        switch (cache.reset, cache.basis) {
+        case (.modelSwitch?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetModelSwitch",
+                defaultValue: "Prompt cache reset by a model switch"
+            ))
+        case (.effortChange?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetEffortChange",
+                defaultValue: "Prompt cache reset by an effort change"
+            ))
+        case (.compaction?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetCompaction",
+                defaultValue: "Prompt cache reset by compaction"
+            ))
+        case (nil, .ttl(let seconds)):
+            let ttl = TabSheetClockText.duration(seconds, locale: locale)
+            lines.append(String(
+                localized: "surface.activity.promptCache.expired",
+                defaultValue: "Prompt cache expired (\(ttl) cache)"
+            ))
+        case (nil, .estimate):
+            lines.append(String(
+                localized: "surface.activity.promptCache.likelyExpired",
+                defaultValue: "Prompt cache likely expired (estimated)"
+            ))
+        }
+        if let tokens = cache.promptTokens, tokens > 0 {
+            let count = TabSheetClockText.count(tokens, locale: locale)
+            lines.append(String(
+                localized: "surface.activity.promptCache.recache",
+                defaultValue: "Next message re-caches about \(count) tokens"
+            ))
+        }
+        return lines
     }
 
     func text(at now: Date) -> String {
@@ -168,6 +225,12 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     let activityHelp: AgentActivityHelpProjection?
 
     var id: UUID { surfaceId }
+
+    /// The cold line turns blue when the agent's prompt cache expired; the
+    /// flag's violet wins over it.
+    var showsPromptCacheColor: Bool {
+        !flagged && presentedState == .cold && activityHelp?.promptCacheExpired == true
+    }
 
     init(
         surfaceId: UUID,

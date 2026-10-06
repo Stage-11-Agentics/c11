@@ -108,6 +108,7 @@ final class AgentDetector: @unchecked Sendable {
                     detectedTerminalType: self.detectedTerminalTypes[key]
                 )
             }
+            TabLivenessDeriver.retainPromptCacheState(forLiveSurfaces: Set(self.ttyNames.keys.map(\.panelId)))
             // Live model detection rides the same sweep: tail each agent's own
             // session file off-main; surfaces with no agent in front clear any
             // derived model left by a session that ended.

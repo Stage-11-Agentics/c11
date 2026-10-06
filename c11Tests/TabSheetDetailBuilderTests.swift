@@ -285,4 +285,45 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         input.evidenceNote = "Unconfirmed"
         XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed")
     }
+
+
+    // MARK: Cache clock
+
+    func testCacheClockCountsDownWholeMinutesThenReadsCold() {
+        let en = Locale(identifier: "en_US")
+        let exact = PromptCacheObservation(requestAt: t0, basis: .ttl(3_600), promptTokens: 1_000)
+        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(22 * 60 + 5), locale: en), "38m")
+        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(3_600 - 20), locale: en), "<1m")
+        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(exact, now: t0.addingTimeInterval(3_600), locale: en), "cold")
+
+        let estimate = PromptCacheObservation(requestAt: t0, basis: .estimate(7_200), promptTokens: nil)
+        XCTAssertEqual(TabSheetDetailBuilder.promptCacheClockText(estimate, now: t0.addingTimeInterval(30 * 60), locale: en), "~1h 30m")
+    }
+
+    func testCacheClockIsOptInAndOnlyForAgentsWithEvidence() {
+        XCTAssertTrue(TabSheetDetailBuilder.optInClocks.contains("cache"))
+        XCTAssertFalse(TabSheetDetailBuilder.defaultClockOrder.contains("cache"))
+        XCTAssertEqual(TabSheetDetailBuilder.clockTitle("cache"), "Cache")
+
+        var input = inputs(terminalKind: "claude-code", activity: .idle)
+        input.now = t0
+        XCTAssertNil(TabSheetDetailBuilder.build(input).clockTexts["cache"])
+        input.promptCache = PromptCacheObservation(requestAt: t0.addingTimeInterval(-3_600), basis: .ttl(300), promptTokens: nil)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).clockTexts["cache"], "cold")
+    }
+
+    func testAWaitingAgentsExpiredCacheJoinsTheSubtitle() {
+        var input = inputs(terminalKind: "claude-code", description: "synthetic", activity: .waiting)
+        input.now = t0
+        input.promptCache = PromptCacheObservation(requestAt: t0.addingTimeInterval(-3_600), basis: .ttl(300), promptTokens: nil)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · cache expired")
+        input.evidenceNote = "Unconfirmed"
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed · cache expired")
+        input.evidenceNote = nil
+        input.activity = .cold
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic", "a cold mark says it in blue")
+        input.activity = .waiting
+        input.promptCache = PromptCacheObservation(requestAt: t0, basis: .ttl(300), promptTokens: nil)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic", "a warm cache adds nothing")
+    }
 }

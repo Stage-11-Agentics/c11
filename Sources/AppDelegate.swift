@@ -13543,7 +13543,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let surfaceId: UUID? = {
-            guard let tabIdString = response.notification.request.content.userInfo["surfaceId"] as? String else {
+            guard let tabIdString = TerminalNotificationStore.panelIdString(
+                fromUserInfo: response.notification.request.content.userInfo
+            ) else {
                 return nil
             }
             return UUID(uuidString: tabIdString)

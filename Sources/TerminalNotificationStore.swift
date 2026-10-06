@@ -537,6 +537,7 @@ enum NotificationSoundSettings {
             // must never inherit the tab that happened to launch the app.
             for prefix in ["C11", "CMUX"] {
                 env["\(prefix)_NOTIFICATION_WORKSPACE_ID"] = workspaceId?.uuidString ?? ""
+                env["\(prefix)_NOTIFICATION_PANEL_ID"] = surfaceId?.uuidString ?? ""
                 env["\(prefix)_NOTIFICATION_TAB_ID"] = surfaceId?.uuidString ?? ""
                 env["\(prefix)_NOTIFICATION_KIND"] = kind.rawValue
             }
@@ -693,6 +694,28 @@ struct TerminalNotification: Identifiable, Hashable {
 
 @MainActor
 final class TerminalNotificationStore: ObservableObject {
+    /// The system notification `userInfo`. `tabId` holds the **workspace** id.
+    /// The panel is written as `panelId` and, for notifications a pre-1.0 click
+    /// handler may still read, as `surfaceId` (same value).
+    nonisolated static func userInfo(for notification: TerminalNotification) -> [AnyHashable: Any] {
+        var info: [AnyHashable: Any] = [
+            "tabId": notification.workspaceId.uuidString,
+            "notificationId": notification.id.uuidString,
+        ]
+        if let surfaceId = notification.surfaceId {
+            info["panelId"] = surfaceId.uuidString
+            // C11-337: legacy spelling, still written and read forever.
+            info["surfaceId"] = surfaceId.uuidString
+        }
+        return info
+    }
+
+    /// The panel id of a delivered notification: `panelId`, falling back to the
+    /// legacy `surfaceId` so notifications delivered before the upgrade still open.
+    nonisolated static func panelIdString(fromUserInfo userInfo: [AnyHashable: Any]) -> String? {
+        (userInfo["panelId"] as? String) ?? (userInfo["surfaceId"] as? String)
+    }
+
     struct WorkspaceTabKey: Hashable {
         let workspaceId: UUID
         let surfaceId: UUID?
@@ -1336,13 +1359,7 @@ final class TerminalNotificationStore: ObservableObject {
             content.body = notification.body
             content.sound = NotificationSoundSettings.sound()
             content.categoryIdentifier = Self.categoryIdentifier
-            content.userInfo = [
-                "tabId": notification.workspaceId.uuidString,
-                "notificationId": notification.id.uuidString,
-            ]
-            if let surfaceId = notification.surfaceId {
-                content.userInfo["surfaceId"] = surfaceId.uuidString
-            }
+            content.userInfo = Self.userInfo(for: notification)
 
             let request = UNNotificationRequest(
                 identifier: notification.systemIdentifier ?? notification.id.uuidString,
@@ -1474,13 +1491,7 @@ final class TerminalNotificationStore: ObservableObject {
         content.body = notification.body
         content.sound = NotificationSoundSettings.sound()
         content.categoryIdentifier = Self.categoryIdentifier
-        content.userInfo = [
-            "tabId": notification.workspaceId.uuidString,
-            "notificationId": notification.id.uuidString,
-        ]
-        if let surfaceId = notification.surfaceId {
-            content.userInfo["surfaceId"] = surfaceId.uuidString
-        }
+        content.userInfo = Self.userInfo(for: notification)
         let request = UNNotificationRequest(
             identifier: notification.systemIdentifier ?? notification.id.uuidString,
             content: content,

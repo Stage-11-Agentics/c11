@@ -18,8 +18,10 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         let directory: URL
         let output: URL
         static let keys = [
-            "C11_NOTIFICATION_WORKSPACE_ID", "C11_NOTIFICATION_TAB_ID", "C11_NOTIFICATION_KIND",
-            "CMUX_NOTIFICATION_WORKSPACE_ID", "CMUX_NOTIFICATION_TAB_ID", "CMUX_NOTIFICATION_KIND",
+            "C11_NOTIFICATION_WORKSPACE_ID", "C11_NOTIFICATION_PANEL_ID", "C11_NOTIFICATION_TAB_ID",
+            "C11_NOTIFICATION_KIND",
+            "CMUX_NOTIFICATION_WORKSPACE_ID", "CMUX_NOTIFICATION_PANEL_ID", "CMUX_NOTIFICATION_TAB_ID",
+            "CMUX_NOTIFICATION_KIND",
             "CMUX_NOTIFICATION_TITLE", "CMUX_NOTIFICATION_SUBTITLE", "CMUX_NOTIFICATION_BODY",
         ]
 
@@ -81,6 +83,7 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
     ) {
         for prefix in ["C11", "CMUX"] {
             XCTAssertEqual(environment["\(prefix)_NOTIFICATION_WORKSPACE_ID"], workspace.uuidString, file: file, line: line)
+            XCTAssertEqual(environment["\(prefix)_NOTIFICATION_PANEL_ID"], tab?.uuidString ?? "", file: file, line: line)
             XCTAssertEqual(environment["\(prefix)_NOTIFICATION_TAB_ID"], tab?.uuidString ?? "", file: file, line: line)
             XCTAssertEqual(environment["\(prefix)_NOTIFICATION_KIND"], kind, file: file, line: line)
         }
@@ -137,6 +140,7 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         var inherited = ProcessInfo.processInfo.environment
         for prefix in ["C11", "CMUX"] {
             inherited["\(prefix)_NOTIFICATION_WORKSPACE_ID"] = "inherited-workspace"
+            inherited["\(prefix)_NOTIFICATION_PANEL_ID"] = "inherited-panel"
             inherited["\(prefix)_NOTIFICATION_TAB_ID"] = "inherited-tab"
             inherited["\(prefix)_NOTIFICATION_KIND"] = "inherited-kind"
         }
@@ -248,5 +252,42 @@ final class NotificationCommandEnvironmentTests: XCTestCase {
         wait(for: [drained], timeout: 1)
 
         XCTAssertEqual(commands, ["Current reason"])
+    }
+
+    // MARK: - C11-337 notification userInfo
+
+    func testRoutineRequestUserInfoCarriesPanelIdBesideSurfaceId() throws {
+        let store = TerminalNotificationStore.makeForNotificationCommandTesting()
+        var captured: UNNotificationRequest?
+        store.configureRoutineNotificationDeliveryHooksForTesting(
+            authorization: { $0(true) },
+            add: { request, _ in captured = request }
+        )
+        let notice = notification(workspace: UUID(), tab: UUID())
+
+        store.scheduleUserNotificationForTesting(notice)
+
+        let userInfo = try XCTUnwrap(captured).content.userInfo
+        let panel = try XCTUnwrap(notice.surfaceId).uuidString
+        XCTAssertEqual(userInfo["panelId"] as? String, panel)
+        XCTAssertEqual(userInfo["surfaceId"] as? String, panel)
+        // `tabId` holds the workspace id.
+        XCTAssertEqual(userInfo["tabId"] as? String, notice.workspaceId.uuidString)
+        XCTAssertEqual(TerminalNotificationStore.panelIdString(fromUserInfo: userInfo), panel)
+    }
+
+    func testWorkspaceOnlyUserInfoHasNoPanel() {
+        let userInfo = TerminalNotificationStore.userInfo(for: notification(workspace: UUID(), tab: nil))
+        XCTAssertNil(userInfo["panelId"])
+        XCTAssertNil(userInfo["surfaceId"])
+        XCTAssertNil(TerminalNotificationStore.panelIdString(fromUserInfo: userInfo))
+    }
+
+    func testPanelIdReaderFallsBackToLegacySurfaceId() {
+        let panel = UUID().uuidString
+        let legacy = UUID().uuidString
+        XCTAssertEqual(TerminalNotificationStore.panelIdString(fromUserInfo: ["tabId": UUID().uuidString, "surfaceId": legacy]), legacy)
+        XCTAssertEqual(TerminalNotificationStore.panelIdString(fromUserInfo: ["panelId": panel, "surfaceId": legacy]), panel)
+        XCTAssertNil(TerminalNotificationStore.panelIdString(fromUserInfo: ["tabId": UUID().uuidString]))
     }
 }

@@ -441,6 +441,39 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertNotNil(object["flag"] as? [String: Any])
     }
 
+    // C11-337: rows and flags carry the panel spelling beside the legacy tab spelling.
+    func testRowsEmitPanelIdBesideTabIdAndCallerPanelIdBesideCallerTabId() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let row = try XCTUnwrap(project([question], attention: [flag()], scope: .attention).first)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: jsonData(row.jsonObject())) as? [String: Any])
+        XCTAssertEqual(object["panel_id"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertEqual(object["tab_id"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertNil(object["surface_id"])
+        let flagObject = try XCTUnwrap(object["flag"] as? [String: Any])
+        XCTAssertEqual(flagObject["caller_panel_id"] as? String, otherTab.uuidString)
+        XCTAssertEqual(flagObject["caller_tab_id"] as? String, otherTab.uuidString)
+        XCTAssertNil(flagObject["caller_surface_id"])
+
+        let noCaller = FeedAttentionFact(workspaceID: JournalTestData.workspace, tabID: question.owner.tabID, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerTabID: nil, suppressed: false)
+        let bare = try XCTUnwrap(project([question], attention: [noCaller], scope: .attention).first)
+        let bareFlag = try XCTUnwrap(bare.jsonObject()["flag"] as? [String: Any])
+        XCTAssertTrue(bareFlag["caller_panel_id"] is NSNull)
+        XCTAssertTrue(bareFlag["caller_tab_id"] is NSNull)
+    }
+
+    func testFeedPanelParamPrefersPanelIdThenTabIdThenSurfaceId() {
+        let panel = "00000000-0000-0000-0000-0000000000c1"
+        let tab = "00000000-0000-0000-0000-0000000000c2"
+        let surface = "00000000-0000-0000-0000-0000000000c3"
+        XCTAssertEqual(FeedPanelParam.rawValue(in: ["panel_id": panel, "tab_id": tab, "surface_id": surface]), panel)
+        XCTAssertEqual(FeedPanelParam.rawValue(in: ["tab_id": tab, "surface_id": surface]), tab)
+        XCTAssertEqual(FeedPanelParam.rawValue(in: ["surface_id": surface]), surface)
+        XCTAssertNil(FeedPanelParam.rawValue(in: ["workspace_id": panel]))
+        XCTAssertEqual(FeedPanelParam.key(in: ["panel_id": panel]), "panel_id")
+        XCTAssertEqual(FeedPanelParam.key(in: ["tab_id": tab]), "tab_id")
+        XCTAssertEqual(FeedPanelParam.key(in: [:]), "panel_id")
+    }
+
     func testDisplayCacheHonorsCountBytesAndOversize() throws {
         let cache = AskDisplayCache()
         let tab = JournalTestData.tab

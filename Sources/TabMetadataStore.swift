@@ -25,7 +25,11 @@ public enum MetadataKey {
     /// legacy `flag_caller_surface_id` (both hold the same UUID) and read in
     /// either spelling, for one release.
     public static let flagCallerTabId = "flag_caller_tab_id"
-    static let flagCallerKeys = [flagCallerTabId, legacyFlagCallerSurfaceId]
+    /// C11-337: the panel spelling of the flag caller key, written beside the
+    /// permanent `flag_caller_surface_id` (which wins on read) and
+    /// `flag_caller_tab_id` (written for one more release).
+    public static let flagCallerPanelId = "flag_caller_panel_id"
+    static let flagCallerKeys = [flagCallerPanelId, flagCallerTabId, legacyFlagCallerSurfaceId]
     public static let suppressed = "suppressed"
 
     /// Operator/agent-set tab identity marker. `icon` is a short glyph (usually
@@ -56,8 +60,8 @@ public enum MetadataKey {
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, suppressed,
-        icon, color
+        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, flagCallerPanelId,
+        suppressed, icon, color
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -214,6 +218,7 @@ final class TabMetadataStore: @unchecked Sendable {
         "flag",
         "flag_caller_surface_id",
         "flag_caller_tab_id",
+        "flag_caller_panel_id",
         "suppressed",
         "icon",
         "color",
@@ -325,7 +330,7 @@ final class TabMetadataStore: @unchecked Sendable {
                 return .reservedKeyInvalidType(key, "reason must be a single line")
             }
             return nil
-        case "flag_caller_surface_id", "flag_caller_tab_id":
+        case "flag_caller_surface_id", "flag_caller_tab_id", "flag_caller_panel_id":
             guard let value = value as? String, UUID(uuidString: value) != nil else {
                 return .reservedKeyInvalidType(key, "expected UUID string")
             }
@@ -600,10 +605,13 @@ final class TabMetadataStore: @unchecked Sendable {
         }
     }
 
-    /// C11-248: the flag caller UUID string, read from either key spelling. The legacy key wins: both
-    /// are always written together, so a stale custom `flag_caller_tab_id` never outranks it.
+    /// C11-248 / C11-337: the flag caller UUID string, read from any key spelling. The permanent
+    /// surface key wins, then panel, then tab: all are written together, so a stale custom value
+    /// in a newer spelling never outranks it.
     static func flagCallerValue(_ blob: [String: Any]) -> String? {
-        (blob[MetadataKey.legacyFlagCallerSurfaceId] as? String) ?? (blob[MetadataKey.flagCallerTabId] as? String)
+        (blob[MetadataKey.legacyFlagCallerSurfaceId] as? String)
+            ?? (blob[MetadataKey.flagCallerPanelId] as? String)
+            ?? (blob[MetadataKey.flagCallerTabId] as? String)
     }
 
     /// Canonical attention read. The flag source timestamp is the original
@@ -821,6 +829,7 @@ final class TabMetadataStore: @unchecked Sendable {
                 MetadataKey.flag,
                 MetadataKey.legacyFlagCallerSurfaceId,
                 MetadataKey.flagCallerTabId,
+                MetadataKey.flagCallerPanelId,
                 MetadataKey.suppressed,
             ]
             let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
@@ -1032,6 +1041,7 @@ final class TabMetadataStore: @unchecked Sendable {
         guard key != MetadataKey.flag,
               key != MetadataKey.legacyFlagCallerSurfaceId,
               key != MetadataKey.flagCallerTabId,
+              key != MetadataKey.flagCallerPanelId,
               key != MetadataKey.suppressed else {
             return false
         }
@@ -1101,6 +1111,7 @@ final class TabMetadataStore: @unchecked Sendable {
             MetadataKey.flag,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
+            MetadataKey.flagCallerPanelId,
             MetadataKey.suppressed,
         ]
         let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)

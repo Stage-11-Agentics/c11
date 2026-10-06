@@ -477,7 +477,11 @@ struct MailboxDeliveryReceipt: Equatable {
             "ts": ts,
             "deliveries": deliveries.map { ["id": $0.id, "recipient": $0.recipient] }
         ]
-        if let tabId { object["tab_id"] = tabId.uuidString }
+        if let tabId {
+            object["panel_id"] = tabId.uuidString
+            // C11-337: legacy spelling, still written so an older reader keeps the panel.
+            object["tab_id"] = tabId.uuidString
+        }
         return object
     }
 
@@ -491,8 +495,9 @@ struct MailboxDeliveryReceipt: Equatable {
 
     /// Nil only when the file is not a receipt at all; otherwise every valid
     /// delivery is kept and every invalid one returned in `dropped`. Unknown
-    /// keys are ignored. An invalid `tab_id` leaves the deliveries without a
-    /// surface (and is listed in `dropped`) rather than losing them.
+    /// keys are ignored. The panel is read from `panel_id`, falling back to
+    /// the legacy `tab_id`. An invalid value leaves the deliveries without a
+    /// panel (and is listed in `dropped`) rather than losing them.
     static func decode(_ data: Data) -> Decoded? {
         guard data.count <= maxBytes,
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -501,11 +506,13 @@ struct MailboxDeliveryReceipt: Equatable {
               let rawDeliveries = object["deliveries"] as? [Any] else { return nil }
         var dropped: [Any] = []
         var tabId: UUID?
-        if let rawTab = object["tab_id"] {
+        // C11-337: `tab_id` is the legacy spelling, accepted forever.
+        let panelKey = object["panel_id"] != nil ? "panel_id" : "tab_id"
+        if let rawTab = object[panelKey] {
             if let string = rawTab as? String, let uuid = UUID(uuidString: string) {
                 tabId = uuid
             } else {
-                dropped.append(["tab_id": rawTab])
+                dropped.append([panelKey: rawTab])
             }
         }
         var deliveries: [Delivery] = []

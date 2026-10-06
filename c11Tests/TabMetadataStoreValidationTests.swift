@@ -232,6 +232,106 @@ final class TabMetadataStoreValidationTests: XCTestCase {
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
         }
     }
+
+    // MARK: - C11-337 flag caller keys
+
+    private let callerKeys = ["flag_caller_surface_id", "flag_caller_panel_id", "flag_caller_tab_id"]
+
+    func testRaisingAFlagWritesAllThreeCallerKeys() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        let caller = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        let raised = try store.mutateAttention(
+            workspaceId: workspace, surfaceId: surface, flag: .raise("Synthetic decision"), callerTabId: caller
+        )
+        XCTAssertEqual(raised.after.flagCallerTabId, caller)
+        let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
+        for key in callerKeys {
+            XCTAssertEqual(metadata[key] as? String, caller.uuidString, key)
+        }
+
+        _ = try store.mutateAttention(workspaceId: workspace, surfaceId: surface, flag: .lower)
+        let lowered = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
+        for key in callerKeys {
+            XCTAssertNil(lowered[key], key)
+        }
+    }
+
+    func testRestoredFlagReadsAnySingleCallerSpelling() {
+        for key in callerKeys {
+            let workspace = UUID()
+            let surface = UUID()
+            let caller = UUID()
+            defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+            store.restoreFromSnapshot(
+                workspaceId: workspace,
+                surfaceId: surface,
+                values: [MetadataKey.flag: "Synthetic decision", key: caller.uuidString],
+                sources: [MetadataKey.flag: .init(source: .explicit, ts: 1_725_000_000)]
+            )
+            XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerTabId, caller, key)
+            let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
+            for written in callerKeys {
+                XCTAssertEqual(metadata[written] as? String, caller.uuidString, "\(key) -> \(written)")
+            }
+        }
+    }
+
+    func testSurfaceCallerKeyWinsThenPanelThenTab() {
+        let surfaceCaller = UUID()
+        let panelCaller = UUID()
+        let tabCaller = UUID()
+        XCTAssertEqual(TabMetadataStore.flagCallerValue([
+            "flag_caller_surface_id": surfaceCaller.uuidString,
+            "flag_caller_panel_id": panelCaller.uuidString,
+            "flag_caller_tab_id": tabCaller.uuidString,
+        ]), surfaceCaller.uuidString)
+        XCTAssertEqual(TabMetadataStore.flagCallerValue([
+            "flag_caller_panel_id": panelCaller.uuidString,
+            "flag_caller_tab_id": tabCaller.uuidString,
+        ]), panelCaller.uuidString)
+        XCTAssertEqual(TabMetadataStore.flagCallerValue(["flag_caller_tab_id": tabCaller.uuidString]), tabCaller.uuidString)
+        XCTAssertNil(TabMetadataStore.flagCallerValue([:]))
+
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: surface,
+            values: [
+                MetadataKey.flag: "Synthetic decision",
+                "flag_caller_surface_id": surfaceCaller.uuidString,
+                "flag_caller_panel_id": panelCaller.uuidString,
+                "flag_caller_tab_id": tabCaller.uuidString,
+            ],
+            sources: [MetadataKey.flag: .init(source: .explicit, ts: 1_725_000_000)]
+        )
+        XCTAssertEqual(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagCallerTabId, surfaceCaller)
+    }
+
+    func testPanelCallerKeyIsReservedForTheAttentionService() {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+        XCTAssertThrowsError(try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: ["flag_caller_panel_id": UUID().uuidString],
+            mode: .merge,
+            source: .explicit
+        )) { error in
+            guard case .attentionRequiresService? = error as? TabMetadataStore.WriteError else {
+                return XCTFail("expected attentionRequiresService, got \(error)")
+            }
+        }
+        XCTAssertFalse(store.setInternal(
+            workspaceId: workspace, surfaceId: surface, key: "flag_caller_panel_id",
+            value: UUID().uuidString, source: .heuristic
+        ))
+    }
 }
 
 /// Canonical tab `icon` / `color` keys: validation, normalization, and the

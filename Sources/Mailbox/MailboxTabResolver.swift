@@ -216,7 +216,7 @@ struct MailboxGlobalResolver {
     let surfaces: () -> [TabRecord]
 
     /// `name` is the raw `to` string. It may be a bare name (precedence
-    /// address > role > title) or a qualifier form (`surface:<addr>` /
+    /// address > role > title) or a qualifier form (`panel:<addr>` /
     /// `role:<name>`) — see `MailboxAddress`. Workspace scoping is orthogonal:
     /// the address selects *which surfaces*, the qualifier/local-first logic
     /// selects *which workspace*.

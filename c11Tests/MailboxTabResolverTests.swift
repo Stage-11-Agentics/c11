@@ -400,6 +400,35 @@ final class MailboxAddressTests: XCTestCase {
         XCTAssertEqual(MailboxAddress.parse("tab:01HABC"), .surface("01HABC"))
     }
 
+    // C11-337: `panel:` is canonical; `tab:` and `surface:` stay accepted forever.
+    func testParsePanelTabAndSurfaceQualifiersNameTheSameTarget() {
+        let panel = MailboxAddress.parse("panel:01HABC")
+        XCTAssertEqual(panel, .surface("01HABC"))
+        XCTAssertEqual(MailboxAddress.parse("tab:01HABC"), panel)
+        XCTAssertEqual(MailboxAddress.parse("surface:01HABC"), panel)
+        XCTAssertEqual(MailboxAddress.parse("panel:"), .surface(""))
+        // Prefixes are case-sensitive, as `tab:` always was.
+        XCTAssertEqual(MailboxAddress.parse("Panel:01HABC"), .name("Panel:01HABC"))
+    }
+
+    func testCanonicalRenderUsesPanelPrefix() {
+        for raw in ["panel:01HABC", "tab:01HABC", "surface:01HABC"] {
+            XCTAssertEqual(MailboxAddress.parse(raw).canonical, "panel:01HABC", raw)
+        }
+        XCTAssertEqual(MailboxAddress.parse("role:delegator").canonical, "role:delegator")
+        XCTAssertEqual(MailboxAddress.parse("watcher").canonical, "watcher")
+        XCTAssertEqual(MailboxAddress.parse(MailboxAddress.parse("tab:x").canonical), .surface("x"))
+    }
+
+    func testMatcherPanelQualifierSelectsLikeLegacyQualifiers() {
+        let addressed = MailboxIdentity(title: "display", address: "addr", role: nil)
+        let titled = MailboxIdentity(title: "addr", address: nil, role: nil)
+        for raw in ["panel:addr", "tab:addr", "surface:addr"] {
+            let selected = MailboxMatcher.select(MailboxAddress.parse(raw), from: [titled, addressed], identity: { $0 })
+            XCTAssertEqual(selected, [addressed], raw)
+        }
+    }
+
     func testParseRoleQualifier() {
         XCTAssertEqual(MailboxAddress.parse("role:delegator"), .role("delegator"))
     }

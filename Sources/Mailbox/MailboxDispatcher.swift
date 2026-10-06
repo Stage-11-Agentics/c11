@@ -367,7 +367,7 @@ final class MailboxDispatcher {
         let all = resolver.tabsWithMailboxMetadata()
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
-        // address > role > title; `surface:`/`role:` qualifiers honored).
+        // address > role > title; `panel:`/`role:` qualifiers honored).
         return MailboxMatcher.select(
             MailboxAddress.parse(to),
             from: all,

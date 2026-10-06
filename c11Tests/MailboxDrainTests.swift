@@ -367,4 +367,39 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertTrue(context.contains("ping two"))
         XCTAssertTrue(context.contains("<c11-msg from=\"builder\" id=\"\(idA)\""))
     }
+
+    // MARK: - Delivery receipt panel key (C11-337)
+
+    private let receiptPanel = UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!
+
+    func testReceiptWritesPanelIdBesideLegacyTabId() throws {
+        let receipt = MailboxDeliveryReceipt(
+            tabId: receiptPanel, deliveries: [.init(id: idA, recipient: "watcher")], ts: "t"
+        )
+        let data = try XCTUnwrap(receipt.encode())
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["panel_id"] as? String, receiptPanel.uuidString)
+        XCTAssertEqual(object["tab_id"] as? String, receiptPanel.uuidString)
+        XCTAssertEqual(MailboxDeliveryReceipt.decode(data)?.receipt, receipt)
+    }
+
+    func testReceiptDecodesLegacyTabIdOnly() throws {
+        let json = #"{"version":1,"via":"drain","ts":"t","tab_id":"\#(receiptPanel.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
+        let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(json.utf8)))
+        XCTAssertEqual(decoded.receipt.tabId, receiptPanel)
+        XCTAssertTrue(decoded.dropped.isEmpty)
+    }
+
+    func testReceiptDecodesPanelIdOnlyAndPrefersItOverTabId() throws {
+        let other = UUID(uuidString: "00000000-0000-0000-0000-0000000000b2")!
+        let panelOnly = #"{"version":1,"via":"drain","ts":"t","panel_id":"\#(receiptPanel.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
+        XCTAssertEqual(MailboxDeliveryReceipt.decode(Data(panelOnly.utf8))?.receipt.tabId, receiptPanel)
+        let both = #"{"version":1,"via":"drain","ts":"t","panel_id":"\#(receiptPanel.uuidString)","tab_id":"\#(other.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
+        XCTAssertEqual(MailboxDeliveryReceipt.decode(Data(both.utf8))?.receipt.tabId, receiptPanel)
+        let invalidPanel = #"{"version":1,"via":"drain","ts":"t","panel_id":"not-a-uuid","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
+        let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(invalidPanel.utf8)))
+        XCTAssertNil(decoded.receipt.tabId)
+        XCTAssertEqual(decoded.receipt.deliveries.count, 1)
+        XCTAssertEqual(decoded.dropped.count, 1)
+    }
 }

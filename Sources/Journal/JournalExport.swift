@@ -161,6 +161,8 @@ enum JournalExport {
             "fold_effect": event.effect.rawValue,
             "source": draft.source.rawValue,
             "adapter": draft.adapter.rawValue,
+            "panel_id": draft.tabID?.uuidString as Any? ?? NSNull(),
+            // C11-337: legacy spelling, emitted beside panel_id.
             "tab_id": draft.tabID?.uuidString as Any? ?? NSNull(),
             "workspace_id": draft.workspaceID?.uuidString as Any? ?? NSNull(),
             "agent_kind": draft.agentKind,
@@ -186,6 +188,8 @@ enum JournalExport {
     private static func baselineObject(_ baseline: JournalSnapshot) -> [String: Any] {
         [
             "record_type": "current_state",
+            "panel_id": baseline.owner.tabID.uuidString,
+            // C11-337: legacy spelling, emitted beside panel_id.
             "tab_id": baseline.owner.tabID.uuidString,
             "agent_kind": baseline.owner.agentKind,
             "session_id": baseline.owner.sessionID,

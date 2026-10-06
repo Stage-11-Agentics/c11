@@ -293,6 +293,8 @@ enum AgentRoster {
     private static func tabJSON(_ row: LiveTab, now: Int64) -> [String: Any] {
         let snap = row.snapshot
         return [
+            "panel_id": row.tabID.uuidString,
+            // C11-337: legacy spelling, emitted beside panel_id.
             "tab_id": row.tabID.uuidString,
             "workspace_id": row.workspaceID.uuidString,
             "session_id": row.sessionID ?? NSNull(),
@@ -316,6 +318,8 @@ enum AgentRoster {
 
     private static func candidateJSON(_ row: JournalSnapshot, classification: RestoreClassification) -> [String: Any] {
         [
+            "panel_id": row.owner.tabID.uuidString,
+            // C11-337: legacy spelling, emitted beside panel_id.
             "tab_id": row.owner.tabID.uuidString,
             "workspace_id": row.workspaceID?.uuidString ?? NSNull(),
             "session_id": row.owner.sessionID,

@@ -93,6 +93,29 @@ final class JournalExportTests: XCTestCase {
         XCTAssertNil(eventObject["prompt"])
     }
 
+    // C11-337: export records carry the panel spelling beside the legacy tab spelling.
+    func testExportEventAndCurrentStateEmitPanelIdBesideTabId() throws {
+        let event = JournalAnalyticsFixture.lifecycleEvents()[3]
+        var baseline = JournalSnapshot(owner: JournalOwner(tabID: JournalAnalyticsFixture.tab,
+                                                            agentKind: "claude-code", sessionID: "analytics-session"),
+                                       workspaceID: JournalAnalyticsFixture.workspace,
+                                       appInstanceID: JournalAnalyticsFixture.app)
+        baseline.lastSequence = event.sequence
+        let data = try render(
+            events: [event], baselines: [baseline],
+            coverage: JournalAnalyticsFixture.coverage(highWater: event.sequence),
+            filters: JournalQueryFilters(fromMs: 0, toMs: 9_000))
+        let objects = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+        }
+        for recordType in ["event", "current_state"] {
+            let record = try XCTUnwrap(objects.first { $0["record_type"] as? String == recordType }, recordType)
+            XCTAssertEqual(record["panel_id"] as? String, JournalAnalyticsFixture.tab.uuidString, recordType)
+            XCTAssertEqual(record["tab_id"] as? String, JournalAnalyticsFixture.tab.uuidString, recordType)
+            XCTAssertNil(record["surface_id"], recordType)
+        }
+    }
+
     func testEmptyInitialPageStillEmitsTheFrozenHighWaterTailGap() throws {
         let coverage = JournalQueryCoverage(retainedFromMs: 5_000, firstAvailableSequence: 4,
                                             highWaterSequence: 7, incomplete: false,

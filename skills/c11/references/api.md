@@ -19,7 +19,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Sidebar reporting](#sidebar-reporting)
 - [Spatial layout (`c11 tree`)](#spatial-layout-c11-tree)
 - [Notifications](#notifications)
-- [Installation (`c11 install`)](#installation-c11-install)
+- [Skill installation (`c11 skill install`)](#skill-installation-c11-skill-install)
 - [Troubleshooting](#troubleshooting)
 - [New Workspace recents and pins](#new-workspace-recents-and-pins)
 - [Feed](#feed)

@@ -7,7 +7,7 @@ Patterns for running multiple agents in parallel panels and areas: layout, panel
 - [Layout philosophy](#layout-philosophy)
 - [Panel naming (mandatory)](#panel-naming-mandatory)
 - [Launching sub-agents in panels](#launching-sub-agents-in-panels)
-- [Ready-state polling](#ready-state-polling)
+- [Ready-state handoff](#ready-state-handoff)
 - [Agent-to-agent communication](#agent-to-agent-communication)
 - [Sub-agent self-reporting](#sub-agent-self-reporting)
 - [Monitoring agents from the orchestrator](#monitoring-agents-from-the-orchestrator)

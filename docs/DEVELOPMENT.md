@@ -119,7 +119,7 @@ c11 has four test surfaces, roughly in order of how often you'll touch them:
 | Python socket v1 | `tests/` (~90 files, shell + python) | `./scripts/run-tests-v1.sh` | Older coverage; generally don't add new tests here, prefer v2 |
 | Swift UI | `c11UITests/` (~16 files) | `gh workflow run test-e2e.yml`, or Xcode (slow, flaky on low-RAM) | Full app flows — menu routing, dialogs, drag/drop, keybind regressions |
 
-**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#test-quality-policy)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
+**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#testing)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
 
 ## Build & reload
 

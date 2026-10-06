@@ -38,7 +38,7 @@ fails with degraded health. Analytics must disclose retained coverage rather
 than reconstructing expired intervals. Spooling is bounded best effort, not a
 lossless delivery promise.
 
-This file expands [SKILL.md § Conversation primitives](../SKILL.md#conversation-primitives). Loaded on demand; the top-level skill carries the brief.
+This file expands [SKILL.md](../SKILL.md). Loaded on demand; the top-level skill carries the brief.
 
 ## What it is
 

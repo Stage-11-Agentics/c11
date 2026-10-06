@@ -1,8 +1,11 @@
 import Foundation
 
-/// Read and write the three tip keys. The app uses `UserDefaults`; tests use
+/// Read and write the tip keys. The app uses `UserDefaults`; tests use
 /// an in-memory store. Nothing here touches the network, logs, or the socket.
 protocol TabRailTipStoring: AnyObject {
+    /// True when a value is stored under `key`, even `false` or an empty list.
+    /// The policy uses it to let a new key shadow its old one.
+    func containsValue(forKey key: String) -> Bool
     func strings(forKey key: String) -> [String]
     func setStrings(_ values: [String], forKey key: String)
     func string(forKey key: String) -> String?
@@ -11,12 +14,16 @@ protocol TabRailTipStoring: AnyObject {
     func setBool(_ value: Bool, forKey key: String)
 }
 
-/// The app's tip record, in the same defaults domain as `tabLayoutMode`.
+/// The app's tip record, in the same defaults domain as `panelLayoutMode`.
 final class UserDefaultsTabRailTipStore: TabRailTipStoring {
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    func containsValue(forKey key: String) -> Bool {
+        defaults.object(forKey: key) != nil
     }
 
     func strings(forKey key: String) -> [String] {
@@ -48,7 +55,7 @@ final class UserDefaultsTabRailTipStore: TabRailTipStoring {
     }
 }
 
-/// Which tabs the tip's miniature rail draws. The selected row stays inside
+/// Which panels the tip's miniature rail draws. The selected row stays inside
 /// the window, matching the prototype: a slice of at most `limit` rows.
 enum TabRailTipPreviewWindow {
     static func range(count: Int, selectedIndex: Int, limit: Int = 4) -> Range<Int> {
@@ -63,7 +70,7 @@ enum TabRailTipPreviewWindow {
 /// When to record an overflow day and when a new tip may start.
 ///
 /// An overflow day is one local calendar day. The tip may start when 4 of
-/// those days fall in the last 14, Tab Layout is still Tabs, the area in
+/// those days fall in the last 14, Panel Layout is still Strip, the area in
 /// front is overflowing, the tip has not been dismissed, and at least 30
 /// calendar days have passed since it was last shown.
 ///
@@ -76,14 +83,24 @@ enum TabRailTipPreviewWindow {
 /// as the tip is stamped.
 ///
 /// `forceOffer` skips the 4-day count and the 30-day gap for one showing.
-/// It does not skip dismissal, Tabs layout, or a quiet area. Stamping the
+/// It does not skip dismissal, Strip layout, or a quiet area. Stamping the
 /// offer clears it.
+///
+/// The record used to live under `c11.tabRailTip.*`. Every read prefers the
+/// `c11.panelRailTip.*` key and falls back to the old one only while the new
+/// key is unset; every write goes to the new key, and the old keys are never
+/// deleted. So a tip dismissed under the old key stays dismissed, and clearing
+/// `forceOffer` writes `false` to the new key, which then shadows an old `true`.
 struct TabRailTipPolicy {
-    static let overflowDaysKey = "c11.tabRailTip.overflowDays"
-    static let lastOfferedKey = "c11.tabRailTip.lastOffered"
-    static let dismissedKey = "c11.tabRailTip.dismissed"
+    static let overflowDaysKey = "c11.panelRailTip.overflowDays"
+    static let lastOfferedKey = "c11.panelRailTip.lastOffered"
+    static let dismissedKey = "c11.panelRailTip.dismissed"
     /// One-shot. The next qualifying area offers the tip, then this clears.
-    static let forceOfferKey = "c11.tabRailTip.forceOffer"
+    static let forceOfferKey = "c11.panelRailTip.forceOffer"
+    static let legacyOverflowDaysKey = "c11.tabRailTip.overflowDays"
+    static let legacyLastOfferedKey = "c11.tabRailTip.lastOffered"
+    static let legacyDismissedKey = "c11.tabRailTip.dismissed"
+    static let legacyForceOfferKey = "c11.tabRailTip.forceOffer"
     static let overflowWindowDays = 14
     static let overflowDaysRequired = 4
     static let offerSpacingDays = 30
@@ -166,7 +183,7 @@ struct TabRailTipPolicy {
     }
 
     var isForceOffer: Bool {
-        store.bool(forKey: Self.forceOfferKey)
+        bool(Self.forceOfferKey, legacy: Self.legacyForceOfferKey)
     }
 
     func dismiss() {
@@ -174,11 +191,19 @@ struct TabRailTipPolicy {
     }
 
     var isDismissed: Bool {
-        store.bool(forKey: Self.dismissedKey)
+        bool(Self.dismissedKey, legacy: Self.legacyDismissedKey)
+    }
+
+    /// The new key's value when it is set, else the old key's.
+    private func bool(_ key: String, legacy: String) -> Bool {
+        store.containsValue(forKey: key) ? store.bool(forKey: key) : store.bool(forKey: legacy)
     }
 
     private func spacingAllowsOffer(now: Date) -> Bool {
-        guard let raw = store.string(forKey: Self.lastOfferedKey),
+        let lastOfferedKey = store.containsValue(forKey: Self.lastOfferedKey)
+            ? Self.lastOfferedKey
+            : Self.legacyLastOfferedKey
+        guard let raw = store.string(forKey: lastOfferedKey),
               let offered = date(fromDayKey: raw) else {
             return true
         }
@@ -204,7 +229,10 @@ struct TabRailTipPolicy {
     }
 
     private func storedDayKeys() -> [String] {
-        store.strings(forKey: Self.overflowDaysKey).filter { date(fromDayKey: $0) != nil }
+        let key = store.containsValue(forKey: Self.overflowDaysKey)
+            ? Self.overflowDaysKey
+            : Self.legacyOverflowDaysKey
+        return store.strings(forKey: key).filter { date(fromDayKey: $0) != nil }
     }
 
     private func date(fromDayKey key: String) -> Date? {

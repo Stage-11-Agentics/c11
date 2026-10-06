@@ -2832,16 +2832,16 @@ class WorkspaceManager: ObservableObject {
         let titleLines = plan.titles.map { "• \($0)" }.joined(separator: "\n")
         let message = count == 1
             ? String(
-                format: String(localized: "dialog.closeOtherTabs.message.one", defaultValue: "This closes 1 tab in this area:\n%@"),
+                format: String(localized: "dialog.closeOtherTabs.message.one", defaultValue: "This closes 1 panel in this area:\n%@"),
                 titleLines
             )
             : String(
-                format: String(localized: "dialog.closeOtherTabs.message.other", defaultValue: "This closes %1$lld tabs in this area:\n%2$@"),
+                format: String(localized: "dialog.closeOtherTabs.message.other", defaultValue: "This closes %1$lld panels in this area:\n%2$@"),
                 count,
                 titleLines
             )
         guard confirmClose(
-            title: String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other tabs?"),
+            title: String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other panels?"),
             message: message,
             acceptCmdD: false
         ) else { return }
@@ -3021,7 +3021,7 @@ class WorkspaceManager: ObservableObject {
         if let collapsed, !collapsed.isEmpty {
             return collapsed
         }
-        return "Untitled Tab"
+        return String(localized: "workspace.closePane.alert.tab.untitled", defaultValue: "Untitled panel")
     }
 
     private func orderedClosableWorkspaces(_ workspaceIds: [UUID], allowPinned: Bool) -> [Workspace] {
@@ -3222,8 +3222,8 @@ class WorkspaceManager: ObservableObject {
         guard AreaInteractionFeatureFlag.isEnabled else {
             // Legacy NSAlert path — kept as a rollback/fallback.
             guard confirmClose(
-                title: String(localized: "dialog.closeTab.title", defaultValue: "Close tab?"),
-                message: String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab."),
+                title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
+                message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
                 acceptCmdD: false
             ) else { return }
             performCloseRuntimeSurface(workspace: workspace, surfaceId: surfaceId)
@@ -3236,8 +3236,8 @@ class WorkspaceManager: ObservableObject {
         Task { @MainActor [weak self] in
             let accepted = await workspace.presentConfirmClose(
                 panelId: surfaceId,
-                title: String(localized: "dialog.closeTab.title", defaultValue: "Close tab?"),
-                message: String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab."),
+                title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
+                message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
                 source: .local,
                 dedupeToken: "ghostty.close_surface_cb.\(surfaceId.uuidString)"
             )

@@ -100,20 +100,20 @@ def main() -> int:
             )
 
         client.simulate_shortcut("cmd+a")
-        client.simulate_type(">retab")
+        client.simulate_type(">repan")
         _wait_until(
-            lambda: "retab" in str(_palette_results(client, window_id).get("query") or "").strip().lower(),
-            message="palette query did not update to 'retab'",
+            lambda: "repan" in str(_palette_results(client, window_id).get("query") or "").strip().lower(),
+            message="palette query did not update to 'repan'",
         )
 
         retab_payload = _palette_results(client, window_id, limit=12)
         retab_rows = retab_payload.get("results") or []
         if not retab_rows:
-            raise cmuxError(f"palette returned no results for retab query: {retab_payload}")
+            raise cmuxError(f"palette returned no results for repan query: {retab_payload}")
         top_retabs = [str(row.get("command_id") or "") for row in retab_rows[:3]]
         if "palette.renameTab" not in top_retabs:
             raise cmuxError(
-                f"'retab' did not rank Rename Tab near top: top3={top_retabs} rows={retab_rows}"
+                f"'repan' did not rank Rename Panel near top: top3={top_retabs} rows={retab_rows}"
             )
 
         client.simulate_shortcut("enter")

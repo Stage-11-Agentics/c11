@@ -662,21 +662,21 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
 
     // Must match the defaultValue for dialog.closeTab.title in TabManager.
     private func isCloseTabAlertPresent(app: XCUIApplication) -> Bool {
-        if app.dialogs.containing(.staticText, identifier: "Close tab?").firstMatch.exists { return true }
-        if app.alerts.containing(.staticText, identifier: "Close tab?").firstMatch.exists { return true }
+        if app.dialogs.containing(.staticText, identifier: "Close panel?").firstMatch.exists { return true }
+        if app.alerts.containing(.staticText, identifier: "Close panel?").firstMatch.exists { return true }
         if app.otherElements["AreaInteraction.confirm.card"].firstMatch.exists { return true }
-        return app.staticTexts["Close tab?"].exists
+        return app.staticTexts["Close panel?"].exists
     }
 
     // Must match the defaultValue for dialog.closeTab.title in TabManager.
     private func clickCloseOnCloseTabAlert(app: XCUIApplication) {
-        let dialog = app.dialogs.containing(.staticText, identifier: "Close tab?").firstMatch
+        let dialog = app.dialogs.containing(.staticText, identifier: "Close panel?").firstMatch
         if dialog.exists {
             dialog.buttons["Close"].firstMatch.click()
             return
         }
 
-        let alert = app.alerts.containing(.staticText, identifier: "Close tab?").firstMatch
+        let alert = app.alerts.containing(.staticText, identifier: "Close panel?").firstMatch
         if alert.exists {
             alert.buttons["Close"].firstMatch.click()
             return

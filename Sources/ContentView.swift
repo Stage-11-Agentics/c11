@@ -1608,7 +1608,7 @@ struct ContentView: View {
             case .workspace:
                 return String(localized: "commandPalette.rename.workspaceTitle", defaultValue: "Rename Workspace")
             case .tab:
-                return String(localized: "commandPalette.rename.tabTitle", defaultValue: "Rename Tab")
+                return String(localized: "commandPalette.rename.tabTitle", defaultValue: "Rename Panel")
             }
         }
 
@@ -1617,7 +1617,7 @@ struct ContentView: View {
             case .workspace:
                 return String(localized: "commandPalette.rename.workspaceDescription", defaultValue: "Choose a custom workspace name.")
             case .tab:
-                return String(localized: "commandPalette.rename.tabDescription", defaultValue: "Choose a custom tab name.")
+                return String(localized: "commandPalette.rename.tabDescription", defaultValue: "Pick a custom panel name.")
             }
         }
 
@@ -1626,7 +1626,7 @@ struct ContentView: View {
             case .workspace:
                 return String(localized: "commandPalette.rename.workspacePlaceholder", defaultValue: "Workspace name")
             case .tab:
-                return String(localized: "commandPalette.rename.tabPlaceholder", defaultValue: "Tab name")
+                return String(localized: "commandPalette.rename.tabPlaceholder", defaultValue: "Panel name")
             }
         }
     }
@@ -4115,7 +4115,7 @@ struct ContentView: View {
         case .workspace:
             return String(localized: "commandPalette.rename.workspaceInputHint", defaultValue: "Enter a workspace name. Press Enter to rename, Escape to cancel.")
         case .tab:
-            return String(localized: "commandPalette.rename.tabInputHint", defaultValue: "Enter a tab name. Press Enter to rename, Escape to cancel.")
+            return String(localized: "commandPalette.rename.tabInputHint", defaultValue: "Type a panel name. Press Enter to rename, Escape to cancel.")
         }
     }
 
@@ -4124,7 +4124,7 @@ struct ContentView: View {
         case .workspace:
             return String(localized: "commandPalette.rename.workspaceConfirmHint", defaultValue: "Press Enter to apply this workspace name, or Escape to cancel.")
         case .tab:
-            return String(localized: "commandPalette.rename.tabConfirmHint", defaultValue: "Press Enter to apply this tab name, or Escape to cancel.")
+            return String(localized: "commandPalette.rename.tabConfirmHint", defaultValue: "Press Enter to rename the panel. Press Escape to cancel.")
         }
     }
 
@@ -4169,7 +4169,7 @@ struct ContentView: View {
             return String(localized: "commandPalette.search.commandsPlaceholder", defaultValue: "Type a command")
         case .switcher:
             return commandPaletteSearchAllSurfaces
-                ? String(localized: "commandPalette.search.switcherPlaceholderAllSurfaces", defaultValue: "Search workspaces and tabs")
+                ? String(localized: "commandPalette.search.switcherPlaceholderAllSurfaces", defaultValue: "Search workspaces and panels")
                 : String(localized: "commandPalette.search.switcherPlaceholder", defaultValue: "Search workspaces")
         }
     }
@@ -4180,7 +4180,7 @@ struct ContentView: View {
             return String(localized: "commandPalette.search.commandsEmpty", defaultValue: "No commands match your search.")
         case .switcher:
             return commandPaletteSearchAllSurfaces
-                ? String(localized: "commandPalette.search.switcherEmptyAllSurfaces", defaultValue: "No workspaces or tabs match.")
+                ? String(localized: "commandPalette.search.switcherEmptyAllSurfaces", defaultValue: "No workspaces or panels match.")
                 : String(localized: "commandPalette.search.switcherEmpty", defaultValue: "No workspaces match your search.")
         }
     }
@@ -4830,6 +4830,7 @@ struct ContentView: View {
                     let surfaceKeywords = CommandPaletteSwitcherSearchIndexer.keywords(
                         baseKeywords: [
                             "surface",
+                            "panel",
                             "tab",
                             "switch",
                             "go",
@@ -5290,17 +5291,17 @@ struct ContentView: View {
         }
 
         func panelSubtitle(_ context: CommandPaletteContextSnapshot) -> String {
-            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Tab")
-            return String(localized: "commandPalette.subtitle.tabWithName", defaultValue: "Tab • \(name)")
+            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Panel")
+            return String(localized: "commandPalette.subtitle.tabWithName", defaultValue: "Panel • \(name)")
         }
 
         func browserPanelSubtitle(_ context: CommandPaletteContextSnapshot) -> String {
-            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Tab")
+            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Panel")
             return String(localized: "commandPalette.subtitle.browserWithName", defaultValue: "Browser • \(name)")
         }
 
         func terminalPanelSubtitle(_ context: CommandPaletteContextSnapshot) -> String {
-            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Tab")
+            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Panel")
             return String(localized: "commandPalette.subtitle.terminalWithName", defaultValue: "Terminal • \(name)")
         }
 
@@ -5351,37 +5352,37 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.newTerminalTab",
-                title: constant(String(localized: "command.newTerminalTab.title", defaultValue: "New Tab (Terminal)")),
-                subtitle: constant(String(localized: "command.newTerminalTab.subtitle", defaultValue: "Tab")),
+                title: constant(String(localized: "command.newTerminalTab.title", defaultValue: "New Terminal Panel")),
+                subtitle: constant(String(localized: "command.newTerminalTab.subtitle", defaultValue: "Panel")),
                 shortcutHint: "⌘T",
-                keywords: ["new", "terminal", "tab"]
+                keywords: ["new", "terminal", "panel", "tab"]
             )
         )
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.newBrowserTab",
-                title: constant(String(localized: "command.newBrowserTab.title", defaultValue: "New Tab (Browser)")),
-                subtitle: constant(String(localized: "command.newBrowserTab.subtitle", defaultValue: "Tab")),
+                title: constant(String(localized: "command.newBrowserTab.title", defaultValue: "New Browser Panel")),
+                subtitle: constant(String(localized: "command.newBrowserTab.subtitle", defaultValue: "Panel")),
                 shortcutHint: "⌘⇧L",
-                keywords: ["new", "browser", "tab", "web"]
+                keywords: ["new", "browser", "panel", "tab", "web"]
             )
         )
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.surfaceDetails",
-                title: constant(String(localized: "command.surfaceDetails.title", defaultValue: "Tab Details")),
+                title: constant(String(localized: "command.surfaceDetails.title", defaultValue: "Panel Details")),
                 subtitle: panelSubtitle,
-                keywords: ["surface", "details", "manifest", "metadata", "id", "number", "tab"],
+                keywords: ["surface", "details", "manifest", "metadata", "id", "number", "panel", "tab"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
         )
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeTab",
-                title: constant(String(localized: "command.closeTab.title", defaultValue: "Close Tab")),
-                subtitle: constant(String(localized: "command.closeTab.subtitle", defaultValue: "Tab")),
+                title: constant(String(localized: "command.closeTab.title", defaultValue: "Close Panel")),
+                subtitle: constant(String(localized: "command.closeTab.subtitle", defaultValue: "Panel")),
                 shortcutHint: "⌘W",
-                keywords: ["close", "tab"]
+                keywords: ["close", "panel", "tab"]
             )
         )
         contributions.append(
@@ -5412,7 +5413,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.reopenClosedBrowserTab",
-                title: constant(String(localized: "command.reopenClosedBrowserTab.title", defaultValue: "Reopen Closed Browser Tab")),
+                title: constant(String(localized: "command.reopenClosedBrowserTab.title", defaultValue: "Reopen Closed Browser Panel")),
                 subtitle: constant(String(localized: "command.reopenClosedBrowserTab.subtitle", defaultValue: "Browser")),
                 shortcutHint: "⌘⇧T",
                 keywords: ["reopen", "closed", "browser"]
@@ -5616,9 +5617,9 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.renameTab",
-                title: constant(String(localized: "command.renameTab.title", defaultValue: "Rename Tab…")),
+                title: constant(String(localized: "command.renameTab.title", defaultValue: "Rename Panel…")),
                 subtitle: panelSubtitle,
-                keywords: ["rename", "tab", "title"],
+                keywords: ["rename", "panel", "tab", "title"],
                 dismissOnRun: false,
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
@@ -5626,9 +5627,9 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.clearTabName",
-                title: constant(String(localized: "command.clearTabName.title", defaultValue: "Clear Tab Name")),
+                title: constant(String(localized: "command.clearTabName.title", defaultValue: "Clear Panel Name")),
                 subtitle: panelSubtitle,
-                keywords: ["clear", "tab", "name"],
+                keywords: ["clear", "panel", "tab", "name"],
                 when: {
                     $0.bool(CommandPaletteContextKeys.hasFocusedPanel)
                         && $0.bool(CommandPaletteContextKeys.panelHasCustomName)
@@ -5639,10 +5640,10 @@ struct ContentView: View {
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleTabPin",
                 title: { context in
-                    context.bool(CommandPaletteContextKeys.panelShouldPin) ? String(localized: "command.pinTab.title", defaultValue: "Pin Tab") : String(localized: "command.unpinTab.title", defaultValue: "Unpin Tab")
+                    context.bool(CommandPaletteContextKeys.panelShouldPin) ? String(localized: "command.pinTab.title", defaultValue: "Pin Panel") : String(localized: "command.unpinTab.title", defaultValue: "Unpin Panel")
                 },
                 subtitle: panelSubtitle,
-                keywords: ["tab", "pin", "pinned"],
+                keywords: ["panel", "tab", "pin", "pinned"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
         )
@@ -5650,28 +5651,28 @@ struct ContentView: View {
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleTabUnread",
                 title: { context in
-                    context.bool(CommandPaletteContextKeys.panelHasUnread) ? String(localized: "command.markTabRead.title", defaultValue: "Mark Tab as Read") : String(localized: "command.markTabUnread.title", defaultValue: "Mark Tab as Unread")
+                    context.bool(CommandPaletteContextKeys.panelHasUnread) ? String(localized: "command.markTabRead.title", defaultValue: "Mark Panel as Read") : String(localized: "command.markTabUnread.title", defaultValue: "Mark Panel as Unread")
                 },
                 subtitle: panelSubtitle,
-                keywords: ["tab", "read", "unread", "notification"],
+                keywords: ["panel", "tab", "read", "unread", "notification"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
         )
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.nextTabInPane",
-                title: constant(String(localized: "command.nextTabInPane.title", defaultValue: "Next Tab in Area")),
-                subtitle: constant(String(localized: "command.nextTabInPane.subtitle", defaultValue: "Tab Navigation")),
-                keywords: ["next", "tab", "pane"],
+                title: constant(String(localized: "command.nextTabInPane.title", defaultValue: "Next Panel in Area")),
+                subtitle: constant(String(localized: "command.nextTabInPane.subtitle", defaultValue: "Panel Navigation")),
+                keywords: ["next", "panel", "tab", "pane"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
         )
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.previousTabInPane",
-                title: constant(String(localized: "command.previousTabInPane.title", defaultValue: "Previous Tab in Area")),
-                subtitle: constant(String(localized: "command.previousTabInPane.subtitle", defaultValue: "Tab Navigation")),
-                keywords: ["previous", "tab", "pane"],
+                title: constant(String(localized: "command.previousTabInPane.title", defaultValue: "Previous Panel in Area")),
+                subtitle: constant(String(localized: "command.previousTabInPane.subtitle", defaultValue: "Panel Navigation")),
+                keywords: ["previous", "panel", "tab", "pane"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
         )
@@ -6353,7 +6354,7 @@ struct ContentView: View {
             return title
         }
         let trimmedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedFallback.isEmpty ? String(localized: "panel.displayName.fallback", defaultValue: "Tab") : trimmedFallback
+        return trimmedFallback.isEmpty ? String(localized: "panel.displayName.fallback", defaultValue: "Panel") : trimmedFallback
     }
 
     private func commandPaletteSelectedIndex(resultCount: Int) -> Int {
@@ -12552,7 +12553,7 @@ private struct WorkspaceRowView: View, Equatable {
             if workspacePulseVisibleAgents.isEmpty {
                 Text(String(
                     localized: "sidebar.workspacePulse.terminalsOnly",
-                    defaultValue: "Terminals only · no agent tabs"
+                    defaultValue: "Terminals only · no agent panels"
                 ))
                 .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
                 .foregroundColor(.secondary.opacity(0.65))
@@ -12643,7 +12644,7 @@ private struct WorkspaceRowView: View, Equatable {
             ),
             empty: String(
                 localized: "sidebar.workspacePulse.censusEmpty",
-                defaultValue: "No tabs"
+                defaultValue: "No panels"
             )
         )
     }
@@ -13563,7 +13564,7 @@ private struct WorkspaceRowView: View, Equatable {
             }
             .help(String(
                 localized: "contextMenu.hibernateWorkspaceTooltip",
-                defaultValue: "Suspends browser tabs in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
+                defaultValue: "Suspends browser panels in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
             ))
         }
 

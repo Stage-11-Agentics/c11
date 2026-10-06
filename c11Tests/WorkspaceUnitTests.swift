@@ -63,7 +63,7 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
 
 final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     func testRenameTabShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.label, "Rename Tab")
+        XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.label, "Rename Panel")
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.defaultsKey, "shortcut.renameTab")
 
         // C11-41: default rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.

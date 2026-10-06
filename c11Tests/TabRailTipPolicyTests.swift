@@ -16,6 +16,9 @@ final class TabRailTipPolicyTests: XCTestCase {
         private(set) var stringWrites = 0
         private(set) var boolWrites = 0
 
+        func containsValue(forKey key: String) -> Bool {
+            stringsByKey[key] != nil || stringByKey[key] != nil || boolByKey[key] != nil
+        }
         func strings(forKey key: String) -> [String] { stringsByKey[key] ?? [] }
         func setStrings(_ values: [String], forKey key: String) {
             stringWrites += 1
@@ -270,11 +273,103 @@ final class TabRailTipPolicyTests: XCTestCase {
         let suite = "c11.tabRailTip.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: defaults), .tabs)
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: defaults), .strip)
         TabLayoutSettings.setMode(.rail, defaults: defaults)
         XCTAssertEqual(defaults.string(forKey: TabLayoutSettings.modeKey), "rail")
         XCTAssertEqual(TabLayoutSettings.mode(defaults: defaults), .rail)
-        TabLayoutSettings.setMode(.tabs, defaults: defaults)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: defaults), .tabs)
+        TabLayoutSettings.setMode(.strip, defaults: defaults)
+        XCTAssertEqual(defaults.string(forKey: TabLayoutSettings.modeKey), "strip")
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: defaults), .strip)
+    }
+
+    // MARK: Old `c11.tabRailTip.*` keys
+
+    func testTipRecordLivesUnderThePanelKeys() {
+        let suite = "c11.panelRailTip.keys.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let tip = TabRailTipPolicy(calendar: pacificCalendar(), store: UserDefaultsTabRailTipStore(defaults: defaults))
+
+        tip.dismiss()
+        XCTAssertTrue(defaults.bool(forKey: "c11.panelRailTip.dismissed"))
+        XCTAssertNil(defaults.object(forKey: "c11.tabRailTip.dismissed"))
+
+        XCTAssertTrue(tip.recordOverflow(now: day(2026, 9, 30, calendar: tip.calendar)))
+        XCTAssertEqual(defaults.stringArray(forKey: "c11.panelRailTip.overflowDays"), ["2026-09-30"])
+        XCTAssertNil(defaults.object(forKey: "c11.tabRailTip.overflowDays"))
+    }
+
+    func testTipDismissedUnderTheOldKeyStaysDismissed() {
+        let store = MemoryStore()
+        store.boolByKey[TabRailTipPolicy.legacyDismissedKey] = true
+        let tip = policy(store)
+        XCTAssertTrue(tip.isDismissed)
+        seed(store, ["2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30"])
+        let now = day(2026, 9, 30, calendar: tip.calendar)
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+        XCTAssertEqual(store.boolWrites, 0)
+    }
+
+    func testNewDismissedKeyShadowsTheOldOne() {
+        let store = MemoryStore()
+        store.boolByKey[TabRailTipPolicy.legacyDismissedKey] = true
+        store.boolByKey[TabRailTipPolicy.dismissedKey] = false
+        XCTAssertFalse(policy(store).isDismissed)
+    }
+
+    func testDismissWritesTheNewKeyOnly() {
+        let store = MemoryStore()
+        policy(store).dismiss()
+        XCTAssertEqual(store.boolByKey[TabRailTipPolicy.dismissedKey], true)
+        XCTAssertNil(store.boolByKey[TabRailTipPolicy.legacyDismissedKey])
+    }
+
+    func testOldForceOfferOffersOnceThenClearsForGood() {
+        let store = MemoryStore()
+        store.boolByKey[TabRailTipPolicy.legacyForceOfferKey] = true
+        let tip = policy(store)
+        let now = day(2026, 9, 30, calendar: tip.calendar)
+        XCTAssertTrue(tip.isForceOffer)
+        XCTAssertTrue(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+        tip.markOffered(now: now)
+        XCTAssertFalse(tip.isForceOffer, "The old true must not fire the flag again")
+        XCTAssertEqual(store.boolByKey[TabRailTipPolicy.forceOfferKey], false)
+        XCTAssertEqual(store.boolByKey[TabRailTipPolicy.legacyForceOfferKey], true, "The old key is never deleted")
+        XCTAssertFalse(tip.shouldOffer(now: now.addingTimeInterval(86_400), layoutIsTabs: true, areaOverflowing: true))
+    }
+
+    func testOldOverflowDaysAndLastOfferedCountUntilTheNewKeysExist() {
+        let store = MemoryStore()
+        store.stringsByKey[TabRailTipPolicy.legacyOverflowDaysKey] = ["2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30"]
+        let tip = policy(store)
+        let now = day(2026, 9, 30, calendar: tip.calendar)
+        XCTAssertTrue(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+
+        store.stringByKey[TabRailTipPolicy.legacyLastOfferedKey] = "2026-09-29"
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+
+        // Recording a new day carries the old days into the new key.
+        let tomorrow = now.addingTimeInterval(86_400)
+        XCTAssertTrue(tip.recordOverflow(now: tomorrow))
+        XCTAssertEqual(store.stringsByKey[TabRailTipPolicy.overflowDaysKey],
+                       ["2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01"])
+        XCTAssertEqual(store.stringsByKey[TabRailTipPolicy.legacyOverflowDaysKey]?.count, 4)
+    }
+
+    func testOldKeysThroughTheUserDefaultsStore() {
+        let suite = "c11.tabRailTip.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: TabRailTipPolicy.legacyDismissedKey)
+        defaults.set(true, forKey: TabRailTipPolicy.legacyForceOfferKey)
+        let tip = TabRailTipPolicy(calendar: pacificCalendar(), store: UserDefaultsTabRailTipStore(defaults: defaults))
+        XCTAssertTrue(tip.isDismissed)
+        XCTAssertTrue(tip.isForceOffer)
+
+        tip.clearForceOffer()
+        XCTAssertFalse(tip.isForceOffer)
+        XCTAssertEqual(defaults.object(forKey: TabRailTipPolicy.forceOfferKey) as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: TabRailTipPolicy.legacyForceOfferKey) as? Bool, true)
+        XCTAssertTrue(tip.isDismissed, "Clearing the flag leaves the dismissal alone")
     }
 }

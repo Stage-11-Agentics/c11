@@ -7,8 +7,11 @@ import Bonsplit
 enum TabSheetDetailBuilder {
     /// UserDefaults key for the clock column order: a comma-separated list of
     /// clock names. Change it in one command:
-    /// `defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"`.
-    static let clockOrderDefaultsKey = "c11.tabSheet.clocks"
+    /// `defaults write com.stage11.c11 c11.panelSheet.clocks -string "launched,active"`.
+    /// The setting used to be `c11.tabSheet.clocks`; reads fall back to it while
+    /// the new key is unset, and it is never written or deleted.
+    static let clockOrderDefaultsKey = "c11.panelSheet.clocks"
+    static let legacyClockOrderDefaultsKey = "c11.tabSheet.clocks"
     /// Every clock the sheet can show. The default order is `active,seen,launched`;
     /// `touched` (last operator input), `turn`, `tools`, `tokens` and `cache`
     /// (time left on the agent's prompt cache) are opt-in through the setting.
@@ -293,11 +296,15 @@ enum TabSheetDetailBuilder {
     /// Reads the operator/agent setting: comma-separated, unknown names are
     /// dropped by the sheet itself, an empty or missing value means the default.
     static func clockOrder(defaults: UserDefaults = .standard) -> [String] {
+        // The new key wins whenever it is set; the old key is read only while it is absent.
+        let key = defaults.object(forKey: clockOrderDefaultsKey) != nil
+            ? clockOrderDefaultsKey
+            : legacyClockOrderDefaultsKey
         // `-string "a,b"` is the documented form; `-array a b` works too.
-        if let list = defaults.array(forKey: clockOrderDefaultsKey) as? [String] {
+        if let list = defaults.array(forKey: key) as? [String] {
             return parseClockOrder(list.joined(separator: ","))
         }
-        guard let raw = defaults.string(forKey: clockOrderDefaultsKey) else { return defaultClockOrder }
+        guard let raw = defaults.string(forKey: key) else { return defaultClockOrder }
         return parseClockOrder(raw)
     }
 

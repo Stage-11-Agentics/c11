@@ -3304,7 +3304,7 @@ struct OmnibarSuggestion: Identifiable, Hashable {
     var trailingBadgeText: String? {
         switch kind {
         case .switchToTab:
-            return String(localized: "browser.switchToTab", defaultValue: "Switch to tab")
+            return String(localized: "browser.switchToTab", defaultValue: "Switch to panel")
         default:
             return nil
         }

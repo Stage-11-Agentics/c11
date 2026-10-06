@@ -12,6 +12,9 @@ private final class TipMemoryStore: TabRailTipStoring {
     var stringByKey: [String: String] = [:]
     var boolByKey: [String: Bool] = [:]
 
+    func containsValue(forKey key: String) -> Bool {
+        stringsByKey[key] != nil || stringByKey[key] != nil || boolByKey[key] != nil
+    }
     func strings(forKey key: String) -> [String] { stringsByKey[key] ?? [] }
     func setStrings(_ values: [String], forKey key: String) { stringsByKey[key] = values }
     func string(forKey key: String) -> String? { stringByKey[key] }
@@ -65,7 +68,7 @@ final class TabRailTipCenterTests: XCTestCase {
 
         rig.center.performUndo()
 
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .tabs)
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .strip)
         XCTAssertFalse(rig.workspace.bonsplitController.railOpenPaneIds.contains(rig.paneId),
                        "Undo must not leave the area in the set session autosave persists")
         XCTAssertEqual(toggles, [true, false], "The host is told the rail closed so autosave rewrites it")
@@ -133,7 +136,7 @@ final class TabRailTipCenterTests: XCTestCase {
         // From the rail: back to Tabs, with this area's rail closed, so
         // choosing Rail later does not reopen it.
         controller.switchTabLayout(to: .tabs, fromPane: rig.paneId)
-        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .tabs)
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .strip)
         XCTAssertEqual(controller.configuration.appearance.tabLayout, .tabs)
         XCTAssertFalse(controller.railOpenPaneIds.contains(rig.paneId))
         XCTAssertEqual(toggles, [true, false], "The host is told so session autosave records it")

@@ -3,7 +3,7 @@
 Regression test: command-palette shortcut hints stay in sync with editable shortcuts.
 
 Validates:
-- New Window / Close Window / Rename Tab commands are present in command mode.
+- New Window / Close Window / Rename Panel commands are present in command mode.
 - Their displayed shortcut hints reflect the current KeyboardShortcutSettings values.
 """
 

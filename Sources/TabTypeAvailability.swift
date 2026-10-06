@@ -97,11 +97,11 @@ enum TabTypeAvailability {
     static func disabledMessage(for type: TabContentType) -> String {
         switch type {
         case .browser:
-            return "browser tabs are disabled (Settings → General → Tabs & Areas → Internal Browser)"
+            return "browser panels are disabled (Settings → General → Areas & Panels → Internal Browser)"
         case .markdown:
-            return "markdown tabs are disabled (Settings → General → Tabs & Areas → Markdown Tabs)"
+            return "markdown panels are disabled (Settings → General → Areas & Panels → Markdown Panels)"
         case .terminal:
-            return "terminal tabs cannot be disabled"
+            return "terminal panels cannot be disabled"
         }
     }
 }

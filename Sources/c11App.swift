@@ -215,6 +215,8 @@ struct cmuxApp: App {
         // system light/dark setting doesn't recolor NSColor-based chrome under us.
         UserDefaults.standard.set(AppearanceMode.dark.rawValue, forKey: AppearanceSettings.appearanceModeKey)
         Self.applyAppearance(.dark)
+        // Carry the old `tabLayoutMode` forward before the Settings picker or any workspace reads it.
+        TabLayoutSettings.migrateLegacyKeys(defaults: .standard)
         _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
@@ -971,7 +973,7 @@ struct cmuxApp: App {
 
                 Divider()
 
-                Menu(String(localized: "menu.pane.newSurface", defaultValue: "New Tab")) {
+                Menu(String(localized: "menu.pane.newSurface", defaultValue: "New Panel")) {
                     splitCommandButton(title: String(localized: "menu.pane.newTerminal", defaultValue: "New Terminal"), shortcut: newSurfaceMenuShortcut) {
                         activeWorkspaceManager.newSurface()
                     }
@@ -985,22 +987,22 @@ struct cmuxApp: App {
                     }
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.nextSurface", defaultValue: "Next Tab"), shortcut: nextSurfaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.nextSurface", defaultValue: "Next Panel"), shortcut: nextSurfaceMenuShortcut) {
                     activeWorkspaceManager.selectNextSurface()
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.previousSurface", defaultValue: "Previous Tab"), shortcut: prevSurfaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.previousSurface", defaultValue: "Previous Panel"), shortcut: prevSurfaceMenuShortcut) {
                     activeWorkspaceManager.selectPreviousSurface()
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.renameTab", defaultValue: "Rename Tab"), shortcut: renameTabMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.renameTab", defaultValue: "Rename Panel"), shortcut: renameTabMenuShortcut) {
                     let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
                     _ = AppDelegate.shared?.requestCommandPaletteRenameTab(preferredWindow: targetWindow, source: "menu.renameTab")
                 }
 
                 Divider()
 
-                Button(String(localized: "menu.pane.closeOtherTabs", defaultValue: "Close Other Tabs in Area")) {
+                Button(String(localized: "menu.pane.closeOtherTabs", defaultValue: "Close Other Panels in Area")) {
                     closeOtherTabsInFocusedPane()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
@@ -1069,7 +1071,7 @@ struct cmuxApp: App {
 
                 Divider()
 
-                Button(String(localized: "menu.browser.reopenClosed", defaultValue: "Reopen Closed Browser Tab")) {
+                Button(String(localized: "menu.browser.reopenClosed", defaultValue: "Reopen Closed Browser Panel")) {
                     _ = activeWorkspaceManager.reopenMostRecentlyClosedBrowserPanel()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
@@ -1508,7 +1510,7 @@ struct cmuxApp: App {
             .disabled(workspace == nil)
             .help(String(
                 localized: "contextMenu.hibernateWorkspaceTooltip",
-                defaultValue: "Suspends browser tabs in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
+                defaultValue: "Suspends browser panels in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
             ))
         }
 
@@ -3225,7 +3227,7 @@ private struct AboutPanelView: View {
                         .font(.caption)
                         .tint(.secondary)
                         .opacity(0.85)
-                    Text(String(localized: "about.description", defaultValue: "terminal command center for the operator:agent pair.\nmany tabs. one workspace. one field of view."))
+                    Text(String(localized: "about.description", defaultValue: "terminal command center for the operator:agent pair.\nmany panels. one workspace. one field of view."))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .font(.caption)
@@ -4390,7 +4392,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .notifications:
             return String(localized: "settings.page.notifications.helper", defaultValue: "decide what gets to interrupt the operator.")
         case .input:
-            return String(localized: "settings.page.input.helper", defaultValue: "shape command input before it reaches a tab.")
+            return String(localized: "settings.page.input.helper", defaultValue: "shape command input before it reaches a panel.")
         case .keyboardShortcuts:
             return String(localized: "settings.page.keyboardShortcuts.helper", defaultValue: "shape the keys that move through the room.")
         case .automation:
@@ -4459,6 +4461,14 @@ struct SettingsView: View {
     private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
     @AppStorage(TabLayoutSettings.modeKey)
     private var tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
+    /// The picker's selection. An outside write can leave the stored value as the
+    /// old `tabs` spelling; it resolves to `strip` so a tag always matches.
+    private var tabLayoutSelection: Binding<String> {
+        Binding(
+            get: { TabLayoutSettings.mode(for: tabLayoutMode).rawValue },
+            set: { tabLayoutMode = $0 }
+        )
+    }
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
@@ -4590,12 +4600,12 @@ struct SettingsView: View {
         if keepWorkspaceOpenOnLastSurfaceShortcut {
             return String(
                 localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOn",
-                defaultValue: "If the focused tab is the last one, the close-tab shortcut still closes only the tab. Close the workspace explicitly with the close-workspace shortcut."
+                defaultValue: "If the focused panel is the last one, the close-panel shortcut still closes only the panel. Close the workspace explicitly with the close-workspace shortcut."
             )
         }
         return String(
             localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOff",
-            defaultValue: "If the focused tab is the last one, the close-tab shortcut also closes the workspace."
+            defaultValue: "If the focused panel is the last one, the close-panel shortcut also closes the workspace."
         )
     }
 
@@ -4728,11 +4738,11 @@ struct SettingsView: View {
     private var browserImportHintSettingsNote: String {
         switch browserImportHintPresentation.settingsStatus {
         case .visible:
-            return String(localized: "settings.browser.import.hint.note.visible", defaultValue: "Blank browser tabs can show this import suggestion. Hide or re-enable it here.")
+            return String(localized: "settings.browser.import.hint.note.visible", defaultValue: "Blank browser panels can show this import suggestion. Hide or re-enable it here.")
         case .hidden:
-            return String(localized: "settings.browser.import.hint.note.hidden", defaultValue: "The blank-tab import hint is hidden. Turn it back on any time.")
+            return String(localized: "settings.browser.import.hint.note.hidden", defaultValue: "The blank-panel import hint is hidden. Turn it back on any time.")
         case .settingsOnly:
-            return String(localized: "settings.browser.import.hint.note.settingsOnly", defaultValue: "Blank tabs are currently using Settings only mode from the debug window.")
+            return String(localized: "settings.browser.import.hint.note.settingsOnly", defaultValue: "Blank panels are on Settings-only mode from the debug window.")
         }
     }
 
@@ -5165,13 +5175,13 @@ struct SettingsView: View {
             }
         }
 
-        SettingsSectionHeader(title: String(localized: "settings.section.surfaces", defaultValue: "Tabs & Areas"))
+        SettingsSectionHeader(title: String(localized: "settings.section.surfaces", defaultValue: "Areas & Panels"))
         SettingsCard {
             SettingsCardRow(
                 String(localized: "settings.app.internalBrowser", defaultValue: "Internal Browser"),
                 subtitle: internalBrowserEnabled
-                    ? String(localized: "settings.app.internalBrowser.subtitleOn", defaultValue: "Allow creating internal browser tabs. Open browser tabs keep running when turned off.")
-                    : String(localized: "settings.app.internalBrowser.subtitleOff", defaultValue: "Block new internal browser tabs. The Browser spawn button is hidden and CLI/socket creation is rejected.")
+                    ? String(localized: "settings.app.internalBrowser.subtitleOn", defaultValue: "Allow creating internal browser panels. Open browser panels keep running when turned off.")
+                    : String(localized: "settings.app.internalBrowser.subtitleOff", defaultValue: "Block new internal browser panels. The Browser spawn button is hidden and CLI/socket creation is rejected.")
             ) {
                 Toggle("", isOn: $internalBrowserEnabled)
                     .labelsHidden()
@@ -5181,10 +5191,10 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.markdownSurfaces", defaultValue: "Markdown Tabs"),
+                String(localized: "settings.app.markdownSurfaces", defaultValue: "Markdown Panels"),
                 subtitle: markdownSurfacesEnabled
-                    ? String(localized: "settings.app.markdownSurfaces.subtitleOn", defaultValue: "Allow creating markdown tabs. Open markdown tabs keep running when turned off.")
-                    : String(localized: "settings.app.markdownSurfaces.subtitleOff", defaultValue: "Block new markdown tabs. The Markdown spawn button is hidden and CLI/socket creation is rejected.")
+                    ? String(localized: "settings.app.markdownSurfaces.subtitleOn", defaultValue: "Allow creating markdown panels. Open markdown panels keep running when turned off.")
+                    : String(localized: "settings.app.markdownSurfaces.subtitleOff", defaultValue: "Block new markdown panels. The Markdown spawn button is hidden and CLI/socket creation is rejected.")
             ) {
                 Toggle("", isOn: $markdownSurfacesEnabled)
                     .labelsHidden()
@@ -5195,10 +5205,10 @@ struct SettingsView: View {
                 SettingsCardDivider()
 
                 SettingsCardRow(
-                    String(localized: "settings.app.markdownSpawnButton", defaultValue: "Markdown Button in Tab Bar"),
+                    String(localized: "settings.app.markdownSpawnButton", defaultValue: "Markdown Button in Panel Bar"),
                     subtitle: markdownSpawnButtonVisible
-                        ? String(localized: "settings.app.markdownSpawnButton.subtitleOn", defaultValue: "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown tabs stay available via the CLI and command palette.")
-                        : String(localized: "settings.app.markdownSpawnButton.subtitleOff", defaultValue: "The Markdown spawn button is hidden. Markdown tabs remain fully available via the CLI and command palette.")
+                        ? String(localized: "settings.app.markdownSpawnButton.subtitleOn", defaultValue: "The panel bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown panels stay available via the CLI and command palette.")
+                        : String(localized: "settings.app.markdownSpawnButton.subtitleOff", defaultValue: "The Markdown spawn button is hidden. Markdown panels remain fully available via the CLI and command palette.")
                 ) {
                     Toggle("", isOn: $markdownSpawnButtonVisible)
                         .labelsHidden()
@@ -5209,10 +5219,10 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Tab Numbers in Tab Titles"),
+                String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Panel Numbers in Panel Titles"),
                 subtitle: showSurfaceIdsInTabTitles
-                    ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Tabs display their tab number (\"292: Build agent\"). Say the number to address a tab; agents target it as tab:N.")
-                    : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Tabs display their title only. Turn on to prefix every tab with its addressable tab number.")
+                    ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Panels display their panel number (\"292: Build agent\"). Say the number to address a panel; agents target it as panel:N.")
+                    : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Panels display their title only. Turn on to prefix every panel with its addressable panel number.")
             ) {
                 Toggle("", isOn: $showSurfaceIdsInTabTitles)
                     .labelsHidden()
@@ -5223,15 +5233,15 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.tabLayout", defaultValue: "Tab Layout"),
+                String(localized: "settings.app.tabLayout", defaultValue: "Panel Layout"),
                 subtitle: TabLayoutSettings.mode(for: tabLayoutMode) == .rail
-                    ? String(localized: "settings.app.tabLayout.subtitleRail", defaultValue: "A vertical tab list docks on each area's left edge; the count button toggles it.")
-                    : String(localized: "settings.app.tabLayout.subtitleTabs", defaultValue: "Browser-style tabs across the top of each area; the count button opens the full list."),
+                    ? String(localized: "settings.app.tabLayout.subtitleRail", defaultValue: "A vertical panel list docks on each area's left edge; the count button toggles it.")
+                    : String(localized: "settings.app.tabLayout.subtitleTabs", defaultValue: "A strip of panels across the top of each area; the count button opens the full list."),
                 controlWidth: pickerColumnWidth
             ) {
-                Picker("", selection: $tabLayoutMode) {
-                    Text(String(localized: "settings.app.tabLayout.tabs", defaultValue: "Tabs"))
-                        .tag(TabLayoutSettings.Mode.tabs.rawValue)
+                Picker("", selection: tabLayoutSelection) {
+                    Text(String(localized: "settings.app.tabLayout.tabs", defaultValue: "Strip"))
+                        .tag(TabLayoutSettings.Mode.strip.rawValue)
                     Text(String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"))
                         .tag(TabLayoutSettings.Mode.rail.rawValue)
                 }
@@ -5259,7 +5269,7 @@ struct SettingsView: View {
                 String(localized: "settings.chromeScale.title", defaultValue: "App Chrome UI Scale"),
                 subtitle: String(
                     localized: "settings.chromeScale.subtitle",
-                    defaultValue: "Scale c11 sidebar text and tab strip without changing terminal font size."
+                    defaultValue: "Scale c11 sidebar text and the panel bar without changing terminal font size."
                 ),
                 controlWidth: pickerColumnWidth,
                 selection: $chromeScalePresetRaw
@@ -5494,7 +5504,7 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut", defaultValue: "Keep Workspace When Last Tab Closes"),
+                String(localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut", defaultValue: "Keep Workspace When Last Panel Closes"),
                 subtitle: closeWorkspaceOnLastSurfaceShortcutSubtitle
             ) {
                 Toggle("", isOn: keepWorkspaceOpenOnLastSurfaceShortcutBinding)
@@ -5970,7 +5980,7 @@ struct SettingsView: View {
                 .accessibilityIdentifier("SettingsBrowserImportActions")
 
                 Toggle(
-                    String(localized: "settings.browser.import.hint.show", defaultValue: "Show import hint on blank browser tabs"),
+                    String(localized: "settings.browser.import.hint.show", defaultValue: "Show import hint on blank browser panels"),
                     isOn: browserImportHintVisibilityBinding
                 )
                 .controlSize(.small)
@@ -6225,9 +6235,9 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Tabs"),
+                String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Panels"),
                 subtitle: commandPaletteSearchAllSurfaces
-                    ? String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOn", defaultValue: "Cmd+P also matches terminal, browser, and markdown tabs across workspaces.")
+                    ? String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOn", defaultValue: "Cmd+P also matches terminal, browser, and markdown panels across workspaces.")
                     : String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOff", defaultValue: "Cmd+P matches workspace rows only.")
             ) {
                 Toggle("", isOn: $commandPaletteSearchAllSurfaces)
@@ -6235,7 +6245,7 @@ struct SettingsView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("CommandPaletteSearchAllSurfacesToggle")
                     .accessibilityLabel(
-                        String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Tabs")
+                        String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Panels")
                     )
             }
         }
@@ -6245,7 +6255,7 @@ struct SettingsView: View {
             SettingsCardRow(
                 String(localized: "settings.shortcuts.showHints", defaultValue: "Show Cmd/Ctrl-Hold Shortcut Hints"),
                 subtitle: showShortcutHintsOnCommandHold
-                    ? String(localized: "settings.shortcuts.showHints.subtitleOn", defaultValue: "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (area tabs) reveals shortcut hints.")
+                    ? String(localized: "settings.shortcuts.showHints.subtitleOn", defaultValue: "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (panel bar) reveals shortcut hints.")
                     : String(localized: "settings.shortcuts.showHints.subtitleOff", defaultValue: "Holding Cmd or Ctrl keeps shortcut hint pills hidden.")
             ) {
                 Toggle("", isOn: $showShortcutHintsOnCommandHold)

@@ -125,7 +125,7 @@ struct TabManifestView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             refRow(
-                label: String(localized: "surfaceManifest.ref.tab", defaultValue: "Tab"),
+                label: String(localized: "surfaceManifest.ref.tab", defaultValue: "Panel"),
                 value: handle.tabRef,
                 field: "tab",
                 size: .extraLarge
@@ -326,7 +326,7 @@ struct TabManifestView: View {
     @ViewBuilder
     private var bodyJSON: some View {
         if snapshot.metadata.isEmpty {
-            Text(String(localized: "surfaceManifest.empty", defaultValue: "No metadata set on this tab."))
+            Text(String(localized: "surfaceManifest.empty", defaultValue: "No metadata set on this panel."))
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
         } else {
@@ -344,13 +344,13 @@ struct TabManifestView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(
                     localized: "surfaceManifest.advanced.note",
-                    defaultValue: "Tip: copy the tab integer above (e.g. tab:75), not the UUID below."
+                    defaultValue: "Tip: copy the panel number above (e.g. panel:75), not the UUID below."
                 ))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 row(
-                    label: String(localized: "surfaceManifest.ids.surfaceUUID", defaultValue: "Tab UUID"),
+                    label: String(localized: "surfaceManifest.ids.surfaceUUID", defaultValue: "Panel UUID"),
                     value: surfaceId.uuidString
                 )
                 row(

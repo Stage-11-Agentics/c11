@@ -1,21 +1,56 @@
-name: CI hourly (macOS)
+name: CI main (macOS)
 
+# Native backstop for main: the app build, logic tests and host tests. It runs
+# when main changes, not on a clock. The concurrency group never cancels a
+# running build; GitHub holds one pending run per group and replaces it with
+# each newer push, so a burst of merges collapses to one run at a time, each
+# testing the newest main. A commit that already passed this workflow skips.
 on:
-  schedule:
-    - cron: '0 * * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if this commit already passed
+        type: boolean
+        default: false
 
 concurrency:
-  group: ci-hourly-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-main-macos-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  already-green:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      tested: ${{ steps.check.outputs.tested }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for a green run of this commit
+        id: check
+        if: ${{ !inputs.force }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WORKFLOW_PATH="${GITHUB_WORKFLOW_REF%@*}"
+          tested="$(./scripts/ci-commit-tested-green.sh "$GITHUB_REPOSITORY" "${WORKFLOW_PATH##*/}" "$GITHUB_SHA" "$GITHUB_RUN_ID")"
+          echo "tested=$tested" >> "$GITHUB_OUTPUT"
+
   build:
-    runs-on: macos-15-xlarge
-    timeout-minutes: 45
+    needs: already-green
+    if: needs.already-green.outputs.tested != 'true'
+    # Free standard runner (3 cores); the XLarge build took about 10 minutes.
+    runs-on: macos-15
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

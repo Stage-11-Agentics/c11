@@ -2,8 +2,8 @@ name: Mailbox parity
 
 # Drift-enforcement lock for the c11 mailbox primitive (C11-13 Stage 2).
 # Push and PR events stay cheap: this workflow only compiles the Python parity
-# harness. Native Mailbox* and StdinHandler* coverage runs in the hourly
-# `c11-logic` lane in `ci-hourly.yml`.
+# harness. Native Mailbox* and StdinHandler* coverage runs in the main
+# backstop's `c11-logic` lane in `ci-hourly.yml`.
 #
 # Out of scope (follow-up): launching a real c11 app on a virtual display and
 # running the Python parity test against its socket. The host-driven UI test

@@ -1842,6 +1842,8 @@ extension TerminalController {
             MetadataKey.flag,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
+            // C11-337: R2 writes the panel spelling beside the tab and surface keys.
+            "flag_caller_panel_id",
             MetadataKey.suppressed,
         ])
         let existingAttention = TabMetadataStore.shared.attentionSnapshot(
@@ -1979,6 +1981,8 @@ extension TerminalController {
             MetadataKey.flag,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
+            // C11-337: R2 writes the panel spelling beside the tab and surface keys.
+            "flag_caller_panel_id",
             MetadataKey.suppressed,
         ])
         let existingAttention = TabMetadataStore.shared.attentionSnapshot(

@@ -58,7 +58,6 @@ def main():
             features = client._call("system.capabilities")["features"]
             assert any(item["id"] == "routing.canonical_keys" and item["version"] == 1 for item in features)
             workspace = client._call("workspace.create")["workspace_id"]
-            client._call("workspace.select", {"workspace_id": workspace})
             panel = client._call("panel.list", {"workspace_id": workspace})["panels"][0]["id"]
             area = client._call("area.list", {"workspace_id": workspace})["areas"][0]["id"]
             rejected = "C11279_REJECT_" + uuid.uuid4().hex

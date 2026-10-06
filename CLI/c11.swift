@@ -3325,10 +3325,8 @@ struct CMUXCLI {
             }
 
         case "drag-panel-to-split":
-            let (surfaceArg, rem0) = parseOption(commandArgs, name: "--panel")
-            let (panelArg, rem1) = parseOption(rem0, name: "--panel")
-            let surface = surfaceArg ?? panelArg
-            guard let surface else {
+            let (surfaceArg, rem1) = parseOption(commandArgs, name: "--panel")
+            guard let surface = surfaceArg else {
                 throw CLIError(message: "drag-panel-to-split requires --panel <id|index>")
             }
             let (_, directionArgs) = parseOption(rem1, name: "--workspace")
@@ -21014,7 +21012,7 @@ extension CMUXCLI {
             ]
         ),
             (payload["resolution"] as? String) == "unique",
-            let ids = (payload["panel_ids"] ?? payload["surface_ids"]) as? [String],
+            let ids = (payload["panel_ids"] ?? payload["tab_ids"] ?? payload["surface_ids"]) as? [String],
             ids.count == 1 else {
             return nil
         }

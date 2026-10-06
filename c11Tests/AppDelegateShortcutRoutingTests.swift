@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -12,11 +13,36 @@ private let appDelegateLastSurfaceCloseShortcutDefaultsKey = "closeWorkspaceOnLa
 final class AppDelegateShortcutRoutingTests: XCTestCase {
     private var savedShortcutsByAction: [KeyboardShortcutSettings.Action: StoredShortcut] = [:]
     private var actionsWithPersistedShortcut: Set<KeyboardShortcutSettings.Action> = []
+    private var savedWelcomeShown: Any?
+    private var savedDefaultGridEnabled: Any?
+    private var baselineWindows: Set<ObjectIdentifier> = []
+    private var baselineMainWindowIds: Set<UUID> = []
+    private var baselineSurfaceIds: Set<UUID> = []
+    private weak var baselineKeyWindow: NSWindow?
+    private weak var baselineWorkspaceManager: WorkspaceManager?
+    private weak var baselineSidebarState: SidebarState?
+    private weak var baselineSidebarSelectionState: SidebarSelectionState?
 
     override func setUp() {
         super.setUp()
         // Prevent a single hanging test from consuming the entire CI timeout budget.
         executionTimeAllowance = 30
+        // Snapshot host state so tearDown can remove everything a test adds.
+        baselineWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+        baselineMainWindowIds = mainWindowIds()
+        baselineSurfaceIds = Set(TerminalSurfaceRegistry.shared.allSurfaces().map(\.id))
+        baselineKeyWindow = NSApp.keyWindow
+        baselineWorkspaceManager = AppDelegate.shared?.workspaceManager
+        baselineSidebarState = AppDelegate.shared?.sidebarState
+        baselineSidebarSelectionState = AppDelegate.shared?.sidebarSelectionState
+        // Every fixture here assumes a fresh main window opens one workspace with
+        // one terminal. The host app's first-run welcome quad and the default
+        // 2x2 grid (both applied to new workspaces) would add three panes.
+        let defaults = UserDefaults.standard
+        savedWelcomeShown = defaults.object(forKey: WelcomeSettings.shownKey)
+        savedDefaultGridEnabled = defaults.object(forKey: DefaultGridSettings.enabledKey)
+        defaults.set(true, forKey: WelcomeSettings.shownKey)
+        defaults.set(false, forKey: DefaultGridSettings.enabledKey)
         actionsWithPersistedShortcut = Set(
             KeyboardShortcutSettings.Action.allCases.filter {
                 UserDefaults.standard.object(forKey: $0.defaultsKey) != nil
@@ -34,7 +60,13 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         AppDelegate.shared?.shortcutLayoutCharacterProvider = KeyboardLayout.character(forKeyCode:modifierFlags:)
         AppDelegate.shared?.debugCloseMainWindowConfirmationHandler = nil
         AppDelegate.shared?.dismissNotificationsPopoverIfShown()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        // Cmd+N opens the New Workspace picker; never leak it into the next test.
+        for picker in createWorkspacePickerWindows() {
+            picker.close()
+        }
+        removeTestResidue()
+        restoreDefaultsValue(savedWelcomeShown, forKey: WelcomeSettings.shownKey, defaults: .standard)
+        restoreDefaultsValue(savedDefaultGridEnabled, forKey: DefaultGridSettings.enabledKey, defaults: .standard)
         for action in KeyboardShortcutSettings.Action.allCases {
             if actionsWithPersistedShortcut.contains(action),
                let savedShortcut = savedShortcutsByAction[action] {
@@ -46,7 +78,9 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         super.tearDown()
     }
 
-    func testCmdNUsesEventWindowContextWhenActiveManagerIsStale() {
+    // Cmd+N presents the New Workspace picker (it no longer creates a workspace
+    // on keyDown). Routing still adopts the event's window as the active context.
+    func testCmdNPresentsPickerAndRetargetsEventWindowWhenActiveManagerIsStale() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -94,8 +128,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N should not add workspace to stale active window")
-        XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Cmd+N should add workspace to the event's window")
+        XCTAssertEqual(createWorkspacePickerWindows().count, 1, "Cmd+N should present the New Workspace picker")
+        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N must not add a workspace to the stale active window")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount, "Cmd+N creates workspaces from the picker, not on keyDown")
+        XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Cmd+N routing should retarget the active manager to the event window")
     }
 
     func testAddWorkspaceInPreferredMainWindowIgnoresStaleWorkspaceManagerPointer() {
@@ -135,7 +171,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Workspace creation should target key/main window context")
     }
 
-    func testCmdNResolvesEventWindowWhenObjectKeyLookupIsMismatched() {
+    func testCmdNPresentsPickerAndResolvesEventWindowWhenObjectKeyLookupIsMismatched() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -193,8 +229,13 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
+        XCTAssertEqual(createWorkspacePickerWindows().count, 1, "Cmd+N should present the New Workspace picker")
         XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N should not route to another window when object-key lookup misses")
-        XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Cmd+N should still route by event window metadata when object-key lookup misses")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount, "Cmd+N creates workspaces from the picker, not on keyDown")
+        XCTAssertTrue(
+            appDelegate.workspaceManager === secondManager,
+            "Cmd+N should still route by event window metadata when object-key lookup misses"
+        )
     }
 
     func testAddWorkspaceInPreferredMainWindowUsesKeyWindowWhenObjectKeyLookupIsMismatched() {
@@ -378,6 +419,101 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
     }
 
+    // The test host always has live main windows (its own startup window plus
+    // test windows), so the orphan is never the only context. Creation must skip
+    // the orphan and land in a live window; it must never add into the orphan.
+    func testAddWorkspaceInPreferredMainWindowSkipsOrphanedContextWithoutLiveWindow() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let liveWindowId = appDelegate.createMainWindow()
+        let orphanWindowId = UUID()
+        let orphanManager = WorkspaceManager()
+        defer {
+            discardOrphanedMainWindowContext(appDelegate: appDelegate, windowId: orphanWindowId)
+            closeWindow(withId: liveWindowId)
+        }
+
+        guard let liveManager = appDelegate.workspaceManagerFor(windowId: liveWindowId),
+              let liveWindow = window(withId: liveWindowId) else {
+            XCTFail("Expected live window context")
+            return
+        }
+
+        registerOrphanedMainWindowContext(appDelegate: appDelegate, windowId: orphanWindowId, workspaceManager: orphanManager)
+
+        XCTAssertNil(appDelegate.mainWindow(for: orphanWindowId), "Test precondition: orphaned context should not have a live window")
+        XCTAssertNotNil(appDelegate.workspaceManagerFor(windowId: orphanWindowId), "Test precondition: orphaned context is registered")
+
+        liveWindow.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        // Point the app-level active manager at the orphan so a stale pointer
+        // cannot mask a routing fallback into it.
+        appDelegate.workspaceManager = orphanManager
+
+        let orphanCount = orphanManager.workspaces.count
+        let liveCount = liveManager.workspaces.count
+        let createdId = appDelegate.addWorkspaceInPreferredMainWindow()
+
+        XCTAssertNotNil(createdId, "Workspace creation should resolve a live window when the orphan is skipped")
+        XCTAssertEqual(orphanManager.workspaces.count, orphanCount, "Orphaned manager must not receive a new workspace")
+        XCTAssertEqual(liveManager.workspaces.count, liveCount + 1, "Workspace creation should land in the live key window")
+        if let createdId {
+            XCTAssertNotNil(appDelegate.mainWindowContainingWorkspace(createdId), "Created workspace must belong to a live window")
+        }
+    }
+
+    // A remapped New Workspace shortcut presents the New Workspace picker; it
+    // must not create into an orphaned context or open a fallback window.
+    func testCustomCmdTNewWorkspacePresentsPickerAndSkipsOrphanedContext() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let existingWindowIds = mainWindowIds()
+        let orphanWindowId = UUID()
+        let orphanManager = WorkspaceManager()
+        defer { discardOrphanedMainWindowContext(appDelegate: appDelegate, windowId: orphanWindowId) }
+
+        registerOrphanedMainWindowContext(appDelegate: appDelegate, windowId: orphanWindowId, workspaceManager: orphanManager)
+
+        XCTAssertNil(appDelegate.mainWindow(for: orphanWindowId), "Test precondition: orphaned context should not have a live window")
+
+        let orphanCount = orphanManager.workspaces.count
+        let remappedCmdT = StoredShortcut(key: "t", command: true, shift: false, option: false, control: false)
+
+        withTemporaryShortcut(action: .newWorkspace, shortcut: remappedCmdT) {
+            guard let event = makeKeyDownEvent(
+                key: "t",
+                modifiers: [.command],
+                keyCode: 17, // kVK_ANSI_T
+                windowNumber: 0
+            ) else {
+                XCTFail("Failed to construct remapped Cmd+T event")
+                return
+            }
+
+#if DEBUG
+            XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: event))
+#else
+            XCTFail("debugHandleCustomShortcut is only available in DEBUG")
+#endif
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+
+        XCTAssertEqual(createWorkspacePickerWindows().count, 1, "Remapped Cmd+T should present the New Workspace picker")
+        XCTAssertEqual(orphanManager.workspaces.count, orphanCount, "Orphaned manager must not receive a new workspace from remapped Cmd+T")
+
+        let createdWindowIds = mainWindowIds().subtracting(existingWindowIds)
+        XCTAssertTrue(createdWindowIds.isEmpty, "Remapped Cmd+T should not open a fallback main window while windows exist")
+        for windowId in createdWindowIds {
+            closeWindow(withId: windowId)
+        }
+    }
+
     func testCmdDigitRoutesToEventWindowWhenActiveManagerIsStale() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
@@ -536,11 +672,14 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #else
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
+        // Check the routing decision before spinning the run loop: afterwards the
+        // active manager legitimately follows the key window (the first window
+        // here) whenever SwiftUI re-reads it, which races this synthetic setup.
+        XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Split shortcut routing should keep the event window active")
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
         XCTAssertEqual(firstWorkspace.panels.count, firstSurfaceCount, "Cmd+D must not create a split in the stale key window")
         XCTAssertEqual(secondWorkspace.panels.count, secondSurfaceCount + 1, "Cmd+D should create a split in the event window")
-        XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Split shortcut routing should keep the event window active")
     }
 
     func testPerformSplitShortcutSplitsFocusedTerminalSurfaceWhenSelectedWorkspaceIsStale() {
@@ -703,9 +842,14 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-
-        XCTAssertNil(self.window(withId: windowId), "Confirming Cmd+Ctrl+W should close the window")
+        // `targetWindow` keeps the closed NSWindow alive (and listed in
+        // NSApp.windows), so assert the close itself: ordered out and its
+        // context torn down by the will-close observer.
+        XCTAssertTrue(
+            waitUntil { !targetWindow.isVisible && appDelegate.workspaceManagerFor(windowId: windowId) == nil },
+            "Confirming Cmd+Ctrl+W should close the window"
+        )
+        if targetWindow.isVisible { closeWindow(withId: windowId) }
     }
 
     func testWillCloseNotificationRetainsCloseGuardUntilDelegateCallback() {
@@ -768,6 +912,15 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertEqual(manager.workspaces.count, 1)
         XCTAssertEqual(manager.workspaces[0].panels.count, 1)
 
+        // The test host's Ghostty bundle ships no shell-integration scripts, so
+        // Ghostty cannot tell the fresh shell is idle and close-confirm would
+        // gate this close. Report the idle prompt the way c11 shell integration
+        // does in a real session.
+        let workspace = manager.workspaces[0]
+        for panelId in workspace.panels.keys {
+            workspace.updatePanelShellActivityState(panelId: panelId, state: .promptIdle)
+        }
+
         guard let event = makeKeyDownEvent(
             key: "w",
             modifiers: [.command],
@@ -784,10 +937,11 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-
-        XCTAssertNil(
-            self.window(withId: windowId),
+        // `targetWindow` keeps the closed NSWindow alive (and listed in
+        // NSApp.windows), so assert the close itself: ordered out and its
+        // context torn down by the will-close observer.
+        XCTAssertTrue(
+            waitUntil { !targetWindow.isVisible && appDelegate.workspaceManagerFor(windowId: windowId) == nil },
             "Cmd+W on the last surface in the last workspace should close the window"
         )
     }
@@ -819,6 +973,12 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             XCTFail("Expected test window, manager, workspace, and focused panel")
             return
         }
+
+        // The test host's Ghostty bundle ships no shell-integration scripts, so
+        // Ghostty cannot tell the fresh shell is idle and close-confirm would
+        // gate this close. Report the idle prompt the way c11 shell integration
+        // does in a real session.
+        workspace.updatePanelShellActivityState(panelId: initialPanelId, state: .promptIdle)
 
         guard let event = makeKeyDownEvent(
             key: "w",
@@ -884,7 +1044,11 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             }
         }
 
-        guard let event = makeKeyDownEvent(
+        // An event addressed to a non-main window has no main-window context, so
+        // the app-level handler returns it to AppKit's normal dispatch
+        // (handleCustomShortcut's unresolved-event-window bypass). It must not
+        // fall back to closing a terminal panel in some other window.
+        guard let addressedEvent = makeKeyDownEvent(
             key: "w",
             modifiers: [.command],
             keyCode: 13,
@@ -895,9 +1059,32 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
 
 #if DEBUG
-        XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: event))
+        XCTAssertFalse(
+            appDelegate.debugHandleCustomShortcut(event: addressedEvent),
+            "Cmd+W addressed to an auxiliary window should pass through to AppKit"
+        )
 #else
         throw XCTSkip("debugHandleCustomShortcut is only available in DEBUG builds")
+#endif
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertEqual(manager.workspaces.count, mainWorkspaceCount, "Pass-through Cmd+W must not close a terminal panel")
+        XCTAssertNotNil(self.window(withId: windowId), "Pass-through Cmd+W must not close the main window")
+
+        // An event with no window (responder-chain paths) is routed by the key
+        // window; the handler owns the close for a key auxiliary window.
+        XCTAssertTrue(auxiliaryWindow.isKeyWindow, "Test precondition: auxiliary window is key")
+        guard let unaddressedEvent = makeKeyDownEvent(
+            key: "w",
+            modifiers: [.command],
+            keyCode: 13,
+            windowNumber: 0
+        ) else {
+            XCTFail("Failed to construct Cmd+W event")
+            return
+        }
+
+#if DEBUG
+        XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: unaddressedEvent))
 #endif
 
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
@@ -2448,27 +2635,35 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
 
         guard let window = window(withId: windowId),
-              let contentView = window.contentView else {
+              let themeFrame = window.contentView?.superview else {
             XCTFail("Expected test window")
             return
         }
 
-        let overlayContainer = NSView(frame: contentView.bounds)
-        overlayContainer.identifier = commandPaletteOverlayContainerIdentifier
+        // Every main window mounts the real (hidden) palette overlay container in
+        // its theme frame. Reveal that container, as the overlay does when it
+        // presents ahead of the AppDelegate visibility sync, rather than adding a
+        // second container the routing lookup would never reach.
+        guard let overlayContainer = firstSubview(in: themeFrame, identifier: commandPaletteOverlayContainerIdentifier) else {
+            XCTFail("Expected the window's command palette overlay container")
+            return
+        }
+        let originalHidden = overlayContainer.isHidden
+        let originalAlpha = overlayContainer.alphaValue
         overlayContainer.alphaValue = 1
         overlayContainer.isHidden = false
-        contentView.addSubview(overlayContainer)
 
         let fieldEditor = CommandPaletteMarkedTextFieldEditor(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         fieldEditor.isFieldEditor = true
         overlayContainer.addSubview(fieldEditor)
+        defer {
+            fieldEditor.removeFromSuperview()
+            overlayContainer.alphaValue = originalAlpha
+            overlayContainer.isHidden = originalHidden
+        }
         XCTAssertTrue(window.makeFirstResponder(fieldEditor))
 
         appDelegate.setCommandPaletteVisible(false, for: window)
-        defer {
-            overlayContainer.removeFromSuperview()
-            fieldEditor.removeFromSuperview()
-        }
 
         let moveExpectation = expectation(
             description: "Expected command palette move-selection notification while overlay is interactive"
@@ -3324,6 +3519,121 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         // close(), not performClose(): teardown must not raise the close prompt.
         window.close()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+
+    /// Leaves the host as setUp found it. Each main window a test opens runs a
+    /// real Ghostty terminal (login shell + renderer), and closing the window does
+    /// not free it here: without this sweep the class leaves ~one live terminal
+    /// per test behind and starves later classes' main-queue work.
+    private func removeTestResidue() {
+        guard let appDelegate = AppDelegate.shared else { return }
+
+        for windowId in mainWindowIds().subtracting(baselineMainWindowIds) {
+            closeWindow(withId: windowId)
+        }
+        for window in NSApp.windows
+        where !baselineWindows.contains(ObjectIdentifier(window))
+            && window.isVisible
+            && (window.identifier?.rawValue.hasPrefix("cmux.") ?? false) {
+            window.close()
+        }
+
+        // Orphaned contexts (registered, but their NSWindow is gone).
+        for summary in appDelegate.listMainWindowSummaries()
+        where !baselineMainWindowIds.contains(summary.windowId)
+            && appDelegate.mainWindow(for: summary.windowId) == nil {
+            discardOrphanedMainWindowContext(appDelegate: appDelegate, windowId: summary.windowId)
+        }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+#if DEBUG
+        // Free every terminal created during the test that is still alive.
+        for surface in TerminalSurfaceRegistry.shared.allSurfaces()
+        where !baselineSurfaceIds.contains(surface.id) {
+            surface.releaseSurfaceForTesting()
+        }
+#endif
+
+        if let manager = baselineWorkspaceManager,
+           appDelegate.windowId(for: manager) != nil {
+            appDelegate.workspaceManager = manager
+            appDelegate.sidebarState = baselineSidebarState
+            appDelegate.sidebarSelectionState = baselineSidebarSelectionState
+            TerminalController.shared.setActiveWorkspaceManager(manager)
+        }
+        if let keyWindow = baselineKeyWindow, keyWindow.isVisible, !keyWindow.isKeyWindow {
+            keyWindow.makeKey()
+        }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+
+    private func firstSubview(in root: NSView, identifier: NSUserInterfaceItemIdentifier) -> NSView? {
+        var stack: [NSView] = [root]
+        while let candidate = stack.popLast() {
+            if candidate.identifier == identifier { return candidate }
+            stack.append(contentsOf: candidate.subviews)
+        }
+        return nil
+    }
+
+    /// Visible New Workspace picker windows (Cmd+N / File > New Workspace).
+    private func createWorkspacePickerWindows() -> [NSWindow] {
+        NSApp.windows.filter { window in
+            window.isVisible && window.contentViewController is NSHostingController<CreateWorkspaceSheet>
+        }
+    }
+
+    private func waitUntil(timeout: TimeInterval = 2.0, _ condition: () -> Bool) -> Bool {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while !condition() {
+            if Date() >= deadline { return false }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        return true
+    }
+
+    /// Registers a main-window context whose NSWindow is already deallocated.
+    private func registerOrphanedMainWindowContext(
+        appDelegate: AppDelegate,
+        windowId: UUID,
+        workspaceManager: WorkspaceManager
+    ) {
+        autoreleasepool {
+            var orphanWindow: NSWindow? = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            orphanWindow?.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+            appDelegate.registerMainWindow(
+                orphanWindow!,
+                windowId: windowId,
+                workspaceManager: workspaceManager,
+                sidebarState: SidebarState(),
+                sidebarSelectionState: SidebarSelectionState()
+            )
+            orphanWindow = nil
+        }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+
+    /// Drops an orphaned context through the real will-close teardown, using a
+    /// stand-in window that carries the orphan's identifier, so it cannot leak
+    /// into later tests.
+    private func discardOrphanedMainWindowContext(appDelegate: AppDelegate, windowId: UUID) {
+        guard appDelegate.workspaceManagerFor(windowId: windowId) != nil else { return }
+        let standIn = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: true
+        )
+        standIn.isReleasedWhenClosed = false
+        standIn.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+#if DEBUG
+        appDelegate.debugUnregisterMainWindow(standIn)
+#endif
     }
 
     private func restoreDefaultsValue(_ value: Any?, forKey key: String, defaults: UserDefaults) {

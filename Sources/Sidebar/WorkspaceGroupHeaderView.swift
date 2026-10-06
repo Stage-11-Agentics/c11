@@ -209,7 +209,7 @@ struct WorkspaceGroupHeaderView: View, Equatable {
             ForEach(palette) { entry in
                 Button { applyColor(entry.hex) } label: {
                     Label {
-                        Text(String(localized: "workspaceGroup.colorValue", defaultValue: "Color \(entry.hex)"))
+                        Text(verbatim: WorkspaceColorSettings.localizedColorName(entry.name))
                     } icon: {
                         Image(nsImage: colorSwatch(entry.hex))
                     }

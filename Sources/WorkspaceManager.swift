@@ -443,6 +443,44 @@ enum WorkspaceColorSettings {
         defaults.removeObject(forKey: customColorsKey)
     }
 
+    /// Palette name for `hex` (English identifier), or nil when no palette entry
+    /// carries that color. Pure; the matching ignores case and a missing `#`.
+    static func paletteName(forHex hex: String, in palette: [WorkspaceColorEntry]) -> String? {
+        guard let normalized = normalizedHex(hex) else { return nil }
+        return palette.first { normalizedHex($0.hex) == normalized }?.name
+    }
+
+    /// Human-facing label for a palette entry. Built-in names are localized;
+    /// custom entries keep their generated "Custom N" name.
+    static func localizedColorName(_ name: String) -> String {
+        switch name {
+        case "Red": return String(localized: "workspaceColor.name.red", defaultValue: "Red")
+        case "Crimson": return String(localized: "workspaceColor.name.crimson", defaultValue: "Crimson")
+        case "Orange": return String(localized: "workspaceColor.name.orange", defaultValue: "Orange")
+        case "Amber": return String(localized: "workspaceColor.name.amber", defaultValue: "Amber")
+        case "Olive": return String(localized: "workspaceColor.name.olive", defaultValue: "Olive")
+        case "Green": return String(localized: "workspaceColor.name.green", defaultValue: "Green")
+        case "Teal": return String(localized: "workspaceColor.name.teal", defaultValue: "Teal")
+        case "Aqua": return String(localized: "workspaceColor.name.aqua", defaultValue: "Aqua")
+        case "Blue": return String(localized: "workspaceColor.name.blue", defaultValue: "Blue")
+        case "Navy": return String(localized: "workspaceColor.name.navy", defaultValue: "Navy")
+        case "Indigo": return String(localized: "workspaceColor.name.indigo", defaultValue: "Indigo")
+        case "Purple": return String(localized: "workspaceColor.name.purple", defaultValue: "Purple")
+        case "Magenta": return String(localized: "workspaceColor.name.magenta", defaultValue: "Magenta")
+        case "Rose": return String(localized: "workspaceColor.name.rose", defaultValue: "Rose")
+        case "Brown": return String(localized: "workspaceColor.name.brown", defaultValue: "Brown")
+        case "Charcoal": return String(localized: "workspaceColor.name.charcoal", defaultValue: "Charcoal")
+        default: return name
+        }
+    }
+
+    /// What a human sees for a stored color: the (localized) palette name, or the
+    /// hex itself when the color matches no palette entry (e.g. set via the CLI).
+    static func displayLabel(forHex hex: String, in palette: [WorkspaceColorEntry]) -> String {
+        guard let name = paletteName(forHex: hex, in: palette) else { return hex }
+        return localizedColorName(name)
+    }
+
     static func normalizedHex(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }

@@ -1064,6 +1064,13 @@ enum WorkspaceLayoutExecutor {
                     }
                 }
             }
+            // A blueprint's tab icon / color land in the store; paint them.
+            if spec.metadata?[MetadataKey.icon] != nil {
+                workspace.syncTabIconFromMetadata(panelId: panelId)
+            }
+            if spec.metadata?[MetadataKey.color] != nil {
+                workspace.syncTabColorFromMetadata(panelId: panelId)
+            }
             timings.append(StepTiming(
                 step: "metadata.surface[\(spec.id)].write",
                 durationMs: surfaceClock.elapsedMs

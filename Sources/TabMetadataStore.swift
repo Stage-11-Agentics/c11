@@ -27,6 +27,18 @@ public enum MetadataKey {
     static let flagCallerKeys = [flagCallerTabId, legacyFlagCallerSurfaceId]
     public static let suppressed = "suppressed"
 
+    /// Operator/agent-set tab identity marker. `icon` is a short glyph (usually
+    /// one emoji, or `sf:<symbol>`); `color` is the tab color, stored as
+    /// `#RRGGBB` (palette names are resolved on write). Both render on the
+    /// tab's trailing edge, left of the close X. `color` mirrors the tab color
+    /// owned by `Workspace.tabCustomColors` (the right-click palette and
+    /// `c11 tab-color` write the same value). A blank value clears either key.
+    public static let icon = "icon"
+    public static let color = "color"
+    static let maxIconLength = 32
+    /// Keys where a blank string write means "remove the key".
+    static let blankClearsKeys: Set<String> = [icon, color]
+
     /// C11-104 — derived canonical keys. Written by the c11 runtime,
     /// not by agents. Validated as plain strings with size caps.
     public static let worktree = "worktree"
@@ -43,7 +55,8 @@ public enum MetadataKey {
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, suppressed
+        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, suppressed,
+        icon, color
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -201,6 +214,8 @@ final class TabMetadataStore: @unchecked Sendable {
         "flag_caller_surface_id",
         "flag_caller_tab_id",
         "suppressed",
+        "icon",
+        "color",
         "claude.session_id",
         "claude.session_project_dir",
         "opencode.session_id",
@@ -319,6 +334,30 @@ final class TabMetadataStore: @unchecked Sendable {
                 return .reservedKeyInvalidType(key, "expected boolean")
             }
             return nil
+        case "icon":
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count > MetadataKey.maxIconLength {
+                return .reservedKeyInvalidType(key, "exceeds max length \(MetadataKey.maxIconLength)")
+            }
+            if trimmed.contains("\n") || trimmed.contains("\r") {
+                return .reservedKeyInvalidType(key, "must be a single line")
+            }
+            return nil
+        case "color":
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if isBlank(s) { return nil }
+            if WorkspaceColorSettings.resolvedColorHex(s) == nil {
+                return .reservedKeyInvalidType(
+                    key,
+                    "expected #RRGGBB or a palette color name (\(WorkspaceColorSettings.paletteNameList()))"
+                )
+            }
+            return nil
         case "claude.session_id":
             // Claude SessionStart's `session_id` is a UUIDv4; reject
             // anything else. The value is interpolated verbatim into
@@ -385,6 +424,26 @@ final class TabMetadataStore: @unchecked Sendable {
             return nil
         default:
             return nil
+        }
+    }
+
+    static func isBlank(_ value: Any) -> Bool {
+        guard let s = value as? String else { return false }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Canonical stored form of an already-validated reserved value. `icon`
+    /// is trimmed; `color` resolves palette names and hex spellings to
+    /// `#RRGGBB`. Every other key is stored as written.
+    static func normalizedReservedValue(_ key: String, _ value: Any) -> Any {
+        switch key {
+        case MetadataKey.icon:
+            return (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? value
+        case MetadataKey.color:
+            guard let s = value as? String else { return value }
+            return WorkspaceColorSettings.resolvedColorHex(s) ?? value
+        default:
+            return value
         }
     }
 
@@ -971,6 +1030,12 @@ final class TabMetadataStore: @unchecked Sendable {
               key != MetadataKey.suppressed else {
             return false
         }
+        // Canonical stored form (e.g. `color` → `#RRGGBB`). A blank `icon` /
+        // `color` is a clear, which this single-key setter does not perform.
+        let value = TabMetadataStore.normalizedReservedValue(key, value)
+        if MetadataKey.blankClearsKeys.contains(key), TabMetadataStore.isBlank(value) {
+            return false
+        }
         return queue.sync {
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sblob = sources[workspaceId]?[surfaceId] ?? [:]
@@ -1081,10 +1146,22 @@ final class TabMetadataStore: @unchecked Sendable {
             if !priorBlob.isEmpty || !priorSrc.isEmpty { mutated = true }
         }
 
-        for (k, v) in partial {
+        for (k, rawValue) in partial {
             if mode == .merge, let cur = sblob[k], source.precedence < cur.source.precedence {
                 result.applied[k] = false
                 result.reasons[k] = "lower_precedence"
+                continue
+            }
+            let v = TabMetadataStore.normalizedReservedValue(k, rawValue)
+            // A blank `icon` / `color` clears the key, the same as clear_metadata.
+            if MetadataKey.blankClearsKeys.contains(k), TabMetadataStore.isBlank(v) {
+                let hadValue = blob.removeValue(forKey: k) != nil
+                let hadSource = sblob.removeValue(forKey: k) != nil
+                if hadValue || hadSource || mode == .replace {
+                    result.removedKeys.insert(k)
+                }
+                if hadValue || hadSource { mutated = true }
+                result.applied[k] = true
                 continue
             }
             // No-op skip for revision counter: same value and same source

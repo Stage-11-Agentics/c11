@@ -3240,3 +3240,133 @@ final class WorkspaceTabCustomColorTests: XCTestCase {
         )
     }
 }
+
+// MARK: - Tab icon + color (canonical `icon` / `color` metadata)
+
+@MainActor
+final class WorkspaceTabIconColorTests: XCTestCase {
+    private let store = TabMetadataStore.shared
+
+    private func color(_ ws: Workspace, _ panelId: UUID) -> String? {
+        store.metadataValue(workspaceId: ws.id, surfaceId: panelId, key: MetadataKey.color) as? String
+    }
+
+    private func badge(_ ws: Workspace, _ panelId: UUID) -> String? {
+        ws.bonsplitTabIdFromTabId(panelId).flatMap { ws.bonsplitController.tab($0)?.badgeGlyph }
+    }
+
+    func testTabColorMirrorsIntoColorMetadata() throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        defer { store.removeSurface(workspaceId: workspace.id, surfaceId: panelId) }
+
+        workspace.setTabCustomColor(panelId: panelId, color: "teal")
+        let teal = WorkspaceColorSettings.defaultColorHex(named: "Teal")
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), teal)
+        XCTAssertEqual(color(workspace, panelId), teal)
+        XCTAssertEqual(store.getSource(workspaceId: workspace.id, surfaceId: panelId, key: MetadataKey.color), .explicit)
+
+        workspace.setTabCustomColor(panelId: panelId, color: nil)
+        XCTAssertNil(color(workspace, panelId))
+    }
+
+    func testColorMetadataWriteDrivesTabColorAndKeepsWriterTier() throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let tabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
+        defer { store.removeSurface(workspaceId: workspace.id, surfaceId: panelId) }
+
+        _ = try store.setMetadata(
+            workspaceId: workspace.id, surfaceId: panelId,
+            partial: [MetadataKey.color: "#c0392b"], mode: .merge, source: .declare
+        )
+        workspace.syncTabColorFromMetadata(panelId: panelId)
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#C0392B")
+        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.customColorHex, "#C0392B")
+        XCTAssertEqual(store.getSource(workspaceId: workspace.id, surfaceId: panelId, key: MetadataKey.color), .declare)
+
+        _ = try store.setMetadata(
+            workspaceId: workspace.id, surfaceId: panelId,
+            partial: [MetadataKey.color: ""], mode: .merge, source: .declare
+        )
+        workspace.syncTabColorFromMetadata(panelId: panelId)
+        XCTAssertNil(workspace.tabCustomColor(panelId: panelId))
+        XCTAssertNil(workspace.bonsplitController.tab(tabId)?.customColorHex)
+    }
+
+    func testIconMetadataDrivesTabBadgeAndBlankClears() throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        defer { store.removeSurface(workspaceId: workspace.id, surfaceId: panelId) }
+        XCTAssertNil(badge(workspace, panelId))
+
+        _ = try store.setMetadata(
+            workspaceId: workspace.id, surfaceId: panelId,
+            partial: [MetadataKey.icon: "🚀"], mode: .merge, source: .explicit
+        )
+        workspace.syncTabIconFromMetadata(panelId: panelId)
+        XCTAssertEqual(badge(workspace, panelId), "🚀")
+
+        _ = try store.clearMetadata(
+            workspaceId: workspace.id, surfaceId: panelId, keys: [MetadataKey.icon], source: .explicit
+        )
+        workspace.syncTabIconFromMetadata(panelId: panelId)
+        XCTAssertNil(badge(workspace, panelId))
+    }
+
+    func testDetachAttachCarriesIconAndColorMetadata() throws {
+        let source = Workspace()
+        let panelId = try XCTUnwrap(source.focusedPanelId)
+        _ = try store.setMetadata(
+            workspaceId: source.id, surfaceId: panelId,
+            partial: [MetadataKey.icon: "🧪"], mode: .merge, source: .declare
+        )
+        source.syncTabIconFromMetadata(panelId: panelId)
+        source.setTabCustomColor(panelId: panelId, color: "#7B3F00")
+
+        let detached = try XCTUnwrap(source.detachTab(panelId: panelId))
+        let destination = Workspace()
+        let pane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        defer { store.removeSurface(workspaceId: destination.id, surfaceId: panelId) }
+        XCTAssertEqual(destination.attachDetachedTab(detached, inPane: pane, focus: false), panelId)
+
+        XCTAssertEqual(badge(destination, panelId), "🧪")
+        XCTAssertEqual(destination.tabIcon(panelId: panelId), "🧪")
+        XCTAssertEqual(store.getSource(workspaceId: destination.id, surfaceId: panelId, key: MetadataKey.icon), .declare)
+        XCTAssertEqual(color(destination, panelId), "#7B3F00")
+    }
+
+    func testIconAndColorSurviveSessionSnapshotRoundTrip() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-tab-icon-color-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let markdownURL = root.appendingPathComponent("note.md")
+        try "# hi\n".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+        let workspace = Workspace()
+        let pane = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let panel = try XCTUnwrap(workspace.newMarkdownTab(inPane: pane, filePath: markdownURL.path, focus: true))
+        _ = try store.setMetadata(
+            workspaceId: workspace.id, surfaceId: panel.id,
+            partial: [MetadataKey.icon: "🦊"], mode: .merge, source: .explicit
+        )
+        workspace.setTabCustomColor(panelId: panel.id, color: "navy")
+        let navy = WorkspaceColorSettings.defaultColorHex(named: "Navy")
+
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let restored = Workspace()
+        restored.restoreSessionSnapshot(snapshot)
+        defer {
+            store.removeSurface(workspaceId: workspace.id, surfaceId: panel.id)
+            store.removeSurface(workspaceId: restored.id, surfaceId: panel.id)
+        }
+
+        XCTAssertEqual(restored.tabIcon(panelId: panel.id), "🦊")
+        XCTAssertEqual(badge(restored, panel.id), "🦊")
+        XCTAssertEqual(restored.tabCustomColor(panelId: panel.id), navy)
+        XCTAssertEqual(color(restored, panel.id), navy)
+        let restoredTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panel.id))
+        XCTAssertEqual(restored.bonsplitController.tab(restoredTabId)?.customColorHex, navy)
+    }
+}

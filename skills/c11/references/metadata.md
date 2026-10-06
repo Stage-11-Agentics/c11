@@ -34,6 +34,8 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `progress` | number | 0.0 – 1.0 | sidebar: progress bar |
 | `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `grok`, `kimi`, `opencode`, `github-copilot`, `pi`, `omp`, `shell`, `unknown`. Open-ended. |
 | `title` | string | plain text, ≤ 256 chars | tab label + sidebar label (truncated) |
+| `icon` | string | ≤ 32 chars, single line; usually one emoji, `sf:<symbol>` for an SF Symbol. Blank write clears. | tab strip: badge pinned left of the close X (title truncates, badge stays); tab sheet + rail: after the title. Renders at most 4 characters. |
+| `color` | string | `#RRGGBB` or a palette name (`red`, `teal`, `blue`, … case-insensitive), stored normalized as `#RRGGBB`. Blank write clears. | tints the `icon` badge (a dot when no icon) and the tab's top accent rail. Mirrors the tab color set by `c11 tab-color` and the tab's context menu: one color, readable here, so clearing `color` (including a keyless `clear-metadata` or a `replace` without it) clears the tab color. |
 | `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | bar under the tabs (one line collapsed, full when expanded) + tab sheet subtitle + sidebar agent line (flattened to one truncated line after the title) |
 | `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the tab's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |
 | `branch` | string | ≤ 64 chars (branch name, `(detached @ <short-sha>)`, or `(no branch)`) | sidebar chip. Renders for main checkouts and linked worktrees. Dimmed for branch ∈ {`main`, `master`, `trunk`}. **Derived** — written by c11 runtime, not by agents. |
@@ -136,6 +138,16 @@ c11 get-titlebar-state --tab tab:3
 ```
 
 Writes canonical `title` or `description` with `source: explicit`. `c11 rename-tab` is an alias for `c11 set-title`.
+
+### Icon & color sugar
+
+```bash
+c11 set-tab-icon  --tab "$C11_TAB_ID" "🧪"         # or sf:hammer.fill
+c11 set-tab-color --tab "$C11_TAB_ID" teal         # or "#006B6B"
+c11 set-tab-icon  --tab "$C11_TAB_ID" --clear      # "" also clears
+```
+
+Write canonical `icon` / `color` with `source: explicit` (`--source` overrides). Equivalent to `set-metadata --key icon|color --value …`; a blank value clears the key.
 
 The description renders with MarkdownUI at 11pt with a compact heading hierarchy (13/12/11). Links render styled but are **not navigable** in v1 (`OpenURLAction { .discarded }`). Images, fenced code blocks, and table rows are stripped at render time; the raw string still round-trips through the store unchanged. Content over ~5 lines scrolls internally inside a 90pt-capped region.
 

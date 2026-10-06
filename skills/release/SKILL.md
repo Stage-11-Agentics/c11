@@ -195,7 +195,7 @@ When `release.yml` cannot run (runner billing, outage), `scripts/release-local.s
 
 - Tag first (step 10). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
 - Run `--dry-run` first. It stops before notarization, rehearses the DMG and appcast with a throwaway Sparkle key, and publishes nothing.
-- A real run needs the `c11-notary` notarytool keychain profile. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
+- A real run needs the `c11-notary` notarytool keychain profile. It also needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
 - The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`). The release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
 
 ## Reference

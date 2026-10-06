@@ -30,7 +30,8 @@ scripts/release-local.sh vX.Y.Z
 
 Before it runs, check that:
 - The `c11-notary` notarytool keychain profile exists (the preflight fails fast without it).
-- Someone is at the Mac: the first read of the `c11mux` Sparkle key shows one keychain dialog for Sparkle's `generate_keys`. *Always Allow* makes later runs silent.
+- Atlas builds with the pinned release toolchain. The script refuses an app whose `DTXcode` differs from `RELEASE_DTXCODE` (1640, Xcode 16.4, as v0.67.0 shipped). Moving the pin (`C11_RELEASE_DTXCODE`) is a deliberate SDK change and should move `release.yml` with it.
+- Someone is at the Mac: the first read of the `c11mux` Sparkle key shows one keychain dialog for Sparkle's `generate_keys`, asking for the login password. *Always Allow* makes later runs silent.
 
 `--reuse-build` reruns the tail from the existing Atlas build of the same HEAD, for example after a notarization failure. If the run fails, run `say "c11 release failed"` and read `build-release-local/vX.Y.Z/release-local.log`.
 

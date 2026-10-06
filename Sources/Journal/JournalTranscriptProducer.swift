@@ -7,7 +7,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
     static let shared = JournalTranscriptProducer()
 
     private struct OwnerKey: Hashable {
-        let tabID: UUID
+        let panelID: UUID
         let workspaceID: UUID
         let agentKind: String
         let sessionID: String
@@ -38,7 +38,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         now: Date = Date()
     ) {
         guard ["codex", "grok"].contains(target.kind), !ref.placeholder else { return }
-        let key = OwnerKey(tabID: target.surfaceId, workspaceID: target.workspaceId,
+        let key = OwnerKey(panelID: target.surfaceId, workspaceID: target.workspaceId,
                            agentKind: target.kind, sessionID: ref.id)
         if case .gap = coverage { requireGap(for: key) }
 
@@ -78,7 +78,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
             adapter: adapter,
             nativeEvent: observation.nativeEvent
         )
-        draft.tabID = target.surfaceId
+        draft.panelID = target.surfaceId
         draft.workspaceID = target.workspaceId
         draft.sessionID = ref.id
         draft.turnID = observation.turnID
@@ -104,7 +104,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
             adapter: .c11,
             nativeEvent: "adapter_gap"
         )
-        draft.tabID = target.surfaceId
+        draft.panelID = target.surfaceId
         draft.workspaceID = target.workspaceId
         draft.sessionID = ref.id
         draft.signal = .adapterGap

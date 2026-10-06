@@ -82,9 +82,9 @@
       </element>
     </class>
 
-    <class name="terminal" code="CMtr" plural="terminals" description="An individual terminal tab.">
+    <class name="terminal" code="CMtr" plural="terminals" description="An individual terminal panel.">
       <cocoa class="CmuxScriptTerminal"/>
-      <property name="id" code="ID  " type="text" access="r" description="Stable ID for this terminal tab."/>
+      <property name="id" code="ID  " type="text" access="r" description="Stable ID for this terminal panel."/>
       <property name="name" code="pnam" type="text" access="r" description="Current terminal title.">
         <cocoa key="title"/>
       </property>

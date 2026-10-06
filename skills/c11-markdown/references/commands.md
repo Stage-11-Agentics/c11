@@ -1,6 +1,6 @@
 # Command Reference (c11 Markdown)
 
-## Opening a Markdown Tab
+## Opening a Markdown Panel
 
 ```bash
 c11 markdown open <path>
@@ -12,13 +12,13 @@ c11 markdown <path>          # shorthand (implicit "open")
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--workspace <id\|ref\|index>` | Target workspace | `$C11_WORKSPACE_ID` |
-| `--tab <id\|ref\|index>` | Source tab to split from | Focused tab |
+| `--panel <id\|ref\|index>` | Source panel to split from | Focused panel |
 | `--window <id\|ref>` | Target window | Current window |
 
 ### Output
 
 ```
-OK tab=tab:8 area=area:3 path=/absolute/path/to/file.md
+OK panel=panel:8 area=area:3 path=/absolute/path/to/file.md
 ```
 
 With `--json`:
@@ -28,7 +28,7 @@ With `--json`:
   "window_id": "...",
   "workspace_id": "...",
   "area_id": "...",
-  "tab_id": "...",
+  "panel_id": "...",
   "path": "/absolute/path/to/file.md"
 }
 ```
@@ -46,17 +46,17 @@ c11 markdown open ./plan.md
 c11 markdown open /Users/me/project/plan.md
 ```
 
-## Tab Behavior
+## Panel Behavior
 
-- The tab opens as a **horizontal split** to the right of the source tab.
-- The tab title shows the filename (e.g., `plan.md`).
-- The tab icon is a document icon.
+- The panel opens as a **horizontal split** to the right of the source panel.
+- The panel title shows the filename (e.g., `plan.md`).
+- The panel icon is a document icon.
 - Content is **read-only** with text selection enabled.
-- The file path is displayed as a breadcrumb at the top of the tab.
+- The file path is displayed as a breadcrumb at the top of the panel.
 
 ## Session Persistence
 
-Markdown tabs are saved and restored across sessions. On restore, the tab re-reads the file from disk. If the file no longer exists at restore time, the tab is not recreated.
+Markdown panels are saved and restored across sessions. On restore, the panel re-reads the file from disk. If the file no longer exists at restore time, the panel is not recreated.
 
 ## Help
 

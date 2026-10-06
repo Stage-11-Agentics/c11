@@ -29,7 +29,8 @@ def main():
                         assert connection["auth"], "reconnected client omitted authentication"
                         request = json.loads(line)
                         if request["method"] == "system.capabilities":
-                            result = {"methods": ["tab.list", "feed.list"]}
+                            result = {"methods": ["panel.list", "feed.list"],
+                                      "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                         else:
                             assert request["method"] == "feed.list", request
                             connection["scopes"].append(request["params"]["scope"])

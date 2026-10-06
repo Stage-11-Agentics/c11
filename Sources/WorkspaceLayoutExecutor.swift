@@ -160,8 +160,8 @@ enum WorkspaceLayoutExecutor {
         // Resolve the seed panel that `addWorkspace` produced in the root
         // pane. Every path below expects at least one seed; if it isn't
         // available yet, record a partial failure and return what we have.
-        guard let seedTab = workspace.focusedTerminalTab,
-              let rootPaneId = workspace.paneIdForTab(seedTab.id) else {
+        guard let seedPanel = workspace.focusedTerminalPanel,
+              let rootPaneId = workspace.paneIdForPanel(seedPanel.id) else {
             let failure = ApplyFailure(
                 code: "seed_panel_missing",
                 step: "layout.walk",
@@ -184,7 +184,7 @@ enum WorkspaceLayoutExecutor {
         walkState.materialize(
             plan.layout,
             intoPane: rootPaneId,
-            anchor: .seedTerminal(seedTab)
+            anchor: .seedTerminal(seedPanel)
         )
 
         // Apply divider positions by walking the plan tree alongside the
@@ -312,7 +312,7 @@ enum WorkspaceLayoutExecutor {
         for surfaceSpec in plan.surfaces {
             guard surfaceSpec.kind == .terminal,
                   let panelId = walkState.planSurfaceIdToPanelId[surfaceSpec.id],
-                  let terminalTab = workspace.panels[panelId] as? TerminalTab else {
+                  let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
                 continue
             }
             let effectiveCommand: String?
@@ -325,8 +325,8 @@ enum WorkspaceLayoutExecutor {
                 usedRegistry = false
             } else if let registry = options.restartRegistry {
                 let surfaceMeta = stringMetadata(surfaceSpec.metadata)
-                let terminalType = surfaceMeta[TabMetadataKeyName.terminalType]
-                let sessionId = surfaceMeta[TabMetadataKeyName.claudeSessionId]
+                let terminalType = surfaceMeta[PanelMetadataKeyName.terminalType]
+                let sessionId = surfaceMeta[PanelMetadataKeyName.claudeSessionId]
                 let synthesized = registry.resolveCommand(
                     terminalType: terminalType,
                     sessionId: sessionId,
@@ -362,20 +362,20 @@ enum WorkspaceLayoutExecutor {
                 // the bytes (queueing if the surface isn't yet attached) and
                 // dispatches a synthetic Return outside the bracketed-paste
                 // sequence so the receiving shell or TUI actually submits.
-                terminalTab.surface.sendSubmitFormText(cmd)
+                terminalPanel.surface.sendSubmitFormText(cmd)
             } else if surfaceSpec.submitCommand {
                 // Opt-in execute: the blueprint asked for this command to run,
                 // not sit at the prompt. `sendSubmitFormText` types the bytes
                 // (queueing if the surface isn't yet attached) and dispatches a
                 // synthetic Return outside the bracketed-paste sequence so the
                 // shell/TUI actually submits.
-                terminalTab.surface.sendSubmitFormText(cmd)
+                terminalPanel.surface.sendSubmitFormText(cmd)
             } else {
                 // Explicit `SurfaceSpec.command` — Phase 0 parity. Deliver
                 // raw bytes verbatim, including whitespace-only "kick"
                 // commands that blueprints use to coax the shell into
                 // printing a fresh prompt.
-                terminalTab.sendText(cmd)
+                terminalPanel.sendText(cmd)
             }
             walkState.timings.append(StepTiming(
                 step: "surface[\(surfaceSpec.id)].command.enqueue",
@@ -400,7 +400,7 @@ enum WorkspaceLayoutExecutor {
         var paneRefs: [String: String] = [:]
         for (planSurfaceId, panelId) in walkState.planSurfaceIdToPanelId {
             surfaceRefs[planSurfaceId] = dependencies.surfaceRefMinter(panelId)
-            if let paneId = workspace.paneIdForTab(panelId) {
+            if let paneId = workspace.paneIdForPanel(panelId) {
                 paneRefs[planSurfaceId] = dependencies.paneRefMinter(paneId.id)
             }
         }
@@ -680,14 +680,14 @@ enum WorkspaceLayoutExecutor {
     /// Anchor passed into `materialize`. Either the workspace's seed terminal
     /// panel (at the root call), or the panel returned by a `newXSplit` that
     /// introduced the current subtree.
-    fileprivate enum AnchorTab {
+    fileprivate enum AnchorPanel {
         /// The seed `TerminalPanel` created by `TabManager.addWorkspace`. If
         /// the subtree's first leaf is not a terminal, the walker replaces it
         /// with the target kind in the same pane and closes the seed.
-        case seedTerminal(TerminalTab)
+        case seedTerminal(TerminalPanel)
         /// A panel returned by `newXSplit`. Type is matched to the first leaf
         /// of the subtree by construction — no replacement needed.
-        case anyExisting(panelId: UUID, kind: TabSpecKind)
+        case anyExisting(panelId: UUID, kind: PanelSpecKind)
 
         var panelId: UUID {
             switch self {
@@ -696,7 +696,7 @@ enum WorkspaceLayoutExecutor {
             }
         }
 
-        var kind: TabSpecKind {
+        var kind: PanelSpecKind {
             switch self {
             case .seedTerminal: return .terminal
             case .anyExisting(_, let kind): return kind
@@ -710,7 +710,7 @@ enum WorkspaceLayoutExecutor {
     @MainActor
     fileprivate struct WalkState {
         let workspace: Workspace
-        let surfacesById: [String: TabSpec]
+        let surfacesById: [String: PanelSpec]
         var warnings: [String]
         var failures: [ApplyFailure]
         var timings: [StepTiming]
@@ -741,7 +741,7 @@ enum WorkspaceLayoutExecutor {
         mutating func materialize(
             _ node: LayoutTreeSpec,
             intoPane paneId: PaneID,
-            anchor: AnchorTab
+            anchor: AnchorPanel
         ) {
             switch node {
             case .pane(let paneSpec):
@@ -754,7 +754,7 @@ enum WorkspaceLayoutExecutor {
         private mutating func materializePane(
             _ areaSpec: LayoutTreeSpec.AreaSpec,
             intoPane paneId: PaneID,
-            anchor: AnchorTab
+            anchor: AnchorPanel
         ) {
             guard let firstSurfaceId = areaSpec.surfaceIds.first,
                   let firstSurface = surfacesById[firstSurfaceId] else {
@@ -804,7 +804,7 @@ enum WorkspaceLayoutExecutor {
                     return
                 }
                 firstPanelId = replacement
-                _ = workspace.closeTab(anchor.panelId, force: true)
+                _ = workspace.closePanel(anchor.panelId, force: true)
             }
             timings.append(StepTiming(
                 step: "surface[\(firstSurface.id)].create",
@@ -817,7 +817,7 @@ enum WorkspaceLayoutExecutor {
             // the rest of surface + pane metadata land immediately after,
             // during creation (no post-hoc socket loop).
             if let title = firstSurface.title {
-                workspace.setTabCustomTitle(panelId: firstPanelId, title: title)
+                workspace.setPanelCustomTitle(panelId: firstPanelId, title: title)
             }
             writeSurfaceMetadata(firstSurface, panelId: firstPanelId)
 
@@ -839,7 +839,7 @@ enum WorkspaceLayoutExecutor {
                 ))
                 planSurfaceIdToPanelId[spec.id] = newPanelId
                 if let title = spec.title {
-                    workspace.setTabCustomTitle(panelId: newPanelId, title: title)
+                    workspace.setPanelCustomTitle(panelId: newPanelId, title: title)
                 }
                 writeSurfaceMetadata(spec, panelId: newPanelId)
             }
@@ -861,7 +861,7 @@ enum WorkspaceLayoutExecutor {
         private mutating func materializeSplit(
             _ splitSpec: LayoutTreeSpec.SplitSpec,
             intoPane paneId: PaneID,
-            anchor: AnchorTab
+            anchor: AnchorPanel
         ) {
             // Pick the right split primitive based on `split.second`'s first
             // leaf so the newly-minted pane is seeded with a panel of the
@@ -898,7 +898,7 @@ enum WorkspaceLayoutExecutor {
             ))
 
             guard let newPanelId,
-                  let newPaneId = workspace.paneIdForTab(newPanelId) else {
+                  let newPaneId = workspace.paneIdForPanel(newPanelId) else {
                 failures.append(ApplyFailure(
                     code: "split_failed",
                     step: "layout.split[\(label)].create",
@@ -928,7 +928,7 @@ enum WorkspaceLayoutExecutor {
         private mutating func splitFromPanel(
             _ panelId: UUID,
             orientation: SplitOrientation,
-            spec: TabSpec
+            spec: PanelSpec
         ) -> UUID? {
             switch spec.kind {
             case .terminal:
@@ -972,7 +972,7 @@ enum WorkspaceLayoutExecutor {
         /// shell has already launched). Keeps cwd loss non-silent per
         /// review cycle 1 I1.
         mutating func reportWorkingDirectoryNotApplicable(
-            _ spec: TabSpec,
+            _ spec: PanelSpec,
             context: String
         ) {
             let cwd = spec.workingDirectory ?? ""
@@ -990,7 +990,7 @@ enum WorkspaceLayoutExecutor {
         /// during creation (not post-hoc), all with source `.explicit`.
         /// The `mailbox.*` namespace in pane metadata is enforced
         /// strings-only per docs/c11-13-cmux-37-alignment.md.
-        mutating func writeSurfaceMetadata(_ spec: TabSpec, panelId: UUID) {
+        mutating func writeSurfaceMetadata(_ spec: PanelSpec, panelId: UUID) {
             let surfaceClock = StepClock()
             let workspaceId = workspace.id
 
@@ -998,7 +998,7 @@ enum WorkspaceLayoutExecutor {
             if let raw = spec.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !raw.isEmpty {
                 do {
-                    _ = try TabMetadataStore.shared.setMetadata(
+                    _ = try PanelMetadataStore.shared.setMetadata(
                         workspaceId: workspaceId,
                         surfaceId: panelId,
                         partial: ["description": raw],
@@ -1046,7 +1046,7 @@ enum WorkspaceLayoutExecutor {
                     // model outranks it.
                     let isLaunchModel = key == MetadataKey.model || key == MetadataKey.modelLabel
                     do {
-                        _ = try TabMetadataStore.shared.setMetadata(
+                        _ = try PanelMetadataStore.shared.setMetadata(
                             workspaceId: workspaceId,
                             surfaceId: panelId,
                             partial: decoded,
@@ -1064,6 +1064,13 @@ enum WorkspaceLayoutExecutor {
                     }
                 }
             }
+            // A blueprint's tab icon / color land in the store; paint them.
+            if spec.metadata?[MetadataKey.icon] != nil {
+                workspace.syncPanelIconFromMetadata(panelId: panelId)
+            }
+            if spec.metadata?[MetadataKey.color] != nil {
+                workspace.syncPanelColorFromMetadata(panelId: panelId)
+            }
             timings.append(StepTiming(
                 step: "metadata.surface[\(spec.id)].write",
                 durationMs: surfaceClock.elapsedMs
@@ -1074,7 +1081,7 @@ enum WorkspaceLayoutExecutor {
                 return
             }
             let paneClock = StepClock()
-            guard let paneId = workspace.paneIdForTab(panelId) else {
+            guard let paneId = workspace.paneIdForPanel(panelId) else {
                 let message = "surface[\(spec.id)] pane metadata skipped: no bonsplit pane resolved for panel"
                 warnings.append(message)
                 failures.append(ApplyFailure(
@@ -1146,7 +1153,7 @@ enum WorkspaceLayoutExecutor {
         /// (cycle 2: R3 left this in-pane path silent; split path was
         /// already covered).
         private mutating func createSurface(
-            _ spec: TabSpec,
+            _ spec: PanelSpec,
             inPane paneId: PaneID,
             focus: Bool
         ) -> UUID? {
@@ -1172,7 +1179,7 @@ enum WorkspaceLayoutExecutor {
                 if spec.workingDirectory != nil {
                     reportWorkingDirectoryNotApplicable(spec, context: "markdown in-pane creation")
                 }
-                return workspace.newMarkdownTab(
+                return workspace.newMarkdownPanel(
                     inPane: paneId,
                     filePath: spec.filePath,
                     focus: focus
@@ -1296,12 +1303,12 @@ enum WorkspaceLayoutExecutor {
     /// `spec.url` before being re-hibernated. Returning `false` keeps the
     /// legacy spin-up + `restoreLifecycleStateFromMetadata` fallback for
     /// any panel kind whose construction path doesn't yet honor the flag.
-    fileprivate nonisolated static func specRequestsHibernated(_ spec: TabSpec) -> Bool {
+    fileprivate nonisolated static func specRequestsHibernated(_ spec: PanelSpec) -> Bool {
         guard let metadata = spec.metadata,
               case .string(let raw)? = metadata[MetadataKey.lifecycleState] else {
             return false
         }
-        return raw == TabLifecycleState.hibernated.rawValue
+        return raw == PanelLifecycleState.hibernated.rawValue
     }
 
     // MARK: - Timing helper

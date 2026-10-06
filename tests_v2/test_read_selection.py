@@ -63,8 +63,8 @@ def main():
             with socket.socket(socket.AF_UNIX) as connection:
                 connection.settimeout(10)
                 connection.connect(target)
-                request = {'id': 1, 'method': 'tab.read_selection', 'params':
-                           {'workspace_id': state['workspace'], 'tab_id': state['tab']}}
+                request = {'id': 1, 'method': 'panel.read_selection', 'params':
+                           {'workspace_id': state['workspace'], 'panel_id': state['tab']}}
                 connection.sendall((json.dumps(request)+'\n').encode())
                 chunks = bytearray()
                 while b'\n' not in chunks:
@@ -81,10 +81,10 @@ def main():
             assert base64.b64decode(value['base64']) == value['text'].encode('utf-8'), 'selection text/base64 mismatch'
 
         def screen():
-            return client._call('tab.read_text', {'workspace_id': state['workspace'], 'tab_id': state['tab']})['text']
+            return client._call('panel.read_text', {'workspace_id': state['workspace'], 'panel_id': state['tab']})['text']
 
         def send(text):
-            client._call('tab.send_text', {'workspace_id': state['workspace'], 'tab_id': state['tab'], 'text': text, 'submit': True})
+            client._call('panel.send_text', {'workspace_id': state['workspace'], 'panel_id': state['tab'], 'text': text, 'submit': True})
 
         def wait_marker(marker):
             deadline = time.monotonic() + 45
@@ -95,7 +95,7 @@ def main():
 
         def reject(params, code=None):
             try:
-                client._call('tab.read_selection', params)
+                client._call('panel.read_selection', params)
             except cmuxError as error:
                 if code: assert code in str(error), str(error)
                 return
@@ -104,7 +104,7 @@ def main():
         if args.phase == 'setup':
             state['workspace'] = client._call('workspace.create', {'title': 'Selection fixture'})['workspace_id']
             client._call('workspace.select', {'workspace_id': state['workspace']})
-            state['tab'] = client._call('tab.list', {'workspace_id': state['workspace']})['tabs'][0]['id']
+            state['tab'] = client._call('panel.list', {'workspace_id': state['workspace']})['panels'][0]['id']
             state_path.write_text(json.dumps(state))
             # Neutral prompt and cleared scrollback, including any startup banner.
             send("export PS1='$ '; printf '\\033[H\\033[2J\\033[3JSELECTIONFIXTURE\\n'")
@@ -113,38 +113,38 @@ def main():
                 value = read(); parity(value)
                 assert not value['has_selection'] and value['text'] == '' and not value['truncated']
                 cap = client._call('system.capabilities')
-                assert 'tab.read_selection' in cap['methods']
+                assert 'panel.read_selection' in cap['methods']
                 assert any(row['id'] == 'read_selection.terminal' and row['version'] == 1 for row in cap['features'])
             print('PASS: neutral fixture ready; no-selection and discovery' if not args.baseline else 'PASS: baseline fixture ready')
             print(json.dumps(state))
 
         elif args.phase == 'boundaries':
             before = screen()
-            for key in ['tab_id', 'workspace_id', 'window_id']:
+            for key in ['panel_id', 'workspace_id', 'window_id']:
                 reject({key: ''}, 'invalid_params')
-                reject({key: 'tab:999999999'}, 'invalid_params')
+                reject({key: 'panel:999999999'}, 'invalid_params')
                 reject({key: str(uuid.uuid4())}, 'not_found')
-            for extra in [[], ['--tab', ''], ['--workspace', ''], ['--bad-flag']]:
-                result = subprocess.run([cli, '--socket', target, 'read-selection', '--workspace', state['workspace'], '--tab', state['tab'], *extra], capture_output=True, text=True, timeout=10)
+            for extra in [[], ['--panel', ''], ['--workspace', ''], ['--bad-flag']]:
+                result = subprocess.run([cli, '--socket', target, 'read-selection', '--workspace', state['workspace'], '--panel', state['tab'], *extra], capture_output=True, text=True, timeout=10)
                 if extra: assert result.returncode != 0, extra
                 else: assert result.returncode == 0 and result.stdout.strip() == 'No selection.', result
-            browser = client._call('tab.create', {'workspace_id': state['workspace'], 'type': 'browser', 'url': 'about:blank'})['tab_id']
+            browser = client._call('panel.create', {'workspace_id': state['workspace'], 'type': 'browser', 'url': 'about:blank'})['panel_id']
             try:
-                instrument = {'workspace_id': state['workspace'], 'tab_id': browser,
+                instrument = {'workspace_id': state['workspace'], 'panel_id': browser,
                     'script': 'window.selectionReadCalls=0;document.getSelection=()=>{window.selectionReadCalls++;return null};window.getSelection=document.getSelection;0'}
                 client._call('browser.eval', instrument)
-                reject({'workspace_id': state['workspace'], 'tab_id': browser}, 'invalid_params')
-                observed = client._call('browser.eval', {'workspace_id': state['workspace'], 'tab_id': browser, 'script': 'window.selectionReadCalls'})
+                reject({'workspace_id': state['workspace'], 'panel_id': browser}, 'invalid_params')
+                observed = client._call('browser.eval', {'workspace_id': state['workspace'], 'panel_id': browser, 'script': 'window.selectionReadCalls'})
                 assert observed['value'] == 0, observed
             finally:
-                client._call('tab.close', {'workspace_id': state['workspace'], 'tab_id': browser})
+                client._call('panel.close', {'workspace_id': state['workspace'], 'panel_id': browser})
             path = Path('/tmp/c11-282-selection.md'); path.write_text('# Selection fixture\n')
-            markdown = client._call('tab.create', {'workspace_id': state['workspace'], 'type': 'markdown', 'file': str(path)})['tab_id']
+            markdown = client._call('panel.create', {'workspace_id': state['workspace'], 'type': 'markdown', 'file': str(path)})['panel_id']
             try:
-                reject({'workspace_id': state['workspace'], 'tab_id': markdown}, 'invalid_params')
+                reject({'workspace_id': state['workspace'], 'panel_id': markdown}, 'invalid_params')
             finally:
-                client._call('tab.close', {'workspace_id': state['workspace'], 'tab_id': markdown})
-            legacy = client._call('surface.read_selection', {'workspace_id': state['workspace'], 'surface_id': state['tab']})
+                client._call('panel.close', {'workspace_id': state['workspace'], 'panel_id': markdown})
+            legacy = client._call('surface.read_selection', {'workspace_id': state['workspace'], 'surface_id': state['tab']})  # silent legacy alias
             parity(legacy); assert not legacy['has_selection']
             assert screen() == before, 'read or invalid target changed terminal'
             print('PASS: no selection, CLI output/errors, empty/stale targets, terminal-only and legacy worker route')
@@ -159,7 +159,7 @@ def main():
                 assert value['has_selection'] and value['text'] == 'SELECTIONFIXTURE', repr(value['text'])
                 assert not value['truncated']
                 assert read()['text'] == value['text'], 'reader changed selection'
-                result = subprocess.run([cli, '--socket', target, 'read-selection', '--workspace', state['workspace'], '--tab', state['tab'], '--json'], capture_output=True, text=True, check=True, timeout=10)
+                result = subprocess.run([cli, '--socket', target, 'read-selection', '--workspace', state['workspace'], '--panel', state['tab'], '--json'], capture_output=True, text=True, check=True, timeout=10)
                 assert json.loads(result.stdout)['text'] == 'SELECTIONFIXTURE'
                 ui('click', x2+20,y2)
                 assert not read()['has_selection'], 'click did not clear selection'

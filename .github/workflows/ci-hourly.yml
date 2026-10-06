@@ -148,7 +148,7 @@ jobs:
             # C11-253: standalone split panels have no portal-bound window; guest QA proves split-focus recovery.
             c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalFirstResponderConvergesSplitActiveStateWhenSelectionAlreadyMatches
             # C11-253: ttyname(stdin) can name a pty that is not the host's controlling tty, so PROC_TTY_ONLY finds nothing.
-            c11Tests/TabLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY
+            c11Tests/PanelLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY
             # C11-253: the standalone host remaps posted pointer coordinates; guest scenario 9 proves divider reopening.
             c11Tests/WindowBrowserHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed
             # C11-253: the standalone host remaps posted pointer coordinates; guest scenario 10 proves divider reopening.

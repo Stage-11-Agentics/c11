@@ -107,8 +107,8 @@ def capture_state(client: cmux) -> str:
         panes = client.list_panes()
         state = {
             "workspaces": client.list_workspaces(),
-            "surfaces": client.list_surfaces(),
-            "panes": panes,
+            "panels": client.list_surfaces(),
+            "areas": panes,
             "pane_surfaces": {pid: client.list_pane_surfaces(pid) for _i, pid, _n, _f in panes},
             "surface_health": client.surface_health(),
         }

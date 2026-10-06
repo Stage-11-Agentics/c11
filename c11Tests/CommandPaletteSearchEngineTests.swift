@@ -727,7 +727,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
         XCTAssertNotEqual(base, changedDisplayName)
     }
 
-    func testSwitcherFingerprintTracksTabValuesAtSameCardinality() {
+    func testSwitcherFingerprintTracksPanelValuesAtSameCardinality() {
         let windowID = UUID()
         let workspaceID = UUID()
         let surfaceID = UUID()
@@ -744,7 +744,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
                             displayName: "Workspace Alpha",
                             metadata: CommandPaletteSwitcherSearchMetadata(),
                             surfaces: [
-                                ContentView.CommandPaletteSwitcherFingerprintTab(
+                                ContentView.CommandPaletteSwitcherFingerprintPanel(
                                     id: surfaceID,
                                     displayName: "Terminal",
                                     kindLabel: "Terminal",
@@ -772,7 +772,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
                             displayName: "Workspace Alpha",
                             metadata: CommandPaletteSwitcherSearchMetadata(),
                             surfaces: [
-                                ContentView.CommandPaletteSwitcherFingerprintTab(
+                                ContentView.CommandPaletteSwitcherFingerprintPanel(
                                     id: surfaceID,
                                     displayName: "Terminal",
                                     kindLabel: "Terminal",
@@ -800,7 +800,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
                             displayName: "Workspace Alpha",
                             metadata: CommandPaletteSwitcherSearchMetadata(),
                             surfaces: [
-                                ContentView.CommandPaletteSwitcherFingerprintTab(
+                                ContentView.CommandPaletteSwitcherFingerprintPanel(
                                     id: surfaceID,
                                     displayName: "Terminal",
                                     kindLabel: "Browser",

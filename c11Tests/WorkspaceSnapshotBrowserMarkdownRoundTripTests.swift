@@ -38,7 +38,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
     // MARK: - Tests
 
     /// Apply a plan with one terminal + one browser, capture, check kinds.
-    func testBrowserTabKindRoundTrips() throws {
+    func testBrowserPanelKindRoundTrips() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
@@ -49,8 +49,8 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
                 second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
-                TabSpec(id: "s1", kind: .terminal),
-                TabSpec(id: "s2", kind: .browser, url: "https://example.com")
+                PanelSpec(id: "s1", kind: .terminal),
+                PanelSpec(id: "s2", kind: .browser, url: "https://example.com")
             ]
         )
 
@@ -99,7 +99,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             workspace: WorkspaceSpec(),
             layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
             surfaces: [
-                TabSpec(id: "s1", kind: .markdown, filePath: fixturePath)
+                PanelSpec(id: "s1", kind: .markdown, filePath: fixturePath)
             ]
         )
 
@@ -143,9 +143,9 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
                 ))
             )),
             surfaces: [
-                TabSpec(id: "s1", kind: .terminal),
-                TabSpec(id: "s2", kind: .browser, url: "https://docs.example.com"),
-                TabSpec(id: "s3", kind: .markdown, filePath: "/tmp/notes.md")
+                PanelSpec(id: "s1", kind: .terminal),
+                PanelSpec(id: "s2", kind: .browser, url: "https://docs.example.com"),
+                PanelSpec(id: "s3", kind: .markdown, filePath: "/tmp/notes.md")
             ]
         )
 
@@ -181,8 +181,8 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
                 second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
-                TabSpec(id: "s1", kind: .browser),
-                TabSpec(id: "s2", kind: .markdown)
+                PanelSpec(id: "s1", kind: .browser),
+                PanelSpec(id: "s2", kind: .markdown)
             ]
         )
 

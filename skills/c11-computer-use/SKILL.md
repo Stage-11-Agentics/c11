@@ -8,7 +8,7 @@ description: Validate c11 as a product through the real macOS UI — screenshots
 
 Maintainer skill: prove a c11 change works through the **real macOS UI**, the way the operator experiences it. Use it for behavior that is visual, spatial, focus-sensitive, pointer-driven, or human-ergonomic — the things a green socket/CLI oracle can't prove. Keep the socket for setup and deterministic oracle checks; keep computer-use for the UI path itself.
 
-This is not the `c11` operating skill. That one teaches an agent to drive the room (splits, tabs, status). This one teaches a maintainer agent to test the room as a product. Do not blur them.
+This is not the `c11` operating skill. That one teaches an agent to drive the room (splits, panels, status). This one teaches a maintainer agent to test the room as a product. Do not blur them.
 
 ## The hard rule: never validate against the operator's live c11
 
@@ -56,19 +56,19 @@ scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]
 
 ### Live agent proofs run in the sandbox
 
-A proof that needs real agents (a Claude Code, Codex, or Grok tab receiving mail, hooks firing, a turn running) runs in the sandbox guest, never in a tagged build on the operator's laptop:
+A proof that needs real agents (a Claude Code, Codex, or Grok panel receiving mail, hooks firing, a turn running) runs in the sandbox guest, never in a tagged build on the operator's laptop:
 
 ```
 scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok
 scripts/sandbox-agent.sh <run-id> launch <claude|codex|grok> <brief.md> --title lc-claude
-scripts/sandbox-agent.sh <run-id> c11 new-tab --workspace workspace:2 --no-focus  # any guest c11 command; this one makes a shell tab
-scripts/sandbox-agent.sh <run-id> c11 send --workspace workspace:2 --tab tab:12 "c11 mailbox send --to lc-claude --body 'reply PONG'"
-scripts/sandbox-agent.sh <run-id> screen tab:6 --workspace workspace:2 --lines 60
+scripts/sandbox-agent.sh <run-id> c11 new-panel --workspace workspace:2 --no-focus  # any guest c11 command; this one makes a shell panel
+scripts/sandbox-agent.sh <run-id> c11 send --workspace workspace:2 --panel panel:12 "c11 mailbox send --to lc-claude --body 'reply PONG'"
+scripts/sandbox-agent.sh <run-id> screen panel:6 --workspace workspace:2 --lines 60
 scripts/sandbox-down.sh <run-id>
 scripts/sandbox-agent.sh <run-id> verify-clean            # after down; --control while up proves the scan sees guest files
 ```
 
-`--agents` copies the Tart host's installed agent CLIs into the clone and stages one access credential per kind from the Overwatch seat logins on that host (`seat.sh export-cred`). Credentials go host to guest on SSH stdin and live only in the clone; the golden image never holds one, and `verify-clean` searches its disk for them after `sandbox-down`. `launch` delivers the brief as a file pointer through the guest's `c11 launch-agent`, opts the tab into mailbox push, and waits for the composer. `mailbox send` needs a sender tab, so send mail from a shell tab inside the guest workspace, as above; that is also what an agent sees. An operator draft is `c11 send --raw --no-submit`. A kind whose account is out of quota starts logged in and then shows the provider's limit screen: read the screen before calling a delivery failure. `C11_SANDBOX_CLAUDE_ACCOUNT` picks the Claude call-sign.
+`--agents` copies the Tart host's installed agent CLIs into the clone and stages one access credential per kind from the Overwatch seat logins on that host (`seat.sh export-cred`). Credentials go host to guest on SSH stdin and live only in the clone; the golden image never holds one, and `verify-clean` searches its disk for them after `sandbox-down`. `launch` delivers the brief as a file pointer through the guest's `c11 launch-agent`, opts the panel into mailbox push, and waits for the composer. `mailbox send` needs a sender panel, so send mail from a shell panel inside the guest workspace, as above; that is also what an agent sees. An operator draft is `c11 send --raw --no-submit`. A kind whose account is out of quota starts logged in and then shows the provider's limit screen: read the screen before calling a delivery failure. `C11_SANDBOX_CLAUDE_ACCOUNT` picks the Claude call-sign.
 
 ## Launch discipline
 
@@ -78,7 +78,7 @@ scripts/sandbox-agent.sh <run-id> verify-clean            # after down; --contro
 
 ## Handing validation to a fresh agent
 
-A watched validation pass runs in a fresh context, so the result doesn't inherit the builder's assumptions. Open a new tab, start interactive `codex --yolo` (never `codex exec`, which the operator can't watch), and send a file-backed prompt naming the tagged app and window, the scenario, success criteria, safety boundaries, expected artifacts, and your workspace and tab refs so it can report back with `c11 send`. Works across harnesses: Claude can hand to Codex, Codex to another Codex tab.
+A watched validation pass runs in a fresh context, so the result doesn't inherit the builder's assumptions. Open a new panel, start interactive `codex --yolo` (never `codex exec`, which the operator can't watch), and send a file-backed prompt naming the tagged app and window, the scenario, success criteria, safety boundaries, expected artifacts, and your workspace and panel refs so it can report back with `c11 send`. Works across harnesses: Claude can hand to Codex, Codex to another Codex panel.
 
 ## Reading what the app actually did
 

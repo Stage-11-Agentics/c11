@@ -18,7 +18,7 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _surface_id(payload: dict) -> str:
-    return str((payload or {}).get("tab_id") or "")
+    return str((payload or {}).get("panel_id") or "")
 
 
 def _pane_id(payload: dict) -> str:
@@ -32,8 +32,8 @@ def _pane_count(c: cmux, workspace_id: str) -> int:
 
 
 def _pane_for_surface(c: cmux, workspace_id: str, surface_id: str) -> str:
-    payload = c._call("tab.list", {"workspace_id": workspace_id}) or {}
-    for row in payload.get("tabs") or []:
+    payload = c._call("panel.list", {"workspace_id": workspace_id}) or {}
+    for row in payload.get("panels") or []:
         if str(row.get("id") or "") == surface_id:
             pane = str(row.get("area_id") or "")
             if pane:
@@ -48,30 +48,30 @@ def main() -> int:
         _must(bool(workspace_id), f"workspace.create returned no workspace_id: {created}")
         c._call("workspace.select", {"workspace_id": workspace_id})
 
-        current = c._call("tab.current", {"workspace_id": workspace_id}) or {}
-        left_surface = str(current.get("tab_id") or "")
-        _must(bool(left_surface), f"tab.current returned no tab_id: {current}")
+        current = c._call("panel.current", {"workspace_id": workspace_id}) or {}
+        left_surface = str(current.get("panel_id") or "")
+        _must(bool(left_surface), f"panel.current returned no panel_id: {current}")
 
         right = c._call(
-            "tab.split",
-            {"workspace_id": workspace_id, "tab_id": left_surface, "direction": "right"},
+            "panel.split",
+            {"workspace_id": workspace_id, "panel_id": left_surface, "direction": "right"},
         ) or {}
         right_surface = _surface_id(right)
-        _must(bool(right_surface), f"tab.split right returned no tab_id: {right}")
+        _must(bool(right_surface), f"panel.split right returned no panel_id: {right}")
 
         right_down = c._call(
-            "tab.split",
-            {"workspace_id": workspace_id, "tab_id": right_surface, "direction": "down"},
+            "panel.split",
+            {"workspace_id": workspace_id, "panel_id": right_surface, "direction": "down"},
         ) or {}
         right_bottom_surface = _surface_id(right_down)
-        _must(bool(right_bottom_surface), f"tab.split right/down returned no tab_id: {right_down}")
+        _must(bool(right_bottom_surface), f"panel.split right/down returned no panel_id: {right_down}")
 
         left_down = c._call(
-            "tab.split",
-            {"workspace_id": workspace_id, "tab_id": left_surface, "direction": "down"},
+            "panel.split",
+            {"workspace_id": workspace_id, "panel_id": left_surface, "direction": "down"},
         ) or {}
         left_bottom_surface = _surface_id(left_down)
-        _must(bool(left_bottom_surface), f"tab.split left/down returned no tab_id: {left_down}")
+        _must(bool(left_bottom_surface), f"panel.split left/down returned no panel_id: {left_down}")
 
         right_top_pane = _pane_for_surface(c, workspace_id, right_surface)
         right_bottom_pane = _pane_for_surface(c, workspace_id, right_bottom_surface)
@@ -80,7 +80,7 @@ def main() -> int:
 
         open_from_left_top = c._call(
             "browser.open_split",
-            {"workspace_id": workspace_id, "tab_id": left_surface, "url": "about:blank"},
+            {"workspace_id": workspace_id, "panel_id": left_surface, "url": "about:blank"},
         ) or {}
         _must(bool(open_from_left_top.get("created_split")) is False, f"Expected pane reuse from left-top: {open_from_left_top}")
         _must(
@@ -91,7 +91,7 @@ def main() -> int:
 
         open_from_left_bottom = c._call(
             "browser.open_split",
-            {"workspace_id": workspace_id, "tab_id": left_bottom_surface, "url": "about:blank"},
+            {"workspace_id": workspace_id, "panel_id": left_bottom_surface, "url": "about:blank"},
         ) or {}
         _must(bool(open_from_left_bottom.get("created_split")) is False, f"Expected pane reuse from left-bottom: {open_from_left_bottom}")
         _must(
@@ -103,7 +103,7 @@ def main() -> int:
         before_right_open = _pane_count(c, workspace_id)
         open_from_right = c._call(
             "browser.open_split",
-            {"workspace_id": workspace_id, "tab_id": right_bottom_surface, "url": "about:blank"},
+            {"workspace_id": workspace_id, "panel_id": right_bottom_surface, "url": "about:blank"},
         ) or {}
         _must(bool(open_from_right.get("created_split")) is True, f"Expected new split from right-most pane: {open_from_right}")
         _must(

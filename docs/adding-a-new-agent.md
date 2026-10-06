@@ -42,7 +42,7 @@ All paths are relative to `code/c11/`. Order doesn't matter — the changes are 
 
 1. **`Sources/DefaultAgentConfig.swift` — `AgentType` enum.** Add a new `case` with kebab-case raw value. Extend the three switch statements (`displayName`, `factoryCommand`, `factoryInitialPrompt`). `displayName` uses `String(localized:)` — write English only; spawn a localization sub-agent after (see `CLAUDE.md` → Localization).
 
-2. **`Sources/TabMetadataStore.swift` — `canonicalTerminalTypes`.** Add the kebab-case string. Without this, the sidebar treats the new agent as `unknown` even when explicitly declared.
+2. **`Sources/PanelMetadataStore.swift` — `canonicalTerminalTypes`.** Add the kebab-case string. Without this, the sidebar treats the new agent as `unknown` even when explicitly declared.
 
 3. **`CLI/c11.swift` — `default-agent set` valid-types message.** Search for the hard-coded `["claude-code", "codex", ...]` list and add the new value. CLI ergonomics only — the resolver is enum-driven and accepts the new case automatically.
 
@@ -95,7 +95,7 @@ The clean local path is to build, launch a *tagged* DEV build, and exercise the 
 ./scripts/launch-tagged-automation.sh <slug>
 ```
 
-In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh tab. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
+In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh panel. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
 
 Do not `open` an untagged `c11 DEV.app` from DerivedData while prod c11 is running — they fight for sockets. See `CLAUDE.md` → "Testing policy" for the why.
 

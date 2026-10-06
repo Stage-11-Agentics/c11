@@ -51,7 +51,7 @@ extension TerminalController {
     struct V2BrowserOffMainTarget {
         let workspaceId: UUID
         let surfaceId: UUID
-        let browserTab: BrowserTab
+        let browserPanel: BrowserPanel
         let webView: WKWebView
         let cookieStore: WKHTTPCookieStore
         let currentURL: URL?
@@ -90,14 +90,14 @@ extension TerminalController {
             return v2Result(id: id, self.v2BrowserGetTitle(params: params))
         case "browser.frame.main":
             return v2Result(id: id, self.v2BrowserFrameMain(params: params))
-        case "browser.tab.new":
-            return v2Result(id: id, self.v2BrowserTabNew(params: params))
-        case "browser.tab.list":
-            return v2Result(id: id, self.v2BrowserTabList(params: params))
-        case "browser.tab.switch":
-            return v2Result(id: id, self.v2BrowserTabSwitch(params: params))
-        case "browser.tab.close":
-            return v2Result(id: id, self.v2BrowserTabClose(params: params))
+        case "browser.panel.new":
+            return v2Result(id: id, self.v2BrowserPanelNew(params: params))
+        case "browser.panel.list":
+            return v2Result(id: id, self.v2BrowserPanelList(params: params))
+        case "browser.panel.switch":
+            return v2Result(id: id, self.v2BrowserPanelSwitch(params: params))
+        case "browser.panel.close":
+            return v2Result(id: id, self.v2BrowserPanelClose(params: params))
         case "browser.viewport.set":
             return v2Result(id: id, self.v2BrowserViewportSet(params: params))
         case "browser.geolocation.set":
@@ -527,7 +527,7 @@ extension TerminalController {
 
     func v2BrowserWithPanel(
         params: [String: Any],
-        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserTab: BrowserTab) -> V2CallResult
+        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserPanel: BrowserPanel) -> V2CallResult
     ) -> V2CallResult {
         var result: V2CallResult = .err(code: "internal_error", message: "Browser operation failed", data: nil)
         v2MainSync {
@@ -541,14 +541,14 @@ extension TerminalController {
             }
             let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused browser tab", data: nil)
+                result = .err(code: "not_found", message: "No focused browser panel", data: nil)
                 return
             }
-            guard let browserTab = ws.browserPanel(for: surfaceId) else {
-                result = .err(code: "invalid_params", message: "Tab is not a browser", data: ["surface_id": surfaceId.uuidString])
+            guard let browserPanel = ws.browserPanel(for: surfaceId) else {
+                result = .err(code: "invalid_params", message: "Panel is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            result = body(workspaceManager, ws, surfaceId, browserTab)
+            result = body(workspaceManager, ws, surfaceId, browserPanel)
         }
         return result
     }
@@ -576,12 +576,12 @@ extension TerminalController {
         }
         let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
         guard let surfaceId else {
-            return .result(.err(code: "not_found", message: "No focused browser tab", data: nil))
+            return .result(.err(code: "not_found", message: "No focused browser panel", data: nil))
         }
         guard let browserPanel = ws.browserPanel(for: surfaceId) else {
             return .result(.err(
                 code: "invalid_params",
-                message: "Tab is not a browser",
+                message: "Panel is not a browser",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
@@ -608,14 +608,14 @@ extension TerminalController {
         return .ready(V2BrowserOffMainTarget(
             workspaceId: ws.id,
             surfaceId: surfaceId,
-            browserTab: browserPanel,
+            browserPanel: browserPanel,
             webView: browserPanel.webView,
             cookieStore: browserPanel.webView.configuration.websiteDataStore.httpCookieStore,
             currentURL: browserPanel.currentURL,
             frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
             resolvedSelector: resolvedSelector,
-            telemetryBootstrap: BrowserTab.telemetryHookBootstrapScriptSource,
-            dialogBootstrap: BrowserTab.dialogTelemetryHookBootstrapScriptSource,
+            telemetryBootstrap: BrowserPanel.telemetryHookBootstrapScriptSource,
+            dialogBootstrap: BrowserPanel.dialogTelemetryHookBootstrapScriptSource,
             hasIssuedLoad: Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView),
             responseEnvelope: [
                 "workspace_id": ws.id.uuidString,
@@ -884,7 +884,7 @@ extension TerminalController {
     }
 
     nonisolated func v2BrowserNavigateForStateLoadOffMain(
-        _ browserTab: BrowserTab,
+        _ browserPanel: BrowserPanel,
         url: URL,
         timeout: TimeInterval
     ) -> BrowserStateLoadNavigationResult {
@@ -896,7 +896,7 @@ extension TerminalController {
         let result: BrowserStateLoadNavigationResult? = v2AwaitCallback(timeout: timeout) { finish in
             DispatchQueue.main.async {
                 guard gate.begin() else { return }
-                browserTab.navigateForStateLoad(to: url) { navigationResult in
+                browserPanel.navigateForStateLoad(to: url) { navigationResult in
                     guard gate.complete() else { return }
                     finish(navigationResult)
                 }
@@ -1256,11 +1256,11 @@ extension TerminalController {
     /// hibernated) has a URL already and needs to be told that instead, or the
     /// agent re-issues the same navigate in a loop.
     func v2BrowserNoDocumentResultIfNeeded(
-        browserPanel browserTab: BrowserTab,
+        browserPanel: BrowserPanel,
         surfaceId: UUID
     ) -> V2CallResult? {
-        guard !Self.v2BrowserWebViewHasIssuedLoad(browserTab.webView) else { return nil }
-        let currentURL = browserTab.currentURL?.absoluteString
+        guard !Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView) else { return nil }
+        let currentURL = browserPanel.currentURL?.absoluteString
         let message = currentURL.map { Self.v2BrowserNavigationWithheldMessage(url: $0) }
             ?? Self.v2BrowserNoDocumentMessage
         return .err(
@@ -1269,7 +1269,7 @@ extension TerminalController {
             data: [
                 "surface_id": surfaceId.uuidString,
                 "current_url": v2OrNull(currentURL),
-                "lifecycle_state": browserTab.lifecycleState.rawValue
+                "lifecycle_state": browserPanel.lifecycleState.rawValue
             ]
         )
     }
@@ -1442,11 +1442,11 @@ extension TerminalController {
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
+                result = .err(code: "not_found", message: "No focused panel to split", data: nil)
                 return
             }
             guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source tab not found", data: ["surface_id": sourceSurfaceId.uuidString])
+                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": sourceSurfaceId.uuidString])
                 return
             }
 
@@ -1454,9 +1454,9 @@ extension TerminalController {
 
             var createdSplit = true
             var placementStrategy = "split_right"
-            let createdTab: BrowserTab?
+            let createdPanel: BrowserPanel?
             if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                    createdTab = ws.newBrowserSurface(
+                    createdPanel = ws.newBrowserSurface(
                         inPane: targetPane,
                         url: url,
                         focus: true,
@@ -1467,7 +1467,7 @@ extension TerminalController {
                 createdSplit = false
                 placementStrategy = "reuse_right_sibling"
             } else {
-                createdTab = ws.newBrowserSplit(
+                createdPanel = ws.newBrowserSplit(
                     from: sourceSurfaceId,
                     orientation: .horizontal,
                     url: url,
@@ -1477,12 +1477,12 @@ extension TerminalController {
                 )
             }
 
-            guard let browserTabId = createdTab?.id else {
+            guard let browserPanelId = createdPanel?.id else {
                 result = .err(code: "internal_error", message: "Failed to create browser", data: nil)
                 return
             }
 
-            let targetPaneUUID = ws.paneId(forPanelId: browserTabId)?.id
+            let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -1491,15 +1491,15 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
-                "surface_id": browserTabId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: browserTabId),
+                "surface_id": browserPanelId.uuidString,
+                "surface_ref": v2Ref(kind: .surface, uuid: browserPanelId),
                 "source_surface_id": sourceSurfaceId.uuidString,
                 "source_surface_ref": v2Ref(kind: .surface, uuid: sourceSurfaceId),
                 "source_pane_id": v2OrNull(sourcePaneUUID?.uuidString),
                 "source_pane_ref": v2Ref(kind: .pane, uuid: sourcePaneUUID),
                 "target_pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
-                "profile_id": createdTab?.profileID.uuidString ?? NSNull(),
+                "profile_id": createdPanel?.profileID.uuidString ?? NSNull(),
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
             ]
@@ -1508,7 +1508,7 @@ extension TerminalController {
             // in the payload rather than as an error, so the caller keeps the
             // surface/pane refs it needs to retry with `allow_insecure_http`
             // or to close the surface.
-            if let insecureHTTP = browserInsecureHTTPPayload(for: createdTab?.lastNavigationDisposition) {
+            if let insecureHTTP = browserInsecureHTTPPayload(for: createdPanel?.lastNavigationDisposition) {
                 payload["insecure_http"] = insecureHTTP
             }
             result = .ok(payload)
@@ -1536,7 +1536,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         guard let url = v2String(params, "url") else {
             return .err(code: "invalid_params", message: "Missing url", data: nil)
@@ -1544,7 +1544,7 @@ extension TerminalController {
 
         let allowInsecureHTTP = v2Bool(params, "allow_insecure_http") ?? false
 
-        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Panel not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -2555,7 +2555,7 @@ extension TerminalController {
             let snapshotResult: Data?? = v2AwaitCallback(timeout: 5.0) { finish in
                 Task { @MainActor in
                     guard gate.begin() else { return }
-                    target.browserTab.takeSnapshot { image in
+                    target.browserPanel.takeSnapshot { image in
                         guard gate.complete() else { return }
                         finish(image.flatMap { self.v2PNGData(from: $0) })
                     }

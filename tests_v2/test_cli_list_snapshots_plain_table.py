@@ -90,7 +90,7 @@ def main() -> int:
             table_lines = [line for line in table_out.splitlines() if line.strip()]
             _must(bool(table_lines), f"list-snapshots produced no output: {table_out!r}")
             header = table_lines[0]
-            for col in ("SNAPSHOT_ID", "CREATED_AT", "WORKSPACE_TITLE", "SURFACES", "ORIGIN", "SOURCE"):
+            for col in ("SNAPSHOT_ID", "CREATED_AT", "WORKSPACE_TITLE", "PANELS", "ORIGIN", "SOURCE"):
                 _must(col in header, f"list-snapshots header missing '{col}': {header!r}")
             row = next((line for line in table_lines if line.startswith(snapshot_id)), None)
             _must(row is not None, f"list-snapshots missing row for {snapshot_id}: {table_out!r}")
@@ -107,10 +107,10 @@ def main() -> int:
             snapshots = payload.get("snapshots") or []
             match = next((e for e in snapshots if e.get("snapshot_id") == snapshot_id), None)
             _must(match is not None, f"list-snapshots --json missing row for {snapshot_id}")
-            surface_count = match.get("tab_count")
+            surface_count = match.get("panel_count")
             _must(
                 isinstance(surface_count, int) and surface_count >= 0,
-                f"tab_count is not a non-negative int: {surface_count!r}",
+                f"panel_count is not a non-negative int: {surface_count!r}",
             )
             _must(match.get("source") == "current", f"source not 'current': {match.get('source')!r}")
             # The row's surface count must match what the plain table
@@ -121,7 +121,7 @@ def main() -> int:
             row_ints = [int(tok) for tok in row.split() if tok.isdigit()]
             _must(
                 surface_count in row_ints,
-                f"plain-table row surface count tokens {row_ints} do not contain JSON tab_count {surface_count}: {row!r}",
+                f"plain-table row surface count tokens {row_ints} do not contain JSON panel_count {surface_count}: {row!r}",
             )
     finally:
         if snapshot_path and os.path.isfile(snapshot_path):

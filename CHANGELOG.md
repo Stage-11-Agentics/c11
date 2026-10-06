@@ -6,6 +6,20 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+Headline: **c11's vocabulary is now window → workspace → area → panel.** A panel is a terminal, browser or markdown viewer inside an area. "Tab" is no longer a c11 concept.
+
+### Changed
+
+- **Panel everywhere.** CLI commands (`new-panel`, `close-panel`, `rename-panel`, `list-panels`, `send-panel` and the rest), flags (`--panel`, `--before-panel`, `--after-panel`, `--in-panel`), refs (`panel:N`), environment variables (`C11_PANEL_ID`, and a new `C11_PANEL_NUM`), socket methods (`panel.*`), and JSON keys (`panel_*`) all say panel. The UI follows: the panel bar and panel sheet, Panel Layout: Strip | Rail, "Show Panel Numbers in Panel Titles", "Areas & Panels" in Settings, and "Panel Details".
+- **Event schema v2.** `panel.created`, `panel.closed` and `panel.input_sent` replace the `tab.*` event types, with `panel` and `area` in the envelope. Event logs written by older builds keep their v1 lines and still read.
+- **Defaults keys.** `panelLayoutMode` (`strip` | `rail`), `c11.panelSheet.clocks` and `c11.panelRailTip.*` replace their tab-named predecessors. The old keys are read as a fallback, so a chosen layout and a dismissed rail tip carry over.
+
+### Compatibility
+
+- Every tab and surface spelling stays accepted: commands, flags, refs, environment variables, socket methods and input keys. The `C11_TAB_*`, `C11_SURFACE_*` and `CMUX_*` environment variables are still exported.
+- JSON output emits `panel_*` plus `tab_*` for one release, and no longer emits `surface_*` or `pane_*`.
+- Blueprints and snapshots with the old keys still load. Existing files and settings are never rewritten. A blueprint or snapshot exported by this version uses the new keys and does not load in 0.67.
+
 ## [0.67.0] - 2026-10-01
 
 Headline: **A redesigned tab bar, and a new vocabulary: workspace, area, tab.** The tab bar scrolls, opens a full-width drawer of every tab with its agent, status and clocks, and can dock as a rail. Across the UI and CLI, a split region is now an area and a terminal, browser or markdown view is a tab. Old names keep working.

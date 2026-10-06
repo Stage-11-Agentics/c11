@@ -1,13 +1,28 @@
 import Foundation
 
 private struct FeedAnswerPrepared {
-    let resolved: TerminalController.TabSendPhaseAResolved
+    let resolved: TerminalController.PanelSendPhaseAResolved
     let terminalSurface: TerminalSurface
     let nativeSurface: ghostty_surface_t
     let surfaceLifetimeID: UUID
     let identity: FeedAnswerIdentity
     let projectedRow: FeedAnswerProjectionRow
     let operatorInputAt: Date?
+}
+
+/// The feed methods name their panel by `panel_id`. C11-337: `tab_id` and
+/// `surface_id` are legacy spellings, accepted forever; `panel_id` wins.
+enum FeedPanelParam {
+    static let keys = ["panel_id", "tab_id", "surface_id"]
+
+    /// The first panel key the caller set, or `panel_id` when none is.
+    static func key(in params: [String: Any]) -> String {
+        keys.first { params[$0] != nil } ?? keys[0]
+    }
+
+    static func rawValue(in params: [String: Any]) -> String? {
+        params[key(in: params)] as? String
+    }
 }
 
 private enum FeedAnswerPreparation {
@@ -39,7 +54,7 @@ extension TerminalController {
             return .err(code: "method_not_found", message: "Unknown method", data: nil)
         }
         guard let workspaceRaw = params["workspace_id"] as? String, let workspaceID = UUID(uuidString: workspaceRaw),
-              let tabRaw = params["tab_id"] as? String, let tabID = UUID(uuidString: tabRaw),
+              let panelRaw = FeedPanelParam.rawValue(in: params), let panelID = UUID(uuidString: panelRaw),
               let eventRaw = params["event_id"] as? String, let eventID = UUID(uuidString: eventRaw),
               let agentKind = params["agent_kind"] as? String, !agentKind.isEmpty,
               let sessionID = params["session_id"] as? String, !sessionID.isEmpty else {
@@ -51,13 +66,13 @@ extension TerminalController {
         if params["options"] != nil && options == nil {
             return .err(code: "invalid_params", message: "invalid_params", data: nil)
         }
-        guard let owner = JournalCoordinator.shared.exactOwner(tabID: tabID),
-              owner.agentKind == agentKind, owner.sessionID == sessionID, owner.tabID == tabID,
-              JournalCoordinator.shared.target(tabID: tabID) == workspaceID else {
+        guard let owner = JournalCoordinator.shared.exactOwner(panelID: panelID),
+              owner.agentKind == agentKind, owner.sessionID == sessionID, owner.panelID == panelID,
+              JournalCoordinator.shared.target(panelID: panelID) == workspaceID else {
             return .err(code: FeedNoteError.unmatched.rawValue, message: FeedNoteError.unmatched.rawValue, data: nil)
         }
         if let code = FeedProjectionBridge.shared.acceptNote(
-            tabID: tabID,
+            panelID: panelID,
             workspaceID: workspaceID,
             agentKind: agentKind,
             sessionID: sessionID,
@@ -77,14 +92,19 @@ extension TerminalController {
         guard CapabilityFeatures.current.supports(.feedAsks) else {
             return .err(code: "method_not_found", message: "Unknown method", data: nil)
         }
-        guard let workspaceID = v2UUID(params, "workspace_id"), let tabID = v2UUID(params, "tab_id") else {
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              let panelID = v2UUID(params, FeedPanelParam.key(in: params)) else {
             return .err(code: "invalid_params", message: "invalid_params", data: nil)
         }
         return v2MainSync {
-            guard AppDelegate.shared?.selectFeedTarget(.init(workspaceID: workspaceID, tabID: tabID)) == true else {
+            guard AppDelegate.shared?.selectFeedTarget(.init(workspaceID: workspaceID, panelID: panelID)) == true else {
                 return .err(code: "unavailable", message: "unavailable", data: nil)
             }
-            return .ok(["workspace_id": workspaceID.uuidString, "tab_id": tabID.uuidString])
+            return .ok([
+                "workspace_id": workspaceID.uuidString,
+                "panel_id": panelID.uuidString,
+                "tab_id": panelID.uuidString,
+            ])
         }
     }
 
@@ -96,10 +116,10 @@ extension TerminalController {
         }
         guard let workspaceRaw = params["workspace_id"] as? String,
               let workspaceID = UUID(uuidString: workspaceRaw),
-              let tabRaw = params["tab_id"] as? String,
-              let tabID = UUID(uuidString: tabRaw),
+              let panelRaw = FeedPanelParam.rawValue(in: params),
+              let panelID = UUID(uuidString: panelRaw),
               let text = params["text"] as? String else {
-            return .err(code: "invalid_params", message: "feed.answer requires workspace_id, tab_id, and text", data: nil)
+            return .err(code: "invalid_params", message: "feed.answer requires workspace_id, panel_id, and text", data: nil)
         }
         if let refusalCode = FeedAnswerTextPolicy.refusalCode(for: text) {
             var data = feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
@@ -109,7 +129,7 @@ extension TerminalController {
                 code: refusalCode,
                 message: String(
                     localized: "feed.answer.multilineUnsupported",
-                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the tab."
+                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the panel."
                 ),
                 data: data
             )
@@ -126,22 +146,22 @@ extension TerminalController {
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
             )
         }
-        let actorRaw = params["by"] as? String ?? TabAttentionActor.agent.rawValue
-        guard let actor = TabAttentionActor(rawValue: actorRaw) else {
+        let actorRaw = params["by"] as? String ?? PanelAttentionActor.agent.rawValue
+        guard let actor = PanelAttentionActor(rawValue: actorRaw) else {
             return .err(code: "invalid_params", message: "by must be agent or operator", data: nil)
         }
 
         let body = Self.trimmingTrailingNewlines(text)
         if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return v2FeedAnswerOpen(workspaceID: workspaceID, tabID: tabID)
+            return v2FeedAnswerOpen(workspaceID: workspaceID, panelID: panelID)
         }
-        guard FeedAnswerInFlight.begin(tabID: tabID) else {
+        guard FeedAnswerInFlight.begin(panelID: panelID) else {
             return feedAnswerError(
                 code: "submit_pending",
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
             )
         }
-        defer { FeedAnswerInFlight.end(tabID: tabID) }
+        defer { FeedAnswerInFlight.end(panelID: panelID) }
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var preparation: FeedAnswerPreparation = .error(
@@ -149,7 +169,7 @@ extension TerminalController {
         )
         Task { @MainActor in
             defer { phaseASema.signal() }
-            preparation = prepareFeedAnswer(workspaceID: workspaceID, tabID: tabID)
+            preparation = prepareFeedAnswer(workspaceID: workspaceID, panelID: panelID)
         }
         phaseASema.wait()
         let prepared: FeedAnswerPrepared
@@ -209,7 +229,7 @@ extension TerminalController {
         }
     }
 
-    private nonisolated func v2FeedAnswerOpen(workspaceID: UUID, tabID: UUID) -> V2CallResult {
+    private nonisolated func v2FeedAnswerOpen(workspaceID: UUID, panelID: UUID) -> V2CallResult {
         let semaphore = DispatchSemaphore(value: 0)
         let context = SocketCommandContext.current
         nonisolated(unsafe) var result: V2CallResult = .err(
@@ -222,7 +242,7 @@ extension TerminalController {
                     defer { blockedTarget = SocketCommandContext.current?.blockedTarget }
                     return v2FeedOpen(params: [
                         "workspace_id": workspaceID.uuidString,
-                        "tab_id": tabID.uuidString,
+                        "panel_id": panelID.uuidString,
                     ])
                 }
             }
@@ -257,11 +277,11 @@ extension TerminalController {
     @MainActor
     private func prepareFeedAnswer(
         workspaceID: UUID,
-        tabID: UUID
+        panelID: UUID
     ) -> FeedAnswerPreparation {
         switch resolveSurfaceSendTargets(params: [
             "workspace_id": workspaceID.uuidString,
-            "surface_id": tabID.uuidString,
+            "surface_id": panelID.uuidString,
         ]) {
         case .err(let error):
             if case .err(let code, _, _) = error, code == "not_ready" { return .error(error) }
@@ -271,8 +291,8 @@ extension TerminalController {
             ))
         case .ok(let resolved):
             guard resolved.workspaceId == workspaceID,
-                  resolved.tabId == tabID,
-                  resolved.workspace.panels[tabID] != nil else {
+                  resolved.panelId == panelID,
+                  resolved.workspace.panels[panelID] != nil else {
                 return .error(feedAnswerError(
                     code: "unavailable",
                     data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
@@ -291,14 +311,14 @@ extension TerminalController {
                     data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
                 ))
             }
-            let owner = JournalCoordinator.shared.exactOwner(tabID: tabID)
-            let snapshot = JournalCoordinator.shared.snapshot(tabID: tabID)
-            let attention = TabMetadataStore.shared.attentionSnapshot(workspaceId: workspaceID, surfaceId: tabID)
-            guard let projectedRow = FeedProjectionBridge.shared.answerRow(tabID: tabID),
+            let owner = JournalCoordinator.shared.exactOwner(panelID: panelID)
+            let snapshot = JournalCoordinator.shared.snapshot(panelID: panelID)
+            let attention = PanelMetadataStore.shared.attentionSnapshot(workspaceId: workspaceID, surfaceId: panelID)
+            guard let projectedRow = FeedProjectionBridge.shared.answerRow(panelID: panelID),
                   let identity = FeedAnswerEligibility.capture(
                     workspaceID: workspaceID,
-                    tabID: tabID,
-                    targetWorkspaceID: JournalCoordinator.shared.target(tabID: tabID),
+                    panelID: panelID,
+                    targetWorkspaceID: JournalCoordinator.shared.target(panelID: panelID),
                     owner: owner,
                     snapshot: snapshot,
                     attention: attention,
@@ -342,7 +362,7 @@ extension TerminalController {
         _ prepared: FeedAnswerPrepared,
         body: String,
         answer: String,
-        actor: TabAttentionActor
+        actor: PanelAttentionActor
     ) -> FeedAnswerDeliveryStart {
         guard feedAnswerTargetIsCurrent(prepared) else {
             return .error(feedAnswerError(
@@ -356,7 +376,7 @@ extension TerminalController {
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
             ))
         }
-        guard FeedProjectionBridge.shared.answerRow(tabID: prepared.identity.tabID) == prepared.projectedRow else {
+        guard FeedProjectionBridge.shared.answerRow(panelID: prepared.identity.panelID) == prepared.projectedRow else {
             return .error(feedAnswerError(
                 code: "ineligible",
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
@@ -418,7 +438,7 @@ extension TerminalController {
         _ prepared: FeedAnswerPrepared,
         body: String,
         answer: String,
-        actor: TabAttentionActor
+        actor: PanelAttentionActor
     ) -> FeedAnswerSubmitOutcome {
         let targetIsCurrent = feedAnswerTargetIsCurrent(prepared)
         let rowIsCurrent = targetIsCurrent && feedAnswerRowIsCurrent(prepared)
@@ -454,9 +474,9 @@ extension TerminalController {
         ) {
             guard let expectedEpoch = prepared.identity.flagEpoch else { return .unavailable }
             do {
-                let result = try TabAttentionService.shared.lower(
+                let result = try PanelAttentionService.shared.lower(
                     workspaceId: prepared.identity.workspaceID,
-                    surfaceId: prepared.identity.tabID,
+                    surfaceId: prepared.identity.panelID,
                     by: actor,
                     answer: answer,
                     expectedFlagEpoch: expectedEpoch
@@ -472,9 +492,9 @@ extension TerminalController {
     private func feedAnswerTargetIsCurrent(_ prepared: FeedAnswerPrepared) -> Bool {
         let resolved = prepared.resolved
         guard resolved.workspaceManager.workspaces.contains(where: { $0 === resolved.workspace }),
-              resolved.workspace.terminalPanel(for: prepared.identity.tabID) === resolved.terminalPanel,
+              resolved.workspace.terminalPanel(for: prepared.identity.panelID) === resolved.terminalPanel,
               resolved.terminalPanel.surface === prepared.terminalSurface,
-              prepared.terminalSurface.id == prepared.identity.tabID,
+              prepared.terminalSurface.id == prepared.identity.panelID,
               prepared.terminalSurface.workspaceId == prepared.identity.workspaceID,
               prepared.terminalSurface.nativeSurfaceLifetimeID == prepared.surfaceLifetimeID,
               prepared.terminalSurface.surface == prepared.nativeSurface else { return false }
@@ -484,18 +504,18 @@ extension TerminalController {
     @MainActor
     private func feedAnswerRowIsCurrent(_ prepared: FeedAnswerPrepared) -> Bool {
         let identity = prepared.identity
-        guard FeedProjectionBridge.shared.answerRow(tabID: identity.tabID) == prepared.projectedRow else {
+        guard FeedProjectionBridge.shared.answerRow(panelID: identity.panelID) == prepared.projectedRow else {
             return false
         }
-        let owner = JournalCoordinator.shared.exactOwner(tabID: identity.tabID)
-        let snapshot = JournalCoordinator.shared.snapshot(tabID: identity.tabID)
-        let attention = TabMetadataStore.shared.attentionSnapshot(
+        let owner = JournalCoordinator.shared.exactOwner(panelID: identity.panelID)
+        let snapshot = JournalCoordinator.shared.snapshot(panelID: identity.panelID)
+        let attention = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: identity.workspaceID,
-            surfaceId: identity.tabID
+            surfaceId: identity.panelID
         )
         return FeedAnswerEligibility.stillEligible(
             identity,
-            targetWorkspaceID: JournalCoordinator.shared.target(tabID: identity.tabID),
+            targetWorkspaceID: JournalCoordinator.shared.target(panelID: identity.panelID),
             owner: owner,
             snapshot: snapshot,
             attention: attention

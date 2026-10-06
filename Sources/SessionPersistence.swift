@@ -331,12 +331,12 @@ struct SessionGitBranchSnapshot: Codable, Sendable {
     var isDirty: Bool
 }
 
-struct SessionTerminalTabSnapshot: Codable, Sendable {
+struct SessionTerminalPanelSnapshot: Codable, Sendable {
     var workingDirectory: String?
     var scrollback: String?
 }
 
-struct SessionBrowserTabSnapshot: Codable, Sendable {
+struct SessionBrowserPanelSnapshot: Codable, Sendable {
     var urlString: String?
     var profileID: UUID?
     var shouldRenderWebView: Bool
@@ -346,10 +346,10 @@ struct SessionBrowserTabSnapshot: Codable, Sendable {
     var forwardHistoryURLStrings: [String]?
     /// Durable browser-to-agent association. Optional so pre-companion
     /// session-v1 snapshots continue to decode unchanged.
-    var linkedAgent: AgentTabLink? = nil
+    var linkedAgent: AgentPanelLink? = nil
 }
 
-struct SessionMarkdownTabSnapshot: Codable, Sendable {
+struct SessionMarkdownPanelSnapshot: Codable, Sendable {
     /// Absolute path to the markdown file, or nil for an unbound panel
     /// (empty state — not yet bound to a file). Unbound panels are not
     /// recreated on restore; see Workspace.createPanel(from:inPane:).
@@ -359,12 +359,12 @@ struct SessionMarkdownTabSnapshot: Codable, Sendable {
     var fontScale: Double? = nil
 }
 
-struct SessionTabSnapshot: Codable, Sendable {
+struct SessionPanelSnapshot: Codable, Sendable {
     var id: UUID
     /// Logical surface creation time. Optional so legacy snapshots remain
     /// honest: absence means "not recorded", never "created on restore".
     var createdAt: Date? = nil
-    var type: TabContentType
+    var type: PanelType
     var title: String?
     var customTitle: String?
     /// Per-surface tab color, normalized as `#RRGGBB`. Optional for
@@ -377,9 +377,9 @@ struct SessionTabSnapshot: Codable, Sendable {
     var gitBranch: SessionGitBranchSnapshot?
     var listeningPorts: [Int]
     var ttyName: String?
-    var terminal: SessionTerminalTabSnapshot?
-    var browser: SessionBrowserTabSnapshot?
-    var markdown: SessionMarkdownTabSnapshot?
+    var terminal: SessionTerminalPanelSnapshot?
+    var browser: SessionBrowserPanelSnapshot?
+    var markdown: SessionMarkdownPanelSnapshot?
 
     /// Tier 1 Phase 2: persisted `SurfaceMetadataStore` values for this
     /// surface. Optional for backcompat with pre-Phase-2 snapshots; older
@@ -400,7 +400,7 @@ struct SessionTabSnapshot: Codable, Sendable {
     ///
     /// `history: []` is written explicitly as an empty array (not omitted)
     /// for stable JSON output across v1/v2.
-    var surfaceConversations: TabConversations? = nil
+    var surfaceConversations: PanelConversations? = nil
 
     /// C11-164 (RES-2): persisted `SurfaceActivityTracker.lastActivity` floor
     /// for this surface. The Codex/pi/omp scrape filters use "candidate mtime
@@ -544,7 +544,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var rootAdoptionArmed: Bool? = nil
     var focusedPanelId: UUID?
     var layout: SessionWorkspaceLayoutSnapshot
-    var panels: [SessionTabSnapshot]
+    var panels: [SessionPanelSnapshot]
     var statusEntries: [SessionStatusEntrySnapshot]
     var logEntries: [SessionLogEntrySnapshot]
     var progress: SessionProgressSnapshot?
@@ -555,6 +555,30 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// Session-only active companion context. Blueprints and snapshots do not
     /// carry this transient focus-derived value.
     var activeAgentSurfaceId: UUID? = nil
+
+    // Pinned on-disk keys: session decode is all-or-nothing, so these raw
+    // strings never change even when the Swift names do.
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case processTitle = "processTitle"
+        case customTitle = "customTitle"
+        case stableDefaultTitle = "stableDefaultTitle"
+        case customColor = "customColor"
+        case isPinned = "isPinned"
+        case groupId = "groupId"
+        case currentDirectory = "currentDirectory"
+        case rootDirectory = "rootDirectory"
+        case rootAdoptionArmed = "rootAdoptionArmed"
+        case focusedPanelId = "focusedPanelId"
+        case layout = "layout"
+        case panels = "panels"
+        case statusEntries = "statusEntries"
+        case logEntries = "logEntries"
+        case progress = "progress"
+        case gitBranch = "gitBranch"
+        case metadata = "metadata"
+        case activeAgentSurfaceId = "activeAgentSurfaceId"
+    }
 }
 
 /// Repair the duplicate identities seen in B024 before any restore consumer
@@ -587,11 +611,11 @@ enum SessionRestoreNormalization {
             case duplicateLayoutReference = "duplicate_layout_reference"
         }
 
-        let tabId: UUID
+        let panelId: UUID
         let reason: Reason
 
         func diagnostic(workspaceId: UUID) -> String {
-            "session.restore.drop workspace=\(workspaceId) tab=\(tabId) reason=\(reason.rawValue)"
+            "session.restore.drop workspace=\(workspaceId) tab=\(panelId) reason=\(reason.rawValue)"
         }
     }
 
@@ -601,7 +625,7 @@ enum SessionRestoreNormalization {
         var knownIds = Set<UUID>()
         snapshot.panels = input.panels.filter { panel in
             guard knownIds.insert(panel.id).inserted else {
-                drops.append(Drop(tabId: panel.id, reason: .duplicateRecord))
+                drops.append(Drop(panelId: panel.id, reason: .duplicateRecord))
                 return false
             }
             return true
@@ -616,7 +640,7 @@ enum SessionRestoreNormalization {
                     // references alone rather than broadening this repair.
                     guard knownIds.contains(id) else { return true }
                     guard placedIds.insert(id).inserted else {
-                        drops.append(Drop(tabId: id, reason: .duplicateLayoutReference))
+                        drops.append(Drop(panelId: id, reason: .duplicateLayoutReference))
                         return false
                     }
                     return true

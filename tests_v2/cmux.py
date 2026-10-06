@@ -8,11 +8,11 @@ It intentionally mirrors the existing v1 Python client's convenience API so the
 existing test suite can be ported with minimal churn.
 
 Protocol:
-  Request:  {"id": 1, "method": "tab.list", "params": {..}}
+  Request:  {"id": 1, "method": "panel.list", "params": {..}}
   Response: {"id": 1, "ok": true, "result": {...}}
 
 Notes:
-- v2 uses stable UUID handles for workspaces/panes/surfaces.
+- v2 uses stable UUID handles for workspaces/areas/panels.
 - For test convenience, this client accepts integer indexes for many methods and
   resolves them to IDs using list calls.
 """
@@ -142,10 +142,11 @@ def _looks_like_uuid(s: str) -> bool:
         return False
 
 
-# Canonical ref kinds are tab:N / area:N; surface:N / pane:N stay accepted as aliases.
+# Canonical ref kinds are panel:N / area:N; tab:N / surface:N / pane:N stay accepted as aliases.
 _REF_KIND_ALIASES = {
-    "surface": {"tab", "surface"},
-    "tab": {"tab", "surface"},
+    "panel": {"panel", "tab", "surface"},
+    "surface": {"panel", "tab", "surface"},
+    "tab": {"panel", "tab", "surface"},
     "pane": {"area", "pane"},
     "area": {"area", "pane"},
 }
@@ -158,7 +159,7 @@ def _looks_like_ref(s: str, kind: Optional[str] = None) -> bool:
     ref_kind, ordinal = parts[0].strip().lower(), parts[1].strip()
     if kind is not None and ref_kind not in _REF_KIND_ALIASES.get(kind, {kind}):
         return False
-    if ref_kind not in {"window", "workspace", "area", "tab", "pane", "surface"}:
+    if ref_kind not in {"window", "workspace", "area", "panel", "tab", "pane", "surface"}:
         return False
     return ordinal.isdigit()
 
@@ -366,14 +367,14 @@ class cmux:
             # Try fast-path via identify.
             ident = self._call("system.identify")
             focused = (ident or {}).get("focused") or {}
-            sid = focused.get("tab_id") if isinstance(focused, dict) else None
+            sid = focused.get("panel_id") if isinstance(focused, dict) else None
             return None if sid in (None, "", {}) else str(sid)
 
         if isinstance(surface, int):
             params: Dict[str, Any] = {}
             if workspace_id:
                 params["workspace_id"] = workspace_id
-            items = (self._call("tab.list", params) or {}).get("tabs") or []
+            items = (self._call("panel.list", params) or {}).get("panels") or []
             for row in items:
                 if int(row.get("index", -1)) == surface:
                     return str(row.get("id"))
@@ -599,9 +600,9 @@ class cmux:
         if workspace is not None:
             wsid = self._resolve_workspace_id(workspace)
             params["workspace_id"] = wsid
-        res = self._call("tab.list", params) or {}
+        res = self._call("panel.list", params) or {}
         out: List[Tuple[int, str, bool]] = []
-        for row in res.get("tabs") or []:
+        for row in res.get("panels") or []:
             out.append((
                 int(row.get("index", 0)),
                 str(row.get("id")),
@@ -613,33 +614,33 @@ class cmux:
         sid = self._resolve_surface_id(surface)
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
-        self._call("tab.focus", {"tab_id": sid})
+        self._call("panel.focus", {"panel_id": sid})
 
     def focus_surface_by_panel(self, surface_id: str) -> None:
         # In v2, surface_id is the panel UUID.
         self.focus_surface(surface_id)
 
     def new_split(self, direction: str) -> str:
-        res = self._call("tab.split", {"direction": direction}) or {}
-        sid = res.get("tab_id")
+        res = self._call("panel.split", {"direction": direction}) or {}
+        sid = res.get("panel_id")
         if not sid:
-            raise cmuxError(f"tab.split returned no tab_id: {res}")
+            raise cmuxError(f"panel.split returned no panel_id: {res}")
         return str(sid)
 
     def drag_surface_to_split(self, surface: Union[str, int], direction: str) -> None:
         sid = self._resolve_surface_id(surface)
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
-        self._call("tab.drag_to_split", {"tab_id": sid, "direction": direction})
+        self._call("panel.drag_to_split", {"panel_id": sid, "direction": direction})
 
     def new_pane(self, direction: str = "right", panel_type: str = "terminal", url: str = None) -> str:
         params: Dict[str, Any] = {"direction": direction, "type": panel_type}
         if url:
             params["url"] = url
         res = self._call("area.create", params) or {}
-        sid = res.get("tab_id")
+        sid = res.get("panel_id")
         if not sid:
-            raise cmuxError(f"area.create returned no tab_id: {res}")
+            raise cmuxError(f"area.create returned no panel_id: {res}")
         return str(sid)
 
     def new_surface(self, pane: Union[str, int, None] = None, panel_type: str = "terminal", url: str = None) -> str:
@@ -651,10 +652,10 @@ class cmux:
             params["area_id"] = pid
         if url:
             params["url"] = url
-        res = self._call("tab.create", params) or {}
-        sid = res.get("tab_id")
+        res = self._call("panel.create", params) or {}
+        sid = res.get("panel_id")
         if not sid:
-            raise cmuxError(f"tab.create returned no tab_id: {res}")
+            raise cmuxError(f"panel.create returned no panel_id: {res}")
         return str(sid)
 
     def close_surface(self, surface: Union[str, int, None] = None) -> None:
@@ -663,8 +664,8 @@ class cmux:
             sid = self._resolve_surface_id(surface)
             if not sid:
                 raise cmuxError(f"Invalid surface: {surface!r}")
-            params["tab_id"] = sid
-        self._call("tab.close", params)
+            params["panel_id"] = sid
+        self._call("panel.close", params)
 
     def move_surface(
         self,
@@ -682,7 +683,7 @@ class cmux:
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
 
-        params: Dict[str, Any] = {"tab_id": sid, "focus": bool(focus)}
+        params: Dict[str, Any] = {"panel_id": sid, "focus": bool(focus)}
         if pane is not None:
             pid = self._resolve_pane_id(pane)
             if not pid:
@@ -699,16 +700,16 @@ class cmux:
             before_id = self._resolve_surface_id(before_surface)
             if not before_id:
                 raise cmuxError(f"Invalid before_surface: {before_surface!r}")
-            params["before_tab_id"] = before_id
+            params["before_panel_id"] = before_id
         if after_surface is not None:
             after_id = self._resolve_surface_id(after_surface)
             if not after_id:
                 raise cmuxError(f"Invalid after_surface: {after_surface!r}")
-            params["after_tab_id"] = after_id
+            params["after_panel_id"] = after_id
         if index is not None:
             params["index"] = int(index)
 
-        self._call("tab.move", params)
+        self._call("panel.move", params)
 
     def reorder_surface(
         self,
@@ -722,7 +723,7 @@ class cmux:
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
 
-        params: Dict[str, Any] = {"tab_id": sid}
+        params: Dict[str, Any] = {"panel_id": sid}
         targets = 0
         if index is not None:
             params["index"] = int(index)
@@ -731,18 +732,18 @@ class cmux:
             before_id = self._resolve_surface_id(before_surface)
             if not before_id:
                 raise cmuxError(f"Invalid before_surface: {before_surface!r}")
-            params["before_tab_id"] = before_id
+            params["before_panel_id"] = before_id
             targets += 1
         if after_surface is not None:
             after_id = self._resolve_surface_id(after_surface)
             if not after_id:
                 raise cmuxError(f"Invalid after_surface: {after_surface!r}")
-            params["after_tab_id"] = after_id
+            params["after_panel_id"] = after_id
             targets += 1
         if targets != 1:
             raise cmuxError("reorder_surface requires exactly one target: index|before_surface|after_surface")
 
-        self._call("tab.reorder", params)
+        self._call("panel.reorder", params)
 
     def trigger_flash(self, surface: Union[str, int, None] = None) -> None:
         params: Dict[str, Any] = {}
@@ -750,23 +751,23 @@ class cmux:
             sid = self._resolve_surface_id(surface)
             if not sid:
                 raise cmuxError(f"Invalid surface: {surface!r}")
-            params["tab_id"] = sid
-        self._call("tab.trigger_flash", params)
+            params["panel_id"] = sid
+        self._call("panel.trigger_flash", params)
 
     def refresh_surfaces(self, workspace: Union[str, int, None] = None) -> None:
         params: Dict[str, Any] = {}
         if workspace is not None:
             wsid = self._resolve_workspace_id(workspace)
             params["workspace_id"] = wsid
-        self._call("tab.refresh", params)
+        self._call("panel.refresh", params)
 
     def surface_health(self, workspace: Union[str, int, None] = None) -> List[dict]:
         params: Dict[str, Any] = {}
         if workspace is not None:
             wsid = self._resolve_workspace_id(workspace)
             params["workspace_id"] = wsid
-        res = self._call("tab.health", params) or {}
-        return list(res.get("tabs") or [])
+        res = self._call("panel.health", params) or {}
+        return list(res.get("panels") or [])
 
     def clear_history(self, surface: Union[str, int, None] = None, workspace: Union[str, int, None] = None) -> None:
         params: Dict[str, Any] = {}
@@ -777,8 +778,8 @@ class cmux:
             sid = self._resolve_surface_id(surface, workspace_id=params.get("workspace_id"))
             if not sid:
                 raise cmuxError(f"Invalid surface: {surface!r}")
-            params["tab_id"] = sid
-        self._call("tab.clear_history", params)
+            params["panel_id"] = sid
+        self._call("panel.clear_history", params)
 
     # ---------------------------------------------------------------------
     # Pane commands
@@ -791,7 +792,7 @@ class cmux:
             out.append((
                 int(row.get("index", 0)),
                 str(row.get("id")),
-                int(row.get("tab_count", 0)),
+                int(row.get("panel_count", 0)),
                 bool(row.get("focused", False)),
             ))
         return out
@@ -807,9 +808,9 @@ class cmux:
         if pane is not None:
             pid = self._resolve_pane_id(pane)
             params["area_id"] = pid
-        res = self._call("area.tabs", params) or {}
+        res = self._call("area.panels", params) or {}
         out: List[Tuple[int, str, str, bool]] = []
-        for row in res.get("tabs") or []:
+        for row in res.get("panels") or []:
             out.append((
                 int(row.get("index", 0)),
                 str(row.get("id")),
@@ -836,7 +837,7 @@ class cmux:
             sid = self._resolve_surface_id(surface)
             if not sid:
                 raise cmuxError(f"Invalid surface: {surface!r}")
-            params["tab_id"] = sid
+            params["panel_id"] = sid
         res = self._call("area.break", params) or {}
         wsid = res.get("workspace_id")
         if not wsid:
@@ -863,7 +864,7 @@ class cmux:
             sid = self._resolve_surface_id(surface)
             if not sid:
                 raise cmuxError(f"Invalid surface: {surface!r}")
-            params["tab_id"] = sid
+            params["panel_id"] = sid
         self._call("area.join", params)
 
     def last_pane(self) -> str:
@@ -879,23 +880,23 @@ class cmux:
 
     def send(self, text: str) -> None:
         text2 = _unescape_backslash_controls(text)
-        self._call("tab.send_text", {"text": text2})
+        self._call("panel.send_text", {"text": text2})
 
     def send_surface(self, surface: Union[str, int], text: str) -> None:
         sid = self._resolve_surface_id(surface)
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
         text2 = _unescape_backslash_controls(text)
-        self._call("tab.send_text", {"tab_id": sid, "text": text2})
+        self._call("panel.send_text", {"panel_id": sid, "text": text2})
 
     def send_key(self, key: str) -> None:
-        self._call("tab.send_key", {"key": key})
+        self._call("panel.send_key", {"key": key})
 
     def send_key_surface(self, surface: Union[str, int], key: str) -> None:
         sid = self._resolve_surface_id(surface)
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
-        self._call("tab.send_key", {"tab_id": sid, "key": key})
+        self._call("panel.send_key", {"panel_id": sid, "key": key})
 
     def send_ctrl_c(self) -> None:
         self.send_key("ctrl-c")
@@ -915,8 +916,8 @@ class cmux:
         if not sid:
             raise cmuxError(f"Invalid surface: {surface!r}")
         self._call(
-            "notification.create_for_tab",
-            {"tab_id": sid, "title": title, "subtitle": subtitle, "body": body},
+            "notification.create_for_panel",
+            {"panel_id": sid, "title": title, "subtitle": subtitle, "body": body},
         )
 
     def list_notifications(self) -> list[dict]:
@@ -942,7 +943,7 @@ class cmux:
         params: Dict[str, Any] = {"workspace_id": wsid}
         if surface is not None:
             sid = self._resolve_surface_id(surface, workspace_id=wsid)
-            params["tab_id"] = sid
+            params["panel_id"] = sid
         self._call("debug.notification.focus", params)
 
     # ---------------------------------------------------------------------
@@ -954,41 +955,41 @@ class cmux:
         if url:
             params["url"] = url
         res = self._call("browser.open_split", params) or {}
-        sid = res.get("tab_id")
+        sid = res.get("panel_id")
         if not sid:
-            raise cmuxError(f"browser.open_split returned no tab_id: {res}")
+            raise cmuxError(f"browser.open_split returned no panel_id: {res}")
         return str(sid)
 
     def navigate(self, panel_id: str, url: str) -> None:
         sid = self._resolve_surface_id(panel_id)
         if not sid:
             raise cmuxError(f"Invalid surface: {panel_id!r}")
-        self._call("browser.navigate", {"tab_id": sid, "url": url})
+        self._call("browser.navigate", {"panel_id": sid, "url": url})
 
     def browser_back(self, panel_id: str) -> None:
         sid = self._resolve_surface_id(panel_id)
-        self._call("browser.back", {"tab_id": sid})
+        self._call("browser.back", {"panel_id": sid})
 
     def browser_forward(self, panel_id: str) -> None:
         sid = self._resolve_surface_id(panel_id)
-        self._call("browser.forward", {"tab_id": sid})
+        self._call("browser.forward", {"panel_id": sid})
 
     def browser_reload(self, panel_id: str) -> None:
         sid = self._resolve_surface_id(panel_id)
-        self._call("browser.reload", {"tab_id": sid})
+        self._call("browser.reload", {"panel_id": sid})
 
     def get_url(self, panel_id: str) -> str:
         sid = self._resolve_surface_id(panel_id)
-        res = self._call("browser.url.get", {"tab_id": sid}) or {}
+        res = self._call("browser.url.get", {"panel_id": sid}) or {}
         return str(res.get("url") or "")
 
     def focus_webview(self, panel_id: str) -> None:
         sid = self._resolve_surface_id(panel_id)
-        self._call("browser.focus_webview", {"tab_id": sid})
+        self._call("browser.focus_webview", {"panel_id": sid})
 
     def is_webview_focused(self, panel_id: str) -> bool:
         sid = self._resolve_surface_id(panel_id)
-        res = self._call("browser.is_webview_focused", {"tab_id": sid}) or {}
+        res = self._call("browser.is_webview_focused", {"panel_id": sid}) or {}
         return bool(res.get("focused"))
 
     def wait_for_webview_focus(self, panel_id: str, timeout_s: float = 2.0) -> None:
@@ -1020,7 +1021,7 @@ class cmux:
         params: Dict[str, Any] = {}
         if window_id is not None:
             params["window_id"] = str(window_id)
-        self._call("debug.command_palette.rename_tab.open", params)
+        self._call("debug.command_palette.rename_panel.open", params)
 
     def command_palette_results(self, window_id: str, limit: int = 20) -> dict:
         res = self._call(
@@ -1039,16 +1040,16 @@ class cmux:
 
     def is_terminal_focused(self, panel: Union[str, int]) -> bool:
         sid = self._resolve_surface_id(panel)
-        res = self._call("debug.terminal.is_focused", {"tab_id": sid}) or {}
+        res = self._call("debug.terminal.is_focused", {"panel_id": sid}) or {}
         return bool(res.get("focused"))
 
     def read_terminal_text(self, panel: Union[str, int, None] = None) -> str:
         params: Dict[str, Any] = {}
         if panel is not None:
             sid = self._resolve_surface_id(panel)
-            params["tab_id"] = sid
+            params["panel_id"] = sid
         try:
-            res = self._call("tab.read_text", params) or {}
+            res = self._call("panel.read_text", params) or {}
             if "text" in res:
                 return str(res.get("text") or "")
             b64 = str(res.get("base64") or "")
@@ -1068,7 +1069,7 @@ class cmux:
         params: Dict[str, Any] = {}
         if panel is not None:
             sid = self._resolve_surface_id(panel)
-            params["tab_id"] = sid
+            params["panel_id"] = sid
         res = self._call("debug.terminal.render_stats", params) or {}
         # Server wraps the underlying stats object under "stats".
         return dict(res.get("stats") or {})
@@ -1080,18 +1081,14 @@ class cmux:
 
     def panel_snapshot_reset(self, panel: Union[str, int]) -> None:
         sid = self._resolve_surface_id(panel)
-        self._call("debug.tab_snapshot.reset", {"tab_id": sid})
+        self._call("debug.panel_snapshot.reset", {"panel_id": sid})
 
     def panel_snapshot(self, panel: Union[str, int], label: str = "") -> dict:
         sid = self._resolve_surface_id(panel)
-        params: Dict[str, Any] = {"tab_id": sid}
+        params: Dict[str, Any] = {"panel_id": sid}
         if label:
             params["label"] = label
-        res = dict(self._call("debug.tab_snapshot", params) or {})
-        # Normalize key to match the v1 client (panel_id).
-        if "panel_id" not in res and "tab_id" in res:
-            res["panel_id"] = res.get("tab_id")
-        return res
+        return dict(self._call("debug.panel_snapshot", params) or {})
 
     def bonsplit_underflow_count(self) -> int:
         res = self._call("debug.bonsplit_underflow.count") or {}
@@ -1109,7 +1106,7 @@ class cmux:
 
     def flash_count(self, surface: Union[str, int]) -> int:
         sid = self._resolve_surface_id(surface)
-        res = self._call("debug.flash.count", {"tab_id": sid}) or {}
+        res = self._call("debug.flash.count", {"panel_id": sid}) or {}
         return int(res.get("count") or 0)
 
     def reset_flash_counts(self) -> None:

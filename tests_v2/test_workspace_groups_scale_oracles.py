@@ -13,7 +13,7 @@ from test_workspace_groups_scale import assert_identity, assert_move, compare_se
 
 def snapshot():
     return {"workspace_order": ["one", "two"], "workspaces": {
-        wid: {"group_id": None, "pinned": False, "tab_ids": [wid + "-tab"], "tabs": [{"id": wid + "-tab", "type": "terminal",
+        wid: {"group_id": None, "pinned": False, "panel_ids": [wid + "-tab"], "panels": [{"id": wid + "-tab", "type": "terminal",
               "tty": "synthetic-tty", "shell_pids": [123], "metadata": {}}]}
         for wid in ("one", "two")}}
 
@@ -43,13 +43,13 @@ class ScaleOracleTests(unittest.TestCase):
 
     def test_surviving_tab_replacement_is_rejected(self):
         before, after = snapshot(), snapshot()
-        after["workspaces"]["one"]["tabs"][0]["id"] = "replacement"
+        after["workspaces"]["one"]["panels"][0]["id"] = "replacement"
         with self.assertRaises(AssertionError):
             assert_identity(before, after)
 
     def test_surviving_shell_replacement_is_rejected(self):
         before, after = snapshot(), snapshot()
-        after["workspaces"]["one"]["tabs"][0]["shell_pids"] = [456]
+        after["workspaces"]["one"]["panels"][0]["shell_pids"] = [456]
         with self.assertRaises(AssertionError):
             assert_identity(before, after)
 
@@ -62,7 +62,7 @@ class ScaleOracleTests(unittest.TestCase):
     def test_missing_process_identity_is_unverified(self):
         before, after = snapshot(), snapshot()
         for record in before["workspaces"].values():
-            record["tabs"][0]["shell_pids"] = []
+            record["panels"][0]["shell_pids"] = []
         self.assertEqual(len(assert_identity(before, after)), 2)
 
     def test_compatibility_restore_rejects_replacement_ids_and_wrong_group_properties(self):

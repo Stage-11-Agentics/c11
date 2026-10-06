@@ -39,7 +39,7 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         var template = ghostty_surface_config_new()
         template.command = UnsafePointer(shellCommand)
         let workspaceId = UUID()
-        let panel = TerminalTab(
+        let panel = TerminalPanel(
             workspaceId: workspaceId, configTemplate: template,
             workingDirectory: root.path, initialInput: command + "\r",
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]
@@ -88,7 +88,7 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         panel.close()
         panel.hostedView.removeFromSuperview()
         XCTAssertNil(panel.surface.surface)
-        let rebuiltPanel = TerminalTab(
+        let rebuiltPanel = TerminalPanel(
             workspaceId: workspaceId, configTemplate: template,
             workingDirectory: root.path, initialInput: nil,
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]

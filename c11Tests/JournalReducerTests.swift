@@ -7,11 +7,11 @@ import XCTest
 #endif
 
 enum JournalTestData {
-    static let tab = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let panel = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     static let workspace = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     static let instance = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
     static func draft(_ kind: JournalKind, at: Int64 = 1_000) -> JournalDraft {
-        JournalDraft(kind: kind, emittedAtMs: at, tabID: tab, workspaceID: workspace,
+        JournalDraft(kind: kind, emittedAtMs: at, panelID: panel, workspaceID: workspace,
                      sessionID: "fixture-session", agentKind: "claude-code", source: .hook, adapter: .claudeHook,
                      nativeEvent: kind == .turnStarted ? "UserPromptSubmit" : (kind == .turnCompleted ? "Stop" : "PreToolUse"))
     }
@@ -25,13 +25,13 @@ enum JournalTestData {
 final class JournalReducerTests: XCTestCase {
     // C11-263 seen/sibling repair: unread can disappear independently of a blocked ask.
     func testJournalAttentionSurvivesSeenAndRespectsSuppressionAndFlag() {
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code"), .waiting)
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code", suppressed: true), .idle)
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code", flagged: true, suppressed: true), .waiting)
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: false, derivedActivity: .working, terminalType: "claude-code"), .running)
     }
 

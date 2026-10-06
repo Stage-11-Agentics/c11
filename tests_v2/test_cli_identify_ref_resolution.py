@@ -62,10 +62,10 @@ def _workspace_and_surface_sets(payload: dict) -> tuple[set[str], set[str]]:
         str(focused.get("workspace_ref") or ""),
     }
     surfaces = {
-        str(payload.get("tab_id") or ""),
-        str(payload.get("tab_ref") or ""),
-        str(focused.get("tab_id") or ""),
-        str(focused.get("tab_ref") or ""),
+        str(payload.get("panel_id") or ""),
+        str(payload.get("panel_ref") or ""),
+        str(focused.get("panel_id") or ""),
+        str(focused.get("panel_ref") or ""),
     }
     return ({x for x in workspaces if x}, {x for x in surfaces if x})
 
@@ -104,30 +104,30 @@ def main() -> int:
         )
 
         workspace_for_list = base_workspace_id or base_workspace_ref
-        list_payload = client._call("tab.list", {"workspace_id": workspace_for_list}) or {}
-        surfaces = list_payload.get("tabs") or []
+        list_payload = client._call("panel.list", {"workspace_id": workspace_for_list}) or {}
+        surfaces = list_payload.get("panels") or []
         _must(len(surfaces) > 0, f"No surfaces found in target workspace: {list_payload}")
 
         target_surface = surfaces[0]
         target_surface_id = str(target_surface.get("id") or "")
         target_surface_ref = str(target_surface.get("ref") or "")
-        _must(bool(target_surface_id) and bool(target_surface_ref), f"tab.list missing id/ref: {target_surface}")
+        _must(bool(target_surface_id) and bool(target_surface_ref), f"panel.list missing id/ref: {target_surface}")
 
         identify_both_refs = _run_cli_json(
             cli,
-            ["identify", "--workspace", base_workspace_ref, "--tab", target_surface_ref],
+            ["identify", "--workspace", base_workspace_ref, "--panel", target_surface_ref],
         )
         caller_both = identify_both_refs.get("caller") or {}
         got_ws_both = str(caller_both.get("workspace_id") or caller_both.get("workspace_ref") or "")
-        got_surface_both = str(caller_both.get("tab_id") or caller_both.get("tab_ref") or "")
+        got_surface_both = str(caller_both.get("panel_id") or caller_both.get("panel_ref") or "")
 
         _must(
             got_ws_both in {x for x in [base_workspace_id, base_workspace_ref] if x},
-            f"identify --workspace/--tab refs resolved wrong workspace; got={got_ws_both} payload={identify_both_refs}",
+            f"identify --workspace/--panel refs resolved wrong workspace; got={got_ws_both} payload={identify_both_refs}",
         )
         _must(
             got_surface_both in {target_surface_id, target_surface_ref},
-            f"identify --workspace/--tab refs resolved wrong surface; got={got_surface_both} expected one of {[target_surface_id, target_surface_ref]}",
+            f"identify --workspace/--panel refs resolved wrong surface; got={got_surface_both} expected one of {[target_surface_id, target_surface_ref]}",
         )
 
     finally:

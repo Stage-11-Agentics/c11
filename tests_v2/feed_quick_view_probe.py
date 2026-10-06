@@ -87,12 +87,12 @@ class QuickProbe(FeedProbe):
         return result
 
     def terminal_text(self, tab):
-        result = self.rpc('tab.read_text', {'workspace_id': self.workspace, 'tab_id': tab})
+        result = self.rpc('panel.read_text', {'workspace_id': self.workspace, 'panel_id': tab})
         return result.get('text') or base64.b64decode(result.get('base64') or '').decode(errors='replace')
 
     def decline_settings(self, tab):
         self.ui('background')
-        self.rpc('notification.create_for_tab', {'workspace_id': self.workspace, 'tab_id': tab,
+        self.rpc('notification.create_for_panel', {'workspace_id': self.workspace, 'panel_id': tab,
                  'title': 'Synthetic setup', 'body': 'No permission changes'})
         self.ui('activate')
         end = time.monotonic() + 3
@@ -120,11 +120,11 @@ end tell''' % self.args.pid
         self.workspace = self.rpc('workspace.create')['workspace_id']
         self.rpc('workspace.rename', {'workspace_id': self.workspace,
                  'title': 'Synthetic long workspace 日本語 한국어 中文 Українська Русский ' * 8})
-        anchor = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        older, newer, flagged, turn, inserted = [self.rpc('tab.create', {'workspace_id': self.workspace,
-            'type': 'terminal', 'focus': False})['tab_id'] for _ in range(5)]
+        anchor = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
+        older, newer, flagged, turn, inserted = [self.rpc('panel.create', {'workspace_id': self.workspace,
+            'type': 'terminal', 'focus': False})['panel_id'] for _ in range(5)]
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': anchor})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': anchor})
         self.decline_settings(turn)
         self.open()
         empty_geometry = self.geometry()
@@ -161,7 +161,7 @@ end tell''' % self.args.pid
         before_text = {tab: self.terminal_text(tab) for tab in [anchor, older, newer, flagged, turn]}
         self.keys(125)
         self.keys(36)
-        self.eventually(lambda: self.rpc('system.identify')['focused'].get('tab_id') == older, 'Enter failed exact selected ask')
+        self.eventually(lambda: self.rpc('system.identify')['focused'].get('panel_id') == older, 'Enter failed exact selected ask')
         self.eventually(lambda: not self.shown(), 'Enter failed dismissal')
         self.check(all(self.terminal_text(tab) == text for tab, text in before_text.items()), 'Navigation/Enter sent no PTY reply or approval')
         self.open()
@@ -169,16 +169,16 @@ end tell''' % self.args.pid
         self.rpc('flag.raise', {'tab_id': inserted, 'reason': 'Synthetic newly inserted flag', 'by': 'operator'})
         self.eventually(lambda: len(self.rows()) == 4, 'Inserted row not visible')
         self.keys(36)
-        self.eventually(lambda: self.rpc('system.identify')['focused'].get('tab_id') == older, 'Insertion changed selected UUID')
+        self.eventually(lambda: self.rpc('system.identify')['focused'].get('panel_id') == older, 'Insertion changed selected UUID')
         self.open()
         self.keys(125)
         self.keys(125) # Older ask after two flags.
         self.rpc('agent.event.append', {'event': dict(drafts[older], event_id=str(uuid.uuid4()),
             kind='agent.attention.resolved', resolution='resumed', native_event='PostToolUse')})
         self.eventually(lambda: len(self.rows()) == 3, 'Removed ask stayed visible')
-        self.check(self.rpc('system.identify')['focused'].get('tab_id') == older, 'Removal chose neighbor without activating it')
+        self.check(self.rpc('system.identify')['focused'].get('panel_id') == older, 'Removal chose neighbor without activating it')
         self.keys(36)
-        self.eventually(lambda: self.rpc('system.identify')['focused'].get('tab_id') == newer, 'Removed selection did not choose defined neighbor')
+        self.eventually(lambda: self.rpc('system.identify')['focused'].get('panel_id') == newer, 'Removed selection did not choose defined neighbor')
         self.open()
         selection = self.rpc('system.identify')['focused']
         self.keys(48) # Tab: keyboard-first filter switch (Asks -> Turns); the Asks return below uses the pointer.
@@ -188,7 +188,7 @@ end tell''' % self.args.pid
         self.screenshot('03-turns-filter')
         self.inspect('feed.quick.filter.asks')
         self.eventually(lambda: len(self.rows()) == 3, 'Asks filter failed return')
-        self.rpc('tab.close', {'workspace_id': self.workspace, 'tab_id': flagged}) # Selected first flag closes.
+        self.rpc('panel.close', {'workspace_id': self.workspace, 'panel_id': flagged}) # Selected first flag closes.
         self.eventually(lambda: any('unavailable' in str(e).lower() for e in self.inspect() if e['id'] == 'feed.quick.status'),
                         'Closed target unavailable status missing')
         self.check(self.rpc('system.identify')['focused'] == selection, 'Closed target never redirects current selection')

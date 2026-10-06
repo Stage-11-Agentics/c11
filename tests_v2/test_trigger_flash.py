@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Regression test for tab.trigger_flash (v2).
+Regression test for panel.trigger_flash (v2).
 
 This is intended for LLM/agent workflows where the agent can visually indicate
 which surface it's operating on without relying on unstable indexes.
@@ -33,7 +33,7 @@ def main() -> int:
         if after <= base:
             raise cmuxError(f"Expected flash count to increase (base={base}, after={after})")
 
-    print("PASS: tab.trigger_flash increments flash counter")
+    print("PASS: panel.trigger_flash increments flash counter")
     return 0
 
 

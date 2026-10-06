@@ -130,7 +130,7 @@ class Harness:
         self.env = dict(os.environ)
         for key in ('C11_SOCKET', 'C11_SOCKET_PATH', 'CMUX_SOCKET', 'CMUX_SOCKET_PATH'):
             self.env[key] = args.socket
-        for key in ('C11_TAB_ID', 'CMUX_SURFACE_ID', 'CMUX_PANEL_ID',
+        for key in ('C11_PANEL_ID', 'C11_TAB_ID', 'C11_SURFACE_ID', 'CMUX_PANEL_ID', 'CMUX_TAB_ID', 'CMUX_SURFACE_ID',
                     'C11_WORKSPACE_ID', 'CMUX_WORKSPACE_ID'):
             self.env.pop(key, None)
         self.report = {'suite': 'C11-308-tagged-PTY', 'source_head': args.source_head,
@@ -149,7 +149,7 @@ class Harness:
         return self.client._call(method, params or {}, timeout_s=8) or {}
 
     def target(self, **extra):
-        return {'workspace_id': self.workspace, 'tab_id': self.tab, **extra}
+        return {'workspace_id': self.workspace, 'panel_id': self.tab, **extra}
 
     def wait(self, predicate, description, timeout=5):
         deadline = time.monotonic() + timeout
@@ -199,10 +199,10 @@ class Harness:
             environment = dict(self.env)
             for key in ('C11_SOCKET', 'C11_SOCKET_PATH', 'CMUX_SOCKET', 'CMUX_SOCKET_PATH'):
                 environment[key] = dead_socket
-            for command in ('send-key', 'send-key-tab', 'send-key-panel'):
+            for command in ('send-key', 'send-key-panel', 'send-key-panel'):
                 for separator in (False, True):
                     for with_window in (False, True):
-                        flag = '--panel' if command == 'send-key-panel' else '--tab'
+                        flag = '--panel' if command == 'send-key-panel' else '--panel'
                         arguments = ([ '--window', identity ] if with_window else []) + [
                             command, '--workspace', identity, flag, identity]
                         if separator:
@@ -231,8 +231,8 @@ class Harness:
         return 1 + max((row['seq'] for row in self.events()), default=-1)
 
     def scoped_inputs(self, floor):
-        return [row for row in self.events(floor) if row.get('type') == 'tab.input_sent'
-                and row.get('workspace') == self.workspace and row.get('surface') == self.tab]
+        return [row for row in self.events(floor) if row.get('type') in ('panel.input_sent', 'tab.input_sent')
+                and row.get('workspace') == self.workspace and row.get('panel', row.get('surface')) == self.tab]
 
     def assert_one_event(self, floor, kind, text):
         self.wait(lambda: len(self.scoped_inputs(floor)) >= 1, 'input event persisted')
@@ -250,7 +250,7 @@ class Harness:
         current = [row for row in workspace_list.get('workspaces', []) if row.get('selected')]
         require(len(current) == 1, 'original workspace selection unavailable')
         self.original_workspace = current[0]['id']
-        tabs = self.rpc('tab.list', {'workspace_id': self.original_workspace}).get('tabs', [])
+        tabs = self.rpc('panel.list', {'workspace_id': self.original_workspace}).get('panels', [])
         focused = [row for row in tabs if row.get('focused')]
         require(len(focused) == 1, 'original focused tab unavailable')
         self.original_tab = focused[0]['id']
@@ -258,11 +258,11 @@ class Harness:
         (self.root / 'reader.py').write_text(READER)
         self.workspace = self.rpc('workspace.create', {'cwd': str(self.root), 'title': '308 Synthetic Keys'}).get('workspace_id')
         require(bool(self.workspace), 'owned workspace was not created')
-        tabs = self.rpc('tab.list', {'workspace_id': self.workspace}).get('tabs', [])
+        tabs = self.rpc('panel.list', {'workspace_id': self.workspace}).get('panels', [])
         require(len(tabs) == 1, 'owned workspace needs exactly one terminal')
         self.tab = tabs[0]['id']
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        self.rpc('tab.focus', self.target())
+        self.rpc('panel.focus', self.target())
         self.start_reader('raw-legacy' if self.args.latency_only else 'kitty')
 
     def start_reader(self, mode):
@@ -270,7 +270,7 @@ class Harness:
             (self.root / name).unlink(missing_ok=True)
         command = shlex.join([sys.executable, str(self.root / 'reader.py'), str(self.root), mode])
         floor = self.event_floor()
-        self.rpc('tab.send_text', self.target(text=command + '\n', submit=False))
+        self.rpc('panel.send_text', self.target(text=command + '\n', submit=False))
         self.wait(lambda: (self.root / 'ready.json').exists(), 'real PTY reader readiness')
         ready = json.loads((self.root / 'ready.json').read_text())
         require(ready.get('mode') == mode, 'wrong PTY reader mode')
@@ -301,7 +301,7 @@ class Harness:
         return b''.join(bytes.fromhex(row['hex']) for row in rows), rows
 
     def send_key(self, key, command='send-key', separator=False, extra=None, with_window=False):
-        target_flag = '--panel' if command == 'send-key-panel' else '--tab'
+        target_flag = '--panel' if command == 'send-key-panel' else '--panel'
         arguments = [command, '--workspace', self.workspace, target_flag, self.tab]
         if with_window:
             require(bool(self.window), 'exact window ID required for window-intent test')
@@ -313,10 +313,10 @@ class Harness:
 
     def focus_snapshot(self):
         windows = self.rpc('window.list').get('windows', [])
-        focused = self.rpc('tab.list', {'workspace_id': self.workspace}).get('tabs', [])
+        focused = self.rpc('panel.list', {'workspace_id': self.workspace}).get('panels', [])
         return {
             'windows': sorted((row['id'], bool(row.get('key')), row.get('selected_workspace_id')) for row in windows),
-            'tabs': sorted((row['id'], bool(row.get('focused')), bool(row.get('selected_in_pane'))) for row in focused),
+            'panels': sorted((row['id'], bool(row.get('focused')), bool(row.get('selected_in_area'))) for row in focused),
         }
 
     def capture_command(self, label, action, expected, kind, event_text):
@@ -341,7 +341,7 @@ class Harness:
                                  (press + release).encode(), 'key', key)
         prose = 'Synthetic prose once.'
         self.capture_command('kitty-prose-no-duplicate', lambda: self.cli([
-            'send', '--workspace', self.workspace, '--tab', self.tab, '--no-submit', prose]),
+            'send', '--workspace', self.workspace, '--panel', self.tab, '--no-submit', prose]),
             prose.encode(), 'text', prose)
 
         # All rejects precede a successful event fence. The persisted fence
@@ -349,7 +349,7 @@ class Harness:
         # not inferred from an immediate read of an asynchronous event log.
         floor, cursor = self.event_floor(), self.byte_cursor()
         rejected = []
-        for command in ('send-key', 'send-key-tab', 'send-key-panel'):
+        for command in ('send-key', 'send-key-panel', 'send-key-panel'):
             for separator in (False, True):
                 for with_window in (False, True):
                     before = self.focus_snapshot()
@@ -387,7 +387,7 @@ class Harness:
         # Prove a following send can execute through the shell after SIGINT.
         follow = self.root / 'follow-up'
         command = 'printf synthetic-follow-up > ' + shlex.quote(str(follow))
-        self.cli(['send', '--workspace', self.workspace, '--tab', self.tab, command])
+        self.cli(['send', '--workspace', self.workspace, '--panel', self.tab, command])
         self.wait(follow.exists, 'shell command after legacy interrupt')
         require(follow.read_text() == 'synthetic-follow-up', 'following shell send did not run')
         self.report['cases'].append({'case': 'legacy-sigint-and-following-send', 'signal': 'SIGINT',
@@ -425,9 +425,9 @@ class Harness:
         if self.original_workspace and self.original_tab:
             try:
                 self.rpc('workspace.select', {'workspace_id': self.original_workspace})
-                self.rpc('tab.focus', {'workspace_id': self.original_workspace, 'tab_id': self.original_tab})
+                self.rpc('panel.focus', {'workspace_id': self.original_workspace, 'panel_id': self.original_tab})
                 workspaces = self.rpc('workspace.list').get('workspaces', [])
-                tabs = self.rpc('tab.list', {'workspace_id': self.original_workspace}).get('tabs', [])
+                tabs = self.rpc('panel.list', {'workspace_id': self.original_workspace}).get('panels', [])
                 self.report['cleanup']['original_selection_restored'] = (
                     any(row.get('id') == self.original_workspace and row.get('selected') for row in workspaces)
                     and any(row.get('id') == self.original_tab and row.get('focused') for row in tabs))

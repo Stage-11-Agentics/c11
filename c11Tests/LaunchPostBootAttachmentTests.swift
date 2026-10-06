@@ -60,7 +60,7 @@ file_receipt.write_text(json.dumps(result))
         defer { free(shellCommand) }
         var template = ghostty_surface_config_new()
         template.command = UnsafePointer(shellCommand)
-        let panel = TerminalTab(
+        let panel = TerminalPanel(
             workspaceId: UUID(), configTemplate: template,
             workingDirectory: root.path,
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]

@@ -1,12 +1,12 @@
 ---
 name: c11-fanout
 version: 1
-description: Fan one brief out to several agents in c11 (different models, harnesses, or approaches, each in its own tab and, when they write code, its own git worktree), then fan their results back in to compare, judge, and merge. Load when the operator says "fan out", "race", "try it with N models" or "N approaches", "best of N", "fork this into", or wants several independent attempts or opinions on one task. Requires the c11 skill.
+description: Fan one brief out to several agents in c11 (different models, harnesses, or approaches, each in its own panel and, when they write code, its own git worktree), then fan their results back in to compare, judge, and merge. Load when the operator says "fan out", "race", "try it with N models" or "N approaches", "best of N", "fork this into", or wants several independent attempts or opinions on one task. Requires the c11 skill.
 ---
 
 # c11 fan-out
 
-One brief, N agents, one area. c11 provides the tabs, labels and signals. The brief, the worktrees and the judgment belong to the workflow. Fan-out is a recipe over shipped commands, not a command.
+One brief, N agents, one area. c11 provides the panels, labels and signals. The brief, the worktrees and the judgment belong to the workflow. Fan-out is a recipe over shipped commands, not a command.
 
 ## 1 · Decide the shape before launching
 
@@ -29,7 +29,7 @@ Write one file, identical for every member. Members can't ask follow-up question
   - a summary at `<results-dir>/<member>.md`, in a shared directory outside every worktree, covering what the member did, what it chose and why, and what worries it;
   - for write fan-out, the work committed on its branch;
 - the receipt: `When done, run: c11 mailbox send --to <parent-address> --body "DONE <member> <branch|na> <head-sha|na>"`;
-- isolation: work alone, and don't read, message, or coordinate with other tabs or their worktrees.
+- isolation: work alone, and don't read, message, or coordinate with other panels or their worktrees.
 
 Comparability is decided here. Members that answered slightly different questions can't be judged against each other.
 
@@ -38,8 +38,8 @@ Comparability is decided here. Members that answered slightly different question
 **Your own address first.** Receipts come to you by mailbox, so declare where they go before any member launches:
 
 ```bash
-c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.address --value "<your-handle>" --type string
-c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.delivery --value stdin --type string
+c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.address --value "<your-handle>" --type string
+c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery --value stdin --type string
 ```
 
 **Worktrees** (write fan-out only). Put them beside the repo, not inside it, so members can't see each other's work. Creating and provisioning them is the project's job (submodules, dependencies, env files), so run the project's own setup.
@@ -51,11 +51,12 @@ git worktree add -b "fanout/$SLUG/$MEMBER" "$ROOT-fanout/$SLUG/$MEMBER" "$BASE"
 **Cold members**, all into one area:
 
 ```bash
-TAB=$(c11 launch-agent --type "$HARNESS" --model "$MODEL" --effort "$EFFORT" \
-  --area "$AREA" --cwd "$WT" --prompt-file "$BRIEF" --title "$MEMBER $SLUG" --json | jq -r .tab_ref)
-c11 set-metadata --tab "$TAB" --json '{"fanout.group":"<slug>","fanout.member":"<member>",
+OUT=$(c11 launch-agent --type "$HARNESS" --model "$MODEL" --effort "$EFFORT" \
+  --area "$AREA" --cwd "$WT" --prompt-file "$BRIEF" --title "$MEMBER $SLUG" --json)
+PANEL=$(jq -r .panel_ref <<<"$OUT"); PANEL_ID=$(jq -r .panel_id <<<"$OUT")   # keep PANEL_ID for event matching
+c11 set-metadata --panel "$PANEL" --json '{"fanout.group":"<slug>","fanout.member":"<member>",
   "fanout.branch":"<branch>","fanout.base":"<sha>","fanout.state":"running"}'
-c11 tab-color set --tab "$TAB" "#006B6B"      # one color for the whole group
+c11 panel-color set --panel "$PANEL" "#006B6B"      # one color for the whole group
 ```
 
 - Lead each title with the member (its model or approach) so siblings stay distinct in the sidebar.
@@ -65,14 +66,14 @@ c11 tab-color set --tab "$TAB" "#006B6B"      # one color for the whole group
 **Forked members.** When a conversation has built the context and reached a decision point, fork it instead of briefing N agents from cold. This needs a harness with a fork command (Claude Code, Codex). With any other harness, members start cold.
 
 ```bash
-SID=$(c11 conversation get --tab "$SOURCE_TAB" --json | jq -r '.active.id // empty')
-[ -n "$SID" ] || echo "no captured conversation on $SOURCE_TAB; start this member cold"
-TAB=$(c11 new-tab --area "$AREA" --cwd "$WT" \
+SID=$(c11 conversation get --panel "$SOURCE_PANEL" --json | jq -r '.active.id // empty')
+[ -n "$SID" ] || echo "no captured conversation on $SOURCE_PANEL; start this member cold"
+PANEL=$(c11 new-panel --area "$AREA" --cwd "$WT" \
   --command "claude --dangerously-skip-permissions --resume $SID --fork-session" | awk '{print $2}')
 # Codex: --command "codex fork --dangerously-bypass-approvals-and-sandbox -C $WT $SID"
-c11 rename-tab --tab "$TAB" "$MEMBER $SLUG"
-c11 set-agent --tab "$TAB" --type claude-code --model "$MODEL"   # --type codex for a Codex fork
-c11 send --tab "$TAB" "You are a fork. Work only in $WT. Take approach <X>: …"
+c11 rename-panel --panel "$PANEL" "$MEMBER $SLUG"
+c11 set-agent --panel "$PANEL" --type claude-code --model "$MODEL"   # --type codex for a Codex fork
+c11 send --panel "$PANEL" "You are a fork. Work only in $WT. Take approach <X>: …"
 ```
 
 - The fork keeps the source's memory, but its history points at the old directory, so name the new one in the first message.
@@ -80,15 +81,15 @@ c11 send --tab "$TAB" "You are a fork. Work only in $WT. Take approach <X>: …"
 
 ## 4 · Fan in
 
-- **Receipts.** Each member mails DONE. While you're waiting, each receipt arrives as a new turn. Claude Code and Codex also pick up mail at every turn boundary. In other harnesses, run `c11 mailbox recv --drain` after each turn so nothing waits unread. Set `fanout.state` to `done` on the member's tab as each receipt lands.
+- **Receipts.** Each member mails DONE. While you're waiting, each receipt arrives as a new turn. Claude Code and Codex also pick up mail at every turn boundary. In other harnesses, run `c11 mailbox recv --drain` after each turn so nothing waits unread. Set `fanout.state` to `done` on the member's panel as each receipt lands.
 - **Quiet members.** Stopping is not finishing. A member that asks a question, crashes or stalls never mails. For the ones you haven't heard from, check:
-  - `c11 events tail --filter type=ask.opened`, matching each line's `surface` against your member tabs (blocked on a question);
-  - `--filter type=surface.closed` (gone);
+  - `c11 events tail --filter type=ask.opened`, matching each line's `panel` (a UUID) against your members' `PANEL_ID`s (blocked on a question);
+  - `--filter type=panel.closed` (gone);
   - `c11 read-screen` for anything else.
 
   Not every harness reports its lifecycle to c11. Where one doesn't, the receipt is the only completion signal.
-- **Steering.** Use `c11 send` per member tab. Steering one member and not the others breaks the comparison, so send the same message to all of them or to none.
-- **Scoreboard.** The area's tab sheet lists each member's model, its state and how long it has held. The opt-in `turn`, `tools` and `tokens` clocks add effort.
+- **Steering.** Use `c11 send` per member panel. Steering one member and not the others breaks the comparison, so send the same message to all of them or to none.
+- **Scoreboard.** The area's panel sheet lists each member's model, its state and how long it has held. The opt-in `turn`, `tools` and `tokens` clocks add effort.
 - **Context before code.** Read every summary before any diff. A losing member can still carry findings the winner missed.
 
 ## 5 · Merge back
@@ -111,12 +112,12 @@ Judging:
   3. the shape of each diff (files touched, size, test delta);
   4. the diff itself.
 - Judge agents favor their own model family. Use a judge from outside the members' families, or one judge per family.
-- A blind comparison relabels outputs as letters, and its judge must not have watched the run. Visible tabs leak identity through model chips, the TUI's look and finish order.
+- A blind comparison relabels outputs as letters, and its judge must not have watched the run. Visible panels leak identity through model chips, the TUI's look and finish order.
 
 ## 6 · Clean up
 
 ```bash
-c11 close-tab --tab "$TAB"
+c11 close-panel --panel "$PANEL"
 git update-ref "refs/fanout/$SLUG/$MEMBER" "fanout/$SLUG/$MEMBER"   # losers stay as data
 git worktree remove --force "$WT"                                   # after the branch holds what matters
 git branch -D "fanout/$SLUG/$MEMBER"

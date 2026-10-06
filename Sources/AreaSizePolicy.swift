@@ -24,8 +24,9 @@ enum AreaSizeMode: String, CaseIterable, Identifiable {
     case warn
     /// Requested axis if it fits; else flip to the roomier axis; else refuse. (Default.)
     case balance
-    /// Like `balance`, but fall back to a tab on the target pane instead of refusing.
-    case tab
+    /// Like `balance`, but fall back to a new panel on the target area instead of
+    /// refusing. The raw value stays `"tab"` (persisted); `"panel"` parses to it.
+    case panel = "tab"
 
     var id: String { rawValue }
 
@@ -34,6 +35,7 @@ enum AreaSizeMode: String, CaseIterable, Identifiable {
     static func parse(_ raw: String?) -> AreaSizeMode? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty else { return nil }
+        if trimmed == "panel" { return .panel }
         return AreaSizeMode(rawValue: trimmed)
     }
 }
@@ -202,7 +204,7 @@ enum AreaSizePolicy {
             // Never block — report status against the requested axis.
             return proceed(requested, flipped: false)
 
-        case .balance, .tab:
+        case .balance, .panel:
             if requestedAdmissible {
                 return proceed(requested, flipped: false)
             }
@@ -211,7 +213,7 @@ enum AreaSizePolicy {
             }
             // Neither axis yields a usable pane.
             let undersizedChild = childSize(requested, paneFrame: paneFrame)
-            let fallback: Outcome = (mode == .tab) ? .addTab : .refuse
+            let fallback: Outcome = (mode == .panel) ? .addTab : .refuse
             return Decision(
                 outcome: fallback,
                 requestedAxis: requested,
@@ -240,7 +242,7 @@ enum AreaSizePolicy {
         switch decision.outcome {
         case .proceed:
             if decision.flipped {
-                var msg = "requested a \(axisWord(decision.requestedAxis)) split, but it would leave an area below the \(dims(decision.minPoints)) minimum for a \(kindLabel) tab; split \(axisWord(decision.appliedAxis ?? decision.requestedAxis)) instead"
+                var msg = "requested a \(axisWord(decision.requestedAxis)) split, but it would leave an area below the \(dims(decision.minPoints)) minimum for a \(kindLabel) panel; split \(axisWord(decision.appliedAxis ?? decision.requestedAxis)) instead"
                 if decision.status == .near {
                     msg += " (still close to the minimum)"
                 }
@@ -252,10 +254,10 @@ enum AreaSizePolicy {
             case .near:
                 return "the new \(kindLabel) area (\(dims(decision.resultingChild))) is close to the \(dims(decision.minPoints)) minimum usable size"
             case .undersized:
-                return "the new \(kindLabel) area (\(dims(decision.resultingChild))) is below the \(dims(decision.minPoints)) minimum usable size for a \(kindLabel) tab"
+                return "the new \(kindLabel) area (\(dims(decision.resultingChild))) is below the \(dims(decision.minPoints)) minimum usable size for a \(kindLabel) panel"
             }
         case .addTab:
-            return "too small to split usably; added a tab to the target area instead"
+            return "too small to split usably; added a panel to the target area instead"
         case .refuse:
             return nil
         }
@@ -263,7 +265,7 @@ enum AreaSizePolicy {
 
     /// The actionable refusal message. `paneRefLabel` is something like `area:3`.
     static func refusalMessage(for decision: Decision, kindLabel: String, paneRefLabel: String) -> String {
-        "won't split \(paneRefLabel): a split would leave a \(dims(decision.resultingChild)) area below the \(dims(decision.minPoints)) minimum for a \(kindLabel) tab. Add a tab instead (c11 new-tab --area \(paneRefLabel)), close a sibling area, or pass --allow-undersized to force."
+        "won't split \(paneRefLabel): a split would leave a \(dims(decision.resultingChild)) area below the \(dims(decision.minPoints)) minimum for a \(kindLabel) panel. Add a panel instead (c11 new-panel --area \(paneRefLabel)), close a sibling area, or pass --allow-undersized to force."
     }
 }
 

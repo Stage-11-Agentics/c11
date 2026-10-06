@@ -1,0 +1,14 @@
+{
+  "seq": 30,
+  "ts": "2026-10-06T08:21:00.000Z",
+  "type": "flag.raised",
+  "instance": "com.stage11.c11-12345",
+  "v": 2,
+  "workspace": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+  "panel": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "payload": {
+    "reason": "needs a decision",
+    "caller_panel_id": "9b2d4e6a-1c3f-4a5b-8d7e-2f0a1b3c4d5e",
+    "by": "agent"
+  }
+}

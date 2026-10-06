@@ -119,28 +119,36 @@ extension TerminalController {
             "settings.open",
             "feedback.open",
             "feedback.submit",
-            "tab.list",
-            "tab.current",
-            "tab.focus",
-            "tab.split",
-            "tab.create",
-            "tab.close",
-            "tab.drag_to_split",
-            "tab.move",
-            "tab.reorder",
-            "tab.action",
-            "tab.refresh",
-            "tab.health",
+            "panel.list",
+            "panel.current",
+            "panel.focus",
+            "panel.split",
+            "panel.create",
+            "panel.close",
+            "panel.drag_to_split",
+            "panel.move",
+            "panel.reorder",
+            "panel.action",
+            "panel.refresh",
+            "panel.health",
             "debug.terminals",
-            "tab.send_text",
-            "tab.send_key",
-            "tab.read_text",
-            "tab.clear_history",
-            "tab.trigger_flash",
-            "tab.cancel_flash",
-            "tab.set_metadata",
-            "tab.get_metadata",
-            "tab.clear_metadata",
+            "panel.send_text",
+            "panel.send_key",
+            "panel.read_text",
+            "panel.clear_history",
+            "panel.trigger_flash",
+            "panel.cancel_flash",
+            "panel.set_metadata",
+            "panel.get_metadata",
+            "panel.clear_metadata",
+            "panel.set_custom_color",
+            "panel.get_titlebar_state",
+            "panel.set_titlebar_visibility",
+            "panel.set_titlebar_collapsed",
+            // C11-337: the v0.67 CLI decides its vocabulary tier by probing for
+            // `tab.list`; advertising it keeps that CLI on tab spellings, which
+            // `LegacyWireAliases` still accepts. The one non-canonical entry.
+            "tab.list",
             "agent.launch",
             "flag.raise",
             "flag.lower",
@@ -159,18 +167,19 @@ extension TerminalController {
             "mailbox.resolve",
             "area.list",
             "area.focus",
-            "area.tabs",
+            "area.panels",
             "area.create",
             "area.resize",
             "area.swap",
             "area.break",
             "area.join",
             "area.last",
+            "area.confirm",
             "area.set_metadata",
             "area.get_metadata",
             "area.clear_metadata",
             "notification.create",
-            "notification.create_for_tab",
+            "notification.create_for_panel",
             "notification.create_for_target",
             "notification.list",
             "notification.clear",
@@ -242,10 +251,10 @@ extension TerminalController {
             "browser.storage.get",
             "browser.storage.set",
             "browser.storage.clear",
-            "browser.tab.new",
-            "browser.tab.list",
-            "browser.tab.switch",
-            "browser.tab.close",
+            "browser.panel.new",
+            "browser.panel.list",
+            "browser.panel.switch",
+            "browser.panel.close",
             "browser.console.list",
             "browser.console.clear",
             "browser.errors.list",
@@ -283,7 +292,7 @@ extension TerminalController {
             "debug.feed_answer.hold_after_paste",
             "debug.app.activate",
             "debug.command_palette.toggle",
-            "debug.command_palette.rename_tab.open",
+            "debug.command_palette.rename_panel.open",
             "debug.command_palette.visible",
             "debug.command_palette.selection",
             "debug.command_palette.results",
@@ -307,25 +316,25 @@ extension TerminalController {
             "debug.notification.focus",
             "debug.flash.count",
             "debug.flash.reset",
-            "debug.tab_snapshot",
-            "debug.tab_snapshot.reset",
+            "debug.panel_snapshot",
+            "debug.panel_snapshot.reset",
             "debug.window.screenshot",
-            "debug.tab_sheet.open",
-            "debug.tab_rail.open",
-            "debug.tab_strip.scroll",
-            "debug.tab_sheet.hover",
-            "debug.tab_sheet.motion_scale",
-            "debug.tab_sheet.detail",
+            "debug.panel_sheet.open",
+            "debug.panel_rail.open",
+            "debug.panel_strip.scroll",
+            "debug.panel_sheet.hover",
+            "debug.panel_sheet.motion_scale",
+            "debug.panel_sheet.detail",
             "debug.session.round_trip",
             "debug.session.round_trip_workspaces",
         ])
 #endif
 
         if CapabilityFeatures.current.supports(.terminalSelection) {
-            methods.append("tab.read_selection")
+            methods.append("panel.read_selection")
         }
         if CapabilityFeatures.current.supports(.terminalInputState) {
-            methods.append("tab.input_state")
+            methods.append("panel.input_state")
         }
         if CapabilityFeatures.current.supports(.feedAsks) {
             methods.append("feed.list")
@@ -373,7 +382,7 @@ extension TerminalController {
                     "surface_id": v2OrNull(surfaceUUID?.uuidString),
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceUUID),
                     "tab_id": v2OrNull(surfaceUUID?.uuidString),
-                    "tab_ref": v2TabRef(uuid: surfaceUUID),
+                    "tab_ref": v2PanelRef(uuid: surfaceUUID),
                     "surface_type": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType.rawValue }),
                     "is_browser_surface": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType == .browser })
                 ]
@@ -389,7 +398,8 @@ extension TerminalController {
         var resolvedCaller: [String: Any]? = nil
         if let callerObj = params["caller"] as? [String: Any],
            let wsId = v2UUIDAny(callerObj["workspace_id"]) {
-            let surfaceId = v2UUIDAny(callerObj["surface_id"]) ?? v2UUIDAny(callerObj["tab_id"])
+            let surfaceId = v2UUIDAny(callerObj["panel_id"]) ?? v2UUIDAny(callerObj["surface_id"])
+                ?? v2UUIDAny(callerObj["tab_id"])
             v2MainSync {
                 let callerWorkspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) ?? workspaceManager
                 if let ws = callerWorkspaceManager.workspaces.first(where: { $0.id == wsId }) {
@@ -407,7 +417,7 @@ extension TerminalController {
                         payload["surface_id"] = surfaceId.uuidString
                         payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
                         payload["tab_id"] = surfaceId.uuidString
-                        payload["tab_ref"] = v2TabRef(uuid: surfaceId)
+                        payload["tab_ref"] = v2PanelRef(uuid: surfaceId)
                         payload["surface_type"] = v2OrNull(ws.panels[surfaceId]?.panelType.rawValue)
                         payload["is_browser_surface"] = v2OrNull(ws.panels[surfaceId]?.panelType == .browser)
                         payload["pane_id"] = v2OrNull(paneUUID?.uuidString)

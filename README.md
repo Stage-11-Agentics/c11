@@ -2,16 +2,16 @@
 
 **c11 terminal multiplexer for the operator:agent pair.**
 
-c11 gives the hyperengineer and their agents a shared workspace for terminals, embedded browsers, and Markdown tabs. Split areas as the work grows. Drive every tab through the CLI or socket.
+c11 gives the hyperengineer and their agents a shared workspace for terminals, embedded browsers, and Markdown panels. Split areas as the work grows. Drive every panel through the CLI or socket.
 
 <!-- WALKTHROUGH VIDEO: C11-124 -->
 Walkthrough video: coming soon.
 
 ![c11 workspace with terminal, browser, Markdown, and saved agent configurations](docs/images/readme/workspace-overview.png)
 
-## Workspaces, areas, tabs
+## Workspaces, areas, panels
 
-A window contains workspaces. Each workspace contains areas. Each area holds terminal, browser, or Markdown tabs. Split areas as the work grows, then move between workspaces without losing their layouts.
+A window contains workspaces. Each workspace contains areas. Each area holds terminal, browser, or Markdown panels. Split areas as the work grows, then move between workspaces without losing their layouts.
 
 Workspace folders group related workspaces in the sidebar. Collapse a folder to hide its member rows while its workspaces stay open. Pin and reorder folders and workspaces independently.
 
@@ -19,21 +19,21 @@ Workspace folders group related workspaces in the sidebar. Collapse a folder to 
 
 ## Agents in the workspace
 
-Launch a supported coding agent in a tab. Give it a title, role, and task. It can split areas, open browser and Markdown tabs, read the workspace tree, and report status to the sidebar. The [c11 skill](skills/c11/SKILL.md) teaches agents to drive these surfaces.
+Launch a supported coding agent in a panel. Give it a title, role, and task. It can split areas, open browser and Markdown panels, read the workspace tree, and report status to the sidebar. The [c11 skill](skills/c11/SKILL.md) teaches agents to drive these surfaces.
 
 The A-button picker launches a saved configuration or pins it as the default. Open it with `⌘⇧A`. Saved configurations keep an agent and its launch settings together.
 
 ## Attention and messages
 
-The Feed gathers open asks and raised flags. Flags keep their priority when an agent is suppressed. Suppression keeps routine worker signals out of the operator's attention list. The Feed points to the exact tab that needs attention.
+The Feed gathers open asks and raised flags. Flags keep their priority when an agent is suppressed. Suppression keeps routine worker signals out of the operator's attention list. The Feed points to the exact panel that needs attention.
 
-Use `c11 mailbox send` for durable messages between agent tabs, including across workspaces. Open `c11 messages view` to read the live message timeline and delivery state.
+Use `c11 mailbox send` for durable messages between agent panels, including across workspaces. Open `c11 messages view` to read the live message timeline and delivery state.
 
 ## Browser profiles
 
-The embedded browser lives beside terminals and Markdown tabs. Named profiles keep website data and browser history separate. Switch profiles from a browser tab, or create one from its profile menu.
+The embedded browser lives beside terminals and Markdown panels. Named profiles keep website data and browser history separate. Switch profiles from a browser panel, or create one from its profile menu.
 
-![Embedded browser tab beside a terminal](docs/images/readme/browser-profile-control.png)
+![Embedded browser panel beside a terminal](docs/images/readme/browser-profile-control.png)
 
 ## Journal and session restore
 
@@ -56,7 +56,7 @@ brew install --cask c11
 
 ### Hardware
 
-Terminals, browser tabs, and agent processes use your Mac's memory while they run. Give large workspaces enough headroom for the agents and pages they hold.
+Terminals, browser panels, and agent processes use your Mac's memory while they run. Give large workspaces enough headroom for the agents and pages they hold.
 
 ## Learn more
 
@@ -66,7 +66,7 @@ Terminals, browser tabs, and agent processes use your Mac's memory while they ru
 
 ## Lineage and license
 
-c11 builds on [cmux](https://github.com/manaflow-ai/cmux), embeds [Ghostty](https://ghostty.org), and uses [Bonsplit](https://github.com/almonk/bonsplit) for tab and split chrome.
+c11 builds on [cmux](https://github.com/manaflow-ai/cmux), embeds [Ghostty](https://ghostty.org), and uses [Bonsplit](https://github.com/almonk/bonsplit) for panel and split chrome.
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 

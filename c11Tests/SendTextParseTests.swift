@@ -41,11 +41,11 @@ final class SendTextParseTests: XCTestCase {
     }
 
     func testFlagsAndTargetAliasesAreConsumedBeforeTerminator() throws {
-        for flag in ["--tab", "--surface", "--panel"] {
-            let parsed = try SendTextParse.parse(["--workspace", "workspace:2", flag, "tab:3",
+        for flag in ["--panel", "--tab", "--surface"] {
+            let parsed = try SendTextParse.parse(["--workspace", "workspace:2", flag, "panel:3",
                                                   "--json", "--no-submit", "--raw", "body"])
             XCTAssertEqual(parsed.workspace, "workspace:2")
-            XCTAssertEqual(parsed.tab, "tab:3")
+            XCTAssertEqual(parsed.panel, "panel:3")
             XCTAssertTrue(parsed.raw)
             XCTAssertTrue(parsed.json)
             XCTAssertFalse(parsed.allowUnguarded)
@@ -53,7 +53,7 @@ final class SendTextParseTests: XCTestCase {
             XCTAssertEqual(try parsed.text(), "body")
         }
         let literal = try SendTextParse.parse(["--", "--bogus", "--raw", "--tab", "tab:9"])
-        XCTAssertNil(literal.tab)
+        XCTAssertNil(literal.panel)
         XCTAssertFalse(literal.raw)
         XCTAssertEqual(try literal.text(), "--bogus --raw --tab tab:9")
 
@@ -64,7 +64,7 @@ final class SendTextParseTests: XCTestCase {
 
     func testUnknownFlagsAndMissingTargetsAreErrorsRatherThanText() {
         for arguments in [["--bogus", "hello"], ["hello", "--text", "hi"],
-                          ["--tab"], ["--tab", ""], ["--workspace", "--raw", "hello"]] {
+                          ["--panel"], ["--panel", ""], ["--tab"], ["--tab", ""], ["--workspace", "--raw", "hello"]] {
             XCTAssertThrowsError(try SendTextParse.parse(arguments)) { error in
                 XCTAssertTrue(String(describing: error).contains(arguments.first(where: { $0.hasPrefix("--") })!))
             }

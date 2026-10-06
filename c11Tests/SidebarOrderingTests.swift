@@ -223,7 +223,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
     // plan-review's three-step safety protocol (grep → compile both
     // schemes → snapshot/persistence audit) to confirm full removal.
 
-    func testOrderedUniquePullRequestsFollowsTabOrderAcrossSplitsAndTabs() {
+    func testOrderedUniquePullRequestsFollowsPanelOrderAcrossSplitsAndPanels() {
         let first = UUID()
         let second = UUID()
         let third = UUID()
@@ -231,7 +231,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second, third, fourth],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 337,
                     label: "PR",
@@ -281,7 +281,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -310,7 +310,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -342,7 +342,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -365,14 +365,14 @@ final class SidebarBranchOrderingTests: XCTestCase {
     }
 
     @MainActor
-    func testUpdateTabPullRequestPreservesExistingChecksWhenUpdateOmitsThem() {
+    func testUpdatePanelPullRequestPreservesExistingChecksWhenUpdateOmitsThem() {
         let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath, portOrdinal: 0)
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel for new workspace")
             return
         }
 
-        workspace.updateTabPullRequest(
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -380,7 +380,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open,
             checks: .pass
         )
-        workspace.updateTabPullRequest(
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -388,11 +388,11 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        XCTAssertEqual(workspace.tabPullRequests[panelId]?.checks, .pass)
+        XCTAssertEqual(workspace.panelPullRequests[panelId]?.checks, .pass)
         XCTAssertEqual(workspace.pullRequest?.checks, .pass)
     }
 
-    func testOrderedUniquePullRequestsUsesFallbackWhenNoTabPullRequestsExist() {
+    func testOrderedUniquePullRequestsUsesFallbackWhenNoPanelPullRequestsExist() {
         let fallback = pullRequestState(
             number: 11,
             label: "PR",
@@ -401,7 +401,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
         )
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [],
-            tabPullRequests: [:],
+            panelPullRequests: [:],
             fallbackPullRequest: fallback
         )
 
@@ -409,15 +409,15 @@ final class SidebarBranchOrderingTests: XCTestCase {
     }
 
     @MainActor
-    func testUpdateTabGitBranchClearsFocusedPullRequestWhenBranchChanges() {
+    func testUpdatePanelGitBranchClearsFocusedPullRequestWhenBranchChanges() {
         let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath, portOrdinal: 0)
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel for new workspace")
             return
         }
 
-        workspace.updateTabGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
-        workspace.updateTabPullRequest(
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",
@@ -425,10 +425,10 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
 
         XCTAssertNil(workspace.pullRequest)
-        XCTAssertNil(workspace.tabPullRequests[panelId])
+        XCTAssertNil(workspace.panelPullRequests[panelId])
         XCTAssertTrue(workspace.sidebarPullRequestsInDisplayOrder().isEmpty)
     }
 
@@ -440,8 +440,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
-        workspace.updateTabPullRequest(
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updatePanelPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",

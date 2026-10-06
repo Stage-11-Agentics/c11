@@ -24,7 +24,7 @@ def _wait_for_text(c: cmux, workspace_id: str, needle: str, timeout_s: float = 8
     last_text = ""
     while time.time() < deadline:
         payload = c._call(
-            "tab.read_text",
+            "panel.read_text",
             {"workspace_id": workspace_id},
         ) or {}
         if "text" in payload:
@@ -58,8 +58,8 @@ def main() -> int:
             # Terminal surfaces in background workspaces may not be attached/render-ready yet.
             # Select it before reading text so the initial command output is available.
             c.select_workspace(created_workspace)
-            listed = c._call("tab.list", {"workspace_id": created_workspace}) or {}
-            rows = list(listed.get("tabs") or [])
+            listed = c._call("panel.list", {"workspace_id": created_workspace}) or {}
+            rows = list(listed.get("panels") or [])
             _must(bool(rows), "Expected at least one surface in the created workspace")
             terminal_row = next((row for row in rows if str(row.get("type") or "") == "terminal"), None)
             _must(terminal_row is not None, f"Expected a terminal surface in workspace.create result: {rows}")

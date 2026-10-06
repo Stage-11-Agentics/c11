@@ -46,9 +46,9 @@ def _snapshot_path() -> Path | None:
 
 def _fresh_workspace_and_pane(c: cmux) -> tuple[str, str]:
     workspace_id = c.new_workspace()
-    split_res = c._call("tab.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
+    split_res = c._call("panel.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
     pane_id = split_res.get("area_id")
-    _must(bool(pane_id), f"tab.split returned no area_id: {split_res}")
+    _must(bool(pane_id), f"panel.split returned no area_id: {split_res}")
     return workspace_id, str(pane_id)
 
 

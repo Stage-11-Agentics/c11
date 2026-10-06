@@ -10,7 +10,7 @@ final class AskDisplayCache: @unchecked Sendable {
 
     private struct Stored {
         var note: FeedDisplayNote
-        var tabID: UUID
+        var panelID: UUID
         var bytes: Int
     }
 
@@ -21,24 +21,24 @@ final class AskDisplayCache: @unchecked Sendable {
     var count: Int { byEvent.count }
     var accountedBytes: Int { totalBytes }
 
-    func note(tabID: UUID, requestID: String) -> FeedDisplayNote? {
-        guard let eventID = byRequest[tabID]?[requestID] else { return nil }
+    func note(panelID: UUID, requestID: String) -> FeedDisplayNote? {
+        guard let eventID = byRequest[panelID]?[requestID] else { return nil }
         return byEvent[eventID]?.note
     }
 
-    func notesByTab() -> [UUID: [String: FeedDisplayNote]] {
+    func notesByPanel() -> [UUID: [String: FeedDisplayNote]] {
         var result: [UUID: [String: FeedDisplayNote]] = [:]
         for stored in byEvent.values {
-            result[stored.tabID, default: [:]][stored.note.requestID] = stored.note
+            result[stored.panelID, default: [:]][stored.note.requestID] = stored.note
         }
         return result
     }
 
-    func store(tabID: UUID, note: FeedDisplayNote) throws {
+    func store(panelID: UUID, note: FeedDisplayNote) throws {
         let bytes = Self.accountedBytes(prompt: note.prompt, options: note.options)
         try Self.validateBounds(prompt: note.prompt, options: note.options)
         let previous = byEvent[note.eventID]
-        let replacingRequest = byRequest[tabID]?[note.requestID]
+        let replacingRequest = byRequest[panelID]?[note.requestID]
         let previousForRequest = replacingRequest.flatMap { byEvent[$0] }
         var nextBytes = totalBytes + bytes
         var nextCount = byEvent.count + 1
@@ -51,35 +51,35 @@ final class AskDisplayCache: @unchecked Sendable {
             nextCount -= 1
         }
         guard nextCount <= Self.maxNotes, nextBytes <= Self.maxBytes else { throw FeedNoteError.overflow }
-        if let previous, previous.tabID != tabID || previous.note.requestID != note.requestID {
-            byRequest[previous.tabID]?[previous.note.requestID] = nil
+        if let previous, previous.panelID != panelID || previous.note.requestID != note.requestID {
+            byRequest[previous.panelID]?[previous.note.requestID] = nil
         }
         if let previousForRequest, previousForRequest.note.eventID != note.eventID {
             byEvent.removeValue(forKey: previousForRequest.note.eventID)
-            byRequest[previousForRequest.tabID]?[previousForRequest.note.requestID] = nil
+            byRequest[previousForRequest.panelID]?[previousForRequest.note.requestID] = nil
         }
-        byEvent[note.eventID] = Stored(note: note, tabID: tabID, bytes: bytes)
-        byRequest[tabID, default: [:]][note.requestID] = note.eventID
+        byEvent[note.eventID] = Stored(note: note, panelID: panelID, bytes: bytes)
+        byRequest[panelID, default: [:]][note.requestID] = note.eventID
         totalBytes = nextBytes
     }
 
     func prune(openRequests: [UUID: String?]) {
         let open = openRequests.compactMapValues { $0 }
-        let stale = byEvent.values.filter { open[$0.tabID] != $0.note.requestID }.map(\.note.eventID)
+        let stale = byEvent.values.filter { open[$0.panelID] != $0.note.requestID }.map(\.note.eventID)
         for eventID in stale { drop(eventID: eventID) }
     }
 
-    func drop(tabID: UUID) {
-        let ids = Array(byRequest[tabID]?.values ?? Dictionary<String, UUID>().values)
+    func drop(panelID: UUID) {
+        let ids = Array(byRequest[panelID]?.values ?? Dictionary<String, UUID>().values)
         for eventID in ids { drop(eventID: eventID) }
-        byRequest.removeValue(forKey: tabID)
+        byRequest.removeValue(forKey: panelID)
     }
 
     private func drop(eventID: UUID) {
         guard let stored = byEvent.removeValue(forKey: eventID) else { return }
         totalBytes -= stored.bytes
-        if byRequest[stored.tabID]?[stored.note.requestID] == eventID {
-            byRequest[stored.tabID]?[stored.note.requestID] = nil
+        if byRequest[stored.panelID]?[stored.note.requestID] == eventID {
+            byRequest[stored.panelID]?[stored.note.requestID] = nil
         }
     }
 

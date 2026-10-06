@@ -25,16 +25,16 @@ def main() -> int:
         focused = ident.get("focused") or {}
         _must(isinstance(focused, dict), f"identify.focused should be dict: {focused}")
         _must(bool(focused.get("workspace_id") or focused.get("workspace_ref")), f"identify should return workspace handle: {focused}")
-        _must(bool(focused.get("tab_id") or focused.get("tab_ref")), f"identify should return surface handle: {focused}")
+        _must(bool(focused.get("panel_id") or focused.get("panel_ref")), f"identify should return surface handle: {focused}")
 
         # Open browser split and prefer ref handles to validate v2 handle parsing.
         opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
-        sid = opened.get("tab_id")
-        sref = opened.get("tab_ref")
-        _must(bool(sid), f"browser.open_split returned no tab_id: {opened}")
+        sid = opened.get("panel_id")
+        sref = opened.get("panel_ref")
+        _must(bool(sid), f"browser.open_split returned no panel_id: {opened}")
         target = str(sid)
         if sref:
-            _ = c._call("browser.url.get", {"tab_id": str(sref)})
+            _ = c._call("browser.url.get", {"panel_id": str(sref)})
 
         html = """
 <!doctype html>
@@ -51,9 +51,9 @@ def main() -> int:
 """.strip()
         data_url = "data:text/html," + urllib.parse.quote(html)
 
-        c._call("browser.navigate", {"tab_id": target, "url": data_url})
+        c._call("browser.navigate", {"panel_id": target, "url": data_url})
         try:
-            c._call("browser.wait", {"tab_id": target, "selector": "#btn", "timeout_ms": 5000})
+            c._call("browser.wait", {"panel_id": target, "selector": "#btn", "timeout_ms": 5000})
         except cmuxError as exc:
             if "timeout" not in str(exc):
                 raise
@@ -61,7 +61,7 @@ def main() -> int:
             while time.time() < deadline:
                 probe = c._call(
                     "browser.eval",
-                    {"tab_id": target, "script": "document.querySelector('#btn') !== null"},
+                    {"panel_id": target, "script": "document.querySelector('#btn') !== null"},
                 ) or {}
                 if bool(probe.get("value")):
                     break
@@ -69,24 +69,24 @@ def main() -> int:
             else:
                 raise
 
-        c._call("browser.fill", {"tab_id": target, "selector": "#name", "text": "cmux"})
-        c._call("browser.click", {"tab_id": target, "selector": "#btn"})
+        c._call("browser.fill", {"panel_id": target, "selector": "#name", "text": "cmux"})
+        c._call("browser.click", {"panel_id": target, "selector": "#btn"})
 
-        out = c._call("browser.get.text", {"tab_id": target, "selector": "#out"}) or {}
+        out = c._call("browser.get.text", {"panel_id": target, "selector": "#out"}) or {}
         _must("cmux" in str(out.get("value", "")), f"Expected #out text to include 'cmux': {out}")
 
-        c._call("browser.check", {"tab_id": target, "selector": "#chk"})
-        checked = c._call("browser.is.checked", {"tab_id": target, "selector": "#chk"}) or {}
+        c._call("browser.check", {"panel_id": target, "selector": "#chk"})
+        checked = c._call("browser.is.checked", {"panel_id": target, "selector": "#chk"}) or {}
         _must(bool(checked.get("value")) is True, f"Expected checkbox checked: {checked}")
 
-        c._call("browser.select", {"tab_id": target, "selector": "#sel", "value": "b"})
-        val = c._call("browser.get.value", {"tab_id": target, "selector": "#sel"}) or {}
+        c._call("browser.select", {"panel_id": target, "selector": "#sel", "value": "b"})
+        val = c._call("browser.get.value", {"panel_id": target, "selector": "#sel"}) or {}
         _must(str(val.get("value", "")) == "b", f"Expected select value 'b': {val}")
 
-        eval_res = c._call("browser.eval", {"tab_id": target, "script": "document.querySelector('#name').value"}) or {}
+        eval_res = c._call("browser.eval", {"panel_id": target, "script": "document.querySelector('#name').value"}) or {}
         _must(str(eval_res.get("value", "")) == "cmux", f"Expected eval value 'cmux': {eval_res}")
 
-        snap = c._call("browser.snapshot", {"tab_id": target}) or {}
+        snap = c._call("browser.snapshot", {"panel_id": target}) or {}
         snapshot_text = str(snap.get("snapshot") or "")
         _must("cmux-browser-p0" in snapshot_text, f"Expected snapshot text to include page title: {snap}")
         refs = snap.get("refs") or {}
@@ -94,18 +94,18 @@ def main() -> int:
         _must(any(str(key).startswith("e") for key in refs.keys()), f"Expected eN refs in snapshot: {snap}")
 
         # Focus and focus-state checks can be slightly asynchronous.
-        c._call("browser.focus_webview", {"tab_id": target})
+        c._call("browser.focus_webview", {"panel_id": target})
         deadline = time.time() + 2.0
         focused_ok = False
         while time.time() < deadline:
-            is_focused = c._call("browser.is_webview_focused", {"tab_id": target}) or {}
+            is_focused = c._call("browser.is_webview_focused", {"panel_id": target}) or {}
             if bool(is_focused.get("focused")):
                 focused_ok = True
                 break
             time.sleep(0.05)
         _must(focused_ok, "Expected browser.is_webview_focused=true after browser.focus_webview")
 
-        shot = c._call("browser.screenshot", {"tab_id": target}) or {}
+        shot = c._call("browser.screenshot", {"panel_id": target}) or {}
         b64 = str(shot.get("png_base64") or "")
         _must(len(b64) > 100, f"Expected non-trivial screenshot payload: len={len(b64)}")
 

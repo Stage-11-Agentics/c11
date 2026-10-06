@@ -97,7 +97,7 @@ def test_round_trip_preserves_panel_ids(client: cmux) -> tuple[bool, str]:
         post_round_trip = _surface_ids_in_workspace(client, ws_id)
         if post_round_trip != before:
             return False, (
-                f"tab.list disagrees with debug.session.round_trip after restore: "
+                f"panel.list disagrees with debug.session.round_trip after restore: "
                 f"socket={post_round_trip} round_trip_after={after}"
             )
     finally:

@@ -56,7 +56,7 @@ def workspace_panes(client: cmux, workspace_id: str) -> list[tuple[str, bool, in
         out.append((
             str(row.get("id") or ""),
             bool(row.get("focused")),
-            int(row.get("tab_count") or 0),
+            int(row.get("panel_count") or 0),
         ))
     return out
 
@@ -70,8 +70,8 @@ def focused_pane_id(client: cmux, workspace_id: str) -> str:
 
 def surface_scrollback_text(client: cmux, workspace_id: str, surface_id: str) -> str:
     payload = client._call(
-        "tab.read_text",
-        {"workspace_id": workspace_id, "tab_id": surface_id, "scrollback": True},
+        "panel.read_text",
+        {"workspace_id": workspace_id, "panel_id": surface_id, "scrollback": True},
     ) or {}
     return str(payload.get("text") or "")
 

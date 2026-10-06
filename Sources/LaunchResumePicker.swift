@@ -434,7 +434,7 @@ private struct LaunchResumePickerRow: View {
     private var secondaryLine: String {
         let countFormat = String(
             localized: "launch.resume.surfaceCount",
-            defaultValue: "%lld tab(s)"
+            defaultValue: "%lld panel(s)"
         )
         let countText = String(format: countFormat, entry.surfaceCount)
         if entry.surfaceTitles.isEmpty {

@@ -74,12 +74,12 @@ def main():
             return {row[1] for row in client.list_workspaces()}
 
         def snapshot(workspace):
-            tabs = client._call("tab.list", {"workspace_id": workspace})["tabs"]
+            tabs = client._call("panel.list", {"workspace_id": workspace})["panels"]
             areas = client._call("area.list", {"workspace_id": workspace})["areas"]
             return workspace_ids(), {row["id"] for row in tabs}, {row["id"] for row in areas}
 
         def read(workspace, tab):
-            value = client._call("tab.read_text", {"workspace_id": workspace, "tab_id": tab})
+            value = client._call("panel.read_text", {"workspace_id": workspace, "panel_id": tab})
             return value.get("text") or base64.b64decode(value.get("base64") or "").decode("utf-8", "replace")
 
         def wait_output(workspace, tab, marker, timeout=10):
@@ -99,8 +99,8 @@ def main():
 
         def followup(workspace, tab, label):
             text, marker = command(label)
-            client._call("tab.send_text", {"workspace_id": workspace, "tab_id": tab, "text": text})
-            client._call("tab.send_key", {"workspace_id": workspace, "tab_id": tab, "key": "enter"})
+            client._call("panel.send_text", {"workspace_id": workspace, "panel_id": tab, "text": text})
+            client._call("panel.send_key", {"workspace_id": workspace, "panel_id": tab, "key": "enter"})
             wait_output(workspace, tab, marker)
 
         def own(payload):
@@ -109,7 +109,7 @@ def main():
             return workspace
 
         def tab_of(payload, workspace):
-            return payload.get("tab_id") or client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+            return payload.get("panel_id") or client._call("panel.list", {"workspace_id": workspace})["panels"][0]["id"]
 
         try:
             capabilities = client._call("system.capabilities")
@@ -123,12 +123,12 @@ def main():
             requests = traced[before:]
             creates = [r for r in requests if r["method"] == "workspace.create"]
             assert len(creates) == 1 and creates[0]["params"]["initial_input"] == initial + "\r", requests
-            assert not any(r["method"] == "tab.send_text" for r in requests), requests
+            assert not any(r["method"] == "panel.send_text" for r in requests), requests
             wait_output(workspace, tab, marker)
             followup(workspace, tab, "workspace_followup")
-            print("PASS: workspace.create carries initial_input once; no create-following tab.send_text")
+            print("PASS: workspace.create carries initial_input once; no create-following panel.send_text")
 
-            for route, arguments in (("new-tab", ["new-tab"]),
+            for route, arguments in (("new-panel", ["new-panel"]),
                                      ("new-split", ["new-split", "down", "--allow-undersized"]),
                                      ("new-area", ["new-area", "--direction", "right", "--allow-undersized"])):
                 text, marker = command(route)
@@ -140,7 +140,7 @@ def main():
                 print("PASS: " + route + " executes queued input and retains an interactive shell")
 
             for kind in ("browser", "markdown"):
-                for route in ("new-tab", "new-area"):
+                for route in ("new-panel", "new-area"):
                     before = snapshot(workspace)
                     error = run(route, "--workspace", workspace, "--type", kind,
                                 "--command", "echo forbidden", accepted=False)
@@ -153,11 +153,11 @@ def main():
             assert snapshot(workspace) == before
 
             invalid = [("workspace.create", {"initial_input": "x", "layout": {}})]
-            for method in ("workspace.create", "tab.create", "tab.split", "area.create"):
+            for method in ("workspace.create", "panel.create", "panel.split", "area.create"):
                 for value in (42, True, [], {}):
-                    invalid.append((method, {"workspace_id": workspace, "tab_id": tab,
+                    invalid.append((method, {"workspace_id": workspace, "panel_id": tab,
                                              "direction": "down", "initial_input": value}))
-            for method in ("tab.create", "area.create"):
+            for method in ("panel.create", "area.create"):
                 for kind in ("browser", "markdown"):
                     invalid.append((method, {"workspace_id": workspace, "direction": "down",
                                              "type": kind, "initial_input": "x"}))
@@ -183,7 +183,7 @@ def main():
             replacement_tab = tab_of(payload, replacement_ws)
             wait_output(replacement_ws, replacement_tab, marker)
             later, later_marker = command("must_not_execute")
-            client._call("tab.send_text", {"workspace_id": replacement_ws, "tab_id": replacement_tab, "text": later + "\n"})
+            client._call("panel.send_text", {"workspace_id": replacement_ws, "panel_id": replacement_tab, "text": later + "\n"})
             time.sleep(0.5)
             assert later_marker not in read(replacement_ws, replacement_tab), "initial_command unexpectedly retained a shell"
             print("PASS: initial_command replaces the shell; initial_input leaves it running")

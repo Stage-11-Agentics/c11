@@ -228,7 +228,7 @@ final class MailboxReceiptRecorder {
             pending.removeAll { alreadyLogged.contains($0.id) }
         }
         for delivery in pending {
-            emit(workspaceId, delivery.id, delivery.recipient, receipt.tabId)
+            emit(workspaceId, delivery.id, delivery.recipient, receipt.panelId)
             remember(delivery.id)
         }
         // The events are on disk before the receipt that proves them is gone.
@@ -316,7 +316,9 @@ final class MailboxReceiptRecorder {
     }
 
     /// Ids already recorded as `mailbox.delivered` via drain in any event log
-    /// written to at or after `since` (rolled generations included).
+    /// written to at or after `since` (rolled generations included). Reads v1
+    /// and v2 lines alike: `mailbox.delivered` kept its type and payload keys
+    /// in v2 (C11-337); only the envelope's subject key changed.
     private func loggedDrainDeliveryIds(since: Date) -> Set<String> {
         guard let directory = eventsDirectory() else { return [] }
         let files = (try? fileManager.contentsOfDirectory(

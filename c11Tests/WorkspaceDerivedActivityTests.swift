@@ -16,14 +16,14 @@ import XCTest
 /// working-dominates-idle / nil-when-empty rollup contract.
 final class WorkspaceDerivedActivityTests: XCTestCase {
     @MainActor
-    func testSetDerivedActivityStoresPerTabState() {
+    func testSetDerivedActivityStoresPerPanelState() {
         let workspace = Workspace()
         let surface = UUID()
 
-        XCTAssertNil(workspace.derivedActivityByTab[surface])
+        XCTAssertNil(workspace.derivedActivityByPanel[surface])
 
         workspace.setDerivedActivity(.working, forSurface: surface)
-        XCTAssertEqual(workspace.derivedActivityByTab[surface], .working)
+        XCTAssertEqual(workspace.derivedActivityByPanel[surface], .working)
     }
 
     @MainActor
@@ -32,10 +32,10 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let surface = UUID()
 
         workspace.setDerivedActivity(.working, forSurface: surface)
-        XCTAssertEqual(workspace.derivedActivityByTab[surface], .working)
+        XCTAssertEqual(workspace.derivedActivityByPanel[surface], .working)
 
         workspace.setDerivedActivity(.idle, forSurface: surface)
-        XCTAssertEqual(workspace.derivedActivityByTab[surface], .idle)
+        XCTAssertEqual(workspace.derivedActivityByPanel[surface], .idle)
     }
 
     @MainActor
@@ -44,15 +44,15 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let surface = UUID()
 
         workspace.setDerivedActivity(.working, forSurface: surface)
-        XCTAssertNotNil(workspace.derivedActivityByTab[surface])
+        XCTAssertNotNil(workspace.derivedActivityByPanel[surface])
 
         workspace.setDerivedActivity(nil, forSurface: surface)
-        XCTAssertNil(workspace.derivedActivityByTab[surface])
-        XCTAssertFalse(workspace.derivedActivityByTab.keys.contains(surface))
+        XCTAssertNil(workspace.derivedActivityByPanel[surface])
+        XCTAssertFalse(workspace.derivedActivityByPanel.keys.contains(surface))
     }
 
     @MainActor
-    func testSetDerivedActivityIsPerTabIndependent() {
+    func testSetDerivedActivityIsPerPanelIndependent() {
         let workspace = Workspace()
         let surfaceA = UUID()
         let surfaceB = UUID()
@@ -60,13 +60,13 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         workspace.setDerivedActivity(.working, forSurface: surfaceA)
         workspace.setDerivedActivity(.idle, forSurface: surfaceB)
 
-        XCTAssertEqual(workspace.derivedActivityByTab[surfaceA], .working)
-        XCTAssertEqual(workspace.derivedActivityByTab[surfaceB], .idle)
+        XCTAssertEqual(workspace.derivedActivityByPanel[surfaceA], .working)
+        XCTAssertEqual(workspace.derivedActivityByPanel[surfaceB], .idle)
 
         // Clearing one leaves the other untouched.
         workspace.setDerivedActivity(nil, forSurface: surfaceA)
-        XCTAssertNil(workspace.derivedActivityByTab[surfaceA])
-        XCTAssertEqual(workspace.derivedActivityByTab[surfaceB], .idle)
+        XCTAssertNil(workspace.derivedActivityByPanel[surfaceA])
+        XCTAssertEqual(workspace.derivedActivityByPanel[surfaceB], .idle)
     }
 
     @MainActor
@@ -74,7 +74,7 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let workspace = Workspace()
 
         // A freshly seeded workspace has no derived signals for its surfaces.
-        workspace.derivedActivityByTab = [:]
+        workspace.derivedActivityByPanel = [:]
         XCTAssertNil(workspace.aggregatedDerivedActivity)
     }
 

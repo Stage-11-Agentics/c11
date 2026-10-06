@@ -343,7 +343,7 @@ enum TextBoxAppDetection: CaseIterable {
     /// Regex pattern matched (case-insensitive) against the terminal tab title.
     /// Claude Code detection: matches "Claude Code" anywhere in the title,
     /// or a title starting with "✱ " / "✳ " (idle/active icon) or "⠂ " (thinking indicator).
-    private var tabTitlePattern: String {
+    private var panelTitlePattern: String {
         switch self {
         case .claudeCode: return "Claude Code|^[✱✳⠂] "
         case .codex:      return "Codex"
@@ -357,7 +357,7 @@ enum TextBoxAppDetection: CaseIterable {
             return metadataTerminalTypes.contains(type)
         }
         return terminalTitle.range(
-            of: tabTitlePattern,
+            of: panelTitlePattern,
             options: [.caseInsensitive, .regularExpression]
         ) != nil
     }
@@ -849,7 +849,7 @@ struct TextBoxInputContainer: View {
     }
 
     private func submit() {
-        JournalCoordinator.shared.noteTextBoxSubmit(tabID: surface.id)
+        JournalCoordinator.shared.noteTextBoxSubmit(panelID: surface.id)
         let content = text
         TextBoxSubmit.send(content, via: surface)
         text = ""

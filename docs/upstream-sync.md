@@ -104,9 +104,9 @@ Do all of these before pushing:
 1. **Build:** `xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/cmux-sync build`
 2. **Launch app:** `./scripts/reload.sh --tag sync-YYYYMMDD` and confirm the window opens,
    display name reads "c11", About box attribution still says "a fork of cmux".
-3. **Smoke test socket:** from another terminal, `cmux new-split right --tab <id>` and
+3. **Smoke test socket:** from another terminal, `cmux new-split right --panel <id>` and
    confirm it works (socket path/filename unchanged for upstream compat).
-4. **Shell integration:** open a new tab, confirm both shell-integration env namespaces
+4. **Shell integration:** open a new panel, confirm both shell-integration env namespaces
    (upstream-compatible and c11mux) are set.
 5. **Prefs migration smoke:** blow away `~/Library/Preferences/com.stage11.c11mux.plist`, seed
    `~/Library/Preferences/ai.manaflow.cmuxterm.plist` with a known key, launch, confirm

@@ -38,7 +38,7 @@ def main() -> int:
     with cmux(SOCKET_PATH) as c:
         ident = c.identify()
         caller = ident.get("caller") or {}
-        panel_id = caller.get("tab_id")
+        panel_id = caller.get("panel_id")
         _must(bool(panel_id), f"identify should return caller.tab_id: {caller}")
 
         # 1) Missing panel_id → invalid_params

@@ -92,7 +92,7 @@ def run(client: cmux) -> dict:
         require(workspace not in workspace_ids(client, destination), "owner close did not remove workspace")
         require(workspace_ids(client, source) == [w for w in source_before if w != workspace], "owner close changed source siblings")
         require(workspace_ids(client, destination) == destination_before, "owner close changed destination siblings")
-        return {"workspace": workspace, "tabs": tab_ids, "shell_pid": before[0], "child_pid": before[1],
+        return {"workspace": workspace, "panels": tab_ids, "shell_pid": before[0], "child_pid": before[1],
                 "wrong_window": "not_found", "move_and_stale_close": "survived", "owner_close": "removed"}
     finally:
         for window in reversed(windows):

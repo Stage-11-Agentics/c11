@@ -64,10 +64,12 @@ def _run_cli(
 ) -> subprocess.CompletedProcess:
     merged_env = dict(os.environ)
     merged_env.pop("CMUX_WORKSPACE_ID", None)
+    merged_env.pop("C11_PANEL_ID", None)
     merged_env.pop("C11_TAB_ID", None)
-    merged_env.pop("C11_TAB_ID", None)
+    merged_env.pop("C11_SURFACE_ID", None)
+    merged_env.pop("CMUX_PANEL_ID", None)
     merged_env.pop("CMUX_TAB_ID", None)
-    merged_env.pop("C11_TAB_ID", None)
+    merged_env.pop("CMUX_SURFACE_ID", None)
     if env:
         merged_env.update(env)
     cmd = [cli, "--socket", SOCKET_PATH] + args
@@ -247,14 +249,14 @@ def _create_workspace_with_surfaces(
     _must(bool(workspace_id), f"workspace.create returned no id: {created}")
     c._call("workspace.select", {"workspace_id": workspace_id})
 
-    current = c._call("tab.current", {"workspace_id": workspace_id}) or {}
-    sender_id = str(current.get("tab_id") or "")
-    _must(bool(sender_id), f"tab.current returned no id: {current}")
+    current = c._call("panel.current", {"workspace_id": workspace_id}) or {}
+    sender_id = str(current.get("panel_id") or "")
+    _must(bool(sender_id), f"panel.current returned no id: {current}")
     c._call(
-        "tab.set_metadata",
+        "panel.set_metadata",
         {
             "workspace_id": workspace_id,
-            "tab_id": sender_id,
+            "panel_id": sender_id,
             "metadata": {"title": sender_name},
             "mode": "merge",
             "source": "explicit",
@@ -262,16 +264,16 @@ def _create_workspace_with_surfaces(
     )
 
     created_surface = c._call(
-        "tab.create",
+        "panel.create",
         {"workspace_id": workspace_id, "type": "terminal"},
     ) or {}
-    receiver_id = str(created_surface.get("tab_id") or "")
-    _must(bool(receiver_id), f"tab.create returned no id: {created_surface}")
+    receiver_id = str(created_surface.get("panel_id") or "")
+    _must(bool(receiver_id), f"panel.create returned no id: {created_surface}")
     c._call(
-        "tab.set_metadata",
+        "panel.set_metadata",
         {
             "workspace_id": workspace_id,
-            "tab_id": receiver_id,
+            "panel_id": receiver_id,
             "metadata": {
                 "title": receiver_name,
                 "mailbox.delivery": "silent",

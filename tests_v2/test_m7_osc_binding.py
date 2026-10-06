@@ -8,7 +8,7 @@ injecting bytes into PTY input.
 Covers:
 1. `printf '\\033]2;OSC Title\\007'` → title="OSC Title", title_source="osc".
 2. `printf '\\033]2;\\007'` (empty payload) → title cleared (source was osc).
-3. Explicit set-title via tab.set_metadata upgrades source to "explicit";
+3. Explicit set-title via panel.set_metadata upgrades source to "explicit";
    subsequent OSC emit is dropped (lower_precedence) and title stays.
 """
 
@@ -30,7 +30,7 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _state(c, surface_id: str) -> dict:
-    return c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
+    return c._call("panel.get_titlebar_state", {"panel_id": surface_id}) or {}
 
 
 def _wait_for(pred, timeout_s: float, step_s: float = 0.05):
@@ -71,9 +71,9 @@ def main() -> int:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
         _must(
-            "tab.set_metadata" in methods
-            and "tab.get_titlebar_state" in methods
-            and "tab.send_text" in methods,
+            "panel.set_metadata" in methods
+            and "panel.get_titlebar_state" in methods
+            and "panel.send_text" in methods,
             f"Required methods missing. methods={sorted(methods)[:80]}",
         )
 
@@ -84,9 +84,9 @@ def main() -> int:
         c.select_workspace(ws_id)
         time.sleep(0.5)
 
-        current = c._call("tab.current", {"workspace_id": ws_id}) or {}
-        surface_id = str(current.get("tab_id") or "")
-        _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
+        current = c._call("panel.current", {"workspace_id": ws_id}) or {}
+        surface_id = str(current.get("panel_id") or "")
+        _must(bool(surface_id), f"panel.current returned no panel_id: {current}")
 
         try:
             osc_title = f"OSC Title {stamp}"
@@ -119,9 +119,9 @@ def main() -> int:
             # Explicit write upgrades source.
             explicit_title = f"User Title {stamp}"
             res = c._call(
-                "tab.set_metadata",
+                "panel.set_metadata",
                 {
-                    "tab_id": surface_id,
+                    "panel_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {"title": explicit_title},

@@ -93,10 +93,10 @@ enum JournalCommand {
     }
 
     /// Extract only the known fields from hook input. Never store a copied payload.
-    static func claudeDraft(subcommand: String, input: [String: Any], tabID: UUID?, workspaceID: UUID?) -> JournalDraft? {
+    static func claudeDraft(subcommand: String, input: [String: Any], panelID: UUID?, workspaceID: UUID?) -> JournalDraft? {
         guard var draft = ClaudeHookMapping.map(subcommand: subcommand, object: input) else { return nil }
-        if let tabID, let workspaceID {
-            draft.tabID = tabID
+        if let panelID, let workspaceID {
+            draft.panelID = panelID
             draft.workspaceID = workspaceID
         }
         return (try? draft.validate()) != nil ? draft : nil

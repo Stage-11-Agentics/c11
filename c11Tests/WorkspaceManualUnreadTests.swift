@@ -34,7 +34,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isManuallyUnread: true,
                 markedAt: now.addingTimeInterval(-0.05),
                 now: now,
-                sameTabGraceInterval: 0.2
+                samePanelGraceInterval: 0.2
             )
         )
     }
@@ -50,7 +50,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isManuallyUnread: true,
                 markedAt: now.addingTimeInterval(-0.25),
                 now: now,
-                sameTabGraceInterval: 0.2
+                samePanelGraceInterval: 0.2
             )
         )
     }
@@ -76,7 +76,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isManuallyUnread: true,
                 markedAt: now.addingTimeInterval(-0.05),
                 now: now,
-                sameTabGraceInterval: 0.2
+                samePanelGraceInterval: 0.2
             )
         )
     }
@@ -146,6 +146,14 @@ final class CommandPaletteFuzzyMatcherTests: XCTestCase {
         XCTAssertNotNil(renameTabScore)
         XCTAssertNotNil(reopenTabScore)
         XCTAssertGreaterThan(renameTabScore ?? 0, reopenTabScore ?? 0)
+    }
+
+    func testRepanPrefersRenamePanelOverReopenBrowserPanel() {
+        let renamePanelScore = CommandPaletteFuzzyMatcher.score(query: "repan", candidate: "Rename Panel…")
+        let reopenPanelScore = CommandPaletteFuzzyMatcher.score(query: "repan", candidate: "Reopen Closed Browser Panel")
+
+        XCTAssertNotNil(renamePanelScore)
+        XCTAssertGreaterThan(renamePanelScore ?? 0, reopenPanelScore ?? 0)
     }
 
     func testRenameScoresHigherThanUnrelatedCommand() {

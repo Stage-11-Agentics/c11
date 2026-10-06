@@ -1025,18 +1025,18 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
 
     private func updateFeedSnapshot(_ projection: FeedProjectionSnapshot) {
         guard let feedModel else { return }
-        let previousSelectedRow = feedModel.rows.first { $0.tabID == feedModel.selection.selectedTabID }
+        let previousSelectedRow = feedModel.rows.first { $0.panelID == feedModel.selection.selectedPanelID }
         var titles: [UUID: String] = [:]
         for row in projection.rows {
-            let target = AttentionOrder.Target(workspaceID: row.workspaceID, tabID: row.tabID)
+            let target = AttentionOrder.Target(workspaceID: row.workspaceID, panelID: row.panelID)
             if let (_, workspace) = AppDelegate.shared?.resolveFeedTarget(target) {
-                titles[row.tabID] = workspace.title + " · " + (workspace.tabTitle(panelId: row.tabID) ?? "—")
+                titles[row.panelID] = workspace.title + " · " + (workspace.panelTitle(panelId: row.panelID) ?? "—")
             }
         }
         feedModel.apply(.init(projection: projection, titles: titles, now: Date(), loading: false))
         if let row = previousSelectedRow,
-           !feedModel.rows.contains(where: { $0.tabID == row.tabID }),
-           AppDelegate.shared?.resolveFeedTarget(.init(workspaceID: row.workspaceID, tabID: row.tabID)) == nil {
+           !feedModel.rows.contains(where: { $0.panelID == row.panelID }),
+           AppDelegate.shared?.resolveFeedTarget(.init(workspaceID: row.workspaceID, panelID: row.panelID)) == nil {
             feedModel.markUnavailable()
         }
     }

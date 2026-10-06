@@ -39,14 +39,14 @@ final class MailboxStdinBufferTests: XCTestCase {
         )
         // An agent at its prompt whose process does not own the terminal
         // (the shell, `vim`, `--bg`): buffer.
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: false, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: false, lastOperatorKeyAt: nil),
             .buffer
         )
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
@@ -166,27 +166,27 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// alone would buffer forever. At its prompt, the agent gate injects.
     func testAgentAtPromptInjectsDespiteRunningShell() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
 
     func testAgentMidTurnBuffers() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        buffer.noteSubmit(surfaceId: tab, at: t(1))
-        XCTAssertEqual(buffer.agentTurn(surfaceId: tab)?.atPrompt, false)
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.noteSubmit(surfaceId: panel, at: t(1))
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel)?.atPrompt, false)
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(2))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(2))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
     }
@@ -204,12 +204,12 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// type is not yet detected.
     func testTurnEdgeAloneMarksTabAsAgent() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        XCTAssertFalse(buffer.isAgent(surfaceId: tab, isAgentKind: false))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        XCTAssertTrue(buffer.isAgent(surfaceId: tab, isAgentKind: false))
+        let panel = UUID()
+        XCTAssertFalse(buffer.isAgent(surfaceId: panel, isAgentKind: false))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        XCTAssertTrue(buffer.isAgent(surfaceId: panel, isAgentKind: false))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
@@ -218,17 +218,17 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// reached a prompt again, a second message must wait, not join the first.
     func testPushWaitsForTheNextPromptEdge() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        buffer.notePush(surfaceId: tab, at: t(1))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.notePush(surfaceId: panel, at: t(1))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
-        buffer.noteSubmit(surfaceId: tab, at: t(1.2))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(5))
+        buffer.noteSubmit(surfaceId: panel, at: t(1.2))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(5))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
@@ -237,27 +237,27 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// composer. Waiting does not clear it; only a submit does.
     func testOperatorDraftDefersUntilSubmit() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteSubmit(surfaceId: tab, at: t(0))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(10))
+        let panel = UUID()
+        buffer.noteSubmit(surfaceId: panel, at: t(0))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(10))
         let typed = t(20)
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: typed),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: typed),
             .buffer
         )
         // Typing during the turn and leaving it unsent is a draft too: the
         // prompt edge arriving later does not clear it.
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(30))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(3_600))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(30))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(3_600))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: typed),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: typed),
             .buffer
         )
         // The operator submits; the agent's turn ends; the gate opens.
-        buffer.noteSubmit(surfaceId: tab, at: t(3_700))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(3_710))
+        buffer.noteSubmit(surfaceId: panel, at: t(3_700))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(3_710))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(3_700)),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(3_700)),
             .injectNow
         )
     }
@@ -304,18 +304,18 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// does not turn it into an agent.
     func testSubmitIntoPlainShellDoesNotCreateTurn() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteSubmit(surfaceId: tab, at: t(0))
-        XCTAssertNil(buffer.agentTurn(surfaceId: tab))
-        XCTAssertFalse(buffer.isAgent(surfaceId: tab, isAgentKind: false))
+        let panel = UUID()
+        buffer.noteSubmit(surfaceId: panel, at: t(0))
+        XCTAssertNil(buffer.agentTurn(surfaceId: panel))
+        XCTAssertFalse(buffer.isAgent(surfaceId: panel, isAgentKind: false))
     }
 
     func testRepeatedSameEdgeKeepsItsStart() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(50))
-        XCTAssertEqual(buffer.agentTurn(surfaceId: tab), .init(atPrompt: true, since: t(0)))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(50))
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel), .init(atPrompt: true, since: t(0)))
     }
 
     // MARK: - agent flush
@@ -324,10 +324,10 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// flush delivers everything, regardless of age.
     func testAgentPromptFlushNeverExpires() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "old", at: t(0)))
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "new", at: t(7_000)))
-        let result = buffer.drainForFlush(surfaceId: tab, now: t(10_000), trigger: .agentPrompt)
+        let panel = UUID()
+        buffer.enqueue(surfaceId: panel, entry: entry(id: "old", at: t(0)))
+        buffer.enqueue(surfaceId: panel, entry: entry(id: "new", at: t(7_000)))
+        let result = buffer.drainForFlush(surfaceId: panel, now: t(10_000), trigger: .agentPrompt)
         XCTAssertEqual(result.fresh.map(\.id), ["old", "new"])
         XCTAssertTrue(result.expired.isEmpty)
     }
@@ -345,10 +345,10 @@ final class MailboxStdinBufferTests: XCTestCase {
 
     func testRemoveSurfaceForgetsTurnState() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        buffer.removeSurface(tab)
-        XCTAssertNil(buffer.agentTurn(surfaceId: tab))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.removeSurface(panel)
+        XCTAssertNil(buffer.agentTurn(surfaceId: panel))
     }
 
     // MARK: - review r1
@@ -358,14 +358,14 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// carries the Return's own time, so the new draft still reads as one.
     func testLateSubmitEdgeKeepsPostSubmitDraft() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
         let returnAt = t(1)
         let draftKeyAt = t(1.05)
-        buffer.noteSubmit(surfaceId: tab, at: returnAt)  // delivered late, stamped at the event
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(4))
+        buffer.noteSubmit(surfaceId: panel, at: returnAt)  // delivered late, stamped at the event
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(4))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: draftKeyAt),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: draftKeyAt),
             .buffer
         )
     }
@@ -373,12 +373,12 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// An out-of-order (older) submit edge never moves the submit clock back.
     func testOlderSubmitEdgeDoesNotRewindClock() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteSubmit(surfaceId: tab, at: t(10))
-        buffer.noteSubmit(surfaceId: tab, at: t(5))
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(20))
+        let panel = UUID()
+        buffer.noteSubmit(surfaceId: panel, at: t(10))
+        buffer.noteSubmit(surfaceId: panel, at: t(5))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(20))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(8)),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(8)),
             .injectNow
         )
     }
@@ -387,10 +387,10 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// turn that already ended.
     func testStaleSubmitEdgeDoesNotStartTurn() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(10))
-        buffer.noteSubmit(surfaceId: tab, at: t(9))
-        XCTAssertEqual(buffer.agentTurn(surfaceId: tab)?.atPrompt, true)
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(10))
+        buffer.noteSubmit(surfaceId: panel, at: t(9))
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel)?.atPrompt, true)
     }
 
     /// While one push is between claim and Return, nothing else is typed into
@@ -428,31 +428,31 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// A push that typed waits for the agent's next prompt edge.
     func testTypedPushWaitsForNextEdge() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        buffer.beginPush(surfaceId: tab)
-        buffer.endPush(surfaceId: tab, typedAt: t(1))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.beginPush(surfaceId: panel)
+        buffer.endPush(surfaceId: panel, typedAt: t(1))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
     }
 
     func testRequeueFrontRestoresOrderAndEvictsOldest() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "later"))
-        buffer.requeueFront(surfaceId: tab, entries: [entry(id: "a"), entry(id: "b")])
+        let panel = UUID()
+        buffer.enqueue(surfaceId: panel, entry: entry(id: "later"))
+        buffer.requeueFront(surfaceId: panel, entries: [entry(id: "a"), entry(id: "b")])
         XCTAssertEqual(
-            buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .agentPrompt).fresh.map(\.id),
+            buffer.drainForFlush(surfaceId: panel, now: t(1), trigger: .agentPrompt).fresh.map(\.id),
             ["a", "b", "later"]
         )
         for i in 0..<MailboxStdinBuffer.perSurfaceCap {
-            buffer.enqueue(surfaceId: tab, entry: entry(id: "q\(i)"))
+            buffer.enqueue(surfaceId: panel, entry: entry(id: "q\(i)"))
         }
-        let evicted = buffer.requeueFront(surfaceId: tab, entries: [entry(id: "x")])
+        let evicted = buffer.requeueFront(surfaceId: panel, entries: [entry(id: "x")])
         XCTAssertEqual(evicted.map(\.id), ["x"])
-        XCTAssertEqual(buffer.pendingCount(surfaceId: tab), MailboxStdinBuffer.perSurfaceCap)
+        XCTAssertEqual(buffer.pendingCount(surfaceId: panel), MailboxStdinBuffer.perSurfaceCap)
     }
 
     /// Claude's Notification and AskUserQuestion hooks report idle with
@@ -506,13 +506,13 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// the hop turns an admitted agent push into a drop.
     func testForgetAgentDuringHopDropsAdmittedPush() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
-        let admitted = buffer.agentTurn(surfaceId: tab)
-        buffer.beginPush(surfaceId: tab)
-        buffer.forgetAgent(surfaceId: tab)
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        let admitted = buffer.agentTurn(surfaceId: panel)
+        buffer.beginPush(surfaceId: panel)
+        buffer.forgetAgent(surfaceId: panel)
         XCTAssertEqual(
-            buffer.pushVerdict(surfaceId: tab, admittedAs: .agentPrompt, admittedTurn: admitted,
+            buffer.pushVerdict(surfaceId: panel, admittedAs: .agentPrompt, admittedTurn: admitted,
                                lastOperatorKeyAt: nil, surfaceAttached: true, agentOwnsTerminal: false),
             .drop
         )
@@ -549,16 +549,16 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// its prompt: mail buffers, and drops when the run exits to the shell.
     func testHeadlessAgentNeverOpensGateAndDropsOnExit() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(0))  // SessionStart, headless
-        XCTAssertTrue(buffer.isAgent(surfaceId: tab, isAgentKind: false))
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))  // SessionStart, headless
+        XCTAssertTrue(buffer.isAgent(surfaceId: panel, isAgentKind: false))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: panel, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "m"))
-        buffer.forgetAgent(surfaceId: tab)  // the run exits; shell back at its prompt
-        let flush = buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .shellPrompt)
+        buffer.enqueue(surfaceId: panel, entry: entry(id: "m"))
+        buffer.forgetAgent(surfaceId: panel)  // the run exits; shell back at its prompt
+        let flush = buffer.drainForFlush(surfaceId: panel, now: t(1), trigger: .shellPrompt)
         XCTAssertTrue(flush.fresh.isEmpty)
         XCTAssertEqual(flush.expired.map(\.id), ["m"])
     }
@@ -573,16 +573,16 @@ final class MailboxStdinBufferTests: XCTestCase {
     }
 
     private func owns(_ info: MailboxAgentForeground.ProcessTerminalInfo?, start: UInt64? = 1_000_000,
-                      tab: dev_t? = 0x1000007, canonical: Bool? = false) -> Bool {
+                      panel: dev_t? = 0x1000007, canonical: Bool? = false) -> Bool {
         MailboxAgentForeground.agentOwnsTerminal(
-            info, expectedStartTime: start, tabTerminalDevice: tab, terminalIsCanonical: canonical
+            info, expectedStartTime: start, panelTerminalDevice: panel, terminalIsCanonical: canonical
         )
     }
 
     /// The kernel decides who reads the terminal: only the registered agent
     /// process, as its terminal's foreground group, on the tab's tty, with
     /// the tty in non-canonical (raw) mode.
-    func testAgentOwnsTerminalOnlyAsRawForegroundGroupOnTabTTY() {
+    func testAgentOwnsTerminalOnlyAsRawForegroundGroupOnPanelTTY() {
         XCTAssertTrue(owns(procInfo(pgid: 500, fg: 500)))
         // vim, the shell, or a pipeline holds the foreground (`--bg`, Ctrl-Z, exit).
         XCTAssertFalse(owns(procInfo(pgid: 500, fg: 777)))
@@ -592,7 +592,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500, tty: -1)))
         XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500, zombie: true)))
         XCTAssertFalse(owns(nil))
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: nil, tabTTYName: "ttys001"))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: nil, panelTTYName: "ttys001"))
     }
 
     /// r4 #2: a print or one-shot run is the foreground group but leaves its
@@ -604,11 +604,11 @@ final class MailboxStdinBufferTests: XCTestCase {
     }
 
     /// r4 #3: a tab whose tty c11 does not know cannot be verified.
-    func testUnknownTabTTYFailsClosed() {
-        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), tab: nil))
+    func testUnknownPanelTTYFailsClosed() {
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), panel: nil))
         let process = MailboxStdinBuffer.AgentProcess(pid: getpid(), startTime: 1)
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, tabTTYName: nil))
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, tabTTYName: "ttys-not-a-device"))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, panelTTYName: nil))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, panelTTYName: "ttys-not-a-device"))
     }
 
     /// A later process reusing the registered PID (an editor in the same
@@ -674,16 +674,16 @@ final class MailboxStdinBufferTests: XCTestCase {
 
     func testAgentProcessBookkeeping() {
         var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.noteAgentProcess(surfaceId: tab, process: .init(pid: 4242, startTime: 7))
-        XCTAssertEqual(buffer.agentPid(surfaceId: tab), 4242)
+        let panel = UUID()
+        buffer.noteAgentProcess(surfaceId: panel, process: .init(pid: 4242, startTime: 7))
+        XCTAssertEqual(buffer.agentPid(surfaceId: panel), 4242)
         // A repeat report for the same PID keeps the pinned start time.
-        buffer.noteAgentProcess(surfaceId: tab, process: .init(pid: 4242, startTime: 9))
-        XCTAssertEqual(buffer.agentProcess(surfaceId: tab)?.startTime, 7)
-        buffer.forgetAgent(surfaceId: tab)
-        XCTAssertNil(buffer.agentPid(surfaceId: tab))
-        buffer.noteAgentProcess(surfaceId: tab, process: .init(pid: 4243, startTime: 8))
-        buffer.removeSurface(tab)
-        XCTAssertNil(buffer.agentPid(surfaceId: tab))
+        buffer.noteAgentProcess(surfaceId: panel, process: .init(pid: 4242, startTime: 9))
+        XCTAssertEqual(buffer.agentProcess(surfaceId: panel)?.startTime, 7)
+        buffer.forgetAgent(surfaceId: panel)
+        XCTAssertNil(buffer.agentPid(surfaceId: panel))
+        buffer.noteAgentProcess(surfaceId: panel, process: .init(pid: 4243, startTime: 8))
+        buffer.removeSurface(panel)
+        XCTAssertNil(buffer.agentPid(surfaceId: panel))
     }
 }

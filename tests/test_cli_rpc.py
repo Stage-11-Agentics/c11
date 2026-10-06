@@ -45,7 +45,8 @@ def main():
                             requests.append(request)
                             method = request["method"]
                             if method == "system.capabilities":
-                                result = {"methods": ["tab.list", "fixture.echo", "no.such.method", "system.ping"]}
+                                result = {"methods": ["panel.list", "fixture.echo", "no.such.method", "system.ping"],
+                                          "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                             elif method == "no.such.method":
                                 response = {"id": request["id"], "ok": False, "error": {"code": "method_not_found", "message": "Unknown fixture method"}}
                                 stream.write((json.dumps(response) + "\n").encode())
@@ -54,7 +55,7 @@ def main():
                             elif method == "system.ping":
                                 result = {"pong": True, "is_terminating_app": False}
                             else:
-                                result = {"params": request["params"], "tab_id": "11111111-1111-4111-8111-111111111111"}
+                                result = {"params": request["params"], "panel_id": "11111111-1111-4111-8111-111111111111"}
                             stream.write((json.dumps({"id": request["id"], "ok": True, "result": result}) + "\n").encode())
                             stream.flush()
                 except Exception as error:
@@ -76,13 +77,13 @@ def main():
                 assert json.loads(result.stdout) == {"pong": True, "is_terminating_app": False}
                 actual = [r for r in requests[start:] if r["method"] != "system.capabilities"]
                 assert len(actual) == 1 and actual[0]["params"] == {}
-            params = {"text": "literal\\n 世界\n", "nested": [None, True, {"tab_id": "tab:987"}]}
+            params = {"text": "literal\\n 世界\n", "nested": [None, True, {"panel_id": "panel:987"}]}
             start = len(requests)
             result = run(["rpc", "fixture.echo", json.dumps(params)])
             assert result.returncode == 0, result.stderr
             body = json.loads(result.stdout)
             assert body["params"] == params
-            assert body["tab_id"] == "11111111-1111-4111-8111-111111111111"
+            assert body["panel_id"] == "11111111-1111-4111-8111-111111111111"
             actual = [r for r in requests[start:] if r["method"] != "system.capabilities"]
             assert len(actual) == 1 and actual[0]["params"] == params
             result = run(["rpc", "no.such.method"])

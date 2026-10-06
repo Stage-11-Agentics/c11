@@ -56,7 +56,7 @@ def main():
         workspace = client.new_workspace()
         try:
             caller = client.list_surfaces(workspace)[0][1]
-            sibling = client._call("tab.create", {"workspace_id": workspace, "type": "terminal"})["tab_id"]
+            sibling = client._call("panel.create", {"workspace_id": workspace, "type": "terminal"})["panel_id"]
             # Only this disposable instance's focus oracle is overridden.
             client.set_app_focus(False)
             baseline = client.identify().get("focused")
@@ -81,7 +81,7 @@ def main():
 
             def seed():
                 for tab in (caller, sibling):
-                    client._call("notification.create_for_tab", {
+                    client._call("notification.create_for_panel", {
                         "workspace_id": workspace, "tab_id": tab,
                         "title": "Synthetic wait", "body": "Attention fixture"})
                 eventually(lambda: len(unread(caller)) == len(unread(sibling)) == 1, "both tabs waiting")

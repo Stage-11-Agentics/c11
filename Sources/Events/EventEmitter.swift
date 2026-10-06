@@ -107,7 +107,7 @@ final class EventEmitter {
         currentLog()?.flush()
     }
 
-    // MARK: - Emit helpers (v1 taxonomy)
+    // MARK: - Emit helpers
 
     func emitSurfaceCreated(
         workspace: UUID,
@@ -130,22 +130,26 @@ final class EventEmitter {
         emit(.workspaceReordered, payload: payload)
     }
 
-    func emitWorkspaceSelected(previous: UUID?, selected: UUID, cause: String = "menu", method: String? = nil, callerTabId: UUID? = nil) {
+    func emitWorkspaceSelected(previous: UUID?, selected: UUID, cause: String = "menu", method: String? = nil, callerPanelId: UUID? = nil) {
         var payload: [String: Any] = [:]
         if let previous { payload["previous"] = previous.uuidString }
         payload["cause"] = cause
-        if let method { payload["method"] = method; payload["caller_tab_id"] = callerTabId?.uuidString ?? NSNull() }
+        if let method {
+            payload["method"] = method
+            payload[EventEnvelope.PayloadKey.callerPanelId] = callerPanelId?.uuidString ?? NSNull()
+        }
         emit(.workspaceSelected, workspace: selected, payload: payload)
     }
 
-    func emitWorkspaceSwitchBlocked(target: UUID, method: String, callerTabId: UUID?) {
+    func emitWorkspaceSwitchBlocked(target: UUID, method: String, callerPanelId: UUID?) {
         emit(.workspaceSwitchBlocked, workspace: target, payload: [
             "target": target.uuidString, "method": method,
-            "caller_tab_id": callerTabId?.uuidString ?? NSNull()
+            EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull()
         ])
     }
 
-    /// `scope` is "surface" or "pane"; `source` is the `MetadataSource` raw
+    /// `scope` is "surface" or "pane" (callers' v1 spelling); it is written as
+    /// the v2 "panel" / "area". `source` is the `MetadataSource` raw
     /// value stringified by the caller (the pure envelope never names the enum).
     /// `prior` is optional — the surface store does not retain it for free.
     func emitMetadataChanged(
@@ -158,7 +162,7 @@ final class EventEmitter {
         source: String
     ) {
         var payload: [String: Any] = [
-            "scope": scope,
+            EventEnvelope.PayloadKey.scope: EventEnvelope.canonicalScope(scope),
             "key": key,
             "source": source,
         ]
@@ -175,16 +179,22 @@ final class EventEmitter {
         emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
     }
 
-    func emitLifecycleChanged(workspace: UUID, tab: UUID, payload: [String: Any]) {
-        emit(.lifecycleChanged, workspace: workspace, surface: tab, payload: payload)
+    /// The journal builds the payload with a `tab` key; v2 writes it as `panel`.
+    func emitLifecycleChanged(workspace: UUID, panel: UUID, payload: [String: Any]) {
+        var payload = payload
+        if let legacy = payload.removeValue(forKey: EventEnvelope.PayloadKey.legacyTab),
+           payload[EventEnvelope.PayloadKey.panel] == nil {
+            payload[EventEnvelope.PayloadKey.panel] = legacy
+        }
+        emit(.lifecycleChanged, workspace: workspace, surface: panel, payload: payload)
     }
 
     func emitFlagRaised(
         workspace: UUID,
         surface: UUID,
         reason: String,
-        callerTabId: UUID?,
-        by actor: TabAttentionActor
+        callerPanelId: UUID?,
+        by actor: PanelAttentionActor
     ) {
         emit(
             .flagRaised,
@@ -192,10 +202,9 @@ final class EventEmitter {
             surface: surface,
             payload: [
                 "reason": reason,
-                // C11-248: `caller_tab_id` is canonical; `caller_surface_id` carries the
-                // same UUID for v1 consumers (remove after one release).
-                "caller_tab_id": callerTabId?.uuidString ?? NSNull(),
-                "caller_surface_id": callerTabId?.uuidString ?? NSNull(),
+                // C11-337: v2 writes only `caller_panel_id`; readers accept the
+                // v1 `caller_tab_id` / `caller_surface_id` via `EventEnvelope.callerPanelId`.
+                EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull(),
                 "by": actor.rawValue,
             ]
         )
@@ -204,7 +213,7 @@ final class EventEmitter {
     func emitFlagLowered(
         workspace: UUID,
         surface: UUID,
-        by actor: TabAttentionActor,
+        by actor: PanelAttentionActor,
         answer: String? = nil
     ) {
         var payload: [String: Any] = ["by": actor.rawValue]
@@ -212,11 +221,11 @@ final class EventEmitter {
         emit(.flagLowered, workspace: workspace, surface: surface, payload: payload)
     }
 
-    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
+    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: PanelAttentionActor) {
         emit(.flagSuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
     }
 
-    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
+    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: PanelAttentionActor) {
         emit(.flagUnsuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
     }
 
@@ -235,8 +244,8 @@ final class EventEmitter {
     /// C11-257 C1: build the stable payload for a successful socket send. This
     /// is intentionally pure so the truncation and null-attribution contract
     /// can be exercised without constructing a workspace or terminal.
-    static func tabInputPayload(
-        callerTabId: UUID?,
+    static func panelInputPayload(
+        callerPanelId: UUID?,
         callerTitle: String?,
         targetTitle: String,
         kind: String,
@@ -246,7 +255,7 @@ final class EventEmitter {
     ) -> [String: Any] {
         let recorded = recordedText(text)
         var payload: [String: Any] = [
-            "caller_tab_id": callerTabId?.uuidString ?? NSNull(),
+            EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull(),
             "caller_title": callerTitle ?? NSNull(),
             "target_title": targetTitle,
             "kind": kind,
@@ -264,10 +273,10 @@ final class EventEmitter {
     }
 
     @discardableResult
-    func emitTabInputSent(
+    func emitPanelInputSent(
         workspace: UUID,
         surface: UUID,
-        callerTabId: UUID?,
+        callerPanelId: UUID?,
         callerTitle: String?,
         targetTitle: String,
         kind: String,
@@ -276,11 +285,11 @@ final class EventEmitter {
         queued: Bool = false
     ) -> Bool {
         emit(
-            .tabInputSent,
+            .panelInputSent,
             workspace: workspace,
             surface: surface,
-            payload: Self.tabInputPayload(
-                callerTabId: callerTabId,
+            payload: Self.panelInputPayload(
+                callerPanelId: callerPanelId,
                 callerTitle: callerTitle,
                 targetTitle: targetTitle,
                 kind: kind,

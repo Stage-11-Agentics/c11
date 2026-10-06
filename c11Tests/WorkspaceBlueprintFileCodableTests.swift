@@ -35,7 +35,7 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(title: "Blueprint Test"),
             layout: .pane(.init(surfaceIds: ["a"])),
-            surfaces: [TabSpec(id: "a", kind: .terminal)]
+            surfaces: [PanelSpec(id: "a", kind: .terminal)]
         )
     }
 
@@ -70,9 +70,9 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
                 )
             ),
             surfaces: [
-                TabSpec(id: "term", kind: .terminal, title: "shell", command: "bash"),
-                TabSpec(id: "browser", kind: .browser, title: "docs", url: "https://stage11.ai"),
-                TabSpec(id: "md", kind: .markdown, title: "notes", filePath: "/tmp/notes.md")
+                PanelSpec(id: "term", kind: .terminal, title: "shell", command: "bash"),
+                PanelSpec(id: "browser", kind: .browser, title: "docs", url: "https://stage11.ai"),
+                PanelSpec(id: "md", kind: .markdown, title: "notes", filePath: "/tmp/notes.md")
             ]
         )
         let file = WorkspaceBlueprintFile(
@@ -99,6 +99,52 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
         let decoded = try decode(WorkspaceBlueprintFile.self, from: json)
         XCTAssertNil(decoded.description)
         XCTAssertEqual(decoded.name, "No Description")
+    }
+
+    func testBlueprintFileLegacyAndPanelKeysDecodeToTheSameFile() throws {
+        let legacy = Data("""
+        {
+            "version": 1,
+            "name": "Companion",
+            "plan": {
+                "version": 1,
+                "workspace": {},
+                "layout": {"type": "pane", "pane": {"surfaceIds": ["agent", "web"], "selectedIndex": 1}},
+                "surfaces": [
+                    {"id": "agent", "kind": "terminal", "declaredAgentKind": "claude-code"},
+                    {"id": "web", "kind": "browser", "linkedAgentSurfacePlanId": "agent"}
+                ]
+            }
+        }
+        """.utf8)
+        let current = Data("""
+        {
+            "version": 1,
+            "name": "Companion",
+            "plan": {
+                "version": 1,
+                "workspace": {},
+                "layout": {"type": "pane", "pane": {"panelIds": ["agent", "web"], "selectedIndex": 1}},
+                "panels": [
+                    {"id": "agent", "kind": "terminal", "declaredAgentKind": "claude-code"},
+                    {"id": "web", "kind": "browser", "linkedAgentPanelPlanId": "agent"}
+                ]
+            }
+        }
+        """.utf8)
+        let decodedLegacy = try decode(WorkspaceBlueprintFile.self, from: legacy)
+        let decodedCurrent = try decode(WorkspaceBlueprintFile.self, from: current)
+        XCTAssertEqual(decodedLegacy, decodedCurrent)
+        XCTAssertEqual(decodedCurrent.plan.surfaces.count, 2)
+        XCTAssertEqual(decodedCurrent.plan.surfaces[1].linkedAgentSurfacePlanId, "agent")
+
+        let json = try XCTUnwrap(String(data: try encode(decodedLegacy), encoding: .utf8))
+        XCTAssertTrue(json.contains("\"panels\""))
+        XCTAssertTrue(json.contains("\"panelIds\""))
+        XCTAssertTrue(json.contains("\"linkedAgentPanelPlanId\""))
+        XCTAssertFalse(json.contains("\"surfaces\""))
+        XCTAssertFalse(json.contains("\"surfaceIds\""))
+        XCTAssertFalse(json.contains("\"linkedAgentSurfacePlanId\""))
     }
 
     func testBlueprintFileVersionDefaultsToOne() throws {

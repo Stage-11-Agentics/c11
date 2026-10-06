@@ -12,7 +12,7 @@
         "dividerPosition": 0.6,
         "first": {
           "type": "pane",
-          "pane": { "surfaceIds": ["s1"] }
+          "pane": { "panelIds": ["s1"] }
         },
         "second": {
           "type": "split",
@@ -21,17 +21,17 @@
             "dividerPosition": 0.5,
             "first": {
               "type": "pane",
-              "pane": { "surfaceIds": ["s3"] }
+              "pane": { "panelIds": ["s3"] }
             },
             "second": {
               "type": "pane",
-              "pane": { "surfaceIds": ["s2"] }
+              "pane": { "panelIds": ["s2"] }
             }
           }
         }
       }
     },
-    "surfaces": [
+    "panels": [
       {
         "id": "s1",
         "kind": "terminal",

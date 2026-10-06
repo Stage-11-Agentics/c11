@@ -56,11 +56,11 @@ class FeedProbe(Probe):
             return self.benchmark()
         self.workspace = self.rpc('workspace.create')['workspace_id']
         self.rpc('workspace.rename', {'workspace_id': self.workspace, 'title': 'Synthetic attention order'})
-        anchor = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        tabs = [self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['tab_id'] for _ in range(4)]
+        anchor = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
+        tabs = [self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['panel_id'] for _ in range(4)]
         older, newer, flagged, completion = tabs
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': anchor})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': anchor})
         self.eventually(lambda: len(self.ui('inspect')['candidates']) == 1, 'Status extra unavailable')
         self.ui('background')
         self.ui('open')
@@ -98,16 +98,16 @@ class FeedProbe(Probe):
         def jump(tab, label):
             self.ui('activate')
             self.ui('jump-shortcut')
-            self.eventually(lambda: self.rpc('system.identify')['focused'].get('tab_id') == tab, label)
+            self.eventually(lambda: self.rpc('system.identify')['focused'].get('panel_id') == tab, label)
             focused = self.rpc('system.identify')['focused']
             self.check(focused.get('workspace_id') == self.workspace, label + ' exact workspace/tab')
 
         jump(flagged, 'Configured shortcut chooses flag before older ask')
         self.rpc('flag.lower', {'tab_id': flagged, 'by': 'operator'})
         self.eventually(lambda: '0 flags · 2 open asks' in str(self.status()['help']), 'Suppressed lowered ask stayed eligible')
-        closed = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['tab_id']
+        closed = self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['panel_id']
         self.rpc('flag.raise', {'tab_id': closed, 'reason': 'Synthetic closed target', 'by': 'operator'})
-        self.rpc('tab.close', {'workspace_id': self.workspace, 'tab_id': closed})
+        self.rpc('panel.close', {'workspace_id': self.workspace, 'panel_id': closed})
         before_failed_open = self.rpc('system.identify')['focused']
         try:
             self.rpc('feed.open', {'workspace_id': self.workspace, 'tab_id': closed})
@@ -125,13 +125,13 @@ class FeedProbe(Probe):
         resolve(older)
         jump(newer, 'Configured shortcut continues to next ask')
         resolve(newer)
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': anchor})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': anchor})
         finder = self.ui('background')
         self.eventually(lambda: self.ui('foreground') == finder, 'Finder failed foreground')
         selection = self.rpc('system.identify')['focused']
-        self.rpc('notification.create_for_tab', {'workspace_id': self.workspace, 'tab_id': completion,
+        self.rpc('notification.create_for_panel', {'workspace_id': self.workspace, 'panel_id': completion,
             'title': 'Synthetic older completion', 'body': 'Synthetic unread tail'})
-        self.rpc('notification.create_for_tab', {'workspace_id': self.workspace, 'tab_id': newer,
+        self.rpc('notification.create_for_panel', {'workspace_id': self.workspace, 'panel_id': newer,
             'title': 'Synthetic newer completion', 'body': 'Synthetic unread tail'})
         self.rpc('flag.raise', {'tab_id': flagged, 'reason': 'Synthetic background decision', 'by': 'operator'})
         self.eventually(lambda: '1 flag · 1 open ask' in str(self.status()['help']), 'Background menu stale')
@@ -160,10 +160,10 @@ class FeedProbe(Probe):
 
     def benchmark(self):
         self.workspace = self.rpc('workspace.create')['workspace_id']
-        anchor = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        worker = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['tab_id']
+        anchor = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
+        worker = self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['panel_id']
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': anchor})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': anchor})
         session = str(uuid.uuid4())
         self.rpc('conversation.push', {'tab_id': worker, 'kind': 'claude-code', 'id': session, 'source': 'hook', 'state': 'alive'})
         self.eventually(lambda: self.status(), 'Extra unavailable for benchmark')
@@ -174,7 +174,7 @@ class FeedProbe(Probe):
                 kind='agent.question.requested', emitted_at_ms=int(time.time() * 1000), tab_id=worker,
                 workspace_id=self.workspace, session_id=session, agent_kind='claude-code', source='hook',
                 adapter='claude_hook', native_event='PreToolUse', request_id='synthetic-perf-' + str(index))})
-            self.rpc('tab.list', {'workspace_id': self.workspace}) # Synchronous main-query latency proxy.
+            self.rpc('panel.list', {'workspace_id': self.workspace}) # Synchronous main-query latency proxy.
             times.append((time.monotonic() - start) * 1000)
         self.ui('activate')
         # Selection is a setup oracle, not proof of AppKit first-responder focus.
@@ -188,7 +188,7 @@ class FeedProbe(Probe):
         started = time.monotonic()
         self.ui('type-burst')
         def echoed():
-            result = self.rpc('tab.read_text', {'workspace_id': self.workspace, 'tab_id': anchor})
+            result = self.rpc('panel.read_text', {'workspace_id': self.workspace, 'panel_id': anchor})
             text = result.get('text') or base64.b64decode(result.get('base64') or '').decode(errors='replace')
             return 'a' * 40 in text
         self.eventually(echoed, 'Real PID-targeted typing burst did not echo', seconds=3)

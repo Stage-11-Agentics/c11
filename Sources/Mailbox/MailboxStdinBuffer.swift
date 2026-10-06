@@ -425,7 +425,7 @@ enum MailboxAgentForeground {
     static func agentOwnsTerminal(
         _ info: ProcessTerminalInfo?,
         expectedStartTime: UInt64?,
-        tabTerminalDevice: dev_t?,
+        panelTerminalDevice: dev_t?,
         terminalIsCanonical: Bool?
     ) -> Bool {
         guard let info, !info.isZombie,
@@ -434,7 +434,7 @@ enum MailboxAgentForeground {
               info.terminalDevice != -1,  // NODEV: no controlling terminal
               info.processGroup > 0,
               info.terminalForegroundGroup == info.processGroup,
-              let tabTerminalDevice, tabTerminalDevice == info.terminalDevice,
+              let panelTerminalDevice, panelTerminalDevice == info.terminalDevice,
               terminalIsCanonical == false else { return false }
         return true
     }
@@ -471,19 +471,19 @@ enum MailboxAgentForeground {
     /// Live check for a registered agent process against the tab's tty name. A tab
     /// whose tty c11 has not been told (no shell-integration `report_tty`)
     /// cannot be verified and never receives a push.
-    static func agentOwnsTerminal(process: MailboxStdinBuffer.AgentProcess?, tabTTYName: String?) -> Bool {
-        guard let process, let tabTTYName else { return false }
-        let path = tabTTYName.hasPrefix("/") ? tabTTYName : "/dev/\(tabTTYName)"
-        guard let tabDevice = TerminalPIDResolver.ttyDevice(for: path) else { return false }
+    static func agentOwnsTerminal(process: MailboxStdinBuffer.AgentProcess?, panelTTYName: String?) -> Bool {
+        guard let process, let panelTTYName else { return false }
+        let path = panelTTYName.hasPrefix("/") ? panelTTYName : "/dev/\(panelTTYName)"
+        guard let panelDevice = TerminalPIDResolver.ttyDevice(for: path) else { return false }
         let info = processTerminalInfo(pid: process.pid)
         // The process checks first: the termios read opens the device.
         guard agentOwnsTerminal(
             info, expectedStartTime: process.startTime,
-            tabTerminalDevice: tabDevice, terminalIsCanonical: false
+            panelTerminalDevice: panelDevice, terminalIsCanonical: false
         ) else { return false }
         return agentOwnsTerminal(
             info, expectedStartTime: process.startTime,
-            tabTerminalDevice: tabDevice, terminalIsCanonical: terminalIsCanonical(path: path)
+            panelTerminalDevice: panelDevice, terminalIsCanonical: terminalIsCanonical(path: path)
         )
     }
 }

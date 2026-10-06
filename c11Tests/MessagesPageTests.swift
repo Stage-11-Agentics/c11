@@ -437,3 +437,61 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("C11_257_TEXT_PROOF"))
     }
 }
+
+// MARK: - C11-337: v1 and v2 event lines
+
+extension MessagesPageTests {
+    private static let v1SendLine = #"{"instance":"fixture-v1","payload":{"bytes":7,"caller_tab_id":"11111111-1111-4111-8111-111111111111","caller_title":"old-caller","kind":"text","submitted":true,"target_title":"old-target","text":"V1_BODY"},"seq":5,"surface":"22222222-2222-4222-8222-222222222222","ts":"2026-10-01T00:00:00.000Z","type":"tab.input_sent","v":1,"workspace":"44444444-4444-4444-8444-444444444444"}"#
+    private static let v2SendLine = #"{"area":"33333333-3333-4333-8333-333333333333","instance":"fixture-v2","panel":"55555555-5555-4555-8555-555555555555","payload":{"bytes":7,"caller_panel_id":"66666666-6666-4666-8666-666666666666","caller_title":null,"kind":"text","submitted":true,"target_title":"new-target","text":"V2_BODY"},"seq":9,"ts":"2026-10-06T00:00:00.000Z","type":"panel.input_sent","v":2,"workspace":"44444444-4444-4444-8444-444444444444"}"#
+    private static let v2DeliveredLine = #"{"instance":"fixture-v2","panel":"55555555-5555-4555-8555-555555555555","payload":{"id":"01K3A2B7X8PQRTVWYZ0123456Q","recipient":"new-target","via":"drain"},"seq":10,"ts":"2026-10-06T00:00:01.000Z","type":"mailbox.delivered","v":2,"workspace":"44444444-4444-4444-8444-444444444444"}"#
+    private static let v2NoiseLine = #"{"instance":"fixture-v2","panel":"55555555-5555-4555-8555-555555555555","payload":{"kind":"terminal"},"seq":8,"ts":"2026-10-06T00:00:00.000Z","type":"panel.created","v":2}"#
+
+    func testV1AndV2SendLinesBothRenderAsMessages() throws {
+        let events = [Self.v1SendLine, Self.v2SendLine].compactMap(MessagesPageEvent.init(line:))
+        XCTAssertEqual(events.map(\.type), ["panel.input_sent", "panel.input_sent"])
+        let snapshot = MessagesPageBuilder.build(events: events, generatedAt: "now")
+        XCTAssertEqual(snapshot.totalObserved, 2)
+
+        let old = try XCTUnwrap(snapshot.messages.first(where: { $0.body == "V1_BODY" }))
+        XCTAssertEqual(old.channel, "send")
+        XCTAssertEqual(old.senderID, "11111111-1111-4111-8111-111111111111")
+        XCTAssertEqual(old.sender, "old-caller")
+        XCTAssertEqual(old.surface, "22222222-2222-4222-8222-222222222222")
+        XCTAssertEqual(old.recipient, "old-target")
+
+        let new = try XCTUnwrap(snapshot.messages.first(where: { $0.body == "V2_BODY" }))
+        XCTAssertEqual(new.channel, "send")
+        XCTAssertEqual(new.senderID, "66666666-6666-4666-8666-666666666666")
+        XCTAssertNil(new.callerTitle)
+        XCTAssertEqual(new.surface, "55555555-5555-4555-8555-555555555555")
+        XCTAssertEqual(new.recipient, "new-target")
+        XCTAssertEqual(new.status, "submitted")
+    }
+
+    /// The raw-byte prefilter must admit a log that holds only v2 send lines,
+    /// and an old log that holds only v1 send lines.
+    func testEventLogsWithOnlyV1OrOnlyV2SendLinesAreRead() throws {
+        let eventsDirectory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)
+        try (Self.v1SendLine + "\n").write(
+            to: eventsDirectory.appendingPathComponent("events-old.ndjson"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try ([Self.v2NoiseLine, Self.v2SendLine, Self.v2DeliveredLine].joined(separator: "\n") + "\n").write(
+            to: eventsDirectory.appendingPathComponent("events-new.ndjson"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.events.count, 3, "two sends and one mailbox event; panel.created is not a message")
+        XCTAssertFalse(source.events.contains { $0.type == "panel.created" })
+
+        let snapshot = MessagesPageBuilder.build(events: source.events, generatedAt: "now")
+        XCTAssertEqual(Set(snapshot.messages.filter { $0.channel == "send" }.map(\.body)), ["V1_BODY", "V2_BODY"])
+        let mailbox = try XCTUnwrap(snapshot.messages.first(where: { $0.channel == "mailbox" }))
+        XCTAssertEqual(mailbox.surface, "55555555-5555-4555-8555-555555555555")
+        XCTAssertEqual(mailbox.status, "delivered")
+    }
+}

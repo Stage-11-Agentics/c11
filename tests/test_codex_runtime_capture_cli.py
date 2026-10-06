@@ -64,7 +64,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
 def runtime_env(surface: str, thread_id: str, socket_path: str) -> dict[str, str]:
     # Identity is set below on purpose; every socket variable names the fake.
     env = fake_server_env(socket_path, scrub_identity=False)
-    for key in ("C11_TAB_ID", "CMUX_TAB_ID", "C11_SURFACE_ID", "CMUX_SURFACE_ID", "CODEX_THREAD_ID"):
+    for key in ("C11_PANEL_ID", "CMUX_PANEL_ID", "C11_TAB_ID", "CMUX_TAB_ID", "C11_SURFACE_ID", "CMUX_SURFACE_ID", "CODEX_THREAD_ID"):
         env.pop(key, None)
     env.update({
         "C11_SURFACE_ID": surface,
@@ -122,8 +122,8 @@ def main() -> int:
             request = state.requests[-1] if state.requests else {}
             expect(request.get("method") == "conversation.capture_runtime", f"wrong method: {request}", failures)
             params = request.get("params", {})
-            expect(params == {"tab_id": surface, "id": thread_id, "cwd": os.path.realpath(tmp)}, f"wrong runtime params: {params}", failures)
-            expect(params.get("id") != caller_thread_id and params.get("tab_id") != caller_surface, f"caller identity leaked into target capture: {params}", failures)
+            expect(params == {"panel_id": surface, "id": thread_id, "cwd": os.path.realpath(tmp)}, f"wrong runtime params: {params}", failures)
+            expect(params.get("id") != caller_thread_id and params.get("panel_id") != caller_surface, f"caller identity leaked into target capture: {params}", failures)
 
             before = len(state.requests)
             mismatch = env.copy()

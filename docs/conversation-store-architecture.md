@@ -496,6 +496,6 @@ The remaining strategic call (still open):
 - `Sources/Conversation/Strategies/Opencode.swift` — Opencode strategy (fresh-launch only in v1).
 - `Sources/Conversation/Strategies/Kimi.swift` — Kimi strategy (fresh-launch only in v1).
 - `Sources/Conversation/Scrapers/ClaudeCodeScraper.swift`, `CodexScraper.swift` — bounded I/O providers, mockable for tests.
-- `Sources/Conversation/SurfaceActivity.swift` — per-surface `lastActivityTimestamp` primitive (terminal input + output, debounced).
+- `Sources/Conversation/PanelActivity.swift` — per-surface `lastActivityTimestamp` primitive (terminal input + output, debounced).
 - `Tests/ConversationStoreTests/ConversationStoreFailureModeTests.swift` — 1:1 mapping with §Failure modes table.
 - `Tests/ConversationStoreTests/Fixtures/codex/two-panes-same-cwd/` — fixture dir for the staging-QA regression test.

@@ -52,7 +52,7 @@ extension TerminalController {
         let surfaceResult = v2ResolveLiveTerminalSurfaceForRuntimeCapture(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
-            return .err(code: "internal_error", message: "tab resolution", data: nil)
+            return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let cwd = v2String(params, "cwd")
         let result = conversationStoreSync { store in
@@ -65,7 +65,7 @@ extension TerminalController {
         guard let result else {
             return .err(code: "internal_error", message: "store timeout", data: nil)
         }
-        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": result.ref.kind,
@@ -87,7 +87,7 @@ extension TerminalController {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
-            return .err(code: "internal_error", message: "tab resolution", data: nil)
+            return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let cwd = v2String(params, "cwd")
         let placeholder = v2String(params, "placeholder_id")
@@ -167,7 +167,7 @@ extension TerminalController {
         }
         // Only an acknowledged claim bumps the activity floor. An expired
         // request is a complete no-op, including side-channel mutations.
-        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": ref.kind,
@@ -205,7 +205,7 @@ extension TerminalController {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
-            return .err(code: "internal_error", message: "tab resolution", data: nil)
+            return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let cwd = v2String(params, "cwd")
         let reason = v2String(params, "diagnostic_reason")
@@ -290,7 +290,7 @@ extension TerminalController {
                 data: nil
             )
         }
-        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": ref.kind,
@@ -317,7 +317,7 @@ extension TerminalController {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
-            return .err(code: "internal_error", message: "tab resolution", data: nil)
+            return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let reason = v2String(params, "reason")
         // The bridge wraps each result in Optional (nil = store timeout),
@@ -330,7 +330,7 @@ extension TerminalController {
         }
         guard let active = maybeActive else {
             return .err(code: "not_found",
-                        message: "no active conversation for tab",
+                        message: "no active conversation for panel",
                         data: ["surface_id": surfaceId.uuidString])
         }
         if active.kind != kind || active.id != id {
@@ -390,7 +390,7 @@ extension TerminalController {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
-            return .err(code: "internal_error", message: "tab resolution", data: nil)
+            return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let surfaceConv = conversationStoreSync { store in
             await store.conversations(for: surfaceId.uuidString)
@@ -422,12 +422,12 @@ extension TerminalController {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
-            return .err(code: "internal_error", message: "tab resolution", data: nil)
+            return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         _ = conversationStoreSync { store -> Void in
             await store.clear(surfaceId: surfaceId.uuidString)
         }
-        TabActivityTracker.shared.clear(surfaceId: surfaceId.uuidString)
+        PanelActivityTracker.shared.clear(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "result": "cleared"

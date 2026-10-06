@@ -12,13 +12,13 @@ import XCTest
 // Claude hook rule already covered by JournalReducerTests.
 final class FeedProjectorTests: XCTestCase {
     private let sentinel = "SYNTHETIC-PROMPT-264"
-    private let otherTab = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
+    private let otherPanel = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
     private let laterWorkspace = UUID(uuidString: "00000000-0000-0000-0000-000000000009")!
 
-    private func blocked(_ kind: JournalKind, request: String, tab: UUID = JournalTestData.tab, workspace: UUID = JournalTestData.workspace, seq: Int64 = 1) throws -> JournalSnapshot {
+    private func blocked(_ kind: JournalKind, request: String, panel: UUID = JournalTestData.panel, workspace: UUID = JournalTestData.workspace, seq: Int64 = 1) throws -> JournalSnapshot {
         var draft = JournalTestData.draft(kind)
         draft.requestID = request
-        draft.tabID = tab
+        draft.panelID = panel
         draft.workspaceID = workspace
         return try XCTUnwrap(JournalTestData.fold(nil, draft, seq: seq).snapshot)
     }
@@ -31,8 +31,8 @@ final class FeedProjectorTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
-    private func flag(tab: UUID = JournalTestData.tab, workspace: UUID = JournalTestData.workspace, suppressed: Bool = false) -> FeedAttentionFact {
-        FeedAttentionFact(workspaceID: workspace, tabID: tab, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerTabID: otherTab, suppressed: suppressed)
+    private func flag(panel: UUID = JournalTestData.panel, workspace: UUID = JournalTestData.workspace, suppressed: Bool = false) -> FeedAttentionFact {
+        FeedAttentionFact(workspaceID: workspace, panelID: panel, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerPanelID: otherPanel, suppressed: suppressed)
     }
 
     func testFeedAnswerTextPolicyClassifiesNewlinesForPreDeliveryRefusal() {
@@ -45,20 +45,20 @@ final class FeedProjectorTests: XCTestCase {
     @MainActor
     func testAttentionServiceRemovalAndPruningRetireClosedTargets() throws {
         let bridge = FeedProjectionBridge()
-        let service = TabAttentionService(feedProjection: bridge)
+        let service = PanelAttentionService(feedProjection: bridge)
         let workspace = UUID()
-        let flagOnly = UUID(), askTab = UUID(), survivor = UUID()
-        for tab in [flagOnly, askTab, survivor] {
-            try service.raise(workspaceId: workspace, surfaceId: tab, reason: "synthetic-flag", by: .operator, title: nil)
+        let flagOnly = UUID(), askPanel = UUID(), survivor = UUID()
+        for panel in [flagOnly, askPanel, survivor] {
+            try service.raise(workspaceId: workspace, surfaceId: panel, reason: "synthetic-flag", by: .operator, title: nil)
         }
-        let ask = try blocked(.questionRequested, request: "closure", tab: askTab, workspace: workspace)
-        bridge.noteJournal(tabID: askTab, snapshot: ask)
+        let ask = try blocked(.questionRequested, request: "closure", panel: askPanel, workspace: workspace)
+        bridge.noteJournal(panelID: askPanel, snapshot: ask)
         func rows() -> [[String: Any]] { bridge.list(scope: .attention)["rows"] as? [[String: Any]] ?? [] }
         XCTAssertEqual(rows().count, 3)
         // A journal owner disappearing alone must preserve the independent flag.
-        bridge.noteJournal(tabID: askTab, snapshot: nil)
+        bridge.noteJournal(panelID: askPanel, snapshot: nil)
         XCTAssertEqual(rows().count, 3)
-        bridge.noteJournal(tabID: askTab, snapshot: ask)
+        bridge.noteJournal(panelID: askPanel, snapshot: ask)
         service.remove(workspaceId: workspace, surfaceId: flagOnly)
         XCTAssertEqual(rows().count, 2)
         XCTAssertFalse(rows().contains { $0["tab_id"] as? String == flagOnly.uuidString })
@@ -111,21 +111,21 @@ final class FeedProjectorTests: XCTestCase {
                 if kind == .attentionResolved { draft.resolution = .resumed }
                 if kind == .stateChanged { draft.signal = .toolActivity }
                 state = JournalTestData.fold(state, draft, seq: Int64(index + 1)).snapshot
-                bridge.noteJournal(tabID: JournalTestData.tab, snapshot: state)
+                bridge.noteJournal(panelID: JournalTestData.panel, snapshot: state)
                 let bridgeRows = bridge.list(scope: .attention)["rows"] as? [[String: Any]] ?? []
                 XCTAssertEqual(bridgeRows.count, state.flatMap(FeedProjector.blockingKind) == nil ? 0 : 1, name)
-                transitions += tracker.consume(tabID: JournalTestData.tab, snapshot: state)
+                transitions += tracker.consume(panelID: JournalTestData.panel, snapshot: state)
                 if let snapshot = state, FeedProjector.blockingKind(snapshot) != nil {
                     XCTAssertEqual(project([snapshot], scope: .attention).first?.kind, .question, name)
                     var unrelated = JournalTestData.draft(.stateChanged)
                     unrelated.signal = .toolActivity
                     let unchanged = JournalTestData.fold(snapshot, unrelated, seq: snapshot.lastSequence + 1).snapshot
                     XCTAssertEqual(project([unchanged!], scope: .attention).first?.state, "open")
-                    XCTAssertTrue(tracker.consume(tabID: JournalTestData.tab, snapshot: unchanged).isEmpty)
+                    XCTAssertTrue(tracker.consume(panelID: JournalTestData.panel, snapshot: unchanged).isEmpty)
                     var sibling = JournalTestData.draft(.turnStarted)
-                    sibling.tabID = otherTab
+                    sibling.panelID = otherPanel
                     let siblingState = JournalTestData.fold(nil, sibling, seq: 1).snapshot
-                    XCTAssertTrue(tracker.consume(tabID: otherTab, snapshot: siblingState).isEmpty)
+                    XCTAssertTrue(tracker.consume(panelID: otherPanel, snapshot: siblingState).isEmpty)
                 }
                 if kind == .attentionResolved {
                     sawResolution = true
@@ -152,10 +152,10 @@ final class FeedProjectorTests: XCTestCase {
     // claude-bypass-ask: question, plan, and permission are typed rows; other blocked reasons are not.
     func testTypedAsksUseJournalFactsAndLeaveUnknownOptionsNull() throws {
         let question = try blocked(.questionRequested, request: "ask-1")
-        let plan = try blocked(.planReviewRequested, request: "plan-1", tab: otherTab)
-        let permission = try blocked(.approvalRequested, request: "perm-1", tab: UUID(uuidString: "00000000-0000-0000-0000-000000000007")!)
+        let plan = try blocked(.planReviewRequested, request: "plan-1", panel: otherPanel)
+        let permission = try blocked(.approvalRequested, request: "perm-1", panel: UUID(uuidString: "00000000-0000-0000-0000-000000000007")!)
         for (snapshot, kind) in [(question, FeedKind.question), (plan, .plan), (permission, .permission)] {
-            let row = try XCTUnwrap(project([snapshot], scope: .attention).first { $0.tabID == snapshot.owner.tabID })
+            let row = try XCTUnwrap(project([snapshot], scope: .attention).first { $0.panelID == snapshot.owner.panelID })
             XCTAssertEqual(row.kind, kind)
             XCTAssertEqual(row.workspaceID, snapshot.workspaceID)
             XCTAssertEqual(row.source, "hook")
@@ -195,7 +195,7 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertEqual(row.openedAtMs, ended.sinceMs)
 
         let early = try blocked(.questionRequested, request: "early")
-        let late = try blocked(.questionRequested, request: "late", tab: otherTab, workspace: laterWorkspace)
+        let late = try blocked(.questionRequested, request: "late", panel: otherPanel, workspace: laterWorkspace)
         let sorted = project([late, early], scope: .attention)
         XCTAssertEqual(sorted.map(\.workspaceID), [JournalTestData.workspace, laterWorkspace])
     }
@@ -204,7 +204,7 @@ final class FeedProjectorTests: XCTestCase {
     func testPromptAppearsOnlyOnTheJoinedNote() throws {
         let question = try blocked(.questionRequested, request: "ask-1")
         let note = FeedDisplayNote(eventID: UUID(), requestID: "ask-1", prompt: sentinel, options: ["one"])
-        let row = try XCTUnwrap(project([question], notes: [question.owner.tabID: ["ask-1": note]], scope: .attention).first)
+        let row = try XCTUnwrap(project([question], notes: [question.owner.panelID: ["ask-1": note]], scope: .attention).first)
         XCTAssertEqual(row.prompt, sentinel)
         XCTAssertEqual(row.options, ["one"])
         XCTAssertTrue(row.promptAvailable)
@@ -233,26 +233,26 @@ final class FeedProjectorTests: XCTestCase {
         let requestID = try XCTUnwrap(question.requestID)
         let bridge = FeedProjectionBridge()
         let currentEvent = UUID()
-        bridge.noteJournal(tabID: owner.tabID, snapshot: question, eventID: currentEvent)
+        bridge.noteJournal(panelID: owner.panelID, snapshot: question, eventID: currentEvent)
 
         let wrong = bridge.acceptNote(
-            tabID: owner.tabID, workspaceID: workspaceID,
+            panelID: owner.panelID, workspaceID: workspaceID,
             agentKind: owner.agentKind, sessionID: owner.sessionID,
             eventID: UUID(), requestID: requestID, prompt: sentinel, options: nil
         )
         XCTAssertEqual(wrong, FeedNoteError.unmatched.rawValue)
 
         XCTAssertNil(bridge.acceptNote(
-            tabID: owner.tabID, workspaceID: workspaceID,
+            panelID: owner.panelID, workspaceID: workspaceID,
             agentKind: owner.agentKind, sessionID: owner.sessionID,
             eventID: currentEvent, requestID: requestID, prompt: sentinel, options: nil
         ))
         let rows = bridge.list(scope: .attention)["rows"] as? [[String: Any]]
         XCTAssertEqual(rows?.first?["prompt"] as? String, sentinel)
 
-        bridge.noteJournal(tabID: owner.tabID, snapshot: JournalReplayPolicy.restored(question))
+        bridge.noteJournal(panelID: owner.panelID, snapshot: JournalReplayPolicy.restored(question))
         let replayed = bridge.acceptNote(
-            tabID: owner.tabID, workspaceID: workspaceID,
+            panelID: owner.panelID, workspaceID: workspaceID,
             agentKind: owner.agentKind, sessionID: owner.sessionID,
             eventID: currentEvent, requestID: requestID, prompt: "stale", options: nil
         )
@@ -267,10 +267,10 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertEqual(row.state, "open")
         XCTAssertEqual(row.flag?.reason, "synthetic-flag")
         XCTAssertEqual(row.flag?.raisedAtMs, 50)
-        XCTAssertEqual(row.flag?.callerTabID, otherTab)
+        XCTAssertEqual(row.flag?.callerPanelID, otherPanel)
 
         var sibling = JournalTestData.draft(.turnStarted)
-        sibling.tabID = otherTab
+        sibling.panelID = otherPanel
         sibling.workspaceID = laterWorkspace
         let working = try XCTUnwrap(JournalTestData.fold(nil, sibling, seq: 1).snapshot)
         var tool = JournalTestData.draft(.stateChanged)
@@ -281,29 +281,29 @@ final class FeedProjectorTests: XCTestCase {
         let rows = project([afterTool.snapshot!, working], attention: [flag()], scope: .attention)
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows[0].state, "open")
-        XCTAssertEqual(rows[0].tabID, question.owner.tabID)
+        XCTAssertEqual(rows[0].panelID, question.owner.panelID)
     }
 
     func testTrackerEmitsOneOpenThenReplacementAndResolution() throws {
         let question = try blocked(.questionRequested, request: "ask-a")
         var tracker = FeedAskTracker()
-        let opened = tracker.consume(tabID: question.owner.tabID, snapshot: question)
+        let opened = tracker.consume(panelID: question.owner.panelID, snapshot: question)
         XCTAssertEqual(opened.map(\.action), [.opened])
         XCTAssertEqual(opened[0].kind, "question")
         XCTAssertEqual(opened[0].state, "open")
         XCTAssertNil(opened[0].resolution)
-        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: question), [])
+        XCTAssertEqual(tracker.consume(panelID: question.owner.panelID, snapshot: question), [])
 
         var again = JournalTestData.draft(.questionRequested)
         again.requestID = "ask-a"
         let duplicate = JournalTestData.fold(question, again, seq: 2)
         XCTAssertEqual(duplicate.effect, .duplicateEvidence)
-        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: duplicate.snapshot), [])
+        XCTAssertEqual(tracker.consume(panelID: question.owner.panelID, snapshot: duplicate.snapshot), [])
 
         var replacement = JournalTestData.draft(.questionRequested)
         replacement.requestID = "ask-b"
         let replaced = try XCTUnwrap(JournalTestData.fold(question, replacement, seq: 3).snapshot)
-        let swapped = tracker.consume(tabID: question.owner.tabID, snapshot: replaced)
+        let swapped = tracker.consume(panelID: question.owner.panelID, snapshot: replaced)
         XCTAssertEqual(swapped.map(\.action), [.closed, .opened])
         XCTAssertEqual(swapped[0].requestID, "ask-a")
         XCTAssertNil(swapped[0].resolution)
@@ -320,25 +320,25 @@ final class FeedProjectorTests: XCTestCase {
         }
         let resumed = try resolve(.resumed, seq: 4)
         XCTAssertEqual(FeedProjector.resolution(after: resumed), "resumed")
-        let resumedEvents = tracker.consume(tabID: question.owner.tabID, snapshot: resumed)
+        let resumedEvents = tracker.consume(panelID: question.owner.panelID, snapshot: resumed)
         XCTAssertEqual(resumedEvents.map(\.resolution), ["resumed"])
 
         let reopened = try blocked(.planReviewRequested, request: "plan-1", seq: 5)
-        _ = tracker.consume(tabID: reopened.owner.tabID, snapshot: reopened)
+        _ = tracker.consume(panelID: reopened.owner.panelID, snapshot: reopened)
         var cancel = JournalTestData.draft(.attentionResolved)
         cancel.requestID = "plan-1"
         cancel.resolution = .cancelled
         let cancelled = try XCTUnwrap(JournalTestData.fold(reopened, cancel, seq: 6).snapshot)
-        XCTAssertEqual(tracker.consume(tabID: reopened.owner.tabID, snapshot: cancelled).first?.resolution, "cancelled")
+        XCTAssertEqual(tracker.consume(panelID: reopened.owner.panelID, snapshot: cancelled).first?.resolution, "cancelled")
 
         let third = try blocked(.approvalRequested, request: "perm-1", seq: 7)
-        _ = tracker.consume(tabID: third.owner.tabID, snapshot: third)
+        _ = tracker.consume(panelID: third.owner.panelID, snapshot: third)
         var unknown = JournalTestData.draft(.attentionResolved)
         unknown.requestID = "perm-1"
         unknown.resolution = .unknown
         let foldedUnknown = try XCTUnwrap(JournalTestData.fold(third, unknown, seq: 8).snapshot)
         XCTAssertEqual(FeedProjector.resolution(after: foldedUnknown), "unknown")
-        XCTAssertEqual(tracker.consume(tabID: third.owner.tabID, snapshot: foldedUnknown).first?.resolution, "unknown")
+        XCTAssertEqual(tracker.consume(panelID: third.owner.panelID, snapshot: foldedUnknown).first?.resolution, "unknown")
     }
 
     func testReplaySuppressionAndStaleSnapshotsDoNotEmitFalseCloses() throws {
@@ -346,24 +346,24 @@ final class FeedProjectorTests: XCTestCase {
         var tracker = FeedAskTracker()
         let restored = JournalReplayPolicy.restored(question)
         XCTAssertEqual(restored.confirmation, .unconfirmed)
-        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: restored), [])
-        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: question), [])
+        XCTAssertEqual(tracker.consume(panelID: question.owner.panelID, snapshot: restored), [])
+        XCTAssertEqual(tracker.consume(panelID: question.owner.panelID, snapshot: question), [])
 
         var fresh = FeedAskTracker()
-        _ = fresh.consume(tabID: question.owner.tabID, snapshot: question)
+        _ = fresh.consume(panelID: question.owner.panelID, snapshot: question)
         var stale = question
         stale.lastSequence = 0
-        XCTAssertEqual(fresh.consume(tabID: question.owner.tabID, snapshot: stale), [])
-        let gone = fresh.consume(tabID: question.owner.tabID, snapshot: nil)
+        XCTAssertEqual(fresh.consume(panelID: question.owner.panelID, snapshot: stale), [])
+        let gone = fresh.consume(panelID: question.owner.panelID, snapshot: nil)
         XCTAssertEqual(gone.map(\.action), [.closed])
         XCTAssertNil(gone[0].resolution)
 
         let suppressed = project([question], attention: [FeedAttentionFact(
-            workspaceID: JournalTestData.workspace, tabID: question.owner.tabID,
-            flagReason: nil, flagRaisedAtMs: nil, flagCallerTabID: nil, suppressed: true
+            workspaceID: JournalTestData.workspace, panelID: question.owner.panelID,
+            flagReason: nil, flagRaisedAtMs: nil, flagCallerPanelID: nil, suppressed: true
         )], scope: .attention)
         XCTAssertTrue(suppressed.isEmpty)
-        XCTAssertEqual(fresh.consume(tabID: question.owner.tabID, snapshot: nil).count, 0)
+        XCTAssertEqual(fresh.consume(panelID: question.owner.panelID, snapshot: nil).count, 0)
     }
 
     func testClaudeApprovalStopClosesWithoutCancelledResolution() throws {
@@ -378,8 +378,8 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertEqual(completed.turnOutcome, "completed")
         XCTAssertNil(FeedProjector.resolution(after: completed))
         var tracker = FeedAskTracker()
-        _ = tracker.consume(tabID: blockedApproval.owner.tabID, snapshot: blockedApproval)
-        let closed = tracker.consume(tabID: blockedApproval.owner.tabID, snapshot: completed)
+        _ = tracker.consume(panelID: blockedApproval.owner.panelID, snapshot: blockedApproval)
+        let closed = tracker.consume(panelID: blockedApproval.owner.panelID, snapshot: completed)
         XCTAssertEqual(closed.map(\.action), [.closed])
         XCTAssertNil(closed[0].resolution)
         let bytes = try jsonData(closed[0].jsonObject())
@@ -389,7 +389,7 @@ final class FeedProjectorTests: XCTestCase {
 
     func testSuppressionAndConfirmationFilterRowsWithoutASecondProjector() throws {
         let question = try blocked(.questionRequested, request: "ask-1")
-        let suppressedOnly = FeedAttentionFact(workspaceID: JournalTestData.workspace, tabID: question.owner.tabID, flagReason: nil, flagRaisedAtMs: nil, flagCallerTabID: nil, suppressed: true)
+        let suppressedOnly = FeedAttentionFact(workspaceID: JournalTestData.workspace, panelID: question.owner.panelID, flagReason: nil, flagRaisedAtMs: nil, flagCallerPanelID: nil, suppressed: true)
         XCTAssertTrue(project([question], attention: [suppressedOnly], scope: .attention).isEmpty)
         XCTAssertTrue(project([question], attention: [suppressedOnly], scope: .all).isEmpty)
         let kept = try XCTUnwrap(project([question], attention: [flag(suppressed: true)], scope: .attention).first)
@@ -424,12 +424,12 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertFalse(replay.promptAvailable)
 
         let emptyNote = FeedDisplayNote(eventID: UUID(), requestID: "ask-1", prompt: nil, options: [])
-        let joined = try XCTUnwrap(project([question], notes: [question.owner.tabID: ["ask-1": emptyNote]], scope: .attention).first)
+        let joined = try XCTUnwrap(project([question], notes: [question.owner.panelID: ["ask-1": emptyNote]], scope: .attention).first)
         XCTAssertTrue(joined.promptAvailable)
         XCTAssertNil(joined.prompt)
         XCTAssertEqual(joined.options, [])
         let wrong = FeedDisplayNote(eventID: UUID(), requestID: "other", prompt: sentinel, options: ["x"])
-        let missed = try XCTUnwrap(project([question], notes: [question.owner.tabID: ["other": wrong]], scope: .attention).first)
+        let missed = try XCTUnwrap(project([question], notes: [question.owner.panelID: ["other": wrong]], scope: .attention).first)
         XCTAssertFalse(missed.promptAvailable)
         XCTAssertNil(missed.prompt)
 
@@ -441,52 +441,85 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertNotNil(object["flag"] as? [String: Any])
     }
 
+    // C11-337: rows and flags carry the panel spelling beside the legacy tab spelling.
+    func testRowsEmitPanelIdBesideTabIdAndCallerPanelIdBesideCallerTabId() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let row = try XCTUnwrap(project([question], attention: [flag()], scope: .attention).first)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: jsonData(row.jsonObject())) as? [String: Any])
+        XCTAssertEqual(object["panel_id"] as? String, JournalTestData.panel.uuidString)
+        XCTAssertEqual(object["tab_id"] as? String, JournalTestData.panel.uuidString)
+        XCTAssertNil(object["surface_id"])
+        let flagObject = try XCTUnwrap(object["flag"] as? [String: Any])
+        XCTAssertEqual(flagObject["caller_panel_id"] as? String, otherPanel.uuidString)
+        XCTAssertEqual(flagObject["caller_tab_id"] as? String, otherPanel.uuidString)
+        XCTAssertNil(flagObject["caller_surface_id"])
+
+        let noCaller = FeedAttentionFact(workspaceID: JournalTestData.workspace, panelID: question.owner.panelID, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerPanelID: nil, suppressed: false)
+        let bare = try XCTUnwrap(project([question], attention: [noCaller], scope: .attention).first)
+        let bareFlag = try XCTUnwrap(bare.jsonObject()["flag"] as? [String: Any])
+        XCTAssertTrue(bareFlag["caller_panel_id"] is NSNull)
+        XCTAssertTrue(bareFlag["caller_tab_id"] is NSNull)
+    }
+
+    func testFeedPanelParamPrefersPanelIdThenTabIdThenSurfaceId() {
+        let panel = "00000000-0000-0000-0000-0000000000c1"
+        let legacyTab = "00000000-0000-0000-0000-0000000000c2"
+        let surface = "00000000-0000-0000-0000-0000000000c3"
+        XCTAssertEqual(FeedPanelParam.rawValue(in: ["panel_id": panel, "tab_id": legacyTab, "surface_id": surface]), panel)
+        XCTAssertEqual(FeedPanelParam.rawValue(in: ["tab_id": legacyTab, "surface_id": surface]), legacyTab)
+        XCTAssertEqual(FeedPanelParam.rawValue(in: ["surface_id": surface]), surface)
+        XCTAssertNil(FeedPanelParam.rawValue(in: ["workspace_id": panel]))
+        XCTAssertEqual(FeedPanelParam.key(in: ["panel_id": panel]), "panel_id")
+        XCTAssertEqual(FeedPanelParam.key(in: ["tab_id": legacyTab]), "tab_id")
+        XCTAssertEqual(FeedPanelParam.key(in: [:]), "panel_id")
+    }
+
     func testDisplayCacheHonorsCountBytesAndOversize() throws {
         let cache = AskDisplayCache()
-        let tab = JournalTestData.tab
+        let panel = JournalTestData.panel
         func maxNote(request: String, event: UUID = UUID()) -> FeedDisplayNote {
             FeedDisplayNote(eventID: event, requestID: request, prompt: String(repeating: "p", count: 1024),
                             options: Array(repeating: String(repeating: "l", count: 128), count: 12))
         }
         for index in 0..<204 {
-            try cache.store(tabID: tab, note: maxNote(request: "r\(index)"))
+            try cache.store(panelID: panel, note: maxNote(request: "r\(index)"))
         }
         XCTAssertEqual(cache.count, 204)
         XCTAssertEqual(cache.accountedBytes, 204 * 2560)
-        XCTAssertThrowsError(try cache.store(tabID: tab, note: maxNote(request: "overflow"))) { XCTAssertEqual($0 as? FeedNoteError, .overflow) }
+        XCTAssertThrowsError(try cache.store(panelID: panel, note: maxNote(request: "overflow"))) { XCTAssertEqual($0 as? FeedNoteError, .overflow) }
         XCTAssertEqual(cache.count, 204)
 
         let zero = UUID()
-        try cache.store(tabID: tab, note: FeedDisplayNote(eventID: zero, requestID: "slack", prompt: nil, options: []))
+        try cache.store(panelID: panel, note: FeedDisplayNote(eventID: zero, requestID: "slack", prompt: nil, options: []))
         XCTAssertEqual(cache.count, 205)
         XCTAssertEqual(cache.accountedBytes, 204 * 2560)
-        XCTAssertThrowsError(try cache.store(tabID: tab, note: maxNote(request: "slack"))) { XCTAssertEqual($0 as? FeedNoteError, .overflow) }
-        XCTAssertEqual(cache.note(tabID: tab, requestID: "slack")?.eventID, zero)
+        XCTAssertThrowsError(try cache.store(panelID: panel, note: maxNote(request: "slack"))) { XCTAssertEqual($0 as? FeedNoteError, .overflow) }
+        XCTAssertEqual(cache.note(panelID: panel, requestID: "slack")?.eventID, zero)
 
         let repeated = UUID()
-        try cache.store(tabID: tab, note: FeedDisplayNote(eventID: repeated, requestID: "repeat", prompt: "0123456789", options: nil))
+        try cache.store(panelID: panel, note: FeedDisplayNote(eventID: repeated, requestID: "repeat", prompt: "0123456789", options: nil))
         let before = cache.accountedBytes
-        try cache.store(tabID: tab, note: FeedDisplayNote(eventID: repeated, requestID: "repeat", prompt: "abcd", options: nil))
+        try cache.store(panelID: panel, note: FeedDisplayNote(eventID: repeated, requestID: "repeat", prompt: "abcd", options: nil))
         XCTAssertEqual(cache.accountedBytes, before - 6)
-        XCTAssertEqual(cache.note(tabID: tab, requestID: "repeat")?.prompt, "abcd")
+        XCTAssertEqual(cache.note(panelID: panel, requestID: "repeat")?.prompt, "abcd")
 
         let fresh = AskDisplayCache()
-        XCTAssertThrowsError(try fresh.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "big", prompt: String(repeating: "p", count: 1025), options: nil))) {
+        XCTAssertThrowsError(try fresh.store(panelID: panel, note: FeedDisplayNote(eventID: UUID(), requestID: "big", prompt: String(repeating: "p", count: 1025), options: nil))) {
             XCTAssertEqual($0 as? FeedNoteError, .oversize)
         }
-        XCTAssertThrowsError(try fresh.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "many", prompt: nil, options: Array(repeating: "a", count: 13)))) {
+        XCTAssertThrowsError(try fresh.store(panelID: panel, note: FeedDisplayNote(eventID: UUID(), requestID: "many", prompt: nil, options: Array(repeating: "a", count: 13)))) {
             XCTAssertEqual($0 as? FeedNoteError, .oversize)
         }
-        XCTAssertThrowsError(try fresh.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "long", prompt: nil, options: [String(repeating: "x", count: 129)]))) {
+        XCTAssertThrowsError(try fresh.store(panelID: panel, note: FeedDisplayNote(eventID: UUID(), requestID: "long", prompt: nil, options: [String(repeating: "x", count: 129)]))) {
             XCTAssertEqual($0 as? FeedNoteError, .oversize)
         }
         XCTAssertEqual(fresh.count, 0)
 
         let counted = AskDisplayCache()
         for index in 0..<256 {
-            try counted.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "z\(index)", prompt: nil, options: []))
+            try counted.store(panelID: panel, note: FeedDisplayNote(eventID: UUID(), requestID: "z\(index)", prompt: nil, options: []))
         }
-        XCTAssertThrowsError(try counted.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "z256", prompt: nil, options: []))) {
+        XCTAssertThrowsError(try counted.store(panelID: panel, note: FeedDisplayNote(eventID: UUID(), requestID: "z256", prompt: nil, options: []))) {
             XCTAssertEqual($0 as? FeedNoteError, .overflow)
         }
         XCTAssertEqual(counted.count, 256)

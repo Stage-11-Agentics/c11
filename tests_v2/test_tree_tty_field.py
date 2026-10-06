@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pick #3098: c11 tree --json and tab.list return non-null tty for terminal surfaces."""
+"""Pick #3098: c11 tree --json and panel.list return non-null tty for terminal surfaces."""
 
 from __future__ import annotations
 
@@ -61,16 +61,18 @@ def _all_surfaces_from_tree(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     for win in payload.get("windows", []):
         for ws in win.get("workspaces", []):
             for pane in ws.get("areas", []):
-                out.extend(pane.get("tabs", []))
+                out.extend(pane.get("panels", []))
     return out
 
 
 def _run_cli(cli: str, args: List[str]) -> subprocess.CompletedProcess:
     env = dict(os.environ)
+    env.pop("C11_PANEL_ID", None)
     env.pop("C11_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
     env.pop("CMUX_WORKSPACE_ID", None)
     env["CMUX_SOCKET"] = SOCKET_PATH
     cmd = [cli, "--socket", SOCKET_PATH] + args
@@ -78,17 +80,17 @@ def _run_cli(cli: str, args: List[str]) -> subprocess.CompletedProcess:
 
 
 def test_tty_key_present_in_surface_list(c: cmux) -> None:
-    """tab.list must include a 'tty' key for every terminal surface (may be null)."""
+    """panel.list must include a 'tty' key for every terminal surface (may be null)."""
     created = c._call("workspace.create") or {}
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     try:
         time.sleep(0.3)
-        res = c._call("tab.list", {"workspace_id": ws_id}) or {}
-        surfaces = res.get("tabs") or []
-        _must(bool(surfaces), f"tab.list returned no surfaces for ws {ws_id}")
+        res = c._call("panel.list", {"workspace_id": ws_id}) or {}
+        surfaces = res.get("panels") or []
+        _must(bool(surfaces), f"panel.list returned no surfaces for ws {ws_id}")
         for s in surfaces:
-            _must("tty" in s, f"tab.list response missing 'tty' key for terminal surface: {s}")
+            _must("tty" in s, f"panel.list response missing 'tty' key for terminal surface: {s}")
     finally:
         try:
             c.close_workspace(ws_id)
@@ -98,14 +100,14 @@ def test_tty_key_present_in_surface_list(c: cmux) -> None:
 
 
 def test_surface_list_tty_non_null_after_register(c: cmux) -> None:
-    """After registering a TTY via report_tty, tab.list must return a non-null tty."""
+    """After registering a TTY via report_tty, panel.list must return a non-null tty."""
     created = c._call("workspace.create") or {}
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     try:
         time.sleep(0.3)
-        surfaces_res = c._call("tab.list", {"workspace_id": ws_id}) or {}
-        surfaces = surfaces_res.get("tabs") or []
+        surfaces_res = c._call("panel.list", {"workspace_id": ws_id}) or {}
+        surfaces = surfaces_res.get("panels") or []
         _must(bool(surfaces), f"No surfaces in workspace {ws_id}")
         surface_id = str(surfaces[0].get("id") or "")
         _must(bool(surface_id), f"Surface missing id: {surfaces}")
@@ -114,12 +116,12 @@ def test_surface_list_tty_non_null_after_register(c: cmux) -> None:
         _register_tty(SOCKET_PATH, ws_id, surface_id, fake_tty)
         time.sleep(0.2)
 
-        surfaces_after = (c._call("tab.list", {"workspace_id": ws_id}) or {}).get("tabs") or []
+        surfaces_after = (c._call("panel.list", {"workspace_id": ws_id}) or {}).get("panels") or []
         found = next((s for s in surfaces_after if s.get("id") == surface_id), None)
         _must(found is not None, f"Surface {surface_id!r} disappeared after TTY register")
         _must(
             found.get("tty") == fake_tty,
-            f"tab.list tty expected {fake_tty!r}, got {found.get('tty')!r}",
+            f"panel.list tty expected {fake_tty!r}, got {found.get('tty')!r}",
         )
     finally:
         try:
@@ -136,8 +138,8 @@ def test_tree_json_tty_non_null_after_register(c: cmux, cli: str) -> None:
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     try:
         time.sleep(0.3)
-        surfaces_res = c._call("tab.list", {"workspace_id": ws_id}) or {}
-        surfaces = surfaces_res.get("tabs") or []
+        surfaces_res = c._call("panel.list", {"workspace_id": ws_id}) or {}
+        surfaces = surfaces_res.get("panels") or []
         _must(bool(surfaces), f"No surfaces in workspace {ws_id}")
         surface = surfaces[0]
         surface_id = str(surface.get("id") or "")

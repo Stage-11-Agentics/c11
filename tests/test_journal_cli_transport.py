@@ -32,7 +32,8 @@ def main():
                     calls.append(message)
                     method = message['method']
                     if method == 'system.capabilities':
-                        response = {'ok': True, 'result': {'methods': ['tab.list', 'agent.event.append']}}
+                        response = {'ok': True, 'result': {'methods': ['panel.list', 'agent.event.append'],
+                                                                'features': [{'id': 'vocabulary.workspace_area_panel', 'version': 1}]}}
                     elif mode == 'stall':
                         time.sleep(2)
                         return

@@ -32,7 +32,9 @@ extension TerminalController {
             "position": v2OrNull(snapshot.index),
             "back_count": snapshot.index ?? 0,
             "forward_count": snapshot.index.map { snapshot.entries.count - $0 - 1 } ?? 0,
-            "entries": rows
+            // `entries` is an opaque key for completion (user data elsewhere), so
+            // these c11-generated rows get their panel_* + tab_* pairs here.
+            "entries": rows.map { LegacyWireAliases.completeResult($0) }
         ])
     }
 
@@ -69,9 +71,9 @@ extension TerminalController {
             "workspace_id": workspace.id.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
             "workspace_title": workspace.title,
-            "tab_id": entry.panelId.uuidString,
-            "tab_ref": v2Ref(kind: .surface, uuid: entry.panelId),
-            "title": workspace.tabTitle(panelId: entry.panelId) ?? panel.displayTitle,
+            "panel_id": entry.panelId.uuidString,
+            "panel_ref": v2Ref(kind: .surface, uuid: entry.panelId),
+            "title": workspace.panelTitle(panelId: entry.panelId) ?? panel.displayTitle,
             "type": panel.panelType.rawValue,
             "seen_at": Self.historyTimestampFormatter.string(from: entry.seenAt),
             "dwell_seconds": (entry.dwell * 1000).rounded() / 1000,

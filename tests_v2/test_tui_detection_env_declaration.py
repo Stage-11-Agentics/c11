@@ -39,9 +39,9 @@ def main() -> int:
         # Uses explicit --surface so the CLI inside the surface targets its own surface.
         cmd = (
             f"cmux set-agent --type claude-code --model claude-opus-4-7 "
-            f"--tab {surface_id}\n"
+            f"--panel {surface_id}\n"
         )
-        client._call("tab.send_text", {"tab_id": surface_id, "text": cmd})
+        client._call("panel.send_text", {"panel_id": surface_id, "text": cmd})
 
         meta, sources = wait_for_terminal_type(
             client,

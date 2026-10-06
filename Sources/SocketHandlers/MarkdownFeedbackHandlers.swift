@@ -139,7 +139,7 @@ extension TerminalController {
             return .err(code: "permission_denied", message: "File not readable: \(filePath)", data: ["path": filePath])
         }
 
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create markdown tab", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
         v2MainSync {
             // M6 — if pane_id is supplied, locate the owning workspace across all
             // windows so `markdown.open --pane P` works standalone (spec: --pane
@@ -175,14 +175,14 @@ extension TerminalController {
                     return
                 }
 
-                let createdPanel = ws.newMarkdownTab(
+                let createdPanel = ws.newMarkdownPanel(
                     inPane: targetPaneId,
                     filePath: filePath,
                     focus: v2FocusAllowed()
                 )
 
                 guard let markdownPanelId = createdPanel?.id else {
-                    result = .err(code: "internal_error", message: "Failed to create markdown tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
                     return
                 }
 
@@ -205,11 +205,11 @@ extension TerminalController {
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
+                result = .err(code: "not_found", message: "No focused panel to split", data: nil)
                 return
             }
             guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source tab not found", data: ["surface_id": sourceSurfaceId.uuidString])
+                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": sourceSurfaceId.uuidString])
                 return
             }
 
@@ -223,7 +223,7 @@ extension TerminalController {
             )
 
             guard let markdownPanelId = createdPanel?.id else {
-                result = .err(code: "internal_error", message: "Failed to create markdown tab", data: nil)
+                result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
                 return
             }
 
@@ -252,7 +252,7 @@ extension TerminalController {
 
     private func v2MarkdownGetContent(params: [String: Any]) -> V2CallResult {
         guard let resolved = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "Tab not found", data: nil)
+            return .err(code: "not_found", message: "Panel not found", data: nil)
         }
         let (ws, surfaceId) = resolved
 
@@ -260,11 +260,11 @@ extension TerminalController {
         var errResult: V2CallResult?
         v2MainSync {
             guard let panel = ws.panels[surfaceId] else {
-                errResult = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
+                errResult = .err(code: "not_found", message: "Panel not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            guard let markdown = panel as? MarkdownTab else {
-                errResult = .err(code: "invalid_params", message: "Tab is not a markdown tab", data: ["surface_id": surfaceId.uuidString])
+            guard let markdown = panel as? MarkdownPanel else {
+                errResult = .err(code: "invalid_params", message: "Panel is not a markdown panel", data: ["surface_id": surfaceId.uuidString])
                 return
             }
 
@@ -276,7 +276,7 @@ extension TerminalController {
             var out: [String: Any] = [
                 "surface_id": surfaceId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "type": TabContentType.markdown.rawValue,
+                "type": PanelType.markdown.rawValue,
                 "file_path": markdown.filePath,
                 "content_length": contentBytes.count,
                 "content_sha256": sha,
@@ -292,7 +292,7 @@ extension TerminalController {
         }
         if let errResult { return errResult }
         guard let out = payload else {
-            return .err(code: "not_found", message: "Tab not found", data: nil)
+            return .err(code: "not_found", message: "Panel not found", data: nil)
         }
         return .ok(out)
     }

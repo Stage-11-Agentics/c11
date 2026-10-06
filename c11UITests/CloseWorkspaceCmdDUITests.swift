@@ -58,10 +58,10 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             "Expected Cmd+W to route through the close-current-tab action"
         )
 
-        if waitForCloseTabAlert(app: app, timeout: 5.0) {
-            clickCloseOnCloseTabAlert(app: app)
+        if waitForClosePanelAlert(app: app, timeout: 5.0) {
+            clickCloseOnClosePanelAlert(app: app)
             XCTAssertFalse(
-                isCloseTabAlertPresent(app: app),
+                isClosePanelAlertPresent(app: app),
                 "Expected close tab confirmation to dismiss after confirming the close"
             )
         }
@@ -650,10 +650,10 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
-    private func waitForCloseTabAlert(app: XCUIApplication, timeout: TimeInterval) -> Bool {
+    private func waitForClosePanelAlert(app: XCUIApplication, timeout: TimeInterval) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                self.isCloseTabAlertPresent(app: app)
+                self.isClosePanelAlertPresent(app: app)
             },
             object: NSObject()
         )
@@ -661,22 +661,22 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
     }
 
     // Must match the defaultValue for dialog.closeTab.title in TabManager.
-    private func isCloseTabAlertPresent(app: XCUIApplication) -> Bool {
-        if app.dialogs.containing(.staticText, identifier: "Close tab?").firstMatch.exists { return true }
-        if app.alerts.containing(.staticText, identifier: "Close tab?").firstMatch.exists { return true }
+    private func isClosePanelAlertPresent(app: XCUIApplication) -> Bool {
+        if app.dialogs.containing(.staticText, identifier: "Close panel?").firstMatch.exists { return true }
+        if app.alerts.containing(.staticText, identifier: "Close panel?").firstMatch.exists { return true }
         if app.otherElements["AreaInteraction.confirm.card"].firstMatch.exists { return true }
-        return app.staticTexts["Close tab?"].exists
+        return app.staticTexts["Close panel?"].exists
     }
 
     // Must match the defaultValue for dialog.closeTab.title in TabManager.
-    private func clickCloseOnCloseTabAlert(app: XCUIApplication) {
-        let dialog = app.dialogs.containing(.staticText, identifier: "Close tab?").firstMatch
+    private func clickCloseOnClosePanelAlert(app: XCUIApplication) {
+        let dialog = app.dialogs.containing(.staticText, identifier: "Close panel?").firstMatch
         if dialog.exists {
             dialog.buttons["Close"].firstMatch.click()
             return
         }
 
-        let alert = app.alerts.containing(.staticText, identifier: "Close tab?").firstMatch
+        let alert = app.alerts.containing(.staticText, identifier: "Close panel?").firstMatch
         if alert.exists {
             alert.buttons["Close"].firstMatch.click()
             return

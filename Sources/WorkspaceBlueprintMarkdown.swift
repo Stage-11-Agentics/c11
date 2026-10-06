@@ -124,17 +124,17 @@ enum WorkspaceBlueprintMarkdown {
             case .unsupportedSurfaceKind(let raw):
                 return String(
                     localized: "blueprint.markdown.error.unsupportedSurfaceKind",
-                    defaultValue: "blueprint markdown: unsupported tab kind '\(raw)' (expected terminal/browser/markdown)"
+                    defaultValue: "blueprint markdown: unsupported panel kind '\(raw)' (expected terminal/browser/markdown)"
                 )
             case .duplicateSurfaceID(let id):
                 return String(
                     localized: "blueprint.markdown.error.duplicateSurfaceID",
-                    defaultValue: "blueprint markdown: duplicate tab id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
+                    defaultValue: "blueprint markdown: duplicate panel id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
                 )
             case .invalidAgentKind(let surfaceID, let kind):
                 return String(
                     localized: "blueprint.markdown.error.invalidAgentKind",
-                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on tab '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
+                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on panel '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
                 )
             case .invalidCompanionLink(let code, let sourceID, let targetID):
                 let target = targetID.map { " -> '\($0)'" } ?? ""
@@ -162,8 +162,8 @@ enum WorkspaceBlueprintMarkdown {
         }
         var explicitIDs = Set<String>()
         try reserveExplicitSurfaceIDs(in: rootNode, reserved: &explicitIDs)
-        var idGen = TabIDGenerator(reservedIDs: explicitIDs)
-        var surfaces: [TabSpec] = []
+        var idGen = PanelIDGenerator(reservedIDs: explicitIDs)
+        var surfaces: [PanelSpec] = []
         let layout = try buildLayoutTree(from: rootNode, surfaces: &surfaces, idGen: &idGen)
         try validateCompanionFields(in: surfaces)
 
@@ -315,7 +315,7 @@ enum WorkspaceBlueprintMarkdown {
 
     // MARK: - Layout tree conversion (YAML → LayoutTreeSpec)
 
-    private struct TabIDGenerator {
+    private struct PanelIDGenerator {
         var counter: Int = 1
         var reservedIDs: Set<String>
 
@@ -341,9 +341,9 @@ enum WorkspaceBlueprintMarkdown {
             }
             return
         }
-        if keys.contains("tabs") {
-            for tabNode in node.lookup("tabs")?.asList ?? [] {
-                try reserveExplicitSurfaceIDs(in: tabNode, reserved: &reserved)
+        if let listKey = panelListKey(in: keys) {
+            for panelNode in node.lookup(listKey)?.asList ?? [] {
+                try reserveExplicitSurfaceIDs(in: panelNode, reserved: &reserved)
             }
             return
         }
@@ -353,17 +353,26 @@ enum WorkspaceBlueprintMarkdown {
         }
     }
 
+    /// The key of a multi-panel area's list: `panels:` is canonical, and
+    /// `tabs:` is still read. `panels:` wins when both are present.
+    private static func panelListKey(in keys: Set<String>) -> String? {
+        if keys.contains("panels") { return "panels" }
+        // C11-337: legacy spelling, accepted forever.
+        if keys.contains("tabs") { return "tabs" }
+        return nil
+    }
+
     private static func surfaceID(
         from node: YAML.Value,
-        generator: inout TabIDGenerator
+        generator: inout PanelIDGenerator
     ) -> String {
         nullIfEmpty(node.lookup("id")?.asScalar) ?? generator.mint()
     }
 
     private static func buildLayoutTree(
         from node: YAML.Value,
-        surfaces: inout [TabSpec],
-        idGen: inout TabIDGenerator
+        surfaces: inout [PanelSpec],
+        idGen: inout PanelIDGenerator
     ) throws -> LayoutTreeSpec {
         let mapping = node.asMapping ?? []
         let keys = Set(mapping.map { $0.0 })
@@ -391,14 +400,14 @@ enum WorkspaceBlueprintMarkdown {
             ))
         }
 
-        // Multi-tab pane: has `tabs:` list.
-        if keys.contains("tabs") {
-            let tabNodes = node.lookup("tabs")?.asList ?? []
+        // Multi-panel area: has a `panels:` (or legacy `tabs:`) list.
+        if let listKey = panelListKey(in: keys) {
+            let panelNodes = node.lookup(listKey)?.asList ?? []
             var ids: [String] = []
-            for tabNode in tabNodes {
-                let id = surfaceID(from: tabNode, generator: &idGen)
+            for panelNode in panelNodes {
+                let id = surfaceID(from: panelNode, generator: &idGen)
                 ids.append(id)
-                surfaces.append(try buildSurfaceSpec(id: id, from: tabNode))
+                surfaces.append(try buildSurfaceSpec(id: id, from: panelNode))
             }
             let selectedIndex: Int? = node.lookup("selected")?.asScalar.flatMap { Int($0) }
             return .pane(LayoutTreeSpec.AreaSpec(
@@ -413,11 +422,11 @@ enum WorkspaceBlueprintMarkdown {
         return .pane(LayoutTreeSpec.AreaSpec(surfaceIds: [id], selectedIndex: nil))
     }
 
-    private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> TabSpec {
+    private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> PanelSpec {
         guard let typeRaw = node.lookup("type")?.asScalar, !typeRaw.isEmpty else {
             throw ParseError.missingType
         }
-        guard let kind = TabSpecKind(rawValue: typeRaw.lowercased()) else {
+        guard let kind = PanelSpecKind(rawValue: typeRaw.lowercased()) else {
             throw ParseError.unsupportedSurfaceKind(typeRaw)
         }
         let title = node.lookup("title")?.asScalar
@@ -430,7 +439,7 @@ enum WorkspaceBlueprintMarkdown {
         // Opt-in `submit:` — only the exact scalar `true` (case-insensitive)
         // enables execution; anything else, including absence, stays false.
         let submit = node.lookup("submit")?.asScalar?.lowercased() == "true"
-        return TabSpec(
+        return PanelSpec(
             id: id,
             kind: kind,
             title: nullIfEmpty(title),
@@ -447,7 +456,7 @@ enum WorkspaceBlueprintMarkdown {
         )
     }
 
-    private static func validateCompanionFields(in surfaces: [TabSpec]) throws {
+    private static func validateCompanionFields(in surfaces: [PanelSpec]) throws {
         let byID = Dictionary(uniqueKeysWithValues: surfaces.map { ($0.id, $0) })
         for surface in surfaces {
             if let declaredKind = surface.declaredAgentKind,
@@ -516,7 +525,7 @@ enum WorkspaceBlueprintMarkdown {
     /// subsequent keys live at column `indent`.
     private static func emitLayoutNode(
         _ tree: LayoutTreeSpec,
-        surfaces: [TabSpec],
+        surfaces: [PanelSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -530,7 +539,7 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func emitSplitNode(
         _ split: LayoutTreeSpec.SplitSpec,
-        surfaces: [TabSpec],
+        surfaces: [PanelSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -547,7 +556,7 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func emitPaneNode(
         _ area: LayoutTreeSpec.AreaSpec,
-        surfaces: [TabSpec],
+        surfaces: [PanelSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -557,9 +566,9 @@ enum WorkspaceBlueprintMarkdown {
         if resolved.count == 1 {
             return emitSurfaceFields(resolved[0], firstLinePad: firstLinePad, restPad: pad)
         }
-        // Multi-tab pane.
+        // Multi-panel area.
         var out = ""
-        out += "\(firstLinePad)tabs:\n"
+        out += "\(firstLinePad)panels:\n"
         for surface in resolved {
             out += emitSurfaceFields(
                 surface,
@@ -574,7 +583,7 @@ enum WorkspaceBlueprintMarkdown {
     }
 
     private static func emitSurfaceFields(
-        _ surface: TabSpec,
+        _ surface: PanelSpec,
         firstLinePad: String,
         restPad: String
     ) -> String {

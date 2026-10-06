@@ -348,7 +348,7 @@ class Harness:
                                      '-' if width is None else str(width),
                                      '-' if height is None else str(height)]).stdout)
         requests = self.forwarder.trace[floor:]
-        require(not any(row.get('method') in ('window.focus', 'workspace.select', 'tab.focus',
+        require(not any(row.get('method') in ('window.focus', 'workspace.select', 'panel.focus',
                                              'legacy.focus_window') for row in requests),
                 'resize-window must never issue a focus command')
         resizes = [row for row in requests if row.get('method') == 'window.resize']

@@ -1,6 +1,6 @@
 # Authentication Patterns
 
-Login flows, session persistence, OAuth, and 2FA patterns for c11 browser tabs.
+Login flows, session persistence, OAuth, and 2FA patterns for c11 browser panels.
 
 **Related**: [session-management.md](session-management.md), [SKILL.md](../SKILL.md)
 
@@ -19,15 +19,15 @@ Login flows, session persistence, OAuth, and 2FA patterns for c11 browser tabs.
 
 ```bash
 c11 browser open https://app.example.com/login --json
-c11 browser tab:7 wait --load-state complete --timeout-ms 15000
+c11 browser panel:7 wait --load-state complete --timeout-ms 15000
 
-c11 browser tab:7 snapshot --interactive
+c11 browser panel:7 snapshot --interactive
 # [ref=e1] email, [ref=e2] password, [ref=e3] submit
 
-c11 browser tab:7 fill e1 "user@example.com"
-c11 browser tab:7 fill e2 "$APP_PASSWORD"
-c11 browser tab:7 click e3 --snapshot-after --json
-c11 browser tab:7 wait --url-contains "/dashboard" --timeout-ms 20000
+c11 browser panel:7 fill e1 "user@example.com"
+c11 browser panel:7 fill e2 "$APP_PASSWORD"
+c11 browser panel:7 click e3 --snapshot-after --json
+c11 browser panel:7 wait --url-contains "/dashboard" --timeout-ms 20000
 ```
 
 ## Saving Authentication State
@@ -35,46 +35,46 @@ c11 browser tab:7 wait --url-contains "/dashboard" --timeout-ms 20000
 After logging in, save state for reuse:
 
 ```bash
-c11 browser tab:7 state save ./auth-state.json
+c11 browser panel:7 state save ./auth-state.json
 ```
 
-State includes cookies, localStorage, sessionStorage, and open page-tab metadata for that tab.
+State includes cookies, localStorage, sessionStorage, and open page metadata for that panel.
 
 ## Restoring Authentication
 
 ```bash
 c11 browser open https://app.example.com --json
-c11 browser tab:8 state load ./auth-state.json
-c11 browser tab:8 goto https://app.example.com/dashboard
-c11 browser tab:8 snapshot --interactive
+c11 browser panel:8 state load ./auth-state.json
+c11 browser panel:8 goto https://app.example.com/dashboard
+c11 browser panel:8 snapshot --interactive
 ```
 
 ## OAuth / SSO Flows
 
 ```bash
 c11 browser open https://app.example.com/auth/google --json
-c11 browser tab:7 wait --url-contains "accounts.google.com" --timeout-ms 30000
-c11 browser tab:7 snapshot --interactive
+c11 browser panel:7 wait --url-contains "accounts.google.com" --timeout-ms 30000
+c11 browser panel:7 snapshot --interactive
 
-c11 browser tab:7 fill e1 "user@gmail.com"
-c11 browser tab:7 click e2 --snapshot-after --json
+c11 browser panel:7 fill e1 "user@gmail.com"
+c11 browser panel:7 click e2 --snapshot-after --json
 
-c11 browser tab:7 wait --url-contains "app.example.com" --timeout-ms 45000
-c11 browser tab:7 state save ./oauth-state.json
+c11 browser panel:7 wait --url-contains "app.example.com" --timeout-ms 45000
+c11 browser panel:7 state save ./oauth-state.json
 ```
 
 ## Two-Factor Authentication
 
 ```bash
 c11 browser open https://app.example.com/login --json
-c11 browser tab:7 snapshot --interactive
-c11 browser tab:7 fill e1 "user@example.com"
-c11 browser tab:7 fill e2 "$APP_PASSWORD"
-c11 browser tab:7 click e3
+c11 browser panel:7 snapshot --interactive
+c11 browser panel:7 fill e1 "user@example.com"
+c11 browser panel:7 fill e2 "$APP_PASSWORD"
+c11 browser panel:7 click e3
 
 # complete 2FA manually in the webview, then:
-c11 browser tab:7 wait --url-contains "/dashboard" --timeout-ms 120000
-c11 browser tab:7 state save ./2fa-state.json
+c11 browser panel:7 wait --url-contains "/dashboard" --timeout-ms 120000
+c11 browser panel:7 state save ./2fa-state.json
 ```
 
 ## Cookie-Based Auth
@@ -85,8 +85,8 @@ session cookies, authenticated pages will keep landing on the login route no mat
 cookie was set; drive that server's API with `curl`/`fetch` instead, or serve it over HTTPS.
 
 ```bash
-c11 browser tab:7 cookies set session_token "abc123xyz"
-c11 browser tab:7 goto https://app.example.com/dashboard
+c11 browser panel:7 cookies set session_token "abc123xyz"
+c11 browser panel:7 goto https://app.example.com/dashboard
 ```
 
 ## Token Refresh Handling
@@ -96,22 +96,22 @@ c11 browser tab:7 goto https://app.example.com/dashboard
 set -euo pipefail
 
 STATE_FILE="./auth-state.json"
-TAB="tab:7"
+PANEL="panel:7"
 
 if [ -f "$STATE_FILE" ]; then
-  c11 browser "$TAB" state load "$STATE_FILE"
+  c11 browser "$PANEL" state load "$STATE_FILE"
 fi
 
-c11 browser "$TAB" goto https://app.example.com/dashboard
-URL=$(c11 browser "$TAB" get url)
+c11 browser "$PANEL" goto https://app.example.com/dashboard
+URL=$(c11 browser "$PANEL" get url)
 
 if printf '%s' "$URL" | grep -q '/login'; then
-  c11 browser "$TAB" snapshot --interactive
-  c11 browser "$TAB" fill e1 "$APP_USERNAME"
-  c11 browser "$TAB" fill e2 "$APP_PASSWORD"
-  c11 browser "$TAB" click e3
-  c11 browser "$TAB" wait --url-contains "/dashboard" --timeout-ms 20000
-  c11 browser "$TAB" state save "$STATE_FILE"
+  c11 browser "$PANEL" snapshot --interactive
+  c11 browser "$PANEL" fill e1 "$APP_USERNAME"
+  c11 browser "$PANEL" fill e2 "$APP_PASSWORD"
+  c11 browser "$PANEL" click e3
+  c11 browser "$PANEL" wait --url-contains "/dashboard" --timeout-ms 20000
+  c11 browser "$PANEL" state save "$STATE_FILE"
 fi
 ```
 
@@ -122,6 +122,6 @@ fi
 3. Clear state/cookies after sensitive tasks:
 
 ```bash
-c11 browser tab:7 cookies clear
+c11 browser panel:7 cookies clear --all
 rm -f ./auth-state.json
 ```

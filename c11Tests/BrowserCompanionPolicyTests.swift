@@ -19,7 +19,7 @@ final class BrowserCompanionPolicyTests: XCTestCase {
         kind: String = "codex"
     ) -> AgentDescriptor {
         AgentDescriptor(
-            identity: CompanionTabIdentity(
+            identity: CompanionPanelIdentity(
                 surfaceID: id,
                 surfaceRef: "surface:\(ordinal)",
                 surfaceOrdinal: ordinal,
@@ -31,10 +31,10 @@ final class BrowserCompanionPolicyTests: XCTestCase {
 
     private var agentA: AgentDescriptor { descriptor(agentAID, name: "Maya", ordinal: 3) }
     private var agentB: AgentDescriptor { descriptor(agentBID, name: "Build Agent", ordinal: 5) }
-    private var linkA: AgentTabLink { AgentTabLink(surfaceID: agentAID, lastKnownName: "Maya") }
+    private var linkA: AgentPanelLink { AgentPanelLink(surfaceID: agentAID, lastKnownName: "Maya") }
 
     private func presentation(
-        link: AgentTabLink?,
+        link: AgentPanelLink?,
         active: UUID?,
         generation: UInt64 = 0,
         agents: [AgentDescriptor]? = nil,
@@ -262,11 +262,11 @@ final class BrowserCompanionPolicyTests: XCTestCase {
     }
 
     func testOrphanFormattingExpandsCollidingPrefixesAndNeverUsesStaleRef() {
-        let first = AgentTabLink(
+        let first = AgentPanelLink(
             surfaceID: UUID(uuidString: "7F2A8C00-0000-0000-0000-000000000000")!,
             lastKnownName: "Maya"
         )
-        let second = AgentTabLink(
+        let second = AgentPanelLink(
             surfaceID: UUID(uuidString: "7F2A8C10-0000-0000-0000-000000000000")!,
             lastKnownName: "Maya"
         )
@@ -293,7 +293,7 @@ final class BrowserCompanionPolicyTests: XCTestCase {
     }
 
     func testRepeatedVisibleLinksToSameOrphanDoNotArtificiallyExpandPrefix() {
-        let repeated = AgentTabLink(
+        let repeated = AgentPanelLink(
             surfaceID: UUID(uuidString: "12345678-0000-0000-0000-000000000000")!,
             lastKnownName: nil
         )
@@ -371,7 +371,7 @@ final class BrowserCompanionPolicyTests: XCTestCase {
                 "companion_link_orphan_omitted", "companion_link_source_not_browser",
                 "companion_link_target_missing", "companion_link_target_not_terminal",
                 "companion_link_target_not_agent", "companion_link_apply_failed",
-                "blueprint_duplicate_surface_id", "blueprint_invalid_agent_kind",
+                "blueprint_duplicate_panel_id", "blueprint_invalid_agent_kind",
             ]
         )
     }

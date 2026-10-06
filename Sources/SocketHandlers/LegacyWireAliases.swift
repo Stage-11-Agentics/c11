@@ -1,14 +1,18 @@
 import Foundation
 
-// C11-248: wire vocabulary is workspace > area > tab. Canonical socket methods
-// are `tab.*` / `area.*`, canonical refs are `tab:N` / `area:N`, canonical JSON
-// keys are `tab_*` / `area_*`. Every older spelling (`surface.*` / `pane.*`
-// methods, `surface:N` / `pane:N` refs, `surface_*` / `pane_*` / `panel_*` keys)
-// keeps working as a hidden alias: this file is the one place that knows the
-// old names.
+// C11-337: wire vocabulary is workspace > area > panel. Canonical socket
+// methods are `panel.*` / `area.*`, canonical refs are `panel:N` / `area:N`,
+// canonical JSON keys are `panel_*` / `area_*`. Every older spelling keeps
+// working as a hidden alias on input: `tab.*` / `surface.*` / `pane.*`
+// methods, `tab:N` / `surface:N` / `pane:N` refs, `tab_*` / `surface_*` /
+// `pane_*` keys. This file is the one place that knows the old names.
 //
-// C11-248: legacy keys, remove after one release (the whole `legacyKeyPairs`
-// table and the output/input completion that reads it).
+// Output: results carry `panel_*` beside the v0.67 `tab_*` spelling (whose ref
+// values say `tab:N`), and `area_*` alone. `surface_*` / `pane_*` are no longer
+// emitted; they had their one release.
+//
+// C11-337: stop emitting `tab_*` at 1.1 (set `emitOld: false` on the panel
+// family); input aliases stay forever.
 enum LegacyWireAliases {
     // MARK: - Methods
 
@@ -17,36 +21,57 @@ enum LegacyWireAliases {
     /// so every registry (handlers, off-main set, focus-intent set,
     /// capabilities) holds only canonical names.
     nonisolated static func canonicalMethod(_ method: String) -> String {
+        if method.hasPrefix("tab.") {
+            return "panel." + method.dropFirst("tab.".count)
+        }
         if method.hasPrefix("surface.") {
-            return "tab." + method.dropFirst("surface.".count)
+            return "panel." + method.dropFirst("surface.".count)
+        }
+        if method == "area.tabs" || method == "pane.surfaces" {
+            return "area.panels"
         }
         if method.hasPrefix("pane.") {
-            let rest = String(method.dropFirst("pane.".count))
-            return "area." + (rest == "surfaces" ? "tabs" : rest)
+            return "area." + method.dropFirst("pane.".count)
         }
-        if method == "notification.create_for_surface" {
-            return "notification.create_for_tab"
+        if method.hasPrefix("browser.tab.") {
+            return "browser.panel." + method.dropFirst("browser.tab.".count)
         }
-        if let canonical = legacyDebugMethods[method] {
-            return canonical
+        if method == "notification.create_for_tab" || method == "notification.create_for_surface" {
+            return "notification.create_for_panel"
+        }
+        if method.hasPrefix("debug.") {
+            if let canonical = legacyDebugMethods[method] {
+                return canonical
+            }
+            for (old, new) in legacyDebugPrefixes where method.hasPrefix(old) {
+                return new + method.dropFirst(old.count)
+            }
         }
         return method
     }
 
     /// Old debug-only method names. `empty_panel` counts the Empty Area view, so
-    /// it becomes `empty_area`; `panel_snapshot` snapshots one tab.
+    /// it maps to `empty_area` (there "panel" never meant the c11 leaf).
     nonisolated private static let legacyDebugMethods: [String: String] = [
         "debug.empty_panel.count": "debug.empty_area.count",
         "debug.empty_panel.reset": "debug.empty_area.reset",
-        "debug.panel_snapshot": "debug.tab_snapshot",
-        "debug.panel_snapshot.reset": "debug.tab_snapshot.reset",
+        "debug.tab_snapshot": "debug.panel_snapshot",
+        "debug.tab_snapshot.reset": "debug.panel_snapshot.reset",
+        "debug.command_palette.rename_tab.open": "debug.command_palette.rename_panel.open",
+    ]
+
+    /// Old debug chrome method families (panel sheet, rail and strip).
+    nonisolated private static let legacyDebugPrefixes: [(old: String, new: String)] = [
+        ("debug.tab_sheet.", "debug.panel_sheet."),
+        ("debug.tab_rail.", "debug.panel_rail."),
+        ("debug.tab_strip.", "debug.panel_strip."),
     ]
 
     /// The canonical spelling of a handler-side param key, for error text
-    /// (`surface_id`/`panel_id` -> `tab_id`, `pane_id` -> `area_id`).
+    /// (`surface_id`/`tab_id` -> `panel_id`, `pane_id` -> `area_id`).
     nonisolated static func displayKey(_ key: String) -> String {
         switch key {
-        case "surface_id", "panel_id": return "tab_id"
+        case "surface_id", "tab_id": return "panel_id"
         case "pane_id": return "area_id"
         default: return key
         }
@@ -54,8 +79,8 @@ enum LegacyWireAliases {
 
     // MARK: - Handles
 
-    /// `surface:N` -> `tab:N`, `pane:N` -> `area:N` (case-insensitive, trimmed).
-    /// Anything else is returned unchanged.
+    /// `tab:N` / `surface:N` -> `panel:N`, `pane:N` -> `area:N`
+    /// (case-insensitive prefix, trimmed). Anything else is returned unchanged.
     nonisolated static func canonicalHandle(_ handle: String) -> String {
         let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
         // Only the prefix is case-folded; the remainder (an ordinal, or a fallback UUID) is kept verbatim.
@@ -63,99 +88,168 @@ enum LegacyWireAliases {
         let prefix = trimmed[..<colon].lowercased()
         let rest = trimmed[trimmed.index(after: colon)...]
         switch prefix {
-        case "surface", "tab": return "tab:" + rest
-        case "pane", "area": return "area:" + rest
+        case "panel", "tab", "surface": return "panel:" + rest
+        case "area", "pane": return "area:" + rest
         default: return handle
         }
     }
 
-    /// `tab:N` -> `surface:N`, `area:N` -> `pane:N`: the old-format value that
-    /// rides beside the new one in legacy keys.
+    /// `panel:N` (or any spelling of it) -> `tab:N`: the v0.67 value that rides
+    /// beside the canonical one in `tab_*` keys. Area refs keep `area:N`.
     nonisolated static func legacyHandle(_ handle: String) -> String {
-        if handle.hasPrefix("tab:") { return "surface:" + handle.dropFirst("tab:".count) }
-        if handle.hasPrefix("area:") { return "pane:" + handle.dropFirst("area:".count) }
-        return handle
+        let canonical = canonicalHandle(handle)
+        if canonical.hasPrefix("panel:") { return "tab:" + canonical.dropFirst("panel:".count) }
+        return canonical
+    }
+
+    /// The ref spelling an old client expects back, from the method name it
+    /// sent: `tab.*` (v0.67) -> `tab:`, `surface.*` (older) -> `surface:`.
+    /// `system.tree` / `system.identify` kept their names, so there the old
+    /// client shows in its `caller` block: `tab_id` (or `surface_id`) without
+    /// `panel_id`. Canonical requests return nil.
+    nonisolated static func legacyRefPrefix(forRawMethod method: String, params: [String: Any] = [:]) -> String? {
+        if method.hasPrefix("tab.") || method == "area.tabs" || method.hasPrefix("browser.tab.") {
+            return "tab:"
+        }
+        if method.hasPrefix("surface.") || method == "pane.surfaces" {
+            return "surface:"
+        }
+        if method == "system.tree" || method == "system.identify",
+           let caller = params["caller"] as? [String: Any], caller["panel_id"] == nil {
+            if caller["tab_id"] != nil { return "tab:" }
+            if caller["surface_id"] != nil { return "surface:" }
+        }
+        return nil
+    }
+
+    /// Old CLIs resolve `--tab tab:N` client-side by matching the generic `ref`
+    /// of `tab.list` items, so a response to an old-spelling request carries its
+    /// generic `ref` values (`panel:N`) in that spelling. Paired keys already
+    /// carry `tab:N` in `tab_*`. Only old clients pay for the re-encode.
+    nonisolated static func echoLegacyRefs(_ response: String, prefix: String) -> String {
+        guard response.contains("\"panel:"),
+              let data = response.data(using: .utf8),
+              var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let result = object["result"] else { return response }
+        object["result"] = echoGenericRefs(result, prefix: prefix)
+        guard JSONSerialization.isValidJSONObject(object),
+              let encoded = try? JSONSerialization.data(withJSONObject: object),
+              let text = String(data: encoded, encoding: .utf8) else { return response }
+        return text
+    }
+
+    nonisolated private static func echoGenericRefs(_ value: Any, prefix: String) -> Any {
+        if let array = value as? [Any] {
+            return array.map { echoGenericRefs($0, prefix: prefix) }
+        }
+        guard var dict = value as? [String: Any] else { return value }
+        for (key, child) in dict where !opaqueKeys.contains(key) {
+            if key == "ref", let ref = child as? String, ref.hasPrefix("panel:") {
+                dict[key] = prefix + ref.dropFirst("panel:".count)
+            } else {
+                dict[key] = echoGenericRefs(child, prefix: prefix)
+            }
+        }
+        return dict
     }
 
     // MARK: - Key table
 
-    /// `new` is canonical. `old` is the primary legacy spelling: filled from
-    /// `new` when absent, and `new` is filled from it when only `old` was set.
-    /// `extraOld` spellings only ever fill `new` (the legacy `panel_*` /
-    /// `focused_panel_*` family has one canonical successor).
+    /// `new` is canonical and always emitted. `old` is the previous spelling:
+    /// when `emitOld`, it is filled from `new` (and `new` from it); otherwise
+    /// it is accepted on input and dropped from output. `extraOld` spellings
+    /// are input-only: they fill `new` and are dropped from output.
     struct KeyPair {
         let new: String
         let old: String
         var extraOld: [String] = []
-        /// Values are handles (`tab:N` / `area:N`) or arrays of them.
+        /// Values are handles (`panel:N` / `area:N`) or arrays of them.
         var isRef: Bool = false
+        var emitOld: Bool = true
+    }
+
+    /// The panel family: `panel_*` canonical, `tab_*` emitted beside it,
+    /// `surface_*` input-only.
+    nonisolated private static func panel(
+        _ new: String, _ old: String, _ surface: String? = nil, ref: Bool = false
+    ) -> KeyPair {
+        KeyPair(new: new, old: old, extraOld: surface.map { [$0] } ?? [], isRef: ref)
+    }
+
+    /// The area family: `area_*` canonical and alone on output, `pane_*` input-only.
+    nonisolated private static func area(_ new: String, _ old: String, ref: Bool = false) -> KeyPair {
+        KeyPair(new: new, old: old, isRef: ref, emitOld: false)
     }
 
     nonisolated static let legacyKeyPairs: [KeyPair] = [
-        KeyPair(new: "tab_id", old: "surface_id", extraOld: ["panel_id"]),
-        KeyPair(new: "tab_ref", old: "surface_ref", extraOld: ["panel_ref"], isRef: true),
-        KeyPair(new: "tab_ids", old: "surface_ids"),
-        KeyPair(new: "tab_refs", old: "surface_refs", isRef: true),
-        KeyPair(new: "area_id", old: "pane_id"),
-        KeyPair(new: "area_ref", old: "pane_ref", isRef: true),
-        KeyPair(new: "target_area_id", old: "target_pane_id"),
-        KeyPair(new: "target_area_ref", old: "target_pane_ref", isRef: true),
-        KeyPair(new: "source_area_id", old: "source_pane_id"),
-        KeyPair(new: "source_area_ref", old: "source_pane_ref", isRef: true),
-        KeyPair(new: "source_tab_id", old: "source_surface_id"),
-        KeyPair(new: "source_tab_ref", old: "source_surface_ref", isRef: true),
-        KeyPair(new: "target_tab_id", old: "target_surface_id"),
-        KeyPair(new: "target_tab_ref", old: "target_surface_ref", isRef: true),
-        KeyPair(new: "before_tab_id", old: "before_surface_id"),
-        KeyPair(new: "after_tab_id", old: "after_surface_id"),
-        KeyPair(new: "created_tab_id", old: "created_surface_id"),
-        KeyPair(new: "created_tab_ref", old: "created_surface_ref", isRef: true),
-        KeyPair(new: "selected_tab_id", old: "selected_surface_id"),
-        KeyPair(new: "selected_tab_ref", old: "selected_surface_ref", isRef: true),
-        KeyPair(new: "focused_tab_id", old: "focused_surface_id", extraOld: ["focused_panel_id"]),
-        KeyPair(new: "focused_tab_ref", old: "focused_surface_ref", extraOld: ["focused_panel_ref"], isRef: true),
-        KeyPair(new: "caller_tab_id", old: "caller_surface_id"),
-        KeyPair(new: "flag_caller_tab_id", old: "flag_caller_surface_id"),
-        KeyPair(new: "affected_tab_ids", old: "affected_surface_ids"),
-        KeyPair(new: "tab_type", old: "surface_type"),
-        KeyPair(new: "tab_title", old: "surface_title"),
-        KeyPair(new: "tab_index", old: "surface_index"),
-        KeyPair(new: "tab_index_in_area", old: "surface_index_in_pane"),
-        KeyPair(new: "tab_selected_in_area", old: "surface_selected_in_pane"),
-        KeyPair(new: "index_in_area", old: "index_in_pane"),
-        KeyPair(new: "selected_in_area", old: "selected_in_pane"),
-        KeyPair(new: "area_index", old: "pane_index"),
-        KeyPair(new: "is_browser_tab", old: "is_browser_surface"),
-        KeyPair(new: "tab_pinned", old: "surface_pinned"),
-        KeyPair(new: "tab_focused", old: "surface_focused"),
-        KeyPair(new: "tab_created_at", old: "surface_created_at"),
-        KeyPair(new: "tab_age_seconds", old: "surface_age_seconds"),
-        KeyPair(new: "tab_context", old: "surface_context"),
-        KeyPair(new: "tab_view_first_responder", old: "surface_view_first_responder"),
-        KeyPair(new: "runtime_tab_ready", old: "runtime_surface_ready"),
-        KeyPair(new: "runtime_tab_created_at", old: "runtime_surface_created_at"),
-        KeyPair(new: "runtime_tab_age_seconds", old: "runtime_surface_age_seconds"),
-        KeyPair(new: "tab_count", old: "surface_count"),
-        KeyPair(new: "terminal_tabs", old: "terminal_panels"),
+        panel("panel_id", "tab_id", "surface_id"),
+        panel("panel_ref", "tab_ref", "surface_ref", ref: true),
+        panel("panel_ids", "tab_ids", "surface_ids"),
+        panel("panel_refs", "tab_refs", "surface_refs", ref: true),
+        area("area_id", "pane_id"),
+        area("area_ref", "pane_ref", ref: true),
+        area("target_area_id", "target_pane_id"),
+        area("target_area_ref", "target_pane_ref", ref: true),
+        area("source_area_id", "source_pane_id"),
+        area("source_area_ref", "source_pane_ref", ref: true),
+        panel("source_panel_id", "source_tab_id", "source_surface_id"),
+        panel("source_panel_ref", "source_tab_ref", "source_surface_ref", ref: true),
+        panel("target_panel_id", "target_tab_id", "target_surface_id"),
+        panel("target_panel_ref", "target_tab_ref", "target_surface_ref", ref: true),
+        panel("before_panel_id", "before_tab_id", "before_surface_id"),
+        panel("after_panel_id", "after_tab_id", "after_surface_id"),
+        panel("created_panel_id", "created_tab_id", "created_surface_id"),
+        panel("created_panel_ref", "created_tab_ref", "created_surface_ref", ref: true),
+        panel("selected_panel_id", "selected_tab_id", "selected_surface_id"),
+        panel("selected_panel_ref", "selected_tab_ref", "selected_surface_ref", ref: true),
+        panel("focused_panel_id", "focused_tab_id", "focused_surface_id"),
+        panel("focused_panel_ref", "focused_tab_ref", "focused_surface_ref", ref: true),
+        panel("caller_panel_id", "caller_tab_id", "caller_surface_id"),
+        panel("flag_caller_panel_id", "flag_caller_tab_id", "flag_caller_surface_id"),
+        panel("affected_panel_ids", "affected_tab_ids", "affected_surface_ids"),
+        panel("panel_type", "tab_type", "surface_type"),
+        panel("panel_title", "tab_title", "surface_title"),
+        panel("panel_index", "tab_index", "surface_index"),
+        panel("panel_index_in_area", "tab_index_in_area", "surface_index_in_pane"),
+        panel("panel_selected_in_area", "tab_selected_in_area", "surface_selected_in_pane"),
+        area("index_in_area", "index_in_pane"),
+        area("selected_in_area", "selected_in_pane"),
+        area("area_index", "pane_index"),
+        panel("is_browser_panel", "is_browser_tab", "is_browser_surface"),
+        panel("panel_pinned", "tab_pinned", "surface_pinned"),
+        panel("panel_focused", "tab_focused", "surface_focused"),
+        panel("panel_created_at", "tab_created_at", "surface_created_at"),
+        panel("panel_age_seconds", "tab_age_seconds", "surface_age_seconds"),
+        panel("panel_context", "tab_context", "surface_context"),
+        panel("panel_view_first_responder", "tab_view_first_responder", "surface_view_first_responder"),
+        panel("runtime_panel_ready", "runtime_tab_ready", "runtime_surface_ready"),
+        panel("runtime_panel_created_at", "runtime_tab_created_at", "runtime_surface_created_at"),
+        panel("runtime_panel_age_seconds", "runtime_tab_age_seconds", "runtime_surface_age_seconds"),
+        panel("panel_count", "tab_count", "surface_count"),
+        panel("terminal_panels", "terminal_tabs"),
         // camelCase `workspace.apply` result keys.
-        KeyPair(new: "tabRefs", old: "surfaceRefs", isRef: true),
-        KeyPair(new: "areaRefs", old: "paneRefs", isRef: true),
+        panel("panelRefs", "tabRefs", "surfaceRefs", ref: true),
+        area("areaRefs", "paneRefs", ref: true),
     ]
 
     /// Extra spellings a caller may use for a param whose canonical name the
     /// handlers read: new name, `*_ref` variant, and old names all land on the
     /// key the handler reads (`target`). Applied only when `target` is absent.
     nonisolated static let paramSources: [(target: String, sources: [String])] = [
-        ("surface_id", ["tab_id", "tab_ref", "surface_ref", "panel_id", "panel_ref"]),
+        ("surface_id", ["panel_id", "panel_ref", "tab_id", "tab_ref", "surface_ref"]),
         ("pane_id", ["area_id", "area_ref", "pane_ref"]),
         ("pane", ["area"]),
         ("target_pane_id", ["target_area_id", "target_area_ref", "target_pane_ref"]),
         ("source_pane_id", ["source_area_id", "source_area_ref", "source_pane_ref"]),
-        ("target_surface_id", ["target_tab_id", "target_tab_ref", "target_surface_ref"]),
-        ("source_surface_id", ["source_tab_id", "source_tab_ref", "source_surface_ref"]),
-        ("before_surface_id", ["before_tab_id"]),
-        ("after_surface_id", ["after_tab_id"]),
-        ("caller_surface_id", ["caller_tab_id"]),
+        ("target_surface_id", [
+            "target_panel_id", "target_panel_ref", "target_tab_id", "target_tab_ref", "target_surface_ref",
+        ]),
+        ("source_surface_id", [
+            "source_panel_id", "source_panel_ref", "source_tab_id", "source_tab_ref", "source_surface_ref",
+        ]),
+        ("before_surface_id", ["before_panel_id", "before_tab_id"]),
+        ("after_surface_id", ["after_panel_id", "after_tab_id"]),
+        ("caller_surface_id", ["caller_panel_id", "caller_tab_id"]),
     ]
 
     /// Subtrees the output completion never enters: user/page-supplied data
@@ -255,9 +349,11 @@ enum LegacyWireAliases {
 
     // MARK: - Results (outbound)
 
-    /// Walks a JSON-shaped result: every `new`/`old` key pair is completed
-    /// (never overwriting a key a handler set), the `new` spelling carrying
-    /// `tab:N` / `area:N` values and the `old` spelling `surface:N` / `pane:N`.
+    /// Walks a JSON-shaped result and completes every key pair (never
+    /// overwriting a canonical key a handler set): `new` always, carrying
+    /// `panel:N` / `area:N` values; `old` beside it when `emitOld`, carrying
+    /// `tab:N`; input-only spellings (`extraOld`, and `old` when not emitted)
+    /// are removed.
     nonisolated static func completeResult(_ value: Any) -> Any {
         if let dict = value as? [String: Any] {
             return completeDict(dict)
@@ -275,20 +371,19 @@ enum LegacyWireAliases {
             out[key] = opaqueKeys.contains(key) ? child : completeResult(child)
         }
         for pair in legacyKeyPairs {
-            if let value = out[pair.new] {
-                if pair.isRef { out[pair.new] = convertRef(value, using: canonicalHandle) }
-                if out[pair.old] == nil {
-                    out[pair.old] = pair.isRef ? convertRef(value, using: legacyHandle) : value
-                } else if pair.isRef, let existing = out[pair.old] {
-                    out[pair.old] = convertRef(existing, using: legacyHandle)
-                }
-                continue
+            var found: Any? = out[pair.new]
+            if found == nil { found = out[pair.old] }
+            for key in pair.extraOld {
+                if found == nil { found = out[key] }
+                out.removeValue(forKey: key)
             }
-            if let value = out[pair.old] ?? pair.extraOld.lazy.compactMap({ out[$0] }).first {
-                out[pair.new] = pair.isRef ? convertRef(value, using: canonicalHandle) : value
-                if pair.isRef, let existing = out[pair.old] {
-                    out[pair.old] = convertRef(existing, using: legacyHandle)
-                }
+            guard let value = found else { continue }
+            out[pair.new] = pair.isRef ? convertRef(value, using: canonicalHandle) : value
+            if pair.emitOld {
+                let old = out[pair.old] ?? value
+                out[pair.old] = pair.isRef ? convertRef(old, using: legacyHandle) : old
+            } else {
+                out.removeValue(forKey: pair.old)
             }
         }
         return out
@@ -298,7 +393,7 @@ enum LegacyWireAliases {
         if let string = value as? String { return transform(string) }
         if let array = value as? [Any] { return array.map { convertRef($0, using: transform) } }
         if let dict = value as? [String: Any] {
-            // `surfaceRefs` style maps: plan id -> ref.
+            // `panelRefs` style maps: plan id -> ref.
             return dict.mapValues { convertRef($0, using: transform) }
         }
         return value

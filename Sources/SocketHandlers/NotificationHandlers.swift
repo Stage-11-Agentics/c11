@@ -42,16 +42,16 @@ extension TerminalController {
         return callbackThreadId == rootThreadId
     }
 
-    private func appendLegacyCodexCompletion(params: [String: Any], tabID: UUID, workspaceID: UUID) -> Bool {
+    private func appendLegacyCodexCompletion(params: [String: Any], panelID: UUID, workspaceID: UUID) -> Bool {
         guard let encoded = params[LegacyCodexNotifyGuard.payloadKey] as? String,
               let data = Data(base64Encoded: encoded),
               let input = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               input["type"] as? String == "agent-turn-complete" else { return false }
         let callbackID = input["thread-id"] as? String
-        let owner = JournalCoordinator.shared.exactOwner(tabID: tabID)
+        let owner = JournalCoordinator.shared.exactOwner(panelID: panelID)
         let matches = owner?.agentKind == "codex" && owner?.sessionID == callbackID
         let draft = JournalDraft(kind: .turnCompleted, emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
-            tabID: tabID, workspaceID: workspaceID, sessionID: matches ? callbackID : nil,
+            panelID: panelID, workspaceID: workspaceID, sessionID: matches ? callbackID : nil,
             agentKind: "codex", source: .hook, adapter: .codexNotify, nativeEvent: "agent-turn-complete")
         let pid = (params["agent_pid"] as? Int).flatMap { Int32(exactly: $0) }.flatMap { $0 > 1 ? $0 : nil }
         DispatchQueue.global(qos: .utility).async { _ = try? JournalCoordinator.shared.append(draft, interactivePID: pid) }
@@ -64,7 +64,7 @@ extension TerminalController {
         switch method {
         case "notification.create":
             return v2Result(id: id, self.v2NotificationCreate(params: params))
-        case "notification.create_for_tab":
+        case "notification.create_for_panel":
             return v2Result(id: id, self.v2NotificationCreateForSurface(params: params))
         case "notification.create_for_target":
             return v2Result(id: id, self.v2NotificationCreateForTarget(params: params))
@@ -98,7 +98,7 @@ extension TerminalController {
                 result = .ok(["workspace_id": ws.id.uuidString, "surface_id": surfaceId.uuidString])
                 return
             }
-            if let surfaceId { _ = appendLegacyCodexCompletion(params: params, tabID: surfaceId, workspaceID: ws.id) }
+            if let surfaceId { _ = appendLegacyCodexCompletion(params: params, panelID: surfaceId, workspaceID: ws.id) }
             TerminalNotificationStore.shared.addNotification(
                 workspaceId: ws.id,
                 surfaceId: surfaceId,
@@ -116,7 +116,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
 
         let title = (params["title"] as? String) ?? "Notification"
@@ -130,7 +130,7 @@ extension TerminalController {
                 return
             }
             guard ws.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "not_found", message: "Panel not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
@@ -141,10 +141,10 @@ extension TerminalController {
             // this is an explicit prompt edge for the mailbox stdin gate. It
             // goes through the deriver queue like every other lifecycle edge,
             // so a Return typed just before it is applied first.
-            if !appendLegacyCodexCompletion(params: params, tabID: surfaceId, workspaceID: ws.id),
+            if !appendLegacyCodexCompletion(params: params, panelID: surfaceId, workspaceID: ws.id),
                params[LegacyCodexNotifyGuard.payloadKey] != nil,
                let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
                     workspaceId: ws.id,
                     activity: .idle,
@@ -172,7 +172,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
 
         let title = (params["title"] as? String) ?? "Notification"
@@ -186,7 +186,7 @@ extension TerminalController {
                 return
             }
             guard ws.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "not_found", message: "Panel not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
@@ -197,10 +197,10 @@ extension TerminalController {
             // this is an explicit prompt edge for the mailbox stdin gate. It
             // goes through the deriver queue like every other lifecycle edge,
             // so a Return typed just before it is applied first.
-            if !appendLegacyCodexCompletion(params: params, tabID: surfaceId, workspaceID: ws.id),
+            if !appendLegacyCodexCompletion(params: params, panelID: surfaceId, workspaceID: ws.id),
                params[LegacyCodexNotifyGuard.payloadKey] != nil,
                let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
                     workspaceId: ws.id,
                     activity: .idle,

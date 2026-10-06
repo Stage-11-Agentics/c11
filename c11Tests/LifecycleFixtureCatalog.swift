@@ -17,7 +17,7 @@ struct LifecycleReplayStep: Equatable {
     let name: String
     let toolName: String?
     let sessionID: String?
-    let tab: String?
+    let panel: String?
     let attributes: [String: String]
     let oracle: LifecycleOracle?
 }
@@ -64,8 +64,8 @@ enum LifecycleReplay {
         guard let beforeOracle = before.oracle, let afterOracle = after.oracle else { return false }
         guard beforeOracle.mark == "waiting", afterOracle.mark == "waiting" else { return false }
         guard afterOracle.unread == beforeOracle.unread else { return false }
-        guard let askTab = before.tab, let toolTab = tool.tab, askTab != toolTab else { return false }
-        guard after.tab == askTab else { return false }
+        guard let askPanel = before.panel, let toolPanel = tool.panel, askPanel != toolPanel else { return false }
+        guard after.panel == askPanel else { return false }
         return true
     }
 
@@ -91,11 +91,11 @@ enum LifecycleReplay {
         return !finishedBeforeKey
     }
 
-    static func sessionEndedOnLiveTab(_ steps: [LifecycleReplayStep]) -> Bool {
-        guard let end = steps.first(where: { $0.name == "SessionEnd" && $0.tab != nil }) else {
+    static func sessionEndedOnLivePanel(_ steps: [LifecycleReplayStep]) -> Bool {
+        guard let end = steps.first(where: { $0.name == "SessionEnd" && $0.panel != nil }) else {
             return false
         }
-        return steps.contains { $0.oracle != nil && $0.seq > end.seq && $0.tab == end.tab }
+        return steps.contains { $0.oracle != nil && $0.seq > end.seq && $0.panel == end.panel }
     }
 
     static func toolPrecedesStop(_ steps: [LifecycleReplayStep]) -> Bool {
@@ -254,7 +254,7 @@ enum LifecycleFixtureCatalog {
                 name: try string(event, "name"),
                 toolName: optionalString(event, "tool_name"),
                 sessionID: optionalString(event, "session_id"),
-                tab: optionalString(event, "tab"),
+                panel: optionalString(event, "tab"),
                 attributes: try stringMap(event["attrs"], label: "\(label) attrs"),
                 oracle: try oracle(event["oracle"], label: label)
             )
@@ -352,7 +352,7 @@ final class LifecycleFixtureCatalogTests: XCTestCase {
     func testCapturedC11271CasesReachCommittedRosterConsumersAfterReopen() throws {
         let all = try LifecycleFixtureCatalog.load(from: LifecycleFixtureCatalog.directory())
         let selected = Set(["claude-bypass-ask", "claude-bypass-ask-answered", "claude-session-end", "derived-late-pretool-after-stop"])
-        let tab = UUID(uuidString: "00000000-0000-0000-0000-000000000231")!
+        let panel = UUID(uuidString: "00000000-0000-0000-0000-000000000231")!
         let workspace = UUID(uuidString: "00000000-0000-0000-0000-000000000232")!
 
         for fixture in all where selected.contains(fixture.id) {
@@ -389,7 +389,7 @@ final class LifecycleFixtureCatalogTests: XCTestCase {
                 draft.emittedAtMs = timestamp
                 draft.occurredAtMs = timestamp
                 draft.timeQuality = .nativeLocal
-                draft.tabID = tab
+                draft.panelID = panel
                 draft.workspaceID = workspace
                 try draft.validate()
                 let result = try store!.append(
@@ -494,7 +494,7 @@ final class LifecycleFixtureCatalogTests: XCTestCase {
                 XCTAssertEqual(item.intendedMark, "waiting")
                 let before = try XCTUnwrap(item.steps.first { $0.name == "ask-is-waiting" })
                 let after = try XCTUnwrap(item.steps.first { $0.name == "after-sibling" })
-                XCTAssertEqual(after.tab, before.tab)
+                XCTAssertEqual(after.panel, before.panel)
                 XCTAssertEqual(after.oracle?.mark, item.intendedMark)
                 XCTAssertEqual(after.oracle?.unread, before.oracle?.unread)
             case "claude-bypass-exit-plan":
@@ -502,7 +502,7 @@ final class LifecycleFixtureCatalogTests: XCTestCase {
             case "claude-esc-interrupt":
                 try assertObservedOrGap(item, observed: LifecycleReplay.escapeLandedDuringTool, intended: "idle")
             case "claude-session-end":
-                try assertObservedOrGap(item, observed: LifecycleReplay.sessionEndedOnLiveTab, intended: "idle")
+                try assertObservedOrGap(item, observed: LifecycleReplay.sessionEndedOnLivePanel, intended: "idle")
             case "claude-normal-tool-stop":
                 try assertObserved(item)
                 XCTAssertTrue(LifecycleReplay.toolPrecedesStop(item.steps))

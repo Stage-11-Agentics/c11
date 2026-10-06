@@ -17,6 +17,8 @@ From a provisioned delegator worktree on the laptop:
 
 This runs no local xcodebuild. It bundles the exact parent/submodule commits, overlays tracked modifications and untracked non-ignored files with content hashes, and retrieves the tagged Debug app plus logs and `result.json` under `build-remote/<invocation>/`. Tracked deletions, executable modes and symlinks are preserved. Dirty submodules are refused: commit and pin their changes first. Initialize the required submodules with `git submodule update --init --recursive ghostty vendor/bonsplit`; do not run `setup.sh` on the laptop to build GhosttyKit.
 
+Staging uploads only the commits Atlas lacks: Atlas keeps one mirror per repository (`~/c11-builds/mirrors/`), and each bundle excludes everything reachable from a head the mirror holds, so a head whose parent was built before sends a few KB; with no shared base it falls back to a full bundle. The client prints `staged <MB> in <s>; bundles: …` per run, and Atlas checks out the requested SHAs from the mirror and verifies them before building.
+
 Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Developer`) and Zig 0.15.2 (`~/zig-0.15.2`). `C11_REMOTE_HOST` defaults to `atlas`; `--host` overrides it. `C11_REMOTE_DEVELOPER_DIR` and `C11_REMOTE_ZIG_DIR` override paths but the versions are checked. No global Xcode selection or credential provisioning happens.
 
 The Atlas route admits at most two builds with separate per-tag caches. After one-minute load stays above 40 for 60 seconds it admits only one until load returns to 40 or below. Active builds finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
@@ -36,10 +38,11 @@ change after the branch includes current `origin/main`. A docs-only change is
 exempt only when the diff is limited to documentation or prose and contains no
 Swift, native workflow, script, project, submodule, test, or build-input change.
 The hourly main result is the post-merge authority; red main is fixed forward.
-For Ghostty/bonsplit pointer changes, manually dispatch `Build GhosttyKit` on the
+For Ghostty pointer changes, manually dispatch `Build GhosttyKit` on the
 internal bump branch, wait for its prerelease non-`latest` artifact and bot
 checksum commit, refresh PR checks at that bot-created head, then run the
-exact-head Atlas gate before landing.
+exact-head Atlas gate before landing. The workflow keys on the ghostty SHA, so a
+Bonsplit-only pointer bump needs no dispatch.
 
 Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both Atlas and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
 
@@ -51,7 +54,7 @@ Remote failure returns nonzero, retrieves available logs, and preserves the prev
 
 In the c11 1.0 run, packaged-app validation and computer use run on Atlas only. The laptop receives the app but does not launch it. On Atlas, launch the retained tagged app using its source checkout's `launch-tagged-automation.sh`. Never launch an untagged c11 DEV app.
 
-Live proofs that need real agent tabs (Claude Code, Codex, Grok receiving mail or running hooks) run in an Atlas sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained Atlas copy of a remote build is under `~/c11-builds/<tag>/artifacts/<invocation>/`; running the sandbox scripts on Atlas with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
+Live proofs that need real agent panels (Claude Code, Codex, Grok receiving mail or running hooks) run in an Atlas sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained Atlas copy of a remote build is under `~/c11-builds/<tag>/artifacts/<invocation>/`; running the sandbox scripts on Atlas with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
 
 ## Remote variants
 
@@ -72,7 +75,7 @@ A clean quit preserves agent resume; do not pre-kill the app before a reload. Us
 
 ## Driving a Release/staging build over the socket
 
-A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<slug>.sock`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `/tmp/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching tab's inherited c11 identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
+A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<slug>.sock`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `/tmp/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching panel's inherited c11 identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
 ## QA / automation launch (suppress the startup dialogs)
 
@@ -146,7 +149,7 @@ Running tags are auto-protected. A weekly launchd job (`scripts/launchd/com.stag
 
 ## Debug event log
 
-All debug events (keys, mouse, focus, splits, tabs) go to a unified log in DEBUG builds:
+All debug events (keys, mouse, focus, splits, panels) go to a unified log in DEBUG builds:
 
 ```bash
 tail -f "$(cat /tmp/c11-last-debug-log-path 2>/dev/null || echo /tmp/c11-debug.log)"

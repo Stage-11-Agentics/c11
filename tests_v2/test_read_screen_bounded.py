@@ -69,7 +69,7 @@ def read_text(client, params, deadline=None):
     while True:
         remaining = deadline - time.monotonic()
         require(remaining > 0, "Read never succeeded within bounded busy retry budget")
-        response = client.exchange("tab.read_text", params, timeout_s=min(12, remaining))
+        response = client.exchange("panel.read_text", params, timeout_s=min(12, remaining))
         if response["ok"]:
             result = response.get("result")
             require(isinstance(result, dict), "Read success has no result object")
@@ -77,7 +77,7 @@ def read_text(client, params, deadline=None):
             require(isinstance(text, str) and isinstance(encoded, str), "Read success lacks text/base64")
             require(base64.b64decode(encoded, validate=True) == text.encode("utf-8"),
                     "Text/base64 bytes differ")
-            require(result.get("tab_id", result.get("surface_id")) == params["tab_id"],
+            require(result.get("panel_id", result.get("panel_id")) == params["panel_id"],
                     "Read returned another tab")
             return text
         error = response.get("error") or {}
@@ -101,7 +101,7 @@ def send_marker(client, params, marker):
     # Split the output marker so the echoed shell command cannot satisfy it.
     middle = len(marker) // 2
     command = "printf '%s%s\\n' " + shlex.quote(marker[:middle]) + " " + shlex.quote(marker[middle:])
-    client._call("tab.send_text", {**params, "text": command + "\n"})
+    client._call("panel.send_text", {**params, "text": command + "\n"})
 
 
 def main():
@@ -124,22 +124,22 @@ def main():
             sentinel = client._call("workspace.create")["workspace_id"]
             created.append(sentinel)
             client._call("workspace.select", {"workspace_id": sentinel})
-            sentinel_tab = client._call("tab.current", {"workspace_id": sentinel})["tab_id"]
-            sentinel_params = {"workspace_id": sentinel, "tab_id": sentinel_tab}
+            sentinel_tab = client._call("panel.current", {"workspace_id": sentinel})["panel_id"]
+            sentinel_params = {"workspace_id": sentinel, "panel_id": sentinel_tab}
             sentinel_marker = "C295_SENTINEL_" + uuid.uuid4().hex
             send_marker(client, sentinel_params, sentinel_marker)
             wait_marker(client, sentinel_params, sentinel_marker)
 
             def focus_snapshot():
                 return (client._call("workspace.current")["workspace_id"],
-                        client._call("tab.current", {"workspace_id": sentinel})["tab_id"],
-                        len(client._call("tab.list", {"workspace_id": sentinel})["tabs"]))
+                        client._call("panel.current", {"workspace_id": sentinel})["panel_id"],
+                        len(client._call("panel.list", {"workspace_id": sentinel})["panels"]))
 
             baseline = focus_snapshot()
             target = client._call("workspace.create", {"focus": False})["workspace_id"]
             created.append(target)
-            cold_tab = client._call("tab.list", {"workspace_id": target})["tabs"][0]["id"]
-            cold_params = {"workspace_id": target, "tab_id": cold_tab}
+            cold_tab = client._call("panel.list", {"workspace_id": target})["panels"][0]["id"]
+            cold_params = {"workspace_id": target, "panel_id": cold_tab}
             started = time.monotonic()
             read_text(client, cold_params)  # Read must succeed before any send/focus.
             print(f"Never-focused first read: {time.monotonic() - started:.3f}s")
@@ -147,10 +147,10 @@ def main():
             send_marker(client, cold_params, cold_marker)
             wait_marker(client, cold_params, cold_marker)
 
-            queued_tab = client._call("tab.create", {
+            queued_tab = client._call("panel.create", {
                 "workspace_id": target, "type": "terminal", "focus": False,
-            })["tab_id"]
-            queued_params = {"workspace_id": target, "tab_id": queued_tab}
+            })["panel_id"]
+            queued_params = {"workspace_id": target, "panel_id": queued_tab}
             queued_marker = "C295_SEND_FIRST_" + uuid.uuid4().hex
             send_marker(client, queued_params, queued_marker)  # Queue before first read.
             wait_marker(client, queued_params, queued_marker)
@@ -169,7 +169,7 @@ def main():
             encoded = base64.b64encode(script.encode()).decode()
             command = "python3 -c " + shlex.quote(
                 f"import base64;exec(base64.b64decode('{encoded}'))")
-            client._call("tab.send_text", {**cold_params, "text": command + "\n"})
+            client._call("panel.send_text", {**cold_params, "text": command + "\n"})
             wait_marker(client, cold_params, finished, timeout=30)
 
             # Wait for shell prompt/terminal output to settle before cross-request
@@ -200,15 +200,15 @@ def main():
             if retained < 2 * 1024 * 1024:
                 print("LIMITATION: retained capture below 2 MiB; multi-MB capture not proven")
 
-            stale = client._call("tab.create", {
+            stale = client._call("panel.create", {
                 "workspace_id": sentinel, "type": "terminal", "focus": False,
-            })["tab_id"]
-            client._call("tab.close", {"workspace_id": sentinel, "tab_id": stale})
+            })["panel_id"]
+            client._call("panel.close", {"workspace_id": sentinel, "panel_id": stale})
             require(focus_snapshot() == baseline, "Stale fixture preparation changed sentinel")
-            for ref in (stale, "tab:2147483647", "tab:not-a-number"):
-                for method in ("tab.read_text", "tab.split"):
+            for ref in (stale, "panel:2147483647", "panel:not-a-number"):
+                for method in ("panel.read_text", "panel.split"):
                     response = client.exchange(method, {
-                        "workspace_id": sentinel, "tab_id": ref, "direction": "right",
+                        "workspace_id": sentinel, "panel_id": ref, "direction": "right",
                     })
                     require(response["ok"] is False, f"{method} silently accepted stale target {ref}")
                     require((response.get("error") or {}).get("code") == "not_found",

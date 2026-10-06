@@ -19,7 +19,7 @@ from cmux import cmux, cmuxError
 from test_claude_attention_batch import eventually
 
 
-FOCUS_KEYS = ("window_id", "workspace_id", "pane_id", "surface_id", "tab_id")
+FOCUS_KEYS = ("window_id", "workspace_id", "area_id", "panel_id")
 
 
 def main():
@@ -43,7 +43,7 @@ def main():
         workspace = client.new_workspace()
         surfaces = [client.list_surfaces(workspace)[0][1]]
         for _ in range(4):
-            surfaces.append(client._call("tab.create", {"workspace_id": workspace, "type": "terminal"})["tab_id"])
+            surfaces.append(client._call("panel.create", {"workspace_id": workspace, "type": "terminal"})["panel_id"])
         blocked, working, historical, ended, unknown = surfaces
         sessions = {tab: str(uuid.uuid4()) for tab in surfaces}
         before = focus_ids(client.identify())

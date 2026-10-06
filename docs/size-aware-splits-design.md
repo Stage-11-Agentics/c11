@@ -6,13 +6,13 @@
 size. Stacking splits (vertical especially) drives areas to sizes like 584×173 pt
 (≈70 cols × 10 rows) — too small to read or drive a coding-agent TUI. An orchestrator
 fanning out sub-agent areas ends up with several areas at 25%×13% and the operator has
-to manually recombine. c11 also treats every tab kind identically: a Claude Code
+to manually recombine. c11 also treats every panel kind identically: a Claude Code
 TUI and a `tail -f` log area get the same blind 50/50.
 
 ## Goal
 
 Area creation refuses to produce an unusable area: it either lays the split out usably
-(picking the roomier axis), turns the request into a tab (tabs do not shrink), or
+(picking the roomier axis), turns the request into a panel (panels do not shrink), or
 returns a clear actionable refusal. Behavior is configurable with a safe default and a
 per-call escape hatch.
 
@@ -24,12 +24,12 @@ c11.
 
 - `bonsplitController.layoutSnapshot()` → `containerFrame` (content area, pt) and
   `panes[]` each with a pixel `frame` (pt). This is the source of the current area size.
-- A terminal tab's font cell size lives on `TerminalPanel.hostedView.cellSize`
+- A terminal panel's font cell size lives on `TerminalPanel.hostedView.cellSize`
   (`GhosttySurfaceScrollView`), reported by Ghostty in **backing pixels**, while area
   frames are in **AppKit points**. `Workspace.sourceCellSize` divides the cell size by
-  the tab's `backingScaleFactor` to bring both into points before deriving
+  the panel's `backingScaleFactor` to bring both into points before deriving
   `cols = frame.width / cellSize.width`, `rows = frame.height / cellSize.height`.
-- Tab kind comes from `terminal_type` in the tab manifest
+- Panel kind comes from `terminal_type` in the panel manifest
   (`SurfaceMetadataStore`): `claude-code`, `codex`, `grok`, `kimi`, `opencode`,
   `opencode-run`, `github-copilot` are coding agents; `shell` / `unknown` / unset are
   generic terminals.
@@ -38,18 +38,18 @@ c11.
 
 | CLI | V2 method | App handler | Effect |
 |-----|-----------|-------------|--------|
-| `new-split` | `tab.split` | `v2SurfaceSplit` → `tabManager.newSplit` → `Workspace.newTerminalSplit` | split (shrinks) |
+| `new-split` | `panel.split` | `v2SurfaceSplit` → `tabManager.newSplit` → `Workspace.newTerminalSplit` | split (shrinks) |
 | `new-area` | `area.create` | `v2PaneCreate` → `Workspace.new{Terminal,Browser,Markdown}Split` | split (shrinks) |
-| `new-tab` | `tab.create` | `v2SurfaceCreate` | tab (no shrink) — the fallback target |
+| `new-panel` | `panel.create` | `v2SurfaceCreate` | panel (no shrink) — the fallback target |
 
 `Workspace.newTerminalSplit` sets `isProgrammaticSplit = true` around the Bonsplit
-mutation, so CLI/programmatic splits are distinguishable from UI (Bonsplit tab-bar
+mutation, so CLI/programmatic splits are distinguishable from UI (Bonsplit panel-bar
 button / drag) splits.
 
 ## The size model
 
-Minimums are per tab kind, expressed in cols × rows and converted to points with the
-source tab's cell size:
+Minimums are per panel kind, expressed in cols × rows and converted to points with the
+source panel's cell size:
 
 | Kind | Minimum (cols × rows) | Optimum |
 |------|----------------------|---------|
@@ -64,7 +64,7 @@ held to the new area's type (terminal new areas inherit the source kind; browser
 use the point floor). The controlling minimum on the shrinking axis is the max of the
 two children's requirements.
 
-A tab may override its own minimum via `min_cols` / `min_rows` metadata keys (lets a
+A panel may override its own minimum via `min_cols` / `min_rows` metadata keys (lets a
 status strip or log tail declare itself tiny-ok). Optional; defaults apply when unset.
 
 ### Geometry
@@ -86,7 +86,7 @@ of the minimum — a non-blocking warning.
 | `off` | Never block; today's blind 50/50. |
 | `warn` | Never block; attach a warning when the result is undersized / near threshold. |
 | `balance` (default) | Use the requested axis if admissible; else auto-flip to the other axis if that is admissible; else **refuse** with an actionable message. |
-| `tab` | Like `balance`, but when neither axis is admissible, fall back to adding a **tab** to the target area instead of refusing. |
+| `panel` | Like `balance`, but when neither axis is admissible, fall back to adding a **panel** to the target area instead of refusing. The stored setting value stays `tab`. |
 
 - Setting persists via `@AppStorage` (`SocketControlSettings`-style enum). Env override
   `C11_SPLIT_SIZE_POLICY` for headless/tests.
@@ -98,26 +98,26 @@ of the minimum — a non-blocking warning.
 V2 success envelope gains:
 
 - `requested_direction`, `applied_direction` (differ when flipped)
-- `size_outcome`: `split` | `flipped` | `tab`
+- `size_outcome`: `split` | `flipped` | `panel`
 - `size_warning`: string | null
 
 Refusal returns `.err(code: "pane_too_small", message: <actionable>, data: { resulting,
 minimum, area_ref })`. Message names the offending size, the minimum, the kind, and the
-remedies (add a tab with `new-tab --area …`, close a sibling, or `--allow-undersized`).
+remedies (add a panel with `new-panel --area …`, close a sibling, or `--allow-undersized`).
 
 The CLI prints `size_warning` when present and surfaces the refusal message on error.
 
 ## UI path (follow-up, deferred)
 
 A global Bonsplit `splitTabBar(_:shouldSplitPane:orientation:)` veto would catch the
-tab-bar split buttons and drag-to-split, but it also fires for direct
+panel-bar split buttons and drag-to-split, but it also fires for direct
 `bonsplitController.splitPane` callers that are *not* interactive (cross-workspace
-tab-drag in `AppDelegate`, other socket split commands), and the only in-app notice
+panel-drag in `AppDelegate`, other socket split commands), and the only in-app notice
 channel is a modal `NSAlert`. A veto can only deny, not flip the axis, so it would
 reject an explicit "split down" even when "split right" would fit. Given the blast
 radius and that the *accidental* tiny-area pain is the CLI/orchestrator fan-out (fully
 covered by the handlers), the manual UI path is left as-is in this change and tracked as
-a follow-up — ideally routing the tab-bar split buttons through the same size-aware
+a follow-up — ideally routing the panel-bar split buttons through the same size-aware
 evaluation so they can flip the axis rather than just refuse.
 
 CLI splits go through `Workspace.newTerminalSplit` (which sets `isProgrammaticSplit`),
@@ -127,7 +127,7 @@ so they would bypass any future veto; the handler owns their richer policy regar
 
 Pure decision logic (`PaneSizePolicy.decide`) is unit-tested in `c11LogicTests` (fast,
 host-free): given area rect + cell size + kind + requested axis + mode → expected outcome
-(proceed / flip / tab / refuse) and flags (flipped, nearThreshold). Covers the 584×173
+(proceed / flip / panel / refuse) and flags (flipped, nearThreshold). Covers the 584×173
 repro, the orchestrator fan-out cascade, axis-flip selection, force bypass, and per-kind
 minimums.
 

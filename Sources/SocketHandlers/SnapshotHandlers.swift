@@ -331,10 +331,10 @@ extension TerminalController {
                     self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
                 },
                 surfaceRefMinter: { [weak self] uuid in
-                    self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "surface:\(uuid.uuidString)"
+                    self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "panel:\(uuid.uuidString)"
                 },
                 paneRefMinter: { [weak self] uuid in
-                    self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "pane:\(uuid.uuidString)"
+                    self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "area:\(uuid.uuidString)"
                 }
             )
             if inPlace, let target = inPlaceTarget {
@@ -508,10 +508,10 @@ extension TerminalController {
                         self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
                     },
                     surfaceRefMinter: { [weak self] uuid in
-                        self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "surface:\(uuid.uuidString)"
+                        self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "panel:\(uuid.uuidString)"
                     },
                     paneRefMinter: { [weak self] uuid in
-                        self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "pane:\(uuid.uuidString)"
+                        self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "area:\(uuid.uuidString)"
                     }
                 )
                 result = WorkspaceLayoutExecutor.apply(plan, options: optionsTemplate, dependencies: deps)

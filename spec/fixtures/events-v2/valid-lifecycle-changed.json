@@ -1,0 +1,16 @@
+{
+  "seq": 12,
+  "ts": "2026-10-06T03:00:00.000Z",
+  "type": "lifecycle.changed",
+  "instance": "com.stage11.c11-12345",
+  "v": 2,
+  "workspace": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+  "panel": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "payload": {
+    "panel": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+    "agent": "claude-code",
+    "from": "working",
+    "to": "blocked",
+    "reason": "question"
+  }
+}

@@ -1,4 +1,5 @@
 import XCTest
+import Bonsplit
 import Combine
 
 #if canImport(c11_DEV)
@@ -61,7 +62,7 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
     }
 
     func testFlagsIncludeSuppressedAndNonAgentTabsButWaitingHasNoUnreadFallback() {
-        let member = WorkspaceGroupMemberAttention(tabs: [
+        let member = WorkspaceGroupMemberAttention(panels: [
             .init(isFlagged: false, isWaiting: true, isSuppressed: false),
             .init(isFlagged: false, isWaiting: true, isSuppressed: true),
             .init(isFlagged: true, isWaiting: true, isSuppressed: true),
@@ -83,8 +84,8 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
             WorkspaceOrderEntry(id: a, isPinned: false, groupId: group.id),
             WorkspaceOrderEntry(id: b, isPinned: false, groupId: group.id)
         ], attentionByWorkspace: [
-            a: .init(tabs: [.init(isFlagged: true, isWaiting: true, isSuppressed: true)], unreadCount: 2),
-            b: .init(tabs: [.init(isFlagged: false, isWaiting: true, isSuppressed: false)], unreadCount: 1)
+            a: .init(panels: [.init(isFlagged: true, isWaiting: true, isSuppressed: true)], unreadCount: 2),
+            b: .init(panels: [.init(isFlagged: false, isWaiting: true, isSuppressed: false)], unreadCount: 1)
         ])
         XCTAssertEqual(projection.headersById[group.id]?.summary,
                        WorkspaceGroupHeaderSummary(memberCount: 2, flaggedCount: 1, waitingCount: 1, unreadCount: 3))
@@ -95,7 +96,7 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         let a = WorkspaceGroup(name: "A"), b = WorkspaceGroup(name: "B")
         let id = UUID()
         let attention: [UUID: WorkspaceGroupMemberAttention] = [id: .init(
-            tabs: [.init(isFlagged: true, isWaiting: true, isSuppressed: false)], unreadCount: 2)]
+            panels: [.init(isFlagged: true, isWaiting: true, isSuppressed: false)], unreadCount: 2)]
         let before = WorkspaceGroupSidebarProjection.make(groups: [a, b],
             workspaces: [.init(id: id, isPinned: false, groupId: a.id)], attentionByWorkspace: attention)
         let after = WorkspaceGroupSidebarProjection.make(groups: [a, b],
@@ -129,7 +130,7 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         defer { subscription.cancel() }
         XCTAssertEqual(member.captures, 1)
         member.changes.send() // Match objectWillChange: notification precedes storage mutation.
-        member.tabs = [.init(isFlagged: true, isWaiting: false, isSuppressed: true)]
+        member.panels = [.init(isFlagged: true, isWaiting: false, isSuppressed: true)]
         member.changes.send()
         member.changes.send()
         XCTAssertEqual(member.captures, 1)
@@ -145,10 +146,43 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         XCTAssertEqual(member.captures, 3)
         XCTAssertEqual(publications, 1)
         member.changes.send()
-        member.tabs = []
+        member.panels = []
         scheduler.drain()
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.flaggedCount, 0)
         XCTAssertEqual(publications, 2)
+    }
+
+    @MainActor
+    func testCoordinatorRepublishesWhenOnlyAnAgentLifecycleChanges() {
+        let fixture = ObservationFixture()
+        let group = WorkspaceGroup(name: "Work")
+        let member = ObservedMember(groupId: group.id)
+        let ungrouped = ObservedMember(groupId: nil)
+        fixture.groups = [group]; fixture.members = [member, ungrouped]
+        let scheduler = ManualScheduler()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule)
+        coordinator.attach(source: fixture.source())
+        var publications = 0
+        let subscription = coordinator.$projection.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        let panel = UUID()
+        let revision = coordinator.projection.pulseRevision
+
+        ungrouped.changes.send()
+        ungrouped.lifecycle = [panel: .init(state: .idle, promptCacheExpired: false)]
+        scheduler.drain()
+        XCTAssertEqual(publications, 1, "a lifecycle edge with no header change still rebuilds row pulses")
+        XCTAssertEqual(coordinator.projection.pulseRevision, revision + 1)
+
+        ungrouped.changes.send()
+        ungrouped.lifecycle = [panel: .init(state: .cold, promptCacheExpired: true)]
+        scheduler.drain()
+        XCTAssertEqual(publications, 2, "a cache-cold flip carries no notification")
+
+        ungrouped.changes.send() // A title or output event leaves the pulse alone.
+        scheduler.drain()
+        XCTAssertEqual(publications, 2)
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.waitingCount, 0)
     }
 
     @MainActor
@@ -163,7 +197,7 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         fixture.notifications.send()
         member.unread = 3
         member.changes.send()
-        member.tabs = [.init(isFlagged: false, isWaiting: true, isSuppressed: false)]
+        member.panels = [.init(isFlagged: false, isWaiting: true, isSuppressed: false)]
         scheduler.drain()
         XCTAssertEqual(member.captures, 2)
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary,
@@ -205,7 +239,7 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         let fixture = ObservationFixture()
         let a = WorkspaceGroup(name: "A"), b = WorkspaceGroup(name: "B")
         let member = ObservedMember(groupId: a.id)
-        member.tabs = [.init(isFlagged: true, isWaiting: false, isSuppressed: true)]
+        member.panels = [.init(isFlagged: true, isWaiting: false, isSuppressed: true)]
         fixture.groups = [a, b]; fixture.members = [member]
         let scheduler = ManualScheduler()
         let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule)
@@ -257,7 +291,7 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         XCTAssertTrue(coordinator.projection.headersById.values.allSatisfy { $0.summary.memberCount == 10 })
         let changed = fixture.members[59]
         changed.changes.send()
-        changed.tabs = [.init(isFlagged: true, isWaiting: true, isSuppressed: false)]
+        changed.panels = [.init(isFlagged: true, isWaiting: true, isSuppressed: false)]
         scheduler.drain()
         XCTAssertEqual(coordinator.projection.headersById[fixture.groups[5].id]?.summary.flaggedCount, 1)
         XCTAssertEqual(coordinator.projection.headersById[fixture.groups[5].id]?.summary.waitingCount, 1)
@@ -304,8 +338,9 @@ private final class ObservedMember {
     let changes = PassthroughSubject<Void, Never>()
     var groupId: UUID?
     var isPinned = false
-    var tabs: [WorkspaceGroupTabAttention] = []
+    var panels: [WorkspaceGroupPanelAttention] = []
     var unread = 0
+    var lifecycle: [UUID: WorkspaceGroupPanelLifecycle] = [:]
     var captures = 0
 
     init(id: UUID = UUID(), groupId: UUID?) { self.id = id; self.groupId = groupId }
@@ -316,7 +351,7 @@ private final class ObservedMember {
             orderEntry: { .init(id: self.id, isPinned: self.isPinned, groupId: self.groupId) },
             attention: {
                 self.captures += 1
-                return .init(tabs: self.tabs, unreadCount: self.unread)
+                return .init(panels: self.panels, unreadCount: self.unread, lifecycleByPanel: self.lifecycle)
             })
     }
 }

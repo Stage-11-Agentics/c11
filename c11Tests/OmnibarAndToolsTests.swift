@@ -521,7 +521,7 @@ final class OmnibarRemoteSuggestionMergeTests: XCTestCase {
             query: "go",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [],
+            openPanelMatches: [],
             remoteQueries: ["go tutorial", "go.dev", "go json"],
             resolvedURL: nil,
             limit: 8
@@ -603,7 +603,7 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
             query: "n",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [],
+            openPanelMatches: [],
             remoteQueries: ["search google for n", "news"],
             resolvedURL: nil,
             limit: 8,
@@ -641,7 +641,7 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
             query: "gm",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [],
+            openPanelMatches: [],
             remoteQueries: ["gmail", "gmail.com", "google mail"],
             resolvedURL: nil,
             limit: 8,
@@ -687,13 +687,13 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
             query: "gm",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [
+            openPanelMatches: [
                 .init(
                     workspaceId: UUID(),
                     panelId: UUID(),
                     url: "https://gmail.com/",
                     title: "Gmail",
-                    isKnownOpenTab: true
+                    isKnownOpenPanel: true
                 ),
             ],
             remoteQueries: ["Search google for gm", "gmail", "gmail.com", "Google mail"],
@@ -732,7 +732,7 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
             query: "gm",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [],
+            openPanelMatches: [],
             remoteQueries: ["Search google for gm", "gmail", "gmail.com"],
             resolvedURL: nil,
             limit: 8,
@@ -775,7 +775,7 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
             query: "ne",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [],
+            openPanelMatches: [],
             remoteQueries: ["netflix", "new york times", "newegg"],
             resolvedURL: nil,
             limit: 8,
@@ -794,7 +794,7 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
         XCTAssertFalse(remoteCompletions.isEmpty, "Expected remote suggestions to be present for two-char query")
     }
 
-    func testGmQueryWithRemoteSuggestionsAndOpenTabPromotesAutocompletionMatch() {
+    func testGmQueryWithRemoteSuggestionsAndOpenPanelPromotesAutocompletionMatch() {
         let entries: [BrowserHistoryStore.Entry] = [
             .init(
                 id: UUID(),
@@ -820,13 +820,13 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
             query: "gm",
             engineName: "Google",
             historyEntries: entries,
-            openTabMatches: [
+            openPanelMatches: [
                 .init(
                     workspaceId: UUID(),
                     panelId: UUID(),
                     url: "https://google.com/maps",
                     title: "Google Maps",
-                    isKnownOpenTab: true
+                    isKnownOpenPanel: true
                 ),
             ],
             remoteQueries: ["gmail login", "gm stock price", "gmail.com"],

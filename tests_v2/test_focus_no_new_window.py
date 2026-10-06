@@ -41,10 +41,12 @@ def _find_cli() -> str:
 
 def _run_cli(cli: str, args: List[str]) -> subprocess.CompletedProcess:
     env = dict(os.environ)
+    env.pop("C11_PANEL_ID", None)
     env.pop("C11_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
-    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
     env.pop("CMUX_WORKSPACE_ID", None)
     env["CMUX_SOCKET"] = SOCKET_PATH
     cmd = [cli, "--socket", SOCKET_PATH] + args

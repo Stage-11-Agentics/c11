@@ -36,7 +36,7 @@ Assumes c11 (load the c11 skill for mechanics). Outside c11, takes degrade to fi
 
 ## The iteration
 
-Present the takes side by side — in c11, one browser tab each, tiled for single-glance comparison. **The pick is the start of the design, not the end**: iterate the chosen direction with the client — revise, re-present in the same tab, repeat, generously. Many rounds are the norm, not gold-plating; this is the cheapest place the design will ever be to change. Diverge, then converge by iteration: the binding design is the one you *arrive at together*, never the first fan-out winner.
+Present the takes side by side — in c11, one browser panel each, tiled for single-glance comparison. **The pick is the start of the design, not the end**: iterate the chosen direction with the client — revise, re-present in the same panel, repeat, generously. Many rounds are the norm, not gold-plating; this is the cheapest place the design will ever be to change. Diverge, then converge by iteration: the binding design is the one you *arrive at together*, never the first fan-out winner.
 
 **Living artifacts (pipeline norm).** Iteration here stress-tests everything upstream. New stories and criteria discovered in the prototype flow back into `USER_STORIES.md` with fresh AC IDs. And when a client choice contradicts `PHILOSOPHY.md` and they uphold the choice, the philosophy is what's wrong — propose the amendment, update it, propagate. This stage is fully licensed to reopen initiation's artifacts; they live in the same repo precisely so it can.
 

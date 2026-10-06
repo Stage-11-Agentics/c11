@@ -72,13 +72,13 @@ class PerformanceProbe(Probe):
         for workspace in self.rpc('workspace.list')['workspaces']:
             if workspace['id'] != self.workspace:
                 self.rpc('workspace.close', {'workspace_id': workspace['id']})
-        control = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        self.rpc('tab.set_metadata', {'tab_id': control, 'metadata': {'title': 'Glyph control'}})
-        agents = [self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal'})['tab_id'] for _ in range(8)]
+        control = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
+        self.rpc('panel.set_metadata', {'panel_id': control, 'metadata': {'title': 'Glyph control'}})
+        agents = [self.rpc('panel.create', {'workspace_id': self.workspace, 'type': 'terminal'})['panel_id'] for _ in range(8)]
         for index, tab in enumerate(agents):
-            self.rpc('tab.set_metadata', {'tab_id': tab, 'metadata': {'title': 'Synthetic agent ' + str(index + 1)}})
+            self.rpc('panel.set_metadata', {'panel_id': tab, 'metadata': {'title': 'Synthetic agent ' + str(index + 1)}})
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        self.rpc('tab.focus', {'tab_id': control})
+        self.rpc('panel.focus', {'panel_id': control})
         self.ui('activate')
         code = """import os,sys,termios,tty
 fd=sys.stdin.fileno();old=termios.tcgetattr(fd);tty.setraw(fd)
@@ -91,7 +91,7 @@ try:
 finally:
  termios.tcsetattr(fd,termios.TCSADRAIN,old);os.write(1,b'\\x1b[?25h\\r\\n')
 """
-        self.rpc('tab.send_text', {'tab_id': control, 'text': 'python3 -u -c ' + shlex.quote(code) + '\n'})
+        self.rpc('panel.send_text', {'panel_id': control, 'text': 'python3 -u -c ' + shlex.quote(code) + '\n'})
         time.sleep(1)
         blank = self.capture()
         self.key(7); time.sleep(.15); x_image = self.capture()
@@ -177,7 +177,7 @@ finally:
             'scope': 'eight structural hook producers and one real PTY; short comparison, not fleet soak or memory slope'}
         self.check(not errors, 'All packaged hooks completed under the matched load')
         self.check(len(valid) >= 114, 'At least 95 percent of 120 expected glyphs appeared within 500 ms under hook load')
-        self.check(self.rpc('system.identify')['focused']['tab_id'] == control, 'Hook burst preserves the typing target')
+        self.check(self.rpc('system.identify')['focused']['panel_id'] == control, 'Hook burst preserves the typing target')
         self.run([self.args.cli, '--socket', self.args.socket, 'tree', '--no-layout'])
         self.check(True, 'Topology inspected and glyph control remained one readable area')
 

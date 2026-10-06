@@ -36,10 +36,11 @@ change after the branch includes current `origin/main`. A docs-only change is
 exempt only when the diff is limited to documentation or prose and contains no
 Swift, native workflow, script, project, submodule, test, or build-input change.
 The hourly main result is the post-merge authority; red main is fixed forward.
-For Ghostty/bonsplit pointer changes, manually dispatch `Build GhosttyKit` on the
+For Ghostty pointer changes, manually dispatch `Build GhosttyKit` on the
 internal bump branch, wait for its prerelease non-`latest` artifact and bot
 checksum commit, refresh PR checks at that bot-created head, then run the
-exact-head Atlas gate before landing.
+exact-head Atlas gate before landing. The workflow keys on the ghostty SHA, so a
+Bonsplit-only pointer bump needs no dispatch.
 
 Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both Atlas and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
 

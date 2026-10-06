@@ -20,7 +20,7 @@ what is inside the cell — full of output, holding a payload, empty, or collaps
 | `cold` | flat line | the collapsed cell: the agent is still at its prompt, but has gone cold (its prompt cache expired, or it sat dormant) |
 
 **What makes an agent cold.** Cold is a live agent at rest whose next message starts from
-cold. A process that exits leaves no mark at all: the tab becomes a plain terminal.
+cold. A process that exits leaves no mark at all: the panel becomes a plain terminal.
 
 - **Prompt cache: Claude Code, Codex and Grok Build.** These agents' lifecycle comes from
   their journal (hooks or transcript), and they go cold only when their prompt cache
@@ -69,7 +69,7 @@ against its chrome (dark chrome up to `#3A3A3A`). It marks a cold that is a cost
 A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two differ
 in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent keeps its
 gold mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its
-tab sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
+panel sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
 many tokens the next message re-caches.
 
 ## Behavior under the modifiers

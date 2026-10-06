@@ -26,7 +26,7 @@ enum AreaSizeMode: String, CaseIterable, Identifiable {
     case balance
     /// Like `balance`, but fall back to a new panel on the target area instead of
     /// refusing. The raw value stays `"tab"` (persisted); `"panel"` parses to it.
-    case tab
+    case panel = "tab"
 
     var id: String { rawValue }
 
@@ -35,7 +35,7 @@ enum AreaSizeMode: String, CaseIterable, Identifiable {
     static func parse(_ raw: String?) -> AreaSizeMode? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty else { return nil }
-        if trimmed == "panel" { return .tab }
+        if trimmed == "panel" { return .panel }
         return AreaSizeMode(rawValue: trimmed)
     }
 }
@@ -204,7 +204,7 @@ enum AreaSizePolicy {
             // Never block — report status against the requested axis.
             return proceed(requested, flipped: false)
 
-        case .balance, .tab:
+        case .balance, .panel:
             if requestedAdmissible {
                 return proceed(requested, flipped: false)
             }
@@ -213,7 +213,7 @@ enum AreaSizePolicy {
             }
             // Neither axis yields a usable pane.
             let undersizedChild = childSize(requested, paneFrame: paneFrame)
-            let fallback: Outcome = (mode == .tab) ? .addTab : .refuse
+            let fallback: Outcome = (mode == .panel) ? .addTab : .refuse
             return Decision(
                 outcome: fallback,
                 requestedAxis: requested,

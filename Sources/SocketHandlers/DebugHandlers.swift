@@ -31,17 +31,17 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugTerminalScrollViewport(params: params))
         case "debug.terminal.runtime_start_hold":
             return v2Result(id: id, v2MainSync {
-                guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id"),
+                guard let panelId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id"),
                       let located = AppDelegate.shared?.workspaceContainingPanel(
-                        panelId: tabId, preferredWorkspaceId: v2UUID(params, "workspace_id")
-                      ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+                        panelId: panelId, preferredWorkspaceId: v2UUID(params, "workspace_id")
+                      ), let terminal = located.workspace.panels[panelId] as? TerminalPanel else {
                     return .err(code: "not_found", message: "Terminal panel not found", data: nil)
                 }
-                let fixture: TerminalTab
+                let fixture: TerminalPanel
                 if v2Bool(params, "create") == true {
                     // Create and hold on this same main turn, before the normal
                     // eager-load callbacks can start the new fixture runtime.
-                    guard let pane = located.workspace.paneId(forPanelId: tabId),
+                    guard let pane = located.workspace.paneId(forPanelId: panelId),
                           let created = located.workspace.newTerminalSurface(inPane: pane, focus: false) else {
                         return .err(code: "internal_error", message: String(
                             localized: "socket.debug.runtime_hold_create",
@@ -71,7 +71,7 @@ extension TerminalController {
         case "debug.command_palette.toggle":
             return v2Result(id: id, self.v2DebugToggleCommandPalette(params: params))
         case "debug.command_palette.rename_panel.open":
-            return v2Result(id: id, self.v2DebugOpenCommandPaletteRenameTabInput(params: params))
+            return v2Result(id: id, self.v2DebugOpenCommandPaletteRenamePanelInput(params: params))
         case "debug.command_palette.visible":
             return v2Result(id: id, self.v2DebugCommandPaletteVisible(params: params))
         case "debug.command_palette.selection":
@@ -93,8 +93,8 @@ extension TerminalController {
         case "debug.browser.simulate_web_content_termination":
             // Main-thread lookup is necessary for WKWebView identity. Recovery
             // itself is queued by the tab, outside this synchronous socket hop.
-            return v2Result(id: id, v2BrowserWithPanel(params: params) { _, _, _, browserTab in
-                .ok(["scheduled": browserTab.debugSimulateWebContentProcessTermination()])
+            return v2Result(id: id, v2BrowserWithPanel(params: params) { _, _, _, browserPanel in
+                .ok(["scheduled": browserPanel.debugSimulateWebContentProcessTermination()])
             })
         case "debug.sidebar.visible":
             return v2Result(id: id, self.v2DebugSidebarVisible(params: params))
@@ -129,19 +129,19 @@ extension TerminalController {
         case "debug.window.screenshot":
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
         case "debug.panel_sheet.open":
-            return v2Result(id: id, self.v2DebugTabSheetOpen(params: params))
+            return v2Result(id: id, self.v2DebugPanelSheetOpen(params: params))
         case "debug.panel_rail.open":
-            return v2Result(id: id, self.v2DebugTabRailOpen(params: params))
+            return v2Result(id: id, self.v2DebugPanelRailOpen(params: params))
         case "debug.panel_strip.scroll":
-            return v2Result(id: id, self.v2DebugTabStripScroll(params: params))
+            return v2Result(id: id, self.v2DebugPanelStripScroll(params: params))
         case "debug.panel_sheet.hover":
-            return v2Result(id: id, self.v2DebugTabSheetHover(params: params))
+            return v2Result(id: id, self.v2DebugPanelSheetHover(params: params))
         case "debug.panel_sheet.motion_scale":
             let scale = debugDouble(params, "scale") ?? 1
             v2MainSync { BonsplitDebug.tabSheetMotionScale = scale }
             return v2Result(id: id, .ok(["scale": scale]))
         case "debug.panel_sheet.detail":
-            return v2Result(id: id, self.v2DebugTabSheetDetail(params: params))
+            return v2Result(id: id, self.v2DebugPanelSheetDetail(params: params))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
         case "debug.session.round_trip_workspaces":
@@ -165,7 +165,7 @@ extension TerminalController {
                 let workspaceIndex: Int
                 let workspaceSelected: Bool
                 let workspace: Workspace
-                let terminalPanel: TerminalTab
+                let terminalPanel: TerminalPanel
                 let paneId: PaneID?
                 let paneIndex: Int?
                 let surfaceIndex: Int
@@ -274,7 +274,7 @@ extension TerminalController {
                     }
 
                     for (surfaceIndex, panel) in orderedPanels(in: workspace).enumerated() {
-                        guard let terminalTab = panel as? TerminalTab else { continue }
+                        guard let terminalTab = panel as? TerminalPanel else { continue }
                         mappedLocations[ObjectIdentifier(terminalTab.surface)] = MappedTerminalLocation(
                             windowIndex: windowIndex,
                             windowId: state.windowId,
@@ -305,13 +305,13 @@ extension TerminalController {
                 let panelId = mapped?.terminalPanel.id ?? terminalSurface.id
                 let portalState = hostedView.portalBindingGuardState()
                 let portalHostLease = terminalSurface.debugPortalHostLease()
-                let gitBranchState = workspace?.tabGitBranches[panelId]
-                let listeningPorts = (workspace?.tabListeningPorts[panelId] ?? []).sorted()
-                let title = workspace?.tabTitle(panelId: panelId)
+                let gitBranchState = workspace?.panelGitBranches[panelId]
+                let listeningPorts = (workspace?.panelListeningPorts[panelId] ?? []).sorted()
+                let title = workspace?.panelTitle(panelId: panelId)
                 let paneId = mapped?.paneId
                 let treeVisible = mapped?.bonsplitTabId != nil && paneId != nil
-                let ttyName = workspace?.tabTTYNames[panelId]
-                let currentDirectory = nonEmpty(workspace?.tabDirectories[panelId] ?? mapped?.terminalPanel.directory)
+                let ttyName = workspace?.panelTTYNames[panelId]
+                let currentDirectory = nonEmpty(workspace?.panelDirectories[panelId] ?? mapped?.terminalPanel.directory)
                 let teardownRequest = terminalSurface.debugTeardownRequest()
                 let lastKnownWorkspaceId = terminalSurface.debugLastKnownWorkspaceId()
 
@@ -349,7 +349,7 @@ extension TerminalController {
                     "surface_title": v2OrNull(title),
                     "surface_focused": v2OrNull(workspace.map { panelId == $0.focusedPanelId }),
                     "surface_selected_in_pane": v2OrNull(mapped?.selectedInPane),
-                    "surface_pinned": v2OrNull(workspace.map { $0.isTabPinned(panelId) }),
+                    "surface_pinned": v2OrNull(workspace.map { $0.isPanelPinned(panelId) }),
                     "surface_context": terminalSurface.debugSurfaceContextLabel(),
                     "surface_created_at": v2OrNull(iso8601String(terminalSurface.debugCreatedAt())),
                     "surface_age_seconds": v2OrNull(ageSeconds(since: terminalSurface.debugCreatedAt())),
@@ -415,21 +415,21 @@ extension TerminalController {
 #if DEBUG
     private func v2DebugFeedAnswerHoldAfterPaste(params: [String: Any]) -> V2CallResult {
         guard let workspaceID = v2UUID(params, "workspace_id"),
-              let tabID = v2UUID(params, FeedPanelParam.key(in: params)),
+              let panelID = v2UUID(params, FeedPanelParam.key(in: params)),
               let holdMilliseconds = v2Int(params, "hold_ms"),
               (1...5_000).contains(holdMilliseconds) else {
             return .err(code: "invalid_params", message: "workspace_id, panel_id, and hold_ms (1...5000) are required", data: nil)
         }
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
-                panelId: tabID, preferredWorkspaceId: workspaceID
-            ), located.workspace.panels[tabID] is TerminalTab else {
+                panelId: panelID, preferredWorkspaceId: workspaceID
+            ), located.workspace.panels[panelID] is TerminalPanel else {
                 return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
-            guard FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: holdMilliseconds) else {
+            guard FeedAnswerDebugHold.shared.arm(panelID: panelID, milliseconds: holdMilliseconds) else {
                 return .err(code: "invalid_state", message: "A feed-answer hold is already armed", data: nil)
             }
-            return .ok(["armed": true, "tab_id": tabID.uuidString, "hold_ms": holdMilliseconds])
+            return .ok(["armed": true, "tab_id": panelID.uuidString, "hold_ms": holdMilliseconds])
         }
     }
 #endif
@@ -514,14 +514,14 @@ extension TerminalController {
         guard let text = params["text"] as? String else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
-        guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
+        guard let panelId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
-                panelId: tabId,
+                panelId: panelId,
                 preferredWorkspaceId: nil
-            ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+            ), let terminal = located.workspace.panels[panelId] as? TerminalPanel else {
                 return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             let delivered = terminal.surface.debugSimulateOperatorKeys(text)
@@ -540,14 +540,14 @@ extension TerminalController {
         guard let lines = v2Int(params, "lines") else {
             return .err(code: "invalid_params", message: "Missing lines", data: nil)
         }
-        guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
+        guard let panelId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
-                panelId: tabId,
+                panelId: panelId,
                 preferredWorkspaceId: nil
-            ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+            ), let terminal = located.workspace.panels[panelId] as? TerminalPanel else {
                 return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             guard terminal.surface.performBindingAction("scroll_page_lines:\(lines)") else {
@@ -585,7 +585,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2DebugOpenCommandPaletteRenameTabInput(params: [String: Any]) -> V2CallResult {
+    private func v2DebugOpenCommandPaletteRenamePanelInput(params: [String: Any]) -> V2CallResult {
         let requestedWindowId = v2UUID(params, "window_id")
         var result: V2CallResult = .ok([:])
         v2MainSync {
@@ -606,7 +606,7 @@ extension TerminalController {
             } else {
                 targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
             }
-            NotificationCenter.default.post(name: .commandPaletteRenameTabRequested, object: targetWindow)
+            NotificationCenter.default.post(name: .commandPaletteRenamePanelRequested, object: targetWindow)
         }
         return result
     }
@@ -1002,13 +1002,13 @@ extension TerminalController {
     /// The detail the tab sheet would show for a surface, as JSON: agent tag, type,
     /// status, clocks (ISO 8601) and the text clocks (`turn`, `tools`, `tokens`).
     /// Read-only; opens nothing. For validating the sheet's inputs without a screenshot.
-    private func v2DebugTabSheetDetail(params: [String: Any]) -> V2CallResult {
+    private func v2DebugPanelSheetDetail(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "panel not found", data: nil)
         }
         var payload: [String: Any]?
         v2MainSync {
-            guard let detail = workspace.tabSheetDetail(panelId: surfaceId) else { return }
+            guard let detail = workspace.panelSheetDetail(panelId: surfaceId) else { return }
             let iso = ISO8601DateFormatter()
             payload = [
                 "surface_id": surfaceId.uuidString,
@@ -1030,7 +1030,7 @@ extension TerminalController {
 
     /// Test seam: opens (default) or closes the tab sheet of the pane hosting
     /// `surface_id` (or the focused surface), without a click.
-    private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
+    private func v2DebugPanelSheetOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "panel not found", data: nil)
         }
@@ -1052,7 +1052,7 @@ extension TerminalController {
     }
 
     /// Test seam: opens (default) or closes the rail of the pane hosting `surface_id`.
-    private func v2DebugTabRailOpen(params: [String: Any]) -> V2CallResult {
+    private func v2DebugPanelRailOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "panel not found", data: nil)
         }
@@ -1067,7 +1067,7 @@ extension TerminalController {
     }
 
     /// Test seam: scrolls the tab strip of the pane hosting `surface_id` to `offset`.
-    private func v2DebugTabStripScroll(params: [String: Any]) -> V2CallResult {
+    private func v2DebugPanelStripScroll(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "panel not found", data: nil)
         }
@@ -1083,7 +1083,7 @@ extension TerminalController {
 
     /// Test seam: lights the tab of `surface_id` (and its sheet row) as linked
     /// hover would; `clear: true` clears. `from_sheet` picks the origin.
-    private func v2DebugTabSheetHover(params: [String: Any]) -> V2CallResult {
+    private func v2DebugPanelSheetHover(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "panel not found", data: nil)
         }

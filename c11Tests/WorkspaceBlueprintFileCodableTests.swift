@@ -35,7 +35,7 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(title: "Blueprint Test"),
             layout: .pane(.init(surfaceIds: ["a"])),
-            surfaces: [TabSpec(id: "a", kind: .terminal)]
+            surfaces: [PanelSpec(id: "a", kind: .terminal)]
         )
     }
 
@@ -70,9 +70,9 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
                 )
             ),
             surfaces: [
-                TabSpec(id: "term", kind: .terminal, title: "shell", command: "bash"),
-                TabSpec(id: "browser", kind: .browser, title: "docs", url: "https://stage11.ai"),
-                TabSpec(id: "md", kind: .markdown, title: "notes", filePath: "/tmp/notes.md")
+                PanelSpec(id: "term", kind: .terminal, title: "shell", command: "bash"),
+                PanelSpec(id: "browser", kind: .browser, title: "docs", url: "https://stage11.ai"),
+                PanelSpec(id: "md", kind: .markdown, title: "notes", filePath: "/tmp/notes.md")
             ]
         )
         let file = WorkspaceBlueprintFile(

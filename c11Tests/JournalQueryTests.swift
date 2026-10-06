@@ -8,13 +8,13 @@ import SQLite3
 #endif
 
 enum JournalAnalyticsFixture {
-    static let tab = UUID(uuidString: "00000000-0000-0000-0000-000000000101")!
+    static let panel = UUID(uuidString: "00000000-0000-0000-0000-000000000101")!
     static let workspace = UUID(uuidString: "00000000-0000-0000-0000-000000000102")!
     static let app = UUID(uuidString: "00000000-0000-0000-0000-000000000103")!
     static let restartedApp = UUID(uuidString: "00000000-0000-0000-0000-000000000104")!
 
     static func draft(_ kind: JournalKind, at: Int64, agent: String = "claude-code") -> JournalDraft {
-        JournalDraft(kind: kind, emittedAtMs: at, tabID: tab, workspaceID: workspace,
+        JournalDraft(kind: kind, emittedAtMs: at, panelID: panel, workspaceID: workspace,
                      sessionID: "analytics-session", agentKind: agent, source: .hook,
                      adapter: .claudeHook,
                      nativeEvent: kind == .turnStarted ? "UserPromptSubmit" : "PreToolUse")
@@ -167,7 +167,7 @@ final class JournalQueryTests: XCTestCase {
     }
 
     func testRetainedUnconfirmedBaselineIsSeparateFromConfirmedBlockedTime() throws {
-        var baseline = JournalSnapshot(owner: JournalOwner(tabID: JournalAnalyticsFixture.tab,
+        var baseline = JournalSnapshot(owner: JournalOwner(panelID: JournalAnalyticsFixture.panel,
                                                             agentKind: "claude-code", sessionID: "analytics-session"),
                                        workspaceID: JournalAnalyticsFixture.workspace,
                                        appInstanceID: JournalAnalyticsFixture.app)
@@ -195,7 +195,7 @@ final class JournalQueryTests: XCTestCase {
     }
 
     func testCurrentBaselineReplacesEventDerivedOngoingInterval() throws {
-        var baseline = JournalSnapshot(owner: JournalOwner(tabID: JournalAnalyticsFixture.tab,
+        var baseline = JournalSnapshot(owner: JournalOwner(panelID: JournalAnalyticsFixture.panel,
                                                             agentKind: "claude-code", sessionID: "analytics-session"),
                                        workspaceID: JournalAnalyticsFixture.workspace,
                                        appInstanceID: JournalAnalyticsFixture.app)
@@ -217,7 +217,7 @@ final class JournalQueryTests: XCTestCase {
     }
 
     func testOfflineBaselineStopsAtItsLastObservation() throws {
-        var baseline = JournalSnapshot(owner: JournalOwner(tabID: JournalAnalyticsFixture.tab,
+        var baseline = JournalSnapshot(owner: JournalOwner(panelID: JournalAnalyticsFixture.panel,
                                                             agentKind: "claude-code", sessionID: "analytics-session"),
                                        workspaceID: JournalAnalyticsFixture.workspace,
                                        appInstanceID: JournalAnalyticsFixture.app)
@@ -466,10 +466,10 @@ final class JournalQueryTests: XCTestCase {
 
     func testStreamBoundsOwnerAndDimensionAggregationAndDisclosesTruncation() throws {
         func makeEvent(sequence: Int64, ownerIndex: Int, model: String,
-                       workspaceID: UUID, tabID: UUID? = nil,
+                       workspaceID: UUID, panelID: UUID? = nil,
                        sessionID: String? = nil) -> JournalEvent {
             let draft = JournalDraft(kind: .turnStarted, emittedAtMs: sequence,
-                                     tabID: tabID ?? UUID(), workspaceID: workspaceID,
+                                     panelID: panelID ?? UUID(), workspaceID: workspaceID,
                                      sessionID: sessionID ?? "bounded-owner-\(ownerIndex)",
                                      agentKind: "claude-code", source: .hook,
                                      adapter: .claudeHook, nativeEvent: "UserPromptSubmit",
@@ -501,12 +501,12 @@ final class JournalQueryTests: XCTestCase {
         XCTAssertEqual((ownerResult["turns"] as? [String: Any])?["started"] as? Int, ownerCount)
 
         let modelCount = JournalQuery.maximumGroupsPerDimension + 1
-        let sharedTab = UUID()
+        let sharedPanel = UUID()
         let sharedSession = "bounded-dimension-owner"
         let modelEvents = (0..<modelCount).map { index in
             makeEvent(sequence: Int64(index + 1), ownerIndex: 10_000,
                       model: "model-\(index)", workspaceID: workspace,
-                      tabID: sharedTab, sessionID: sharedSession)
+                      panelID: sharedPanel, sessionID: sharedSession)
         }
         let modelStream = JournalQuery.Stream(
             baselines: [], coverage: JournalAnalyticsFixture.coverage(highWater: Int64(modelCount)),
@@ -529,26 +529,26 @@ final class JournalQueryTests: XCTestCase {
         let store = try JournalStore(layout: JournalStorageLayout(directory: directory),
                                      instanceID: JournalAnalyticsFixture.app,
                                      clock: { now }, tickClock: { UInt64(now) * 1_000_000 })
-        let tabB = UUID(uuidString: "00000000-0000-0000-0000-000000000203")!
+        let panelB = UUID(uuidString: "00000000-0000-0000-0000-000000000203")!
 
-        func ownerDraft(_ kind: JournalKind, tab: UUID = JournalTestData.tab,
+        func ownerDraft(_ kind: JournalKind, panel: UUID = JournalTestData.panel,
                         session: String = "fixture-session", at: Int64) -> JournalDraft {
             var draft = JournalTestData.draft(kind, at: at)
-            draft.tabID = tab
+            draft.panelID = panel
             draft.sessionID = session
             return draft
         }
-        func appendAsk(tab: UUID, session: String, at: Int64) throws {
+        func appendAsk(panel: UUID, session: String, at: Int64) throws {
             now = at
-            var ask = ownerDraft(.questionRequested, tab: tab, session: session, at: at)
+            var ask = ownerDraft(.questionRequested, panel: panel, session: session, at: at)
             ask.requestID = "shared-request"
             ask.reasonCode = .question
             _ = try store.append(draft: ask, context: JournalContext(eligible: true, modelID: "ask-model"))
         }
-        func response(tab: UUID, session: String, at: Int64, model: String,
+        func response(panel: UUID, session: String, at: Int64, model: String,
                       source: JournalSource = .c11, adapter: JournalAdapter = .c11) throws -> JournalEvent {
             now = at
-            var draft = ownerDraft(.stateChanged, tab: tab, session: session, at: at)
+            var draft = ownerDraft(.stateChanged, panel: panel, session: session, at: at)
             draft.source = source
             draft.adapter = adapter
             draft.nativeEvent = "operator_response"
@@ -561,25 +561,25 @@ final class JournalQueryTests: XCTestCase {
                                                 through: result.receipt.sequence, limit: 1).first)
         }
 
-        try appendAsk(tab: JournalTestData.tab, session: "fixture-session", at: 1_000)
-        try appendAsk(tab: tabB, session: "second-session", at: 1_100)
-        let firstResponse = try response(tab: JournalTestData.tab, session: "fixture-session", at: 3_000, model: "response-a")
-        let secondResponse = try response(tab: tabB, session: "second-session", at: 3_200, model: "response-b")
+        try appendAsk(panel: JournalTestData.panel, session: "fixture-session", at: 1_000)
+        try appendAsk(panel: panelB, session: "second-session", at: 1_100)
+        let firstResponse = try response(panel: JournalTestData.panel, session: "fixture-session", at: 3_000, model: "response-a")
+        let secondResponse = try response(panel: panelB, session: "second-session", at: 3_200, model: "response-b")
         XCTAssertEqual(firstResponse.effect, .observation)
         XCTAssertEqual(secondResponse.effect, .observation)
 
         now = 4_000
-        var cancelledAsk = ownerDraft(.questionRequested, tab: tabB, session: "cancel-session", at: now)
+        var cancelledAsk = ownerDraft(.questionRequested, panel: panelB, session: "cancel-session", at: now)
         cancelledAsk.requestID = "cancel-request"
         cancelledAsk.reasonCode = .question
         _ = try store.append(draft: cancelledAsk, context: JournalContext(eligible: true, modelID: "ask-model"))
         now = 5_000
-        var cancel = ownerDraft(.attentionResolved, tab: tabB, session: "cancel-session", at: now)
+        var cancel = ownerDraft(.attentionResolved, panel: panelB, session: "cancel-session", at: now)
         cancel.requestID = "cancel-request"
         cancel.resolution = .cancelled
         _ = try store.append(draft: cancel, context: JournalContext(eligible: true, modelID: "ask-model"))
         now = 6_000
-        var late = ownerDraft(.stateChanged, tab: tabB, session: "cancel-session", at: now)
+        var late = ownerDraft(.stateChanged, panel: panelB, session: "cancel-session", at: now)
         late.source = .c11; late.adapter = .c11; late.nativeEvent = "operator_response"
         late.signal = .operatorResponse; late.requestID = "cancel-request"
         late.occurredAtMs = now; late.timeQuality = .observed
@@ -587,11 +587,11 @@ final class JournalQueryTests: XCTestCase {
         XCTAssertEqual(lateResult.receipt.projectionEffect, .advisory)
 
         now = 7_000
-        var hookAsk = ownerDraft(.questionRequested, tab: tabB, session: "hook-session", at: now)
+        var hookAsk = ownerDraft(.questionRequested, panel: panelB, session: "hook-session", at: now)
         hookAsk.requestID = "hook-request"; hookAsk.reasonCode = .question
         _ = try store.append(draft: hookAsk, context: JournalContext(eligible: true, modelID: "ask-model"))
         now = 8_000
-        var hookResponse = ownerDraft(.stateChanged, tab: tabB, session: "hook-session", at: now)
+        var hookResponse = ownerDraft(.stateChanged, panel: panelB, session: "hook-session", at: now)
         hookResponse.source = .hook; hookResponse.adapter = .claudeHook
         hookResponse.nativeEvent = "operator_response"; hookResponse.signal = .operatorResponse
         hookResponse.requestID = "hook-request"; hookResponse.occurredAtMs = now
@@ -640,7 +640,7 @@ final class JournalQueryTests: XCTestCase {
         _ = try store.append(draft: ask, context: JournalContext(eligible: true))
         now = 2_000
         var unrelated = JournalTestData.draft(.turnStarted, at: now)
-        unrelated.tabID = UUID(uuidString: "00000000-0000-0000-0000-000000000204")!
+        unrelated.panelID = UUID(uuidString: "00000000-0000-0000-0000-000000000204")!
         unrelated.sessionID = "gap-owner"
         _ = try store.append(draft: unrelated, context: JournalContext(eligible: true))
         now = 3_000

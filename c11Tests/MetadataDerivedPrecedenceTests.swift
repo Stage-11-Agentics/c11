@@ -33,7 +33,7 @@ final class MetadataDerivedPrecedenceTests: XCTestCase {
     // MARK: - SurfaceMetadataStore precedence behavior
 
     func testOscWinsOverDerivedForSameKey() {
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let ws = UUID()
         let surface = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
@@ -61,7 +61,7 @@ final class MetadataDerivedPrecedenceTests: XCTestCase {
     }
 
     func testDerivedWinsOverHeuristic() {
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let ws = UUID()
         let surface = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
@@ -86,7 +86,7 @@ final class MetadataDerivedPrecedenceTests: XCTestCase {
     }
 
     func testExplicitWinsOverDerived() {
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let ws = UUID()
         let surface = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
@@ -109,24 +109,24 @@ final class MetadataDerivedPrecedenceTests: XCTestCase {
     // MARK: - Reserved-key validation for the new canonical keys
 
     func testWorktreeKeyValidatesAsString() {
-        let result = TabMetadataStore.validateReservedKey(MetadataKey.worktree, "wt-name")
+        let result = PanelMetadataStore.validateReservedKey(MetadataKey.worktree, "wt-name")
         XCTAssertNil(result, "valid worktree value must not produce a validation error")
     }
 
     func testBranchKeyValidatesAsString() {
-        let result = TabMetadataStore.validateReservedKey(MetadataKey.branch, "feature/foo")
+        let result = PanelMetadataStore.validateReservedKey(MetadataKey.branch, "feature/foo")
         XCTAssertNil(result, "valid branch value must not produce a validation error")
     }
 
     func testWorktreeRejectsOversizeValue() {
         let huge = String(repeating: "a", count: 129)
-        let result = TabMetadataStore.validateReservedKey(MetadataKey.worktree, huge)
+        let result = PanelMetadataStore.validateReservedKey(MetadataKey.worktree, huge)
         XCTAssertNotNil(result, "worktree value over 128 chars must be rejected")
     }
 
     func testBranchRejectsOversizeValue() {
         let huge = String(repeating: "a", count: 65)
-        let result = TabMetadataStore.validateReservedKey(MetadataKey.branch, huge)
+        let result = PanelMetadataStore.validateReservedKey(MetadataKey.branch, huge)
         XCTAssertNotNil(result, "branch value over 64 chars must be rejected")
     }
 

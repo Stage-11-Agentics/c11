@@ -162,8 +162,8 @@ enum WorkspaceBlueprintMarkdown {
         }
         var explicitIDs = Set<String>()
         try reserveExplicitSurfaceIDs(in: rootNode, reserved: &explicitIDs)
-        var idGen = TabIDGenerator(reservedIDs: explicitIDs)
-        var surfaces: [TabSpec] = []
+        var idGen = PanelIDGenerator(reservedIDs: explicitIDs)
+        var surfaces: [PanelSpec] = []
         let layout = try buildLayoutTree(from: rootNode, surfaces: &surfaces, idGen: &idGen)
         try validateCompanionFields(in: surfaces)
 
@@ -315,7 +315,7 @@ enum WorkspaceBlueprintMarkdown {
 
     // MARK: - Layout tree conversion (YAML → LayoutTreeSpec)
 
-    private struct TabIDGenerator {
+    private struct PanelIDGenerator {
         var counter: Int = 1
         var reservedIDs: Set<String>
 
@@ -342,8 +342,8 @@ enum WorkspaceBlueprintMarkdown {
             return
         }
         if let listKey = panelListKey(in: keys) {
-            for tabNode in node.lookup(listKey)?.asList ?? [] {
-                try reserveExplicitSurfaceIDs(in: tabNode, reserved: &reserved)
+            for panelNode in node.lookup(listKey)?.asList ?? [] {
+                try reserveExplicitSurfaceIDs(in: panelNode, reserved: &reserved)
             }
             return
         }
@@ -364,15 +364,15 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func surfaceID(
         from node: YAML.Value,
-        generator: inout TabIDGenerator
+        generator: inout PanelIDGenerator
     ) -> String {
         nullIfEmpty(node.lookup("id")?.asScalar) ?? generator.mint()
     }
 
     private static func buildLayoutTree(
         from node: YAML.Value,
-        surfaces: inout [TabSpec],
-        idGen: inout TabIDGenerator
+        surfaces: inout [PanelSpec],
+        idGen: inout PanelIDGenerator
     ) throws -> LayoutTreeSpec {
         let mapping = node.asMapping ?? []
         let keys = Set(mapping.map { $0.0 })
@@ -402,12 +402,12 @@ enum WorkspaceBlueprintMarkdown {
 
         // Multi-panel area: has a `panels:` (or legacy `tabs:`) list.
         if let listKey = panelListKey(in: keys) {
-            let tabNodes = node.lookup(listKey)?.asList ?? []
+            let panelNodes = node.lookup(listKey)?.asList ?? []
             var ids: [String] = []
-            for tabNode in tabNodes {
-                let id = surfaceID(from: tabNode, generator: &idGen)
+            for panelNode in panelNodes {
+                let id = surfaceID(from: panelNode, generator: &idGen)
                 ids.append(id)
-                surfaces.append(try buildSurfaceSpec(id: id, from: tabNode))
+                surfaces.append(try buildSurfaceSpec(id: id, from: panelNode))
             }
             let selectedIndex: Int? = node.lookup("selected")?.asScalar.flatMap { Int($0) }
             return .pane(LayoutTreeSpec.AreaSpec(
@@ -422,11 +422,11 @@ enum WorkspaceBlueprintMarkdown {
         return .pane(LayoutTreeSpec.AreaSpec(surfaceIds: [id], selectedIndex: nil))
     }
 
-    private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> TabSpec {
+    private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> PanelSpec {
         guard let typeRaw = node.lookup("type")?.asScalar, !typeRaw.isEmpty else {
             throw ParseError.missingType
         }
-        guard let kind = TabSpecKind(rawValue: typeRaw.lowercased()) else {
+        guard let kind = PanelSpecKind(rawValue: typeRaw.lowercased()) else {
             throw ParseError.unsupportedSurfaceKind(typeRaw)
         }
         let title = node.lookup("title")?.asScalar
@@ -439,7 +439,7 @@ enum WorkspaceBlueprintMarkdown {
         // Opt-in `submit:` — only the exact scalar `true` (case-insensitive)
         // enables execution; anything else, including absence, stays false.
         let submit = node.lookup("submit")?.asScalar?.lowercased() == "true"
-        return TabSpec(
+        return PanelSpec(
             id: id,
             kind: kind,
             title: nullIfEmpty(title),
@@ -456,7 +456,7 @@ enum WorkspaceBlueprintMarkdown {
         )
     }
 
-    private static func validateCompanionFields(in surfaces: [TabSpec]) throws {
+    private static func validateCompanionFields(in surfaces: [PanelSpec]) throws {
         let byID = Dictionary(uniqueKeysWithValues: surfaces.map { ($0.id, $0) })
         for surface in surfaces {
             if let declaredKind = surface.declaredAgentKind,
@@ -525,7 +525,7 @@ enum WorkspaceBlueprintMarkdown {
     /// subsequent keys live at column `indent`.
     private static func emitLayoutNode(
         _ tree: LayoutTreeSpec,
-        surfaces: [TabSpec],
+        surfaces: [PanelSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -539,7 +539,7 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func emitSplitNode(
         _ split: LayoutTreeSpec.SplitSpec,
-        surfaces: [TabSpec],
+        surfaces: [PanelSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -556,7 +556,7 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func emitPaneNode(
         _ area: LayoutTreeSpec.AreaSpec,
-        surfaces: [TabSpec],
+        surfaces: [PanelSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -583,7 +583,7 @@ enum WorkspaceBlueprintMarkdown {
     }
 
     private static func emitSurfaceFields(
-        _ surface: TabSpec,
+        _ surface: PanelSpec,
         firstLinePad: String,
         restPad: String
     ) -> String {

@@ -62,8 +62,8 @@ final class MailboxLayoutTests: XCTestCase {
 
     func testInboxURLIsKeyedOnLowercasedTabUUID() {
         let ws = stubWorkspace()
-        let tab = UUID(uuidString: "A1B2C3D4-0000-4000-8000-00000000BEEF")!
-        let url = MailboxLayout.inboxURL(state: stateURL, workspaceId: ws, tabId: tab)
+        let panel = UUID(uuidString: "A1B2C3D4-0000-4000-8000-00000000BEEF")!
+        let url = MailboxLayout.inboxURL(state: stateURL, workspaceId: ws, panelId: panel)
         XCTAssertEqual(
             url.path,
             "/tmp/c11-test-state/workspaces/\(ws.uuidString)/mailboxes/a1b2c3d4-0000-4000-8000-00000000beef"
@@ -73,12 +73,12 @@ final class MailboxLayoutTests: XCTestCase {
     func testLegacyInboxURLKeepsSafeTitles() {
         let ws = stubWorkspace()
         XCTAssertEqual(
-            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, tabName: "build watcher")?
+            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: "build watcher")?
                 .lastPathComponent,
             "build watcher"
         )
         XCTAssertEqual(
-            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, tabName: "ビルダー")?
+            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: "ビルダー")?
                 .lastPathComponent,
             "ビルダー"
         )
@@ -91,7 +91,7 @@ final class MailboxLayoutTests: XCTestCase {
         let long = "MRQ-214 [review]: " + String(repeating: "x", count: 90)
         for title in ["a/b: c", long, "../escape", ".hidden", "", "_outbox", "_read", "blobs"] {
             XCTAssertNil(
-                MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, tabName: title),
+                MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: title),
                 title
             )
         }
@@ -102,36 +102,36 @@ final class MailboxLayoutTests: XCTestCase {
             .appendingPathComponent("c11-layout-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: state) }
         let ws = stubWorkspace()
-        let tab = UUID()
+        let panel = UUID()
 
         // No legacy directory on disk: only the canonical inbox.
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, tabName: "watcher"),
-            [MailboxLayout.inboxURL(state: state, workspaceId: ws, tabId: tab)]
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: panel, panelName: "watcher"),
+            [MailboxLayout.inboxURL(state: state, workspaceId: ws, panelId: panel)]
         )
 
         let legacy = try XCTUnwrap(
-            MailboxLayout.legacyInboxURL(state: state, workspaceId: ws, tabName: "watcher")
+            MailboxLayout.legacyInboxURL(state: state, workspaceId: ws, panelName: "watcher")
         )
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, tabName: "watcher"),
-            [MailboxLayout.inboxURL(state: state, workspaceId: ws, tabId: tab), legacy]
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: panel, panelName: "watcher"),
+            [MailboxLayout.inboxURL(state: state, workspaceId: ws, panelId: panel), legacy]
         )
         // Tab UUID unknown (a `--surface` name c11 could not resolve): legacy only.
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: nil, tabName: "watcher"),
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: nil, panelName: "watcher"),
             [legacy]
         )
         // A title-unsafe name never yields a legacy path.
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, tabName: "a/b: c"),
-            [MailboxLayout.inboxURL(state: state, workspaceId: ws, tabId: tab)]
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: panel, panelName: "a/b: c"),
+            [MailboxLayout.inboxURL(state: state, workspaceId: ws, panelId: panel)]
         )
     }
 
     func testReadURLIsInsideInbox() {
-        let inbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: stubWorkspace(), tabId: UUID())
+        let inbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: stubWorkspace(), panelId: UUID())
         XCTAssertEqual(MailboxLayout.readURL(inbox: inbox).deletingLastPathComponent().path, inbox.path)
         XCTAssertEqual(MailboxLayout.readURL(inbox: inbox).lastPathComponent, "_read")
     }

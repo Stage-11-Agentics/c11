@@ -118,7 +118,7 @@ final class MetadataPersistenceRoundTripTests: XCTestCase {
             "listeningPorts": []
         }
         """.data(using: .utf8)!
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: legacyJSON)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: legacyJSON)
         XCTAssertNil(decoded.metadata)
         XCTAssertNil(decoded.metadataSources)
     }
@@ -137,7 +137,7 @@ final class MetadataPersistenceRoundTripTests: XCTestCase {
             "active": PersistedMetadataSource(source: "heuristic", ts: 1_700_000_003),
             "tags": PersistedMetadataSource(source: "declare", ts: 1_700_000_004)
         ]
-        let snapshot = SessionTabSnapshot(
+        let snapshot = SessionPanelSnapshot(
             id: panelId,
             type: .terminal,
             title: nil,
@@ -155,7 +155,7 @@ final class MetadataPersistenceRoundTripTests: XCTestCase {
             metadataSources: sources
         )
         let data = try JSONEncoder().encode(snapshot)
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         XCTAssertEqual(decoded.id, panelId)
         XCTAssertEqual(decoded.metadata, metadata)
         XCTAssertEqual(decoded.metadataSources, sources)
@@ -165,7 +165,7 @@ final class MetadataPersistenceRoundTripTests: XCTestCase {
         // If every panel has an empty store, snapshot should not bloat with
         // empty dicts. The capture path assigns nil; verify the encoded JSON
         // omits both keys entirely.
-        let snapshot = SessionTabSnapshot(
+        let snapshot = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: nil,

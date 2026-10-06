@@ -1,0 +1,80 @@
+import XCTest
+
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
+#endif
+
+/// Pure tests for `SurfaceActivityTracker`. Per `CLAUDE.md`, never run
+/// locally — CI only.
+final class PanelActivityTests: XCTestCase {
+
+    func testRecordActivityIsAsyncButReadable() {
+        let tracker = PanelActivityTracker()
+        let surface = "S1"
+        let when = Date(timeIntervalSince1970: 1000)
+        tracker.recordActivity(surfaceId: surface, at: when)
+        // Force synchronous read — drains the serial queue.
+        let read = tracker.lastActivity(for: surface)
+        XCTAssertEqual(read?.timeIntervalSince1970, 1000)
+    }
+
+    func testInputBurstCoalescedWithDebounce() throws {
+        let tracker = PanelActivityTracker()
+        let base = Date()
+        // First write fires.
+        tracker.recordActivity(surfaceId: "S1", at: base)
+        // Burst of writes inside the debounce window must NOT advance the
+        // timestamp — the leading-edge value is what we want.
+        tracker.recordActivity(surfaceId: "S1", at: base.addingTimeInterval(0.05))
+        tracker.recordActivity(surfaceId: "S1", at: base.addingTimeInterval(0.10))
+        tracker.recordActivity(surfaceId: "S1", at: base.addingTimeInterval(0.20))
+        let read = tracker.lastActivity(for: "S1")
+        // C11-164: the `accuracy:` XCTAssertEqual overload requires a
+        // non-optional FloatingPoint; unwrap first (was a pre-existing host-lane
+        // compile break — `Double?` never satisfied that overload).
+        XCTAssertEqual(try XCTUnwrap(read).timeIntervalSince1970, base.timeIntervalSince1970, accuracy: 0.001,
+                       "burst inside the debounce window must not advance the timestamp")
+    }
+
+    func testWritesPastDebounceWindowAdvanceTheTimestamp() throws {
+        let tracker = PanelActivityTracker()
+        let base = Date()
+        tracker.recordActivity(surfaceId: "S1", at: base)
+        let later = base.addingTimeInterval(PanelActivityTracker.debounceInterval + 0.1)
+        tracker.recordActivity(surfaceId: "S1", at: later)
+        let read = tracker.lastActivity(for: "S1")
+        XCTAssertEqual(try XCTUnwrap(read).timeIntervalSince1970, later.timeIntervalSince1970, accuracy: 0.001)
+    }
+
+    func testEmptyOrWhitespacePanelIdIgnored() {
+        let tracker = PanelActivityTracker()
+        tracker.recordActivity(surfaceId: "", at: Date())
+        tracker.recordActivity(surfaceId: "   ", at: Date())
+        XCTAssertNil(tracker.lastActivity(for: ""))
+        XCTAssertNil(tracker.lastActivity(for: "   "))
+    }
+
+    func testSeedAndSnapshotRoundTrip() throws {
+        let tracker = PanelActivityTracker()
+        let now = Date()
+        tracker.seed(from: ["S1": now, "S2": now.addingTimeInterval(-60)])
+        let snap = tracker.snapshot()
+        XCTAssertEqual(try XCTUnwrap(snap["S1"]).timeIntervalSince1970,
+                       now.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(snap["S2"]).timeIntervalSince1970,
+                       now.addingTimeInterval(-60).timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertEqual(snap.count, 2)
+    }
+
+    func testClearWipesPanelOnly() {
+        let tracker = PanelActivityTracker()
+        let now = Date()
+        tracker.recordActivity(surfaceId: "S1", at: now)
+        tracker.recordActivity(surfaceId: "S2", at: now)
+        tracker.clear(surfaceId: "S1")
+        XCTAssertNil(tracker.lastActivity(for: "S1"))
+        XCTAssertNotNil(tracker.lastActivity(for: "S2"))
+    }
+}

@@ -53,15 +53,15 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | Area | Files |
 |---|---|
 | Terminal | `TerminalView.swift`, `GhosttyTerminalView.swift`, `GhosttyConfig.swift`, `TerminalController.swift`, `TerminalWindowPortal.swift` |
-| Browser | `BrowserWindowPortal.swift`, `Tabs/BrowserTab.swift`, `Tabs/BrowserTabView.swift`, `Tabs/CmuxWebView.swift` |
-| Markdown | `Tabs/MarkdownTab.swift`, `Tabs/MarkdownTabView.swift`, `Tabs/FencedCodeRenderer.swift`, `Tabs/MermaidRenderer.swift` |
-| Panel base | `Tabs/TabContent.swift`, `Tabs/TabContentView.swift`, `Tabs/AreaInteraction.swift` |
+| Browser | `BrowserWindowPortal.swift`, `Panels/BrowserPanel.swift`, `Panels/BrowserPanelView.swift`, `Panels/CmuxWebView.swift` |
+| Markdown | `Panels/MarkdownPanel.swift`, `Panels/MarkdownPanelView.swift`, `Panels/FencedCodeRenderer.swift`, `Panels/MermaidRenderer.swift` |
+| Panel base | `Panels/Panel.swift`, `Panels/PanelContentView.swift`, `Panels/AreaInteraction.swift` |
 
 ### Areas, panels, workspaces
 
 | File | Role |
 |---|---|
-| `TabManager.swift` | Workspace lifecycle |
+| `WorkspaceManager.swift` | Workspace lifecycle |
 | `Workspace.swift`, `WorkspaceContentView.swift`, `WorkspaceMetadataKeys.swift` | Workspace model & view |
 | `SessionPersistence.swift`, `PersistedMetadata.swift` | Restore across launches |
 
@@ -72,7 +72,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a panel |
 | `AgentChip.swift`, `AgentChipBadge.swift` | Sidebar chip UI |
 | `AgentSkillsView.swift`, `SkillInstaller.swift` | Skills onboarding sheet |
-| `AreaMetadataStore.swift`, `TabMetadataStore.swift`, `TabTitleBarView.swift` | The panel manifest — the open JSON blob agents read/write over the socket |
+| `AreaMetadataStore.swift`, `PanelMetadataStore.swift`, `PanelTitleBarView.swift` | The panel manifest — the open JSON blob agents read/write over the socket |
 
 ### Theming
 
@@ -84,7 +84,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 ### Find / search overlay
 
-`Sources/Find/TabSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
+`Sources/Find/PanelSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
 
 ## The CLI and socket
 

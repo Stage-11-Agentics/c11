@@ -111,3 +111,32 @@ named for Ghostty/Bonsplit keeps its name, and a name that holds both the old wo
 (`testRenameAcceptsEitherSurfaceOrTabId`) is a legacy-alias test and keeps it. c11UITests drive the app by
 strings, have no subject identifiers to point at, and keep their names. References outside Swift
 (`-skip-testing`/`-only-testing` lists, `c11-27-split-tests.rb`) are updated by hand from the pass table.
+
+## C11-337 R8: Tab -> Panel
+
+The leaf is a **panel** (window -> workspace -> area -> panel). One command per pass, on the tree the previous pass left,
+in a clean checkout; each regenerates its table (never reuse an old run), applies it with its evidence log, runs every
+gate and, with `--commit`, commits the pass:
+
+    scripts/vocab-rename/run-r8.sh a --commit    # 2a/2b products back to Panel; Sources/Tabs -> Sources/Panels
+    scripts/vocab-rename/run-r8.sh b --commit    # names born Tab since: evidence plus pass-r8b.hand.tsv
+    scripts/vocab-rename/run-r8.sh c --commit    # test names (gen-p6.py r8c), CI test lists, docs
+
+- **r8a** (`gen-evidence.py r8a`) takes only the live products of passes 2a and 2b (followed through 3 and p6): a 2b
+  product goes back to the exact name 2b took away (`TabContent` -> `Panel`), a 2a product swaps Tab for Panel.
+- **r8b** (`gen-evidence.py r8b`) is the 2b machinery reversed, with every name Bonsplit declares or uses kept, and the
+  workspace-meaning upstream names, the Tab key and the CLI `--tab` argument locals in its keep list.
+  `pass-r8b.hand.tsv` holds the curated rows (class X) the evidence cannot derive: Journal/Feed `tabID`, the chrome
+  names, `v2Surface*` and the three surface-named files, each with its reason; kept names are listed there as comments.
+- **r8c** (`gen-p6.py r8c`) renames test classes, functions and files whose subject an r8 pass renamed; legacy-alias
+  tests that name Surface beside Tab, the v1 `tab` key and the legacy `tabs` layout value keep their names.
+  `sync-test-lists.py` rewrites `-skip-testing` ids and `c11-27-split-tests.rb`; `sync-docs.py r8a r8b r8c` the docs.
+- `pass-r8<x>.hand.tsv` is appended to the generated table. `literals-reviewed.tsv` follows moved files on every pass.
+- `check-domains` judges both spellings of the leaf (`tab*` and `panel*`). `check-literals` treats a name a later pass
+  brought back (`BrowserPanel`) as current. Persisted keys never move: implicit raw values are pinned
+  (`case renamePanel = "renameTab"`), explicit `CodingKeys` keep their strings.
+- Each pass also proves the new names landed, not only that the old word is gone: `apply` refuses a row scoped to a file
+  that is not in the tree on entry (`GLOB STALE`; hand rows written against post-pass paths are rewritten to the path
+  on entry by the generator), and `check-rows <table> <base> <log>` reports a scoped file that held the old name and
+  holds no new one (`NOT-LANDED`), a new name used but declared nowhere (`UNDECLARED`), and a logged rename whose new
+  name is not in its file (`MISSING`).

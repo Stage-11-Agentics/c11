@@ -14,13 +14,13 @@ enum SendInputGuardDecision: Equatable {
 }
 
 enum SendInputGuard {
-    static func targetIsCurrent<Workspace: AnyObject, Tab: AnyObject>(
+    static func targetIsCurrent<Workspace: AnyObject, PanelObject: AnyObject>(
         expectedWorkspace: Workspace,
         currentWorkspaces: [Workspace],
-        expectedTab: Tab,
-        currentTab: Tab?
+        expectedPanel: PanelObject,
+        currentPanel: PanelObject?
     ) -> Bool {
-        currentWorkspaces.contains { $0 === expectedWorkspace } && currentTab === expectedTab
+        currentWorkspaces.contains { $0 === expectedWorkspace } && currentPanel === expectedPanel
     }
 
     static func decide(

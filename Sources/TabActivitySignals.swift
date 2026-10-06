@@ -57,7 +57,7 @@ struct ScrollbackGrowthTracker: Equatable {
 }
 
 /// Text for the sheet's non-date clocks.
-enum TabSheetClockText {
+enum PanelSheetClockText {
     /// The app's language, not the region (like the sheet's own ages): a Russian
     /// UI on a US-region Mac reads Russian units.
     static var appLocale: Locale {

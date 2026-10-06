@@ -785,5 +785,93 @@ class TestNames(unittest.TestCase):
         self.assertTrue(rename.verify_classes(entries, "WORKTREE", self.root))
 
 
+class R8PanelSpelling(unittest.TestCase):
+    """C11-337 R8: Tab -> Panel. The gates keep guarding once the c11 leaf is spelled `panel`."""
+
+    def leak(self, stmt, rel="Sources/X.swift"):
+        report = []
+        return rename.check_domains(wrap(stmt), rel, report), report
+
+    def test_panel_named_bonsplit_leaf_is_flagged(self):
+        self.assertGreater(self.leak("let panelId = bonsplitController.allTabIds.first")[0]["B"], 0)
+        self.assertEqual(self.leak("guard let panelId = workspace.panelIdFromBonsplitTabId(bonsplitTabId) else { return }")[0]["B"], 0)
+
+    def test_bonsplit_name_from_a_c11_panel_is_flagged(self):
+        self.assertGreater(self.leak("let bonsplitTab = workspace.newTerminalPanel(inPane: p, focus: false)")[0]["C"], 0)
+
+    def test_ghostty_lifecycle_names_must_not_take_the_panel_spelling(self):
+        counts = rename.check_domains("final class T {\n    func teardownPanel() {}\n}\n", "Sources/GhosttyTerminalView.swift", [])
+        self.assertGreaterEqual(counts["A"], 1)
+
+    def test_capture_list_source_ends_at_its_bracket(self):
+        stmt = "let ok = send(stillLive: { [weak panel = resolved.terminalPanel] in panel?.surface.surface })"
+        self.assertEqual(self.leak(stmt)[0]["A"], 0)
+
+    def test_parameter_name_taking_its_label_spelling_is_dropped(self):
+        src = ("final class W {\n    func run(panelsToWrite tabsToWrite: Set<UUID>) {\n        for key in tabsToWrite { use(key) }\n    }\n}\n")
+        rules = [("Sources/*", r"Set<UUID>", {"tabsToWrite": "panelsToWrite"}, "", "", {"ev:L"})]
+        del rename.EVIDENCE[:]
+        out, n = rename.taint_pass(src, "Sources/W.swift", rules, [])
+        self.assertIn("func run(panelsToWrite: Set<UUID>)", out)
+        self.assertIn("for key in panelsToWrite", out)
+        self.assertIn(("panelsToWrite tabsToWrite", "panelsToWrite"), {(e[2], e[3]) for e in rename.EVIDENCE})
+
+    def test_qualified_member_does_not_block_a_local_rename(self):
+        src = ("final class W {\n    func run(ws: Workspace) {\n        let terminalTab: TerminalPanel? = ws.terminalPanel(for: id)\n"
+               "        terminalTab?.go()\n    }\n}\n")
+        rules = [("Sources/*", r"TerminalPanel", {"terminalTab": "terminalPanel"}, "", "", {"ev:L"})]
+        report = []
+        out, n = rename.taint_pass(src, "Sources/W.swift", rules, report)
+        self.assertIn("let terminalPanel: TerminalPanel? = ws.terminalPanel(for: id)", out)
+        self.assertEqual(report, [])
+
+    def test_check_evidence_aligns_a_dropped_name_beside_a_type_rename(self):
+        logged = {("f", "panelsToWrite tabsToWrite", "panelsToWrite"): {"L"}}
+        a = rename._merge_dropped(["func", "run", "panelsToWrite", "tabsToWrite", "TabSet"], logged, "f", "f")
+        pairs, bad = rename._align(a, ["func", "run", "panelsToWrite", "PanelSet"], "f", "f", logged)
+        self.assertEqual(bad, [])
+        self.assertIn(("panelsToWrite tabsToWrite", "panelsToWrite"), pairs)
+
+    def test_r8_test_vocabulary(self):
+        saved = rename.TEST_WORDS[:], dict(rename.TEST_OLD_RX), dict(rename.TEST_DOMAIN_RX), rename.TEST_TABLES
+        try:
+            rename.use_test_vocab("r8")
+            self.assertEqual(rename.test_new_name("TabLifecycleTests"), ("PanelLifecycleTests", ["Tab"]))
+            self.assertEqual(rename.test_new_name("testTeardownAllTabsClears")[0], "testTeardownAllPanelsClears")
+            self.assertIsNone(rename.test_new_name("testStableTableOrder")[0])
+            rx = re.compile(rename.TEST_OLD_RX["Tab"], re.I)
+            self.assertTrue(rx.search("tabId") and rx.search("closeTab") and rx.search("TabSheetDetailBuilder"))
+            self.assertFalse(rx.search("stableId") or rx.search("tableView"))
+        finally:
+            rename.TEST_WORDS[:] = saved[0]
+            rename.TEST_OLD_RX.clear(); rename.TEST_OLD_RX.update(saved[1])
+            rename.TEST_DOMAIN_RX.clear(); rename.TEST_DOMAIN_RX.update(saved[2])
+            rename.TEST_TABLES = saved[3]
+
+
+class R8RowsLand(unittest.TestCase):
+    def test_declared_names_cover_types_members_and_parameter_labels(self):
+        src = ("struct P {\n    var panelID: UUID\n    func shouldOffer(now: Date, layoutIsStrip flag: Bool) -> Bool { flag }\n}\n"
+               "let s = \"func notDeclared(x: Int)\"\n")
+        names = rename._declared_names(src)
+        self.assertTrue({"P", "panelID", "shouldOffer", "now", "layoutIsStrip", "flag"} <= names)
+        self.assertNotIn("notDeclared", names)
+
+    def test_hand_rows_name_files_as_they_are_on_entry(self):
+        root = tempfile.mkdtemp(prefix="vr-hand-")
+        os.makedirs(os.path.join(root, "Sources"))
+        open(os.path.join(root, "Sources", "TabRailTipPolicy.swift"), "w").write("")
+        saved = gev.ROOT
+        try:
+            gev.ROOT = root
+            out = gev._hand_paths_as_on_entry([
+                "# ---- pass-r8b.hand.tsv",
+                "layoutIsTabs\tlayoutIsStrip\tSources/PanelRailTipPolicy.swift,c11Tests/X.swift\t\tev:X",
+                "@path\tSources/TabRailTipPolicy.swift\tSources/PanelRailTipPolicy.swift"])
+        finally:
+            gev.ROOT = saved
+        self.assertIn("Sources/TabRailTipPolicy.swift,c11Tests/X.swift", out[1])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

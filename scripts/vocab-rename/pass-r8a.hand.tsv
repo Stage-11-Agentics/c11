@@ -1,0 +1,21 @@
+# Pass r8a hand rows: curated edits appended to pass-r8a.tsv (class X / F).
+# Baseline domain leaks on main (check-domains B/D): Bonsplit leaf values named for the c11 panel or area
+@regionrename	c11Tests/WorkspaceUnitTests.swift	func testColorMetadataWriteDrivesTabColorAndKeepsWriterTier\(	tabId=bonsplitTabId
+@regionrename	c11Tests/WorkspaceUnitTests.swift	func testIconAndColorSurviveSessionSnapshotRoundTrip\(	restoredTabId=restoredBonsplitTabId
+@regionrename	c11Tests/WorkspaceManagerUnitTests.swift	func testSplitMoveAndClosePreserveRefsWithoutReseeding\(	targetArea=targetPane
+@regionrename	c11Tests/WorkspaceManagerUnitTests.swift	func testSnapshotRestoreRegistersNewAreasAndRetainsRestoredTabRefs\(	area=pane
+# Literals that name a renamed type and must follow it: theme role consumer lists and Debug menu titles
+@fixall	Sources/Theme/ThemeRoleRegistry.swift	"TabTitleBarView	"PanelTitleBarView
+@fixall	Sources/Theme/ThemeRoleRegistry.swift	"BrowserTabView"	"BrowserPanelView"
+@fixall	Sources/Theme/ThemeRoleRegistry.swift	"MarkdownTabView"	"MarkdownPanelView"
+@fix	Sources/c11App.swift	Toggle TabTitleBarView"	Toggle PanelTitleBarView"
+@fix	Sources/c11App.swift	Toggle BrowserTabView"	Toggle BrowserPanelView"
+@fix	Sources/c11App.swift	Toggle MarkdownTabView"	Toggle MarkdownPanelView"
+# In these tests `controller` is a TerminalController, not a Bonsplit controller: its renamed members follow
+@novendor	c11Tests/BrowserAwaitPolicyTests.swift	controller.
+@novendor	c11Tests/BrowserTabTests.swift	controller.
+@novendor	c11Tests/NotificationAndMenuBarTests.swift	controller.
+@novendor	c11Tests/TabOrdinalDisplayTests.swift	controller.
+@novendor	c11Tests/TerminalAndGhosttyTests.swift	controller.
+@novendor	c11Tests/WorkspaceManagerUnitTests.swift	controller.
+@novendor	c11Tests/SocketTabRefRejectionWiringTests.swift	controller.

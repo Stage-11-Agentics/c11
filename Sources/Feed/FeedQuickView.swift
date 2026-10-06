@@ -27,11 +27,11 @@ final class FeedQuickViewModel: ObservableObject {
 
     func apply(_ snapshot: FeedQuickViewSnapshot) {
         self.snapshot = snapshot
-        selection.update(rows.map(\.tabID))
+        selection.update(rows.map(\.panelID))
     }
 
     func switchFilter(_ filter: FeedQuickViewSelection.Filter) {
-        selection.switchFilter(filter, tabIDs: snapshot.rows(for: filter).map(\.tabID))
+        selection.switchFilter(filter, panelIDs: snapshot.rows(for: filter).map(\.panelID))
         status = ""
     }
 
@@ -43,21 +43,21 @@ final class FeedQuickViewModel: ObservableObject {
     }
 
     func move(_ delta: Int) { selection.move(delta); status = "" }
-    func select(_ tabID: UUID) { selection.select(tabID) }
+    func select(_ panelID: UUID) { selection.select(panelID) }
 
     func markUnavailable() {
         status = String(localized: "feed.quick.unavailable", defaultValue: "That panel is unavailable")
     }
 
     func openSelected() {
-        guard let row = rows.first(where: { $0.tabID == selection.selectedTabID }) else { return }
+        guard let row = rows.first(where: { $0.panelID == selection.selectedPanelID }) else { return }
         // Like the command palette, the session adopts the request that submits it. A Return that
         // arrives inside a socket request (a simulated shortcut) keeps that context for the whole
         // action, so the selection setter refuses and attributes it; only real operator input has
         // no context to adopt and switches workspaces.
         let origin = SocketCommandContext.adoptForPaletteSession()
         let opened = SocketCommandContext.withContext(origin) {
-            onOpen(.init(workspaceID: row.workspaceID, tabID: row.tabID))
+            onOpen(.init(workspaceID: row.workspaceID, panelID: row.panelID))
         }
         guard opened else {
             // A refused agent action is attributed by the gate; it is not an unavailable tab.
@@ -134,14 +134,14 @@ struct FeedQuickView: View {
                 ZStack {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(model.rows, id: \.tabID) { row in
-                                FeedQuickViewRow(row: row, title: model.snapshot.titles[row.tabID] ?? row.tabID.uuidString,
-                                    now: model.snapshot.now, selected: model.selection.selectedTabID == row.tabID,
+                            ForEach(model.rows, id: \.panelID) { row in
+                                FeedQuickViewRow(row: row, title: model.snapshot.titles[row.panelID] ?? row.panelID.uuidString,
+                                    now: model.snapshot.now, selected: model.selection.selectedPanelID == row.panelID,
                                     onLayout: onLayout) {
-                                        model.select(row.tabID)
+                                        model.select(row.panelID)
                                         model.openSelected()
                                     }
-                                    .id(row.tabID)
+                                    .id(row.panelID)
                             }
                         }
                     }
@@ -151,7 +151,7 @@ struct FeedQuickView: View {
                             .accessibilityIdentifier("feed.quick.empty")
                     }
                 }
-                .onChange(of: model.selection.selectedTabID) { _, id in
+                .onChange(of: model.selection.selectedPanelID) { _, id in
                     if let id { scroll.scrollTo(id) } // No animation; identity, not moving index.
                 }
             }
@@ -191,8 +191,8 @@ struct FeedQuickViewRow: View {
     var body: some View {
         Button(action: onOpen) { rowContent }
         .buttonStyle(.plain)
-        .feedQuickMeasure("row.\(row.tabID.uuidString)", observer: onLayout)
-        .accessibilityIdentifier("feed.quick.row.\(row.tabID.uuidString)")
+        .feedQuickMeasure("row.\(row.panelID.uuidString)", observer: onLayout)
+        .accessibilityIdentifier("feed.quick.row.\(row.panelID.uuidString)")
         .accessibilityLabel(kindTitle + ": " + String(title.prefix(256)))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .help(accessibleHelp)

@@ -9,7 +9,7 @@ protocol MailboxHandler {
     func deliver(
         envelope: MailboxEnvelope,
         to surfaceId: UUID,
-        tabName: String
+        panelName: String
     ) async -> MailboxDispatcher.HandlerInvocationResult
 }
 
@@ -21,7 +21,7 @@ extension MailboxHandler {
             await self.deliver(
                 envelope: envelope,
                 to: surfaceId,
-                tabName: name
+                panelName: name
             )
         }
     }

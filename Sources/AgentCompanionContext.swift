@@ -4,7 +4,7 @@ import Foundation
 
 /// Durable browser-to-agent association. The stable surface UUID is the
 /// authority; the last known name exists only to explain an orphaned link.
-struct AgentTabLink: Codable, Equatable, Sendable {
+struct AgentPanelLink: Codable, Equatable, Sendable {
     var surfaceID: UUID
     var lastKnownName: String?
 
@@ -18,7 +18,7 @@ struct AgentTabLink: Codable, Equatable, Sendable {
 
 /// A live surface identity. Refs and ordinals are live presentation hints and
 /// must never be copied into durable companion state.
-struct CompanionTabIdentity: Equatable, Sendable {
+struct CompanionPanelIdentity: Equatable, Sendable {
     var surfaceID: UUID
     var surfaceRef: String?
     var surfaceOrdinal: Int?
@@ -26,7 +26,7 @@ struct CompanionTabIdentity: Equatable, Sendable {
 }
 
 struct AgentDescriptor: Equatable, Sendable {
-    var identity: CompanionTabIdentity
+    var identity: CompanionPanelIdentity
     var terminalKind: String
 }
 
@@ -49,8 +49,8 @@ enum BrowserCompanionPresentation: Equatable, Sendable {
     case aligned(linked: AgentDescriptor)
     case veiled(linked: AgentDescriptor, active: AgentDescriptor)
     case revealed(linked: AgentDescriptor, active: AgentDescriptor)
-    case orphaned(link: AgentTabLink)
-    case orphanedRevealed(link: AgentTabLink)
+    case orphaned(link: AgentPanelLink)
+    case orphanedRevealed(link: AgentPanelLink)
 
     var state: BrowserCompanionPresentationState {
         switch self {
@@ -79,7 +79,7 @@ enum BrowserCompanionPresentation: Equatable, Sendable {
 enum BrowserCompanionPolicy {
     static func presentation(
         browserSurfaceID: UUID,
-        link: AgentTabLink?,
+        link: AgentPanelLink?,
         context: AgentContextState,
         liveAgents: [AgentDescriptor],
         revealGrant: CompanionRevealGrant?
@@ -174,7 +174,7 @@ enum AgentIdentityPolicy {
             ?? fallbackDisplayName(for: normalizedKind)
             ?? normalizedKind
         return AgentDescriptor(
-            identity: CompanionTabIdentity(
+            identity: CompanionPanelIdentity(
                 surfaceID: surfaceID,
                 surfaceRef: surfaceRef,
                 surfaceOrdinal: surfaceOrdinal,
@@ -189,7 +189,7 @@ enum AgentIdentityPolicy {
 
 enum CompanionIdentityFormatting {
     static func live(
-        _ identity: CompanionTabIdentity,
+        _ identity: CompanionPanelIdentity,
         showSurfaceIDs: Bool
     ) -> String {
         TitleFormatting.ordinalPrefixed(
@@ -200,8 +200,8 @@ enum CompanionIdentityFormatting {
     }
 
     static func orphan(
-        _ link: AgentTabLink,
-        visibleLinks: [AgentTabLink],
+        _ link: AgentPanelLink,
+        visibleLinks: [AgentPanelLink],
         showSurfaceIDs: Bool
     ) -> String {
         let trimmedName = link.lastKnownName?

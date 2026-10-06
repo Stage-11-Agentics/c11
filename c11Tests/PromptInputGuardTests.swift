@@ -501,13 +501,13 @@ final class SendInputGuardTests: XCTestCase {
 
     func testReplacedTabIsUnavailableAndNeverReachesWriter() {
         let workspace = PromptInputTargetIdentity()
-        let originalTab = PromptInputTargetIdentity()
-        let replacementTab = PromptInputTargetIdentity()
+        let originalPanel = PromptInputTargetIdentity()
+        let replacementPanel = PromptInputTargetIdentity()
         let sameWorkspace = SendInputGuard.targetIsCurrent(
             expectedWorkspace: workspace,
             currentWorkspaces: [workspace],
-            expectedTab: originalTab,
-            currentTab: replacementTab
+            expectedPanel: originalPanel,
+            currentPanel: replacementPanel
         )
 
         var writes = 0
@@ -530,13 +530,13 @@ final class FeedAnswerSafetyTests: XCTestCase {
 
     func testEligibilityRequiresCurrentFlagOrCompletedTurnAndExactRowIdentity() throws {
         let workspaceID = UUID()
-        let tabID = UUID()
-        let owner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "fixture-session")
+        let panelID = UUID()
+        let owner = JournalOwner(panelID: panelID, agentKind: "claude", sessionID: "fixture-session")
         let epoch = Date(timeIntervalSince1970: 1_000)
         let flagSnapshot = snapshot(owner: owner, workspaceID: workspaceID, phase: .working, sequence: 41)
-        let attention = TabAttentionSnapshot(
+        let attention = PanelAttentionSnapshot(
             workspaceId: workspaceID,
-            surfaceId: tabID,
+            surfaceId: panelID,
             flagReason: "fixture blocker",
             flagRaisedAt: epoch,
             suppressed: false
@@ -545,7 +545,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
 
         let identity = try XCTUnwrap(FeedAnswerEligibility.capture(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             targetWorkspaceID: workspaceID,
             owner: owner,
             snapshot: flagSnapshot,
@@ -562,10 +562,10 @@ final class FeedAnswerSafetyTests: XCTestCase {
             attention: attention
         ), "a later journal row must not inherit this answer")
 
-        let wrongOwner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "replacement-session")
+        let wrongOwner = JournalOwner(panelID: panelID, agentKind: "claude", sessionID: "replacement-session")
         XCTAssertNil(FeedAnswerEligibility.capture(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             targetWorkspaceID: workspaceID,
             owner: wrongOwner,
             snapshot: flagSnapshot,
@@ -574,7 +574,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
         ))
         XCTAssertNil(FeedAnswerEligibility.capture(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             targetWorkspaceID: workspaceID,
             owner: owner,
             snapshot: flagSnapshot,
@@ -597,7 +597,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
         let blockedRow = try row(for: blockedSnapshot, attention: attention)
         XCTAssertNil(FeedAnswerEligibility.capture(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             targetWorkspaceID: workspaceID,
             owner: owner,
             snapshot: blockedSnapshot,
@@ -615,13 +615,13 @@ final class FeedAnswerSafetyTests: XCTestCase {
         let completedRow = try row(for: completed, attention: nil)
         let turnIdentity = try XCTUnwrap(FeedAnswerEligibility.capture(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             targetWorkspaceID: workspaceID,
             owner: owner,
             snapshot: completed,
-            attention: TabAttentionSnapshot(
+            attention: PanelAttentionSnapshot(
                 workspaceId: workspaceID,
-                surfaceId: tabID,
+                surfaceId: panelID,
                 flagReason: nil,
                 flagRaisedAt: nil,
                 suppressed: false
@@ -687,12 +687,12 @@ final class FeedAnswerSafetyTests: XCTestCase {
 
     #if DEBUG
     func testCloseDuringHeldPostPasteReturnFailsClosedWithUnsafeRetryAndNoLower() throws {
-        let tabID = UUID()
-        let replacementTabID = UUID()
-        XCTAssertTrue(FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: 900))
-        defer { FeedAnswerDebugHold.shared.clear(tabID: tabID) }
-        XCTAssertNil(FeedAnswerDebugHold.shared.consume(tabID: replacementTabID))
-        XCTAssertEqual(FeedAnswerDebugHold.shared.consume(tabID: tabID), 900)
+        let panelID = UUID()
+        let replacementPanelID = UUID()
+        XCTAssertTrue(FeedAnswerDebugHold.shared.arm(panelID: panelID, milliseconds: 900))
+        defer { FeedAnswerDebugHold.shared.clear(panelID: panelID) }
+        XCTAssertNil(FeedAnswerDebugHold.shared.consume(panelID: replacementPanelID))
+        XCTAssertEqual(FeedAnswerDebugHold.shared.consume(panelID: panelID), 900)
 
         let state = FeedAnswerRaceState()
         let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> {
@@ -737,30 +737,30 @@ final class FeedAnswerSafetyTests: XCTestCase {
     #endif
 
     func testReplacedFlagEpochCannotBeLoweredByDelayedAnswer() throws {
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let workspaceID = UUID()
-        let tabID = UUID()
+        let panelID = UUID()
         let originalEpoch = Date(timeIntervalSince1970: 2_000)
         let replacementEpoch = Date(timeIntervalSince1970: 3_000)
-        defer { store.removeSurface(workspaceId: workspaceID, surfaceId: tabID) }
+        defer { store.removeSurface(workspaceId: workspaceID, surfaceId: panelID) }
 
         _ = try store.mutateAttention(
             workspaceId: workspaceID,
-            surfaceId: tabID,
+            surfaceId: panelID,
             flag: .raise("original"),
             now: originalEpoch
         )
-        _ = try store.mutateAttention(workspaceId: workspaceID, surfaceId: tabID, flag: .lower)
+        _ = try store.mutateAttention(workspaceId: workspaceID, surfaceId: panelID, flag: .lower)
         _ = try store.mutateAttention(
             workspaceId: workspaceID,
-            surfaceId: tabID,
+            surfaceId: panelID,
             flag: .raise("replacement"),
             now: replacementEpoch
         )
 
         let staleLower = try store.mutateAttention(
             workspaceId: workspaceID,
-            surfaceId: tabID,
+            surfaceId: panelID,
             flag: .lower,
             expectedFlagEpoch: originalEpoch
         )
@@ -794,15 +794,15 @@ final class FeedAnswerSafetyTests: XCTestCase {
 
     private func row(
         for snapshot: JournalSnapshot,
-        attention: TabAttentionSnapshot?
+        attention: PanelAttentionSnapshot?
     ) throws -> FeedAnswerProjectionRow {
         let attentionFacts = attention.map { value in
             [FeedAttentionFact(
                 workspaceID: value.workspaceId,
-                tabID: value.surfaceId,
+                panelID: value.surfaceId,
                 flagReason: value.flagReason,
                 flagRaisedAtMs: value.flagRaisedAt.map { Int64($0.timeIntervalSince1970 * 1_000) },
-                flagCallerTabID: value.flagCallerTabId,
+                flagCallerPanelID: value.flagCallerPanelId,
                 suppressed: value.suppressed
             )]
         } ?? []

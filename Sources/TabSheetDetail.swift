@@ -4,7 +4,7 @@ import Bonsplit
 /// Assembles the tab sheet's per-tab detail (type, subtitle, status, clocks)
 /// from already-resolved inputs. Pure: no stores, no AppKit. `Workspace` gathers
 /// the inputs; bonsplit only renders the result.
-enum TabSheetDetailBuilder {
+enum PanelSheetDetailBuilder {
     /// UserDefaults key for the clock column order: a comma-separated list of
     /// clock names. Change it in one command:
     /// `defaults write com.stage11.c11 c11.panelSheet.clocks -string "launched,active"`.
@@ -19,7 +19,7 @@ enum TabSheetDetailBuilder {
     static let optInClocks = ["touched", "turn", "tools", "tokens", "cache"]
 
     struct Inputs {
-        var panelType: TabContentType
+        var panelType: PanelType
         /// Full title (custom or process title), untruncated.
         var title: String?
         /// The kind used for live agent presentation (`nil` for a plain shell).
@@ -66,7 +66,7 @@ enum TabSheetDetailBuilder {
         /// Agent tabs: the prompt cache from the transcript tail (`cache`).
         var promptCache: PromptCacheObservation? = nil
         var now: Date = Date()
-        var locale: Locale = TabSheetClockText.appLocale
+        var locale: Locale = PanelSheetClockText.appLocale
     }
 
     static func build(_ input: Inputs) -> BonsplitTabDetail {
@@ -89,10 +89,10 @@ enum TabSheetDetailBuilder {
             } else {
                 end = input.lastAgentEventAt ?? input.now
             }
-            texts["turn"] = TabSheetClockText.duration(end.timeIntervalSince(start), locale: input.locale)
+            texts["turn"] = PanelSheetClockText.duration(end.timeIntervalSince(start), locale: input.locale)
             if let tools = input.turnToolCalls { texts["tools"] = String(tools) }
         }
-        if let tokens = input.tokens { texts["tokens"] = TabSheetClockText.count(tokens, locale: input.locale) }
+        if let tokens = input.tokens { texts["tokens"] = PanelSheetClockText.count(tokens, locale: input.locale) }
         if let cache = input.promptCache {
             texts["cache"] = promptCacheClockText(cache, now: input.now, locale: input.locale)
         }
@@ -151,8 +151,8 @@ enum TabSheetDetailBuilder {
     }
 
     /// The tab's kind for the sheet's Type column, shown when it hosts no agent.
-    static func typeLabel(_ tabType: TabContentType) -> String {
-        switch tabType {
+    static func typeLabel(_ panelType: PanelType) -> String {
+        switch panelType {
         case .terminal:
             return String(localized: "tabSheet.type.terminal", defaultValue: "Terminal")
         case .browser:
@@ -276,7 +276,7 @@ enum TabSheetDetailBuilder {
         }
         let left = remaining < 60
             ? String(localized: "tabSheet.clock.cacheUnderMinute", defaultValue: "<1m")
-            : TabSheetClockText.duration((remaining / 60).rounded(.up) * 60, locale: locale)
+            : PanelSheetClockText.duration((remaining / 60).rounded(.up) * 60, locale: locale)
         guard cache.isEstimate else { return left }
         return String(localized: "tabSheet.clock.cacheEstimate", defaultValue: "~\(left)")
     }
@@ -346,7 +346,7 @@ enum TabSheetDetailBuilder {
 }
 
 /// The state a surface last entered and when.
-struct TabSheetStatusEntry: Equatable {
+struct PanelSheetStatusEntry: Equatable {
     var kind: BonsplitTabDetail.StatusKind
     var at: Date
 }
@@ -357,25 +357,25 @@ extension Workspace {
     /// Gathers the inputs for one tab's sheet detail. Cheap: dictionary reads
     /// and a handful of metadata keys; called when a sheet opens and on
     /// metadata/activity events, never on a timer.
-    func tabSheetDetail(panelId: UUID) -> BonsplitTabDetail? {
+    func panelSheetDetail(panelId: UUID) -> BonsplitTabDetail? {
         guard let panel = panels[panelId] else { return nil }
-        let snapshot = TabMetadataStore.shared.getMetadata(
+        let snapshot = PanelMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
             keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel, AgentModelDetector.MetadataKeys.detected]
         )
-        let activity = resolvedSurfaceTabActivityState(panelId: panelId)
+        let activity = resolvedSurfacePanelActivityState(panelId: panelId)
         // Idempotent: makes sure the entry describes the state we are about to
         // show, whichever recorder saw (or missed) the last transition.
-        recordTabSheetStatusTransition(panelId: panelId, activity: activity)
-        let baseKind = TabSheetDetailBuilder.baseKind(activity: activity)
-        let entered = tabSheetStatusEntered[panelId].flatMap { $0.kind == baseKind ? $0.at : nil }
+        recordPanelSheetStatusTransition(panelId: panelId, activity: activity)
+        let baseKind = PanelSheetDetailBuilder.baseKind(activity: activity)
+        let entered = panelSheetStatusEntered[panelId].flatMap { $0.kind == baseKind ? $0.at : nil }
         let help = resolvedAgentActivityHelp(panelId: panelId, activityState: activity)
         let attention = attentionSnapshot(panelId: panelId)
         let terminalKind = panel.panelType == .terminal ? surfaceActivityTerminalKind(panelId: panelId) : nil
-        let fullTitle = resolvedTabTitle(
+        let fullTitle = resolvedPanelTitle(
             panelId: panelId,
-            fallback: tabTitles[panelId] ?? panel.displayTitle
+            fallback: panelTitles[panelId] ?? panel.displayTitle
         )
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
@@ -389,10 +389,10 @@ extension Workspace {
             labelSource: source(MetadataKey.modelLabel),
             detected: snapshot.metadata[AgentModelDetector.MetadataKeys.detected] as? String
         )
-        let signals = tabSheetSignals(panel: panel, panelId: panelId, terminalKind: terminalKind)
+        let signals = panelSheetSignals(panel: panel, panelId: panelId, terminalKind: terminalKind)
         let legacyActivityAt = help?.lastActivityAt
-            ?? TabActivityTracker.shared.lastActivity(for: panelId.uuidString)
-        let journal = JournalCoordinator.shared.snapshot(tabID: panelId)
+            ?? PanelActivityTracker.shared.lastActivity(for: panelId.uuidString)
+        let journal = JournalCoordinator.shared.snapshot(panelID: panelId)
         let sheetActivity: AgentRoster.SheetActivity
         if activity == .running { sheetActivity = .running }
         else if activity == .idle { sheetActivity = .idle }
@@ -404,7 +404,7 @@ extension Workspace {
         }
         let managedTurn: Date? = {
             guard let journal, journal.turnID != nil else { return nil }
-            guard let ms = JournalCoordinator.shared.cachedTurnStartedMs(tabID: panelId) else { return nil }
+            guard let ms = JournalCoordinator.shared.cachedTurnStartedMs(panelID: panelId) else { return nil }
             return Date(timeIntervalSince1970: Double(ms) / 1000)
         }()
         let turnEndedAt: Date? = {
@@ -412,16 +412,16 @@ extension Workspace {
             guard journal.isHistorical || activity != .running else { return nil }
             return Date(timeIntervalSince1970: Double(journal.observedAtMs) / 1000)
         }()
-        return TabSheetDetailBuilder.build(.init(
+        return PanelSheetDetailBuilder.build(.init(
             panelType: panel.panelType,
             title: fullTitle,
             terminalKind: terminalKind,
             model: effectiveModel.model,
             modelLabel: effectiveModel.label,
             description: snapshot.metadata[MetadataKey.description] as? String,
-            directory: tabDirectories[panelId],
-            browserURL: (panel as? BrowserTab)?.currentURL,
-            markdownPath: (panel as? MarkdownTab)?.filePath,
+            directory: panelDirectories[panelId],
+            browserURL: (panel as? BrowserPanel)?.currentURL,
+            markdownPath: (panel as? MarkdownPanel)?.filePath,
             activity: activity,
             isFlagged: attention.isFlagged,
             stateEnteredAt: entered,
@@ -431,8 +431,8 @@ extension Workspace {
             createdAt: panel.createdAt,
             activeAt: signals.activeAt,
             touchedAt: signals.touchedAt,
-            seenAt: TabSeenTracker.shared.storedLastSeenAt(panelId: panelId),
-            isBeingSeen: TabSeenTracker.shared.isBeingSeen(panelId: panelId),
+            seenAt: PanelSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: PanelSeenTracker.shared.isBeingSeen(panelId: panelId),
             turnStartedAt: journal != nil ? managedTurn : signals.turnStartedAt,
             turnToolCalls: signals.turnToolCalls,
             tokens: signals.tokens,
@@ -452,27 +452,27 @@ extension Workspace {
     /// The per-type signals behind `active`, `touched`, `turn`, `tools` and
     /// `tokens`. Plain reads of stores the panels keep up to date; no work here
     /// scales with output.
-    private func tabSheetSignals(
-        panel: any TabContent,
+    private func panelSheetSignals(
+        panel: any Panel,
         panelId: UUID,
         terminalKind: String?
     ) -> (activeAt: Date?, touchedAt: Date?, turnStartedAt: Date?, turnToolCalls: Int?, tokens: Int?, lastAgentEventAt: Date?) {
         switch panel.panelType {
         case .terminal:
-            let surface = (panel as? TerminalTab)?.surface
+            let surface = (panel as? TerminalPanel)?.surface
             let touched = surface?.lastOperatorInputAt
             // Plain terminal, or an agent whose files say nothing (Kimi, Copilot,
             // no transcript yet): output that scrolled while visible, or a command
             // starting/finishing. Hidden terminals only see command edges. Operator
             // input is never part of Active; with no signal the clock reads `—`.
             let growth = surface?.lastOutputGrowthAt
-            let edge = tabShellEdgeAt[panelId]
-            let plainActive = TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: growth, commandEdgeAt: edge)
+            let edge = panelShellEdgeAt[panelId]
+            let plainActive = PanelSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: growth, commandEdgeAt: edge)
             if AgentIdentityPolicy.isAgentKind(terminalKind),
                let signals = AgentModelDetector.shared.signals(forSurface: panelId) {
                 let hasTurn = signals.turnStartedAt != nil
                 return (
-                    TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: signals.lastEventAt, outputGrowthAt: growth, commandEdgeAt: edge),
+                    PanelSheetDetailBuilder.terminalActiveAt(agentLastEventAt: signals.lastEventAt, outputGrowthAt: growth, commandEdgeAt: edge),
                     touched,
                     signals.turnStartedAt,
                     hasTurn ? signals.turnToolCalls : nil,
@@ -482,9 +482,9 @@ extension Workspace {
             }
             return (plainActive, touched, nil, nil, nil, nil)
         case .markdown:
-            return ((panel as? MarkdownTab)?.lastContentChangeAt, nil, nil, nil, nil, nil)
+            return ((panel as? MarkdownPanel)?.lastContentChangeAt, nil, nil, nil, nil, nil)
         case .browser:
-            let browser = panel as? BrowserTab
+            let browser = panel as? BrowserPanel
             return (browser?.lastLoadedAt, browser?.lastOperatorInputAt, nil, nil, nil, nil)
         }
     }
@@ -492,7 +492,7 @@ extension Workspace {
     /// Pushes the tab's sheet detail into bonsplit when anything other than a
     /// clock changed. Clocks are refreshed by `tabDetailProvider` as the sheet
     /// opens, so a stream of activity never churns the tab bar.
-    func syncSurfaceTabDetailForTab(_ panelId: UUID) {
+    func syncSurfacePanelDetailForPanel(_ panelId: UUID) {
         // Nothing can show the detail unless a sheet is open in this pane;
         // opening one refreshes it, so skip the work otherwise.
         // Nothing open anywhere (the common case): no pane lookup, no work.
@@ -501,9 +501,9 @@ extension Workspace {
               bonsplitController.isTabDetailVisible(inPane: paneId),
               let bonsplitTabId = bonsplitTabIdFromTabId(panelId),
               let existing = bonsplitController.tab(bonsplitTabId),
-              let detail = tabSheetDetail(panelId: panelId) else { return }
-        guard TabSheetDetailBuilder.ignoringClocks(existing.detail)
-                != TabSheetDetailBuilder.ignoringClocks(detail) else { return }
+              let detail = panelSheetDetail(panelId: panelId) else { return }
+        guard PanelSheetDetailBuilder.ignoringClocks(existing.detail)
+                != PanelSheetDetailBuilder.ignoringClocks(detail) else { return }
         bonsplitController.updateTab(bonsplitTabId, detail: .some(detail))
     }
 
@@ -515,48 +515,48 @@ extension Workspace {
     /// the last recorded activity for working/idle, the notification or
     /// dormancy start for waiting/cold. Only a change seen from a known state
     /// is stamped with the current time.
-    func recordTabSheetStatusTransition(panelId: UUID, activity: BonsplitTabActivityState?) {
-        guard let kind = TabSheetDetailBuilder.baseKind(activity: activity) else {
-            tabSheetStatusEntered.removeValue(forKey: panelId)
+    func recordPanelSheetStatusTransition(panelId: UUID, activity: BonsplitTabActivityState?) {
+        guard let kind = PanelSheetDetailBuilder.baseKind(activity: activity) else {
+            panelSheetStatusEntered.removeValue(forKey: panelId)
             return
         }
-        let existing = tabSheetStatusEntered[panelId]
+        let existing = panelSheetStatusEntered[panelId]
         guard existing?.kind != kind else { return }
         let now = Date()
         var at = now
         if existing == nil {
-            at = TabSheetDetailBuilder.seededEnteredAt(
+            at = PanelSheetDetailBuilder.seededEnteredAt(
                 kind: kind,
                 now: now,
-                lastActivityAt: TabActivityTracker.shared.lastActivity(for: panelId.uuidString),
+                lastActivityAt: PanelActivityTracker.shared.lastActivity(for: panelId.uuidString),
                 exactStart: kind == .waiting || kind == .cold
                     ? resolvedAgentActivityHelp(panelId: panelId, activityState: activity)?.stateStartedAt
                     : nil
             )
         }
-        tabSheetStatusEntered[panelId] = TabSheetStatusEntry(kind: kind, at: at)
+        panelSheetStatusEntered[panelId] = PanelSheetStatusEntry(kind: kind, at: at)
     }
 
     /// The tab's current detail with its title replaced, for the same
     /// `updateTab` call that changes the tab's title. nil when the tab has no
     /// detail yet (opening a sheet supplies it).
-    func tabDetailReplacingTitle(bonsplitTabId: TabID, with title: String) -> BonsplitTabDetail?? {
+    func panelDetailReplacingTitle(bonsplitTabId: TabID, with title: String) -> BonsplitTabDetail?? {
         guard var detail = bonsplitController.tab(bonsplitTabId)?.detail else { return nil }
-        detail.title = TabSheetDetailBuilder.collapsedWhitespace(title)
+        detail.title = PanelSheetDetailBuilder.collapsedWhitespace(title)
         return .some(detail)
     }
 
-    func installTabSheetDetailProviders() {
+    func installPanelSheetDetailProviders() {
         bonsplitController.tabDetailProvider = { [weak self] bonsplitTabId in
             guard let self, let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId) else { return nil }
-            return self.tabSheetDetail(panelId: panelId)
+            return self.panelSheetDetail(panelId: panelId)
         }
         bonsplitController.sheetClockOrderProvider = {
-            TabSheetDetailBuilder.clockOrder()
+            PanelSheetDetailBuilder.clockOrder()
         }
         // Titles for the opt-in clocks; `active`, `launched` and `seen` use bonsplit's own.
         bonsplitController.sheetClockTitleProvider = { name in
-            TabSheetDetailBuilder.clockTitle(name)
+            PanelSheetDetailBuilder.clockTitle(name)
         }
     }
 }

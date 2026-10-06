@@ -14,7 +14,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
     private let claudeSessionId = "abc12345-ef67-890a-bcde-f0123456789a"
 
     func testLiftLegacyClaudeSessionIdProducesScrapeRef() {
-        let panel = SessionTabSnapshot(
+        let panel = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: "T",
@@ -25,12 +25,12 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             gitBranch: nil,
             listeningPorts: [],
             ttyName: nil,
-            terminal: SessionTerminalTabSnapshot(workingDirectory: "/work/proj", scrollback: nil),
+            terminal: SessionTerminalPanelSnapshot(workingDirectory: "/work/proj", scrollback: nil),
             browser: nil,
             markdown: nil,
             metadata: [
-                TabMetadataKeyName.claudeSessionId: .string(claudeSessionId),
-                TabMetadataKeyName.terminalType: .string("claude-code")
+                PanelMetadataKeyName.claudeSessionId: .string(claudeSessionId),
+                PanelMetadataKeyName.terminalType: .string("claude-code")
             ],
             metadataSources: nil,
             surfaceConversations: nil
@@ -47,7 +47,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
     }
 
     func testLiftReturnsNilWhenLegacyKeyAbsent() {
-        let panel = SessionTabSnapshot(
+        let panel = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: "T",
@@ -69,7 +69,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
     }
 
     func testLiftValidatesUUIDGrammarBeforeSynthesizingRef() {
-        let panel = SessionTabSnapshot(
+        let panel = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: "T",
@@ -84,7 +84,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             browser: nil,
             markdown: nil,
             metadata: [
-                TabMetadataKeyName.claudeSessionId: .string("not-a-uuid")
+                PanelMetadataKeyName.claudeSessionId: .string("not-a-uuid")
             ],
             metadataSources: nil,
             surfaceConversations: nil
@@ -95,10 +95,10 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
         )
     }
 
-    func testTabConversationsCodableEmitsHistoryAsArrayNotOmitted() throws {
+    func testPanelConversationsCodableEmitsHistoryAsArrayNotOmitted() throws {
         // v1 contract: history is written as `[]`, not omitted, for stable
         // JSON output across v1/v2.
-        let panel = SessionTabSnapshot(
+        let panel = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: "T",
@@ -109,12 +109,12 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             gitBranch: nil,
             listeningPorts: [],
             ttyName: nil,
-            terminal: SessionTerminalTabSnapshot(workingDirectory: nil, scrollback: nil),
+            terminal: SessionTerminalPanelSnapshot(workingDirectory: nil, scrollback: nil),
             browser: nil,
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: TabConversations(
+            surfaceConversations: PanelConversations(
                 active: ConversationRef(
                     kind: "claude-code",
                     id: claudeSessionId,
@@ -135,7 +135,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
     }
 
     func testNativeFieldRoundTripsThroughCodable() throws {
-        let original = SessionTabSnapshot(
+        let original = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: "T",
@@ -146,12 +146,12 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             gitBranch: nil,
             listeningPorts: [],
             ttyName: nil,
-            terminal: SessionTerminalTabSnapshot(workingDirectory: nil, scrollback: nil),
+            terminal: SessionTerminalPanelSnapshot(workingDirectory: nil, scrollback: nil),
             browser: nil,
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: TabConversations(
+            surfaceConversations: PanelConversations(
                 active: ConversationRef(
                     kind: "codex",
                     id: "ddd11111-2222-3333-4444-555566667777",
@@ -164,7 +164,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             )
         )
         let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         XCTAssertEqual(decoded.surfaceConversations?.active?.kind, "codex")
         XCTAssertEqual(decoded.surfaceConversations?.active?.id,
                        "ddd11111-2222-3333-4444-555566667777")
@@ -172,7 +172,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
     }
 
     func testRuntimeIdentityAndQuarantineRoundTripThroughSnapshotCodable() throws {
-        let original = SessionTabSnapshot(
+        let original = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: "Codex",
@@ -183,7 +183,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             gitBranch: nil,
             listeningPorts: [],
             ttyName: nil,
-            terminal: SessionTerminalTabSnapshot(
+            terminal: SessionTerminalPanelSnapshot(
                 workingDirectory: "/work/shared",
                 scrollback: nil
             ),
@@ -191,7 +191,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: TabConversations(
+            surfaceConversations: PanelConversations(
                 active: ConversationRef(
                     kind: "codex",
                     id: "ddd11111-2222-4333-8444-555566667777",
@@ -206,7 +206,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         XCTAssertEqual(decoded.surfaceConversations?.active?.capturedVia, .runtimeEnv)
         XCTAssertEqual(
             decoded.surfaceConversations?.active?.quarantineReason,

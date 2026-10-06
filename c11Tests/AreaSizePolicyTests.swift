@@ -121,7 +121,7 @@ final class AreaSizePolicyTests: XCTestCase {
     func testTabModeFallsBackToTabWhenNeitherAxisFits() {
         let frame = CGSize(width: 700, height: 360)
         let min = CGSize(width: 640, height: 340)
-        let d = AreaSizePolicy.decide(paneFrame: frame, requested: .horizontal, minPoints: min, mode: .tab, force: false)
+        let d = AreaSizePolicy.decide(paneFrame: frame, requested: .horizontal, minPoints: min, mode: .panel, force: false)
         XCTAssertEqual(d.outcome, .addTab)
     }
 
@@ -199,9 +199,9 @@ final class AreaSizePolicyTests: XCTestCase {
 
     func testModeParsing() {
         XCTAssertEqual(AreaSizeMode.parse("balance"), .balance)
-        XCTAssertEqual(AreaSizeMode.parse(" TAB "), .tab)
-        XCTAssertEqual(AreaSizeMode.parse("panel"), .tab)
-        XCTAssertEqual(AreaSizeMode.tab.rawValue, "tab")
+        XCTAssertEqual(AreaSizeMode.parse(" TAB "), .panel)
+        XCTAssertEqual(AreaSizeMode.parse("panel"), .panel)
+        XCTAssertEqual(AreaSizeMode.panel.rawValue, "tab")
         XCTAssertEqual(AreaSizeMode.parse("off"), .off)
         XCTAssertNil(AreaSizeMode.parse("nonsense"))
         XCTAssertNil(AreaSizeMode.parse(nil))

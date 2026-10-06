@@ -34,7 +34,7 @@ final class FocusHistoryStore {
         // The seen tracker may already be observing this tab, so its next refresh
         // would be a no-op. Start a fresh post-restore visit without restoring dwell.
         if let panelId = AppDelegate.shared?.operatorSeenPanelId(),
-           TabSeenTracker.shared.isBeingSeen(panelId: panelId) {
+           PanelSeenTracker.shared.isBeingSeen(panelId: panelId) {
             noteTransition(panelId: panelId, at: now())
         }
     }
@@ -71,10 +71,10 @@ final class FocusHistoryStore {
             model = priorModel
             return false
         }
-        TabSeenTracker.shared.refresh()
+        PanelSeenTracker.shared.refresh()
         // Two visits may resolve to the same live tab after intermediate tabs close.
         // In that case refresh is unchanged, but the landing still needs an open visit.
-        if TabSeenTracker.shared.isBeingSeen(panelId: entry.panelId) {
+        if PanelSeenTracker.shared.isBeingSeen(panelId: entry.panelId) {
             noteTransition(panelId: entry.panelId, at: now())
         }
         return true

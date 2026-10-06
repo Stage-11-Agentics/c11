@@ -15,7 +15,7 @@ Scenario (after Atlas builds are enabled):
 5. Capture the final tree/screenshot, dismiss the tagged app through synthesized
    input and verify it closed. Bound the whole UI run with a hard timeout.
 
-The mixed terminal/browser/markdown control is TabIdentityRestoreTests; this
+The mixed terminal/browser/markdown control is PanelIdentityRestoreTests; this
 fixture isolates conflicting records and references within/across two areas.
 """
 from __future__ import annotations

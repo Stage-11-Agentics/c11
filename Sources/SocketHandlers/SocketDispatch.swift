@@ -105,9 +105,9 @@ extension TerminalController {
         case "window.resize":
             return v2WindowResizeWorker(id: request.id, params: request.params)
         case "panel.send_text":
-            return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
+            return v2Result(id: request.id, v2PanelSendText(params: request.params))
         case "panel.send_key":
-            return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
+            return v2Result(id: request.id, v2PanelSendKey(params: request.params))
         case "agent.event.append":
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
         case "agents.list":
@@ -123,13 +123,13 @@ extension TerminalController {
         case "feed.answer":
             return v2Result(id: request.id, v2FeedAnswer(params: request.params))
         case "panel.read_selection":
-            return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
+            return v2Result(id: request.id, v2PanelReadSelection(params: request.params))
         case "panel.input_state":
-            return v2Result(id: request.id, v2SurfaceInputState(params: request.params))
+            return v2Result(id: request.id, v2PanelInputState(params: request.params))
         case "panel.read_text":
-            return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
+            return v2Result(id: request.id, v2PanelReadText(params: request.params))
         case "panel.clear_history":
-            return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
+            return v2Result(id: request.id, v2PanelClearHistory(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
         case "config.launch":
@@ -188,7 +188,7 @@ extension TerminalController {
         let context = SocketCommandContext(
             method: method,
             allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: method, isV2: request != nil),
-            callerTabId: SocketCommandContext.current?.callerTabId
+            callerPanelId: SocketCommandContext.current?.callerPanelId
                 ?? (request?.params["caller_panel_id"] as? String
                     ?? request?.params["caller_tab_id"] as? String
                     ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
@@ -598,7 +598,7 @@ extension TerminalController {
                         )?.workspace.id
                     }
                 ) else { return }
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity,
@@ -932,7 +932,7 @@ extension TerminalController {
             return seedDragPasteboardFileURL()
 
         case "seed_drag_pasteboard_tabtransfer":
-            return seedDragPasteboardTabTransfer()
+            return seedDragPasteboardPanelTransfer()
 
         case "seed_drag_pasteboard_sidebar_reorder":
             return seedDragPasteboardSidebarReorder()
@@ -1225,7 +1225,7 @@ extension TerminalController {
 
         let launchFlagReason: String?
         if params["flag"] != nil {
-            switch TabAttentionReason.validate(params["flag"]) {
+            switch PanelAttentionReason.validate(params["flag"]) {
             case .success(let reason):
                 launchFlagReason = reason
             case .failure(let error):
@@ -1234,9 +1234,9 @@ extension TerminalController {
         } else {
             launchFlagReason = nil
         }
-        let launchFlagActor: TabAttentionActor
+        let launchFlagActor: PanelAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = TabAttentionActor(rawValue: rawActor) else {
+            guard let parsed = PanelAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -1340,7 +1340,7 @@ extension TerminalController {
                 let workspaceRoot = fallbackWorkspace?.rootDirectory
                 let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
                 let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
-                    callerTabId: callerWorkspace == nil ? nil : launchCallerSurfaceId
+                    callerPanelId: callerWorkspace == nil ? nil : launchCallerSurfaceId
                 )
                 return .success(
                     workspaceManager: workspaceManager,
@@ -1472,7 +1472,7 @@ extension TerminalController {
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
             let ws: Workspace
-            let panel: TerminalTab
+            let panel: TerminalPanel
             let paneUUID: UUID?
             if newWorkspace {
                 // Identity env rides workspace creation so it is present at
@@ -1491,12 +1491,12 @@ extension TerminalController {
                     eagerLoadTerminal: !focus,
                     autoWelcomeIfNeeded: false
                 )
-                guard let initialTab = created.focusedTerminalTab else {
+                guard let initialPanel = created.focusedTerminalPanel else {
                     result = .err(code: "internal_error", message: "New workspace has no terminal panel", data: nil)
                     return result
                 }
                 ws = created
-                panel = initialTab
+                panel = initialPanel
                 paneUUID = created.bonsplitController.focusedPaneId?.id
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
@@ -1552,7 +1552,7 @@ extension TerminalController {
                     },
                     stampSuppression: {
                         if launchSuppressed {
-                            _ = try TabAttentionService.shared.suppress(
+                            _ = try PanelAttentionService.shared.suppress(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 by: .operator
@@ -1561,13 +1561,13 @@ extension TerminalController {
                     },
                     stampFlag: {
                         if let launchFlagReason {
-                            _ = try TabAttentionService.shared.raise(
+                            _ = try PanelAttentionService.shared.raise(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 reason: launchFlagReason,
-                                callerTabId: launchCallerSurfaceId,
+                                callerPanelId: launchCallerSurfaceId,
                                 by: launchFlagActor,
-                                title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
+                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }
                         if let stagedPrompt {
@@ -1587,7 +1587,7 @@ extension TerminalController {
                         }
                     }
                 )
-            } catch let error as TabMetadataStore.WriteError {
+            } catch let error as PanelMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
                 return result
             } catch {
@@ -1683,14 +1683,14 @@ extension TerminalController {
         }
         guard case .ok(let rawPayload) = outcome, var payload = rawPayload as? [String: Any],
               let wsRaw = payload["workspace_id"] as? String, let wsId = UUID(uuidString: wsRaw),
-              let tabRaw = payload["surface_id"] as? String, let tabId = UUID(uuidString: tabRaw) else { return outcome }
+              let panelRaw = payload["surface_id"] as? String, let panelId = UUID(uuidString: panelRaw) else { return outcome }
         let probeDeadline = min(responseDeadline, Date().addingTimeInterval(5))
         let startup = AgentStartupProbe.observe(ttyName: {
             let snapshot = AgentLaunchDeadlineGate<String?>(deadline: probeDeadline) {
                 MainActor.assumeIsolated {
                     guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
-                          ws.terminalPanel(for: tabId) != nil else { return nil }
-                    return ws.tabTTYNames[tabId]
+                          ws.terminalPanel(for: panelId) != nil else { return nil }
+                    return ws.panelTTYNames[panelId]
                 }
             }
             snapshot.enqueueOnMain()

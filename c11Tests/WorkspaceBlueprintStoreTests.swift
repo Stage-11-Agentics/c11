@@ -41,7 +41,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: name),
                 layout: .pane(.init(surfaceIds: ["a"])),
-                surfaces: [TabSpec(id: "a", kind: .terminal)]
+                surfaces: [PanelSpec(id: "a", kind: .terminal)]
             )
         )
     }
@@ -265,7 +265,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: "MD Round Trip", customColor: "#9D8048"),
                 layout: .pane(.init(surfaceIds: ["a"])),
-                surfaces: [TabSpec(id: "a", kind: .terminal, title: "shell")]
+                surfaces: [PanelSpec(id: "a", kind: .terminal, title: "shell")]
             )
         )
         let url = tmpRoot.appendingPathComponent("md-roundtrip.md")

@@ -1,42 +1,42 @@
 import Foundation
 
-enum TabAttentionReason {
+enum PanelAttentionReason {
     static let maxLength = 256
 
-    static func validate(_ raw: Any?) -> Result<String, TabMetadataStore.WriteError> {
+    static func validate(_ raw: Any?) -> Result<String, PanelMetadataStore.WriteError> {
         guard let reason = raw as? String else {
             return .failure(.reservedKeyInvalidType(MetadataKey.flag, "expected string"))
         }
-        if let error = TabMetadataStore.validateReservedKey(MetadataKey.flag, reason) {
+        if let error = PanelMetadataStore.validateReservedKey(MetadataKey.flag, reason) {
             return .failure(error)
         }
         return .success(reason)
     }
 }
 
-enum TabAttentionActor: String, CaseIterable {
+enum PanelAttentionActor: String, CaseIterable {
     case `operator`
     case agent
 }
 
-enum TabAttentionFlagMutation {
+enum PanelAttentionFlagMutation {
     case unchanged
     case raise(String)
     case lower
 }
 
-enum TabAttentionSuppressionMutation {
+enum PanelAttentionSuppressionMutation {
     case unchanged
     case suppress
     case unsuppress
 }
 
-struct TabAttentionSnapshot: Equatable, Identifiable {
+struct PanelAttentionSnapshot: Equatable, Identifiable {
     let workspaceId: UUID
     let surfaceId: UUID
     let flagReason: String?
     let flagRaisedAt: Date?
-    let flagCallerTabId: UUID?
+    let flagCallerPanelId: UUID?
     let suppressed: Bool
 
     init(
@@ -44,14 +44,14 @@ struct TabAttentionSnapshot: Equatable, Identifiable {
         surfaceId: UUID,
         flagReason: String?,
         flagRaisedAt: Date?,
-        flagCallerTabId: UUID? = nil,
+        flagCallerPanelId: UUID? = nil,
         suppressed: Bool
     ) {
         self.workspaceId = workspaceId
         self.surfaceId = surfaceId
         self.flagReason = flagReason
         self.flagRaisedAt = flagRaisedAt
-        self.flagCallerTabId = flagCallerTabId
+        self.flagCallerPanelId = flagCallerPanelId
         self.suppressed = suppressed
     }
 
@@ -69,13 +69,13 @@ struct TabAttentionSnapshot: Equatable, Identifiable {
 }
 
 enum AttentionJumpSelector {
-    static func orderedFlags(_ snapshots: [TabAttentionSnapshot]) -> [TabAttentionSnapshot] {
+    static func orderedFlags(_ snapshots: [PanelAttentionSnapshot]) -> [PanelAttentionSnapshot] {
         snapshots.filter(\.isFlagged).sorted {
             AttentionOrder.precedes(
                 time: $0.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
-                target: .init(workspaceID: $0.workspaceId, tabID: $0.surfaceId),
+                target: .init(workspaceID: $0.workspaceId, panelID: $0.surfaceId),
                 time: $1.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
-                target: .init(workspaceID: $1.workspaceId, tabID: $1.surfaceId)
+                target: .init(workspaceID: $1.workspaceId, panelID: $1.surfaceId)
             )
         }
     }
@@ -169,19 +169,19 @@ enum AgentLaunchAttentionSequencer {
 }
 
 @MainActor
-final class TabAttentionIndex: ObservableObject {
-    static let shared = TabAttentionIndex()
+final class PanelAttentionIndex: ObservableObject {
+    static let shared = PanelAttentionIndex()
 
-    @Published private(set) var snapshots: [String: TabAttentionSnapshot] = [:]
+    @Published private(set) var snapshots: [String: PanelAttentionSnapshot] = [:]
 
     var flaggedCount: Int { snapshots.values.lazy.filter(\.isFlagged).count }
-    var oldestFlags: [TabAttentionSnapshot] {
+    var oldestFlags: [PanelAttentionSnapshot] {
         AttentionJumpSelector.orderedFlags(Array(snapshots.values))
     }
 
-    func snapshot(workspaceId: UUID, surfaceId: UUID) -> TabAttentionSnapshot {
+    func snapshot(workspaceId: UUID, surfaceId: UUID) -> PanelAttentionSnapshot {
         snapshots[Self.key(workspaceId: workspaceId, surfaceId: surfaceId)]
-            ?? TabAttentionSnapshot(
+            ?? PanelAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: nil,
@@ -190,7 +190,7 @@ final class TabAttentionIndex: ObservableObject {
             )
     }
 
-    func publish(_ snapshot: TabAttentionSnapshot) {
+    func publish(_ snapshot: PanelAttentionSnapshot) {
         let key = Self.key(workspaceId: snapshot.workspaceId, surfaceId: snapshot.surfaceId)
         if !snapshot.isFlagged && !snapshot.suppressed {
             snapshots.removeValue(forKey: key)
@@ -218,8 +218,8 @@ final class TabAttentionIndex: ObservableObject {
 /// A caller receives a result only after metadata, render cache, signal index,
 /// events, and optional direct delivery are all committed.
 @MainActor
-final class TabAttentionService {
-    static let shared = TabAttentionService()
+final class PanelAttentionService {
+    static let shared = PanelAttentionService()
 
     private let feedProjection: FeedProjectionBridge
 
@@ -232,15 +232,15 @@ final class TabAttentionService {
         workspaceId: UUID,
         surfaceId: UUID,
         reason: String,
-        callerTabId: UUID? = nil,
-        by actor: TabAttentionActor = .agent,
+        callerPanelId: UUID? = nil,
+        by actor: PanelAttentionActor = .agent,
         title: String?
-    ) throws -> TabMetadataStore.WriteResult {
+    ) throws -> PanelMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: .raise(reason),
-            callerTabId: callerTabId,
+            callerPanelId: callerPanelId,
             actor: actor,
             title: title
         )
@@ -250,10 +250,10 @@ final class TabAttentionService {
     func lower(
         workspaceId: UUID,
         surfaceId: UUID,
-        by actor: TabAttentionActor,
+        by actor: PanelAttentionActor,
         answer: String? = nil,
         expectedFlagEpoch: Date? = nil
-    ) throws -> TabMetadataStore.WriteResult {
+    ) throws -> PanelMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
@@ -270,9 +270,9 @@ final class TabAttentionService {
     func lowerIfFlagged(
         workspaceId: UUID,
         surfaceId: UUID,
-        by actor: TabAttentionActor
-    ) throws -> TabMetadataStore.WriteResult? {
-        guard TabAttentionIndex.shared.snapshot(
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult? {
+        guard PanelAttentionIndex.shared.snapshot(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         ).isFlagged else { return nil }
@@ -283,8 +283,8 @@ final class TabAttentionService {
     func suppress(
         workspaceId: UUID,
         surfaceId: UUID,
-        by actor: TabAttentionActor
-    ) throws -> TabMetadataStore.WriteResult {
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
@@ -297,8 +297,8 @@ final class TabAttentionService {
     func unsuppress(
         workspaceId: UUID,
         surfaceId: UUID,
-        by actor: TabAttentionActor
-    ) throws -> TabMetadataStore.WriteResult {
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
@@ -308,16 +308,16 @@ final class TabAttentionService {
     }
 
     func syncFromMetadata(workspaceId: UUID, surfaceId: UUID) {
-        let snapshot = TabMetadataStore.shared.attentionSnapshot(
+        let snapshot = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
         commitProjection(snapshot)
     }
 
-    func restore(_ snapshot: TabAttentionSnapshot) {
-        TabMetadataStore.shared.restoreAttention(snapshot)
-        let canonical = TabMetadataStore.shared.attentionSnapshot(
+    func restore(_ snapshot: PanelAttentionSnapshot) {
+        PanelMetadataStore.shared.restoreAttention(snapshot)
+        let canonical = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: snapshot.workspaceId,
             surfaceId: snapshot.surfaceId
         )
@@ -326,7 +326,7 @@ final class TabAttentionService {
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
-        let attention = TabAttentionIndex.shared.snapshot(
+        let attention = PanelAttentionIndex.shared.snapshot(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
@@ -344,16 +344,16 @@ final class TabAttentionService {
             forWorkspaceId: workspaceId,
             surfaceId: surfaceId
         )
-        TabMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
-        TabAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
-        feedProjection.removeTab(workspaceID: workspaceId, tabID: surfaceId)
+        PanelMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
+        PanelAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
+        feedProjection.removePanel(workspaceID: workspaceId, panelID: surfaceId)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces.first(where: { $0.id == workspaceId })?
             .setAttentionSnapshot(nil, forSurface: surfaceId)
     }
 
     func prune(workspaceId: UUID, validSurfaceIds: Set<UUID>) {
-        for attention in TabAttentionIndex.shared.oldestFlags
+        for attention in PanelAttentionIndex.shared.oldestFlags
         where attention.workspaceId == workspaceId
             && !validSurfaceIds.contains(attention.surfaceId) {
             if let epoch = attention.flagRaisedAt {
@@ -370,34 +370,34 @@ final class TabAttentionService {
             forWorkspaceId: workspaceId,
             excludingSurfaceIds: validSurfaceIds
         )
-        TabMetadataStore.shared.pruneWorkspace(
+        PanelMetadataStore.shared.pruneWorkspace(
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
-        TabAttentionIndex.shared.prune(
+        PanelAttentionIndex.shared.prune(
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
-        feedProjection.pruneWorkspace(workspaceID: workspaceId, validTabIDs: validSurfaceIds)
+        feedProjection.pruneWorkspace(workspaceID: workspaceId, validPanelIDs: validSurfaceIds)
     }
 
     private func mutate(
         workspaceId: UUID,
         surfaceId: UUID,
-        flag: TabAttentionFlagMutation = .unchanged,
-        suppression: TabAttentionSuppressionMutation = .unchanged,
-        callerTabId: UUID? = nil,
-        actor: TabAttentionActor = .agent,
+        flag: PanelAttentionFlagMutation = .unchanged,
+        suppression: PanelAttentionSuppressionMutation = .unchanged,
+        callerPanelId: UUID? = nil,
+        actor: PanelAttentionActor = .agent,
         answer: String? = nil,
         expectedFlagEpoch: Date? = nil,
         title: String? = nil
-    ) throws -> TabMetadataStore.WriteResult {
-        let transaction = try TabMetadataStore.shared.mutateAttention(
+    ) throws -> PanelMetadataStore.WriteResult {
+        let transaction = try PanelMetadataStore.shared.mutateAttention(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: flag,
             suppression: suppression,
-            callerTabId: callerTabId,
+            callerPanelId: callerPanelId,
             expectedFlagEpoch: expectedFlagEpoch
         )
         let flagChanged = transaction.result.applied[MetadataKey.flag] == true
@@ -414,7 +414,7 @@ final class TabAttentionService {
                     workspace: workspaceId,
                     surface: surfaceId,
                     reason: reason,
-                    callerTabId: transaction.after.flagCallerTabId,
+                    callerPanelId: transaction.after.flagCallerPanelId,
                     by: actor
                 )
                 // Operator decision 2026-07-28: direct flag delivery pierces
@@ -465,13 +465,13 @@ final class TabAttentionService {
         return transaction.result
     }
 
-    private func commitProjection(_ snapshot: TabAttentionSnapshot) {
+    private func commitProjection(_ snapshot: PanelAttentionSnapshot) {
         publishProjection(snapshot)
         TerminalNotificationStore.shared.refreshSignalEligibility()
     }
 
-    private func publishProjection(_ snapshot: TabAttentionSnapshot) {
-        TabAttentionIndex.shared.publish(snapshot)
+    private func publishProjection(_ snapshot: PanelAttentionSnapshot) {
+        PanelAttentionIndex.shared.publish(snapshot)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: snapshot.workspaceId)?
             .workspaces.first(where: { $0.id == snapshot.workspaceId })?
             .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)

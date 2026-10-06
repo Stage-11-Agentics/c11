@@ -9,22 +9,22 @@ import XCTest
 /// Synthetic J6 roster decisions. Timestamps are fixture values, not a captured corpus.
 final class AgentRosterTests: XCTestCase {
     private let now: Int64 = 1_700_000_000_000
-    private let tabA = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
-    private let tabB = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
-    private let tabC = UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!
+    private let panelA = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
+    private let panelB = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
+    private let panelC = UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!
     private let workspace = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
 
     func testTwoOwnerDocumentKeepsNullsAndHistoricalCandidates() {
-        let blocked = snapshot(tab: tabA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
-        let working = snapshot(tab: tabB, session: "owner-b", phase: .working, reason: nil, source: .hook, model: "synthetic-model", confirmed: true)
-        var priorInstance = snapshot(tab: tabC, session: "owner-c", phase: .idle, reason: nil, source: .hook, model: nil, confirmed: true)
+        let blocked = snapshot(panel: panelA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
+        let working = snapshot(panel: panelB, session: "owner-b", phase: .working, reason: nil, source: .hook, model: "synthetic-model", confirmed: true)
+        var priorInstance = snapshot(panel: panelC, session: "owner-c", phase: .idle, reason: nil, source: .hook, model: nil, confirmed: true)
         priorInstance.lastSequence = 1
         let historical = JournalReplayPolicy.restored(priorInstance)
         let seen = Date(timeIntervalSince1970: 1_700_000_000)
         let live = [
-            AgentRoster.LiveTab(tabID: tabB, workspaceID: workspace, sessionID: "owner-b", kind: "claude-code", snapshot: working, turnStartedMs: 1_699_000_000_000, flagged: false, suppressed: false, lastSeenAt: nil),
-            AgentRoster.LiveTab(tabID: tabC, workspaceID: workspace, sessionID: nil, kind: nil, snapshot: nil, turnStartedMs: nil, flagged: true, suppressed: false, lastSeenAt: seen),
-            AgentRoster.LiveTab(tabID: tabA, workspaceID: workspace, sessionID: "owner-a", kind: "claude-code", snapshot: blocked, turnStartedMs: nil, flagged: false, suppressed: true, lastSeenAt: nil),
+            AgentRoster.LivePanel(panelID: panelB, workspaceID: workspace, sessionID: "owner-b", kind: "claude-code", snapshot: working, turnStartedMs: 1_699_000_000_000, flagged: false, suppressed: false, lastSeenAt: nil),
+            AgentRoster.LivePanel(panelID: panelC, workspaceID: workspace, sessionID: nil, kind: nil, snapshot: nil, turnStartedMs: nil, flagged: true, suppressed: false, lastSeenAt: seen),
+            AgentRoster.LivePanel(panelID: panelA, workspaceID: workspace, sessionID: "owner-a", kind: "claude-code", snapshot: blocked, turnStartedMs: nil, flagged: false, suppressed: true, lastSeenAt: nil),
         ]
         let started = retained(.sessionStarted, sequence: 1, native: "SessionStart")
         let document = AgentRoster.document(
@@ -46,10 +46,10 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(coverage?["storage"] as? String, "ok")
         XCTAssertEqual(coverage?["unattributed"] as? Int, 2)
         let tabs = document["tabs"] as? [[String: Any]] ?? []
-        XCTAssertEqual(tabs.map { $0["tab_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        XCTAssertEqual(tabs.map { $0["tab_id"] as? String }, [panelA.uuidString, panelB.uuidString, panelC.uuidString])
         // C11-337: `panels` is canonical; `tabs` carries the same rows for one release.
         let panels = document["panels"] as? [[String: Any]] ?? []
-        XCTAssertEqual(panels.map { $0["panel_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        XCTAssertEqual(panels.map { $0["panel_id"] as? String }, [panelA.uuidString, panelB.uuidString, panelC.uuidString])
         XCTAssertEqual((AgentRoster.unavailableDocument()["panels"] as? [Any])?.count, 0)
         let ask = tabs[0]
         XCTAssertEqual(ask["state"] as? String, "blocked")
@@ -79,10 +79,10 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(candidates[0]["connection"] as? String, "unknown")
         XCTAssertEqual(candidates[0]["coverage"] as? String, "retained")
         // C11-337: roster rows carry the panel spelling beside the legacy tab spelling.
-        XCTAssertEqual(tabs.map { $0["panel_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        XCTAssertEqual(tabs.map { $0["panel_id"] as? String }, [panelA.uuidString, panelB.uuidString, panelC.uuidString])
         XCTAssertTrue(tabs.allSatisfy { $0["surface_id"] == nil })
-        XCTAssertEqual(candidates[0]["panel_id"] as? String, tabC.uuidString)
-        XCTAssertEqual(candidates[0]["tab_id"] as? String, tabC.uuidString)
+        XCTAssertEqual(candidates[0]["panel_id"] as? String, panelC.uuidString)
+        XCTAssertEqual(candidates[0]["tab_id"] as? String, panelC.uuidString)
     }
 
     func testRestoreLabelsKeepEndedAfterALaterConnectionObservation() {
@@ -122,20 +122,20 @@ final class AgentRosterTests: XCTestCase {
 
     func testOperatorResponseIsOncePerAskEventAndDoesNotClearBlocked() throws {
         var gate = OperatorResponseGate()
-        let tab = tabA
+        let panel = panelA
         let ask = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
         let reused = UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
-        XCTAssertTrue(gate.begin(tab: tab, ask: ask))
-        XCTAssertFalse(gate.begin(tab: tab, ask: ask))
-        gate.succeed(tab: tab, ask: ask)
-        XCTAssertFalse(gate.begin(tab: tab, ask: ask))
-        XCTAssertTrue(gate.begin(tab: tab, ask: reused))
+        XCTAssertTrue(gate.begin(panel: panel, ask: ask))
+        XCTAssertFalse(gate.begin(panel: panel, ask: ask))
+        gate.succeed(panel: panel, ask: ask)
+        XCTAssertFalse(gate.begin(panel: panel, ask: ask))
+        XCTAssertTrue(gate.begin(panel: panel, ask: reused))
         let retry = UUID(uuidString: "00000000-0000-0000-0000-0000000000A3")!
-        XCTAssertTrue(gate.begin(tab: tab, ask: retry))
-        gate.fail(tab: tab, ask: retry)
-        XCTAssertTrue(gate.begin(tab: tab, ask: retry))
-        gate.clear(tab: tab)
-        XCTAssertTrue(gate.begin(tab: tab, ask: ask))
+        XCTAssertTrue(gate.begin(panel: panel, ask: retry))
+        gate.fail(panel: panel, ask: retry)
+        XCTAssertTrue(gate.begin(panel: panel, ask: retry))
+        gate.clear(panel: panel)
+        XCTAssertTrue(gate.begin(panel: panel, ask: ask))
 
         var open = JournalTestData.draft(.questionRequested)
         open.requestID = "request-a"
@@ -152,7 +152,7 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(observed.snapshot?.phase, .blocked)
         XCTAssertNil(AgentRoster.lifecyclePayload(
             effect: observed.effect, from: observed.fromPhase, to: observed.snapshot?.phase,
-            tab: tab, agent: "claude-code", reason: observed.snapshot?.reason))
+            panel: panel, agent: "claude-code", reason: observed.snapshot?.reason))
         response.eventID = UUID()
         var unnamed = open
         unnamed.requestID = nil
@@ -234,17 +234,17 @@ final class AgentRosterTests: XCTestCase {
     }
 
     func testLifecyclePayloadEmitsOnlyAPhaseChange() {
-        let tab = tabA
-        let first = AgentRoster.lifecyclePayload(effect: .applied, from: nil, to: .blocked, tab: tab, agent: "claude-code", reason: .question)
-        XCTAssertEqual(first?["tab"] as? String, tab.uuidString)
+        let panel = panelA
+        let first = AgentRoster.lifecyclePayload(effect: .applied, from: nil, to: .blocked, panel: panel, agent: "claude-code", reason: .question)
+        XCTAssertEqual(first?["tab"] as? String, panel.uuidString)
         XCTAssertEqual(first?["agent"] as? String, "claude-code")
         XCTAssertTrue(first?["from"] is NSNull)
         XCTAssertEqual(first?["to"] as? String, "blocked")
         XCTAssertEqual(first?["reason"] as? String, "question")
-        XCTAssertNil(AgentRoster.lifecyclePayload(effect: .applied, from: .blocked, to: .blocked, tab: tab, agent: "claude-code", reason: .question))
-        XCTAssertNil(AgentRoster.lifecyclePayload(effect: .duplicateEvidence, from: .working, to: .blocked, tab: tab, agent: "claude-code", reason: .question))
-        XCTAssertNil(AgentRoster.lifecyclePayload(effect: .observation, from: .blocked, to: .working, tab: tab, agent: "claude-code", reason: nil))
-        let failure = AgentRoster.lifecyclePayload(effect: .applied, from: .working, to: .error, tab: tab, agent: "claude-code", reason: .sessionFailure)
+        XCTAssertNil(AgentRoster.lifecyclePayload(effect: .applied, from: .blocked, to: .blocked, panel: panel, agent: "claude-code", reason: .question))
+        XCTAssertNil(AgentRoster.lifecyclePayload(effect: .duplicateEvidence, from: .working, to: .blocked, panel: panel, agent: "claude-code", reason: .question))
+        XCTAssertNil(AgentRoster.lifecyclePayload(effect: .observation, from: .blocked, to: .working, panel: panel, agent: "claude-code", reason: nil))
+        let failure = AgentRoster.lifecyclePayload(effect: .applied, from: .working, to: .error, panel: panel, agent: "claude-code", reason: .sessionFailure)
         XCTAssertEqual(failure?["to"] as? String, "error")
         XCTAssertTrue(failure?["reason"] is NSNull)
     }
@@ -274,7 +274,7 @@ final class AgentRosterTests: XCTestCase {
         var newer = older
         newer.eventID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!
         newer.occurredAtMs = 2_000
-        let snap = snapshot(tab: tabA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
+        let snap = snapshot(panel: panelA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
         var blocked = snap
         blocked.requestID = "request-a"
         blocked.lastSequence = 3
@@ -309,9 +309,9 @@ final class AgentRosterTests: XCTestCase {
         )
     }
 
-    private func snapshot(tab: UUID, session: String, phase: JournalPhase, reason: JournalReason?, source: JournalSource, model: String?, confirmed: Bool) -> JournalSnapshot {
+    private func snapshot(panel: UUID, session: String, phase: JournalPhase, reason: JournalReason?, source: JournalSource, model: String?, confirmed: Bool) -> JournalSnapshot {
         var row = JournalSnapshot(
-            owner: JournalOwner(tabID: tab, agentKind: "claude-code", sessionID: session),
+            owner: JournalOwner(panelID: panel, agentKind: "claude-code", sessionID: session),
             workspaceID: workspace,
             appInstanceID: JournalTestData.instance
         )

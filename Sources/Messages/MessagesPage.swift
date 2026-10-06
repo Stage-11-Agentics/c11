@@ -328,7 +328,7 @@ enum MessagesPageBuilder {
         }
 
         for (index, event) in events.enumerated() {
-            if event.type == EventEnvelope.EventType.tabInputSent.rawValue {
+            if event.type == EventEnvelope.EventType.panelInputSent.rawValue {
                 sends.append(makeSendRecord(event: event, fallbackIndex: index))
             } else if event.type.hasPrefix("mailbox.") {
                 merge(mailboxEvent: event, into: &mailbox)
@@ -698,7 +698,7 @@ enum MessagesPageSource {
                 guard containsSendMarker(line)
                         || line.range(of: mailboxEventMarker) != nil else { continue }
                 if let event = MessagesPageEvent(data: Data(line)) {
-                    guard event.type == EventEnvelope.EventType.tabInputSent.rawValue
+                    guard event.type == EventEnvelope.EventType.panelInputSent.rawValue
                             || event.type.hasPrefix("mailbox.") else {
                         continue
                     }

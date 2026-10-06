@@ -228,7 +228,7 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
             directory: reportedDirectory
         )
 
-        XCTAssertEqual(workspaceB.tabDirectories[surfaceB], reportedDirectory)
+        XCTAssertEqual(workspaceB.panelDirectories[surfaceB], reportedDirectory)
         XCTAssertEqual(workspaceA.currentDirectory, initialDirectoryA)
         XCTAssertTrue(app.workspaceManager === managerA, "PWD routing must preserve the active window manager")
     }
@@ -452,13 +452,13 @@ private func dragConfigurationOperationsSnapshot<T>(from operations: T) throws -
 
 #if compiler(>=6.2)
 @MainActor
-final class InternalTabDragConfigurationTests: XCTestCase {
-    func testDisablesExternalOperationsForInternalTabDrags() throws {
+final class InternalPanelDragConfigurationTests: XCTestCase {
+    func testDisablesExternalOperationsForInternalPanelDrags() throws {
         guard #available(macOS 26.0, *) else {
             throw XCTSkip("Requires macOS 26 drag configuration APIs")
         }
 
-        let configuration = InternalTabDragConfigurationProvider.value
+        let configuration = InternalPanelDragConfigurationProvider.value
         let withinApp = try dragConfigurationOperationsSnapshot(from: configuration.operationsWithinApp)
         let outsideApp = try dragConfigurationOperationsSnapshot(from: configuration.operationsOutsideApp)
 
@@ -486,7 +486,7 @@ final class InternalTabDragConfigurationTests: XCTestCase {
 
 
 @MainActor
-final class InternalTabDragBundleDeclarationTests: XCTestCase {
+final class InternalPanelDragBundleDeclarationTests: XCTestCase {
     private func exportedTypeIdentifiers(bundle: Bundle) -> Set<String> {
         let declarations = (bundle.object(forInfoDictionaryKey: "UTExportedTypeDeclarations") as? [[String: Any]]) ?? []
         return Set(declarations.compactMap { $0["UTTypeIdentifier"] as? String })
@@ -1070,7 +1070,7 @@ final class FileDropOverlayViewTests: XCTestCase {
 
 
 @MainActor
-final class MarkdownTabPointerObserverViewTests: XCTestCase {
+final class MarkdownPanelPointerObserverViewTests: XCTestCase {
     private func makeWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
@@ -1114,7 +1114,7 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let focusExpectation = expectation(description: "observer forwards focus callback")
         var pointerDownCount = 0
@@ -1142,7 +1142,7 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let noFocusExpectation = expectation(description: "observer ignores invalid clicks")
         noFocusExpectation.isInverted = true
@@ -1168,7 +1168,7 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
     }
 
     func testObserverDoesNotParticipateInHitTesting() {
-        let overlay = MarkdownTabPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let overlay = MarkdownPanelPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         XCTAssertNil(overlay.hitTest(NSPoint(x: 40, y: 30)))
     }
 }

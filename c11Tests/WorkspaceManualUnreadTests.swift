@@ -34,7 +34,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isManuallyUnread: true,
                 markedAt: now.addingTimeInterval(-0.05),
                 now: now,
-                sameTabGraceInterval: 0.2
+                samePanelGraceInterval: 0.2
             )
         )
     }
@@ -50,7 +50,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isManuallyUnread: true,
                 markedAt: now.addingTimeInterval(-0.25),
                 now: now,
-                sameTabGraceInterval: 0.2
+                samePanelGraceInterval: 0.2
             )
         )
     }
@@ -76,7 +76,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isManuallyUnread: true,
                 markedAt: now.addingTimeInterval(-0.05),
                 now: now,
-                sameTabGraceInterval: 0.2
+                samePanelGraceInterval: 0.2
             )
         )
     }

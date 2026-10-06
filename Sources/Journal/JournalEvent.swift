@@ -76,15 +76,15 @@ enum JournalResolution: String, Codable { case resumed, cancelled, unknown }
 enum JournalReason: String, Codable { case approval, question, planReview = "plan_review", sessionFailure = "session_failure", toolFailure = "tool_failure", observation }
 
 struct JournalOwner: Codable, Hashable {
-    let tabID: UUID
+    let panelID: UUID
     let agentKind: String
     let sessionID: String
     // Pinned: `journal_current.state` blobs hold these exact on-disk keys.
     enum CodingKeys: String, CodingKey {
-        case tabID = "tabID", agentKind = "agentKind", sessionID = "sessionID"
+        case panelID = "tabID", agentKind = "agentKind", sessionID = "sessionID"
     }
     // JSON is unambiguous even when an opaque session ID contains punctuation.
-    var key: String { String(data: try! JSONEncoder().encode([tabID.uuidString, agentKind, sessionID]), encoding: .utf8)! }
+    var key: String { String(data: try! JSONEncoder().encode([panelID.uuidString, agentKind, sessionID]), encoding: .utf8)! }
 }
 
 struct JournalDraft: Codable, Equatable {
@@ -94,7 +94,7 @@ struct JournalDraft: Codable, Equatable {
     var emittedAtMs: Int64
     var occurredAtMs: Int64? = nil
     var timeQuality: JournalTimeQuality = .missing
-    var tabID: UUID? = nil
+    var panelID: UUID? = nil
     var workspaceID: UUID? = nil
     var sessionID: String? = nil
     var agentKind: String
@@ -113,15 +113,15 @@ struct JournalDraft: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case schemaVersion = "schema_version", eventID = "event_id", kind, emittedAtMs = "emitted_at_ms"
-        case occurredAtMs = "occurred_at_ms", timeQuality = "time_quality", tabID = "tab_id", workspaceID = "workspace_id"
+        case occurredAtMs = "occurred_at_ms", timeQuality = "time_quality", panelID = "tab_id", workspaceID = "workspace_id"
         case sessionID = "session_id", agentKind = "agent_kind", isChild = "is_child", parentSessionID = "parent_session_id"
         case source, adapter, adapterVersion = "adapter_version", nativeEvent = "native_event"
         case turnID = "turn_id", requestID = "request_id", toolClass = "tool_class", reasonCode = "reason_code", signal, resolution
     }
 
     var owner: JournalOwner? {
-        guard let tabID, let sessionID else { return nil }
-        return JournalOwner(tabID: tabID, agentKind: agentKind, sessionID: sessionID)
+        guard let panelID, let sessionID else { return nil }
+        return JournalOwner(panelID: panelID, agentKind: agentKind, sessionID: sessionID)
     }
 
     static func decode(_ data: Data) throws -> JournalDraft {
@@ -158,7 +158,7 @@ struct JournalDraft: Codable, Equatable {
         guard schemaVersion == 1 else { throw JournalError.unsupportedVersion }
         guard source == adapter.source, emittedAtMs >= 0, occurredAtMs.map({ $0 >= 0 }) ?? true,
               (occurredAtMs == nil) == (timeQuality == .missing),
-              (tabID == nil) == (workspaceID == nil),
+              (panelID == nil) == (workspaceID == nil),
               opaque(agentKind, 64), agentKind.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 45 }),
               opaque(sessionID), opaque(parentSessionID), opaque(turnID), opaque(requestID),
               opaque(adapterVersion, 64), adapterVersion.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) }), nativeNames.contains(nativeEvent),

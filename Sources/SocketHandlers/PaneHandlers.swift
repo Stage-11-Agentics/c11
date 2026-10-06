@@ -57,7 +57,7 @@ extension TerminalController {
                 let bonsplitTabs = ws.bonsplitController.tabs(inPane: paneId)
                 let surfaceUUIDs: [UUID] = bonsplitTabs.compactMap { ws.tabIdFromBonsplitTabId($0.id) }
                 let selectedBonsplitTab = ws.bonsplitController.selectedTab(inPane: paneId)
-                let selectedTabUUID = selectedBonsplitTab.flatMap { ws.tabIdFromBonsplitTabId($0.id) }
+                let selectedPanelUUID = selectedBonsplitTab.flatMap { ws.tabIdFromBonsplitTabId($0.id) }
                 return [
                     "id": paneId.id.uuidString,
                     "ref": v2Ref(kind: .pane, uuid: paneId.id),
@@ -65,8 +65,8 @@ extension TerminalController {
                     "focused": paneId == focusedPaneId,
                     "surface_ids": surfaceUUIDs.map { $0.uuidString },
                     "surface_refs": surfaceUUIDs.map { v2Ref(kind: .surface, uuid: $0) },
-                    "selected_surface_id": v2OrNull(selectedTabUUID?.uuidString),
-                    "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedTabUUID),
+                    "selected_surface_id": v2OrNull(selectedPanelUUID?.uuidString),
+                    "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedPanelUUID),
                     "surface_count": surfaceUUIDs.count
                 ]
             }
@@ -175,7 +175,7 @@ extension TerminalController {
         }
 
         let panelType = v2PanelType(params, "type") ?? .terminal
-        if let denial = v2SurfaceTypeDenial(panelType) { return denial }
+        if let denial = v2PanelTypeDenial(panelType) { return denial }
         var initialInput: String?
         if let error = v2ResolveCreateInitialInput(params: params, panelType: panelType.rawValue, resolved: &initialInput) {
             return error
@@ -252,10 +252,10 @@ extension TerminalController {
                 force: force
             )
 
-            var becameTab = false
+            var becamePanel = false
             var appliedDirection = direction
             var warningText: String?
-            var targetPaneForTab: PaneID?
+            var targetPaneForPanel: PaneID?
             var newPanelId: UUID?
 
             switch plan {
@@ -263,10 +263,10 @@ extension TerminalController {
                 result = .err(code: "pane_too_small", message: message, data: data)
                 return
 
-            case .tab(let paneId, let warning):
-                becameTab = true
+            case .panel(let paneId, let warning):
+                becamePanel = true
                 warningText = warning
-                targetPaneForTab = paneId
+                targetPaneForPanel = paneId
                 switch panelType {
                 case .browser:
                     newPanelId = ws.newBrowserSurface(
@@ -277,7 +277,7 @@ extension TerminalController {
                         sticksAsPreferred: sticksAsPreferred
                     )?.id
                 case .markdown:
-                    newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                    newPanelId = ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                 case .terminal:
                     newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
                 }
@@ -309,7 +309,7 @@ extension TerminalController {
                 result = .err(code: "internal_error", message: "Failed to create area", data: nil)
                 return
             }
-            let paneUUID = becameTab ? targetPaneForTab?.id : ws.paneId(forPanelId: createdPanelId)?.id
+            let paneUUID = becamePanel ? targetPaneForPanel?.id : ws.paneId(forPanelId: createdPanelId)?.id
             // Seed pane title atomic with the pane id becoming valid: the
             // caller observes the pane (via the response) only after the seed
             // is in the store.
@@ -330,7 +330,7 @@ extension TerminalController {
                 ok["profile_id"] = browserProfileID.uuidString
             }
             if initialInput != nil { ok["initial_input"] = "queued" }
-            self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becameTab: becameTab, warning: warningText)
+            self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becamePanel: becamePanel, warning: warningText)
             result = .ok(ok)
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
@@ -503,8 +503,8 @@ extension TerminalController {
 
             guard let selectedSourceBonsplitTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
                   let selectedTargetBonsplitTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
-                  let sourceTabId = workspace.tabIdFromBonsplitTabId(selectedSourceBonsplitTab.id),
-                  let targetTabId = workspace.tabIdFromBonsplitTabId(selectedTargetBonsplitTab.id) else {
+                  let sourcePanelId = workspace.tabIdFromBonsplitTabId(selectedSourceBonsplitTab.id),
+                  let targetPanelId = workspace.tabIdFromBonsplitTabId(selectedTargetBonsplitTab.id) else {
                 result = .err(code: "invalid_state", message: "Both areas must have a selected panel", data: nil)
                 return
             }
@@ -527,20 +527,20 @@ extension TerminalController {
                 }
             }
 
-            guard workspace.moveSurface(panelId: sourceTabId, toPane: targetPane, focus: false) else {
+            guard workspace.moveSurface(panelId: sourcePanelId, toPane: targetPane, focus: false) else {
                 result = .err(code: "internal_error", message: "Failed moving source panel into target area", data: nil)
                 return
             }
-            guard workspace.moveSurface(panelId: targetTabId, toPane: sourcePane, focus: false) else {
+            guard workspace.moveSurface(panelId: targetPanelId, toPane: sourcePane, focus: false) else {
                 result = .err(code: "internal_error", message: "Failed moving target panel into source area", data: nil)
                 return
             }
 
             if let sourcePlaceholder {
-                _ = workspace.closeTab(sourcePlaceholder, force: true)
+                _ = workspace.closePanel(sourcePlaceholder, force: true)
             }
             if let targetPlaceholder {
-                _ = workspace.closeTab(targetPlaceholder, force: true)
+                _ = workspace.closePanel(targetPlaceholder, force: true)
             }
 
             if focus {
@@ -556,10 +556,10 @@ extension TerminalController {
                 "pane_ref": v2Ref(kind: .pane, uuid: sourcePane.id),
                 "target_pane_id": targetPane.id.uuidString,
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPane.id),
-                "source_surface_id": sourceTabId.uuidString,
-                "source_surface_ref": v2Ref(kind: .surface, uuid: sourceTabId),
-                "target_surface_id": targetTabId.uuidString,
-                "target_surface_ref": v2Ref(kind: .surface, uuid: targetTabId)
+                "source_surface_id": sourcePanelId.uuidString,
+                "source_surface_ref": v2Ref(kind: .surface, uuid: sourcePanelId),
+                "target_surface_id": targetPanelId.uuidString,
+                "target_surface_ref": v2Ref(kind: .surface, uuid: targetPanelId)
             ])
         }
         return result
@@ -605,7 +605,7 @@ extension TerminalController {
             let sourceIndex = sourceWorkspace.indexInPane(forPanelId: surfaceId)
             let sourcePaneForRollback = sourceWorkspace.paneId(forPanelId: surfaceId)
 
-            guard let detached = sourceWorkspace.detachTab(panelId: surfaceId) else {
+            guard let detached = sourceWorkspace.detachPanel(panelId: surfaceId) else {
                 result = .err(code: "internal_error", message: "Failed to detach source panel", data: nil)
                 return
             }
@@ -614,7 +614,7 @@ extension TerminalController {
             guard let destinationPane = destinationWorkspace.bonsplitController.focusedPaneId
                 ?? destinationWorkspace.bonsplitController.allPaneIds.first else {
                 if let sourcePaneForRollback {
-                    _ = sourceWorkspace.attachDetachedTab(
+                    _ = sourceWorkspace.attachDetachedPanel(
                         detached,
                         inPane: sourcePaneForRollback,
                         atIndex: sourceIndex,
@@ -625,9 +625,9 @@ extension TerminalController {
                 return
             }
 
-            guard destinationWorkspace.attachDetachedTab(detached, inPane: destinationPane, focus: focus) != nil else {
+            guard destinationWorkspace.attachDetachedPanel(detached, inPane: destinationPane, focus: focus) != nil else {
                 if let sourcePaneForRollback {
-                    _ = sourceWorkspace.attachDetachedTab(
+                    _ = sourceWorkspace.attachDetachedPanel(
                         detached,
                         inPane: sourcePaneForRollback,
                         atIndex: sourceIndex,
@@ -679,7 +679,7 @@ extension TerminalController {
         if let focus = v2Bool(params, "focus") {
             moveParams["focus"] = focus
         }
-        return v2SurfaceMove(params: moveParams)
+        return v2PanelMove(params: moveParams)
     }
 
     private func v2PaneLast(params: [String: Any]) -> V2CallResult {
@@ -725,7 +725,7 @@ extension TerminalController {
         }
 
         let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
-        guard let mode = TabMetadataStore.WriteMode(rawValue: modeStr) else {
+        guard let mode = PanelMetadataStore.WriteMode(rawValue: modeStr) else {
             return .err(code: "invalid_mode", message: "mode must be 'merge' or 'replace'", data: nil)
         }
 
@@ -778,7 +778,7 @@ extension TerminalController {
                 result: result,
                 includePriorValues: true
             ))
-        } catch let err as TabMetadataStore.WriteError {
+        } catch let err as PanelMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
@@ -889,7 +889,7 @@ extension TerminalController {
                 result: result,
                 includePriorValues: false
             ))
-        } catch let err as TabMetadataStore.WriteError {
+        } catch let err as PanelMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)

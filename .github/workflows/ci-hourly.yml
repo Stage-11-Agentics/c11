@@ -144,7 +144,7 @@ jobs:
             c11Tests/WorkspaceManagerReopenClosedBrowserFocusTests
             c11Tests/TerminalNotificationDirectInteractionTests
             c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests
-            c11Tests/BrowserTabHostContainerViewTests
+            c11Tests/BrowserPanelHostContainerViewTests
             # C11-253: standalone synthetic views lack a registered live
             # Ghostty surface/responder. Real input proof belongs to guest QA.
             c11Tests/GhosttyBackquoteRegressionTests/testShiftBackquoteEscFallbackSendsLiteralTilde
@@ -154,7 +154,7 @@ jobs:
             c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalFirstResponderConvergesSplitActiveStateWhenSelectionAlreadyMatches
             # C11-253: ttyname(stdin) can name a pty without making it the
             # host process's controlling tty; PROC_TTY_ONLY then has no match.
-            c11Tests/TabLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY
+            c11Tests/PanelLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY
             # C11-253: this standalone AppKit host remaps posted pointer
             # window coordinates, failing the fixture's dispatch precondition.
             # Keep the real-event guards; Atlas guest scenarios 9/10 must prove

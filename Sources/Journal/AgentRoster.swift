@@ -35,8 +35,8 @@ enum AgentRoster {
         var toPhase: JournalPhase? { event.toPhase }
     }
 
-    struct LiveTab {
-        var tabID: UUID
+    struct LivePanel {
+        var panelID: UUID
         var workspaceID: UUID
         var sessionID: String?
         var kind: String?
@@ -105,7 +105,7 @@ enum AgentRoster {
     }
 
     static func document(
-        live: [LiveTab],
+        live: [LivePanel],
         currents: [JournalSnapshot],
         eventsByOwner: [String: [RetainedEvent]],
         truncatedOwners: Set<String>,
@@ -116,7 +116,7 @@ enum AgentRoster {
         now: Int64,
         liveIdentity: String
     ) -> [String: Any] {
-        let tabs = live.sorted { $0.tabID.uuidString < $1.tabID.uuidString }.map { tabJSON($0, now: now) }
+        let panels = live.sorted { $0.panelID.uuidString < $1.panelID.uuidString }.map { panelJSON($0, now: now) }
         let candidates: [[String: Any]]
         if storageAvailable {
             candidates = currents.filter(\.isHistorical).sorted { $0.owner.key < $1.owner.key }.map { row in
@@ -140,9 +140,9 @@ enum AgentRoster {
                 "storage": storageAvailable ? "ok" : "unavailable",
                 "unattributed": storageAvailable ? unattributed : 0,
             ],
-            "panels": tabs,
+            "panels": panels,
             // C11-337: legacy spelling, emitted beside panels for one release.
-            "tabs": tabs,
+            "tabs": panels,
             "restore_candidates": candidates,
         ]
     }
@@ -223,13 +223,13 @@ enum AgentRoster {
         effect: JournalEffect,
         from: JournalPhase?,
         to: JournalPhase?,
-        tab: UUID,
+        panel: UUID,
         agent: String,
         reason: JournalReason?
     ) -> [String: Any]? {
         guard effect == .applied, let to, from != to else { return nil }
         return [
-            "tab": tab.uuidString,
+            "tab": panel.uuidString,
             "agent": agent,
             "from": from?.rawValue ?? NSNull(),
             "to": to.rawValue,
@@ -294,12 +294,12 @@ enum AgentRoster {
         }
     }
 
-    private static func tabJSON(_ row: LiveTab, now: Int64) -> [String: Any] {
+    private static func panelJSON(_ row: LivePanel, now: Int64) -> [String: Any] {
         let snap = row.snapshot
         return [
-            "panel_id": row.tabID.uuidString,
+            "panel_id": row.panelID.uuidString,
             // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": row.tabID.uuidString,
+            "tab_id": row.panelID.uuidString,
             "workspace_id": row.workspaceID.uuidString,
             "session_id": row.sessionID ?? NSNull(),
             "kind": row.kind ?? NSNull(),
@@ -322,9 +322,9 @@ enum AgentRoster {
 
     private static func candidateJSON(_ row: JournalSnapshot, classification: RestoreClassification) -> [String: Any] {
         [
-            "panel_id": row.owner.tabID.uuidString,
+            "panel_id": row.owner.panelID.uuidString,
             // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": row.owner.tabID.uuidString,
+            "tab_id": row.owner.panelID.uuidString,
             "workspace_id": row.workspaceID?.uuidString ?? NSNull(),
             "session_id": row.owner.sessionID,
             "agent_kind": row.owner.agentKind,
@@ -342,29 +342,29 @@ enum AgentRoster {
 }
 
 struct OperatorResponseGate: Equatable {
-    struct Key: Hashable { var tab: UUID; var ask: UUID }
+    struct Key: Hashable { var panel: UUID; var ask: UUID }
     private var pending: Set<Key> = []
     private var recorded: Set<Key> = []
 
-    mutating func begin(tab: UUID, ask: UUID) -> Bool {
-        let key = Key(tab: tab, ask: ask)
+    mutating func begin(panel: UUID, ask: UUID) -> Bool {
+        let key = Key(panel: panel, ask: ask)
         guard !pending.contains(key), !recorded.contains(key) else { return false }
         pending.insert(key)
         return true
     }
 
-    mutating func succeed(tab: UUID, ask: UUID) {
-        let key = Key(tab: tab, ask: ask)
+    mutating func succeed(panel: UUID, ask: UUID) {
+        let key = Key(panel: panel, ask: ask)
         pending.remove(key)
         recorded.insert(key)
     }
 
-    mutating func fail(tab: UUID, ask: UUID) {
-        pending.remove(Key(tab: tab, ask: ask))
+    mutating func fail(panel: UUID, ask: UUID) {
+        pending.remove(Key(panel: panel, ask: ask))
     }
 
-    mutating func clear(tab: UUID) {
-        pending.subtract(pending.filter { $0.tab == tab })
-        recorded.subtract(recorded.filter { $0.tab == tab })
+    mutating func clear(panel: UUID) {
+        pending.subtract(pending.filter { $0.panel == panel })
+        recorded.subtract(recorded.filter { $0.panel == panel })
     }
 }

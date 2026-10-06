@@ -184,7 +184,7 @@ final class JournalStore {
         try execute("BEGIN IMMEDIATE")
         do {
             try execute("INSERT INTO journal_events(event_id,committed_at_ms,tab_id,session_id,agent_kind,model_id,workspace_id,draft) VALUES(?,?,?,?,?,?,?,?)", [
-                .text(d.eventID.uuidString), .integer(now), d.tabID.map { .text($0.uuidString) } ?? .null,
+                .text(d.eventID.uuidString), .integer(now), d.panelID.map { .text($0.uuidString) } ?? .null,
                 d.sessionID.map(Bind.text) ?? .null, .text(d.agentKind), context.modelID.map(Bind.text) ?? .null,
                 d.workspaceID.map { .text($0.uuidString) } ?? .null, .data(canonical)])
             let sequence = sqlite3_last_insert_rowid(db)
@@ -240,7 +240,7 @@ final class JournalStore {
         try queue.sync {
             let cap = max(1, min(200, limit))
             var sql = "SELECT sequence,committed_at_ms,event FROM journal_events WHERE tab_id=? AND session_id=? AND agent_kind=?"
-            var bindings: [Bind] = [.text(owner.tabID.uuidString), .text(owner.sessionID), .text(owner.agentKind)]
+            var bindings: [Bind] = [.text(owner.panelID.uuidString), .text(owner.sessionID), .text(owner.agentKind)]
             if let throughSequence {
                 sql += " AND sequence<=?"
                 bindings.append(.integer(throughSequence))

@@ -67,8 +67,8 @@ enum JournalExport {
                 try gap(from: cursor + 1, to: coverage.highWaterSequence, reason: "unavailable_after_snapshot")
             }
             for baseline in baselines.sorted(by: {
-                ($0.owner.tabID.uuidString, $0.owner.agentKind, $0.owner.sessionID)
-                    < ($1.owner.tabID.uuidString, $1.owner.agentKind, $1.owner.sessionID)
+                ($0.owner.panelID.uuidString, $0.owner.agentKind, $0.owner.sessionID)
+                    < ($1.owner.panelID.uuidString, $1.owner.agentKind, $1.owner.sessionID)
             }) {
                 guard baseline.lastSequence <= coverage.highWaterSequence else {
                     if !baselineGapWritten {
@@ -161,9 +161,9 @@ enum JournalExport {
             "fold_effect": event.effect.rawValue,
             "source": draft.source.rawValue,
             "adapter": draft.adapter.rawValue,
-            "panel_id": draft.tabID?.uuidString as Any? ?? NSNull(),
+            "panel_id": draft.panelID?.uuidString as Any? ?? NSNull(),
             // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": draft.tabID?.uuidString as Any? ?? NSNull(),
+            "tab_id": draft.panelID?.uuidString as Any? ?? NSNull(),
             "workspace_id": draft.workspaceID?.uuidString as Any? ?? NSNull(),
             "agent_kind": draft.agentKind,
             "model_id": event.modelID as Any? ?? NSNull(),
@@ -188,9 +188,9 @@ enum JournalExport {
     private static func baselineObject(_ baseline: JournalSnapshot) -> [String: Any] {
         [
             "record_type": "current_state",
-            "panel_id": baseline.owner.tabID.uuidString,
+            "panel_id": baseline.owner.panelID.uuidString,
             // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": baseline.owner.tabID.uuidString,
+            "tab_id": baseline.owner.panelID.uuidString,
             "agent_kind": baseline.owner.agentKind,
             "session_id": baseline.owner.sessionID,
             "workspace_id": baseline.workspaceID?.uuidString as Any? ?? NSNull(),

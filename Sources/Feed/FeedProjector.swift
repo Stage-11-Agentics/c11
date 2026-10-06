@@ -24,10 +24,10 @@ enum FeedNoteError: String, Error, Equatable {
 
 struct FeedAttentionFact: Equatable {
     var workspaceID: UUID
-    var tabID: UUID
+    var panelID: UUID
     var flagReason: String?
     var flagRaisedAtMs: Int64?
-    var flagCallerTabID: UUID?
+    var flagCallerPanelID: UUID?
     var suppressed: Bool
 
     var isFlagged: Bool { flagReason != nil }
@@ -36,7 +36,7 @@ struct FeedAttentionFact: Equatable {
 struct FeedFlagFact: Equatable {
     var reason: String
     var raisedAtMs: Int64?
-    var callerTabID: UUID?
+    var callerPanelID: UUID?
 }
 
 struct FeedDisplayNote: Equatable {
@@ -48,7 +48,7 @@ struct FeedDisplayNote: Equatable {
 
 struct FeedRow: Equatable {
     var workspaceID: UUID
-    var tabID: UUID
+    var panelID: UUID
     var kind: FeedKind?
     var prompt: String?
     var options: [String]?
@@ -65,9 +65,9 @@ struct FeedRow: Equatable {
     func jsonObject() -> [String: Any] {
         var object: [String: Any] = [
             "workspace_id": workspaceID.uuidString,
-            "panel_id": tabID.uuidString,
+            "panel_id": panelID.uuidString,
             // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": tabID.uuidString,
+            "tab_id": panelID.uuidString,
             "kind": kind?.rawValue ?? NSNull(),
             "prompt": prompt ?? NSNull(),
             "options": options ?? NSNull(),
@@ -84,9 +84,9 @@ struct FeedRow: Equatable {
             object["flag"] = [
                 "reason": flag.reason,
                 "raised_at_ms": flag.raisedAtMs.map { NSNumber(value: $0) } ?? NSNull(),
-                "caller_panel_id": flag.callerTabID?.uuidString ?? NSNull(),
+                "caller_panel_id": flag.callerPanelID?.uuidString ?? NSNull(),
                 // C11-337: legacy spelling, emitted beside caller_panel_id.
-                "caller_tab_id": flag.callerTabID?.uuidString ?? NSNull(),
+                "caller_tab_id": flag.callerPanelID?.uuidString ?? NSNull(),
             ]
         }
         return object
@@ -127,12 +127,12 @@ enum FeedProjector {
         scope: FeedScope
     ) -> [FeedRow] {
         var journals: [UUID: JournalSnapshot] = [:]
-        for row in journalRows { journals[row.owner.tabID] = row }
+        for row in journalRows { journals[row.owner.panelID] = row }
         var flags: [UUID: FeedAttentionFact] = [:]
-        for fact in attention { flags[fact.tabID] = fact }
+        for fact in attention { flags[fact.panelID] = fact }
         var rows: [FeedRow] = []
-        for tabID in Set(journals.keys).union(flags.keys) {
-            if let row = row(tabID: tabID, journal: journals[tabID], attention: flags[tabID], notes: notes[tabID] ?? [:], scope: scope) {
+        for panelID in Set(journals.keys).union(flags.keys) {
+            if let row = row(panelID: panelID, journal: journals[panelID], attention: flags[panelID], notes: notes[panelID] ?? [:], scope: scope) {
                 rows.append(row)
             }
         }
@@ -140,7 +140,7 @@ enum FeedProjector {
     }
 
     private static func row(
-        tabID: UUID,
+        panelID: UUID,
         journal: JournalSnapshot?,
         attention: FeedAttentionFact?,
         notes: [String: FeedDisplayNote],
@@ -160,7 +160,7 @@ enum FeedProjector {
         let flag = flagged ? FeedFlagFact(
             reason: attention?.flagReason ?? "",
             raisedAtMs: attention?.flagRaisedAtMs,
-            callerTabID: attention?.flagCallerTabID
+            callerPanelID: attention?.flagCallerPanelID
         ) : nil
 
         if showBlocking, let journal, let blocking {
@@ -168,7 +168,7 @@ enum FeedProjector {
             let note = request.flatMap { notes[$0] }
             return FeedRow(
                 workspaceID: workspaceID,
-                tabID: tabID,
+                panelID: panelID,
                 kind: blocking,
                 prompt: note?.prompt,
                 options: note?.options,
@@ -186,7 +186,7 @@ enum FeedProjector {
         if showTurn, let journal {
             return FeedRow(
                 workspaceID: workspaceID,
-                tabID: tabID,
+                panelID: panelID,
                 kind: .turnEnd,
                 prompt: nil,
                 options: nil,
@@ -203,7 +203,7 @@ enum FeedProjector {
         }
         return FeedRow(
             workspaceID: workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             kind: nil,
             prompt: nil,
             options: nil,
@@ -224,7 +224,7 @@ struct FeedAskEvent: Equatable {
     enum Action: String, Equatable { case opened = "ask.opened", closed = "ask.closed" }
     var action: Action
     var workspaceID: UUID?
-    var tabID: UUID
+    var panelID: UUID
     var kind: String
     var source: String
     var sourceRank: Int
@@ -266,28 +266,28 @@ struct FeedAskTracker {
     private var tracked: [UUID: Tracked] = [:]
     private var sequences: [UUID: Int64] = [:]
 
-    mutating func consume(tabID: UUID, snapshot: JournalSnapshot?) -> [FeedAskEvent] {
+    mutating func consume(panelID: UUID, snapshot: JournalSnapshot?) -> [FeedAskEvent] {
         if let snapshot {
-            if let seen = sequences[tabID], snapshot.lastSequence < seen { return [] }
-            sequences[tabID] = snapshot.lastSequence
+            if let seen = sequences[panelID], snapshot.lastSequence < seen { return [] }
+            sequences[panelID] = snapshot.lastSequence
         } else {
-            sequences.removeValue(forKey: tabID)
+            sequences.removeValue(forKey: panelID)
         }
         let nextKind = snapshot.flatMap(FeedProjector.blockingKind)
         guard let snapshot, let nextKind else {
-            return retire(tabID: tabID, after: snapshot)
+            return retire(panelID: panelID, after: snapshot)
         }
-        let identityMatches = tracked[tabID].map { $0.kind == nextKind && $0.requestID == snapshot.requestID } ?? false
+        let identityMatches = tracked[panelID].map { $0.kind == nextKind && $0.requestID == snapshot.requestID } ?? false
         if identityMatches {
-            tracked[tabID]?.confirmation = snapshot.confirmation.rawValue
-            tracked[tabID]?.source = snapshot.source.rawValue
-            tracked[tabID]?.sourceRank = snapshot.rank
+            tracked[panelID]?.confirmation = snapshot.confirmation.rawValue
+            tracked[panelID]?.source = snapshot.source.rawValue
+            tracked[panelID]?.sourceRank = snapshot.rank
             return []
         }
-        var events = retire(tabID: tabID, after: snapshot, replacement: true)
+        var events = retire(panelID: panelID, after: snapshot, replacement: true)
         let openedAt = snapshot.sinceMs > 0 ? snapshot.sinceMs : 0
         let emitOpen = snapshot.confirmation == .confirmed
-        tracked[tabID] = Tracked(
+        tracked[panelID] = Tracked(
             kind: nextKind,
             requestID: snapshot.requestID,
             workspaceID: snapshot.workspaceID,
@@ -301,7 +301,7 @@ struct FeedAskTracker {
             events.append(FeedAskEvent(
                 action: .opened,
                 workspaceID: snapshot.workspaceID,
-                tabID: tabID,
+                panelID: panelID,
                 kind: nextKind.rawValue,
                 source: snapshot.source.rawValue,
                 sourceRank: snapshot.rank,
@@ -316,15 +316,15 @@ struct FeedAskTracker {
         return events
     }
 
-    private mutating func retire(tabID: UUID, after snapshot: JournalSnapshot?, replacement: Bool = false) -> [FeedAskEvent] {
-        guard let previous = tracked.removeValue(forKey: tabID), previous.emittedOpen else { return [] }
+    private mutating func retire(panelID: UUID, after snapshot: JournalSnapshot?, replacement: Bool = false) -> [FeedAskEvent] {
+        guard let previous = tracked.removeValue(forKey: panelID), previous.emittedOpen else { return [] }
         let resolution = replacement && snapshot.flatMap(FeedProjector.blockingKind) != nil
             ? nil
             : FeedProjector.resolution(after: snapshot)
         return [FeedAskEvent(
             action: .closed,
             workspaceID: previous.workspaceID ?? snapshot?.workspaceID,
-            tabID: tabID,
+            panelID: panelID,
             kind: previous.kind.rawValue,
             source: previous.source,
             sourceRank: previous.sourceRank,

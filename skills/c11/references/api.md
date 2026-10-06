@@ -814,7 +814,7 @@ skill's status primitives; do not infer lifecycle events from terminal text.
 
 Required fields are `schema_version: 1`, a UUID `event_id`, a supported `agent.*`
 `kind`, integer `emitted_at_ms`, `agent_kind`, `source`, and `adapter`.
-`tab_id` and `workspace_id` are UUIDs, both supplied or both null. `session_id`
+`panel_id` and `workspace_id` are UUIDs, both supplied or both null. `session_id`
 must match the already captured exact conversation. Unknown ownership is
 recorded as unattributed and cannot change a panel. Child evidence cannot finish
 its parent. No focused-panel or cwd fallback exists.

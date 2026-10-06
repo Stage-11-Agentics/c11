@@ -96,8 +96,7 @@ def main() -> int:
         _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
         ws_other = ""
         try:
-            c._call("workspace.select", {"workspace_id": ws_id})
-
+            # Agents cannot select workspaces; every call below targets ws_id explicitly.
             surface_ref = _focused_surface_ref(c, ws_id)
             panel_ref = "panel:" + surface_ref.split(":", 1)[1]
 
@@ -115,7 +114,8 @@ def main() -> int:
             other_created = c._call("workspace.create", {}) or {}
             ws_other = str(other_created.get("workspace_id") or "")
             _must(bool(ws_other), f"workspace.create (second) returned no workspace_id: {other_created}")
-            c._call("workspace.select", {"workspace_id": ws_other})
+            # ws_other stays in the background; the globally focused panel lives in the
+            # guest's selected workspace, which is still "another workspace" for this check.
             ws_target_ref = ""
             ws_list = c._call("workspace.list", {}) or {}
             for row in ws_list.get("workspaces") or []:

@@ -24,8 +24,9 @@ def main():
     socket = os.environ['C11_SOCKET']
     cli = os.environ['C11_CLI']
     with cmux(socket) as client:
-        workspace = client.new_workspace()
-        client.select_workspace(workspace)
+        # Agents cannot select a workspace (workspace_switch_blocked), so the visits
+        # happen in the guest's already-selected workspace.
+        workspace = client._call('workspace.current')['workspace_id']
         targets = [client.new_surface() for _ in range(4)]
         a, b, c, d = targets
         client.activate_app()
@@ -115,7 +116,8 @@ def main():
         time.sleep(1.2)
         client._call('panel.focus', {'workspace_id': workspace, 'panel_id': a})
         require(history() == stable, 'Background focus added unseen visits')
-        client.close_workspace(workspace)
+        for target in (a, c, d):
+            client.close_surface(target)
     print('PASS: focus history dwell, tail/JSON, nonfocus reads, traversal, close and background focus')
     return 0
 

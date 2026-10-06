@@ -108,4 +108,34 @@ final class TabRailTipCenterTests: XCTestCase {
         XCTAssertFalse(rig.center.performShowListFromCountCell(workspace: rig.workspace, paneId: rig.paneId))
         XCTAssertNil(controller.tabSheetRequest)
     }
+
+    /// The Tabs | Rail switch in an area's sheet or rail writes the Tab Layout
+    /// setting and opens or closes that area's rail.
+    func testLayoutSwitchWritesTheSettingAndSetsTheAreasRail() throws {
+        let rig = try makeRig()
+        defer { rig.defaults.removePersistentDomain(forName: rig.suite) }
+        let controller = rig.workspace.bonsplitController
+        XCTAssertNotNil(controller.tabLayoutSwitch, "Every workspace offers the switch")
+        // As `Workspace.applyTabLayout`, but reading the test's defaults.
+        controller.tabLayoutSwitch = TabLayoutSettings.layoutSwitch(defaults: rig.defaults) { [weak controller] in
+            controller?.configuration.appearance.tabLayout =
+                TabLayoutSettings.bonsplitLayout(TabLayoutSettings.mode(defaults: rig.defaults))
+        }
+        var toggles: [Bool] = []
+        controller.onRailToggled = { _, open in toggles.append(open) }
+
+        // From the sheet: Rail everywhere, and this area's rail opens in the same pass.
+        controller.switchTabLayout(to: .rail, fromPane: rig.paneId)
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .rail)
+        XCTAssertEqual(controller.configuration.appearance.tabLayout, .rail)
+        XCTAssertTrue(controller.isTabDetailVisible(inPane: rig.paneId))
+
+        // From the rail: back to Tabs, with this area's rail closed, so
+        // choosing Rail later does not reopen it.
+        controller.switchTabLayout(to: .tabs, fromPane: rig.paneId)
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .tabs)
+        XCTAssertEqual(controller.configuration.appearance.tabLayout, .tabs)
+        XCTAssertFalse(controller.railOpenPaneIds.contains(rig.paneId))
+        XCTAssertEqual(toggles, [true, false], "The host is told so session autosave records it")
+    }
 }

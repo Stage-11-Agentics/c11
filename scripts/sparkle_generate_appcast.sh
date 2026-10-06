@@ -10,8 +10,13 @@ DMG_PATH="$1"
 TAG="$2"
 OUT_PATH="${3:-appcast.xml}"
 
+# SPARKLE_PRIVATE_KEY_FILE passes the key by path (release-local.sh), so it
+# stays out of the environment every child process inherits.
+if [[ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ]]; then
+  SPARKLE_PRIVATE_KEY="$(cat "$SPARKLE_PRIVATE_KEY_FILE")"
+fi
 if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
-  echo "SPARKLE_PRIVATE_KEY is required (exported from Sparkle generate_keys)." >&2
+  echo "SPARKLE_PRIVATE_KEY or SPARKLE_PRIVATE_KEY_FILE is required (exported from Sparkle generate_keys)." >&2
   exit 1
 fi
 

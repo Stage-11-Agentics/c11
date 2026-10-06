@@ -33,7 +33,7 @@ c11 browser panel:8 get url
 Each panel has independent:
 - cookies
 - localStorage/sessionStorage
-- page-level list (`panel list`) and active page
+- its current page
 - navigation history
 
 ## State Persistence

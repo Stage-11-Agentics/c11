@@ -9,7 +9,7 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
 - **The gate was the largest loss.** Baseline 24.52 s wall and 149.75 CPU-s (ten runs). The per-PR rule changed three times (lenient, then "offset your own cost", then "up to 1.5 s accepted"), none of it enforced by the gate; CPU still climbed from 150 to 184 over eight merges, and a tiny seed PR failed on budget alone (05:21). Re-baselined at 29.62 s / 173.7 (06:19), then climbed again: by 10:00 `main`'s own post-merge runs were red and #219 failed alone on a quiet runner (10:16). Pushes held about 50 minutes until #227 (10:51); a second re-baseline and a blocking per-PR CPU gate followed (#237, 12:24: `main` failed the wall 7 of 10 runs). Rerun cycles of about 10 minutes each hit #191 three times, #216, #219 and #220 twice each, #206 and #224 once. Source of the blocking-growth-check-from-ticket-one contract check.
 - **Our own concurrency was the foreign load.** #224 went red at 34.98 s only while it overlapped #223's run (10:59); #232 and #233 were red when three runs overlapped (11:30). Serial CI one PR at a time ended it; once Atin raised the wall limit to 60 s, the window was lifted and runs overlapped again. Source of the conditional CI window clause.
 - **Guessed levers, twice wrong.** The Orchestrator bet on more shards (16/20/24: wall flat, 10:32) and then on migration replay; the builder's measurements showed the test-database pool empty 26.8 s of a run, and fewer copy producers (6 to 3) fixed it (10:44). Source of measure-before-hypothesizing.
-- **The 5-hour usage window stalled the whole fleet.** One account ran the Orchestrator plus about ten builders: stalled 08:05 to 09:50 (1h45m on every builder and review). The recovery nudged delegators only. V1-21a's implementer had died at about 10:25 and V1-18 sat with ten committed fixes waiting for a CI window it was never given, subtitle unchanged; found at 11:37, about 70 minutes lost on the critical path. Source of nudge-every-panel and the 45-minute subtitle rule.
+- **The 5-hour usage window stalled the whole fleet.** One account ran the Orchestrator plus about ten builders: stalled 08:05 to 09:50 (1h45m on every builder and review). The recovery nudged delegators only. V1-21a's implementer had died at about 10:25 and V1-18 sat with ten committed fixes waiting for a CI window it was never given, subtitle unchanged; found at 11:37, about 70 minutes lost on the critical path. Source of nudge-every-tab and the 45-minute subtitle rule.
 - **Rebasing pushed branches cascaded.** V1-15a's PR carried V1-06's pre-rebase history and conflicted (06:47); V1-12b carried its own copies of V1-06 commits (07:02); every anchor rebase meant cueing each stacked child. Switching dependents to merging `main` after the anchor landed (07:17, 07:24) ended the restacks. Source of never-rebase-a-pushed-branch.
 - **Shared CHECK lists dropped values.** Two migrations recreated the notice-template CHECK and the persona-kind CHECK with partial lists; fresh CI order and the live environment's late-applied lower numbers disagreed, so one side silently lost `panel_invite` or `closeout_warning` (10:01). The per-ticket vigilance rule written at 07:46 did not hold; one canonical list in code plus a daily test that scans migrations did (#223). Replaced functions had the same shape (the assignment insert guard, 03:05). Source of the shared-objects contract check.
 - **Two misattributions.** A pair-symmetry failure was blamed on V1-17a's jury code (07:27); a diagnostic captain showed an unawaited top-level sweep in another test file swapping the global service registry when the two files first shared a shard (07:38). A route 500 in #222 was blamed on that harness race; it was an unknown stored value reaching a template key (10:02). Source of reproduce-before-attributing and the Diagnostic Captain.
@@ -25,7 +25,7 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
 - **One machine, every heavy command at once.** Concurrent pr-gate runs from three or four builders took Hyperion to load 170 to 210 (17:55); a mkdir mutex fixed it. On Atlas, the seats' timing A/Bs ran beside CI and the overnight rehearsal, and CI failed two PRs on time (10-01 01:02); a window lock with short, spaced windows fixed it. Source of the generalized Clause 15 and the measurement-window rule.
 - **Green CI, wrong harness.** The one-database-per-shard PR (#295) was green while a fresh Opus review demonstrated about 32 files reading another file's rows and a failed reset stalling a shard; its mutation table showed the self-tests missed a skipped reset. The concurrent leak-crawl PR (#294) shipped only after its review caught 9 of 10 planted mutants. Source of the demonstrated-review rule for harness changes.
 - **Three form stacks for one "shared pattern"** grew in parallel (18:31) until one owner and a landing order were named. Source of the single-owner intake rule.
-- **A panel closed while its PR was open** (22:44Z) had to be reassigned to another builder for the final merge. Source of the close-only-when-merged tick rule.
+- **A tab closed while its PR was open** (22:44Z) had to be reassigned to another builder for the final merge. Source of the close-only-when-merged tick rule.
 - **The tier split was the big gate win.** Splitting the per-PR gate from a pre-deploy tier that blocks every v1 deploy took the per-PR gate from about 31 s and 205 CPU-s to 21.85 s and 132 (10-01 01:36); database copies stopped being its floor, and more shards still did not help.
 
 ## Marquee eval round 10 (2026-08-14)
@@ -35,7 +35,7 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
   One final branch's two-dot diff changed meaning after another PR merged; rebasing,
   fresh exact-head review, and a fresh gate caught it before merge. Source of the
   landing-train convention.
-- **Launch is not acknowledgement:** a reviewer panel existed but never established
+- **Launch is not acknowledgement:** a reviewer tab existed but never established
   that it had the intended cwd/head. The run recovered by replacing it, but paid the
   latency and ambiguity. Source of the positive launch receipt.
 - **External defects still need durable state:** 22 evaluator defects across six
@@ -83,7 +83,7 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
 
 ## C11-27 (2026-05-16)
 
-- **Backend leak → stray workspaces:** five plan-review iterations spawned ten stray `plan-review-*`/`merge-*` c11 workspaces before the operator caught it; the review CLI also renamed the invoking panel (`review-<random>`). Source of the force-headless rule and the restore-title-after-review habit.
+- **Backend leak → stray workspaces:** five plan-review iterations spawned ten stray `plan-review-*`/`merge-*` c11 workspaces before the operator caught it; the review CLI also renamed the invoking tab (`review-<random>`). Source of the force-headless rule and the restore-title-after-review habit.
 
 ## TT-43 / TT-59 run
 

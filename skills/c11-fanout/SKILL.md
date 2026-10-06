@@ -51,8 +51,9 @@ git worktree add -b "fanout/$SLUG/$MEMBER" "$ROOT-fanout/$SLUG/$MEMBER" "$BASE"
 **Cold members**, all into one area:
 
 ```bash
-PANEL=$(c11 launch-agent --type "$HARNESS" --model "$MODEL" --effort "$EFFORT" \
-  --area "$AREA" --cwd "$WT" --prompt-file "$BRIEF" --title "$MEMBER $SLUG" --json | jq -r .panel_ref)
+OUT=$(c11 launch-agent --type "$HARNESS" --model "$MODEL" --effort "$EFFORT" \
+  --area "$AREA" --cwd "$WT" --prompt-file "$BRIEF" --title "$MEMBER $SLUG" --json)
+PANEL=$(jq -r .panel_ref <<<"$OUT"); PANEL_ID=$(jq -r .panel_id <<<"$OUT")   # keep PANEL_ID for event matching
 c11 set-metadata --panel "$PANEL" --json '{"fanout.group":"<slug>","fanout.member":"<member>",
   "fanout.branch":"<branch>","fanout.base":"<sha>","fanout.state":"running"}'
 c11 panel-color set --panel "$PANEL" "#006B6B"      # one color for the whole group
@@ -82,7 +83,7 @@ c11 send --panel "$PANEL" "You are a fork. Work only in $WT. Take approach <X>: 
 
 - **Receipts.** Each member mails DONE. While you're waiting, each receipt arrives as a new turn. Claude Code and Codex also pick up mail at every turn boundary. In other harnesses, run `c11 mailbox recv --drain` after each turn so nothing waits unread. Set `fanout.state` to `done` on the member's panel as each receipt lands.
 - **Quiet members.** Stopping is not finishing. A member that asks a question, crashes or stalls never mails. For the ones you haven't heard from, check:
-  - `c11 events tail --filter type=ask.opened`, matching each line's `panel` against your member panels (blocked on a question);
+  - `c11 events tail --filter type=ask.opened`, matching each line's `panel` (a UUID) against your members' `PANEL_ID`s (blocked on a question);
   - `--filter type=panel.closed` (gone);
   - `c11 read-screen` for anything else.
 

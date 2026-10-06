@@ -144,6 +144,10 @@ This is a checklist trigger, not a CI gate.
 - `gh run watch --repo Stage-11-Agentics/c11`
 - Confirm release exists in GitHub Releases and includes `c11-macos.dmg`.
 
+12. Lift a skill-sync hold:
+- If `CLAUDE.md` carries a "Hold until c11 1.0 is installed" line under the skill-sync hard rule, wait until the maintainer has installed this release, then run `scripts/sync-installed-skills.sh` and check one live copy (`~/.claude/skills/c11/SKILL.md` matches `skills/c11/SKILL.md`).
+- Delete the hold line from `CLAUDE.md` in a text-only commit to `main`.
+
 ## Changelog Rules
 
 - Include only user-visible changes.

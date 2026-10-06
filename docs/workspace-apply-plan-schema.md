@@ -21,7 +21,7 @@ explicit `CodingKeys` or custom encode/decode are defined (see LayoutTreeSpec).
 | `version` | int | yes | Must be `1` |
 | `workspace` | WorkspaceSpec | yes | Workspace-level settings |
 | `layout` | LayoutTreeSpec | yes | Area/split tree |
-| `panels` | PanelSpec[] | yes | Keyed by plan-local id |
+| `panels` | object[] | yes | Keyed by plan-local id; each entry is described under [`panels` entries](#panels-entries) |
 
 ## WorkspaceSpec
 
@@ -67,7 +67,7 @@ A recursive union: either an area leaf (`"type": "pane"`) or a `split` node.
 `orientation`: `"horizontal"` (side by side) or `"vertical"` (top/bottom).
 `dividerPosition`: float in `(0, 1)`.
 
-## PanelSpec
+## `panels` entries
 
 ```json
 {

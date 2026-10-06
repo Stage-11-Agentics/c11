@@ -86,7 +86,7 @@ of the minimum — a non-blocking warning.
 | `off` | Never block; today's blind 50/50. |
 | `warn` | Never block; attach a warning when the result is undersized / near threshold. |
 | `balance` (default) | Use the requested axis if admissible; else auto-flip to the other axis if that is admissible; else **refuse** with an actionable message. |
-| `tab` | Like `balance`, but when neither axis is admissible, fall back to adding a **panel** to the target area instead of refusing. |
+| `panel` | Like `balance`, but when neither axis is admissible, fall back to adding a **panel** to the target area instead of refusing. The stored setting value stays `tab`. |
 
 - Setting persists via `@AppStorage` (`SocketControlSettings`-style enum). Env override
   `C11_SPLIT_SIZE_POLICY` for headless/tests.
@@ -98,7 +98,7 @@ of the minimum — a non-blocking warning.
 V2 success envelope gains:
 
 - `requested_direction`, `applied_direction` (differ when flipped)
-- `size_outcome`: `split` | `flipped` | `tab`
+- `size_outcome`: `split` | `flipped` | `panel`
 - `size_warning`: string | null
 
 Refusal returns `.err(code: "pane_too_small", message: <actionable>, data: { resulting,
@@ -127,7 +127,7 @@ so they would bypass any future veto; the handler owns their richer policy regar
 
 Pure decision logic (`PaneSizePolicy.decide`) is unit-tested in `c11LogicTests` (fast,
 host-free): given area rect + cell size + kind + requested axis + mode → expected outcome
-(proceed / flip / tab / refuse) and flags (flipped, nearThreshold). Covers the 584×173
+(proceed / flip / panel / refuse) and flags (flipped, nearThreshold). Covers the 584×173
 repro, the orchestrator fan-out cascade, axis-flip selection, force bypass, and per-kind
 minimums.
 

@@ -18,7 +18,7 @@ Headline: **c11's vocabulary is now window → workspace → area → panel.** A
 
 - Every tab and surface spelling stays accepted: commands, flags, refs, environment variables, socket methods and input keys. The `C11_TAB_*`, `C11_SURFACE_*` and `CMUX_*` environment variables are still exported.
 - JSON output emits `panel_*` plus `tab_*` for one release, and no longer emits `surface_*` or `pane_*`.
-- Blueprints and snapshots with the old keys still load. On-disk state is unchanged.
+- Blueprints and snapshots with the old keys still load. Existing files and settings are never rewritten. A blueprint or snapshot exported by this version uses the new keys and does not load in 0.67.
 
 ## [0.67.0] - 2026-10-01
 

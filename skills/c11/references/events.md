@@ -21,7 +21,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 - **`log.opened` begins each instance's log.** Its payload carries the `pid` and its first emitted `seq` is **1**. The counter is per instance, not the lifecycle journal's committed sequence; do not resume a journal cursor from an events file.
 - **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (a single rolled generation is retained; the previous `.1` is discarded). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
 
-Schema: **`spec/event-envelope.v2.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line. Event logs written by older builds still contain v1 lines (`v` 1, with `surface` / `pane` subject fields and the older type names), and readers accept both.
+Schema: **`spec/event-envelope.v2.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line. Event logs written by older builds still contain v1 lines (`v` 1, with `surface` / `pane` subject fields and the older type names), and readers accept both. v1 lines validate against `spec/event-envelope.v1.schema.json`.
 
 ## Envelope
 

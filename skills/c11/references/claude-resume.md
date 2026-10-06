@@ -52,7 +52,7 @@ c11 restore --in-place 01KQ0XYZ…
 
 - `C11_SESSION_RESUME` is read at the CLI layer only.  A truthy value (anything except empty / `0` / `false` / `no` / `off`) threads `restart_registry: "phase1"` into the `snapshot.restore` v2 call.
 - The registry is **not** serialised onto the snapshot file. It is resolved by name app-side at restore time, so snapshots stay restorable as new agent types (`codex`, `opencode`, `kimi`, …) are added to the registry.
-- An explicit `SurfaceSpec.command` on a terminal panel always wins; registry synthesis only fires when the command field is nil or empty.
+- An explicit `command` on a terminal panel entry in a blueprint always wins; registry synthesis only fires when the command field is nil or empty.
 
 ## What ends up where
 

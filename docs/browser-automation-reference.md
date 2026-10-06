@@ -1,6 +1,6 @@
-# cmux Browser Automation Reference
+# c11 Browser Automation Reference
 
-Browser automation against cmux browser panels — navigate, interact with DOM, inspect state, evaluate JS, manage sessions.
+Browser automation against c11 browser panels — navigate, interact with DOM, inspect state, evaluate JS, manage sessions.
 
 **Source:** https://cmux.com/docs/browser-automation
 
@@ -22,11 +22,11 @@ Browser automation against cmux browser panels — navigate, interact with DOM, 
 Most subcommands need a target panel. Pass positionally or with `--panel`:
 
 ```bash
-cmux browser panel:2 url              # positional
-cmux browser --panel panel:2 url    # flag — equivalent
+c11 browser panel:2 url              # positional
+c11 browser --panel panel:2 url    # flag — equivalent
 
-cmux browser identify                           # focused browser metadata
-cmux browser identify --panel panel:2       # specific panel
+c11 browser identify                           # focused browser metadata
+c11 browser identify --panel panel:2       # specific panel
 ```
 
 **Flag ordering:** `--panel` and `--workspace` go BEFORE the subcommand, not after.
@@ -34,17 +34,17 @@ cmux browser identify --panel panel:2       # specific panel
 ## Navigation
 
 ```bash
-cmux browser open https://example.com                # new browser split
-cmux browser open-split https://news.ycombinator.com # alias
+c11 browser open https://example.com                # new browser split
+c11 browser open-split https://news.ycombinator.com # alias
 
-cmux browser panel:2 navigate https://example.org/docs --snapshot-after
-cmux browser panel:2 back
-cmux browser panel:2 forward
-cmux browser panel:2 reload --snapshot-after
-cmux browser panel:2 url
+c11 browser panel:2 navigate https://example.org/docs --snapshot-after
+c11 browser panel:2 back
+c11 browser panel:2 forward
+c11 browser panel:2 reload --snapshot-after
+c11 browser panel:2 url
 
-cmux browser panel:2 focus-webview          # give focus to the web content
-cmux browser panel:2 is-webview-focused     # check if web content has focus
+c11 browser panel:2 focus-webview          # give focus to the web content
+c11 browser panel:2 is-webview-focused     # check if web content has focus
 ```
 
 ## Waiting
@@ -52,11 +52,11 @@ cmux browser panel:2 is-webview-focused     # check if web content has focus
 Block until a condition is satisfied:
 
 ```bash
-cmux browser panel:2 wait --load-state complete --timeout-ms 15000
-cmux browser panel:2 wait --selector "#checkout" --timeout-ms 10000
-cmux browser panel:2 wait --text "Order confirmed"
-cmux browser panel:2 wait --url-contains "/dashboard"
-cmux browser panel:2 wait --function "window.__appReady === true"
+c11 browser panel:2 wait --load-state complete --timeout-ms 15000
+c11 browser panel:2 wait --selector "#checkout" --timeout-ms 10000
+c11 browser panel:2 wait --text "Order confirmed"
+c11 browser panel:2 wait --url-contains "/dashboard"
+c11 browser panel:2 wait --function "window.__appReady === true"
 ```
 
 ## DOM Interaction
@@ -66,42 +66,42 @@ All mutating actions support `--snapshot-after` for inline verification.
 ### Click & Hover
 
 ```bash
-cmux browser panel:2 click "button[type='submit']" --snapshot-after
-cmux browser panel:2 dblclick ".item-row"
-cmux browser panel:2 hover "#menu"
-cmux browser panel:2 focus "#email"
-cmux browser panel:2 scroll-into-view "#pricing"
+c11 browser panel:2 click "button[type='submit']" --snapshot-after
+c11 browser panel:2 dblclick ".item-row"
+c11 browser panel:2 hover "#menu"
+c11 browser panel:2 focus "#email"
+c11 browser panel:2 scroll-into-view "#pricing"
 ```
 
 ### Checkboxes
 
 ```bash
-cmux browser panel:2 check "#terms"
-cmux browser panel:2 uncheck "#newsletter"
+c11 browser panel:2 check "#terms"
+c11 browser panel:2 uncheck "#newsletter"
 ```
 
 ### Text Input
 
 ```bash
-cmux browser panel:2 type "#search" "cmux"                     # keystroke-by-keystroke
-cmux browser panel:2 fill "#email" --text "ops@example.com"    # set value directly
-cmux browser panel:2 fill "#email" --text ""                   # clear field
+c11 browser panel:2 type "#search" "cmux"                     # keystroke-by-keystroke
+c11 browser panel:2 fill "#email" --text "ops@example.com"    # set value directly
+c11 browser panel:2 fill "#email" --text ""                   # clear field
 ```
 
 ### Keyboard
 
 ```bash
-cmux browser panel:2 press Enter
-cmux browser panel:2 keydown Shift
-cmux browser panel:2 keyup Shift
+c11 browser panel:2 press Enter
+c11 browser panel:2 keydown Shift
+c11 browser panel:2 keyup Shift
 ```
 
 ### Select & Scroll
 
 ```bash
-cmux browser panel:2 select "#region" "us-east"
-cmux browser panel:2 scroll --dy 800 --snapshot-after
-cmux browser panel:2 scroll --selector "#log-view" --dx 0 --dy 400
+c11 browser panel:2 select "#region" "us-east"
+c11 browser panel:2 scroll --dy 800 --snapshot-after
+c11 browser panel:2 scroll --selector "#log-view" --dx 0 --dy 400
 ```
 
 ## Inspection
@@ -109,134 +109,134 @@ cmux browser panel:2 scroll --selector "#log-view" --dx 0 --dy 400
 ### Snapshots & Screenshots
 
 ```bash
-cmux browser panel:2 snapshot --interactive --compact
-cmux browser panel:2 snapshot --selector "main" --max-depth 5
-cmux browser panel:2 screenshot --out /tmp/cmux-page.png
+c11 browser panel:2 snapshot --interactive --compact
+c11 browser panel:2 snapshot --selector "main" --max-depth 5
+c11 browser panel:2 screenshot --out /tmp/cmux-page.png
 ```
 
 ### Getters
 
 ```bash
-cmux browser panel:2 get title
-cmux browser panel:2 get url
-cmux browser panel:2 get text "h1"
-cmux browser panel:2 get html "main"
-cmux browser panel:2 get value "#email"
-cmux browser panel:2 get attr "a.primary" --attr href
-cmux browser panel:2 get count ".row"
-cmux browser panel:2 get box "#checkout"                    # bounding box
-cmux browser panel:2 get styles "#total" --property color
+c11 browser panel:2 get title
+c11 browser panel:2 get url
+c11 browser panel:2 get text "h1"
+c11 browser panel:2 get html "main"
+c11 browser panel:2 get value "#email"
+c11 browser panel:2 get attr "a.primary" --attr href
+c11 browser panel:2 get count ".row"
+c11 browser panel:2 get box "#checkout"                    # bounding box
+c11 browser panel:2 get styles "#total" --property color
 ```
 
 ### Boolean Checks
 
 ```bash
-cmux browser panel:2 is visible "#checkout"
-cmux browser panel:2 is enabled "button[type='submit']"
-cmux browser panel:2 is checked "#terms"
+c11 browser panel:2 is visible "#checkout"
+c11 browser panel:2 is enabled "button[type='submit']"
+c11 browser panel:2 is checked "#terms"
 ```
 
 ### Locators (Playwright-style)
 
 ```bash
-cmux browser panel:2 find role button --name "Continue"
-cmux browser panel:2 find text "Order confirmed"
-cmux browser panel:2 find label "Email"
-cmux browser panel:2 find placeholder "Search"
-cmux browser panel:2 find alt "Product image"
-cmux browser panel:2 find title "Open settings"
-cmux browser panel:2 find testid "save-btn"
-cmux browser panel:2 find first ".row"
-cmux browser panel:2 find last ".row"
-cmux browser panel:2 find nth 2 ".row"
+c11 browser panel:2 find role button --name "Continue"
+c11 browser panel:2 find text "Order confirmed"
+c11 browser panel:2 find label "Email"
+c11 browser panel:2 find placeholder "Search"
+c11 browser panel:2 find alt "Product image"
+c11 browser panel:2 find title "Open settings"
+c11 browser panel:2 find testid "save-btn"
+c11 browser panel:2 find first ".row"
+c11 browser panel:2 find last ".row"
+c11 browser panel:2 find nth 2 ".row"
 ```
 
 ### Visual Debug
 
 ```bash
-cmux browser panel:2 highlight "#checkout"    # visually highlight element
+c11 browser panel:2 highlight "#checkout"    # visually highlight element
 ```
 
 ## JavaScript & Injection
 
 ```bash
-cmux browser panel:2 eval "document.title"
-cmux browser panel:2 eval --script "window.location.href"
+c11 browser panel:2 eval "document.title"
+c11 browser panel:2 eval --script "window.location.href"
 
-cmux browser panel:2 addinitscript "window.__cmuxReady = true;"   # runs on every navigation
-cmux browser panel:2 addscript "document.querySelector('#name')?.focus()"
-cmux browser panel:2 addstyle "#debug-banner { display: none !important; }"
+c11 browser panel:2 addinitscript "window.__cmuxReady = true;"   # runs on every navigation
+c11 browser panel:2 addscript "document.querySelector('#name')?.focus()"
+c11 browser panel:2 addstyle "#debug-banner { display: none !important; }"
 ```
 
 ## Frames
 
 ```bash
-cmux browser panel:2 frame "iframe[name='checkout']"   # enter iframe context
-cmux browser panel:2 click "#pay-now"                   # interact inside frame
-cmux browser panel:2 frame main                         # return to top-level
+c11 browser panel:2 frame "iframe[name='checkout']"   # enter iframe context
+c11 browser panel:2 click "#pay-now"                   # interact inside frame
+c11 browser panel:2 frame main                         # return to top-level
 ```
 
 ## Dialogs
 
 ```bash
-cmux browser panel:2 dialog accept
-cmux browser panel:2 dialog accept "Confirmed by automation"
-cmux browser panel:2 dialog dismiss
+c11 browser panel:2 dialog accept
+c11 browser panel:2 dialog accept "Confirmed by automation"
+c11 browser panel:2 dialog dismiss
 ```
 
 ## Downloads
 
 ```bash
-cmux browser panel:2 click "a#download-report"
-cmux browser panel:2 download --path /tmp/report.csv --timeout-ms 30000
+c11 browser panel:2 click "a#download-report"
+c11 browser panel:2 download --path /tmp/report.csv --timeout-ms 30000
 ```
 
 ## Cookies & Storage
 
 ```bash
 # Cookies
-cmux browser panel:2 cookies get
-cmux browser panel:2 cookies get --name session_id
-cmux browser panel:2 cookies set session_id abc123 --domain example.com --path /
-cmux browser panel:2 cookies clear --name session_id
-cmux browser panel:2 cookies clear --all
+c11 browser panel:2 cookies get
+c11 browser panel:2 cookies get --name session_id
+c11 browser panel:2 cookies set session_id abc123 --domain example.com --path /
+c11 browser panel:2 cookies clear --name session_id
+c11 browser panel:2 cookies clear --all
 
 # Local storage
-cmux browser panel:2 storage local set theme dark
-cmux browser panel:2 storage local get theme
-cmux browser panel:2 storage local clear
+c11 browser panel:2 storage local set theme dark
+c11 browser panel:2 storage local get theme
+c11 browser panel:2 storage local clear
 
 # Session storage
-cmux browser panel:2 storage session set flow onboarding
-cmux browser panel:2 storage session get flow
+c11 browser panel:2 storage session set flow onboarding
+c11 browser panel:2 storage session get flow
 ```
 
 ## Browser State (Save/Restore)
 
 ```bash
-cmux browser panel:2 state save /tmp/session.json
-cmux browser panel:2 state load /tmp/session.json
-cmux browser panel:2 reload
+c11 browser panel:2 state save /tmp/session.json
+c11 browser panel:2 state load /tmp/session.json
+c11 browser panel:2 reload
 ```
 
 ## Panels
 
 ```bash
-cmux browser panel:2 panel list
-cmux browser panel:2 panel new https://example.com/pricing
-cmux browser panel:2 panel switch 1              # by index
-cmux browser panel:2 panel switch panel:7      # by panel ref
-cmux browser panel:2 panel close                 # current panel
-cmux browser panel:2 panel close panel:7       # specific panel
+c11 browser panel:2 panel list
+c11 browser panel:2 panel new https://example.com/pricing
+c11 browser panel:2 panel switch 1              # by index
+c11 browser panel:2 panel switch panel:7      # by panel ref
+c11 browser panel:2 panel close                 # current panel
+c11 browser panel:2 panel close panel:7       # specific panel
 ```
 
 ## Console & Errors
 
 ```bash
-cmux browser panel:2 console list
-cmux browser panel:2 console clear
-cmux browser panel:2 errors list
-cmux browser panel:2 errors clear
+c11 browser panel:2 console list
+c11 browser panel:2 console clear
+c11 browser panel:2 errors list
+c11 browser panel:2 errors clear
 ```
 
 ## Common Patterns
@@ -244,36 +244,36 @@ cmux browser panel:2 errors clear
 ### Navigate, Wait, Inspect
 
 ```bash
-cmux browser open https://example.com/login
-cmux browser panel:2 wait --load-state complete --timeout-ms 15000
-cmux browser panel:2 snapshot --interactive --compact
-cmux browser panel:2 get title
+c11 browser open https://example.com/login
+c11 browser panel:2 wait --load-state complete --timeout-ms 15000
+c11 browser panel:2 snapshot --interactive --compact
+c11 browser panel:2 get title
 ```
 
 ### Fill Form and Verify
 
 ```bash
-cmux browser panel:2 fill "#email" --text "ops@example.com"
-cmux browser panel:2 fill "#password" --text "$PASSWORD"
-cmux browser panel:2 click "button[type='submit']" --snapshot-after
-cmux browser panel:2 wait --text "Welcome"
-cmux browser panel:2 is visible "#dashboard"
+c11 browser panel:2 fill "#email" --text "ops@example.com"
+c11 browser panel:2 fill "#password" --text "$PASSWORD"
+c11 browser panel:2 click "button[type='submit']" --snapshot-after
+c11 browser panel:2 wait --text "Welcome"
+c11 browser panel:2 is visible "#dashboard"
 ```
 
 ### Debug Artifacts on Failure
 
 ```bash
-cmux browser panel:2 console list
-cmux browser panel:2 errors list
-cmux browser panel:2 screenshot --out /tmp/cmux-failure.png
-cmux browser panel:2 snapshot --interactive --compact
+c11 browser panel:2 console list
+c11 browser panel:2 errors list
+c11 browser panel:2 screenshot --out /tmp/cmux-failure.png
+c11 browser panel:2 snapshot --interactive --compact
 ```
 
 ### Persist and Restore Session
 
 ```bash
-cmux browser panel:2 state save /tmp/session.json
+c11 browser panel:2 state save /tmp/session.json
 # ...later...
-cmux browser panel:2 state load /tmp/session.json
-cmux browser panel:2 reload
+c11 browser panel:2 state load /tmp/session.json
+c11 browser panel:2 reload
 ```

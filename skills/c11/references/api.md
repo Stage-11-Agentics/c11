@@ -32,7 +32,7 @@ Commands accept UUIDs, short refs, or indexes:
 window:1   workspace:1   area:2   panel:3   panel:1
 ```
 
-**Operator-spoken panel numbers are panel refs.** By default (the "Show Panel Numbers in Panel Titles" setting, Settings → Areas & Panels; the operator may turn it off) every panel renders as `N: title` where N is its `panel:N` ordinal. When the operator says "send this to 292", target `panel:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth panel in list order), which is a different panel. Your own number is `$C11_PANEL_NUM`.
+**Operator-spoken panel numbers are panel refs.** By default (the "Show Panel Numbers in Panel Titles" setting, Settings → Areas & Panels; the operator may turn it off) every panel renders as `N: title` where N is its `panel:N` ordinal. When the operator says "send this to 292", target `panel:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth panel in list order), which is a different panel. Your own number is `$C11_PANEL_NUM`. `--pane` (tmux-compat) targets an area; `--panel` targets a panel.
 
 `panel:N`, `area:N`, `workspace:N`, and `window:N` are process-local ordinals that start over when c11 restarts; keep them for live targets. Panels and workspaces retain their UUIDs when restored from a saved session, so store those UUIDs from `c11 --id-format both tree --json` (or `$C11_PANEL_ID` / `$C11_WORKSPACE_ID`) for targeting after a restart. Restored areas and windows receive new UUIDs; rediscover them with `c11 --id-format both tree --json` after a restart.
 

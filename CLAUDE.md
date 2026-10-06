@@ -72,6 +72,8 @@ c11's value to an agent is `skills/c11/SKILL.md` and its peers (`c11-browser`, `
 
 **Syncing the installed copy is part of the edit (HARD RULE).** c11 installs skills as one-time copies in every agent harness's skills folder (`~/.claude/skills/<name>/`, `~/.codex/skills/<name>/`, `~/.pi/agent/skills/<name>/`, …; stamped `.c11-skill.json`) and never tracks the repo afterward. The sync script refreshes every harness copy that exists. Editing or committing a skill under `skills/` changes nothing an agent loads. For any skill in `skills/MANIFEST.json`, the edit is done only after `scripts/sync-installed-skills.sh [name]` and a check of the live copy.
 
+**Hold until c11 1.0 is installed on the maintainer machine:** main's skills teach 1.0 panel commands that 0.67 lacks, so do not run `sync-installed-skills.sh`; the release step syncs and deletes this line.
+
 To validate what the operator actually sees, load `c11-computer-use`. Socket and CLI checks prove state, not UI.
 
 ## Lattice tickets

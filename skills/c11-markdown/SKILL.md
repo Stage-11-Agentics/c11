@@ -1,7 +1,7 @@
 ---
 name: c11-markdown
 version: 1
-description: Open markdown files in a c11 markdown panel with live reload. Use when you need to display plans, documentation, or notes alongside terminals and browser panels with rich rendering (headings, code blocks, tables, lists, Mermaid diagrams). Prefer this over external viewers when c11 is running.
+description: Open markdown files in a c11 markdown panel (formerly a tab) with live reload. Use when you need to display plans, documentation, or notes alongside terminals and browser panels with rich rendering (headings, code blocks, tables, lists, Mermaid diagrams). Prefer this over external viewers when c11 is running.
 ---
 
 # c11 Markdown Panels

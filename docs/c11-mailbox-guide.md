@@ -138,7 +138,7 @@ c11 mailbox send --to watcher                   --body "…"   # bare: address �
 
 These `panel:` / `role:` forms select *which panels* match; the workspace `--to-workspace` qualifier (below) is an orthogonal axis selecting *which workspace*. The envelope's `to` field stays an opaque string — no schema change — so the framed block a recipient sees carries whatever handle the sender used.
 
-`panel:` and `role:` are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a panel whose title literally starts with `panel:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
+`panel:` and `role:` (and the older qualifier prefixes) are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a panel whose title literally starts with `panel:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
 
 **Back-compat.** A panel with only a `title` is addressable by that title exactly as before. `mailbox.address` / `mailbox.role` are additive. Whatever handle resolves the recipient, its inbox directory is keyed on the recipient panel's UUID (lowercased), never on the title, so a title with `/`, a 100-byte title, or a rename never breaks delivery.
 

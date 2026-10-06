@@ -1,7 +1,7 @@
 ---
 name: c11
 version: 1
-description: "c11 is a native macOS terminal multiplexer. Load this skill anytime any of the following attributes are hit: (1) session is inside c11 (`C11_SHELL_INTEGRATION=1`), (2) working with workspaces, areas, panels, or splits, (3) sending text or commands to another panel, (4) launching or orchestrating sub-agents, (5) declaring agent identity, setting title/description, or reporting sidebar status, (6) using the embedded browser or markdown panels, (7) any c11-specific command or troubleshooting question. When in doubt, load it."
+description: "c11 is a native macOS terminal multiplexer. Load this skill anytime any of the following attributes are hit: (1) session is inside c11 (`C11_SHELL_INTEGRATION=1`), (2) working with workspaces, areas, panels (formerly tabs), or splits, (3) sending text or commands to another panel, (4) launching or orchestrating sub-agents, (5) declaring agent identity, setting title/description, or reporting sidebar status, (6) using the embedded browser or markdown panels, (7) any c11-specific command or troubleshooting question. When in doubt, load it."
 ---
 
 # c11
@@ -23,7 +23,7 @@ the PATH CLI can belong to a different build.
 
 `C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_PANEL_ID`, `C11_SOCKET_PATH`, `C11_PANEL_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
 
-Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. **A bare number from the operator is a panel ref.** Panels display `N: title` by default (the "Show Panel Numbers in Panel Titles" setting; if the operator turned it off, panels show titles only), where N is its `panel:N` ordinal — so "send that to 292" means target `panel:292` (with its `--workspace`). Always write the `panel:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_PANEL_NUM`.
+Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. **A bare number from the operator is a panel ref.** Panels display `N: title` by default (the "Show Panel Numbers in Panel Titles" setting; if the operator turned it off, panels show titles only), where N is its `panel:N` ordinal — so "send that to 292" means target `panel:292` (with its `--workspace`). Always write the `panel:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_PANEL_NUM`. `--pane` (tmux-compat) targets an area; `--panel` targets a panel.
 
 **Short refs last only for the current c11 process.** `panel:N`, `area:N`, `workspace:N`, and `window:N` ordinals start over at launch; a ref saved before a restart can name a different object afterward. Keep using short refs for live targets. To find the same panel after a restart, store its UUID from `c11 --id-format both tree --json` or `$C11_PANEL_ID`, and use that UUID. `$C11_WORKSPACE_ID` likewise identifies the workspace; do not store its ordinal across a restart.
 
@@ -210,7 +210,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | launch sub-agents, the panel-naming convention, layout patterns, write c11-aware prompts | [references/orchestration.md](references/orchestration.md) |
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | panel-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
-| tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
+| tail the file-first events stream (`c11 events tail`), envelope schema, v2 taxonomy | [references/events.md](references/events.md) |
 | read and answer typed asks (`c11 feed list\|open\|answer\|watch`); generic input is unsupported | [references/api.md](references/api.md#feed) |
 | workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, conversation resume & lifecycle journal | [references/conversation.md](references/conversation.md) |

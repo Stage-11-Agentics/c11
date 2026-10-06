@@ -287,7 +287,7 @@ final class TabMetadataStore: @unchecked Sendable {
             if parsed == .suspended {
                 return .reservedKeyInvalidType(
                     key,
-                    "'suspended' is reserved and not yet a runtime target; use 'hibernated' for operator-pinned surfaces"
+                    "'suspended' is reserved and not yet a runtime target; use 'hibernated' for operator-pinned panels"
                 )
             }
             return nil

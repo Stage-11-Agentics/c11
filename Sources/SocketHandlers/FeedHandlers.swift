@@ -129,7 +129,7 @@ extension TerminalController {
                 code: refusalCode,
                 message: String(
                     localized: "feed.answer.multilineUnsupported",
-                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the tab."
+                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the panel."
                 ),
                 data: data
             )

@@ -401,7 +401,7 @@ enum MessagesPageBuilder {
         }
         let eventIdentity = event.instance ?? "unknown"
         let sequence = event.sequence.map(String.init) ?? String(fallbackIndex)
-        let sender = callerTitle ?? callerID.map { "tab:\($0)" } ?? "unknown caller"
+        let sender = callerTitle ?? callerID.map { "panel:\($0)" } ?? "unknown caller"
 
         return MessagesPageRecord(
             id: "send:\(eventIdentity):\(sequence)",
@@ -1086,7 +1086,7 @@ enum MessagesPageRenderer {
               parent.appendChild(element);
             };
             const queryText = (message) => [message.body, message.sender, message.sender_id, message.caller_title, message.recipient, message.workspace, message.topic, message.status].filter(Boolean).join(" ").toLowerCase();
-            const senderLabel = (message) => message.caller_title || message.sender || (message.sender_id ? `tab:${message.sender_id}` : "unknown caller");
+            const senderLabel = (message) => message.caller_title || message.sender || (message.sender_id ? `panel:${message.sender_id}` : "unknown caller");
             const filtered = () => {
               const query = document.getElementById("search").value.trim().toLowerCase();
               const channel = document.getElementById("channel").value;

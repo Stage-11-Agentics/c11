@@ -46,7 +46,7 @@ final class FeedQuickViewModel: ObservableObject {
     func select(_ tabID: UUID) { selection.select(tabID) }
 
     func markUnavailable() {
-        status = String(localized: "feed.quick.unavailable", defaultValue: "That tab is unavailable")
+        status = String(localized: "feed.quick.unavailable", defaultValue: "That panel is unavailable")
     }
 
     func openSelected() {

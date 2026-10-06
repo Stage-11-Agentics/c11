@@ -130,7 +130,11 @@ struct JournalDraft: Codable, Equatable {
         // `panel_id` is accepted as input; the stored and hashed key stays `tab_id`.
         if let panel = object.removeValue(forKey: "panel_id") {
             if let tab = object["tab_id"] {
-                guard (tab as? NSObject)?.isEqual(panel) == true else { throw JournalError.invalidEvent }
+                // Both must name one panel; UUID strings compare case-insensitively.
+                let tabUUID = (tab as? String).flatMap(UUID.init(uuidString:))
+                let panelUUID = (panel as? String).flatMap(UUID.init(uuidString:))
+                let same = tabUUID != nil ? tabUUID == panelUUID : (tab as? NSObject)?.isEqual(panel) == true
+                guard same else { throw JournalError.invalidEvent }
             } else {
                 object["tab_id"] = panel
             }

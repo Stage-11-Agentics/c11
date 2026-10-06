@@ -513,6 +513,10 @@ final class JournalStoreTests: XCTestCase {
         object["tab_id"] = JournalTestData.tab.uuidString
         XCTAssertEqual(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object)), draft)
 
+        // The same UUID in a different case names the same panel.
+        object["panel_id"] = JournalTestData.tab.uuidString.lowercased()
+        XCTAssertEqual(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object)), draft)
+
         object["tab_id"] = JournalTestData.workspace.uuidString
         XCTAssertThrowsError(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object))) {
             XCTAssertEqual($0 as? JournalError, .invalidEvent)

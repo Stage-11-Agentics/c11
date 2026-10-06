@@ -71,7 +71,8 @@ final class FeedQuickViewTests: XCTestCase {
         model.openSelected()
         XCTAssertEqual(attempts, [.init(workspaceID: id(99), tabID: id(2))])
         XCTAssertEqual(dismissed, 0)
-        XCTAssertEqual(model.status, "That tab is unavailable")
+        // The English text lives in the catalog (C11-337: R5 syncs it), so compare the lookup.
+        XCTAssertEqual(model.status, String(localized: "feed.quick.unavailable", defaultValue: "That panel is unavailable"))
         XCTAssertEqual(model.selection.selectedTabID, id(2))
         model.onOpen = { attempts.append($0); return true }
         model.openSelected()

@@ -360,8 +360,8 @@ enum MailboxHookOutput {
     static func context(framedBlocks: [String], remaining: Int) -> String {
         let count = framedBlocks.count
         var header = count == 1
-            ? "c11 mailbox: 1 new message for this tab, delivered at a turn boundary."
-            : "c11 mailbox: \(count) new messages for this tab, delivered at a turn boundary."
+            ? "c11 mailbox: 1 new message for this panel, delivered at a turn boundary."
+            : "c11 mailbox: \(count) new messages for this panel, delivered at a turn boundary."
         if remaining > 0 {
             header += " \(remaining) more waiting: run `c11 mailbox recv` to read them."
         }

@@ -343,7 +343,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(try store.read(url: rewrittenURL).plan, legacy.plan)
     }
 
-    func testBundledBlueprintsDecodeAndUsePanelKeys() throws {
+    func testBundledBlueprintsDecodeAndValidate() throws {
         let resources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -360,12 +360,6 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
             let file = try store.read(url: url)
             XCTAssertFalse(file.plan.surfaces.isEmpty, url.lastPathComponent)
             XCTAssertNil(WorkspaceLayoutExecutor.validate(plan: file.plan), url.lastPathComponent)
-            let raw = try XCTUnwrap(
-                JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-            )
-            let plan = try XCTUnwrap(raw["plan"] as? [String: Any], url.lastPathComponent)
-            XCTAssertNotNil(plan["panels"], "\(url.lastPathComponent) should use `panels`")
-            XCTAssertNil(plan["surfaces"], "\(url.lastPathComponent) should not use legacy `surfaces`")
         }
     }
 

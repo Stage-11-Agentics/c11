@@ -510,12 +510,12 @@ enum CompanionPlanDiagnosticMessage {
         case .duplicateSurfaceID:
             return String(
                 localized: "workspace.companion.diagnostic.duplicateSurfaceID",
-                defaultValue: "Blueprint tab ID '\(sourcePlanID)' is duplicated."
+                defaultValue: "Blueprint panel ID '\(sourcePlanID)' is duplicated."
             )
         case .invalidAgentKind:
             return String(
                 localized: "workspace.companion.diagnostic.invalidAgentKind",
-                defaultValue: "Blueprint tab '\(sourcePlanID)' declares an invalid agent kind."
+                defaultValue: "Blueprint panel '\(sourcePlanID)' declares an invalid agent kind."
             )
         }
     }

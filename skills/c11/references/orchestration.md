@@ -1,13 +1,13 @@
 # c11 Orchestration
 
-Patterns for running multiple agents in parallel tabs and areas: layout, tab naming, launching sub-agents, agent-to-agent communication, sidebar reporting. The binary is `c11`.
+Patterns for running multiple agents in parallel panels and areas: layout, panel naming, launching sub-agents, agent-to-agent communication, sidebar reporting. The binary is `c11`.
 
 ## Contents
 
 - [Layout philosophy](#layout-philosophy)
-- [Tab naming (mandatory)](#tab-naming-mandatory)
-- [Launching sub-agents in tabs](#launching-sub-agents-in-tabs)
-- [Ready-state polling](#ready-state-polling)
+- [Panel naming (mandatory)](#panel-naming-mandatory)
+- [Launching sub-agents in panels](#launching-sub-agents-in-panels)
+- [Ready-state handoff](#ready-state-handoff)
 - [Agent-to-agent communication](#agent-to-agent-communication)
 - [Sub-agent self-reporting](#sub-agent-self-reporting)
 - [Monitoring agents from the orchestrator](#monitoring-agents-from-the-orchestrator)
@@ -15,15 +15,15 @@ Patterns for running multiple agents in parallel tabs and areas: layout, tab nam
 
 ## Layout philosophy
 
-**By default: workspace ≈ project, areas ≈ concerns, tabs ≈ individual agents or views.** This is a sensible starting layout, not a law; how the operator maps workspaces to projects overall is their call (see the c11 skill).
+**By default: workspace ≈ project, areas ≈ concerns, panels ≈ individual agents or views.** This is a sensible starting layout, not a law; how the operator maps workspaces to projects overall is their call (see the c11 skill).
 
-Within a single orchestration run, keep the agents as tabs within areas of the run's workspace rather than spawning a fresh workspace per agent. One workspace per agent fragments the run across the sidebar and makes it hard to read; grouping them keeps the whole run legible in one place.
+Within a single orchestration run, keep the agents as panels within areas of the run's workspace rather than spawning a fresh workspace per agent. One workspace per agent fragments the run across the sidebar and makes it hard to read; grouping them keeps the whole run legible in one place.
 
 ### Isolation is a prompt rule, not a topology rule
 
-**Do not reach for `--new-workspace` to keep agents from influencing each other.** Agents in the same workspace are *already* isolated: separate processes, separate context, no shared state. Nothing about sharing a workspace lets one agent see another's work. If you need agents not to consult each other — independent audits, blind reviews, a bake-off — say so **in the prompt** ("work alone; do not read, message, or coordinate with any other agent, tab, or area; do not read other agents' transcripts"). That is the only mechanism that actually binds. A separate workspace adds zero isolation and costs real legibility.
+**Do not reach for `--new-workspace` to keep agents from influencing each other.** Agents in the same workspace are *already* isolated: separate processes, separate context, no shared state. Nothing about sharing a workspace lets one agent see another's work. If you need agents not to consult each other — independent audits, blind reviews, a bake-off — say so **in the prompt** ("work alone; do not read, message, or coordinate with any other agent, panel, or area; do not read other agents' transcripts"). That is the only mechanism that actually binds. A separate workspace adds zero isolation and costs real legibility.
 
-Observed failure (2026-07-25): an orchestrator asked to open two blind auditors "as tabs in the same area" spawned each with `--new-workspace`, reasoning that the operator's "don't let them look at each other" called for a hard barrier. The barrier was imaginary — the prompt was already doing the work — and the run ended up scattered across three workspaces the operator then had to hunt through. Note that `launch-agent` defaults to `$C11_WORKSPACE_ID` and the focused area, so **the correct call was the one with fewer flags**.
+Observed failure (2026-07-25): an orchestrator asked to open two blind auditors "as panels in the same area" spawned each with `--new-workspace`, reasoning that the operator's "don't let them look at each other" called for a hard barrier. The barrier was imaginary — the prompt was already doing the work — and the run ended up scattered across three workspaces the operator then had to hunt through. Note that `launch-agent` defaults to `$C11_WORKSPACE_ID` and the focused area, so **the correct call was the one with fewer flags**.
 
 Before adding any separation flag, ask what it actually isolates. If the answer is "nothing the prompt doesn't already handle," drop it.
 
@@ -34,27 +34,27 @@ Standard orchestration layout for a single project:
 │                     │  Dashboard / Board   │
 │   Orchestrator      │  (browser area)      │
 │   (Claude Code)     ├──────────────────────┤
-│   Full height       │  Sub-agent tabs      │
+│   Full height       │  Sub-agent panels    │
 │                     │  (terminal area)     │
 │                     │  [agent1|agent2|...] │
 └─────────────────────┴──────────────────────┘
 ```
 
 - **Left area** (full height): orchestrator / delegation agent.
-- **Right top area**: task dashboard (browser tab — GitHub issues, a Kanban board, Lattice).
-- **Right bottom area**: sub-agent tabs (terminal tabs, one per task).
+- **Right top area**: task dashboard (browser panel — GitHub issues, a Kanban board, Lattice).
+- **Right bottom area**: sub-agent panels (terminal panels, one per task).
 
-When the layout calls for a role agent where you already sit, launch it in a new tab beside you; don't turn your own tab into that role. Your tab keeps the conversation that built the layout, and the role agent starts cold with its own prompt.
+When the layout calls for a role agent where you already sit, launch it in a new panel beside you; don't turn your own panel into that role. Your panel keeps the conversation that built the layout, and the role agent starts cold with its own prompt.
 
-Read `c11 tree` before reshaping — splits reshape the screen and disorient every agent and operator looking at it. For multiple related outputs, prefer tabs (`c11 new-tab`) over splits. Propose layouts; do not impose them.
+Read `c11 tree` before reshaping — splits reshape the screen and disorient every agent and operator looking at it. For multiple related outputs, prefer panels (`c11 new-panel`) over splits. Propose layouts; do not impose them.
 
-## Tab naming (mandatory)
+## Panel naming (mandatory)
 
-**Name every tab, including your own.** An unnamed "Claude Code" tab is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right; the full title shows in the tab sheet.
+**Name every panel, including your own.** An unnamed "Claude Code" panel is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right; the full title shows in the panel sheet.
 
 ### Titles are short and DISTINCT; the description is the live subtitle
 
-- **Title = 2–3 words, role-first, distinct.** Make the FIRST word differ between sibling tabs
+- **Title = 2–3 words, role-first, distinct.** Make the FIRST word differ between sibling panels
   wherever possible — the leading characters are all that survives sidebar truncation.
   `F2 Routes`, `P2 SPA Plan`, `P4 ImportSync Plan`. Never chain the parent's name into a child
   title (no `Parent :: Child`, no shared prefixes): with six siblings the sidebar becomes a
@@ -68,19 +68,19 @@ Read `c11 tree` before reshaping — splits reshape the screen and disorient eve
   but the description must still say what the work *is* — the operator should not need a
   tracker lookup to parse the sidebar.
 
-| Tab | Title | Description |
+| Panel | Title | Description |
 |------|-------|-------------|
 | Epic orchestrator | `PostHog Orch` | `Dispatching lanes; F2 and P4 in flight.` |
 | A lane's planner | `P2 SPA Plan` | `Drafting SPA routing plan; next, review gate. Lineage: PostHog Orch → P2 planner` |
 | A lane's implementer | `F2 Routes` | `Implementing route table; next, smoke tests. Lineage: PostHog Orch → F2 implementer` |
 | A review spawned over it | `F2 Review` | `Auditing route diff against spec. Lineage: PostHog Orch → F2 → reviewer` |
 
-The user may override any tab name; these are defaults, not locks.
+The user may override any panel name; these are defaults, not locks.
 
 ### Who writes the lineage
 
-- **Orchestrator spawning a sub-agent.** Name the child's tab immediately after `c11 new-tab` / `c11 new-split`, **before** launching the sub-agent or sending the prompt — a short distinct role title, plus a description ending with the lineage breadcrumb. The orchestrator knows the lineage, so it writes it — into the description's last line.
-- **Sub-agent orienting itself.** Before calling `c11 rename-tab`, read the existing title with `c11 get-titlebar-state`. If the orchestrator pre-named it, keep that name unless your role sharpened — and keep it SHORT and distinct, never re-expanding it into a `Parent :: Child` chain. Preserve the description's `Lineage:` line on every update.
+- **Orchestrator spawning a sub-agent.** Name the child's panel immediately after `c11 new-panel` / `c11 new-split`, **before** launching the sub-agent or sending the prompt — a short distinct role title, plus a description ending with the lineage breadcrumb. The orchestrator knows the lineage, so it writes it — into the description's last line.
+- **Sub-agent orienting itself.** Before calling `c11 rename-panel`, read the existing title with `c11 get-titlebar-state`. If the orchestrator pre-named it, keep that name unless your role sharpened — and keep it SHORT and distinct, never re-expanding it into a `Parent :: Child` chain. Preserve the description's `Lineage:` line on every update.
 - **Solo agent (no parent).** Name with your mission.
 
 ### Description tells the story up the chain
@@ -88,25 +88,25 @@ The user may override any tab name; these are defaults, not locks.
 The **description** on a downstream area carries both the live state and *where the work came from* — current context first, breadcrumb last:
 
 ```bash
-c11 set-description --workspace $WS --tab $TAB "Reviewing PR #42 for correctness, style, and edge cases; one of three parallel reviewers, findings merge upstream.
+c11 set-description --workspace $WS --panel $PANEL "Reviewing PR #42 for correctness, style, and edge cases; one of three parallel reviewers, findings merge upstream.
 Lineage: Login Button → Multi-Agent Review → Claude reviewer"
 ```
 
-The orchestrator writes the lineage line when it spawns the child so the child inherits a correct chain. Sub-agents updating the description mid-session preserve it — don't strip it on task change. Without it, the operator has to walk the area tree to reconstruct why a tab exists.
+The orchestrator writes the lineage line when it spawns the child so the child inherits a correct chain. Sub-agents updating the description mid-session preserve it — don't strip it on task change. Without it, the operator has to walk the area tree to reconstruct why a panel exists.
 
 ### Conventions by role (examples)
 
 - **Orchestrators / delegators:** name on startup. Role + project in 2–4 words.
-  `c11 rename-tab "SIG Delegator"`, `c11 rename-tab "Review Orchestrator"`
-- **Sub-agents:** orchestrator names them right after creating the tab — short, distinct, role-first; lineage goes in the description:
-  `c11 rename-tab --workspace $WS --tab $TAB "Login Plan"`
-  `c11 rename-tab --workspace $WS --tab $TAB "Lint Fixes"`
+  `c11 rename-panel "SIG Delegator"`, `c11 rename-panel "Review Orchestrator"`
+- **Sub-agents:** orchestrator names them right after creating the panel — short, distinct, role-first; lineage goes in the description:
+  `c11 rename-panel --workspace $WS --panel $PANEL "Login Plan"`
+  `c11 rename-panel --workspace $WS --panel $PANEL "Lint Fixes"`
 - **Solo agents (no parent):** mission only.
-  `c11 rename-tab "Fix Auth Tests"`, `c11 rename-tab "CSS Cleanup"`
+  `c11 rename-panel "Fix Auth Tests"`, `c11 rename-panel "CSS Cleanup"`
 
-`c11 rename-tab` is an alias for `c11 set-title` — either command writes the canonical `title` metadata key on the target tab. The description (including the lineage breadcrumb) goes via `c11 set-description`.
+`c11 rename-panel` is an alias for `c11 set-title` — either command writes the canonical `title` metadata key on the target panel. The description (including the lineage breadcrumb) goes via `c11 set-description`.
 
-## Launching sub-agents in tabs
+## Launching sub-agents in panels
 
 **The one-command path: `c11 launch-agent`.** For launching a *typed* agent —
 a specific kind, optionally with a pinned model/effort and an initial prompt —
@@ -121,21 +121,21 @@ c11 launch-agent --type codex --model gpt-5.2 --effort high \
 **Keep durable briefs in files.** Put cwd, ticket, rules and reply channel into a
 brief the child can read and later readers can find. Both `--prompt` and
 `--prompt-file` now stage a private copy and send only a short file-reading
-instruction. The owned copy survives until the terminal tab closes; the caller's
+instruction. The owned copy survives until the terminal panel closes; the caller's
 original file stays untouched. Passing a pointer to a durable brief is still
 useful for provenance.
 
-It creates the tab (in an area, a workspace, or `--new-workspace`), renders
+It creates the panel (in an area, a workspace, or `--new-workspace`), renders
 the right per-agent invocation (claude wrapper + skip-permissions, codex
 `--yolo` + `-c model_reasoning_effort=`, pi/omp `--thinking`, …), injects
 `C11_AGENT_TYPE/MODEL/TASK` into the spawn env, stamps sidebar identity at
 birth, and delivers the prompt one-shot via argv where the agent supports it —
-no ready-state race. `--json` returns the new tab/area/workspace refs for
+no ready-state race. `--json` returns the new panel/area/workspace refs for
 follow-up `send`/`read-screen`. Full reference: `docs/launch-agent-reference.md`.
 
 ### Positive launch receipt
 
-`launch-agent` returning a tab ref proves that c11 accepted the launch into a tab.
+`launch-agent` returning a panel ref proves that c11 accepted the launch into a panel.
 `startup=started` additionally proves an identified foreground provider process
 was observed; `pending` means it was not proven. Neither proves the child read
 the brief, landed in
@@ -153,12 +153,12 @@ mutation they have **not** started. The parent verifies the receipt against its 
 expected values; a visible TUI, an idle status chip, or a successful launch response
 is not a substitute.
 
-c11 owns the tab and liveness fact. The workflow that launched the child owns the
+c11 owns the panel and liveness fact. The workflow that launched the child owns the
 work-specific fields and decides what must match before work can continue. Put the
 receipt channel in the prompt: direct `c11 send` to the parent, a metadata handoff,
 or a workflow artifact. Do not make the child guess where acknowledgement belongs.
 
-The manual pattern below remains for launches into an *existing* tab, or
+The manual pattern below remains for launches into an *existing* panel, or
 when you need custom composition.
 
 Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, breaks the auth chain):
@@ -167,51 +167,51 @@ Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls 
 - **Plain `claude`** stalls on every tool call waiting for permission approvals nobody answers.
 - **`claude --dangerously-skip-permissions` in an interactive area** inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can self-report via `c11 set-status`, `c11 log`, `c11 set-progress`, `c11 set-metadata`.
 
-> **`claude` on PATH is the c11 wrapper.** Inside a c11 tab, `claude` resolves to `Resources/bin/claude` — a PATH-scoped wrapper that injects session-id and hook settings so the sidebar gets `claude_code` status. Always invoke `claude --dangerously-skip-permissions` explicitly in anything you send to an area.
+> **`claude` on PATH is the c11 wrapper.** Inside a c11 panel, `claude` resolves to `Resources/bin/claude` — a PATH-scoped wrapper that injects session-id and hook settings so the sidebar gets `claude_code` status. Always invoke `claude --dangerously-skip-permissions` explicitly in anything you send to an area.
 
 ### Standard launch pattern
 
 ```bash
-# 1. Create the split (note the new tab ref from output)
+# 1. Create the split (note the new panel ref from output)
 c11 new-split right
-# → returns tab:NNN
+# → returns panel:NNN
 
 # 2. Launch claude
-c11 send --workspace $WS --tab $TAB "claude --dangerously-skip-permissions"
+c11 send --workspace $WS --panel $PANEL "claude --dangerously-skip-permissions"
 
-# 3. Wait for claude to be ready (see polling section), then name the tab: short,
+# 3. Wait for claude to be ready (see polling section), then name the panel: short,
 #    role-first, DISTINCT first word. Lineage goes in the description's LAST line, never the title.
-c11 rename-tab       --workspace $WS --tab $TAB "Lint Fixes"
-c11 set-description  --workspace $WS --tab $TAB "Clearing lint errors in src/ before the feature branch merges.
+c11 rename-panel     --workspace $WS --panel $PANEL "Lint Fixes"
+c11 set-description  --workspace $WS --panel $PANEL "Clearing lint errors in src/ before the feature branch merges.
 Lineage: Login Button → Lint Fixes sub-agent"
 
 # 3b. Only if you own this worker's completion and blockers (see the attention model
 #     in the skill card): suppress it before the agent boots. When in doubt, skip this.
-# c11 suppress --tab $TAB
+# c11 suppress --panel $PANEL
 
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
-c11 set-agent --workspace $WS --tab $TAB --type claude-code --model claude-opus-4-7
+c11 set-agent --workspace $WS --panel $PANEL --type claude-code --model claude-opus-4-7
 
 # 5. Send the prompt. Name the parent so the sub-agent can keep its own lineage line accurate.
-c11 send --workspace $WS --tab $TAB "Your tab is named 'Lint Fixes'; your parent is 'Login Button'. Keep the title short and distinct, keep your description current (it is your live subtitle), and keep its last-line 'Lineage:' breadcrumb accurate. Now: fix all lint errors in src/"
+c11 send --workspace $WS --panel $PANEL "Your panel is named 'Lint Fixes'; your parent is 'Login Button'. Keep the title short and distinct, keep your description current (it is your live subtitle), and keep its last-line 'Lineage:' breadcrumb accurate. Now: fix all lint errors in src/"
 ```
 
-**One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls). `send` refuses a recognized operator draft or question/plan dialog and types nothing; A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --tab <t> "…" && c11 send-key --tab <t> enter` so a refusal stops the chain.
+**One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls). `send` refuses a recognized operator draft or question/plan dialog and types nothing; A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --panel <t> "…" && c11 send-key --panel <t> enter` so a refusal stops the chain.
 
-### Spawning multiple tabs at once
+### Spawning multiple panels at once
 
-Loop the spawn pattern. Capture the new tab ref from each `c11 new-split` call so you can target it for the rename and send.
+Loop the spawn pattern. Capture the new panel ref from each `c11 new-split` call so you can target it for the rename and send.
 
 ```bash
 WS=$(c11 identify | jq -r '.workspace.id')
 for ROLE in plan impl review; do
-  TAB=$(c11 new-split right | awk '{print $2}')
-  c11 rename-tab --workspace $WS --tab $TAB "$ROLE"
-  c11 send       --workspace $WS --tab $TAB "claude --dangerously-skip-permissions \"<prompt>\""
+  PANEL=$(c11 new-split right | awk '{print $2}')
+  c11 rename-panel --workspace $WS --panel $PANEL "$ROLE"
+  c11 send       --workspace $WS --panel $PANEL "claude --dangerously-skip-permissions \"<prompt>\""
 done
 ```
 
-For 5+ agents, swap `c11 new-split right` for `c11 new-tab --area <area>` so they land as tabs of one area instead of unreadably narrow splits.
+For 5+ agents, swap `c11 new-split right` for `c11 new-panel --area <area>` so they land as panels of one area instead of unreadably narrow splits.
 
 ### For complex prompts: deliver via temp file
 
@@ -224,7 +224,7 @@ cat > /tmp/agent-prompt.md <<'EOF'
 EOF
 
 # 2. Tell the agent to read it
-c11 send --workspace $WS --tab $TAB "Read /tmp/agent-prompt.md and follow the instructions."
+c11 send --workspace $WS --panel $PANEL "Read /tmp/agent-prompt.md and follow the instructions."
 ```
 
 ## Ready-state handoff
@@ -242,10 +242,10 @@ cat > /tmp/agent-prompt.md <<'EOF'
 EOF
 
 # One-shot launch — claude consumes the short argv instruction, which points it at the file
-c11 send --workspace $WS --tab $TAB "cd /path && claude --dangerously-skip-permissions \"Read /tmp/agent-prompt.md and follow the instructions.\""
+c11 send --workspace $WS --panel $PANEL "cd /path && claude --dangerously-skip-permissions \"Read /tmp/agent-prompt.md and follow the instructions.\""
 ```
 
-This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other Claude Code tabs are in the workspace.
+This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other Claude Code panels are in the workspace.
 
 ### Fallback — polling the workspace `claude_code` status
 
@@ -254,15 +254,15 @@ When you need claude interactive first (e.g. to send follow-up messages over the
 ```bash
 # Wait for claude to reach Idle before sending the prompt
 until c11 list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
-c11 send --workspace $WS --tab $TAB "Read /tmp/prompt.md and follow the instructions."
+c11 send --workspace $WS --panel $PANEL "Read /tmp/prompt.md and follow the instructions."
 ```
 
 Supported status values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`. The trailing space in the grep anchors the match to just `Idle`.
 
-> **Critical gotcha — workspace aggregation.** `c11 list-status` is workspace-scoped; `--tab` is silently ignored. The `claude_code=...` row reflects activity across **every** Claude Code tab in the workspace, not the one you're targeting. With two or more claudes running (orchestrator + sub-agent, planner + triage + impl, or any parallel review fan-out), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above whenever any sibling claude is in flight. This gotcha is a known binary limitation (no tab-scoped agent-status query exists); there is no polling recipe that safely substitutes in the multi-claude case.
+> **Critical gotcha — workspace aggregation.** `c11 list-status` is workspace-scoped; `--panel` is silently ignored. The `claude_code=...` row reflects activity across **every** Claude Code panel in the workspace, not the one you're targeting. With two or more claudes running (orchestrator + sub-agent, planner + triage + impl, or any parallel review fan-out), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above whenever any sibling claude is in flight. This gotcha is a known binary limitation (no panel-scoped agent-status query exists); there is no polling recipe that safely substitutes in the multi-claude case.
 
 Additional notes on the polling signal:
-- The signal only exists when claude was launched through c11's bundled PATH. A `claude` invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11 tab this is almost always fine — the wrapper is the default for `claude` in that context.
+- The signal only exists when claude was launched through c11's bundled PATH. A `claude` invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11 panel this is almost always fine — the wrapper is the default for `claude` in that context.
 - For TUIs without lifecycle hooks, agents self-report by calling `c11 set-metadata --key status --value idle` / `running` themselves, following the c11 skill. OpenCode's PATH wrapper loads a bundled notification/status plugin per process (see below). If an agent has neither self-reporting nor a plugin, no status is expected.
 
 **Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across Claude Code releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Use one-shot argv delivery, or poll the status row when it's safe to do so.
@@ -279,18 +279,18 @@ OpenCode has a plugin API with lifecycle events (`session.idle`, `permission.ask
 
 ### claude-code
 
-- **Wrapper on PATH.** Inside a c11 tab, `claude` resolves to `Resources/bin/claude`, a PATH-scoped wrapper that injects the session id and hook settings so the sidebar gets `claude_code` status. The launch command stored in `$C11_DEFAULT_AGENT_LAUNCH` always invokes this wrapper.
+- **Wrapper on PATH.** Inside a c11 panel, `claude` resolves to `Resources/bin/claude`, a PATH-scoped wrapper that injects the session id and hook settings so the sidebar gets `claude_code` status. The launch command stored in `$C11_DEFAULT_AGENT_LAUNCH` always invokes this wrapper.
 - **Never `claude -p`.** Headless mode breaks the auth chain; sub-agents cannot self-report. The default-agent resolver uses `claude --dangerously-skip-permissions`, which is the interactive form.
 - **Multi-claude polling deadlock.** `c11 list-status` aggregates per workspace; a second claude in the same workspace makes the `claude_code` row never settle on `Idle`, deadlocking any `until ... grep Idle` poll. Use the one-shot argv pattern (Ready-state handoff above) when any sibling claude is in flight.
 
 ### codex
 
-- **Use `codex --yolo`, not `codex exec`.** `codex exec` is headless and non-interactive, appropriate only for background jobs whose output will be read after completion. For a visible c11 tab where the operator should be able to watch or take over, `codex --yolo` is the right invocation.
+- **Use `codex --yolo`, not `codex exec`.** `codex exec` is headless and non-interactive, appropriate only for background jobs whose output will be read after completion. For a visible c11 panel where the operator should be able to watch or take over, `codex --yolo` is the right invocation.
 - **No PATH wrapper.** codex does not get a c11 wrapper. The sub-agent self-reports sidebar status by calling `c11 set-status` / `c11 set-metadata` from its own lifecycle, following instructions in the c11 skill it loads at session start.
 
 ### grok
 
-- **Use `grok --always-approve`.** Grok Build's auto-approve flag (parallel to claude's `--dangerously-skip-permissions` and codex's `--yolo`). TUI alias is `/yolo`. Headless mode is `grok agent` or `grok -p`; do not use either for a visible c11 tab.
+- **Use `grok --always-approve`.** Grok Build's auto-approve flag (parallel to claude's `--dangerously-skip-permissions` and codex's `--yolo`). TUI alias is `/yolo`. Headless mode is `grok agent` or `grok -p`; do not use either for a visible c11 panel.
 - **Auth gotcha.** OIDC-acquired tokens (`grok login` browser flow) currently 403 at the chat endpoint for non-Heavy SuperGrok tiers. Use an `XAI_API_KEY` from console.x.ai instead; it bypasses the Heavy-only gate.
 - **No PATH wrapper.** Status comes from skill-driven self-reporting, same as kimi.
 
@@ -311,24 +311,24 @@ Do not regex `c11 read-screen` output for `❯`, `> `, `Welcome to Claude Code`,
 
 ## Choosing a message channel
 
-There are two deliberate paths between agent tabs:
+There are two deliberate paths between agent panels:
 
-- **Use `c11 send` for a direct poke.** It types into the target PTY and submits one turn, and c11 records the full text as `tab.input_sent`. Use it for a nudge, short brief, or immediate instruction. Because it is a PTY action rather than a durable mailbox report, pair it with mailbox completion/blocker reporting when the exchange must survive the tab.
-- **Use `c11 mailbox send` for durable coordination.** The envelope and body remain inspectable through `mailbox.accepted` / `mailbox.delivered`, whose delivery marker is `via: push|drain|inbox`. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers. A waiting agent that opted into push (`mailbox.delivery=stdin`) receives a new turn; a busy agent receives mail at its turn boundary. At orientation, declare `mailbox.address` and set `mailbox.delivery` to `stdin` when the recipient is an interactive agent tab.
+- **Use `c11 send` for a direct poke.** It types into the target PTY and submits one turn, and c11 records the full text as `panel.input_sent`. Use it for a nudge, short brief, or immediate instruction. Because it is a PTY action rather than a durable mailbox report, pair it with mailbox completion/blocker reporting when the exchange must survive the panel.
+- **Use `c11 mailbox send` for durable coordination.** The envelope and body remain inspectable through `mailbox.accepted` / `mailbox.delivered`, whose delivery marker is `via: push|drain|inbox`. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers. A waiting agent that opted into push (`mailbox.delivery=stdin`) receives a new turn; a busy agent receives mail at its turn boundary. At orientation, declare `mailbox.address` and set `mailbox.delivery` to `stdin` when the recipient is an interactive agent panel.
 - **Push is agent-only.** c11 verifies that the recipient owns its foreground terminal and is using raw-mode interactive input before typing. It never pushes into a plain shell, one-shot command, or other program; failed pushes remain in the inbox. Claude and Codex drain at turn boundaries through their wrapper/hooks, while Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit floor.
-- **Use `c11 messages view` for the recorded timeline.** It opens the live traffic page in a c11 browser tab without taking focus. `c11 mailbox view` is the mailbox alias. Reach for either when you need to inspect the durable exchange, not merely the text currently visible in a tab.
+- **Use `c11 messages view` for the recorded timeline.** It opens the live traffic page in a c11 browser panel without taking focus. `c11 mailbox view` is the mailbox alias. Reach for either when you need to inspect the durable exchange, not merely the text currently visible in a panel.
 
 ## Agent-to-agent communication
 
 Sub-agents can `c11 send` directly into each other's terminals — no orchestrator relay required.
 
 ```bash
-c11 send --workspace workspace:N --tab tab:M "The number is 42"
+c11 send --workspace workspace:N --panel panel:M "The number is 42"
 ```
 
 This is a powerful primitive for handoffs: agent A finishes a step, writes its result to agent B's terminal.
 
-Structured handoffs can also ride on the metadata blob — agent A writes `c11 set-metadata --workspace $WS --tab $B_TAB --json '{"handoff":{"from":"A","result":"..."}}'`, and agent B polls with `c11 get-metadata --key handoff`. Pull-on-demand only; there is no subscribe in v1.
+Structured handoffs can also ride on the metadata blob — agent A writes `c11 set-metadata --workspace $WS --panel $B_PANEL --json '{"handoff":{"from":"A","result":"..."}}'`, and agent B polls with `c11 get-metadata --key handoff`. Pull-on-demand only; there is no subscribe in v1.
 
 ## Sub-agent self-reporting
 
@@ -354,12 +354,12 @@ The orchestrator does not need to poll on their behalf. When writing agent promp
 
 ```bash
 # Read what a sub-agent is doing
-c11 read-screen --workspace workspace:N --tab tab:M --lines 50
+c11 read-screen --workspace workspace:N --panel panel:M --lines 50
 
 # A line sitting after ❯ on an idle screen is Claude Code's ghosted auto-suggest,
 # not an operator draft (api.md, "Reading & sending"). Ignore it.
 # Pull a sub-agent's structured state
-c11 get-metadata --workspace $WS --tab $TAB
+c11 get-metadata --workspace $WS --panel $PANEL
 
 # Report aggregate progress from the orchestrator
 c11 set-status task "3/5 agents complete" --icon "play.fill" --color "#00FF00"
@@ -388,8 +388,8 @@ is. Every suppression transfers responsibility upward — to you, on both channe
 
 ```bash
 c11 launch-agent --type claude-code --suppressed ...   # you own it, you sweep it
-c11 suppress --tab $TAB                           # manual-launch path: right after creating the tab
-c11 get-metadata --workspace $WS --tab $TAB | grep '^flag = '   # escalation check; completion arrives on the channel you assigned
+c11 suppress --panel $PANEL                           # manual-launch path: right after creating the panel
+c11 get-metadata --workspace $WS --panel $PANEL | grep '^flag = '   # escalation check; completion arrives on the channel you assigned
 ```
 
 `get-metadata` is the read for attention state — `flag = <reason>` and `suppressed = true`
@@ -399,12 +399,12 @@ appear only when set, and neither `tree` nor `get-titlebar-state` carries them.
 
 When spawning sub-agents in c11, include these as first-class instructions in the prompt:
 
-1. **Self-identify immediately.** First action: `c11 identify` + `c11 get-titlebar-state` (to read any lineage the orchestrator pre-wrote) + `c11 rename-tab "<descriptive name>"` + `c11 set-description "<why this area is open right now>"` + `c11 set-agent --type <tui> --model <model-id>`. An unnamed, undescribed, undeclared tab is an unidentifiable agent. If the orchestrator pre-named the tab, keep that name unless your role sharpened, and preserve the description's `Lineage:` line.
-2. **Name every tab you create in both fields, not just the title.** Title is 2–3 words, role-first, and DISTINCT from its siblings — make the first word differ (`Lint Fixes`, `Routes Impl`, `SPA Plan`). Write `c11 set-description` alongside: a one-sentence "what this area is doing right now" first, closed by a `Lineage: A → B → C` breadcrumb as the last line — description is mandatory, not an afterthought. Pass the parent title in the spawn prompt so the sub-agent can keep that breadcrumb accurate if it ever renames itself.
+1. **Self-identify immediately.** First action: `c11 identify` + `c11 get-titlebar-state` (to read any lineage the orchestrator pre-wrote) + `c11 rename-panel "<descriptive name>"` + `c11 set-description "<why this area is open right now>"` + `c11 set-agent --type <tui> --model <model-id>`. An unnamed, undescribed, undeclared panel is an unidentifiable agent. If the orchestrator pre-named the panel, keep that name unless your role sharpened, and preserve the description's `Lineage:` line.
+2. **Name every panel you create in both fields, not just the title.** Title is 2–3 words, role-first, and DISTINCT from its siblings — make the first word differ (`Lint Fixes`, `Routes Impl`, `SPA Plan`). Write `c11 set-description` alongside: a one-sentence "what this area is doing right now" first, closed by a `Lineage: A → B → C` breadcrumb as the last line — description is mandatory, not an afterthought. Pass the parent title in the spawn prompt so the sub-agent can keep that breadcrumb accurate if it ever renames itself.
 3. **Report at milestones** via `c11 set-metadata`, `c11 set-status`, `c11 set-progress`, `c11 log`. Interactive `claude --dangerously-skip-permissions` inherits the auth chain, so sub-agents can self-report. **When scope shifts** (new task, different file, pivot) refresh both title and description at the pivot, not at the end — keep the description's `Lineage:` breadcrumb accurate.
 4. **Deliver complex prompts via temp files** — write to a file, tell the agent to read it. Avoids shell-escaping issues with `c11 send`.
-5. **Do not make silent splits.** For multiple related outputs, prefer tabs over splits. Propose layouts when they would help; do not impose them.
+5. **Do not make silent splits.** For multiple related outputs, prefer panels over splits. Propose layouts when they would help; do not impose them.
 6. **Read the room before reshaping it.** `c11 tree --json` gives pixel and percent coordinates for every area — check whether a new split will fit before asking for one.
 7. **Require a positive receipt for consequential work.** State the exact work item,
-   cwd, head/base (when git-backed), mode, and return channel. Do not treat tab
+   cwd, head/base (when git-backed), mode, and return channel. Do not treat panel
    creation as proof that the child oriented successfully.

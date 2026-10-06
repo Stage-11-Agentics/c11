@@ -48,7 +48,7 @@ Patterns we've seen cause PR rework:
 
 - **Missing the tag rule.** The agent runs `xcodebuild` or `open` on an untagged `c11 DEV.app` and hijacks the operator's running socket. Fix: always use `./scripts/reload.sh --tag <branch-slug>`. See [`skills/c11-hotload/SKILL.md`](../skills/c11-hotload/SKILL.md).
 - **Adding main-thread work to a typing path.** `WindowTerminalHostView.hitTest()`, `TabItemView.body`, and `TerminalSurface.forceRefresh()` are called every keystroke. New allocations, `@ObservedObject` bindings, or `DispatchQueue.main.sync` in these spots cause visible typing lag.
-- **Agent-side hook feature requests.** Proposals that require c11 to "ask the agent to write a file" or "call back to Claude" violate the "observe from outside — never hook into agents" principle in [`PHILOSOPHY.md`](../PHILOSOPHY.md). c11 stays agent-agnostic; reach for external observation (`c11 tree`, tab scrollback) plus a small local model instead.
+- **Agent-side hook feature requests.** Proposals that require c11 to "ask the agent to write a file" or "call back to Claude" violate the "observe from outside — never hook into agents" principle in [`PHILOSOPHY.md`](../PHILOSOPHY.md). c11 stays agent-agnostic; reach for external observation (`c11 tree`, panel scrollback) plus a small local model instead.
 - **Tests that read source text.** Tests that grep source files or assert on `Info.plist` shape get rejected. Verify observable runtime behavior through real executable paths.
 - **Submodule commits on detached HEAD.** Your agent commits in `ghostty/` without pushing the submodule commit to `manaflow/main` first. The commit is orphaned; the parent pointer references a SHA nobody else can fetch. Push the submodule first, then bump the parent pointer.
 

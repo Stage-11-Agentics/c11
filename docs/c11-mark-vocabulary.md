@@ -1,6 +1,6 @@
 # c11 Agent-State Mark Vocabulary
 
-The four lifecycle marks drawn beside every tab. Every state is distinguishable from
+The four lifecycle marks drawn beside every panel. Every state is distinguishable from
 every other **by shape alone** — no reliance on color or opacity. Color is thereby free for
 two modifiers: the flag (flat violet recolor, per `docs/c11-flagged-agent-plan.md`) and the
 expired prompt cache (a dark blue cold line, below).
@@ -20,7 +20,7 @@ what is inside the cell — full of output, holding a payload, empty, or collaps
 | `cold` | flat line | the collapsed cell: the agent is still at its prompt, but has gone cold (its prompt cache expired, or it sat dormant) |
 
 **What makes an agent cold.** Cold is a live agent at rest whose next message starts from
-cold. A process that exits leaves no mark at all: the tab becomes a plain terminal.
+cold. A process that exits leaves no mark at all: the panel becomes a plain terminal.
 
 - **Prompt cache: Claude Code, Codex and Grok Build.** These agents' lifecycle comes from
   their journal (hooks or transcript), and they go cold only when their prompt cache
@@ -69,7 +69,7 @@ against its chrome (dark chrome up to `#3A3A3A`). It marks a cold that is a cost
 A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two differ
 in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent keeps its
 gold mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its
-tab sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
+panel sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
 many tokens the next message re-caches.
 
 ## Behavior under the modifiers
@@ -99,7 +99,7 @@ is exactly what that intensity is reserved for. For the other flagged combinatio
 (flagged-and-working, -idle, -cold) the mark breathes as the flagged-agent plan specifies;
 the waiting combination alone flashes instead of breathing.
 
-**Suppressed: a lifecycle projection, not a treatment.** A suppressed tab **never enters
+**Suppressed: a lifecycle projection, not a treatment.** A suppressed panel **never enters
 the waiting state**; the record survives even though the state does not. Its mark renders in
 normal lifecycle colors and only ever shows **working, idle, or cold** — on stop it reads
 idle, while the notification record still lands in the store. There is **no visual indicator
@@ -184,15 +184,15 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
    motion fails the gate, the flagged mark ships **static violet** — the color carries the
    state, motion is an amplifier, not the signal.
 4. **Measure at fleet scale.** Every working agent animates in two renderers simultaneously
-   (bonsplit tab chip + sidebar card mark row), so a 20-agent fleet is 40+ independently
+   (bonsplit panel chip + sidebar card mark row), so a 20-agent fleet is 40+ independently
    animating leaf views repainting while the operator types. A single-mark latency test
    passes trivially and proves nothing; the gate runs against a realistic fleet.
 5. **One shared clock, per-mark phase offset.** N marks owning N timers is both more
    expensive and visually worse than one app-level tick every mark reads. Offset each mark's
-   phase by a stable hash of its tab id so the fleet staggers instead of pulsing in
+   phase by a stable hash of its panel id so the fleet staggers instead of pulsing in
    unison: one timer, coalesced repaints, scattered appearance.
-6. **Pause off-screen and in background.** Unselected workspaces, collapsed areas, tabs
-   scrolled out of the tab bar, and app-not-active all stop animating. SwiftUI does not do
+6. **Pause off-screen and in background.** Unselected workspaces, collapsed areas, panels
+   scrolled out of the panel bar, and app-not-active all stop animating. SwiftUI does not do
    this for you; animating what nobody can see is pure battery burn at fleet scale.
 7. **Validate the ladder order empirically.** The dip-before-fill degradation order is
    probably right for a reason worth stating: the dip is a pure opacity change on a static
@@ -207,7 +207,7 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
 Two renderers must change in agreement, plus the sidebar sizing rule:
 
 1. **`vendor/bonsplit/Sources/Bonsplit/Internal/Views/TabItemView.swift`** —
-   `TabActivityMark` (the tab chips) and `TabActivityMarkMetrics`. This vocabulary
+   `TabActivityMark` (the panel chips) and `TabActivityMarkMetrics`. This vocabulary
    is what makes the file's doc comment — "survives greyscale and a color-blind reader" —
    accurate; keep the comment and the code in agreement. Keep the bonsplit
    change pure shape vocabulary with no c11-specific concepts — it is a clean accessibility

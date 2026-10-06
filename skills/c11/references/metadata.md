@@ -1,6 +1,6 @@
-# c11 Per-Tab Metadata
+# c11 Per-Panel Metadata
 
-Every tab in c11 carries an open-ended JSON metadata blob. Agents read and write it over the socket. c11 stores it, renders a narrow set of **canonical keys** in the sidebar and title bar, and leaves everything else opaque for consumers (Lattice, internal dashboards, future Stage 11 tooling). This is the transport — and the vocabulary — that lets a spike's agents speak to the room they are working in.
+Every panel in c11 carries an open-ended JSON metadata blob. Agents read and write it over the socket. c11 stores it, renders a narrow set of **canonical keys** in the sidebar and title bar, and leaves everything else opaque for consumers (Lattice, internal dashboards, future Stage 11 tooling). This is the transport — and the vocabulary — that lets a spike's agents speak to the room they are working in.
 
 ## Contents
 
@@ -15,9 +15,9 @@ Every tab in c11 carries an open-ended JSON metadata blob. Agents read and write
 ## Delivery model
 
 - **Pull-on-demand reads.** Consumers fetch the blob when they want the current state; there is no socket push/subscribe. Changes to evented keys (e.g. `status`) also land as `metadata.changed` on the file-first events stream (`c11 events tail` — see [events.md](events.md)) for consumers that prefer to follow along.
-- **Live blob and workspace snapshots.** The blob lives on the tab model in the running c11 process. Workspace snapshots persist the values `PersistedMetadata` keeps: derived keys are dropped except `activity`, which is retained so restore can seed the live projection. Consumers that need history beyond those snapshots own it.
-- **Per-tab.** Keyed by the tab UUID. No workspace- or window-scoped metadata in v1.
-- **64 KiB cap** on the serialized `metadata` object per tab. Writes that would exceed the cap return `payload_too_large`. Store large payloads externally (S3, Lattice attachments) and put a reference in the blob.
+- **Live blob and workspace snapshots.** The blob lives on the panel model in the running c11 process. Workspace snapshots persist the values `PersistedMetadata` keeps: derived keys are dropped except `activity`, which is retained so restore can seed the live projection. Consumers that need history beyond those snapshots own it.
+- **Per-panel.** Keyed by the panel UUID. No workspace- or window-scoped metadata in v1.
+- **64 KiB cap** on the serialized `metadata` object per panel. Writes that would exceed the cap return `payload_too_large`. Store large payloads externally (S3, Lattice attachments) and put a reference in the blob.
 
 ## Canonical keys
 
@@ -25,7 +25,7 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 
 | Key | Type | Constraint | Rendering |
 |-----|------|------------|-----------|
-| `role` | string | kebab-case, ≤ 64 chars | sidebar: small label after tab title |
+| `role` | string | kebab-case, ≤ 64 chars | sidebar: small label after panel title |
 | `status` | string | ≤ 32 chars | sidebar: colored pill |
 | `task` | string | ≤ 128 chars | sidebar: monospace tag |
 | `model` | string | kebab-case, ≤ 64 chars | sidebar chip |
@@ -33,15 +33,15 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `model_detection` | string | ≤ 128 chars | **Derived** — present only for harnesses whose session files carry no model (`unsupported: kimi session files carry no model`); c11 never guesses one from config. |
 | `progress` | number | 0.0 – 1.0 | sidebar: progress bar |
 | `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `grok`, `kimi`, `opencode`, `github-copilot`, `pi`, `omp`, `shell`, `unknown`. Open-ended. |
-| `title` | string | plain text, ≤ 256 chars | tab label + sidebar label (truncated) |
-| `icon` | string | ≤ 32 chars, single line; usually one emoji, `sf:<symbol>` for an SF Symbol. Blank write clears. | tab strip: badge pinned left of the close X (title truncates, badge stays); tab sheet + rail: after the title. Renders at most 4 characters. |
-| `color` | string | `#RRGGBB` or a palette name (`red`, `teal`, `blue`, … case-insensitive), stored normalized as `#RRGGBB`. Blank write clears. | tints the `icon` badge (a dot when no icon) and the tab's top accent rail. Mirrors the tab color set by `c11 tab-color` and the tab's context menu: one color, readable here, so clearing `color` (including a keyless `clear-metadata` or a `replace` without it) clears the tab color. |
-| `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | bar under the tabs (one line collapsed, full when expanded) + tab sheet subtitle + sidebar agent line (flattened to one truncated line after the title) |
-| `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the tab's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |
+| `title` | string | plain text, ≤ 256 chars | panel label + sidebar label (truncated) |
+| `icon` | string | ≤ 32 chars, single line; usually one emoji, `sf:<symbol>` for an SF Symbol. Blank write clears. | strip: badge pinned left of the close X (title truncates, badge stays); panel sheet + rail: after the title. Renders at most 4 characters. |
+| `color` | string | `#RRGGBB` or a palette name (`red`, `teal`, `blue`, … case-insensitive), stored normalized as `#RRGGBB`. Blank write clears. | tints the `icon` badge (a dot when no icon) and the panel's top accent rail. Mirrors the panel color set by `c11 panel-color` and the panel's context menu: one color, readable here, so clearing `color` (including a keyless `clear-metadata` or a `replace` without it) clears the panel color. |
+| `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | bar under the strip (one line collapsed, full when expanded) + panel sheet subtitle + sidebar agent line (flattened to one truncated line after the title) |
+| `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the panel's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |
 | `branch` | string | ≤ 64 chars (branch name, `(detached @ <short-sha>)`, or `(no branch)`) | sidebar chip. Renders for main checkouts and linked worktrees. Dimmed for branch ∈ {`main`, `master`, `trunk`}. **Derived** — written by c11 runtime, not by agents. |
-| `activity` | string | `working` \| `idle`, ≤ 16 chars | Per-tab **derived liveness** (C11-162). Sidebar shows it as a visually-distinct *derived* pill when an explicit `status` has aged past expiry (or was never set). **Derived** — written by the c11 runtime from shell-integration prompt state, not by agents. Its workspace-snapshot value is retained to seed the live projection after restore, then recomputed on state change. See [Liveness, age & decay](#liveness-age--decay). |
+| `activity` | string | `working` \| `idle`, ≤ 16 chars | Per-panel **derived liveness** (C11-162). Sidebar shows it as a visually-distinct *derived* pill when an explicit `status` has aged past expiry (or was never set). **Derived** — written by the c11 runtime from shell-integration prompt state, not by agents. Its workspace-snapshot value is retained to seed the live projection after restore, then recomputed on state change. See [Liveness, age & decay](#liveness-age--decay). |
 
-**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` renders as the tab label and the sidebar label (truncated). `description` renders in the bar under the tabs, the tab sheet's subtitle row, **and** as the sidebar agent line's subtitle — whitespace-collapsed to a single truncated line after the title (`Title · description…`, setting-gated under Settings → Sidebar). That line is the operator's live read on the tab: put the current state in the opening words and keep it fresh (see the skill card's subtitle contract). The `status` and `progress` pills [decay by age](#liveness-age--decay); when `status` is past expiry the derived `activity` pill takes its place. The description never decays.
+**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` renders as the panel label and the sidebar label (truncated). `description` renders in the bar under the strip, the panel sheet's subtitle row, **and** as the sidebar agent line's subtitle — whitespace-collapsed to a single truncated line after the title (`Title · description…`, setting-gated under Settings → Sidebar). That line is the operator's live read on the panel: put the current state in the opening words and keep it fresh (see the skill card's subtitle contract). The `status` and `progress` pills [decay by age](#liveness-age--decay); when `status` is past expiry the derived `activity` pill takes its place. The description never decays.
 
 **Worktree + branch chips.** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by `GitContextDeriver` on cwd updates (the `report_pwd` socket path) and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → "Show worktree + branch chips in sidebar" gates the entire row (default on, live-toggleable). The branch chip carries a `*` suffix when the working tree is dirty.
 
@@ -105,11 +105,11 @@ c11 clear-metadata --key task
 c11 clear-metadata                   # clear everything (requires explicit source)
 ```
 
-> **Always pass `--tab "$C11_TAB_ID"` explicitly on tab-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. As of C11-165 a tab-scoped write with a missing or empty ref is **rejected** (`missing_ref` / `empty_ref`) rather than falling back to the operator-focused tab — so an omitted or empty flag now fails loudly instead of silently stomping a peer agent's metadata. Pass a valid ref: `--tab "$C11_TAB_ID"`, or the literal `tab:<n>` from `c11 identify --json` if the env var is empty. (On older, pre-C11-165 binaries the missing-ref default silently misrouted to the focused tab — the defensive form costs one flag and is correct on every version.)
+> **Always pass `--panel "$C11_PANEL_ID"` explicitly on panel-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-panel`, `clear-metadata`, etc. As of C11-165 a panel-scoped write with a missing or empty ref is **rejected** (`missing_ref` / `empty_ref`) rather than falling back to the operator-focused panel — so an omitted or empty flag now fails loudly instead of silently stomping a peer agent's metadata. Pass a valid ref: `--panel "$C11_PANEL_ID"`, or the literal `panel:<n>` from `c11 identify --json` if the env var is empty. (On older, pre-C11-165 binaries the missing-ref default silently misrouted to the focused panel — the defensive form costs one flag and is correct on every version.)
 >
 > ```bash
-> c11 set-metadata --tab "$C11_TAB_ID" --key status --value "running"
-> c11 set-title    --tab "$C11_TAB_ID" "TICKET-42 Impl"
+> c11 set-metadata --panel "$C11_PANEL_ID" --key status --value "running"
+> c11 set-title    --panel "$C11_PANEL_ID" "TICKET-42 Impl"
 > ```
 
 ### Agent-declaration sugar
@@ -126,25 +126,25 @@ Writes `terminal_type`, and optionally `model`, `task`, `role` with `source: dec
 ### Title & description sugar
 
 ```bash
-c11 set-title "My Tab Title"
+c11 set-title "My Panel Title"
 c11 set-title --from-file /tmp/title.txt
-c11 set-description "Long-form description of what this tab is doing and why."
+c11 set-description "Long-form description of what this panel is doing and why."
 c11 set-description --from-file /tmp/desc.md
 
 # Read the rendered title-bar state (title, description, sources, collapsed,
-# effective_collapsed, visible, sidebar_label). Defaults to caller's tab.
+# effective_collapsed, visible, sidebar_label). Defaults to caller's panel.
 c11 get-titlebar-state
-c11 get-titlebar-state --tab tab:3
+c11 get-titlebar-state --panel panel:3
 ```
 
-Writes canonical `title` or `description` with `source: explicit`. `c11 rename-tab` is an alias for `c11 set-title`.
+Writes canonical `title` or `description` with `source: explicit`. `c11 rename-panel` is an alias for `c11 set-title`.
 
 ### Icon & color sugar
 
 ```bash
-c11 set-tab-icon  --tab "$C11_TAB_ID" "🧪"         # or sf:hammer.fill
-c11 set-tab-color --tab "$C11_TAB_ID" teal         # or "#006B6B"
-c11 set-tab-icon  --tab "$C11_TAB_ID" --clear      # "" also clears
+c11 set-panel-icon  --panel "$C11_PANEL_ID" "🧪"         # or sf:hammer.fill
+c11 set-panel-color --panel "$C11_PANEL_ID" teal         # or "#006B6B"
+c11 set-panel-icon  --panel "$C11_PANEL_ID" --clear      # "" also clears
 ```
 
 Write canonical `icon` / `color` with `source: explicit` (`--source` overrides). Equivalent to `set-metadata --key icon|color --value …`; a blank value clears the key.
@@ -153,35 +153,35 @@ The description renders with MarkdownUI at 11pt with a compact heading hierarchy
 
 When `description` is empty the title bar renders as collapsed regardless of the flag (`effective_collapsed = collapsed || description.isEmpty`) — this is what the socket payload's `effective_collapsed` field reports.
 
-## Tab flash — asynchronous attention
+## Panel flash — asynchronous attention
 
-Flash is c11's per-tab attention primitive: a brief or persistent visual pulse on the area content and the sidebar workspace row. Reach for it when an agent produces something the operator should look at but doesn't want to steal focus to show.
+Flash is c11's per-panel attention primitive: a brief or persistent visual pulse on the area content and the sidebar workspace row. Reach for it when an agent produces something the operator should look at but doesn't want to steal focus to show.
 
 ```bash
-c11 trigger-flash --tab <ref>                              # one-shot pulse on a non-focused tab
-c11 trigger-flash --tab <ref> --persistent                 # repeats until dismissed
-c11 trigger-flash --tab <ref> --persistent --color "#FF5C5C"  # per-call sRGB hex override
-c11 cancel-flash  --tab <ref>                              # clear an in-flight persistent pulse
+c11 trigger-flash --panel <ref>                              # one-shot pulse on a non-focused panel
+c11 trigger-flash --panel <ref> --persistent                 # repeats until dismissed
+c11 trigger-flash --panel <ref> --persistent --color "#FF5C5C"  # per-call sRGB hex override
+c11 cancel-flash  --panel <ref>                              # clear an in-flight persistent pulse
 ```
 
-- **`--persistent`** repeats until *either* the operator dismisses it (clicking the area content or the sidebar workspace row) *or* an agent calls `c11 cancel-flash`. Use it for "look at this eventually," not "look right now" — the recurring pulse is what makes the tab findable when the operator is deep in another workspace. A `--persistent` call on an already-focused tab degrades to a one-shot pulse.
-- **`--color`** distinguishes signals from different agents on the same workspace. Default `#F5C518` (Stage 11 warm yellow). Validation accepts `#RRGGBB` or `#RRGGBBAA` (case-insensitive, optional `#`); anything else errors. Tints the area ring and the sidebar row pulse; the Bonsplit tab-strip pulse keeps its internal accent.
-- **`flash_state` metadata key.** A persistent flash writes `flash_state=persistent` into the tab manifest; cancellation clears it. Poll it instead of subscribing to per-frame visual state: `c11 get-metadata --tab <ref> --key flash_state`. Treat it as a forward-compatible enum — match the value you care about, don't assume it's binary. Cancel when stale: an agent that flashed to wait on a long task should `cancel-flash` if the task completes by another path.
+- **`--persistent`** repeats until *either* the operator dismisses it (clicking the area content or the sidebar workspace row) *or* an agent calls `c11 cancel-flash`. Use it for "look at this eventually," not "look right now" — the recurring pulse is what makes the panel findable when the operator is deep in another workspace. A `--persistent` call on an already-focused panel degrades to a one-shot pulse.
+- **`--color`** distinguishes signals from different agents on the same workspace. Default `#F5C518` (Stage 11 warm yellow). Validation accepts `#RRGGBB` or `#RRGGBBAA` (case-insensitive, optional `#`); anything else errors. Tints the area ring and the sidebar row pulse; the Bonsplit strip pulse keeps its internal accent.
+- **`flash_state` metadata key.** A persistent flash writes `flash_state=persistent` into the panel manifest; cancellation clears it. Poll it instead of subscribing to per-frame visual state: `c11 get-metadata --panel <ref> --key flash_state`. Treat it as a forward-compatible enum — match the value you care about, don't assume it's binary. Cancel when stale: an agent that flashed to wait on a long task should `cancel-flash` if the task completes by another path.
 - **Duration is operator-tuned.** Settings → Notifications → Flash Duration (500–4000ms, default 1500ms) scales every channel together. Agents fire the signal; c11 paces it.
 
 ## Socket methods
 
 All methods follow the v2 JSON-RPC convention. Responses: `{"id", "ok", "result"}`.
 
-### `tab.set_metadata`
+### `panel.set_metadata`
 
-Merge a partial metadata object into the tab's blob.
+Merge a partial metadata object into the panel's blob.
 
 ```json
 {
-  "method": "tab.set_metadata",
+  "method": "panel.set_metadata",
   "params": {
-    "tab_id": "<uuid-or-ref>",
+    "panel_id": "<uuid-or-ref>",
     "mode": "merge",
     "source": "explicit",
     "metadata": { "role": "reviewer", "task": "lat-412" }
@@ -191,7 +191,7 @@ Merge a partial metadata object into the tab's blob.
 
 | Param | Required | Notes |
 |-------|----------|-------|
-| `tab_id` | yes | UUID or ref. **Required for writes** — a missing/empty ref is rejected (`missing_ref`/`empty_ref`), never defaulted to the focused tab (C11-165). |
+| `panel_id` | yes | UUID or ref. **Required for writes** — a missing/empty ref is rejected (`missing_ref`/`empty_ref`), never defaulted to the focused panel (C11-165). |
 | `metadata` | yes | Partial or full object; ≤ 64 KiB post-merge |
 | `mode` | no | `"merge"` (default, shallow) or `"replace"` (requires `source: explicit`) |
 | `source` | no | Default `"explicit"`; other values: `"declare"`, `"osc"`, `"heuristic"` |
@@ -200,27 +200,27 @@ Semantics: shallow merge (nested objects are replaced, not deep-merged). Per-key
 
 Result includes `applied` (per-key booleans), `reasons` (for rejected keys), and the full `metadata` / `metadata_sources` after the write.
 
-### `tab.get_metadata`
+### `panel.get_metadata`
 
 ```json
 {
-  "method": "tab.get_metadata",
-  "params": { "tab_id": "<uuid-or-ref>", "keys": ["role","model"], "include_sources": true }
+  "method": "panel.get_metadata",
+  "params": { "panel_id": "<uuid-or-ref>", "keys": ["role","model"], "include_sources": true }
 }
 ```
 
 | Param | Required | Notes |
 |-------|----------|-------|
-| `tab_id` | yes | UUID or ref; defaults to focused tab |
+| `panel_id` | yes | UUID or ref; defaults to focused panel |
 | `keys` | no | Return only these keys; omit for full blob |
 | `include_sources` | no | Default `false`; when `true`, response includes `metadata_sources` |
 
-### `tab.clear_metadata`
+### `panel.clear_metadata`
 
 ```json
 {
-  "method": "tab.clear_metadata",
-  "params": { "tab_id": "<uuid-or-ref>", "keys": ["task"], "source": "explicit" }
+  "method": "panel.clear_metadata",
+  "params": { "panel_id": "<uuid-or-ref>", "keys": ["task"], "source": "explicit" }
 }
 ```
 
@@ -276,7 +276,7 @@ Every canonical key's `metadata_sources[key]` record carries a `ts` (seconds sin
 
 **Sidebar freshness is "last reported," not "last changed."** The visible sidebar status pill (`set-status` / `set_status`) tracks the last time the agent *reported* the value: re-reporting the same status is a **heartbeat** that refreshes its freshness clock, so a live agent that keeps asserting the same status never false-decays. (Only the visible sidebar entry works this way; the canonical `metadata_sources` `ts` stays "last changed.") Progress freshness is likewise stamped on every write and round-trips across relaunch.
 
-**`set-status` / `set-progress` also mirror the canonical key into the tab store.** When the entry's key is a canonical agent-reportable key (`status`, `task`, `role`, `model`, `progress`), the fast path writes it through the evented `SurfaceMetadataStore` at the `explicit` tier — so `get-metadata` returns it with a last-changed `ts`, and a `status` change emits a `metadata.changed` event (`progress` records a `ts` but is deliberately not evented, for flood-control). Arbitrary display-only chips (e.g. `build`, `deploy`) stay in the sidebar store only. The mirror targets the explicit `--tab` (resolved from a ref) when you pass one, else the workspace's focused tab — pass `--tab "$C11_TAB_ID"` so your status lands on *your* tab in a multi-agent workspace.
+**`set-status` / `set-progress` also mirror the canonical key into the panel store.** When the entry's key is a canonical agent-reportable key (`status`, `task`, `role`, `model`, `progress`), the fast path writes it through the evented `SurfaceMetadataStore` at the `explicit` tier — so `get-metadata` returns it with a last-changed `ts`, and a `status` change emits a `metadata.changed` event (`progress` records a `ts` but is deliberately not evented, for flood-control). Arbitrary display-only chips (e.g. `build`, `deploy`) stay in the sidebar store only. The mirror targets the explicit `--panel` (resolved from a ref) when you pass one, else the workspace's focused panel — pass `--panel "$C11_PANEL_ID"` so your status lands on *your* panel in a multi-agent workspace.
 
 ### Status/progress decay
 
@@ -292,7 +292,7 @@ Defaults: **stale 5m / expiry 15m**. Tune under **Settings → Sidebar** ("Stale
 
 ### Derived liveness (`activity`)
 
-c11 derives a per-tab activity state — `working` or `idle` — from signals it already observes (shell-integration prompt state: a command running ⇒ `working`, back at the prompt ⇒ `idle`), reconciled on a coarse timer. It is written to the canonical `activity` key at the **`derived`** precedence tier, so it **never overwrites a fresh `explicit` status**. Workspace snapshots retain `activity` as the exception to the derived-key filter so restore can seed the live projection; c11 then recomputes it on state change. No agent cooperation is required — a tab that never self-reports but produces output still shows a derived `working`.
+c11 derives a per-panel activity state — `working` or `idle` — from signals it already observes (shell-integration prompt state: a command running ⇒ `working`, back at the prompt ⇒ `idle`), reconciled on a coarse timer. It is written to the canonical `activity` key at the **`derived`** precedence tier, so it **never overwrites a fresh `explicit` status**. Workspace snapshots retain `activity` as the exception to the derived-key filter so restore can seed the live projection; c11 then recomputes it on state change. No agent cooperation is required — a panel that never self-reports but produces output still shows a derived `working`.
 
 **Takeover.** While an explicit `status` is fresh, it renders as the agent claimed. Once it ages past *expiry*, the sidebar shows the derived `activity` instead, styled **visually distinct** (a "derived/sensed" pill, not agent-claimed). When the agent reports again, the fresh `explicit` status resumes. This is a render-layer decision keyed on `ts`; the store still holds the last `explicit` value at its own tier.
 
@@ -302,7 +302,7 @@ Agents do not (and cannot) write `activity` over the external socket — it is r
 
 | Code | When |
 |------|------|
-| `surface_not_found` | the tab ref doesn't resolve |
+| `surface_not_found` | the panel ref doesn't resolve |
 | `invalid_json` | `metadata` is not a JSON object, or a ref is invalid |
 | `payload_too_large` | Post-merge blob exceeds 64 KiB |
 | `reserved_key_invalid_type` | Canonical key written with wrong type or size; `detail.key` names it |
@@ -314,10 +314,10 @@ Agents do not (and cannot) write `activity` over the external socket — it is r
 
 ## Consumer patterns
 
-**Lattice.** Writes `task` and `role` on the orchestrator's tab and on each sub-agent's tab. Polls `get_metadata` on a ticket's known tabs to render aggregate state in the Lattice UI. `source: declare` for automated writes; `source: explicit` for user-driven writes in the Lattice UI.
+**Lattice.** Writes `task` and `role` on the orchestrator's panel and on each sub-agent's panel. Polls `get_metadata` on a ticket's known panels to render aggregate state in the Lattice UI. `source: declare` for automated writes; `source: explicit` for user-driven writes in the Lattice UI.
 
-**Orchestrators.** Write `status`, `progress`, `role` at each milestone. The orchestrator does not need to ping the operator — canonical keys drive sidebar chips and title bars. Also use `title` / `description` for high-signal tab identity ("SIG Delegator", "Running smoke suite across 10 shards; reports to Lattice task lat-412").
+**Orchestrators.** Write `status`, `progress`, `role` at each milestone. The orchestrator does not need to ping the operator — canonical keys drive sidebar chips and title bars. Also use `title` / `description` for high-signal panel identity ("SIG Delegator", "Running smoke suite across 10 shards; reports to Lattice task lat-412").
 
-**Handoffs.** Structured handoffs between agents can ride on non-canonical keys — e.g. agent A writes `c11 set-metadata --json '{"handoff":{"from":"A","to":"B","result":{...}}}'` on agent B's tab; agent B polls `get-metadata --key handoff` at its prompt loop. Pull-on-demand, no subscribe.
+**Handoffs.** Structured handoffs between agents can ride on non-canonical keys — e.g. agent A writes `c11 set-metadata --json '{"handoff":{"from":"A","to":"B","result":{...}}}'` on agent B's panel; agent B polls `get-metadata --key handoff` at its prompt loop. Pull-on-demand, no subscribe.
 
-**Custom tabs.** Any app that creates a c11 tab (via the socket `tab.create` method) owns that tab's metadata. Use it to carry domain-specific state — a markdown viewer could write `{"doc_path":"/path/to/file.md","last_modified_ts":...}` on its own tab so other agents can pull the current doc without asking.
+**Custom panels.** Any app that creates a c11 panel (via the socket `panel.create` method) owns that panel's metadata. Use it to carry domain-specific state — a markdown viewer could write `{"doc_path":"/path/to/file.md","last_modified_ts":...}` on its own panel so other agents can pull the current doc without asking.

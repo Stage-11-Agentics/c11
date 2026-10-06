@@ -48,8 +48,8 @@ c11 notify --title "Build Complete"
 # With subtitle and body
 c11 notify --title "Claude Code" --subtitle "Permission" --body "Approval needed"
 
-# Notify a specific workspace and tab
-c11 notify --title "Done" --workspace 0 --tab 1
+# Notify a specific workspace and panel
+c11 notify --title "Done" --workspace 0 --panel 1
 ```
 
 ## Integration Examples
@@ -148,27 +148,27 @@ external or phone delivery.
 | Variable | Value |
 |----------|-------|
 | `C11_NOTIFICATION_WORKSPACE_ID` | Originating workspace UUID |
-| `C11_NOTIFICATION_TAB_ID` | Originating tab UUID, or an empty string for a workspace-only notice |
+| `C11_NOTIFICATION_PANEL_ID` | Originating panel UUID, or an empty string for a workspace-only notice |
 | `C11_NOTIFICATION_KIND` | `routine` or `flag` |
 
 Each has an equivalent `CMUX_NOTIFICATION_*` alias with the same value. The
 existing `CMUX_NOTIFICATION_TITLE`, `CMUX_NOTIFICATION_SUBTITLE`, and
-`CMUX_NOTIFICATION_BODY` text variables remain available. An absent tab replaces
-any inherited tab value with the empty string.
+`CMUX_NOTIFICATION_BODY` text variables remain available. An absent panel replaces
+any inherited panel value with the empty string.
 
 Flags appear separately in the enabled menu-bar extra, including flags on
-suppressed tabs. Lowering a flag removes its row. Routine mark-all-read and
+suppressed panels. Lowering a flag removes its row. Routine mark-all-read and
 clear-all actions leave flags in place. Suppressed unflagged completions do not
 contribute to the menu-bar extra's attention count.
 
-Claude lifecycle clears belong to the originating tab. Prompt submission,
+Claude lifecycle clears belong to the originating panel. Prompt submission,
 ordinary tool continuation, eligible session end, and stale-PID cleanup preserve
-sibling notices. A PID without a known tab association clears no notices. In
+sibling notices. A PID without a known panel association clears no notices. In
 bypass-permissions mode, AskUserQuestion publishes waiting from PreToolUse.
 ExitPlanMode publishes waiting in plan or bypass-permissions mode: a session
 started with bypass permissions enters plan mode before asking for approval.
 Neither requires a later Notification hook; a later notification replaces the
-same tab's item.
+same panel's item.
 
 c11 sets these in child shells:
 
@@ -176,12 +176,12 @@ c11 sets these in child shells:
 |----------|-------------|
 | `C11_SOCKET_PATH` | Path to control socket |
 | `C11_WORKSPACE_ID` | UUID of the current workspace |
-| `C11_TAB_ID` | UUID of the current tab |
+| `C11_PANEL_ID` | UUID of the current panel |
 
 ## CLI Commands
 
 ```
-c11 notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|index>] [--tab <id|index>]
+c11 notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|index>] [--panel <id|index>]
 c11 list-notifications
 c11 clear-notifications
 c11 ping

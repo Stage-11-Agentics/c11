@@ -27,7 +27,7 @@ this taxonomy:
   c11 does not try to defend against the operator.
 
 - **Agents inside c11 terminals (semi-trusted).** Processes spawned
-  inside a c11 tab — typically Claude Code, Codex, shell sessions.
+  inside a c11 panel — typically Claude Code, Codex, shell sessions.
   Treated as semi-trusted by default: the socket-control mode
   (`cmuxOnly`) limits commands to processes that are descendants of the
   c11 app, but those processes can run arbitrary code in the operator's
@@ -36,7 +36,7 @@ this taxonomy:
   hardened runtime gives it.
 
 - **Web content in WKWebView (untrusted).** Any page loaded into a c11
-  browser tab. Cannot reach the c11 socket (no JS bridge from web
+  browser panel. Cannot reach the c11 socket (no JS bridge from web
   content to socket). Can request camera / microphone / location via
   the standard WKWebView UI delegate prompts the operator approves
   per-origin.
@@ -120,7 +120,7 @@ Sources/AppDelegate.swift:5804                         (externalOpenDirectories)
 ## 4. WKWebView and web content
 
 c11 hosts web content via WKWebView. The substrate is shared between
-the embedded browser tab and any markdown / preview tab that
+the embedded browser panel and any markdown / preview panel that
 renders HTML. The relevant ATS posture:
 
 - `NSAllowsArbitraryLoadsInWebContent = true` — required by the
@@ -132,8 +132,8 @@ renders HTML. The relevant ATS posture:
   developer servers.
 
 There is no explicit JS bridge from web content to the c11 socket. The
-browser tab communicates with c11 via `WKContentController` script
-message handlers configured per tab; new handlers must be added to
+browser panel communicates with c11 via `WKContentController` script
+message handlers configured per panel; new handlers must be added to
 this doc when introduced (the diff signal in section 9 catches this).
 
 Browser-triggered modals (the `http://` navigation warning, JavaScript
@@ -157,13 +157,13 @@ It never writes the persistent allowlist, and the outcome is reported
 structurally (`proceeded` / `prompted` / `insecure_http_blocked`) rather
 than by a silent no-op. This widens nothing beyond the socket's existing
 trust boundary: anyone who can issue `browser open` could already point
-the tab at any https site, and the loopback hosts agents actually
+the panel at any https site, and the loopback hosts agents actually
 validate against (`localhost`, `127.0.0.1`, `::1`, `*.localtest.me`)
 were allowed by default before this change. Page content cannot set the
 flag; only the socket caller can.
 
 Outbound hand-off: the browser toolbar's "Open in Default Browser"
-button (v0.51.0) passes the tab's current URL to
+button (v0.51.0) passes the panel's current URL to
 `NSWorkspace.shared.open(_:)`. It is operator-gesture-gated (explicit
 click, never script-triggered) and refuses empty/`about:` schemes; a
 page can influence *which* URL is handed off only by navigating itself,
@@ -174,7 +174,7 @@ Evidence:
 ```
 Resources/Info.plist:162-176                           (NSAppTransportSecurity)
 Sources/Panels/BrowserPanel.swift                      (browser substrate)
-Sources/Panels/BrowserPanelView.swift                  (tab host)
+Sources/Panels/BrowserPanelView.swift                  (panel host)
 Sources/BrowserWindowPortal.swift                      (popout / portal layer)
 Sources/BrowserSnapshotStore.swift                     (snapshot capture)
 ```
@@ -285,9 +285,9 @@ connecting process's parents (`TerminalController.parentPid(of:)`,
 `TerminalController.swift:745`) and rejects when c11 is not on the
 chain. As of v0.58.0, command *dispatch* lives in per-domain handlers
 under `Sources/SocketHandlers/`; the connection ACL and ancestry gate
-remain in `TerminalController`. Also as of v0.58.0, tab-scoped
-write commands reject empty or absent tab refs outright — a write
-can no longer be silently routed to the operator-focused tab by a
+remain in `TerminalController`. Also as of v0.58.0, panel-scoped
+write commands reject empty or absent panel refs outright — a write
+can no longer be silently routed to the operator-focused panel by a
 malformed ref.
 
 Password mode reads its secret from (in order):
@@ -305,9 +305,9 @@ ancestor-PID and mode-check paths. New socket modes or changes to the
 gate require updates to those tests as well as this doc.
 
 Local persistent artifacts written by the socket/telemetry layer: the
-tab-metadata snapshots, the mailbox tree, and (new in v0.58.0) the
+panel-metadata snapshots, the mailbox tree, and (new in v0.58.0) the
 events NDJSON log under `~/Library/Application Support/c11/` — an
-append-only record of tab lifecycle, canonical-metadata changes,
+append-only record of panel lifecycle, canonical-metadata changes,
 liveness transitions, and mailbox deliveries. All are plaintext,
 uid-scoped files in the same trust class: readable by any process
 running as the operator. No transcript or scrollback content is

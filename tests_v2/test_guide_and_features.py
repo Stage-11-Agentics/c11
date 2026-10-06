@@ -89,8 +89,8 @@ def main():
             info = plistlib.load(info_file)
         stamped_commit = info.get("C11Commit") or info.get("CMUXCommit")
         assert guide["cli"]["commit"] == (stamped_commit.strip().lower() if stamped_commit else None)
-        # The bundled skill body is R6's to change; keep its assertion as is. `--help` says panel.
-        assert "rename-tab" in guide["body"]
+        # The bundled skill and `--help` both teach panel, never the tab alias.
+        assert "rename-panel" in guide["body"] and "rename-tab" not in guide["body"]
         help_text = run("--help")
         assert "rename-panel" in help_text and "rename-tab" not in help_text
         assert "There is no `c11 list`" in guide["body"]

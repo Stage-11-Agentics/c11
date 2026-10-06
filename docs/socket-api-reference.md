@@ -1,8 +1,8 @@
 # c11 Socket API Reference
 
-The **v2 JSON socket protocol** for programmatically controlling c11 over a Unix domain socket. Every workspace, area, tab, browser, and theme is addressable from outside the process, so agents can compose their own environment without the operator in the loop.
+The **v2 JSON socket protocol** for programmatically controlling c11 over a Unix domain socket. Every workspace, area, panel, browser, and theme is addressable from outside the process, so agents can compose their own environment without the operator in the loop.
 
-> This reference is generated against the v2 method dispatch in `Sources/TerminalController.swift`. The **method index** below lists every dotted v2 method the running app accepts. Cross-check a live instance with `c11 capabilities`.
+> This reference is generated against the v2 method dispatch in `Sources/TerminalController.swift`. The **method index** below groups the dotted v2 methods; `c11 capabilities` is authoritative for what a running app accepts.
 
 ## Socket configuration
 
@@ -70,11 +70,11 @@ The `c11` CLI wraps these methods: e.g. `c11 list-workspaces` → `workspace.lis
 
 ## Method index
 
-All dotted v2 methods, grouped by domain. Method names are stable identifiers; arguments travel in `params` and results in `result`. The `debug.*` domain is a set of test/automation hooks and is only meaningful on debug/tagged builds.
+Dotted v2 methods, grouped by domain. Method names are stable identifiers; arguments travel in `params` and results in `result`. The `debug.*` domain is a set of test/automation hooks and is only meaningful on debug/tagged builds.
 
 ### Agents (`agent.*`) — 1
 
-- `agent.launch` — launch a typed coding agent into a new tab or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. The result includes `cwd`, `cwd_source`, matched project `config_source` (or null), legacy `warnings`, and structured `warning_details`. See `docs/launch-agent-reference.md`.
+- `agent.launch` — launch a typed coding agent into a new panel or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. The result includes `cwd`, `cwd_source`, matched project `config_source` (or null), legacy `warnings`, and structured `warning_details`. See `docs/launch-agent-reference.md`.
 
 ### System (`system.*`) — 5
 
@@ -122,33 +122,35 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `workspace.set_metadata`
 - `workspace.set_root`
 
-### Tabs (`tab.*`) — 25
+### Panels (`panel.*`) — 27
 
-- `tab.action`
-- `tab.cancel_flash`
-- `tab.clear_history`
-- `tab.clear_metadata`
-- `tab.close`
-- `tab.create`
-- `tab.current`
-- `tab.drag_to_split`
-- `tab.focus`
-- `tab.get_metadata`
-- `tab.get_titlebar_state`
-- `tab.health`
-- `tab.list`
-- `tab.move`
-- `tab.read_text`
-- `tab.refresh`
-- `tab.reorder`
-- `tab.send_key`
-- `tab.send_text`
-- `tab.set_custom_color`
-- `tab.set_metadata`
-- `tab.set_titlebar_collapsed`
-- `tab.set_titlebar_visibility`
-- `tab.split`
-- `tab.trigger_flash`
+- `panel.action`
+- `panel.cancel_flash`
+- `panel.clear_history`
+- `panel.clear_metadata`
+- `panel.close`
+- `panel.create`
+- `panel.current`
+- `panel.drag_to_split`
+- `panel.focus`
+- `panel.get_metadata`
+- `panel.get_titlebar_state`
+- `panel.health`
+- `panel.input_state`
+- `panel.list`
+- `panel.move`
+- `panel.read_selection`
+- `panel.read_text`
+- `panel.refresh`
+- `panel.reorder`
+- `panel.send_key`
+- `panel.send_text`
+- `panel.set_custom_color`
+- `panel.set_metadata`
+- `panel.set_titlebar_collapsed`
+- `panel.set_titlebar_visibility`
+- `panel.split`
+- `panel.trigger_flash`
 
 ### Areas (`area.*`) — 13
 
@@ -161,9 +163,9 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `area.join`
 - `area.last`
 - `area.list`
+- `area.panels`
 - `area.resize`
 - `area.set_metadata`
-- `area.tabs`
 - `area.swap`
 
 ### Browser (`browser.*`) — 84
@@ -227,6 +229,10 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `browser.network.unroute`
 - `browser.offline.set`
 - `browser.open_split`
+- `browser.panel.close`
+- `browser.panel.list`
+- `browser.panel.new`
+- `browser.panel.switch`
 - `browser.press`
 - `browser.reload`
 - `browser.screencast.start`
@@ -241,10 +247,6 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `browser.storage.clear`
 - `browser.storage.get`
 - `browser.storage.set`
-- `browser.tab.close`
-- `browser.tab.list`
-- `browser.tab.new`
-- `browser.tab.switch`
 - `browser.trace.start`
 - `browser.trace.stop`
 - `browser.type`
@@ -283,11 +285,11 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 - `notification.clear`
 - `notification.create`
-- `notification.create_for_tab`
+- `notification.create_for_panel`
 - `notification.create_for_target`
 - `notification.list`
 
-### Markdown tabs (`markdown.*`) — 2
+### Markdown panels (`markdown.*`) — 2
 
 - `markdown.get_content`
 - `markdown.open`
@@ -327,31 +329,38 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 - `auth.login`
 
-### Debug (`debug.*`) — 36
+### Debug (`debug.*`) — 43
 
 - `debug.app.activate`
 - `debug.bonsplit_underflow.count`
 - `debug.bonsplit_underflow.reset`
 - `debug.browser.address_bar_focused`
 - `debug.browser.favicon`
-- `debug.browser.simulate_web_content_termination` (DEBUG only; browser target via `workspace_id` and `tab_id`; returns `scheduled`, with recovery queued for the next main turn)
+- `debug.browser.simulate_web_content_termination` (DEBUG only; browser target via `workspace_id` and `panel_id`; returns `scheduled`, with recovery queued for the next main turn)
 - `debug.command_palette.rename_input.delete_backward`
 - `debug.command_palette.rename_input.interact`
 - `debug.command_palette.rename_input.select_all`
 - `debug.command_palette.rename_input.selection`
-- `debug.command_palette.rename_tab.open`
+- `debug.command_palette.rename_panel.open`
 - `debug.command_palette.results`
 - `debug.command_palette.selection`
 - `debug.command_palette.toggle`
 - `debug.command_palette.visible`
 - `debug.empty_area.count`
 - `debug.empty_area.reset`
+- `debug.feed_answer.hold_after_paste`
 - `debug.flash.count`
 - `debug.flash.reset`
 - `debug.layout`
 - `debug.notification.focus`
-- `debug.tab_snapshot`
-- `debug.tab_snapshot.reset`
+- `debug.panel_rail.open`
+- `debug.panel_sheet.detail`
+- `debug.panel_sheet.hover`
+- `debug.panel_sheet.motion_scale`
+- `debug.panel_sheet.open`
+- `debug.panel_snapshot`
+- `debug.panel_snapshot.reset`
+- `debug.panel_strip.scroll`
 - `debug.portal.stats`
 - `debug.session.round_trip`
 - `debug.session.round_trip_workspaces`

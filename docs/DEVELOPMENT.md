@@ -14,7 +14,7 @@ c11/
 ├── skills/             Agent-facing skill files (c11, c11-browser, c11-markdown, c11-hotload, release)
 ├── ghostty/            Submodule — fork of Ghostty rendering the terminals
 ├── vendor/
-│   └── bonsplit/       Submodule — tab bar and split chrome
+│   └── bonsplit/       Submodule — panel bar and split chrome
 ├── homebrew-c11/       Submodule — Homebrew tap for the `c11` cask
 ├── web/                Next.js marketing site
 ├── daemon/             Remote daemon prototype (see docs/remote-daemon-spec.md)
@@ -45,19 +45,19 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 |---|---|
 | `c11App.swift` | SwiftUI `App` entry point |
 | `AppDelegate.swift` | NSApplicationDelegate — 13k LOC — lifecycle, menu bar, workspace routing, IPC |
-| `ContentView.swift` | Root SwiftUI view — 14k LOC — sidebar + workspace split + tab bar |
+| `ContentView.swift` | Root SwiftUI view — 14k LOC — sidebar + workspace split + panel bar |
 | `WindowAccessor.swift`, `WindowDecorationsController.swift`, `WindowToolbarController.swift`, `WindowDragHandleView.swift` | Window chrome and AppKit-SwiftUI bridge |
 
-### Terminals, browsers, markdown (the tab types)
+### Terminals, browsers, markdown (the panel types)
 
 | Area | Files |
 |---|---|
 | Terminal | `TerminalView.swift`, `GhosttyTerminalView.swift`, `GhosttyConfig.swift`, `TerminalController.swift`, `TerminalWindowPortal.swift` |
 | Browser | `BrowserWindowPortal.swift`, `Tabs/BrowserTab.swift`, `Tabs/BrowserTabView.swift`, `Tabs/CmuxWebView.swift` |
 | Markdown | `Tabs/MarkdownTab.swift`, `Tabs/MarkdownTabView.swift`, `Tabs/FencedCodeRenderer.swift`, `Tabs/MermaidRenderer.swift` |
-| Tab base | `Tabs/TabContent.swift`, `Tabs/TabContentView.swift`, `Tabs/AreaInteraction.swift` |
+| Panel base | `Tabs/TabContent.swift`, `Tabs/TabContentView.swift`, `Tabs/AreaInteraction.swift` |
 
-### Areas, tabs, workspaces
+### Areas, panels, workspaces
 
 | File | Role |
 |---|---|
@@ -69,10 +69,10 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 | File | Role |
 |---|---|
-| `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a tab |
+| `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a panel |
 | `AgentChip.swift`, `AgentChipBadge.swift` | Sidebar chip UI |
 | `AgentSkillsView.swift`, `SkillInstaller.swift` | Skills onboarding sheet |
-| `AreaMetadataStore.swift`, `TabMetadataStore.swift`, `TabTitleBarView.swift` | The tab manifest — the open JSON blob agents read/write over the socket |
+| `AreaMetadataStore.swift`, `TabMetadataStore.swift`, `TabTitleBarView.swift` | The panel manifest — the open JSON blob agents read/write over the socket |
 
 ### Theming
 
@@ -119,7 +119,7 @@ c11 has four test surfaces, roughly in order of how often you'll touch them:
 | Python socket v1 | `tests/` (~90 files, shell + python) | `./scripts/run-tests-v1.sh` | Older coverage; generally don't add new tests here, prefer v2 |
 | Swift UI | `c11UITests/` (~16 files) | `gh workflow run test-e2e.yml`, or Xcode (slow, flaky on low-RAM) | Full app flows — menu routing, dialogs, drag/drop, keybind regressions |
 
-**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#test-quality-policy)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
+**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#testing)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
 
 ## Build & reload
 
@@ -148,5 +148,5 @@ c11 is a fork of [`manaflow-ai/cmux`](https://github.com/manaflow-ai/cmux). Lots
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — human contributor workflow
 - [`contributing-with-your-agent.md`](contributing-with-your-agent.md) — agent-operator supplement
 - [`socket-api-reference.md`](socket-api-reference.md) — socket protocol reference
-- [`browser-automation-reference.md`](browser-automation-reference.md) — browser tab automation
+- [`browser-automation-reference.md`](browser-automation-reference.md) — browser panel automation
 - [`../skills/c11/SKILL.md`](../skills/c11/SKILL.md) — the agent-facing how-to-use-c11

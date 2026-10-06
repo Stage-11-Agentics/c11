@@ -12,7 +12,7 @@ It does not plan. The contract arrives written — by `tone-architect` or by han
 
 Three seats, context-isolated: the **Orchestrator** (Phases 0–1 — intake, ticketing, dispatch; it delegates, it does not implement), the **Result Validator** (Phase 2 — fresh session, terminal audit), and the supporting cast: **delegators** (one per ticket, driving plan → impl → review → validate → PR), **captains** (one-shot cross-cutting recovery), and the **Master Validator** singleton (optional in-flight global audit).
 
-Assumes c11 (load the c11 skill; the `lattice` skill owns Lattice CLI footguns beyond orchestration). Outside c11 the run still works — delegators need any harness that can spawn parallel sub-sessions; tabs degrade to what the harness offers.
+Assumes c11 (load the c11 skill; the `lattice` skill owns Lattice CLI footguns beyond orchestration). Outside c11 the run still works — delegators need any harness that can spawn parallel sub-sessions; panels degrade to what the harness offers.
 
 ## Contract
 
@@ -39,13 +39,13 @@ Mechanics, schemas, and templates: `references/intake.md`.
 
 ## Phase 1 — Dispatch (Orchestrator)
 
-The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → landing-train pass if auto-merge is enabled (parallel build, one finalization slot; fresh exact-head review + gate immediately before merge; serial PR runs when a shared runner's wall budget is tight) → close finished tabs → spawn next available delegators → schedule the next wake.
+The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → landing-train pass if auto-merge is enabled (parallel build, one finalization slot; fresh exact-head review + gate immediately before merge; serial PR runs when a shared runner's wall budget is tight) → close finished panels → spawn next available delegators → schedule the next wake.
 
 Delegators run one of three modes, chosen per ticket at Phase 0:
 
 - **Fast-track** — single session, inline self-review; small, well-understood tickets.
 - **Inline-full** *(default for medium work)* — single session plus headless plan-review and code-review for fresh eyes without PTY pressure.
-- **Sub-agent-full** — separate planner/impl/fix tabs; escalation for large or high-risk tickets only.
+- **Sub-agent-full** — separate planner/impl/fix panels; escalation for large or high-risk tickets only.
 
 Landing capacity and the account's usage window bind before builder count: more builders past the landing rate add queue, not throughput.
 
@@ -71,7 +71,7 @@ Every autonomous decision lands in run-state's append-only decision log, tagged 
 
 ## Layout (inside c11)
 
-One workspace per run: a **Main View Area** (Orchestrator, Master Validator, and Result Validator tabs), a **Control Area** (Lattice Board browser tab, logs), and **three Delegate View areas**. Three, because the c11 PTY allocator wedges around 20–25 tabs per area on long runs and a wedge spreads globally within a minute — soft cap **15 tabs per area**, route new delegators to the lightest-loaded area, close finished tabs promptly.
+One workspace per run: a **Main View Area** (Orchestrator, Master Validator, and Result Validator panels), a **Control Area** (Lattice Board browser panel, logs), and **three Delegate View areas**. Three, because the c11 PTY allocator wedges around 20–25 panels per area on long runs and a wedge spreads globally within a minute — soft cap **15 panels per area**, route new delegators to the lightest-loaded area, close finished panels promptly.
 
 ## Resume
 

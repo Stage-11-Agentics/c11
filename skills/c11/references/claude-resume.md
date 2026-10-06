@@ -1,15 +1,15 @@
 # Claude Code session resume
 
-c11 restores Claude Code sessions by reading a per-tab `claude.session_id` out of the snapshot envelope and re-spawning the tab with `cc --resume <session-id>`. Everything below is what makes that wire up end-to-end.
+c11 restores Claude Code sessions by reading a per-panel `claude.session_id` out of the snapshot envelope and re-spawning the panel with `cc --resume <session-id>`. Everything below is what makes that wire up end-to-end.
 
 ## Where the session id comes from
 
 Claude Code emits a `SessionStart` hook event on startup with a JSON payload that includes `session_id`, `cwd`, and `transcript_path`. Operators forward that payload to `c11 claude-hook session-start`, which:
 
 1. Upserts the session into c11's long-lived session register (the store the sidebar reads from).
-2. Writes `claude.session_id = <id>` onto the current tab's metadata via `tab.set_metadata` (mode `merge`, source `explicit`). This is the value the Phase 1 restart registry consults at restore time.
+2. Writes `claude.session_id = <id>` onto the current panel's metadata via `panel.set_metadata` (mode `merge`, source `explicit`). This is the value the Phase 1 restart registry consults at restore time.
 
-Both writes are best-effort: the hook never surfaces an error banner to Claude Code just because the c11 control socket is unreachable. The `tab.set_metadata` write in particular follows the existing advisory pattern and emits one of three breadcrumbs — `claude-hook.session-id.metadata-write.{ok,skipped,failed}` — so the outcome is visible in telemetry.
+Both writes are best-effort: the hook never surfaces an error banner to Claude Code just because the c11 control socket is unreachable. The `panel.set_metadata` write in particular follows the existing advisory pattern and emits one of three breadcrumbs — `claude-hook.session-id.metadata-write.{ok,skipped,failed}` — so the outcome is visible in telemetry.
 
 ## The operator-installed SessionStart hook
 
@@ -44,7 +44,7 @@ c11 restore 01KQ0XYZ…
 C11_SESSION_RESUME=1 c11 restore 01KQ0XYZ…
 
 # Replace the current workspace's content in place (no duplicate workspace).
-# The target workspace's existing tabs and splits are closed first;
+# The target workspace's existing panels and splits are closed first;
 # the new workspace inherits the plan. Note: the workspace UUID changes
 # (a fresh workspace is minted and the prior one is closed).
 c11 restore --in-place 01KQ0XYZ…
@@ -52,15 +52,15 @@ c11 restore --in-place 01KQ0XYZ…
 
 - `C11_SESSION_RESUME` is read at the CLI layer only.  A truthy value (anything except empty / `0` / `false` / `no` / `off`) threads `restart_registry: "phase1"` into the `snapshot.restore` v2 call.
 - The registry is **not** serialised onto the snapshot file. It is resolved by name app-side at restore time, so snapshots stay restorable as new agent types (`codex`, `opencode`, `kimi`, …) are added to the registry.
-- An explicit `SurfaceSpec.command` on a terminal tab always wins; registry synthesis only fires when the command field is nil or empty.
+- An explicit `SurfaceSpec.command` on a terminal panel always wins; registry synthesis only fires when the command field is nil or empty.
 
 ## What ends up where
 
 | Layer | Where the session id lives | How it's consumed |
 |---|---|---|
 | Session register (on-disk JSON store) | SessionStore record | Sidebar UI, stale-session detection |
-| Tab metadata (`SurfaceMetadataStore`) | `claude.session_id` key, source `.explicit` | Phase 1 restart registry; serialised into snapshot envelopes |
-| Snapshot envelope (`WorkspaceSnapshotFile`) | Embedded plan → `surfaces[i].metadata["claude.session_id"]` | Loaded at restore time; executor synthesises `cc --resume <id>` when registry is set |
+| Panel metadata (`SurfaceMetadataStore`) | `claude.session_id` key, source `.explicit` | Phase 1 restart registry; serialised into snapshot envelopes |
+| Snapshot envelope (`WorkspaceSnapshotFile`) | Embedded plan → `panels[i].metadata["claude.session_id"]` | Loaded at restore time; executor synthesises `cc --resume <id>` when registry is set |
 
 ## Privacy and storage
 
@@ -73,4 +73,4 @@ c11 does not encrypt at rest (no Keychain round-trip). The restart registry synt
 ## Troubleshooting
 
 - **Restore starts fresh shells instead of resuming.** Verify `C11_SESSION_RESUME=1` is set in the environment that runs `c11 restore`. The env var is *not* inherited into new workspaces — it's read once, at the CLI layer, when the restore command fires.
-- **Registry declines with `restart_registry_declined` failure.** The tab's metadata blob has `terminal_type=claude-code` but no (or empty) `claude.session_id`. Usually means SessionStart never fired — re-run Claude Code inside a c11 tab, or re-install the SessionStart hook snippet above.
+- **Registry declines with `restart_registry_declined` failure.** The panel's metadata blob has `terminal_type=claude-code` but no (or empty) `claude.session_id`. Usually means SessionStart never fired — re-run Claude Code inside a c11 panel, or re-install the SessionStart hook snippet above.

@@ -1,25 +1,25 @@
 # Agent lifecycle journal
 
-The lifecycle journal is c11-owned, bounded history of structural observations for an exact tab, agent kind, and session owner. It stores no prompts, tool bodies, answers, or transcript text. These observations are optional: a terminal remains usable when a provider does not expose them, and c11 does not write tenant configuration or make an agent wait for an observation.
+The lifecycle journal is c11-owned, bounded history of structural observations for an exact panel, agent kind, and session owner. It stores no prompts, tool bodies, answers, or transcript text. These observations are optional: a terminal remains usable when a provider does not expose them, and c11 does not write tenant configuration or make an agent wait for an observation.
 
 The journal phase and unread attention are separate. A blocked ask can remain blocked after its unread notification is cleared. A completed turn is a lifecycle fact; it does not prove that a particular question was answered. See [journal semantics](conversation.md#lifecycle-journal) for ownership, restart confirmation, and retention, and the [append API](api.md#structural-lifecycle-append) for the adapter contract.
 
 ## Commands
 
-Read the live roster without focusing, launching, or resuming a tab:
+Read the live roster without focusing, launching, or resuming a panel:
 
 ```bash
 c11 agents --json
 ```
 
-The schema version 1 document has `live_identity`, `coverage`, `tabs`, and `restore_candidates`. `live_identity` is `available` or `unavailable`; `coverage.health` is `ok` or `degraded`, `coverage.storage` is `ok` or `unavailable`, and `coverage.unattributed` counts events with no tab or session. With c11 down, `tabs` is empty and `live_identity` is `unavailable`. Journal fields are null for a live tab without a journal row; its flag, suppression, and last-seen values can still be present. For blocked, completed, and restart cases, read the fields this way:
+The schema version 1 document has `live_identity`, `coverage`, `panels`, and `restore_candidates`. `live_identity` is `available` or `unavailable`; `coverage.health` is `ok` or `degraded`, `coverage.storage` is `ok` or `unavailable`, and `coverage.unattributed` counts events with no panel or session. Roster, export, and query output identify a panel by `panel_id`. With c11 down, `panels` is empty and `live_identity` is `unavailable`. Journal fields are null for a live panel without a journal row; its flag, suppression, and last-seen values can still be present. For blocked, completed, and restart cases, read the fields this way:
 
 | Situation | Roster fields |
 |---|---|
 | Blocked question | `state: "blocked"`, `reason: "question"`, plus the evidence `source`, `freshness`, and `confirmation`. |
 | Working turn | `state: "working"`; `turn_started_at` is present only when its start is retained and attributable. |
 | Completed turn | `state: "idle"`, `turn_outcome: "completed"`. |
-| Prior owner after restart | A `restore_candidates` row with `confirmation: "unconfirmed"`, a `historical_candidate`, `ended`, or `unknown` label, and `disconnected` or `unknown` connection. It is not a currently working tab; do not charge time across the restart gap. |
+| Prior owner after restart | A `restore_candidates` row with `confirmation: "unconfirmed"`, a `historical_candidate`, `ended`, or `unknown` label, and `disconnected` or `unknown` connection. It is not a currently working panel; do not charge time across the restart gap. |
 
 Use the journal query for lifecycle analytics. Time bounds accept epoch milliseconds or ISO 8601 and form a half-open `[from,to)` window:
 
@@ -44,7 +44,7 @@ Structural ingestion is for registered adapters. Ordinary agents should keep usi
 
 ## Reading state
 
-The roster lists live tabs, with journal state where present, plus retained restart candidates. A tab can have no journal row and still appear with its ordinary attention fields. Journal state, source, reason, freshness, and confirmation remain explicit; missing evidence is unknown or unavailable, not an inferred working or completed state. The command does not focus, launch, or resume a tab. The [API reference](api.md#agent-roster) gives the full schema.
+The roster lists live panels, with journal state where present, plus retained restart candidates. A panel can have no journal row and still appear with its ordinary attention fields. Journal state, source, reason, freshness, and confirmation remain explicit; missing evidence is unknown or unavailable, not an inferred working or completed state. The command does not focus, launch, or resume a panel. The [API reference](api.md#agent-roster) gives the full schema.
 
 After restart, a prior row is a restore candidate with `confirmation: "unconfirmed"` and a disconnected or unknown connection. It is not proof that the process is still live. Do not carry a working clock through the restart gap. Retained evidence may classify the row as a historical candidate, ended, or unknown; coverage loss remains visible.
 

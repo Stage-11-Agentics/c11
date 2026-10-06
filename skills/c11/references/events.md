@@ -1,6 +1,6 @@
 # c11 Events Stream
 
-c11 emits a **file-first pub/sub log** of everything structural that happens inside a running process — tabs opening and closing, workspace selection, metadata edits, liveness flips, waiting edges, mailbox traffic. Each running c11 writes an append-only NDJSON file; any process may `tail -f` it directly. This is the push counterpart to per-tab [metadata](metadata.md)'s pull-on-demand model: metadata answers *what is the state now*, the events stream answers *what just changed*.
+c11 emits a **file-first pub/sub log** of everything structural that happens inside a running process — panels opening and closing, workspace selection, metadata edits, liveness flips, waiting edges, mailbox traffic. Each running c11 writes an append-only NDJSON file; any process may `tail -f` it directly. This is the push counterpart to per-panel [metadata](metadata.md)'s pull-on-demand model: metadata answers *what is the state now*, the events stream answers *what just changed*.
 
 **The file is the contract.** The CLI (`c11 events tail`) is sugar over reading that file — it works with no running app, and a consumer that wants the raw bytes never has to touch c11 at all.
 
@@ -8,7 +8,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 
 - [File & format](#file--format)
 - [Envelope](#envelope)
-- [v1 taxonomy](#v1-taxonomy)
+- [v2 taxonomy](#v2-taxonomy)
 - [Stream-control markers](#stream-control-markers)
 - [CLI](#cli)
 - [Consumer patterns](#consumer-patterns)
@@ -21,7 +21,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 - **`log.opened` begins each instance's log.** Its payload carries the `pid` and its first emitted `seq` is **1**. The counter is per instance, not the lifecycle journal's committed sequence; do not resume a journal cursor from an events file.
 - **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (a single rolled generation is retained; the previous `.1` is discarded). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
 
-Schema: **`spec/event-envelope.v1.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line.
+Schema: **`spec/event-envelope.v2.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line. Event logs written by older builds still contain v1 lines (`v` 1, with `surface` / `pane` subject fields and the older type names), and readers accept both.
 
 ## Envelope
 
@@ -31,42 +31,42 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 |-------|------|----------|-------|
 | `seq` | int (≥ 0) | yes | Monotonic per instance, assigned on the writer's serial queue so file order and seq order always agree. **THE ordering oracle** — order by `seq`, never by `ts`. |
 | `ts` | string | yes | ISO-8601 / RFC3339 UTC with fractional seconds and `Z` (`2026-07-07T08:20:00.123Z`). Captured on the emitting thread — only *approximately* monotonic and may invert slightly relative to `seq` across racing threads. **Approximate ordering only.** |
-| `type` | string | yes | Dotted event type from the closed v1 enum (below). Matches `^[a-z][a-z0-9_.]*$`. |
+| `type` | string | yes | Dotted event type from the closed v2 enum (below). Matches `^[a-z][a-z0-9_.]*$`. |
 | `instance` | string | yes | The emitting process's instance id. Namespaces `seq`. |
-| `v` | int | yes | Schema version, `1`. Integer, not a string. Bumps are breaking. |
+| `v` | int | yes | Schema version, `2`. Integer, not a string. Bumps are breaking. |
 | `workspace` | UUID string | no | Subject workspace this event concerns. |
-| `surface` | UUID string | no | Subject tab this event concerns. |
-| `pane` | UUID string | no | Subject area this event concerns. |
+| `panel` | UUID string | no | Subject panel this event concerns. |
+| `area` | UUID string | no | Subject area this event concerns. |
 | `payload` | object | no | Type-specific detail, keyed by `type`. Omitted (not `null`) when empty. |
 
-## v1 taxonomy
+## v2 taxonomy
 
-The taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
+The taxonomy types below are the closed v2 enum. The envelope fields `workspace` / `panel` / `area` mark which subject refs are populated; `payload` shows the type-specific shape.
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
-| `surface.created` | workspace + surface | `{kind, title?}` | A new tab opened. `kind` is terminal / browser / markdown. |
-| `surface.closed` | workspace + surface | — | Tab torn down. |
+| `panel.created` | workspace + panel | `{kind, title?}` | A new panel opened. `kind` is terminal / browser / markdown. |
+| `panel.closed` | workspace + panel | — | Panel torn down. |
 | `workspace.reordered` | none (window-scoped) | `{window_id, final_workspace_ids}` | Applied batch order changed. Dry-run, no-op and rejected batches emit nothing. |
-| `workspace.selected` | selected workspace | `{previous?, cause, method?, caller_tab_id?}` | Operator selection. `cause` is `sidebar`, `shortcut`, `palette`, `notification`, `jump`, `menu`, `socket`, `close_fallback`, `restore`, or `create`. Socket fields identify the method and calling tab when known. |
-| `workspace.switch_blocked` | requested workspace | `{target, method, caller_tab_id}` | Socket attempt refused before selection changes. `caller_tab_id` is the peer TTY's tab, or the supplied caller UUID when no TTY is available; null means unknown. |
-| `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `surface`\|`pane` (the tab and area scopes); `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
-| `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
-| `waiting.entered` | workspace + surface? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
-| `waiting.left` | workspace + surface? | — | Paired exit edge for `waiting.entered`. This name stays; it is never `waiting.exited`. |
-| `lifecycle.changed` | workspace + surface | `{tab, agent, from, to, reason}` | One applied journal phase change. `from` is null on the first event. `reason` is `approval`, `question`, `plan_review`, or null. A repeat observation emits nothing. |
-| `flag.raised` | workspace + surface | `{reason, caller_tab_id, by}` | A sticky flag went up. `caller_tab_id` is the UUID of the tab that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
-| `flag.lowered` | workspace + surface | `{by, answer?}` | Flag cleared. `by` ∈ `operator`\|`agent`; only a successful `feed answer` that lowers its original flag epoch adds `answer`. The answer is retained in the local EventLog (8 MiB current file plus one rolled generation), never in the structural journal. Other lower paths omit it; operator dismissal without an answer means *seen and deferred*. |
-| `flag.suppressed` | workspace + surface | `{by}` | Routine attention withheld for this tab. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
-| `flag.unsuppressed` | workspace + surface | `{by}` | Suppression lifted; routine attention signals resume. `by` ∈ `operator`\|`agent`. |
+| `workspace.selected` | selected workspace | `{previous?, cause, method?, caller_panel_id?}` | Operator selection. `cause` is `sidebar`, `shortcut`, `palette`, `notification`, `jump`, `menu`, `socket`, `close_fallback`, `restore`, or `create`. Socket fields identify the method and calling panel when known. |
+| `workspace.switch_blocked` | requested workspace | `{target, method, caller_panel_id}` | Socket attempt refused before selection changes. `caller_panel_id` is the peer TTY's panel, or the supplied caller UUID when no TTY is available; null means unknown. |
+| `metadata.changed` | workspace + panel | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `panel`\|`area`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
+| `liveness.derived` | workspace + panel | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
+| `waiting.entered` | workspace + panel? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
+| `waiting.left` | workspace + panel? | — | Paired exit edge for `waiting.entered`. This name stays; it is never `waiting.exited`. |
+| `lifecycle.changed` | workspace + panel | `{panel, agent, from, to, reason}` | One applied journal phase change. `from` is null on the first event. `reason` is `approval`, `question`, `plan_review`, or null. A repeat observation emits nothing. |
+| `flag.raised` | workspace + panel | `{reason, caller_panel_id, by}` | A sticky flag went up. `caller_panel_id` is the UUID of the panel that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
+| `flag.lowered` | workspace + panel | `{by, answer?}` | Flag cleared. `by` ∈ `operator`\|`agent`; only a successful `feed answer` that lowers its original flag epoch adds `answer`. The answer is retained in the local EventLog (8 MiB current file plus one rolled generation), never in the structural journal. Other lower paths omit it; operator dismissal without an answer means *seen and deferred*. |
+| `flag.suppressed` | workspace + panel | `{by}` | Routine attention withheld for this panel. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
+| `flag.unsuppressed` | workspace + panel | `{by}` | Suppression lifted; routine attention signals resume. `by` ∈ `operator`\|`agent`. |
 | `mailbox.accepted` | workspace | `{id, from, body, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?}` | A mailbox message was accepted onto the bus. `body` is recorded in full up to 256 KiB; larger values carry the first UTF-8-safe 256 KiB and `truncated: true`. |
-| `tab.input_sent` | workspace + surface | `{caller_tab_id, caller_title, target_title, kind, text, bytes, submitted, truncated?, queued?}` | A socket send reached or queued input for the target PTY. `kind` is `text` or `key`; `text` is full up to 256 KiB, then UTF-8-safe truncated with `truncated: true`. `queued: true` means the target surface was not attached yet. Caller refs/titles are null when the caller is unknown (outside c11, or the v1 protocol). |
-| `mailbox.delivered` | workspace + surface? | `{id, recipient, via}` | A mailbox message reached a recipient. `via` is `push`, `drain`, or `inbox`. |
+| `panel.input_sent` | workspace + panel | `{caller_panel_id, caller_title, target_title, kind, text, bytes, submitted, truncated?, queued?}` | A socket send reached or queued input for the target PTY. `kind` is `text` or `key`; `text` is full up to 256 KiB, then UTF-8-safe truncated with `truncated: true`. `queued: true` means the target panel was not attached yet. Caller refs/titles are null when the caller is unknown (outside c11, or the v1 text protocol). |
+| `mailbox.delivered` | workspace + panel? | `{id, recipient, via}` | A mailbox message reached a recipient. `via` is `push`, `drain`, or `inbox`. |
 | `conversation.resume.mode` | — | `{mode}` | The resolved recovery mode (`clean`, `dirty`, or `no-resume`) once per app launch. |
-| `conversation.resume.decision` | workspace + surface | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
+| `conversation.resume.decision` | workspace + panel | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
 | `hang.precursor` | — | `{cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint}` | The main-thread watchdog saw `count` stalls sharing one fingerprint inside `window_ms` — the leading edge of a wedge, emitted before the long stall lands. `durations_ms` are the counted episodes oldest-first; `span_ms` is the wall time the run covered. At most one per fingerprint per window. `runloop-idle` never produces one. |
-| `ask.opened` | workspace + surface | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking}` | A confirmed blocked ask entered the journal fold. Structural fields only: no prompt, options, plan text, or tool command. |
-| `ask.closed` | workspace + surface | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking, resolution}` | That ask left the fold. `resolution` is `resumed`, `cancelled`, `unknown`, or null. Still no prompt text. |
+| `ask.opened` | workspace + panel | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking}` | A confirmed blocked ask entered the journal fold. Structural fields only: no prompt, options, plan text, or tool command. |
+| `ask.closed` | workspace + panel | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking, resolution}` | That ask left the fold. `resolution` is `resumed`, `cancelled`, `unknown`, or null. Still no prompt text. |
 
 `waiting.entered` and `waiting.left` stay the unread 0↔1 edges. A blocked ask is `lifecycle.changed` with `to` or `from` of `blocked` and the journal waiting reason. `waiting.left` is never renamed. Startup baseline publish, a reason-only change that stays blocked, and `duplicate_evidence` do not emit `lifecycle.changed`. The event log can drop a line; `c11 agents` is the recovery read. Do not rebuild a snapshot by tailing the log.
 
@@ -87,7 +87,7 @@ Three additional `type` values are **not taxonomy members** — they are structu
 ```bash
 c11 events tail                       # one-shot: print all events in the current instance log, then exit
 c11 events tail --follow              # keep streaming new events (rotation-aware); -f for short
-c11 events tail --filter type=surface.closed
+c11 events tail --filter type=panel.closed
 c11 events tail --since 1200          # start from seq 1200
 c11 events tail --since 10m           # start from ~10 minutes ago (resolved against ts)
 c11 events tail --instance com.stage11.c11-12345   # a specific instance, not newest-by-mtime
@@ -107,9 +107,9 @@ Defaults: no `--filter` emits every type (taxonomy + control markers); no `--sin
 **React to a specific event.** Follow, filter to one type, act per line:
 
 ```bash
-c11 events tail -f --filter type=surface.closed | while read -r line; do
-  tab=$(printf '%s' "$line" | jq -r '.surface')
-  echo "tab $tab closed — cleaning up"
+c11 events tail -f --filter type=panel.closed | while read -r line; do
+  panel=$(printf '%s' "$line" | jq -r '.panel')
+  echo "panel $panel closed — cleaning up"
 done
 ```
 
@@ -145,4 +145,4 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 - **`ts` is not authoritative for ordering.** It can invert slightly relative to `seq` across racing threads. Never sort or dedupe on `ts`.
 - **Per-instance, not global.** There is no cross-instance total order; `seq` only means something within one `instance`.
 
-To answer who attempted a switch, run `c11 events tail --filter type=workspace.switch_blocked`. Resolve `payload.caller_tab_id` against `c11 tree --all --json`; a closed caller remains attributable by UUID. CLI requests include their caller identity; raw sockets from terminals are attributed by the peer's controlling TTY. This is attribution, not permission to switch.
+To answer who attempted a switch, run `c11 events tail --filter type=workspace.switch_blocked`. Resolve `payload.caller_panel_id` against `c11 tree --all --json`; a closed caller remains attributable by UUID. CLI requests include their caller identity; raw sockets from terminals are attributed by the peer's controlling TTY. This is attribution, not permission to switch.

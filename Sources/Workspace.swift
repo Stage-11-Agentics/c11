@@ -6360,6 +6360,11 @@ final class Workspace: Identifiable, ObservableObject {
         let cachedTitle: String?
         let customTitle: String?
         let customColor: String?
+        /// Tab `icon` metadata and its source, carried so a moved tab keeps its badge.
+        let tabIcon: String?
+        let tabIconSource: MetadataSource?
+        /// Source tier of the `color` mirror, so a moved tab keeps who set it.
+        let tabColorSource: MetadataSource?
         let manuallyUnread: Bool
         let terminalType: String?
         let terminalTypeSource: MetadataSource?
@@ -6955,14 +6960,19 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     /// Set or clear the surface tab color for a panel. Pass nil or an empty/whitespace
-    /// string to clear; otherwise the input is normalized to `#RRGGBB` via
-    /// `WorkspaceTabColorSettings.normalizedHex`. Invalid hex inputs are ignored
-    /// (state unchanged) so callers can pass user input directly.
-    func setTabCustomColor(panelId: UUID, color: String?) {
+    /// string to clear; otherwise the input is resolved to `#RRGGBB` via
+    /// `WorkspaceColorSettings.resolvedColorHex` (hex or palette name). Invalid
+    /// inputs are ignored (state unchanged) so callers can pass user input directly.
+    ///
+    /// `tabCustomColors` owns the tab color; the tab's canonical `color`
+    /// metadata key mirrors it so `get-metadata` and the manifest read the same
+    /// value. Callers applying a `color` metadata write pass
+    /// `mirrorToMetadata: false` so the writer's source tier is kept.
+    func setTabCustomColor(panelId: UUID, color: String?, mirrorToMetadata: Bool = true) {
         guard panels[panelId] != nil else { return }
         let next: String?
         if let raw = color?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-            guard let normalized = WorkspaceColorSettings.normalizedHex(raw) else { return }
+            guard let normalized = WorkspaceColorSettings.resolvedColorHex(raw) else { return }
             next = normalized
         } else {
             next = nil
@@ -6977,6 +6987,62 @@ final class Workspace: Identifiable, ObservableObject {
         if let bonsplitTabId = bonsplitTabIdFromTabId(panelId) {
             bonsplitController.updateTab(bonsplitTabId, customColorHex: .some(next))
         }
+        if mirrorToMetadata {
+            mirrorTabColorToMetadata(panelId: panelId)
+        }
+    }
+
+    /// Write the live tab color into the tab's `color` metadata key (or clear
+    /// it) when the two disagree. Explicit tier: every caller is an operator
+    /// action or a restore of one.
+    func mirrorTabColorToMetadata(panelId: UUID) {
+        let store = TabMetadataStore.shared
+        let live = tabCustomColors[panelId]
+        let stored = store.metadataValue(workspaceId: id, surfaceId: panelId, key: MetadataKey.color) as? String
+        guard live != stored else { return }
+        if let live {
+            store.setInternal(
+                workspaceId: id,
+                surfaceId: panelId,
+                key: MetadataKey.color,
+                value: live,
+                source: .explicit
+            )
+        } else {
+            _ = try? store.clearMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                keys: [MetadataKey.color],
+                source: .explicit
+            )
+        }
+    }
+
+    /// Apply the tab's `color` metadata to the live tab color after a metadata
+    /// write (set_metadata / clear_metadata).
+    func syncTabColorFromMetadata(panelId: UUID) {
+        let stored = TabMetadataStore.shared
+            .metadataValue(workspaceId: id, surfaceId: panelId, key: MetadataKey.color) as? String
+        setTabCustomColor(panelId: panelId, color: stored, mirrorToMetadata: false)
+    }
+
+    /// Push the tab's `icon` metadata into its tab-strip badge.
+    func syncTabIconFromMetadata(panelId: UUID) {
+        guard let bonsplitTabId = bonsplitTabIdFromTabId(panelId) else { return }
+        let raw = TabMetadataStore.shared
+            .metadataValue(workspaceId: id, surfaceId: panelId, key: MetadataKey.icon) as? String
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let glyph = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        guard bonsplitController.tab(bonsplitTabId)?.badgeGlyph != glyph else { return }
+        bonsplitController.updateTab(bonsplitTabId, badgeGlyph: .some(glyph))
+    }
+
+    /// Current tab-strip icon (`icon` metadata) for a panel, nil when unset.
+    func tabIcon(panelId: UUID) -> String? {
+        let raw = TabMetadataStore.shared
+            .metadataValue(workspaceId: id, surfaceId: panelId, key: MetadataKey.icon) as? String
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
     /// Returns the current normalized surface tab color for a panel, or nil if
@@ -7880,6 +7946,11 @@ final class Workspace: Identifiable, ObservableObject {
                 workspaceId: id,
                 surfaceId: tabId
             )
+            // The snapshot's `customColor` (applied when the panel was created)
+            // owns the tab color; re-mirror it over the restored blob, which may
+            // predate the `color` key. Then paint the restored `icon`.
+            mirrorTabColorToMetadata(panelId: tabId)
+            syncTabIconFromMetadata(panelId: tabId)
             if let rawActivity = values[MetadataKey.activity] as? String,
                let activity = SidebarActivityState(rawValue: rawActivity) {
                 derivedActivityByTab[tabId] = activity
@@ -9766,6 +9837,24 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             tabCustomColors.removeValue(forKey: detached.panelId)
         }
+        if let customColor = detached.customColor {
+            _ = TabMetadataStore.shared.setInternal(
+                workspaceId: id,
+                surfaceId: detached.panelId,
+                key: MetadataKey.color,
+                value: customColor,
+                source: detached.tabColorSource ?? .explicit
+            )
+        }
+        if let tabIcon = detached.tabIcon {
+            _ = TabMetadataStore.shared.setInternal(
+                workspaceId: id,
+                surfaceId: detached.panelId,
+                key: MetadataKey.icon,
+                value: tabIcon,
+                source: detached.tabIconSource ?? .explicit
+            )
+        }
         if detached.isPinned {
             pinnedTabIds.insert(detached.panelId)
         } else {
@@ -9835,6 +9924,7 @@ final class Workspace: Identifiable, ObservableObject {
             isLoading: detached.isLoading,
             isPinned: detached.isPinned,
             customColorHex: detached.customColor,
+            badgeGlyph: detached.tabIcon,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: detached.panelId),
             activityState: detached.activityState,
             activityPresentation: resolvedSurfaceTabActivityPresentation(
@@ -12200,6 +12290,17 @@ extension Workspace: BonsplitDelegate {
                 cachedTitle: cachedTitle,
                 customTitle: tabCustomTitles[panelId],
                 customColor: tabCustomColors[panelId],
+                tabIcon: tabIcon(panelId: panelId),
+                tabIconSource: TabMetadataStore.shared.getSource(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: MetadataKey.icon
+                ),
+                tabColorSource: TabMetadataStore.shared.getSource(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: MetadataKey.color
+                ),
                 manuallyUnread: manualUnreadTabIds.contains(panelId),
                 terminalType: surfaceTerminalKind(panelId: panelId),
                 terminalTypeSource: TabMetadataStore.shared.getSource(

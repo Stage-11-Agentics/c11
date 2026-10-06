@@ -2506,6 +2506,12 @@ struct CMUXCLI {
         case "set-description":
             try runSetDescription(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        case "set-tab-icon":
+            try runSetTabMarker(key: "icon", commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
+        case "set-tab-color":
+            try runSetTabMarker(key: "color", commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         case "get-titlebar-state":
             try runGetTitleBarState(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
@@ -6841,6 +6847,74 @@ struct CMUXCLI {
         }
     }
 
+    /// `c11 set-tab-icon` / `c11 set-tab-color` — sugar over `tab.set_metadata`
+    /// for the canonical `icon` / `color` keys. An empty value or `--clear`
+    /// clears the key (the store treats a blank write as removal).
+    private func runSetTabMarker(
+        key: String,
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let commandName = "set-tab-\(key)"
+        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (surfaceOpt, rem1) = parseOption(rem0, name: "--surface")
+        let (sourceOpt, rem2) = parseOption(rem1, name: "--source")
+        let (clear, rem3a) = parseBoolFlag(rem2, name: "--clear")
+        let (jsonFlag, rem3) = parseBoolFlag(rem3a, name: "--json")
+        let jsonOutput = jsonOutput || jsonFlag
+
+        if let unknown = rem3.first(where: { $0.hasPrefix("--") && $0 != "--" }) {
+            throw CLIError(message: "\(commandName): unknown flag '\(unknown)'")
+        }
+        let positional = rem3.dropFirst(rem3.first == "--" ? 1 : 0)
+        guard positional.count <= 1 else {
+            throw CLIError(message: "\(commandName): expected one value; quote it (got \(positional.count) arguments)")
+        }
+        let value = (positional.first ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if clear && !value.isEmpty {
+            throw CLIError(message: "\(commandName): pass a value or --clear, not both")
+        }
+        if !clear && positional.isEmpty {
+            throw CLIError(message: "\(commandName) requires a value, \"\" or --clear (see c11 \(commandName) --help)")
+        }
+
+        let surfaceRaw = surfaceOpt ?? (client.scopedWindow == nil ? Self.callerTabEnv() : nil)
+        let workspaceRaw = workspaceOpt ?? (client.scopedWindow == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+        let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
+        let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
+
+        var params: [String: Any] = [
+            "workspace_id": workspaceId,
+            "mode": "merge",
+            "source": source,
+            "metadata": [key: value]
+        ]
+        // C11-165 COR-1: a ref-less external call omits the tab so the server
+        // rejects it instead of writing to the operator-focused tab.
+        if let surfaceRaw {
+            params["tab_id"] = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+        }
+
+        let payload = try client.sendV2(method: "tab.set_metadata", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let applied = (payload["applied"] as? [String: Any])?[key] as? Bool ?? false
+        guard applied else {
+            let reason = (payload["reasons"] as? [String: Any])?[key] as? String ?? "unknown"
+            FileHandle.standardError.c11SafeWrite(Data("Error: \(key) applied=false reason=\(reason)\n".utf8))
+            exit(1)
+        }
+        if let stored = (payload["metadata"] as? [String: Any])?[key] as? String {
+            print("OK \(key)=\(stored) source=\(source)")
+        } else {
+            print("OK \(key) cleared")
+        }
+    }
+
     private func runGetTitleBarState(
         commandArgs: [String],
         client: SocketClient,
@@ -10171,6 +10245,54 @@ struct CMUXCLI {
               c11 set-description "Running **10 shards** in parallel"
               c11 set-description --auto-expand=false --from-file ./notes.md
             """
+        case "set-tab-icon":
+            return """
+            Usage: c11 set-tab-icon [--tab <ref>] [--workspace <ref>] [--source <src>] <icon>
+                   c11 set-tab-icon [--tab <ref>] (--clear | "")
+
+            Set the tab's canonical `icon` metadata key: a short glyph (≤32 chars,
+            usually one emoji; "sf:<symbol>" for an SF Symbol). It renders pinned
+            on the tab's right edge, just left of the close X, and after the
+            title in the tab sheet and rail. Tinted by the tab color when set.
+            Same as `c11 set-metadata --tab <ref> --key icon --value <icon>`.
+
+            Flags:
+              --tab <ref>         Target tab (default: $C11_TAB_ID)
+              --workspace <ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
+              --clear             Remove the icon (an empty value does the same)
+              --json              Emit raw v2 socket result as JSON
+
+            Examples:
+              c11 set-tab-icon --tab "$C11_TAB_ID" "🚀"
+              c11 set-tab-icon --tab tab:3 sf:hammer.fill
+              c11 set-tab-icon --tab tab:3 --clear
+            """
+        case "set-tab-color":
+            return """
+            Usage: c11 set-tab-color [--tab <ref>] [--workspace <ref>] [--source <src>] <color>
+                   c11 set-tab-color [--tab <ref>] (--clear | "")
+
+            Set the tab color: "#RRGGBB" or a palette name (red, crimson, orange,
+            amber, olive, green, teal, aqua, blue, navy, indigo, purple, magenta,
+            rose, brown, charcoal; `c11 tab-color list-palette` lists them). The
+            color tints the tab's icon badge (a dot when no icon is set) and its
+            top accent rail. It is the same color as the tab's right-click Tab
+            Color menu and `c11 tab-color`, stored as canonical metadata `color`.
+            Same as `c11 set-metadata --tab <ref> --key color --value <color>`.
+
+            Flags:
+              --tab <ref>         Target tab (default: $C11_TAB_ID)
+              --workspace <ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
+              --clear             Remove the color (an empty value does the same)
+              --json              Emit raw v2 socket result as JSON
+
+            Examples:
+              c11 set-tab-color --tab "$C11_TAB_ID" teal
+              c11 set-tab-color --tab tab:3 "#C0392B"
+              c11 set-tab-color --tab tab:3 --clear
+            """
         case "get-titlebar-state":
             return """
             Usage: c11 get-titlebar-state [--tab <ref>] [--workspace <ref>] [--json]
@@ -11879,9 +12001,10 @@ struct CMUXCLI {
             """
         case "tab-color":
             return """
-            Usage: c11 tab-color <set|clear|get> [options]
+            Usage: c11 tab-color <set|clear|get|list-palette> [options]
 
-            Read or change a tab's accent color.
+            Read or change a tab's color (#RRGGBB or a palette name). The same
+            color as `c11 set-tab-color` and tab metadata `color`.
             """
         case "state":
             return stateUsage()
@@ -12674,17 +12797,23 @@ struct CMUXCLI {
     }
 
     private func runWorkspaceColorListPalette(client _: SocketClient, jsonOutput: Bool) throws {
-        // Default palette names — keeps `workspace-color list-palette` purely informational.
-        let palette = [
-            "aurora", "carbon", "ember", "graphite", "lagoon", "lilac", "moss",
-            "ochre", "pine", "plum", "rose", "sand", "sky", "slate", "void"
+        // The app's default palette (`WorkspaceColorSettings.defaultPalette`):
+        // the names `set-tab-color`, `tab-color set` and blueprints resolve.
+        // Operator overrides can change a name's hex; the names are fixed.
+        let palette: [(String, String)] = [
+            ("red", "#C0392B"), ("crimson", "#922B21"), ("orange", "#A04000"),
+            ("amber", "#7D6608"), ("olive", "#4A5C18"), ("green", "#196F3D"),
+            ("teal", "#006B6B"), ("aqua", "#0E6B8C"), ("blue", "#1565C0"),
+            ("navy", "#1A5276"), ("indigo", "#283593"), ("purple", "#6A1B9A"),
+            ("magenta", "#AD1457"), ("rose", "#880E4F"), ("brown", "#7B3F00"),
+            ("charcoal", "#3E4B5E")
         ]
         if jsonOutput {
-            print(jsonString(["palette": palette]))
+            print(jsonString(["palette": palette.map { ["name": $0.0, "default_hex": $0.1] }]))
             return
         }
-        for name in palette {
-            print(name)
+        for (name, hex) in palette {
+            print("\(name)  \(hex)")
         }
     }
 
@@ -12748,7 +12877,7 @@ struct CMUXCLI {
         let (surfaceOpt, rest2) = parseOption(rest1, name: "--surface")
         let positional = rest2.filter { !$0.hasPrefix("-") }
         guard let hex = positional.first else {
-            throw CLIError(message: "tab-color set <hex> [--workspace <ref>] [--tab <ref>] (quote hex starting with '#': c11 tab-color set \"#RRGGBB\")")
+            throw CLIError(message: "tab-color set <hex|palette-name> [--workspace <ref>] [--tab <ref>] (quote hex starting with '#': c11 tab-color set \"#RRGGBB\")")
         }
 
         let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
@@ -19772,6 +19901,8 @@ struct CMUXCLI {
           rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
           set-title [--workspace <id|ref>] [--tab <id|ref>] [--source <src>] <title>
           set-description [--workspace <id|ref>] [--tab <id|ref>] [--source <src>] [--auto-expand=false] <text>
+          set-tab-icon [--workspace <id|ref>] [--tab <id|ref>] (<icon> | --clear)
+          set-tab-color [--workspace <id|ref>] [--tab <id|ref>] (<#RRGGBB|palette-name> | --clear)
           get-titlebar-state [--workspace <id|ref>] [--tab <id|ref>] [--json]
           drag-tab-to-split --tab <id|ref> <left|right|up|down>
           refresh-tabs

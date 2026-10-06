@@ -233,3 +233,99 @@ final class TabMetadataStoreValidationTests: XCTestCase {
         }
     }
 }
+
+/// Canonical tab `icon` / `color` keys: validation, normalization, and the
+/// blank-write-clears contract that `c11 set-tab-icon ""` relies on.
+final class TabIconColorMetadataTests: XCTestCase {
+
+    private let store = TabMetadataStore.shared
+
+    private func write(_ partial: [String: Any], ws: UUID, tab: UUID, source: MetadataSource = .explicit) throws -> TabMetadataStore.WriteResult {
+        try store.setMetadata(workspaceId: ws, surfaceId: tab, partial: partial, mode: .merge, source: source)
+    }
+
+    private func assertRejected(_ partial: [String: Any], file: StaticString = #filePath, line: UInt = #line) {
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        XCTAssertThrowsError(try write(partial, ws: ws, tab: tab), file: file, line: line) { error in
+            XCTAssertEqual((error as? TabMetadataStore.WriteError)?.code, "reserved_key_invalid_type", file: file, line: line)
+        }
+    }
+
+    func testIconIsStoredTrimmedAndReadBack() throws {
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        let result = try write(["icon": "  🚀 "], ws: ws, tab: tab)
+        XCTAssertEqual(result.applied["icon"], true)
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "🚀")
+
+        _ = try write(["icon": "sf:hammer.fill"], ws: ws, tab: tab)
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "sf:hammer.fill")
+    }
+
+    func testIconRejectsOverlongMultilineAndNonString() {
+        assertRejected(["icon": String(repeating: "x", count: 33)])
+        assertRejected(["icon": "a\nb"])
+        assertRejected(["icon": 7])
+        // 32 grapheme clusters is the cap, counted as characters, not bytes.
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        XCTAssertNoThrow(try write(["icon": String(repeating: "👩‍💻", count: 32)], ws: ws, tab: tab))
+    }
+
+    func testColorNormalizesHexAndPaletteNames() throws {
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+
+        _ = try write(["color": "c0392b"], ws: ws, tab: tab)
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "color") as? String, "#C0392B")
+
+        _ = try write(["color": "  Teal "], ws: ws, tab: tab)
+        XCTAssertEqual(
+            store.metadataValue(workspaceId: ws, surfaceId: tab, key: "color") as? String,
+            WorkspaceColorSettings.defaultColorHex(named: "Teal")
+        )
+        XCTAssertEqual(WorkspaceColorSettings.resolvedColorHex("BLUE"), WorkspaceColorSettings.defaultColorHex(named: "Blue"))
+        XCTAssertNil(WorkspaceColorSettings.resolvedColorHex("chartreuse"))
+    }
+
+    func testColorRejectsUnknownNamesAndNonStrings() {
+        assertRejected(["color": "chartreuse"])
+        assertRejected(["color": "#12345"])
+        assertRejected(["color": 0xFF0000])
+    }
+
+    func testBlankWriteClearsIconAndColor() throws {
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        _ = try write(["icon": "🧪", "color": "#196F3D"], ws: ws, tab: tab)
+
+        let result = try write(["icon": "", "color": "   "], ws: ws, tab: tab)
+        XCTAssertEqual(result.applied["icon"], true)
+        XCTAssertEqual(result.applied["color"], true)
+        XCTAssertEqual(result.removedKeys, ["icon", "color"])
+        let snapshot = store.getMetadata(workspaceId: ws, surfaceId: tab)
+        XCTAssertNil(snapshot.metadata["icon"])
+        XCTAssertNil(snapshot.metadata["color"])
+        XCTAssertNil(snapshot.sources["icon"])
+        XCTAssertNil(snapshot.sources["color"])
+    }
+
+    func testBlankWriteRespectsPrecedence() throws {
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        _ = try write(["icon": "🧪"], ws: ws, tab: tab, source: .explicit)
+        let result = try write(["icon": ""], ws: ws, tab: tab, source: .declare)
+        XCTAssertEqual(result.applied["icon"], false)
+        XCTAssertEqual(result.reasons["icon"], "lower_precedence")
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "🧪")
+    }
+
+    func testInternalWriteNormalizesColor() {
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        XCTAssertTrue(store.setInternal(workspaceId: ws, surfaceId: tab, key: "color", value: "#aabbcc", source: .explicit))
+        XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "color") as? String, "#AABBCC")
+        XCTAssertFalse(store.setInternal(workspaceId: ws, surfaceId: tab, key: "color", value: "", source: .explicit))
+    }
+}

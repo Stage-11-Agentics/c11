@@ -247,13 +247,18 @@ c11 focus-area --area <id|ref>
 c11 rename-workspace <title>
 c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
 
-# Tab color: an accent in the tab strip; persists and follows the tab across moves
-c11 tab-color set --tab <id|ref> "#RRGGBB"   # quote the hex
-c11 tab-color get --tab <id|ref>
-c11 tab-color clear --tab <id|ref>
+# Tab icon + color: an identity marker pinned left of the tab's close X (the title
+# truncates first); also shown after the title in the tab sheet and rail. Both persist
+# and follow the tab across moves. Empty value or --clear removes.
+c11 set-tab-icon  --tab <id|ref> "🚀"          # ≤32 chars, usually one emoji; sf:<symbol> for an SF Symbol
+c11 set-tab-color --tab <id|ref> teal          # "#RRGGBB" (quote it) or a palette name
+c11 set-tab-icon  --tab <id|ref> --clear
+    # Color tints the icon's badge (a dot when there is no icon) and the tab's top
+    # accent rail. Same color as `c11 tab-color set|get|clear|list-palette` and the
+    # tab's context menu (Tab Color); stored as canonical tab metadata `color`
+    # (`icon` likewise), so `set-metadata --key icon|color` is equivalent.
     # Color marks a set (one fan-out group, one role family) or a risk (a production
-    # shell). Avoid purple and magenta; they read as flagged. The operator sets the
-    # same color from the tab's context menu (Tab Color).
+    # shell). Avoid purple and magenta; they read as flagged.
 
 # Close
 c11 close-tab [--tab <id|ref>]      # Close a tab (defaults to caller's)

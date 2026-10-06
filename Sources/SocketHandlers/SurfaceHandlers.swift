@@ -221,8 +221,12 @@ extension TerminalController {
         if clear && hex != nil {
             return .err(code: "invalid_params", message: "'clear' and 'hex' are mutually exclusive", data: nil)
         }
-        if !clear, let hex, WorkspaceColorSettings.normalizedHex(hex) == nil {
-            return .err(code: "invalid_params", message: "Invalid hex color (use #RRGGBB)", data: ["hex": hex])
+        if !clear, let hex, WorkspaceColorSettings.resolvedColorHex(hex) == nil {
+            return .err(
+                code: "invalid_params",
+                message: "Invalid color (use #RRGGBB or a palette name: \(WorkspaceColorSettings.paletteNameList()))",
+                data: ["hex": hex]
+            )
         }
 
         var applied: String? = nil

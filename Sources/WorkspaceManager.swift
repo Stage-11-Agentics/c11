@@ -490,6 +490,23 @@ enum WorkspaceColorSettings {
         return "#" + body.uppercased()
     }
 
+    /// `#RRGGBB` for a hex spelling (`#c0392b`, `C0392B`) or a palette color
+    /// name matched case-insensitively (`red`, `Blue`, `custom 1`), honoring
+    /// the operator's palette overrides. Nil when neither matches.
+    static func resolvedColorHex(_ raw: String, defaults: UserDefaults = .standard) -> String? {
+        if let hex = normalizedHex(raw) { return hex }
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        return palette(defaults: defaults)
+            .first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?
+            .hex
+    }
+
+    /// Lowercased default palette names, for error messages and help text.
+    static func paletteNameList() -> String {
+        defaultPalette.map { $0.name.lowercased() }.joined(separator: ", ")
+    }
+
     static func displayColor(
         hex: String,
         colorScheme: ColorScheme,

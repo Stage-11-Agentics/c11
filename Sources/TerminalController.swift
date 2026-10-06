@@ -4319,8 +4319,8 @@ class TerminalController {
 
 
 
-    /// Sync render state when title, description, terminal type, or activity changes
-    /// through M2's metadata API.
+    /// Sync render state when title, description, terminal type, activity, icon,
+    /// or color changes through M2's metadata API.
     func applyTitleDescriptionSideEffects(
         workspaceId: UUID,
         surfaceId: UUID,
@@ -4335,7 +4335,10 @@ class TerminalController {
         let activityApplied = applied[MetadataKey.activity] == true || removedKeys.contains(MetadataKey.activity)
         let modelApplied = [MetadataKey.model, MetadataKey.modelLabel]
             .contains { applied[$0] == true || removedKeys.contains($0) }
-        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied || modelApplied else { return }
+        let iconApplied = applied[MetadataKey.icon] == true || removedKeys.contains(MetadataKey.icon)
+        let colorApplied = applied[MetadataKey.color] == true || removedKeys.contains(MetadataKey.color)
+        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied || modelApplied
+            || iconApplied || colorApplied else { return }
         let resolvedActivity: SidebarActivityState? = if activityApplied {
             (TabMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
                 .metadata[MetadataKey.activity] as? String)
@@ -4364,6 +4367,12 @@ class TerminalController {
             }
             if descriptionApplied || modelApplied || titleApplied {
                 ws.syncSurfaceTabDetailForTab(surfaceId)
+            }
+            if iconApplied {
+                ws.syncTabIconFromMetadata(panelId: surfaceId)
+            }
+            if colorApplied {
+                ws.syncTabColorFromMetadata(panelId: surfaceId)
             }
         }
     }

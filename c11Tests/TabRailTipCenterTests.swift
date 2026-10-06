@@ -116,22 +116,25 @@ final class TabRailTipCenterTests: XCTestCase {
         defer { rig.defaults.removePersistentDomain(forName: rig.suite) }
         let controller = rig.workspace.bonsplitController
         XCTAssertNotNil(controller.tabLayoutSwitch, "Every workspace offers the switch")
-        controller.tabLayoutSwitch = TabLayoutSettings.layoutSwitch(defaults: rig.defaults)
+        // As `Workspace.applyTabLayout`, but reading the test's defaults.
+        controller.tabLayoutSwitch = TabLayoutSettings.layoutSwitch(defaults: rig.defaults) { [weak controller] in
+            controller?.configuration.appearance.tabLayout =
+                TabLayoutSettings.bonsplitLayout(TabLayoutSettings.mode(defaults: rig.defaults))
+        }
         var toggles: [Bool] = []
         controller.onRailToggled = { _, open in toggles.append(open) }
 
-        // From the sheet: Rail everywhere, and this area's rail opens.
+        // From the sheet: Rail everywhere, and this area's rail opens in the same pass.
         controller.switchTabLayout(to: .rail, fromPane: rig.paneId)
         XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .rail)
-        XCTAssertTrue(controller.railOpenPaneIds.contains(rig.paneId))
-
-        // The layout observer applies the setting to each workspace; stand in for it.
-        controller.configuration.appearance.tabLayout = .rail
+        XCTAssertEqual(controller.configuration.appearance.tabLayout, .rail)
+        XCTAssertTrue(controller.isTabDetailVisible(inPane: rig.paneId))
 
         // From the rail: back to Tabs, with this area's rail closed, so
         // choosing Rail later does not reopen it.
         controller.switchTabLayout(to: .tabs, fromPane: rig.paneId)
         XCTAssertEqual(TabLayoutSettings.mode(defaults: rig.defaults), .tabs)
+        XCTAssertEqual(controller.configuration.appearance.tabLayout, .tabs)
         XCTAssertFalse(controller.railOpenPaneIds.contains(rig.paneId))
         XCTAssertEqual(toggles, [true, false], "The host is told so session autosave records it")
     }

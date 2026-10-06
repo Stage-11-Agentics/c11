@@ -5639,7 +5639,9 @@ final class Workspace: Identifiable, ObservableObject {
             self?.applyTabLayout()
         }
         // The same setting, switched from an area's tab sheet or rail.
-        bonsplitController.tabLayoutSwitch = TabLayoutSettings.layoutSwitch()
+        bonsplitController.tabLayoutSwitch = TabLayoutSettings.layoutSwitch { [weak self] in
+            self?.applyTabLayout()
+        }
 
         // The rail tip reads overflow, the count-cell anchor, and the sheet.
         // Any area can record an overflow day; only the front one shows the tip.

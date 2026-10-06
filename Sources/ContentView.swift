@@ -8584,10 +8584,22 @@ struct WorkspaceSidebar: View {
                                 switch row {
                                 case .group(let header):
                                     groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette)
+                                        .overlay(alignment: .topLeading) {
+                                            groupColorBar(
+                                                groupId: header.group.id,
+                                                continuesBelow: !header.group.isCollapsed && header.summary.memberCount > 0
+                                            )
+                                        }
                                 case .workspace(let item):
                                     if let ws = workspacesById[item.workspaceId] {
                                         workspaceRow(ws, item: item, chromeTokens: chromeTokens)
                                             .padding(.leading, item.groupId == nil ? 0 : 12)
+                                            .overlay(alignment: .topLeading) {
+                                                groupColorBar(
+                                                    groupId: item.groupId,
+                                                    continuesBelow: !item.isLastGroupMember
+                                                )
+                                            }
                                             .overlay(alignment: .bottom) {
                                                 if item.isLastGroupMember, draggedGroupId != nil,
                                                    dropIndicator?.groupId == item.groupId,
@@ -8823,6 +8835,25 @@ struct WorkspaceSidebar: View {
             )
         }
         .padding(.horizontal, 6)
+    }
+
+    /// Thin bar in the group's color down the leading edge of the group's block
+    /// (header plus member rows). Drawn as an overlay so no row content moves;
+    /// `continuesBelow` extends it through the inter-row gap so the bar reads as
+    /// one stroke. Groups without a color draw nothing.
+    @ViewBuilder
+    private func groupColorBar(groupId: UUID?, continuesBelow: Bool) -> some View {
+        if let groupId,
+           let hex = groupCoordinator.projection.headersById[groupId]?.group.color,
+           let color = WorkspaceColorSettings.displayColor(hex: hex, colorScheme: colorScheme) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 3)
+                .padding(.leading, 1)
+                .padding(.bottom, continuesBelow ? -tabRowSpacing : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     private func groupHeader(_ header: WorkspaceGroupSidebarHeader, chromeTokens: ChromeScaleTokens,

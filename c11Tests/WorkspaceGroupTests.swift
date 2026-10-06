@@ -44,4 +44,28 @@ final class WorkspaceGroupTests: XCTestCase {
             .group(unpinned, memberWorkspaceIds: [ids[0], ids[2]]), .workspace(ids[3])
         ])
     }
+
+    func testPaletteHexResolvesToPaletteName() {
+        let palette = WorkspaceColorSettings.defaultPalette
+        for entry in palette {
+            XCTAssertEqual(WorkspaceColorSettings.paletteName(forHex: entry.hex, in: palette), entry.name)
+        }
+        XCTAssertEqual(WorkspaceColorSettings.paletteName(forHex: "1565c0", in: palette), "Blue")
+        XCTAssertEqual(WorkspaceColorSettings.paletteName(forHex: " #c0392b ", in: palette), "Red")
+    }
+
+    func testUnknownHexHasNoPaletteNameAndDisplaysAsHex() {
+        let palette = WorkspaceColorSettings.defaultPalette
+        XCTAssertNil(WorkspaceColorSettings.paletteName(forHex: "#123456", in: palette))
+        XCTAssertNil(WorkspaceColorSettings.paletteName(forHex: "not-a-color", in: palette))
+        XCTAssertEqual(WorkspaceColorSettings.displayLabel(forHex: "#123456", in: palette), "#123456")
+    }
+
+    func testDisplayLabelNeverShowsHexForPaletteColor() {
+        let palette = WorkspaceColorSettings.defaultPalette
+        for entry in palette {
+            let label = WorkspaceColorSettings.displayLabel(forHex: entry.hex, in: palette)
+            XCTAssertFalse(label.hasPrefix("#"), "\(entry.name) rendered as \(label)")
+        }
+    }
 }

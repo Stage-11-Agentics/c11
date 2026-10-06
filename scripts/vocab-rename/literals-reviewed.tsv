@@ -172,7 +172,7 @@ Sources/c11App.swift	sidebarActiveTabIndicatorStyle	log	debug/diagnostic log tex
 Sources/c11App.swift	togglePaneZoom	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 c11Tests/AppDelegateShortcutRoutingTests.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/BrowserConfigTests.swift	BrowserPanel	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-c11Tests/BrowserTabTests.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/BrowserPanelTests.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/MainThreadHangDetectorTests.swift	VerticalTabsSidebar	fixture	test fixture: the type of that name still exists
 c11Tests/SessionPersistenceTests.swift	panelIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/SessionPersistenceTests.swift	tabIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
@@ -263,7 +263,7 @@ c11UITests/MenuKeyEquivalentRoutingUITests.swift	browserTabId	harness	debug payl
 Sources/PanelLayoutSettings.swift	tabLayoutMode	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/Panels/BrowserPanel.swift	openInNewTab	log	debug/diagnostic log text, never looked up: leave
 Sources/Panels/CmuxWebView.swift	openLinkInNewTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-c11Tests/TabLayoutSettingsTests.swift	tabLayoutMode	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/PanelLayoutSettingsTests.swift	tabLayoutMode	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 # C11-337 R8 pass C
 c11Tests/PanelLayoutSettingsTests.swift	TabLayoutSettingsTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave
 c11Tests/PanelOrdinalDisplayTests.swift	TabOrdinalDisplayTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave

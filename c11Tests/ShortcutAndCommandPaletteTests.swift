@@ -766,7 +766,7 @@ final class ShortcutHintHorizontalPlannerTests: XCTestCase {
 }
 
 
-final class LastTabCloseShortcutSettingsTests: XCTestCase {
+final class LastPanelCloseShortcutSettingsTests: XCTestCase {
     func testDefaultClosesWorkspace() {
         let suiteName = "LastTabCloseShortcutSettingsTests.Default.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {

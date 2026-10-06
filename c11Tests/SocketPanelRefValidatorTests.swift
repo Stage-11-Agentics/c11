@@ -9,7 +9,7 @@ import XCTest
 /// socket, per CLAUDE.md / C11-105). This file is a `c11LogicTests` member;
 /// the *wiring* proof (that a real handler calls this seam) lives in the
 /// host-target `SocketSurfaceRefRejectionWiringTests`.
-final class SocketTabRefValidatorTests: XCTestCase {
+final class SocketPanelRefValidatorTests: XCTestCase {
 
     // MARK: - classify(): the three raw states
 

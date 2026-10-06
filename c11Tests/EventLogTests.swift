@@ -278,7 +278,7 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload?["scope"] as? String, "panel", "the caller's v1 scope is written as v2 `panel`")
     }
 
-    func testTabInputPayloadRecordsNullCallerAndKeyAttribution() {
+    func testPanelInputPayloadRecordsNullCallerAndKeyAttribution() {
         let log = EventLog(url: logURL(), instance: "input-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "input-inst")
         let workspace = UUID()
@@ -328,7 +328,7 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(keyPayload?["text"] as? String, "enter")
     }
 
-    func testTabInputPayloadRecordsQueuedAndSubmitState() {
+    func testPanelInputPayloadRecordsQueuedAndSubmitState() {
         let payload = EventEmitter.panelInputPayload(
             callerPanelId: UUID(),
             callerTitle: "caller",
@@ -343,7 +343,7 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload["queued"] as? Bool, true)
     }
 
-    func testTabInputPayloadTruncatesBodyAtUTF8Boundary() {
+    func testPanelInputPayloadTruncatesBodyAtUTF8Boundary() {
         let text = "a" + String(repeating: "🙂", count: 100_000)
         let payload = EventEmitter.panelInputPayload(
             callerPanelId: nil,

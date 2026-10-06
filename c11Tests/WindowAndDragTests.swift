@@ -452,8 +452,8 @@ private func dragConfigurationOperationsSnapshot<T>(from operations: T) throws -
 
 #if compiler(>=6.2)
 @MainActor
-final class InternalTabDragConfigurationTests: XCTestCase {
-    func testDisablesExternalOperationsForInternalTabDrags() throws {
+final class InternalPanelDragConfigurationTests: XCTestCase {
+    func testDisablesExternalOperationsForInternalPanelDrags() throws {
         guard #available(macOS 26.0, *) else {
             throw XCTSkip("Requires macOS 26 drag configuration APIs")
         }
@@ -486,7 +486,7 @@ final class InternalTabDragConfigurationTests: XCTestCase {
 
 
 @MainActor
-final class InternalTabDragBundleDeclarationTests: XCTestCase {
+final class InternalPanelDragBundleDeclarationTests: XCTestCase {
     private func exportedTypeIdentifiers(bundle: Bundle) -> Set<String> {
         let declarations = (bundle.object(forInfoDictionaryKey: "UTExportedTypeDeclarations") as? [[String: Any]]) ?? []
         return Set(declarations.compactMap { $0["UTTypeIdentifier"] as? String })
@@ -1070,7 +1070,7 @@ final class FileDropOverlayViewTests: XCTestCase {
 
 
 @MainActor
-final class MarkdownTabPointerObserverViewTests: XCTestCase {
+final class MarkdownPanelPointerObserverViewTests: XCTestCase {
     private func makeWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),

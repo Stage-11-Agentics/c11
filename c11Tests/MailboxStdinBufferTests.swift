@@ -582,7 +582,7 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// The kernel decides who reads the terminal: only the registered agent
     /// process, as its terminal's foreground group, on the tab's tty, with
     /// the tty in non-canonical (raw) mode.
-    func testAgentOwnsTerminalOnlyAsRawForegroundGroupOnTabTTY() {
+    func testAgentOwnsTerminalOnlyAsRawForegroundGroupOnPanelTTY() {
         XCTAssertTrue(owns(procInfo(pgid: 500, fg: 500)))
         // vim, the shell, or a pipeline holds the foreground (`--bg`, Ctrl-Z, exit).
         XCTAssertFalse(owns(procInfo(pgid: 500, fg: 777)))
@@ -604,7 +604,7 @@ final class MailboxStdinBufferTests: XCTestCase {
     }
 
     /// r4 #3: a tab whose tty c11 does not know cannot be verified.
-    func testUnknownTabTTYFailsClosed() {
+    func testUnknownPanelTTYFailsClosed() {
         XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), panel: nil))
         let process = MailboxStdinBuffer.AgentProcess(pid: getpid(), startTime: 1)
         XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, panelTTYName: nil))

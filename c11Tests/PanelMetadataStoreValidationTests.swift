@@ -15,7 +15,7 @@ import XCTest
 /// never lands in the metadata blob in the first place.
 ///
 /// Per `CLAUDE.md`, never run locally — CI only.
-final class TabMetadataStoreValidationTests: XCTestCase {
+final class PanelMetadataStoreValidationTests: XCTestCase {
 
     private let store = PanelMetadataStore.shared
 
@@ -336,7 +336,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
 
 /// Canonical tab `icon` / `color` keys: validation, normalization, and the
 /// blank-write-clears contract that `c11 set-tab-icon ""` relies on.
-final class TabIconColorMetadataTests: XCTestCase {
+final class PanelIconColorMetadataTests: XCTestCase {
 
     private let store = PanelMetadataStore.shared
 

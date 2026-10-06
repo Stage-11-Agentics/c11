@@ -9,7 +9,7 @@ import Bonsplit
 
 /// Pure logic behind the tab sheet's per-tab detail: agent tag, type, status word,
 /// subtitle fallbacks, clocks and the clock-order setting.
-final class TabSheetDetailBuilderTests: XCTestCase {
+final class PanelSheetDetailBuilderTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000_000)
 
     private func inputs(
@@ -81,7 +81,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     // MARK: Type
 
-    func testTypeLabelNamesTheTabKind() {
+    func testTypeLabelNamesThePanelKind() {
         XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(panelType: .terminal)).typeLabel, "Terminal")
         XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(panelType: .browser)).typeLabel, "Browser")
         XCTAssertEqual(PanelSheetDetailBuilder.build(inputs(panelType: .markdown)).typeLabel, "Markdown")

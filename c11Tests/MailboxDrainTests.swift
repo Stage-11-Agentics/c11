@@ -163,7 +163,7 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertEqual(MailboxDrain.claimPending(inbox: inbox).claimed.first?.recipient, "watcher")
     }
 
-    func testTabInboxIsTheLowercasedTabUUID() throws {
+    func testPanelInboxIsTheLowercasedPanelUUID() throws {
         let panel = UUID(uuidString: "B3A3DFEF-0A83-4887-BBE9-FDE27516A3B5")!
         let root = URL(fileURLWithPath: "/tmp/m", isDirectory: true)
         XCTAssertEqual(
@@ -191,7 +191,7 @@ final class MailboxDrainTests: XCTestCase {
             .appendingPathComponent(panel.uuidString.lowercased(), isDirectory: true)
     }
 
-    func testTabInboxURLsFindsAMovedTabsInboxInAnotherWorkspace() throws {
+    func testPanelInboxURLsFindsAMovedPanelsInboxInAnotherWorkspace() throws {
         let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
         let panel = UUID(), stale = UUID(), current = UUID(), unrelated = UUID()
         try FileManager.default.createDirectory(at: workspaceInbox(root, current, panel), withIntermediateDirectories: true)
@@ -207,7 +207,7 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertEqual(both.map(\.path), [workspaceInbox(root, stale, panel).path, workspaceInbox(root, current, panel).path])
     }
 
-    func testTabInboxScanIsReusedWithinItsInterval() throws {
+    func testPanelInboxScanIsReusedWithinItsInterval() throws {
         let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
         let cache = inbox.deletingLastPathComponent().appendingPathComponent("scan-cache")
         let panel = UUID(), first = UUID(), later = UUID()

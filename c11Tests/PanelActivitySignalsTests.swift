@@ -9,7 +9,7 @@ import Bonsplit
 
 /// The tab sheet's `active`, `touched`, `turn`, `tools` and `tokens` clocks:
 /// scrollback-growth filtering, text formatting, clock assembly and order.
-final class TabActivitySignalsTests: XCTestCase {
+final class PanelActivitySignalsTests: XCTestCase {
 
     // MARK: - Scrollback growth (plain terminals)
 

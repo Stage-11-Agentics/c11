@@ -994,7 +994,7 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
         XCTAssertTrue(routineSnapshot.flags.isEmpty)
     }
 
-    func testSuppressionIsScopedToExactWorkspaceAndTab() {
+    func testSuppressionIsScopedToExactWorkspaceAndPanel() {
         let surfaceId = UUID()
         let suppressed = PanelAttentionSnapshot(
             workspaceId: UUID(), surfaceId: surfaceId, flagReason: nil,

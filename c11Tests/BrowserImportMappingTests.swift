@@ -157,7 +157,7 @@ final class BrowserImportMappingTests: XCTestCase {
         XCTAssertEqual(presentation.settingsStatus, .visible)
     }
 
-    func testBrowserImportHintPresentationHidesBlankTabHintWhenDismissed() {
+    func testBrowserImportHintPresentationHidesBlankPanelHintWhenDismissed() {
         let presentation = BrowserImportHintPresentation(
             variant: .floatingCard,
             showOnBlankPanels: true,

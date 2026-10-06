@@ -13,7 +13,7 @@ import XCTest
 /// had in the snapshot. External consumers (Lattice, CLI, socket tests) cache
 /// panel IDs, so the restore path must preserve them — not mint fresh UUIDs and
 /// remap them internally the way pre-Phase-1 code did.
-final class TabIdentityRestoreTests: XCTestCase {
+final class PanelIdentityRestoreTests: XCTestCase {
     @MainActor
     func testDuplicateRecordsAndLayoutReferencesRestoreOnceAndSurviveSecondRestore() throws {
         let workspace = Workspace()
@@ -66,7 +66,7 @@ final class TabIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testTerminalTabIdIsStableAcrossRoundTrip() throws {
+    func testTerminalPanelIdIsStableAcrossRoundTrip() throws {
         let workspace = Workspace()
         let originalPanelIds = Set(workspace.panels.keys)
         XCTAssertEqual(originalPanelIds.count, 1, "Workspace() should seed exactly one terminal panel")
@@ -87,7 +87,7 @@ final class TabIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testMarkdownTabIdIsStableAcrossRoundTrip() throws {
+    func testMarkdownPanelIdIsStableAcrossRoundTrip() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-panel-identity-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -118,7 +118,7 @@ final class TabIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testBrowserTabIdIsStableAcrossRoundTrip() throws {
+    func testBrowserPanelIdIsStableAcrossRoundTrip() throws {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let browserPanel = try XCTUnwrap(
@@ -141,7 +141,7 @@ final class TabIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testMixedTabTypesAllSurviveRoundTripWithSameIds() throws {
+    func testMixedPanelTypesAllSurviveRoundTripWithSameIds() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-panel-identity-mixed-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

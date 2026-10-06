@@ -723,7 +723,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     /// spawned task does not inherit `@MainActor`; this test exercises
     /// it from `@MainActor` (the deadlock-prone caller context) and
     /// asserts the actor's data is observable inside the timeout.
-    func testReadConversationsByTabIdSyncReturnsLiveData() async throws {
+    func testReadConversationsByPanelIdSyncReturnsLiveData() async throws {
         let surfaceA = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
         let surfaceB = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
 
@@ -760,7 +760,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     }
 
     /// Sanity check the empty-store contract.
-    func testReadConversationsByTabIdSyncEmptyStoreReturnsEmpty() async throws {
+    func testReadConversationsByPanelIdSyncEmptyStoreReturnsEmpty() async throws {
         // setUp clears the store; nothing else pushed.
         let captured: [String: PanelConversations] = await MainActor.run {
             Workspace.readConversationsByPanelIdSync(timeout: 1.0)

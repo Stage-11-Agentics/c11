@@ -58,7 +58,7 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertTrue(decoded.placeholder)
     }
 
-    func testTabConversationsCodableEmitsHistoryArrayExplicitly() throws {
+    func testPanelConversationsCodableEmitsHistoryArrayExplicitly() throws {
         let surface = PanelConversations(active: nil, history: [])
         let data = try JSONEncoder().encode(surface)
         let json = String(data: data, encoding: .utf8) ?? ""

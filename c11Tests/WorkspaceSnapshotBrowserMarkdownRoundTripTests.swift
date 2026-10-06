@@ -38,7 +38,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
     // MARK: - Tests
 
     /// Apply a plan with one terminal + one browser, capture, check kinds.
-    func testBrowserTabKindRoundTrips() throws {
+    func testBrowserPanelKindRoundTrips() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),

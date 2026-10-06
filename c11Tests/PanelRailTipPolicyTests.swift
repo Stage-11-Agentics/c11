@@ -7,7 +7,7 @@ import XCTest
 #endif
 
 /// Host-free tests for the rail-tip trigger. Runs in `c11LogicTests`.
-final class TabRailTipPolicyTests: XCTestCase {
+final class PanelRailTipPolicyTests: XCTestCase {
 
     private final class MemoryStore: PanelRailTipStoring {
         var stringsByKey: [String: [String]] = [:]

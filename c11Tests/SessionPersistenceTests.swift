@@ -107,7 +107,7 @@ final class WindowGeometryPersistenceTests: XCTestCase {
 
 final class SessionPersistenceTests: XCTestCase {
     @MainActor
-    func testWorkspaceSessionSnapshotRestoresMarkdownTab() throws {
+    func testWorkspaceSessionSnapshotRestoresMarkdownPanel() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-markdown-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -489,7 +489,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(SessionPersistenceStore.loadHistorySnapshot(from: outsideURL, forSnapshot: snapshotURL))
     }
 
-    func testSessionTabSnapshotCustomColorRoundTrip() throws {
+    func testSessionPanelSnapshotCustomColorRoundTrip() throws {
         let panelId = UUID()
         let snapshot = SessionPanelSnapshot(
             id: panelId,
@@ -520,7 +520,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.id, panelId)
     }
 
-    func testSessionTabSnapshotCustomColorOmittedWhenNil() throws {
+    func testSessionPanelSnapshotCustomColorOmittedWhenNil() throws {
         let snapshot = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
@@ -551,7 +551,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.customColor)
     }
 
-    func testSessionTabSnapshotDecodesLegacyJSONWithoutCustomColor() throws {
+    func testSessionPanelSnapshotDecodesLegacyJSONWithoutCustomColor() throws {
         let panelId = UUID()
         // Hand-rolled legacy JSON without the customColor field; mirrors a
         // pre-C11-10 snapshot. Must decode with customColor == nil.
@@ -580,7 +580,7 @@ final class SessionPersistenceTests: XCTestCase {
     /// decode-tolerate yet silently never encode (a persistence no-op a naive
     /// nil-on-both-sides test would pass). Asserting the JSON key is present
     /// AND a real value round-trips catches that.
-    func testSessionTabSnapshotLastActivityAtRoundTrip() throws {
+    func testSessionPanelSnapshotLastActivityAtRoundTrip() throws {
         let panelId = UUID()
         let floor = Date(timeIntervalSince1970: 1_700_000_123)
         var snapshot = SessionPanelSnapshot(
@@ -602,7 +602,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     /// Pre-C11-164 snapshots have no `last_activity_at` key; they must decode
     /// with `lastActivityAt == nil` (no floor, prior behaviour) — not throw.
-    func testSessionTabSnapshotDecodesLegacyJSONWithoutLastActivity() throws {
+    func testSessionPanelSnapshotDecodesLegacyJSONWithoutLastActivity() throws {
         let panelId = UUID()
         let legacyJSON = """
         {
@@ -619,7 +619,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.lastActivityAt)
     }
 
-    func testSessionTabSnapshotLogicalCreationRoundTrip() throws {
+    func testSessionPanelSnapshotLogicalCreationRoundTrip() throws {
         let createdAt = Date(timeIntervalSince1970: 1_700_000_456)
         let snapshot = SessionPanelSnapshot(
             id: UUID(),
@@ -646,7 +646,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.createdAt, createdAt)
     }
 
-    func testSessionTabSnapshotLegacyCreationIsNotInvented() throws {
+    func testSessionPanelSnapshotLegacyCreationIsNotInvented() throws {
         let panelId = UUID()
         let legacyJSON = """
         {
@@ -864,7 +864,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(object["height"]), 704.5, accuracy: 0.001)
     }
 
-    func testSessionBrowserTabSnapshotHistoryRoundTrip() throws {
+    func testSessionBrowserPanelSnapshotHistoryRoundTrip() throws {
         let profileID = try XCTUnwrap(UUID(uuidString: "8F03A658-5A84-428B-AD03-5A6D04692F64"))
         let source = SessionBrowserPanelSnapshot(
             urlString: "https://example.com/current",
@@ -913,7 +913,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(SessionSnapshotSchema.currentVersion, 1)
     }
 
-    func testSessionBrowserTabSnapshotHistoryDecodesWhenKeysAreMissing() throws {
+    func testSessionBrowserPanelSnapshotHistoryDecodesWhenKeysAreMissing() throws {
         let json = """
         {
           "urlString": "https://example.com/current",

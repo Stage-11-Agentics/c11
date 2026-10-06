@@ -95,7 +95,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
         )
     }
 
-    func testTabConversationsCodableEmitsHistoryAsArrayNotOmitted() throws {
+    func testPanelConversationsCodableEmitsHistoryAsArrayNotOmitted() throws {
         // v1 contract: history is written as `[]`, not omitted, for stable
         // JSON output across v1/v2.
         let panel = SessionPanelSnapshot(

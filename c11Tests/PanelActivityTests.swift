@@ -8,7 +8,7 @@ import XCTest
 
 /// Pure tests for `SurfaceActivityTracker`. Per `CLAUDE.md`, never run
 /// locally — CI only.
-final class TabActivityTests: XCTestCase {
+final class PanelActivityTests: XCTestCase {
 
     func testRecordActivityIsAsyncButReadable() {
         let tracker = PanelActivityTracker()
@@ -48,7 +48,7 @@ final class TabActivityTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(read).timeIntervalSince1970, later.timeIntervalSince1970, accuracy: 0.001)
     }
 
-    func testEmptyOrWhitespaceTabIdIgnored() {
+    func testEmptyOrWhitespacePanelIdIgnored() {
         let tracker = PanelActivityTracker()
         tracker.recordActivity(surfaceId: "", at: Date())
         tracker.recordActivity(surfaceId: "   ", at: Date())
@@ -68,7 +68,7 @@ final class TabActivityTests: XCTestCase {
         XCTAssertEqual(snap.count, 2)
     }
 
-    func testClearWipesTabOnly() {
+    func testClearWipesPanelOnly() {
         let tracker = PanelActivityTracker()
         let now = Date()
         tracker.recordActivity(surfaceId: "S1", at: now)

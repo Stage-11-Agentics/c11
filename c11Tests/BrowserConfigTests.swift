@@ -1104,7 +1104,7 @@ final class BrowserDeveloperToolsShortcutDefaultsTests: XCTestCase {
 
 @MainActor
 final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
-    func testBrowserTabEnablesInspectableWebViewAndDeveloperExtras() {
+    func testBrowserPanelEnablesInspectableWebViewAndDeveloperExtras() {
         let panel = BrowserPanel(workspaceId: UUID())
         let developerExtras = panel.webView.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool
         XCTAssertEqual(developerExtras, true)
@@ -1114,7 +1114,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
         }
     }
 
-    func testBrowserTabRefreshesUnderPageBackgroundColorWhenGhosttyBackgroundChanges() {
+    func testBrowserPanelRefreshesUnderPageBackgroundColorWhenGhosttyBackgroundChanges() {
         let panel = BrowserPanel(workspaceId: UUID())
         let updatedColor = NSColor(srgbRed: 0.18, green: 0.29, blue: 0.44, alpha: 1.0)
         let updatedOpacity = 0.57
@@ -1158,7 +1158,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
         XCTAssertFalse(panel.isShowingNewPanelPage)
     }
 
-    func testBrowserTabThemeModeUpdatesWebViewAppearance() {
+    func testBrowserPanelThemeModeUpdatesWebViewAppearance() {
         let panel = BrowserPanel(workspaceId: UUID())
 
         panel.setBrowserThemeMode(.dark)
@@ -1171,7 +1171,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
         XCTAssertNil(panel.webView.appearance)
     }
 
-    func testBrowserTabRefreshesUnderPageBackgroundColorWithGhosttyOpacity() {
+    func testBrowserPanelRefreshesUnderPageBackgroundColorWithGhosttyOpacity() {
         let panel = BrowserPanel(workspaceId: UUID())
         let updatedColor = NSColor(srgbRed: 0.18, green: 0.29, blue: 0.44, alpha: 1.0)
 
@@ -1400,8 +1400,8 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
 }
 
 
-final class BrowserNavigationNewTabDecisionTests: XCTestCase {
-    func testLinkActivatedCmdClickOpensInNewTab() {
+final class BrowserNavigationNewPanelDecisionTests: XCTestCase {
+    func testLinkActivatedCmdClickOpensInNewPanel() {
         XCTAssertTrue(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
@@ -1411,7 +1411,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testLinkActivatedMiddleClickOpensInNewTab() {
+    func testLinkActivatedMiddleClickOpensInNewPanel() {
         XCTAssertTrue(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
@@ -1421,7 +1421,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testLinkActivatedPlainLeftClickStaysInCurrentTab() {
+    func testLinkActivatedPlainLeftClickStaysInCurrentPanel() {
         XCTAssertFalse(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
@@ -1431,7 +1431,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testOtherNavigationMiddleClickOpensInNewTab() {
+    func testOtherNavigationMiddleClickOpensInNewPanel() {
         XCTAssertTrue(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .other,
@@ -1441,7 +1441,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testOtherNavigationLeftClickStaysInCurrentTab() {
+    func testOtherNavigationLeftClickStaysInCurrentPanel() {
         XCTAssertFalse(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .other,
@@ -1451,7 +1451,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testLinkActivatedButtonFourWithoutMiddleIntentStaysInCurrentTab() {
+    func testLinkActivatedButtonFourWithoutMiddleIntentStaysInCurrentPanel() {
         XCTAssertFalse(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
@@ -1462,7 +1462,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testLinkActivatedButtonFourWithRecentMiddleIntentOpensInNewTab() {
+    func testLinkActivatedButtonFourWithRecentMiddleIntentOpensInNewPanel() {
         XCTAssertTrue(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .linkActivated,
@@ -1497,7 +1497,7 @@ final class BrowserNavigationNewTabDecisionTests: XCTestCase {
         )
     }
 
-    func testNonLinkNavigationNeverForcesNewTab() {
+    func testNonLinkNavigationNeverForcesNewPanel() {
         XCTAssertFalse(
             browserNavigationShouldOpenInNewPanel(
                 navigationType: .reload,
@@ -1553,7 +1553,7 @@ final class BrowserPopupDecisionTests: XCTestCase {
 
 
 final class BrowserNilTargetFallbackDecisionTests: XCTestCase {
-    func testOtherNavigationDoesNotFallbackToNewTab() {
+    func testOtherNavigationDoesNotFallbackToNewPanel() {
         XCTAssertFalse(
             browserNavigationShouldFallbackNilTargetToNewPanel(
                 navigationType: .other
@@ -1561,7 +1561,7 @@ final class BrowserNilTargetFallbackDecisionTests: XCTestCase {
         )
     }
 
-    func testLinkActivatedNavigationFallsBackToNewTab() {
+    func testLinkActivatedNavigationFallsBackToNewPanel() {
         XCTAssertTrue(
             browserNavigationShouldFallbackNilTargetToNewPanel(
                 navigationType: .linkActivated
@@ -1621,7 +1621,7 @@ final class BrowserPopupContentRectTests: XCTestCase {
 
 @MainActor
 final class BrowserJavaScriptDialogDelegateTests: XCTestCase {
-    func testBrowserTabUIDelegateImplementsJavaScriptDialogSelectors() {
+    func testBrowserPanelUIDelegateImplementsJavaScriptDialogSelectors() {
         let panel = BrowserPanel(workspaceId: UUID())
         guard let uiDelegate = panel.webView.uiDelegate as? NSObject else {
             XCTFail("Expected BrowserPanel webView.uiDelegate to be an NSObject")
@@ -1755,7 +1755,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
         XCTAssertNotNil(panel.webView.uiDelegate)
     }
 
-    func testWebViewReplacementPreservesEmptyNewTabRenderState() async {
+    func testWebViewReplacementPreservesEmptyNewPanelRenderState() async {
         let panel = BrowserPanel(workspaceId: UUID())
         defer { panel.close() }
         XCTAssertFalse(panel.shouldRenderWebView)
@@ -1824,7 +1824,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
         XCTAssertEqual(panel.debugWebContentReplacementCount, 2)
     }
 
-    func testResetSidebarContextClearsBrowserPanelsIntoNewTabState() throws {
+    func testResetSidebarContextClearsBrowserPanelsIntoNewPanelState() throws {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let contextPanelId = try XCTUnwrap(workspace.focusedPanelId)

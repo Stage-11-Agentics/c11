@@ -79,7 +79,7 @@ final class WorkspaceFlashTests: XCTestCase {
         XCTAssertTrue(workspace.persistentFlashPanels.isEmpty)
     }
 
-    func testCancelOnUnregisteredTabIsIdempotent() {
+    func testCancelOnUnregisteredPanelIsIdempotent() {
         let workspace = Workspace(title: "flash-test")
         let panelId = UUID()
         // No prior persistent flash; cancel should not crash or alter state.
@@ -117,7 +117,7 @@ final class WorkspaceFlashTests: XCTestCase {
         workspace.cancelPersistentFlash(panelId: panelId)
     }
 
-    func testTeardownAllTabsCancelsEveryPersistentFlash() {
+    func testTeardownAllPanelsCancelsEveryPersistentFlash() {
         let workspace = Workspace(title: "flash-test")
         let panelA = UUID()
         let panelB = UUID()

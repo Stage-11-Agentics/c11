@@ -351,7 +351,7 @@ final class AttentionModelTests: XCTestCase {
         }
     }
 
-    func testTabResolverUsesSuppressionOnlyForExactUnreadDemand() {
+    func testPanelResolverUsesSuppressionOnlyForExactUnreadDemand() {
         XCTAssertEqual(
             PanelActivityResolver.resolve(
                 hasExactSurfaceNotification: true,

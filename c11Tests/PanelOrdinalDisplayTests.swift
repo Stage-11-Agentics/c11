@@ -11,7 +11,7 @@ import XCTest
 /// the "N: title" prefix composition, and the ref field on the M7
 /// title-bar socket payload.
 @MainActor
-final class TabOrdinalDisplayTests: XCTestCase {
+final class PanelOrdinalDisplayTests: XCTestCase {
 
     // MARK: - Settings resolver
 

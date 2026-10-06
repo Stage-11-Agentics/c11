@@ -8,7 +8,7 @@ import Bonsplit
 #endif
 
 /// The Panel layout setting (Strip | Rail) and the per-area rail memory.
-final class TabLayoutSettingsTests: XCTestCase {
+final class PanelLayoutSettingsTests: XCTestCase {
     private func makeSuite() -> UserDefaults {
         UserDefaults(suiteName: "TabLayoutSettingsTests.\(UUID().uuidString)")!
     }

@@ -1234,8 +1234,8 @@ final class GhosttyTerminalStartupEnvironmentTests: XCTestCase {
 }
 
 @MainActor
-final class BrowserTabRemoteStoreTests: XCTestCase {
-    func testRemoteWorkspaceTabsShareWorkspaceScopedWebsiteDataStore() {
+final class BrowserPanelRemoteStoreTests: XCTestCase {
+    func testRemoteWorkspacePanelsShareWorkspaceScopedWebsiteDataStore() {
         let localPanel = BrowserPanel(workspaceId: UUID(), isRemoteWorkspace: false)
         let remoteWorkspaceId = UUID()
         let firstRemotePanel = BrowserPanel(

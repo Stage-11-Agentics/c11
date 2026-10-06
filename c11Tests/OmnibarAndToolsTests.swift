@@ -794,7 +794,7 @@ final class OmnibarSuggestionRankingTests: XCTestCase {
         XCTAssertFalse(remoteCompletions.isEmpty, "Expected remote suggestions to be present for two-char query")
     }
 
-    func testGmQueryWithRemoteSuggestionsAndOpenTabPromotesAutocompletionMatch() {
+    func testGmQueryWithRemoteSuggestionsAndOpenPanelPromotesAutocompletionMatch() {
         let entries: [BrowserHistoryStore.Entry] = [
             .init(
                 id: UUID(),

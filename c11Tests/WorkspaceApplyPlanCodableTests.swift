@@ -75,7 +75,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     // MARK: - SurfaceSpec
 
-    func testTabSpecTerminalRoundTrips() throws {
+    func testPanelSpecTerminalRoundTrips() throws {
         let spec = PanelSpec(
             id: "main",
             kind: .terminal,
@@ -97,7 +97,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
-    func testTabSpecBrowserRoundTrips() throws {
+    func testPanelSpecBrowserRoundTrips() throws {
         let spec = PanelSpec(
             id: "docs",
             kind: .browser,
@@ -107,7 +107,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
-    func testTabSpecCompanionFieldsRoundTrip() throws {
+    func testPanelSpecCompanionFieldsRoundTrip() throws {
         let browser = PanelSpec(
             id: "browser",
             kind: .browser,
@@ -122,7 +122,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(agent)
     }
 
-    func testTabSpecDecodesPrefeatureShapeWithoutCompanionFields() throws {
+    func testPanelSpecDecodesPrefeatureShapeWithoutCompanionFields() throws {
         let legacyJSON = #"{"id":"t","kind":"terminal"}"#
         let decoded = try decode(PanelSpec.self, from: Data(legacyJSON.utf8))
         XCTAssertNil(decoded.linkedAgentSurfacePlanId)
@@ -130,7 +130,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertFalse(decoded.submitCommand)
     }
 
-    func testTabSpecMarkdownRoundTrips() throws {
+    func testPanelSpecMarkdownRoundTrips() throws {
         let spec = PanelSpec(
             id: "notes",
             kind: .markdown,
@@ -140,7 +140,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
-    func testTabSpecPreservesMailboxStarKeysVerbatim() throws {
+    func testPanelSpecPreservesMailboxStarKeysVerbatim() throws {
         // Per docs/c11-13-cmux-37-alignment.md: the mailbox.* namespace
         // round-trips without normalization. The string-value type guard
         // lives in the executor, not the Codable layer, so a non-string value
@@ -166,7 +166,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     // MARK: - SurfaceSpec.submitCommand (opt-in, back-compat)
 
-    func testTabSpecSubmitCommandRoundTrips() throws {
+    func testPanelSpecSubmitCommandRoundTrips() throws {
         let spec = PanelSpec(
             id: "launcher",
             kind: .terminal,
@@ -181,7 +181,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     /// An older plan/snapshot serialized before `submitCommand` existed has no
     /// such key. Swift's *synthesized* decoder would throw `keyNotFound`; the
     /// custom `init(from:)` must instead default it to `false`.
-    func testTabSpecDecodesMissingSubmitCommandAsFalse() throws {
+    func testPanelSpecDecodesMissingSubmitCommandAsFalse() throws {
         let legacyJSON = #"{"id":"t","kind":"terminal","command":"ls"}"#
         let decoded = try decode(PanelSpec.self, from: Data(legacyJSON.utf8))
         XCTAssertFalse(decoded.submitCommand)
@@ -190,7 +190,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     /// When `submitCommand` is `false` the encoder omits the key entirely, so
     /// serialized output for every pre-existing spec stays byte-identical.
-    func testTabSpecOmitsSubmitCommandWhenFalse() throws {
+    func testPanelSpecOmitsSubmitCommandWhenFalse() throws {
         let spec = PanelSpec(id: "t", kind: .terminal, command: "ls")
         let json = String(data: try encode(spec), encoding: .utf8) ?? ""
         XCTAssertFalse(json.contains("submitCommand"), "false must not serialize; got \(json)")

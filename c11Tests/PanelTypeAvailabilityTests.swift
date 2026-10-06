@@ -9,7 +9,7 @@ import XCTest
 /// Host-free unit tests for `SurfaceTypeAvailability` — the pure gate that both
 /// the UI spawn affordances and the socket/CLI creation handlers consult to
 /// decide whether a browser or markdown surface may be created.
-final class TabTypeAvailabilityTests: XCTestCase {
+final class PanelTypeAvailabilityTests: XCTestCase {
 
     private func freshDefaults() -> UserDefaults {
         UserDefaults(suiteName: "TabTypeAvailabilityTests.\(UUID().uuidString)")!

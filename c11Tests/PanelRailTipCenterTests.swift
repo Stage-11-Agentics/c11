@@ -28,7 +28,7 @@ private final class TipMemoryStore: PanelRailTipStoring {
 /// C11-249: the rail tip's Undo and count-cell paths on a real workspace, with
 /// the front area named directly (no window, popover or app state).
 @MainActor
-final class TabRailTipCenterTests: XCTestCase {
+final class PanelRailTipCenterTests: XCTestCase {
     private struct Rig {
         let manager: WorkspaceManager
         let workspace: Workspace

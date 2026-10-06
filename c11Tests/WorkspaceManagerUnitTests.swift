@@ -737,7 +737,7 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertTrue(secondWorkspace.panels.isEmpty)
     }
 
-    func testGenericCloseTabKeepsWorkspaceOpenWithoutExplicitCloseMarker() {
+    func testGenericClosePanelKeepsWorkspaceOpenWithoutExplicitCloseMarker() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let initialPanelId = workspace.focusedPanelId else {

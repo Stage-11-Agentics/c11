@@ -727,7 +727,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
         XCTAssertNotEqual(base, changedDisplayName)
     }
 
-    func testSwitcherFingerprintTracksTabValuesAtSameCardinality() {
+    func testSwitcherFingerprintTracksPanelValuesAtSameCardinality() {
         let windowID = UUID()
         let workspaceID = UUID()
         let surfaceID = UUID()

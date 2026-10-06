@@ -28,8 +28,8 @@ jobs:
       - name: Validate c11 scheme test configuration
         run: ./tests/test_ci_scheme_testaction_debug.sh
 
-      - name: Validate the native backstop's already-green skip
-        run: ./tests/test_ci_commit_tested_green.sh
+      - name: Validate the native backstop's target and skip selection
+        run: ./tests/test_ci_backstop_target.sh
 
       - name: Validate GhosttyKit checksum verification
         run: ./tests/test_ci_ghosttykit_checksum_verification.sh

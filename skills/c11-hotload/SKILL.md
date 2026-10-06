@@ -25,10 +25,13 @@ The Atlas route admits at most two builds with separate per-tag caches. After on
 
 GitHub's native CI for main runs on the free GitHub-hosted `macos-15` runner.
 PRs keep the cheap Ubuntu lane. `ci-hourly.yml` ("CI main (macOS)") runs on
-each push to main and by dispatch; one build runs at a time, a burst of merges
-collapses to one run on the newest main, and a commit that already passed
-skips. `ci-macos-compat.yml` and `build-ghosttykit.yml` run hourly/manual
-against main. Each heavy workflow command uses
+each push to main and by dispatch. One build runs at a time, never cancelled,
+with one pending run that each newer push replaces. An admitted run tests the
+ref's tip at that moment, not its trigger, so every push is followed by a run
+that tests a main containing it. A pass posts a `CI main (macOS)` commit status
+on the tested commit; a run whose tip already has one skips.
+`ci-macos-compat.yml` and `build-ghosttykit.yml` run hourly/manual against main.
+Each heavy workflow command uses
 `scripts/with-build-lock.sh`; the process-scoped Xcode/Zig setup does not install
 into `/usr/local` or change global Xcode state. No self-hosted runner is
 registered or used in this PR. An access-restricted runner is a follow-up that

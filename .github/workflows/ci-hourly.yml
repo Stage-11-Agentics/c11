@@ -2,9 +2,12 @@ name: CI main (macOS)
 
 # Native backstop for main: the app build, logic tests and host tests. It runs
 # when main changes, not on a clock. The concurrency group never cancels a
-# running build; GitHub holds one pending run per group and replaces it with
-# each newer push, so a burst of merges collapses to one run at a time, each
-# testing the newest main. A commit that already passed this workflow skips.
+# running build and holds at most one pending run, which each newer push
+# replaces. GitHub can admit an older push's run after a newer one, so a run
+# does not test its trigger: once admitted, it resolves the ref's tip once and
+# tests that commit. Every push is therefore followed by a run that starts after
+# it and tests a main that contains it. A pass posts a "CI main (macOS)" success
+# status on the tested commit; a run whose tip already has one skips the build.
 on:
   push:
     branches: [main]
@@ -22,39 +25,49 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  GREEN_STATUS_CONTEXT: CI main (macOS)
+
 jobs:
-  already-green:
+  target:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
+      statuses: read
     outputs:
-      tested: ${{ steps.check.outputs.tested }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check for a green run of this commit
-        id: check
-        if: ${{ !inputs.force }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          WORKFLOW_PATH="${GITHUB_WORKFLOW_REF%@*}"
-          tested="$(./scripts/ci-commit-tested-green.sh "$GITHUB_REPOSITORY" "${WORKFLOW_PATH##*/}" "$GITHUB_SHA" "$GITHUB_RUN_ID")"
-          echo "tested=$tested" >> "$GITHUB_OUTPUT"
-
-  build:
-    needs: already-green
-    if: needs.already-green.outputs.tested != 'true'
-    # Free standard runner (3 cores); the XLarge build took about 10 minutes.
-    runs-on: macos-15
-    timeout-minutes: 90
+      sha: ${{ steps.select.outputs.sha }}
+      tested: ${{ steps.select.outputs.tested }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          sparse-checkout: scripts/ci-backstop-target.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the ref's tip and its green record
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci-backstop-target.sh "$GITHUB_REPOSITORY" "$GITHUB_REF" "$GITHUB_SHA" "$GREEN_STATUS_CONTEXT" | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    needs: target
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    # Free standard runner (3 cores); the XLarge build took about 10 minutes.
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
           submodules: recursive
 
       - name: Select Xcode
@@ -216,3 +229,16 @@ jobs:
           # leave on the main queue starves later classes' deferred-mount waits.
           host_tests -only-testing:c11Tests -skip-testing:c11Tests/AppDelegateShortcutRoutingTests
           host_tests -only-testing:c11Tests/AppDelegateShortcutRoutingTests
+
+      - name: Record green for the tested commit
+        # Best effort: without the status the next run rebuilds this commit.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=success \
+            -f context="$GREEN_STATUS_CONTEXT" \
+            -f description="Native build, logic and host tests passed" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

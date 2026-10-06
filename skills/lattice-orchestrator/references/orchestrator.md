@@ -143,11 +143,11 @@ exact review/gate against a base another merge is about to replace.
 
 For c11 1.0, `.github/workflows/ci.yml` is the PR fast lane only: require its
 workflow guards, remote-daemon tests, and web typecheck. The native app build,
-logic/host tests run on each push to main (one run at a time, newest main) and
+logic/host tests run after each push to main (one run at a time; each admitted
+run tests main's tip at that moment, so every push is covered by a later run) and
 compatibility smoke and GhosttyKit packaging run hourly, all on the free
 GitHub-hosted `macos-15` runner and never on fork pull requests. The Merge
-Captain does not wait for a main run
-to land a ready PR. At the exact PR head, require fresh review evidence, the
+Captain does not wait for a main run to land a ready PR. At the exact PR head, require fresh review evidence, the
 cheap checks, and `scripts/remote-build.sh` on Atlas for every Swift or native
 change. This is an exact-head gate after the branch includes current
 `origin/main`; a docs-only change is exempt only when the diff is limited to

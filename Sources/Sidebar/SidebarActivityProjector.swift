@@ -67,6 +67,11 @@ struct AgentActivityHelpProjection: Equatable {
                 localized: "surface.activity.flagged",
                 defaultValue: "Flagged: \(normalizedReason)"
             ))
+        } else if flagReason != nil {
+            detailLines.append(String(
+                localized: "surface.activity.flaggedNoReason",
+                defaultValue: "Flagged"
+            ))
         }
         if suppressed {
             detailLines.append(String(

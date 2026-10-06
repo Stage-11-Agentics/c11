@@ -2660,6 +2660,7 @@ class TerminalController {
                 "tty": v2OrNull(workspace.tabTTYNames[panel.id])
             ]
             v2SetSeenFields(&item, panelId: panel.id)
+            v2SetPromptCacheField(&item, panelId: panel.id)
 
             if panel.panelType == .browser, let browserTab = panel as? BrowserTab {
                 item["url"] = browserTab.currentURL?.absoluteString ?? ""

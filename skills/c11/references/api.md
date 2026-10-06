@@ -643,6 +643,18 @@ Every area's JSON output includes: `pixel_rect`, `percent_rect`, `h_range` / `v_
 
 Every tab node (in `tree --json` and `tab.list`) also carries `last_seen_at` and `being_seen`: when the operator last looked at that tab. A tab is *being seen* while it is the selected tab of the focused area, in the selected workspace of the key c11 window, with c11 frontmost, that window on the active Space and not occluded, and the screen unlocked, awake and out of screensaver. `last_seen_at` is an ISO-8601 UTC timestamp (second precision) of the moment it last stopped being seen (equal to now while `being_seen` is true), or `null` if the operator has never looked at it. A socket focus change while c11 is frontmost DOES stamp the old tab and mark the new one `being_seen`; while c11 is in the background it changes nothing. The value survives relaunch, but it rides the session autosave, so the persisted copy can lag by up to about a minute. Use it to tell tabs the operator has read from ones they have not: `c11 tree --json | jq '.. | objects | select(has("being_seen") and .last_seen_at == null)'`.
 
+Every tab node also carries `prompt_cache`: the agent's prompt cache as of its last model request, read from the harness's transcript on c11's 10-second sweep. It is `null` for a non-agent tab, before the first request, and for harnesses whose files say nothing (opencode, Pi, omp, Kimi, Copilot). Otherwise:
+
+| Field | Meaning |
+|---|---|
+| `state` | `warm` or `cold`. Cold means the next message re-caches the whole context. |
+| `basis` | `ttl`: the provider's published lifetime (Claude Code: 5 minutes, or 1 hour on a subscription within plan), counted from when the request went out. `estimate`: no published lifetime (Codex 2 hours, Grok Build 1 hour, from measured reuse). |
+| `lifetime_seconds` | The TTL or estimated span in effect. |
+| `requested_at`, `cold_at` | ISO-8601. `cold_at` = `requested_at` + `lifetime_seconds`. |
+| `prompt_tokens` | The prompt the next request re-caches once cold; `null` when the harness does not record it (Grok). |
+
+A live idle agent's mark goes cold at `cold_at`, within one sweep. `C11_PROMPT_CACHE_ESTIMATE_SECONDS` (60 to 86400, read at launch) replaces every estimated span for a validation run; it never shortens a published TTL.
+
 ## Notifications
 
 ```bash

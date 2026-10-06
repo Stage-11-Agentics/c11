@@ -10,10 +10,10 @@ enum TabSheetDetailBuilder {
     /// `defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"`.
     static let clockOrderDefaultsKey = "c11.tabSheet.clocks"
     /// Every clock the sheet can show. The default order is `active,seen,launched`;
-    /// `touched` (last operator input), `turn`, `tools` and `tokens` are opt-in
-    /// through the setting.
+    /// `touched` (last operator input), `turn`, `tools`, `tokens` and `cache`
+    /// (time left on the agent's prompt cache) are opt-in through the setting.
     static let defaultClockOrder = ["active", "seen", "launched"]
-    static let optInClocks = ["touched", "turn", "tools", "tokens"]
+    static let optInClocks = ["touched", "turn", "tools", "tokens", "cache"]
 
     struct Inputs {
         var panelType: TabContentType
@@ -60,6 +60,8 @@ enum TabSheetDetailBuilder {
         var journalPhaseSince: Date? = nil
         /// Existing unconfirmed-evidence qualification, appended to the subtitle.
         var evidenceNote: String? = nil
+        /// Agent tabs: the prompt cache from the transcript tail (`cache`).
+        var promptCache: PromptCacheObservation? = nil
         var now: Date = Date()
         var locale: Locale = TabSheetClockText.appLocale
     }
@@ -88,6 +90,9 @@ enum TabSheetDetailBuilder {
             if let tools = input.turnToolCalls { texts["tools"] = String(tools) }
         }
         if let tokens = input.tokens { texts["tokens"] = TabSheetClockText.count(tokens, locale: input.locale) }
+        if let cache = input.promptCache {
+            texts["cache"] = promptCacheClockText(cache, now: input.now, locale: input.locale)
+        }
         return BonsplitTabDetail(
             title: collapsedWhitespace(input.title),
             agentLabel: agentLabel(
@@ -250,6 +255,20 @@ enum TabSheetDetailBuilder {
         agentLastEventAt ?? [outputGrowthAt, commandEdgeAt].compactMap { $0 }.max()
     }
 
+    /// `38m` left while warm (`~1h 5m` for an estimate), `cold` once expired.
+    /// Whole minutes: the sheet refreshes every few seconds, not every second.
+    static func promptCacheClockText(_ cache: PromptCacheObservation, now: Date, locale: Locale) -> String {
+        let remaining = cache.coldAt().timeIntervalSince(now)
+        guard remaining > 0 else {
+            return String(localized: "tabSheet.clock.cacheCold", defaultValue: "cold")
+        }
+        let left = remaining < 60
+            ? String(localized: "tabSheet.clock.cacheUnderMinute", defaultValue: "<1m")
+            : TabSheetClockText.duration((remaining / 60).rounded(.up) * 60, locale: locale)
+        guard cache.isEstimate else { return left }
+        return String(localized: "tabSheet.clock.cacheEstimate", defaultValue: "~\(left)")
+    }
+
     /// Header title for the opt-in clocks (short: the column is narrow).
     static func clockTitle(_ name: String) -> String? {
         switch name {
@@ -257,6 +276,7 @@ enum TabSheetDetailBuilder {
         case "turn": return String(localized: "tabSheet.clock.turn", defaultValue: "Turn")
         case "tools": return String(localized: "tabSheet.clock.tools", defaultValue: "Tools")
         case "tokens": return String(localized: "tabSheet.clock.tokens", defaultValue: "Tokens")
+        case "cache": return String(localized: "tabSheet.clock.cache", defaultValue: "Cache")
         default: return nil
         }
     }
@@ -406,6 +426,9 @@ extension Workspace {
             journalPhaseSince: clock?.since,
             evidenceNote: journal?.isHistorical == true
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
+                : nil,
+            promptCache: AgentIdentityPolicy.isAgentKind(terminalKind)
+                ? AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache
                 : nil
         ))
     }

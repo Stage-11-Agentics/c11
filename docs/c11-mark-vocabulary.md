@@ -2,7 +2,8 @@
 
 The four lifecycle marks drawn beside every tab. Every state is distinguishable from
 every other **by shape alone** — no reliance on color or opacity. Color is thereby free for
-the flagged modifier (flat violet recolor), per `docs/c11-flagged-agent-plan.md`.
+two modifiers: the flag (flat violet recolor, per `docs/c11-flagged-agent-plan.md`) and the
+expired prompt cache (a dark blue cold line, below).
 Suppression consumes no visual channel at all — it is a lifecycle projection, not a
 treatment (see below).
 
@@ -16,7 +17,22 @@ what is inside the cell — full of output, holding a payload, empty, or collaps
 | `working` | 3×3 grid of dots over a faint base square | a cell full of typed output; identically the end state of the animated fill |
 | `waiting` (needs attention) | heavy hollow frame holding a solid core | a stopped frame — same family as idle — with a payload inside for the operator; waiting is literally derived from an unread notification, and the core is the unread thing |
 | `idle` | thin hollow frame | a stopped, empty cell: process present, nothing inside |
-| `cold` | flat line | the collapsed cell: no process |
+| `cold` | flat line | the collapsed cell: the agent is still at its prompt, but its context has gone cold |
+
+**What makes an agent cold.** Cold is a live agent at rest whose next message starts from
+cold. A process that exits leaves no mark at all: the tab becomes a plain terminal.
+
+- **Prompt cache, where c11 can read it.** The mark goes cold when the agent's prompt cache
+  expires, so the next message re-caches its whole context. The cache comes from the
+  harness's own transcript: Claude Code names its tier on every request (5 minutes, or 1 hour
+  on a subscription within plan), counted from when the last request went out; Codex and
+  Grok Build publish no lifetime, so c11 estimates one (Codex 2 hours, Grok 1 hour) from
+  measured reuse. A warm 1-hour agent stays an idle frame for the whole hour.
+- **Dormancy, everywhere else.** An agent with no cache evidence (other harnesses, or before
+  its first request) goes cold after the dormancy threshold: idle and untouched for
+  `sidebarAgentColdThresholdSeconds` (default 10 minutes, 1-60, env
+  `C11_AGENT_COLD_SECONDS`). An agent whose lifecycle comes from its journal (hooks or
+  transcript lifecycle) has no dormancy rule and goes cold only from cache evidence.
 
 Priority order for any UI that ranks states: **needs attention · working · idle · cold.**
 
@@ -39,10 +55,18 @@ Every state occupies the same uniform slot so titles never shift horizontally on
 
 ### Colors
 
-Unchanged — dark theme values from `Sources/Workspace.swift` (`workspacePulseColors`):
+Dark theme values from `Sources/Workspace.swift` (`resolvedSurfaceTabActivityColors`):
 working `#E8E8E8`, waiting `#D0AA45` gold, idle `#9AA0A9`, cold `#62676F`.
 Color remains the fast day-to-day read — redundant reinforcement rather than the
 load-bearing channel.
+
+**Expired prompt cache: dark blue `#3D6DB3`** (`Workspace.promptCacheColdHex`), on the cold
+line only, in both themes. It marks a cold that is a cost: the next message re-caches the
+context. A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two
+differ in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent
+keeps its gold mark: its cache shows in text only (the tab sheet `cache` clock). The tooltip
+names what expired, whether it is an estimate, and how many tokens the next message
+re-caches.
 
 ## Behavior under the modifiers
 
@@ -188,5 +212,8 @@ Two renderers must change in agreement, plus the sidebar sizing rule:
    plus the sidebar sizing at the `min(9, slot)` call site (~line 11324): marks pin to 9pt
    and the slot floors at 9pt instead of compressing to 8pt.
 
-Colors (`Sources/Workspace.swift`) are untouched. The "Static marks" setting is a user
-default (animation on unless set) consumed only by the two renderers' leaf views.
+The lifecycle colors live in `Sources/Workspace.swift`. The two recolors reach bonsplit as a
+plain `colorOverrideHex` on `BonsplitTabActivityPresentation`, so bonsplit never learns
+"flagged" or "prompt cache"; the sidebar mark reads `AgentActivityHelpProjection.promptCacheExpired`.
+The "Static marks" setting is a user default (animation on unless set) consumed only by the
+two renderers' leaf views.

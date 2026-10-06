@@ -5241,12 +5241,19 @@ final class Workspace: Identifiable, ObservableObject {
         .init(backgroundHex: backgroundColor.hexString())
     }
 
+    /// Dark blue: the cold line of an agent whose prompt cache expired, so the
+    /// next message re-caches its whole context. Darker than the flag violet
+    /// (`#9D8AD9`) so the two differ in lightness as well as hue.
+    nonisolated static let promptCacheColdHex = "#3D6DB3"
+
     /// Agent-state palette shared by sidebar workspace pulse marks, the card
     /// agent rollup bar, and bonsplit surface-tab activity chips.
     ///
     /// running/idle/cold are a neutral white-to-gray ramp (running most present,
-    /// cold most receded) so `waiting` gold stays the only chromatic mark in the
-    /// chrome: the brand's deliberate "needs you" signal.
+    /// cold most receded) so `waiting` gold stays the only chromatic lifecycle
+    /// color in the chrome: the brand's deliberate "needs you" signal. Two
+    /// modifiers recolor a mark: the flag's violet and, on a cold mark whose
+    /// agent's prompt cache expired, `promptCacheColdHex`.
     nonisolated static func resolvedSurfaceTabActivityColors(
         from backgroundColor: NSColor
     ) -> BonsplitConfiguration.Appearance.TabActivityColors {
@@ -6788,7 +6795,9 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
         return BonsplitTabActivityPresentation(
-            colorOverrideHex: attention.isFlagged ? "#9D8AD9" : nil,
+            colorOverrideHex: attention.isFlagged
+                ? "#9D8AD9"
+                : (help?.promptCacheExpired == true ? Self.promptCacheColdHex : nil),
             motion: attention.isFlagged
                 ? (activityState == .waiting ? .binaryFlash : .breathe)
                 : nil,
@@ -6831,7 +6840,10 @@ final class Workspace: Identifiable, ObservableObject {
             flagReason: attention.flagReason,
             flagRaisedAt: attention.flagRaisedAt,
             suppressed: attention.suppressed,
-            journal: journalByTab[panelId]
+            journal: journalByTab[panelId],
+            promptCache: state == .cold
+                ? AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache
+                : nil
         )
     }
 

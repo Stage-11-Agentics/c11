@@ -554,4 +554,115 @@ final class TabLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(target?.workspaceId, workspace)
         XCTAssertEqual(target?.panelId, panel)
     }
+
+
+    // MARK: - Prompt cache
+
+    func testPromptCacheDecidesColdOnlyFromFreshEvidence() {
+        let t0 = Date(timeIntervalSince1970: 50_000)
+        let cache = PromptCacheObservation(requestAt: t0, basis: .ttl(300), promptTokens: 10)
+        let fresh = PromptCacheReading(observation: cache, scannedAt: t0.addingTimeInterval(20))
+        let restingSince = t0.addingTimeInterval(10)
+
+        XCTAssertNil(TabLivenessDeriver.isPromptCacheCold(nil, restingSince: restingSince, now: t0))
+        XCTAssertNil(
+            TabLivenessDeriver.isPromptCacheCold(
+                PromptCacheReading(observation: nil, scannedAt: t0.addingTimeInterval(20)),
+                restingSince: restingSince, now: t0.addingTimeInterval(9_999)
+            ),
+            "no cache evidence falls back to dormancy"
+        )
+        XCTAssertEqual(TabLivenessDeriver.isPromptCacheCold(fresh, restingSince: restingSince, now: t0.addingTimeInterval(299)), false)
+        XCTAssertEqual(TabLivenessDeriver.isPromptCacheCold(fresh, restingSince: restingSince, now: t0.addingTimeInterval(300)), true)
+
+        let stale = PromptCacheReading(observation: cache, scannedAt: t0.addingTimeInterval(5))
+        XCTAssertEqual(
+            TabLivenessDeriver.isPromptCacheCold(stale, restingSince: restingSince, now: t0.addingTimeInterval(3_600)),
+            false,
+            "a reading taken before the agent came to rest may predate its last request: fail warm"
+        )
+        XCTAssertEqual(TabLivenessDeriver.isPromptCacheCold(stale, restingSince: nil, now: t0.addingTimeInterval(3_600)), true)
+    }
+
+    func testEstimatesUseTheirOwnSpanOrTheValidationOverride() {
+        let t0 = Date(timeIntervalSince1970: 60_000)
+        let estimate = PromptCacheReading(
+            observation: PromptCacheObservation(requestAt: t0, basis: .estimate(7_200), promptTokens: nil),
+            scannedAt: t0
+        )
+        XCTAssertEqual(TabLivenessDeriver.isPromptCacheCold(estimate, restingSince: nil, now: t0.addingTimeInterval(3_600), estimateOverride: nil), false)
+        XCTAssertEqual(TabLivenessDeriver.isPromptCacheCold(estimate, restingSince: nil, now: t0.addingTimeInterval(7_200), estimateOverride: nil), true)
+        XCTAssertEqual(TabLivenessDeriver.isPromptCacheCold(estimate, restingSince: nil, now: t0.addingTimeInterval(120), estimateOverride: 60), true)
+
+        let published = PromptCacheReading(
+            observation: PromptCacheObservation(requestAt: t0, basis: .ttl(300), promptTokens: nil),
+            scannedAt: t0
+        )
+        XCTAssertEqual(
+            TabLivenessDeriver.isPromptCacheCold(published, restingSince: nil, now: t0.addingTimeInterval(120), estimateOverride: 60),
+            false,
+            "the override never shortens a published TTL"
+        )
+
+        let key = PromptCachePolicy.estimateOverrideEnvironmentKey
+        XCTAssertNil(PromptCachePolicy.parseEstimateOverride(environment: [:]))
+        XCTAssertNil(PromptCachePolicy.parseEstimateOverride(environment: [key: "soon"]))
+        XCTAssertEqual(PromptCachePolicy.parseEstimateOverride(environment: [key: "5"]), 60)
+        XCTAssertEqual(PromptCachePolicy.parseEstimateOverride(environment: [key: "90"]), 90)
+    }
+
+    func testResolverNeverShowsAWorkingAgentCold() {
+        XCTAssertEqual(
+            TabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: .working,
+                isCold: true,
+                terminalType: "claude-code"
+            ),
+            .running
+        )
+        XCTAssertEqual(
+            TabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: nil,
+                isCold: true,
+                terminalType: "claude-code"
+            ),
+            .cold
+        )
+    }
+
+    func testColdHelpNamesAnExpiredPromptCacheAndWhenItExpired() {
+        let now = Date(timeIntervalSince1970: 90_000)
+        let lastActivity = now.addingTimeInterval(-4_000)
+        func project(_ state: WorkspacePulseState, _ cache: PromptCacheObservation?) -> AgentActivityHelpProjection {
+            AgentActivityHelpProjection.project(
+                state: state,
+                lastActivityAt: lastActivity,
+                waitingStartedAt: nil,
+                coldAfterSeconds: 600,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                suppressed: false,
+                now: now,
+                promptCache: cache
+            )
+        }
+        let expired = PromptCacheObservation(requestAt: lastActivity, basis: .ttl(3_600), promptTokens: 182_000)
+        let cold = project(.cold, expired)
+        XCTAssertTrue(cold.promptCacheExpired)
+        XCTAssertEqual(cold.stateStartedAt, now.addingTimeInterval(-400), "cold since the cache expired")
+        XCTAssertEqual(cold.help.detailLines.count, 2, "what expired, and what the next message re-caches")
+
+        let estimated = project(.cold, PromptCacheObservation(requestAt: lastActivity, basis: .estimate(3_600), promptTokens: nil))
+        XCTAssertTrue(estimated.promptCacheExpired)
+        XCTAssertEqual(estimated.help.detailLines.count, 1)
+
+        let dormant = project(.cold, PromptCacheObservation(requestAt: now.addingTimeInterval(-60), basis: .ttl(3_600), promptTokens: nil))
+        XCTAssertFalse(dormant.promptCacheExpired, "a warm cache never paints cold blue")
+        XCTAssertEqual(dormant.stateStartedAt, lastActivity.addingTimeInterval(600))
+
+        XCTAssertFalse(project(.idle, expired).promptCacheExpired, "only the cold mark carries the cache")
+        XCTAssertFalse(project(.waiting, expired).promptCacheExpired)
+    }
 }

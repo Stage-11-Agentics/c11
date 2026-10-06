@@ -894,4 +894,112 @@ final class AgentModelDetectionTests: XCTestCase {
             "Codex · gpt-5.5"
         )
     }
+
+
+    // MARK: - Prompt cache
+
+    private func claudeUser(_ hms: String, toolResult: Bool = false) -> String {
+        let content = toolResult ? #"[{"type":"tool_result","tool_use_id":"t","content":"ok"}]"# : #""go""#
+        return #"{"type":"user","isSidechain":false,"timestamp":"2026-01-01T\#(hms).000Z","message":{"role":"user","content":\#(content)}}"#
+    }
+
+    private func claudeAssistant(
+        _ id: String, _ hms: String, read: Int, written: Int,
+        oneHour: Int = 0, fiveMinute: Int = 0, sidechain: Bool = false
+    ) -> String {
+        #"{"type":"assistant","isSidechain":\#(sidechain),"timestamp":"2026-01-01T\#(hms).000Z","message":{"model":"claude-opus-5-5","id":"\#(id)","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":2,"cache_read_input_tokens":\#(read),"cache_creation_input_tokens":\#(written),"output_tokens":5,"cache_creation":{"ephemeral_1h_input_tokens":\#(oneHour),"ephemeral_5m_input_tokens":\#(fiveMinute)}}}}"#
+    }
+
+    func testClaudePromptCacheAnchorsOnTheRequestAndCarriesItsTier() throws {
+        let lines = [
+            claudeUser("10:00:00"),
+            claudeAssistant("m1", "10:00:20", read: 0, written: 500, oneHour: 500),
+            claudeUser("10:00:25", toolResult: true),
+            claudeAssistant("m2", "10:00:40", read: 1000, written: 0),
+            claudeAssistant("m2", "10:00:41", read: 1000, written: 0),
+        ]
+        try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        let cache = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(cache.requestAt, t("10:00:25"), "the request went out after the tool result, not when its response was written")
+        XCTAssertEqual(cache.basis, .ttl(PromptCachePolicy.anthropicExtendedTTL), "a pure read keeps the tier the session wrote")
+        XCTAssertEqual(cache.promptTokens, 2 + 1000)
+        XCTAssertEqual(cache.coldAt(estimateOverride: nil), t("11:00:25"))
+    }
+
+    func testClaudeFiveMinuteTierIgnoresSidechainsAndResetsAtCompaction() throws {
+        let lines = [
+            claudeUser("10:00:00"),
+            claudeAssistant("m1", "10:00:10", read: 0, written: 300, fiveMinute: 300),
+            claudeAssistant("s1", "10:00:30", read: 0, written: 900, oneHour: 900, sidechain: true),
+        ]
+        let url = try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let r = ref("claude-code", id: claudeId)
+        _ = detect("claude-code", r, &state)
+        XCTAssertEqual(state.signals.promptCache?.basis, .ttl(PromptCachePolicy.anthropicDefaultTTL))
+        XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:00:00"), "a subagent's request does not touch the main cache")
+
+        try append(#"{"type":"system","subtype":"compact_boundary","isSidechain":false,"timestamp":"2026-01-01T10:01:00.000Z"}"# + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertNil(state.signals.promptCache, "compaction replaces the cached prefix")
+
+        try append(claudeUser("10:01:20") + "\n" + claudeAssistant("m2", "10:01:30", read: 0, written: 400, fiveMinute: 400) + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:01:20"))
+    }
+
+    func testClaudeWithoutCacheUseSaysNothingAboutTheCache() throws {
+        let lines = [claudeUser("10:00:00"), claudeAssistant("m1", "10:00:10", read: 0, written: 0)]
+        try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        XCTAssertNil(state.signals.promptCache)
+    }
+
+    func testCodexPromptCacheIsAnEstimateFromTheLastTokenCount() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        try place(codexFixture(id), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        _ = detect("codex", ref("codex", id: id), &state)
+        let cache = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(cache.requestAt, t("09:05:07"))
+        XCTAssertEqual(cache.basis, .estimate(PromptCachePolicy.codexColdAfter))
+        XCTAssertTrue(cache.isEstimate)
+        XCTAssertEqual(cache.promptTokens, 1000, "OpenAI input tokens include the cached part")
+    }
+
+    func testGrokPromptCacheFollowsTheEndOfAVerifiedTurn() throws {
+        let sessionID = "grok-session-cache"
+        let lonelyEnd = #"{"type":"turn_ended","ts":"2026-01-01T06:09:00.000Z","outcome":"completed"}"#
+        let url = try place(Data((lonelyEnd + "\n").utf8), at: "grok-cache/events.jsonl")
+        let r = ref("grok", id: sessionID,
+                   payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+        var state = ModelTailState()
+        _ = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertNil(state.signals.promptCache, "an end with no verified start is not this session's turn")
+
+        try append(#"{"type":"turn_started","ts":"2026-01-01T06:10:00.000Z","turn_number":7,"session_id":"\#(sessionID)","session_relationship":"primary"}"# + "\n", to: url)
+        try append(#"{"type":"turn_ended","ts":"2026-01-01T06:12:00.000Z","outcome":"cancelled"}"# + "\n", to: url)
+        _ = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        let cache = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(cache.requestAt, AgentModelProbe.parseISO("2026-01-01T06:12:00.000Z"))
+        XCTAssertEqual(cache.basis, .estimate(PromptCachePolicy.grokColdAfter))
+    }
+
+    func testPromptCacheFieldDescribesTheCacheOrIsNull() throws {
+        XCTAssertTrue(TerminalController.promptCacheField(nil, now: Date()) is NSNull)
+        let requested = Date(timeIntervalSince1970: 1_000_000)
+        let cache = PromptCacheObservation(requestAt: requested, basis: .ttl(3600), promptTokens: 182_000)
+        let warm = try XCTUnwrap(TerminalController.promptCacheField(cache, now: requested.addingTimeInterval(60)) as? [String: Any])
+        XCTAssertEqual(warm["state"] as? String, "warm")
+        XCTAssertEqual(warm["basis"] as? String, "ttl")
+        XCTAssertEqual(warm["lifetime_seconds"] as? Int, 3600)
+        XCTAssertEqual(warm["prompt_tokens"] as? Int, 182_000)
+        XCTAssertEqual(warm["cold_at"] as? String, ISO8601DateFormatter().string(from: requested.addingTimeInterval(3600)))
+        let cold = try XCTUnwrap(TerminalController.promptCacheField(cache, now: requested.addingTimeInterval(3600)) as? [String: Any])
+        XCTAssertEqual(cold["state"] as? String, "cold")
+    }
 }

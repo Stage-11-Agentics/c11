@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """SSH transport for a self-contained worktree snapshot and existing c11 build scripts."""
 import argparse
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -146,48 +148,80 @@ def bundle(repo, path, held):
     return "incremental" if known else "full"
 
 
-def held_heads(ssh):
-    """Ask the host which commits each repo mirror holds, creating mirrors on first use.
+@contextlib.contextmanager
+def mirror_lock(repo):
+    """Hold the host's lock for one repository mirror; the kernel drops it if the process dies."""
+    mirrors = Path.home() / "c11-builds" / "mirrors"
+    mirrors.mkdir(parents=True, exist_ok=True)
+    with (mirrors / (repo + ".lock")).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield mirrors / (repo + ".git")
 
-    A new mirror adopts the heads of the host's existing per-tag checkouts, so
-    moving onto mirrors does not re-upload history the host already has."""
-    code = """import json,subprocess,sys
-from pathlib import Path
-builds=Path.home()/'c11-builds'; held={}
-def git(*a,**k): return subprocess.run(['git',*map(str,a)],capture_output=True,text=True,**k)
-for repo,sub in json.loads(sys.argv[1]).items():
-    mirror=builds/'mirrors'/(repo+'.git')
-    if not mirror.is_dir():
-        git('init','--quiet','--bare',mirror)
-        for checkout in sorted(builds.glob('*/source')):
-            head=git('-C',checkout/sub,'rev-parse','--verify','HEAD').stdout.strip()
-            if (checkout/sub/'.git').exists() and head:
-                git('-C',mirror,'fetch','--quiet','--no-recurse-submodules',checkout/sub,'+HEAD:refs/c11/'+head)
-    out=git('-C',mirror,'for-each-ref','--format=%(objectname)','refs/c11/').stdout
-    held[repo]=out.split()
-print(json.dumps(held))
-"""
-    response = run([*ssh, shlex.join(["python3", "-c", code, json.dumps(REPOS)])], stdout=subprocess.PIPE)
+
+def ready_mirror(mirror, subpath):
+    """Make the mirror a usable bare repository. Caller holds its lock.
+
+    An interrupted first use can leave a directory that is not a repository; it is
+    rebuilt. A new mirror adopts the heads of the host's existing per-tag checkouts,
+    so moving onto mirrors does not re-upload history the host already has."""
+    check = subprocess.run(["git", "--git-dir", str(mirror), "rev-parse", "--is-bare-repository"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if check.returncode == 0 and check.stdout.strip() == b"true":
+        return
+    staging = mirror.with_name(mirror.name + ".init")
+    shutil.rmtree(staging, ignore_errors=True)
+    run(["git", "init", "--quiet", "--bare", staging])
+    for checkout in sorted((Path.home() / "c11-builds").glob("*/source")):
+        repo = checkout / subpath
+        head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
+        if (repo / ".git").exists() and head:
+            # Best effort: a checkout that cannot be read only means less is adopted.
+            subprocess.run(["git", "--git-dir", str(staging), "fetch", "--quiet", "--no-recurse-submodules",
+                            str(repo), "+HEAD:refs/c11/" + head], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    shutil.rmtree(mirror, ignore_errors=True)
+    staging.rename(mirror)
+
+
+def host_held_heads():
+    """Host side of held_heads: every head each mirror holds, by repository."""
+    held = {}
+    for repo, subpath in REPOS.items():
+        with mirror_lock(repo) as mirror:
+            ready_mirror(mirror, subpath)
+            refs = run(["git", "--git-dir", mirror, "for-each-ref", "--format=%(objectname)", "refs/c11/"],
+                       stdout=subprocess.PIPE)
+        held[repo] = refs.stdout.decode().split()
+    return held
+
+
+def held_heads(ssh):
+    """Ask the host which commits each repository mirror holds.
+
+    The host runs this script from stdin, so the probe shares mirror_head's locking
+    and readiness checks; any host failure fails staging instead of reading as empty."""
+    response = run([*ssh, shlex.join(["python3", "-", "--held-heads"])],
+                   input=Path(__file__).read_bytes(), stdout=subprocess.PIPE)
     return json.loads(response.stdout)
 
 
 def mirror_head(payload, manifest, repo, sha):
     """Publish one exact commit in the host's shared mirror; return the mirror and ref."""
-    mirror = Path.home() / "c11-builds" / "mirrors" / (repo + ".git")
     ref = "refs/c11/" + sha
-    if not mirror.is_dir():
-        run(["git", "init", "--quiet", "--bare", mirror])
-    if repo in manifest["bundles"]:
-        # Fetch verifies the bundle's prerequisite commits are already in the mirror.
-        command = ["git", "-C", mirror, "fetch", "--quiet", "--no-recurse-submodules",
-                   payload / (repo + ".bundle"), "+HEAD:" + ref]
-    else:
-        command = ["git", "-C", mirror, "update-ref", ref, sha + "^{commit}"]
-    # A concurrent request for the same head may win the ref lock; its ref serves equally.
-    attempt = subprocess.run([str(a) for a in command], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    held = subprocess.run(["git", "-C", str(mirror), "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
-                          stdout=subprocess.PIPE).stdout.decode().strip()
-    if held != sha:
+    # Initialization, publication and verification are serialized per mirror, so two
+    # tags staging one new head never contend for its ref lock inside Git.
+    with mirror_lock(repo) as mirror:
+        ready_mirror(mirror, REPOS[repo])
+        if repo in manifest["bundles"]:
+            # Fetch verifies the bundle's prerequisite commits are already in the mirror.
+            command = ["git", "--git-dir", mirror, "fetch", "--quiet", "--no-recurse-submodules",
+                       payload / (repo + ".bundle"), "+HEAD:" + ref]
+        else:
+            command = ["git", "--git-dir", mirror, "update-ref", ref, sha + "^{commit}"]
+        attempt = subprocess.run([str(a) for a in command], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        held = subprocess.run(["git", "--git-dir", str(mirror), "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
+                              stdout=subprocess.PIPE).stdout.decode().strip()
+    if attempt.returncode or held != sha:
         raise ValueError(f"host mirror {repo} lacks {sha}: {attempt.stderr.decode().strip()}")
     return mirror, ref
 
@@ -414,6 +448,9 @@ def client(args):
 
 
 def main():
+    if sys.argv[1:] == ["--held-heads"]:
+        print(json.dumps(host_held_heads()))
+        return 0
     if len(sys.argv) == 3 and sys.argv[1] in ("--remote", "--remote-locked"):
         return remote(Path(sys.argv[2]).resolve(), locked=sys.argv[1] == "--remote-locked")
     parser = argparse.ArgumentParser(description=__doc__)

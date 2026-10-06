@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -220,6 +221,90 @@ class RoutingTests(unittest.TestCase):
         _, manifest = self.stage(home, held)
         self.assertEqual(manifest["bundles"], {"parent": "incremental"})
 
+    def test_overlapping_requests_for_one_new_head_both_publish_it(self):
+        home = self.base / "shared-host"
+        home.mkdir()
+        self.stage(home)
+        with patch.dict(os.environ, HOME=str(home)):
+            held = remote.held_heads(["bash", "-c"])
+        self.advance("one head, two tags")
+        mirror = home / "c11-builds/mirrors/parent.git"
+        ready, release = self.base / "ready", self.base / "release"
+        os.mkfifo(ready)
+        os.mkfifo(release)
+        # The first request pauses inside Git's ref transaction for the new head.
+        hook = mirror / "hooks/reference-transaction"
+        hook.write_text("#!" + sys.executable + "\nimport os,sys\n"
+                        "if sys.argv[1] == 'prepared' and os.environ.get('ACTOR') == 'first':\n"
+                        "    open(os.environ['READY'], 'w').write('ready')\n"
+                        "    open(os.environ['RELEASE']).read()\n")
+        hook.chmod(0o755)
+        payloads = []
+        for tag in ("tag-a", "tag-b"):
+            payload = self.base / tag
+            payload.mkdir()
+            manifest = remote.snapshot(self.worktree, payload, self.args, held)
+            manifest.update(tag=tag, slug=tag)
+            (payload / "identity.json").write_text(json.dumps(manifest))
+            payloads.append(payload)
+        self.assertEqual(manifest["bundles"], {"parent": "incremental"})
+        # A contended mirror lock announces itself on stdout before blocking, so the
+        # test observes the second request waiting instead of guessing with a sleep.
+        child = ("import fcntl,importlib.util,sys\nfrom pathlib import Path\nflock=fcntl.flock\n"
+                 "def announce(f, op):\n"
+                 "    try: return flock(f, op | fcntl.LOCK_NB)\n"
+                 "    except BlockingIOError: print('waiting', flush=True); return flock(f, op)\n"
+                 "fcntl.flock=announce\n"
+                 "s=importlib.util.spec_from_file_location('r', sys.argv[1])\n"
+                 "r=importlib.util.module_from_spec(s); s.loader.exec_module(r)\nrun=r.run\n"
+                 "def stop(args, **kw):\n"
+                 "    if str(args[0]) == 'xcodebuild': raise OSError('fixture stops before the toolchain')\n"
+                 "    return run(args, **kw)\n"
+                 "r.run=stop\nsys.exit(r.remote(Path(sys.argv[2]), locked=True))\n")
+        env = dict(os.environ, HOME=str(home), READY=str(ready), RELEASE=str(release))
+        command = [sys.executable, "-c", child, str(ROOT / "scripts/remote_build.py")]
+        first = subprocess.Popen([*command, payloads[0]], env=dict(env, ACTOR="first"),
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(ready.read_text(), "ready")
+            second = subprocess.Popen([*command, payloads[1]], env=dict(env, ACTOR="second"),
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.assertEqual(second.stdout.readline(), "waiting\n")
+        finally:
+            release.write_text("go")
+            first.communicate()
+        out, err = second.communicate()
+        self.assertEqual((first.returncode, second.returncode), (3, 3), out + err)
+        self.assertEqual(git(mirror, "rev-parse", "refs/c11/" + manifest["head"]), manifest["head"])
+        for tag in ("tag-a", "tag-b"):
+            self.assertEqual(git(home / "c11-builds" / tag / "source", "rev-parse", "HEAD"), manifest["head"])
+
+    def test_interrupted_mirror_initialization_is_rebuilt(self):
+        home = self.base / "interrupted-host"
+        mirrors = home / "c11-builds/mirrors"
+        (mirrors / "parent.git").mkdir(parents=True)
+        (mirrors / "ghostty.git/objects").mkdir(parents=True)
+        (mirrors / "vendor-bonsplit.git.init").mkdir()
+        with patch.dict(os.environ, HOME=str(home), GIT_CEILING_DIRECTORIES=str(self.base)):
+            held = remote.held_heads(["bash", "-c"])
+            self.assertEqual(held, {"parent": [], "ghostty": [], "vendor-bonsplit": []})
+            for repo in held:
+                self.assertEqual(git(mirrors / (repo + ".git"), "rev-parse", "--is-bare-repository"), "true")
+            self.assertFalse((mirrors / "vendor-bonsplit.git.init").exists())
+            _, manifest = self.stage(home, held)
+            self.assertEqual(manifest["bundles"], {"parent": "full", "ghostty": "full", "vendor-bonsplit": "full"})
+        # An interruption after use is recovered by the request that publishes the head.
+        shutil.rmtree(mirrors / "ghostty.git")
+        (mirrors / "ghostty.git").mkdir()
+        with patch.dict(os.environ, HOME=str(home), GIT_CEILING_DIRECTORIES=str(self.base)):
+            self.advance("after a damaged module mirror")
+            payload = self.base / "rebuild"
+            payload.mkdir()
+            manifest = remote.snapshot(self.worktree, payload, self.args, {"ghostty": []})
+            remote.mirror_head(payload, manifest, "ghostty", manifest["submodules"]["ghostty"])
+            # The rebuilt mirror adopted the head the fixture checkout already had.
+            self.assertEqual(remote.held_heads(["bash", "-c"])["ghostty"], [manifest["submodules"]["ghostty"]])
+
     def test_reload_build_failure_does_not_stage_or_launch_existing_app(self):
         scripts = self.base / "scripts"
         scripts.mkdir()
@@ -280,7 +365,7 @@ class RoutingTests(unittest.TestCase):
         # Exercise the client's failed-request retrieval with the emitted artifacts.
         for name in ("remote_build.py", "atlas_build_slots.py", "with-build-lock.sh"):
             (scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
-        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *'python3 -c'*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit 65;; esac\n")
+        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *--held-heads*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit 65;; esac\n")
         (fake / "rsync").write_text("#!/bin/sh\nfor last do :; done\ncase \"$*\" in *atlas:c11-builds/fixture/artifacts/*) cp -R \"$TEST_ARTIFACTS/.\" \"$last\";; esac\n")
         for name in ("ssh", "rsync"):
             (fake / name).chmod(0o755)
@@ -320,7 +405,7 @@ class RoutingTests(unittest.TestCase):
             (fixture_scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
         fake = self.base / "fake"
         fake.mkdir()
-        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *'python3 -c'*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit 23;; esac\n")
+        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *--held-heads*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit 23;; esac\n")
         (fake / "rsync").write_text("#!/bin/sh\nexit 0\n")
         (fake / "open").write_text("#!/bin/sh\ntouch \"$LAUNCH_MARKER\"\nexit 99\n")
         for path in fake.iterdir():
@@ -333,7 +418,7 @@ class RoutingTests(unittest.TestCase):
         self.args.launch = True
         for status in (23, 3):
             with self.subTest(status=status):
-                (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *'python3 -c'*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit " + str(status) + ";; esac\n")
+                (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *--held-heads*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit " + str(status) + ";; esac\n")
                 with patch.object(remote, "__file__", str(fixture_scripts / "remote_build.py")), \
                         patch.dict(os.environ, {"HOME": str(home), "PATH": str(fake) + ":" + os.environ["PATH"],
                                                 "LAUNCH_MARKER": str(marker)}):

@@ -31,7 +31,7 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugTerminalScrollViewport(params: params))
         case "debug.terminal.runtime_start_hold":
             return v2Result(id: id, v2MainSync {
-                guard let tabId = v2UUID(params, "tab_id"),
+                guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id"),
                       let located = AppDelegate.shared?.workspaceContainingPanel(
                         panelId: tabId, preferredWorkspaceId: v2UUID(params, "workspace_id")
                       ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {

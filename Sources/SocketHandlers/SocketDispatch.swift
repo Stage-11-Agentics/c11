@@ -1168,7 +1168,7 @@ extension TerminalController {
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
         if method.hasPrefix("area.") { return v2DispatchPane(method, id: id, params: params) }
-        // `tab.action` is the tab context-menu verb set (Misc); every other `tab.*` is the surface domain.
+        // `panel.action` is the panel context-menu verb set (Misc); every other `panel.*` is the panel domain.
         if method == "panel.action" { return v2DispatchMisc(method, id: id, params: params) }
         if method.hasPrefix("panel.") { return v2DispatchSurface(method, id: id, params: params) }
         if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }

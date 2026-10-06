@@ -3140,7 +3140,7 @@ class TerminalController {
                 return .err(
                     code: SocketTabRefValidator.emptyRefCode,
                     message: "\(LegacyWireAliases.displayKey(key)) was provided but empty; destructive commands need a concrete ref and never fall back to the focused target",
-                    data: ["key": key]
+                    data: ["key": LegacyWireAliases.displayKey(key)]
                 )
             case .present(let handle):
                 let isLive: Bool = v2MainSync {

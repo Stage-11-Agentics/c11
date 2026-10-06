@@ -230,8 +230,6 @@ enum LegacyWireAliases {
     /// key the handler reads (`target`). Applied only when `target` is absent.
     nonisolated static let paramSources: [(target: String, sources: [String])] = [
         ("surface_id", ["panel_id", "panel_ref", "tab_id", "tab_ref", "surface_ref"]),
-        // A few handlers (debug, feed) read `tab_id` directly.
-        ("tab_id", ["panel_id", "panel_ref", "tab_ref", "surface_id", "surface_ref"]),
         ("pane_id", ["area_id", "area_ref", "pane_ref"]),
         ("pane", ["area"]),
         ("target_pane_id", ["target_area_id", "target_area_ref", "target_pane_ref"]),

@@ -1898,15 +1898,15 @@ extension TerminalController {
     }
 
     func v2BrowserViewportSet(params _: [String: Any]) -> V2CallResult {
-        v2BrowserNotSupported("browser.viewport.set", details: "WKWebView does not provide a per-tab programmable viewport emulation API equivalent to CDP")
+        v2BrowserNotSupported("browser.viewport.set", details: "WKWebView does not provide a per-panel programmable viewport emulation API equivalent to CDP")
     }
 
     func v2BrowserGeolocationSet(params _: [String: Any]) -> V2CallResult {
-        v2BrowserNotSupported("browser.geolocation.set", details: "WKWebView does not expose per-tab geolocation spoofing hooks equivalent to Playwright/CDP")
+        v2BrowserNotSupported("browser.geolocation.set", details: "WKWebView does not expose per-panel geolocation spoofing hooks equivalent to Playwright/CDP")
     }
 
     func v2BrowserOfflineSet(params _: [String: Any]) -> V2CallResult {
-        v2BrowserNotSupported("browser.offline.set", details: "WKWebView does not expose reliable per-tab offline emulation")
+        v2BrowserNotSupported("browser.offline.set", details: "WKWebView does not expose reliable per-panel offline emulation")
     }
 
     func v2BrowserTraceStart(params _: [String: Any]) -> V2CallResult {

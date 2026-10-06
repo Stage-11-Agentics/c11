@@ -125,7 +125,7 @@ struct SendTextDelivery {
     static func summary(queued: Bool, submitted: Bool) -> String {
         if queued {
             return String(localized: "cli.send.queued",
-                          defaultValue: "queued, not delivered (tab not attached; the agent has not seen it)")
+                          defaultValue: "queued, not delivered (panel not attached; the agent has not seen it)")
         }
         return submitted
             ? String(localized: "cli.send.delivered_submitted", defaultValue: "delivered, return scheduled")

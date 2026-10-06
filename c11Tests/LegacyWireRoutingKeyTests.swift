@@ -215,8 +215,9 @@ final class LegacyWireCompletionTests: XCTestCase {
         XCTAssertEqual(params["after_surface_id"] as? String, "a")
         XCTAssertEqual(params["caller_surface_id"] as? String, "c")
         XCTAssertEqual(params["pane_id"] as? String, "r")
-        // Handlers that read `tab_id` directly see the canonical spelling too.
-        XCTAssertEqual(LegacyWireAliases.canonicalParams(["panel_id": "x"])["tab_id"] as? String, "x")
+        // `tab_id` is not back-filled: browser panel switch/close read it as an
+        // explicit target ahead of `index`, so the context panel must not leak in.
+        XCTAssertNil(LegacyWireAliases.canonicalParams(["surface_id": "ctx", "index": 2])["tab_id"])
     }
 
     func testOldSpellingRequestsGetGenericRefsInTheirSpelling() throws {

@@ -665,4 +665,30 @@ final class TabLivenessDeriverTests: XCTestCase {
         XCTAssertFalse(project(.idle, expired).promptCacheExpired, "only the cold mark carries the cache")
         XCTAssertFalse(project(.waiting, expired).promptCacheExpired)
     }
+
+
+    func testJournalAgentsGoColdOnlyAtRestAndOnlyFromTheCache() {
+        let t0 = Date(timeIntervalSince1970: 70_000)
+        let expired = PromptCacheReading(
+            observation: PromptCacheObservation(requestAt: t0, basis: .ttl(300), promptTokens: nil),
+            scannedAt: t0.addingTimeInterval(30)
+        )
+        let resting = t0.addingTimeInterval(20)
+        let later = t0.addingTimeInterval(3_600)
+        XCTAssertTrue(TabLivenessDeriver.isJournalAgentCold(phase: .idle, restingSince: resting, promptCache: expired, now: later))
+        for phase in [JournalPhase.working, .blocked, .error, .unknown] {
+            XCTAssertFalse(
+                TabLivenessDeriver.isJournalAgentCold(phase: phase, restingSince: resting, promptCache: expired, now: later),
+                "\(phase) is not at rest"
+            )
+        }
+        XCTAssertFalse(
+            TabLivenessDeriver.isJournalAgentCold(phase: .idle, restingSince: resting, promptCache: nil, now: later),
+            "no dormancy rule: without cache evidence a journal agent stays warm"
+        )
+        XCTAssertFalse(
+            TabLivenessDeriver.isJournalAgentCold(phase: .idle, restingSince: t0.addingTimeInterval(60), promptCache: expired, now: later),
+            "a scan from before the agent came to rest fails warm"
+        )
+    }
 }

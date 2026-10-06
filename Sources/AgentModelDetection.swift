@@ -84,6 +84,11 @@ struct TranscriptSignals: Equatable, Sendable {
             turnTokens = 0
             messageTokens = [:]
             noteLine(at)
+            // A prompt sends a request that reads the cache, even one
+            // interrupted before its response wrote a line.
+            if let at, let cache = promptCache, at > cache.requestAt {
+                promptCache?.requestAt = at
+            }
         case .agent(let at, let tools, let tokens, let messageKey):
             if let at { lastEventAt = max(lastEventAt ?? at, at) }
             turnToolCalls += tools
@@ -670,6 +675,8 @@ struct AgentModelProbe: Sendable {
             state.grokPendingStart = nil
             guard primary, sessionID == expectedSessionID, let turnID, let at else { return false }
             state.grokPendingStart = GrokPendingTurn(turnID: turnID, occurredAt: at)
+            // The turn's first model call reads the cache; its end records the last.
+            state.signals.notePromptCache(Self.grokPromptCache(at: at, key: "start:\(turnID)"))
             observations.append(.init(kind: .turnStarted, occurredAt: at,
                                        nativeEvent: "turn.started", turnID: turnID, isChild: false))
             return false
@@ -677,12 +684,7 @@ struct AgentModelProbe: Sendable {
             // Any end of a verified primary turn follows its last model call.
             if let pending = state.grokPendingStart, let at,
                pending.occurredAt.map({ at >= $0 }) ?? true {
-                state.signals.notePromptCache(PromptCacheUsage(
-                    at: at, requestKey: "turn:\(pending.turnID)",
-                    basis: .estimate(PromptCachePolicy.grokColdAfter),
-                    fallbackBasis: .estimate(PromptCachePolicy.grokColdAfter),
-                    promptTokens: nil, anchorsOnPriorLine: false
-                ))
+                state.signals.notePromptCache(Self.grokPromptCache(at: at, key: "end:\(pending.turnID)"))
             }
             guard outcome == "completed", let pending = state.grokPendingStart,
                   let at else {
@@ -701,6 +703,16 @@ struct AgentModelProbe: Sendable {
             state.grokPendingStart = nil
             return false
         }
+    }
+
+    /// xAI caches automatically and publishes no lifetime: an estimate.
+    private static func grokPromptCache(at: Date, key: String) -> PromptCacheUsage {
+        PromptCacheUsage(
+            at: at, requestKey: key,
+            basis: .estimate(PromptCachePolicy.grokColdAfter),
+            fallbackBasis: .estimate(PromptCachePolicy.grokColdAfter),
+            promptTokens: nil, anchorsOnPriorLine: false
+        )
     }
 
     private static func rememberCodexChild(_ turnID: String, state: inout ModelTailState) {
@@ -833,10 +845,12 @@ struct AgentModelProbe: Sendable {
         guard read + written > 0 else { return nil }
         let tiers = usage["cache_creation"] as? [String: Any]
         let basis: PromptCacheObservation.Basis?
-        if int(tiers?["ephemeral_1h_input_tokens"]) > 0 {
-            basis = .ttl(PromptCachePolicy.anthropicExtendedTTL)
-        } else if int(tiers?["ephemeral_5m_input_tokens"]) > 0 {
+        // Longer TTLs must precede shorter ones in a prompt, so when a request
+        // writes both, the 5-minute part is the conversation's tail.
+        if int(tiers?["ephemeral_5m_input_tokens"]) > 0 {
             basis = .ttl(PromptCachePolicy.anthropicDefaultTTL)
+        } else if int(tiers?["ephemeral_1h_input_tokens"]) > 0 {
+            basis = .ttl(PromptCachePolicy.anthropicExtendedTTL)
         } else {
             basis = nil
         }
@@ -909,27 +923,30 @@ struct AgentModelProbe: Sendable {
         if hasType(line, "token_count") {
             var tokens = 0
             var key: String?
-            var promptTokens: Int?
+            var cache: PromptCacheUsage?
             if line.count <= maxParseBytes, let object = parseObject(line),
                let info = (object["payload"] as? [String: Any])?["info"] as? [String: Any] {
                 if let last = info["last_token_usage"] as? [String: Any] {
                     tokens = max(0, int(last["input_tokens"]) - int(last["cached_input_tokens"])) + int(last["output_tokens"])
-                    promptTokens = int(last["input_tokens"])
                 }
                 // Rollouts repeat identical token_count lines. The session total only
                 // ever grows, so it identifies one API call: repeats collapse to one.
                 if let total = (info["total_token_usage"] as? [String: Any])?["total_tokens"] as? NSNumber {
                     key = "total:\(total.intValue)"
                 }
+                // OpenAI caches automatically and publishes no fixed lifetime. A
+                // line without usage (rate limits only) is not a request.
+                if let last = info["last_token_usage"] as? [String: Any] {
+                    let input = int(last["input_tokens"])
+                    cache = PromptCacheUsage(
+                        at: at, requestKey: key,
+                        basis: .estimate(PromptCachePolicy.codexColdAfter),
+                        fallbackBasis: .estimate(PromptCachePolicy.codexColdAfter),
+                        promptTokens: input > 0 ? input : nil,
+                        anchorsOnPriorLine: false
+                    )
+                }
             }
-            // OpenAI caches automatically and publishes no fixed lifetime.
-            let cache = PromptCacheUsage(
-                at: at, requestKey: key,
-                basis: .estimate(PromptCachePolicy.codexColdAfter),
-                fallbackBasis: .estimate(PromptCachePolicy.codexColdAfter),
-                promptTokens: promptTokens.flatMap { $0 > 0 ? $0 : nil },
-                anchorsOnPriorLine: false
-            )
             return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: key), promptCache: cache)
         }
         guard hasType(line, "response_item") else { return ParsedTranscriptLine() }

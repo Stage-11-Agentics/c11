@@ -989,6 +989,7 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(cache.basis, .estimate(PromptCachePolicy.grokColdAfter))
     }
 
+    @MainActor
     func testPromptCacheFieldDescribesTheCacheOrIsNull() throws {
         XCTAssertTrue(TerminalController.promptCacheField(nil, now: Date()) is NSNull)
         let requested = Date(timeIntervalSince1970: 1_000_000)
@@ -1001,5 +1002,57 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(warm["cold_at"] as? String, ISO8601DateFormatter().string(from: requested.addingTimeInterval(3600)))
         let cold = try XCTUnwrap(TerminalController.promptCacheField(cache, now: requested.addingTimeInterval(3600)) as? [String: Any])
         XCTAssertEqual(cold["state"] as? String, "cold")
+    }
+
+
+    func testANewPromptMovesTheCacheAnchorEvenWithoutAResponse() throws {
+        let lines = [
+            claudeUser("10:00:00"),
+            claudeAssistant("m1", "10:00:10", read: 0, written: 500, oneHour: 500),
+            claudeUser("10:30:00"),
+        ]
+        try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        XCTAssertEqual(
+            state.signals.promptCache?.requestAt, t("10:30:00"),
+            "an interrupted request still read the cache when the prompt went out"
+        )
+        XCTAssertEqual(state.signals.promptCache?.basis, .ttl(PromptCachePolicy.anthropicExtendedTTL))
+    }
+
+    func testARequestWritingBothTiersCountsAsFiveMinutes() throws {
+        let lines = [claudeUser("10:00:00"), claudeAssistant("m1", "10:00:10", read: 0, written: 900, oneHour: 100, fiveMinute: 800)]
+        try place(Data((lines.joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        XCTAssertEqual(state.signals.promptCache?.basis, .ttl(PromptCachePolicy.anthropicDefaultTTL), "the 5-minute part is the conversation's tail")
+    }
+
+    func testCodexTokenCountWithoutUsageIsNotARequest() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let url = try place(codexFixture(id), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let r = ref("codex", id: id)
+        _ = detect("codex", r, &state)
+        try append(#"{"timestamp":"2026-01-01T09:20:00.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{}}}"# + "\n", to: url)
+        _ = detect("codex", r, &state)
+        XCTAssertEqual(state.signals.promptCache?.requestAt, t("09:05:07"))
+    }
+
+    func testGrokTurnStartCountsEvenWhenItsEndCannotPair() throws {
+        let sessionID = "grok-session-start"
+        let events = """
+        {"type":"turn_started","ts":"2026-01-01T06:20:00.000Z","turn_number":3,"session_id":"\(sessionID)","session_relationship":"primary"}
+        {"type":"turn_started","ts":"2026-01-01T06:21:00.000Z","turn_number":1,"session_id":"child","session_relationship":"subagent"}
+        {"type":"turn_ended","ts":"2026-01-01T06:25:00.000Z","outcome":"completed"}
+        """
+        let url = try place(Data((events + "\n").utf8), at: "grok-start/events.jsonl")
+        let r = ref("grok", id: sessionID,
+                   payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+        var state = ModelTailState()
+        _ = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertEqual(state.signals.promptCache?.requestAt, AgentModelProbe.parseISO("2026-01-01T06:20:00.000Z"))
     }
 }

@@ -5060,6 +5060,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// Live-agent dormancy is a reversible presentation projection, kept
     /// separate from the durable working/idle metadata truth.
     @Published private(set) var coldAgentSurfaceIds: Set<UUID> = []
+    /// Cold agents whose prompt cache expired, as last published. Only a
+    /// change detector: the mark's color is resolved from the cache itself.
+    private var promptCacheColdAgentIds: Set<UUID> = []
     /// Foreground-process classifications from `AgentDetector`. Durable
     /// `terminal_type` metadata describes resumable identity; this live map
     /// decides whether that identity is currently an agent or a plain shell.
@@ -7382,13 +7385,19 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    /// Update the live dormancy projection for one agent surface.
-    func setAgentCold(_ isCold: Bool, forSurface surfaceId: UUID) {
-        let changed: Bool
+    /// Update the live cold projection for one agent surface. `promptCacheExpired`
+    /// says the cache caused it, so a switch from dormancy to cache repaints.
+    func setAgentCold(_ isCold: Bool, promptCacheExpired: Bool = false, forSurface surfaceId: UUID) {
+        var changed: Bool
         if isCold {
             changed = coldAgentSurfaceIds.insert(surfaceId).inserted
         } else {
             changed = coldAgentSurfaceIds.remove(surfaceId) != nil
+        }
+        if isCold && promptCacheExpired {
+            changed = promptCacheColdAgentIds.insert(surfaceId).inserted || changed
+        } else {
+            changed = promptCacheColdAgentIds.remove(surfaceId) != nil || changed
         }
         if changed {
             syncSurfaceTabActivityStateForTab(surfaceId)
@@ -8046,6 +8055,7 @@ final class Workspace: Identifiable, ObservableObject {
         derivedActivityByTab = derivedActivityByTab.filter { validSurfaceIds.contains($0.key) }
         attentionByTab = attentionByTab.filter { validSurfaceIds.contains($0.key) }
         coldAgentSurfaceIds = coldAgentSurfaceIds.filter { validSurfaceIds.contains($0) }
+        promptCacheColdAgentIds = promptCacheColdAgentIds.filter { validSurfaceIds.contains($0) }
         detectedTerminalTypesByTab = detectedTerminalTypesByTab.filter {
             validSurfaceIds.contains($0.key)
         }

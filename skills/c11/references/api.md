@@ -653,7 +653,7 @@ Every tab node also carries `prompt_cache`: the agent's prompt cache as of its l
 | `requested_at`, `cold_at` | ISO-8601. `cold_at` = `requested_at` + `lifetime_seconds`. |
 | `prompt_tokens` | The prompt the next request re-caches once cold; `null` when the harness does not record it (Grok). |
 
-A live idle agent's mark goes cold at `cold_at`, within one sweep. `C11_PROMPT_CACHE_ESTIMATE_SECONDS` (60 to 86400, read at launch) replaces every estimated span for a validation run; it never shortens a published TTL.
+A live idle agent's mark goes cold at `cold_at`, within about 20 seconds (two 10-second sweeps). `C11_PROMPT_CACHE_ESTIMATE_SECONDS` (60 to 86400, read at launch) replaces every estimated span for a validation run; it never shortens a published TTL.
 
 ## Notifications
 

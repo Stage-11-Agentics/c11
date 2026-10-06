@@ -254,7 +254,12 @@ enum TabLivenessDeriver {
                           coordinator.target(tabID: tabID) == workspaceID,
                           let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
                             .workspaces.first(where: { $0.id == workspaceID }) else { return }
-                    workspace.setAgentCold(false, forSurface: tabID)
+                    // A projection that leaves the agent resting where it was
+                    // (health, evidence) keeps a cold mark; any edge clears it.
+                    let prior = workspace.journalByTab[tabID]
+                    if snapshot?.phase != .idle || prior?.phase != .idle || prior?.sinceMs != snapshot?.sinceMs {
+                        workspace.setAgentCold(false, forSurface: tabID)
+                    }
                     workspace.setDerivedActivity(mirrored, forSurface: tabID)
                     workspace.setJournalSnapshot(snapshot, forTab: tabID)
                     // A coalesced start may already have been superseded by its ask.
@@ -304,11 +309,12 @@ enum TabLivenessDeriver {
         if let journal = JournalCoordinator.shared.snapshot(tabID: surfaceId), journal.connection == .live {
             // The journal owns a live agent's activity and has no dormancy
             // rule: only prompt cache evidence can make it cold.
-            let cold = journal.phase == .idle && isPromptCacheCold(
-                promptCache,
+            let cold = isJournalAgentCold(
+                phase: journal.phase,
                 restingSince: Date(timeIntervalSince1970: Double(journal.sinceMs) / 1000),
+                promptCache: promptCache,
                 now: now
-            ) == true
+            )
             // Journal projections clear cold on every edge, so a warm sweep
             // hops to main only to undo a cold this deriver published.
             if cold || journalColdSurfaceIds.contains(surfaceId) {
@@ -345,6 +351,7 @@ enum TabLivenessDeriver {
                     now: now,
                     coldAfterSeconds: coldAfterSeconds
                 ),
+                promptCacheExpired: cacheCold == true,
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 observedLastTouchedAt: lastTouched
@@ -421,6 +428,20 @@ enum TabLivenessDeriver {
         return observation.isCold(at: now, estimateOverride: estimateOverride)
     }
 
+    /// A journal-backed agent has no dormancy rule: it is cold only at rest
+    /// and only on cache evidence.
+    static func isJournalAgentCold(
+        phase: JournalPhase,
+        restingSince: Date,
+        promptCache: PromptCacheReading?,
+        now: Date,
+        estimateOverride: TimeInterval? = PromptCachePolicy.estimateOverride
+    ) -> Bool {
+        phase == .idle && isPromptCacheCold(
+            promptCache, restingSince: restingSince, now: now, estimateOverride: estimateOverride
+        ) == true
+    }
+
     /// Cold for a journal-backed agent, published only while the journal
     /// still shows the resting state this sweep read.
     private static func publishJournalCold(
@@ -438,13 +459,14 @@ enum TabLivenessDeriver {
                           current.connection == .live, current.phase == .idle,
                           current.sinceMs == observed.sinceMs else { return }
                 }
-                workspace.setAgentCold(isCold, forSurface: surfaceId)
+                workspace.setAgentCold(isCold, promptCacheExpired: isCold, forSurface: surfaceId)
             }
         }
     }
 
     private static func publishCold(
         _ isCold: Bool,
+        promptCacheExpired: Bool = false,
         workspaceId: UUID,
         surfaceId: UUID,
         observedLastTouchedAt: Date? = nil
@@ -467,7 +489,7 @@ enum TabLivenessDeriver {
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     return
                 }
-                workspace.setAgentCold(isCold, forSurface: surfaceId)
+                workspace.setAgentCold(isCold, promptCacheExpired: promptCacheExpired, forSurface: surfaceId)
             }
         }
     }

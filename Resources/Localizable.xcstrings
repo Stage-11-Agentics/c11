@@ -39107,43 +39107,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A live agent becomes Cold after this long without a submitted task or lifecycle activity."
+            "value": "Claude Code, Codex and Grok Build go Cold when their prompt cache expires. Other agents go Cold after this long without a submitted task or lifecycle activity."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "稼働中のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
+            "value": "Claude Code、Codex、Grok Build は、プロンプトキャッシュの期限が切れるとコールドになります。その他のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行中的代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
+            "value": "Claude Code、Codex 和 Grok Build 会在提示词缓存过期时进入冷态。其他代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "執行中的代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
+            "value": "Claude Code、Codex 和 Grok Build 會在提示詞快取過期時進入冷態。其他代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "실행 중인 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
+            "value": "Claude Code, Codex, Grok Build는 프롬프트 캐시가 만료되면 콜드 상태가 됩니다. 다른 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Запущенный агент переходит в состояние «Холодная», если за это время не было ни новых задач, ни событий жизненного цикла."
+            "value": "Claude Code, Codex и Grok Build переходят в состояние «Холодная», когда истекает их кэш промпта. Остальные агенты переходят в это состояние, если за это время не было ни новых задач, ни событий жизненного цикла."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Запущений агент переходить у стан «Холодна», якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
+            "value": "Claude Code, Codex і Grok Build переходять у стан «Холодна», коли спливає їхній кеш промпту. Інші агенти переходять у цей стан, якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
           }
         }
       }

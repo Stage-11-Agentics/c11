@@ -1,5 +1,31 @@
 import Foundation
 
+/// c11's default named color palette (workspace, tab and group colors). Lives
+/// here because this file compiles into both the app and the `c11` CLI, so
+/// `list-palette` prints exactly the names the app resolves.
+/// `WorkspaceColorSettings` layers the operator's per-name hex overrides and
+/// custom colors on top.
+public enum DefaultColorPalette {
+    public static let entries: [(name: String, hex: String)] = [
+        ("Red", "#C0392B"),
+        ("Crimson", "#922B21"),
+        ("Orange", "#A04000"),
+        ("Amber", "#7D6608"),
+        ("Olive", "#4A5C18"),
+        ("Green", "#196F3D"),
+        ("Teal", "#006B6B"),
+        ("Aqua", "#0E6B8C"),
+        ("Blue", "#1565C0"),
+        ("Navy", "#1A5276"),
+        ("Indigo", "#283593"),
+        ("Purple", "#6A1B9A"),
+        ("Magenta", "#AD1457"),
+        ("Rose", "#880E4F"),
+        ("Brown", "#7B3F00"),
+        ("Charcoal", "#3E4B5E"),
+    ]
+}
+
 /// Canonical operator-authored workspace metadata keys.
 ///
 /// Workspace-scoped. Distinct from `MetadataKey` in `SurfaceMetadataStore.swift`

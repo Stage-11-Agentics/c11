@@ -7179,16 +7179,22 @@ final class Workspace: Identifiable, ObservableObject {
         self.title = title
     }
 
-    func setCustomColor(_ hex: String?) {
+    /// Set or clear the workspace color. Accepts `#RRGGBB` or a palette name
+    /// (`WorkspaceColorSettings.resolvedColorHex`); nil or blank clears. An
+    /// unresolvable value leaves the color unchanged and returns false.
+    @discardableResult
+    func setCustomColor(_ color: String?) -> Bool {
         let next: String?
-        if let hex {
-            next = WorkspaceColorSettings.normalizedHex(hex)
+        if let raw = color?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            guard let resolved = WorkspaceColorSettings.resolvedColorHex(raw) else { return false }
+            next = resolved
         } else {
             next = nil
         }
-        guard customColor != next else { return }
+        guard customColor != next else { return true }
         customColor = next
         customColorDidChange.send(next)
+        return true
     }
 
     func setCustomTitle(_ title: String?) {

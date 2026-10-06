@@ -330,24 +330,8 @@ enum WorkspaceColorSettings {
     static let customColorsKey = "workspaceTabColor.customColors"
     static let maxCustomColors = 24
 
-    private static let originalPRPalette: [WorkspaceColorEntry] = [
-        WorkspaceColorEntry(name: "Red", hex: "#C0392B"),
-        WorkspaceColorEntry(name: "Crimson", hex: "#922B21"),
-        WorkspaceColorEntry(name: "Orange", hex: "#A04000"),
-        WorkspaceColorEntry(name: "Amber", hex: "#7D6608"),
-        WorkspaceColorEntry(name: "Olive", hex: "#4A5C18"),
-        WorkspaceColorEntry(name: "Green", hex: "#196F3D"),
-        WorkspaceColorEntry(name: "Teal", hex: "#006B6B"),
-        WorkspaceColorEntry(name: "Aqua", hex: "#0E6B8C"),
-        WorkspaceColorEntry(name: "Blue", hex: "#1565C0"),
-        WorkspaceColorEntry(name: "Navy", hex: "#1A5276"),
-        WorkspaceColorEntry(name: "Indigo", hex: "#283593"),
-        WorkspaceColorEntry(name: "Purple", hex: "#6A1B9A"),
-        WorkspaceColorEntry(name: "Magenta", hex: "#AD1457"),
-        WorkspaceColorEntry(name: "Rose", hex: "#880E4F"),
-        WorkspaceColorEntry(name: "Brown", hex: "#7B3F00"),
-        WorkspaceColorEntry(name: "Charcoal", hex: "#3E4B5E"),
-    ]
+    private static let originalPRPalette: [WorkspaceColorEntry] =
+        DefaultColorPalette.entries.map { WorkspaceColorEntry(name: $0.name, hex: $0.hex) }
 
     static var defaultPalette: [WorkspaceColorEntry] {
         originalPRPalette

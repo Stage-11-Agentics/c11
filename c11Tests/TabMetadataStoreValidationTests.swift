@@ -321,6 +321,27 @@ final class TabIconColorMetadataTests: XCTestCase {
         XCTAssertEqual(store.metadataValue(workspaceId: ws, surfaceId: tab, key: "icon") as? String, "🧪")
     }
 
+    func testIconRejectsUnknownSFSymbolAcceptsKnownOne() throws {
+        assertRejected(["icon": "sf:not.a.real.symbol.name"])
+        let ws = UUID(), tab = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
+        XCTAssertNoThrow(try write(["icon": "sf:star.fill"], ws: ws, tab: tab))
+        // A plain glyph that merely starts with "sf" is not a symbol reference.
+        XCTAssertNoThrow(try write(["icon": "sfx"], ws: ws, tab: tab))
+    }
+
+    func testDefaultPaletteIsTheSharedListAndEveryNameResolves() {
+        let isolated = UserDefaults(suiteName: "c11-palette-\(UUID())")!
+        XCTAssertEqual(
+            WorkspaceColorSettings.defaultPalette.map(\.name),
+            DefaultColorPalette.entries.map(\.name)
+        )
+        for entry in DefaultColorPalette.entries {
+            XCTAssertEqual(WorkspaceColorSettings.resolvedColorHex(entry.name.lowercased(), defaults: isolated), entry.hex)
+        }
+        XCTAssertNil(WorkspaceColorSettings.resolvedColorHex("aurora", defaults: isolated))
+    }
+
     func testInternalWriteNormalizesColor() {
         let ws = UUID(), tab = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }

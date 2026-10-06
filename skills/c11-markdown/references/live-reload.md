@@ -1,10 +1,10 @@
 # Live Reload Behavior
 
-The markdown tab watches the file on disk and automatically re-renders when it changes. This enables real-time plan tracking as agents or editors update the file.
+The markdown panel watches the file on disk and automatically re-renders when it changes. This enables real-time plan tracking as agents or editors update the file.
 
 ## How It Works
 
-The tab uses a kernel-level file system watcher (`DispatchSource` with `O_EVTONLY`) that monitors the file for:
+The panel uses a kernel-level file system watcher (`DispatchSource` with `O_EVTONLY`) that monitors the file for:
 
 - **Write events** -- content was modified in place
 - **Extend events** -- content was appended
@@ -26,7 +26,7 @@ The tab uses a kernel-level file system watcher (`DispatchSource` with `O_EVTONL
 
 Many editors and tools write files atomically: write to a temporary file, then rename it over the original. This shows up as a **delete** event followed by a new file appearing at the same path.
 
-The tab handles this by:
+The panel handles this by:
 
 1. Detecting the delete/rename event
 2. Attempting to re-read the file immediately (in case the rename already happened)
@@ -35,9 +35,9 @@ The tab handles this by:
 
 ## File Unavailable State
 
-If the file is deleted and does not reappear within the retry window, the tab shows a "file unavailable" state with the original path. The tab does not close automatically -- the user must close it manually.
+If the file is deleted and does not reappear within the retry window, the panel shows a "file unavailable" state with the original path. The panel does not close automatically -- the user must close it manually.
 
-If the file later reappears at the same path (e.g., the user recreates it), the tab does NOT automatically reconnect. Close and reopen the tab to pick up the new file.
+If the file later reappears at the same path (e.g., the user recreates it), the panel does NOT automatically reconnect. Close and reopen the panel to pick up the new file.
 
 ## Performance
 
@@ -47,7 +47,7 @@ If the file later reappears at the same path (e.g., the user recreates it), the 
 
 ## Tips for Agents
 
-- **Write the full plan file first, then open it.** This avoids the tab showing a partially written file.
+- **Write the full plan file first, then open it.** This avoids the panel showing a partially written file.
 - **Append-style updates work well.** Adding sections to the end of a file triggers a smooth re-render.
 - **Overwriting the entire file is fine.** The atomic replace handling ensures no data is lost.
 - **Don't delete and recreate rapidly.** If writing a new version, prefer overwriting in place or using atomic replacement.

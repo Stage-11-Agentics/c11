@@ -1,20 +1,20 @@
 ---
 name: c11-markdown
 version: 1
-description: Open markdown files in a c11 markdown tab with live reload. Use when you need to display plans, documentation, or notes alongside terminals and browser tabs with rich rendering (headings, code blocks, tables, lists, Mermaid diagrams). Prefer this over external viewers when c11 is running.
+description: Open markdown files in a c11 markdown panel with live reload. Use when you need to display plans, documentation, or notes alongside terminals and browser panels with rich rendering (headings, code blocks, tables, lists, Mermaid diagrams). Prefer this over external viewers when c11 is running.
 ---
 
-# c11 Markdown Tabs
+# c11 Markdown Panels
 
-Use this skill to display markdown files in a c11 markdown tab — a first-class tab type that lives alongside terminal and browser tabs in the same workspace, driven from the same `c11` CLI. The binary is `c11`.
+Use this skill to display markdown files in a c11 markdown panel — a first-class panel type that lives alongside terminal and browser panels in the same workspace, driven from the same `c11` CLI. The binary is `c11`.
 
-Rich rendering (headings, code blocks, tables, lists, Mermaid) with live file watching — the tab auto-updates when the file changes on disk.
+Rich rendering (headings, code blocks, tables, lists, Mermaid) with live file watching — the panel auto-updates when the file changes on disk.
 
 ## Core Workflow
 
 1. Write your plan or notes to a `.md` file.
-2. Open it in a markdown tab.
-3. The tab auto-updates when the file changes on disk.
+2. Open it in a markdown panel.
+3. The panel auto-updates when the file changes on disk.
 
 ```bash
 # Open a markdown file as a split next to the current terminal
@@ -41,12 +41,12 @@ Two patterns, in priority order:
 
 ### Default: one consolidated file with sections
 
-Write to a single `/tmp/<task>-trail.md` and append as the work progresses. The operator scrolls one document instead of switching tabs; the most current section sits on top so it is what they see first when they return.
+Write to a single `/tmp/<task>-trail.md` and append as the work progresses. The operator scrolls one document instead of switching panels; the most current section sits on top so it is what they see first when they return.
 
 ```bash
 # At the start of a multi-artifact piece of work, open the trail file once
 c11 new-area --type markdown --file /tmp/voice-trail.md
-# → OK tab:35 area:9 workspace:1
+# → OK panel:35 area:9 workspace:1
 
 # Then write to that file as the work evolves — live-reload renders it.
 # When new sections supersede earlier ones, put the new section at the top
@@ -55,40 +55,40 @@ c11 new-area --type markdown --file /tmp/voice-trail.md
 
 This is the right default unless the operator explicitly asks for separate files.
 
-### When you need multiple distinct files: tabs of the *same* area
+### When you need multiple distinct files: panels of the *same* area
 
-If the artifacts genuinely need to be separate files (different audiences, different lifetimes, downstream tooling reads them as units), add the second and subsequent ones as **tabs of the existing markdown area**, not as new areas:
+If the artifacts genuinely need to be separate files (different audiences, different lifetimes, downstream tooling reads them as units), add the second and subsequent ones as **panels of the existing markdown area**, not as new areas:
 
 ```bash
 # Capture the area ref from the first open
 c11 new-area --type markdown --file /tmp/voice-map.md
-# → OK tab:35 area:9 workspace:1
+# → OK panel:35 area:9 workspace:1
 
-# Add subsequent files as tabs of area:9 — NOT new areas
-c11 new-tab --type markdown --file /tmp/voice-wave-1.md --area area:9
-c11 new-tab --type markdown --file /tmp/voice-audit.md --area area:9
+# Add subsequent files as panels of area:9 — NOT new areas
+c11 new-panel --type markdown --file /tmp/voice-wave-1.md --area area:9
+c11 new-panel --type markdown --file /tmp/voice-audit.md --area area:9
 ```
 
-The operator sees one markdown area; the artifacts navigate as tabs of that area. This is materially different from three `c11 new-area` calls, which produce three sibling areas the operator has to context-switch between.
+The operator sees one markdown area; the artifacts navigate as panels of that area. This is materially different from three `c11 new-area` calls, which produce three sibling areas the operator has to context-switch between.
 
-### Always: title + description per tab
+### Always: title + description per panel
 
-Whether it is one consolidated file or a tabbed area, set `c11 set-title` and `c11 set-description` on every markdown tab immediately after opening it. The operator should know what they are looking at without opening it. See the top-level c11 skill's "Title and description" section for the conventions.
+Whether it is one consolidated file or an area holding several panels, set `c11 set-title` and `c11 set-description` on every markdown panel immediately after opening it. The operator should know what they are looking at without opening it. See the top-level c11 skill's "Title and description" section for the conventions.
 
 ### Close stale artifacts at session-end
 
-If an early-session map document is superseded by a final audit, close the early tab (`c11 close-tab --tab <ref>`) so the operator's primary view shows the current truth. Leaving five tabs open across a session because they were once useful is unkind to the next look.
+If an early-session map document is superseded by a final audit, close the early panel (`c11 close-panel --panel <ref>`) so the operator's primary view shows the current truth. Leaving five panels open across a session because they were once useful is unkind to the next look.
 
 ## Live File Watching
 
-The tab automatically re-renders when the file changes on disk. This works with:
+The panel automatically re-renders when the file changes on disk. This works with:
 
 - Direct writes (`echo "..." >> plan.md`)
 - Editor saves (vim, nano, VS Code)
 - Atomic file replacement (write to temp, rename over original)
 - Agent-generated plan files that are updated progressively
 
-If the file is deleted, the tab shows a "file unavailable" state. During atomic replace, the tab attempts automatic reconnection within its short retry window. If the file returns later, close and reopen the tab.
+If the file is deleted, the panel shows a "file unavailable" state. During atomic replace, the panel attempts automatic reconnection within its short retry window. If the file returns later, close and reopen the panel.
 
 ## Agent Integration
 
@@ -112,10 +112,10 @@ c11 markdown open plan.md
 
 ### Updating a plan in real-time
 
-The tab live-reloads, so simply overwrite the file as work progresses:
+The panel live-reloads, so simply overwrite the file as work progresses:
 
 ```bash
-# The markdown tab updates automatically when the file changes
+# The markdown panel updates automatically when the file changes
 echo "## Step 1: Complete" >> plan.md
 ```
 
@@ -130,7 +130,7 @@ When creating a plan or task list, write it to a `.md` file and open it in c11:
 
     c11 markdown open plan.md
 
-The tab renders markdown with rich formatting and auto-updates when the file changes.
+The panel renders markdown with rich formatting and auto-updates when the file changes.
 ```
 
 ## Routing
@@ -142,8 +142,8 @@ c11 markdown open plan.md
 # Open in a specific workspace
 c11 markdown open plan.md --workspace workspace:2
 
-# Open splitting from a specific tab
-c11 markdown open plan.md --tab tab:5
+# Open splitting from a specific panel
+c11 markdown open plan.md --panel panel:5
 
 # Open in a specific window
 c11 markdown open plan.md --window window:1
@@ -158,7 +158,7 @@ c11 markdown open plan.md --window window:1
 
 ## Rendering Support
 
-The markdown tab renders:
+The markdown panel renders:
 
 - Headings (h1-h6) with dividers on h1/h2
 - Fenced code blocks with monospaced font

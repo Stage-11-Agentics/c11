@@ -72,8 +72,8 @@ As a hardening change, this version disables remote-to-local c11 commands.
 ### 4.1 Browser Networking Path
 1. `DONE` one local proxy endpoint is created per SSH transport/session key (not per detected port).
 2. `DONE` endpoint is provided by a local broker that supports SOCKS5 + HTTP CONNECT and tunnels via daemon stream RPC.
-3. `DONE` browser tabs in remote workspaces are auto-wired to the workspace proxy endpoint.
-4. `DONE` browser tabs in local workspaces are not force-proxied.
+3. `DONE` browser panels in remote workspaces are auto-wired to the workspace proxy endpoint.
+4. `DONE` browser panels in local workspaces are not force-proxied.
 5. `DONE` identical SSH transports share one endpoint via a transport-scoped broker.
 
 ### 4.2 WKWebView Wiring
@@ -151,7 +151,7 @@ Recompute effective size on:
 | ID | Scenario | Status |
 |---|---|---|
 | C-001 | Initial SSH shell works and refuses remote commands | DONE |
-| C-002 | Additional SSH tab works and refuses remote commands | DONE |
+| C-002 | Additional SSH panel works and refuses remote commands | DONE |
 | C-003 | Daemon CLI refuses commands without connecting to a socket | DONE |
 | C-004 | Authenticated command handler refuses commands | DONE |
 | C-005 | Command relay listener startup fails closed | DONE |

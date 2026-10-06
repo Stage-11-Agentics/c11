@@ -95,7 +95,7 @@ The clean local path is to build, launch a *tagged* DEV build, and exercise the 
 ./scripts/launch-tagged-automation.sh <slug>
 ```
 
-In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh tab. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
+In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh panel. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
 
 Do not `open` an untagged `c11 DEV.app` from DerivedData while prod c11 is running — they fight for sockets. See `CLAUDE.md` → "Testing policy" for the why.
 

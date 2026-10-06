@@ -8,6 +8,8 @@ name: CI main (macOS)
 # tests that commit. Every push is therefore followed by a run that starts after
 # it and tests a main that contains it. A pass posts a "CI main (macOS)" success
 # status on the tested commit; a run whose tip already has one skips the build.
+# If the tip cannot be resolved the run fails; if the green record cannot be
+# read the tip builds.
 on:
   push:
     branches: [main]

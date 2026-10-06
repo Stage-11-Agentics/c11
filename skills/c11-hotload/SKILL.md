@@ -29,7 +29,8 @@ each push to main and by dispatch. One build runs at a time, never cancelled,
 with one pending run that each newer push replaces. An admitted run tests the
 ref's tip at that moment, not its trigger, so every push is followed by a run
 that tests a main containing it. A pass posts a `CI main (macOS)` commit status
-on the tested commit; a run whose tip already has one skips.
+on the tested commit; a run whose tip already has one skips. A failed tip
+lookup fails the run; a failed green-record lookup builds.
 `ci-macos-compat.yml` and `build-ghosttykit.yml` run hourly/manual against main.
 Each heavy workflow command uses
 `scripts/with-build-lock.sh`; the process-scoped Xcode/Zig setup does not install

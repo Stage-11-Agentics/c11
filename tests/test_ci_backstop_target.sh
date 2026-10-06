@@ -89,12 +89,23 @@ tip_is "$NEWER_SHA"
 statuses_for "$NEWER_SHA" "[{\"context\":\"$CONTEXT\",\"state\":\"failure\"},{\"context\":\"$CONTEXT\",\"state\":\"pending\"},{\"context\":\"other\",\"state\":\"success\"}]"
 expect "$(run_target "$NEWER_SHA")" "$NEWER_SHA" false "non-success or other-context statuses"
 
-# An unresolvable tip falls back to the trigger and still checks its record.
-reset
-statuses_for "$OLDER_SHA" '[]'
-expect "$(run_target "$OLDER_SHA")" "$OLDER_SHA" false "tip lookup failure"
-fixture "repos/$REPO/git/ref/heads/main" '{"object":{}}'
-expect "$(run_target "$OLDER_SHA")" "$OLDER_SHA" false "tip without a sha"
+# An unresolvable tip fails selection with no outputs, even when the older
+# trigger already passed: skipping it or building it could both miss the tip.
+expect_selection_failure() {
+  local label="$1" output status=0
+  output="$(run_target "$OLDER_SHA")" || status=$?
+  [[ "$status" -ne 0 ]] || fail "$label: selection succeeded with '$output'"
+  [[ -z "$output" ]] || fail "$label: printed outputs '$output'"
+  if grep -Fq "commits/$OLDER_SHA/statuses" "$TMP_DIR/gh.log"; then
+    fail "$label: read the trigger's green record"
+  fi
+}
+for tip_response in API_ERROR 'not json' '{"object":{}}' '{"object":{"sha":"not-a-sha"}}'; do
+  reset
+  statuses_for "$OLDER_SHA" "$(green_status 3)"
+  [[ "$tip_response" == API_ERROR ]] || fixture "repos/$REPO/git/ref/heads/main" "$tip_response"
+  expect_selection_failure "tip lookup returned $tip_response"
+done
 
 # Status lookup failures build instead of skipping.
 reset
@@ -111,4 +122,4 @@ output="$(PATH="$TMP_DIR/bin:$PATH" TEST_GH_LOG="$TMP_DIR/gh.log" TEST_GH_API="$
   "$SCRIPT" "$REPO" refs/heads/followup/proof "$OLDER_SHA" "$CONTEXT" 2>/dev/null)"
 expect "$output" "$NEWER_SHA" false "dispatched branch"
 
-echo "PASS: backstop tests the ref's live tip and skips only on that tip's green status"
+echo "PASS: backstop tests the ref's live tip, skips only on that tip's green status, and fails when the tip is unknown"

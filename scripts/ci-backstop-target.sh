@@ -9,9 +9,10 @@
 # <status-context> success status on the commit it tested; "tested" reads that
 # status, so it describes the tested commit, not the run's trigger.
 #
-# Prints GITHUB_OUTPUT lines: sha=<target> and tested=true|false. API failures
-# never skip: an unresolvable tip falls back to <trigger-sha>, and an unreadable
-# status list reports tested=false.
+# Prints GITHUB_OUTPUT lines: sha=<target> and tested=true|false. A tip that
+# cannot be resolved fails selection (exit 1, no outputs): neither building nor
+# skipping a possibly stale trigger is safe. Once the tip is resolved, an
+# unreadable status list reports tested=false, so the tip builds.
 set -euo pipefail
 
 if [[ $# -ne 4 ]]; then
@@ -29,8 +30,8 @@ if ref_json="$(gh api "repos/$REPO/git/ref/$REF")"; then
   target="$(jq -r '.object.sha // empty' <<<"$ref_json" 2>/dev/null || true)"
 fi
 if [[ ! "$target" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "warning: could not resolve the tip of $REF; testing trigger $TRIGGER_SHA" >&2
-  target="$TRIGGER_SHA"
+  echo "error: could not resolve the tip of $REF (trigger $TRIGGER_SHA); failing instead of testing a possibly stale commit" >&2
+  exit 1
 elif [[ "$target" != "$TRIGGER_SHA" ]]; then
   echo "$REF moved past trigger $TRIGGER_SHA; testing its tip $target" >&2
 fi

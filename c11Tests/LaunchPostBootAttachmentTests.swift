@@ -35,23 +35,35 @@ final class LaunchPostBootAttachmentTests: XCTestCase {
         let staged = try await Task.detached(priority: .userInitiated) { try store.stage(prompt: body) }.value
         let launcherReceipt = root.appendingPathComponent("launcher.json")
         let fileReceipt = root.appendingPathComponent("file.json")
-        let fake = root.appendingPathComponent("fake postboot agent.py")
+        // The fake agent's timing half is zsh, already warm as the tab's shell:
+        // it records its start, blocks on the instruction line, and stamps its
+        // arrival. Python, whose cold start can exceed the 2.5 s post-boot
+        // delay on a slow runner, only verifies the file after arrival, so its
+        // startup never shifts a measured time.
+        let fake = root.appendingPathComponent("fake postboot agent.zsh")
+        try #"""
+zmodload zsh/datetime
+print -r -- "{\"started_at\": $EPOCHREALTIME}" > "$1"
+IFS= read -r instruction
+received_at=$EPOCHREALTIME
+exec /usr/bin/python3 -B "$3" "$2" "$received_at" "${instruction%$'\r'}"
+"""#.write(to: fake, atomically: true, encoding: .utf8)
+        let verifier = root.appendingPathComponent("fake postboot verifier.py")
         try #"""
 import hashlib, json, pathlib, sys, time
-launch_receipt, file_receipt = map(pathlib.Path, sys.argv[1:])
-launch_receipt.write_text(json.dumps({'started_at': time.time()}))
+file_receipt, received_at, instruction = pathlib.Path(sys.argv[1]), float(sys.argv[2]), sys.argv[3]
 try:
-    instruction = sys.stdin.readline().rstrip('\r\n')
     prefix, suffix = 'Read the file at ', ' and follow it exactly.'
     assert instruction.startswith(prefix) and instruction.endswith(suffix), repr(instruction)
     path = instruction[len(prefix):-len(suffix)]
     data = pathlib.Path(path).read_bytes()
     result = {'instruction': instruction, 'path': path, 'file_bytes': len(data),
-              'file_sha256': hashlib.sha256(data).hexdigest(), 'read_at': time.time()}
+              'file_sha256': hashlib.sha256(data).hexdigest(),
+              'received_at': received_at, 'read_at': time.time()}
 except Exception as error:
-    result = {'error': repr(error), 'read_at': time.time()}
+    result = {'error': repr(error), 'received_at': received_at, 'read_at': time.time()}
 file_receipt.write_text(json.dumps(result))
-"""#.write(to: fake, atomically: true, encoding: .utf8)
+"""#.write(to: verifier, atomically: true, encoding: .utf8)
 
         // initialCommand would eagerly make a headless window. A retained
         // config command selects isolated zsh while preserving the unattached
@@ -83,7 +95,7 @@ file_receipt.write_text(json.dumps(result))
             window.close()
         }
         try store.retain(staged, owner: panel.launchPromptOwner)
-        let command = "/usr/bin/python3 -B " + [fake.path, launcherReceipt.path, fileReceipt.path]
+        let command = "/bin/zsh -f " + [fake.path, launcherReceipt.path, fileReceipt.path, verifier.path]
             .map(DefaultAgentResolver.shellQuote).joined(separator: " ")
         let plan = LaunchPromptDelivery.compose(command: command, delivery: .postBoot, promptFilePath: staged.url.path)
         XCTAssertEqual(plan.launchLine, command)
@@ -122,13 +134,16 @@ file_receipt.write_text(json.dumps(result))
         XCTAssertEqual(received["file_bytes"] as? Int, body.utf8.count, diagnostic)
         XCTAssertEqual(received["file_sha256"] as? String, expectedDigest, diagnostic)
         let startedAt = try XCTUnwrap(launcher["started_at"] as? Double)
+        let receivedAt = try XCTUnwrap(received["received_at"] as? Double)
         let readAt = try XCTUnwrap(received["read_at"] as? Double)
-        XCTAssertGreaterThanOrEqual(readAt - attachedAt.timeIntervalSince1970, 2.25,
+        XCTAssertGreaterThanOrEqual(receivedAt - attachedAt.timeIntervalSince1970, 2.25,
                                     "the 2.5 s timer must start after actual submission, not the unattached request")
-        XCTAssertGreaterThan(readAt, startedAt, "file read must follow launcher execution")
+        XCTAssertGreaterThan(receivedAt, startedAt, "the instruction must arrive after the launcher is running")
+        XCTAssertGreaterThanOrEqual(readAt, receivedAt, "file read must follow the instruction's arrival")
         print("POSTBOOT \(kind): unattached=\(attachedAt.timeIntervalSince(requestedAt))s "
               + "attach-to-launch=\(startedAt - attachedAt.timeIntervalSince1970)s "
-              + "launch-to-read=\(readAt - startedAt)s bytes=\(body.utf8.count) sha256=\(expectedDigest)")
+              + "launch-to-receive=\(receivedAt - startedAt)s receive-to-read=\(readAt - receivedAt)s "
+              + "bytes=\(body.utf8.count) sha256=\(expectedDigest)")
     }
 
     private func findTerminalView(in view: NSView) -> GhosttyNSView? {

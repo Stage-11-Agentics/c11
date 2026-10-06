@@ -73,12 +73,12 @@ final class MailboxLayoutTests: XCTestCase {
     func testLegacyInboxURLKeepsSafeTitles() {
         let ws = stubWorkspace()
         XCTAssertEqual(
-            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, tabName: "build watcher")?
+            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: "build watcher")?
                 .lastPathComponent,
             "build watcher"
         )
         XCTAssertEqual(
-            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, tabName: "ビルダー")?
+            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: "ビルダー")?
                 .lastPathComponent,
             "ビルダー"
         )
@@ -91,7 +91,7 @@ final class MailboxLayoutTests: XCTestCase {
         let long = "MRQ-214 [review]: " + String(repeating: "x", count: 90)
         for title in ["a/b: c", long, "../escape", ".hidden", "", "_outbox", "_read", "blobs"] {
             XCTAssertNil(
-                MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, tabName: title),
+                MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: title),
                 title
             )
         }
@@ -106,26 +106,26 @@ final class MailboxLayoutTests: XCTestCase {
 
         // No legacy directory on disk: only the canonical inbox.
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, tabName: "watcher"),
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, panelName: "watcher"),
             [MailboxLayout.inboxURL(state: state, workspaceId: ws, tabId: tab)]
         )
 
         let legacy = try XCTUnwrap(
-            MailboxLayout.legacyInboxURL(state: state, workspaceId: ws, tabName: "watcher")
+            MailboxLayout.legacyInboxURL(state: state, workspaceId: ws, panelName: "watcher")
         )
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, tabName: "watcher"),
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, panelName: "watcher"),
             [MailboxLayout.inboxURL(state: state, workspaceId: ws, tabId: tab), legacy]
         )
         // Tab UUID unknown (a `--surface` name c11 could not resolve): legacy only.
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: nil, tabName: "watcher"),
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: nil, panelName: "watcher"),
             [legacy]
         )
         // A title-unsafe name never yields a legacy path.
         XCTAssertEqual(
-            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, tabName: "a/b: c"),
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, tabId: tab, panelName: "a/b: c"),
             [MailboxLayout.inboxURL(state: state, workspaceId: ws, tabId: tab)]
         )
     }

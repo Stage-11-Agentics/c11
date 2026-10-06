@@ -31,7 +31,7 @@ enum FeedAnswerEligibility {
         targetWorkspaceID: UUID?,
         owner: JournalOwner?,
         snapshot: JournalSnapshot?,
-        attention: TabAttentionSnapshot,
+        attention: PanelAttentionSnapshot,
         projectedRow: FeedAnswerProjectionRow?
     ) -> FeedAnswerIdentity? {
         guard targetWorkspaceID == workspaceID,
@@ -81,7 +81,7 @@ enum FeedAnswerEligibility {
         targetWorkspaceID: UUID?,
         owner: JournalOwner?,
         snapshot: JournalSnapshot?,
-        attention: TabAttentionSnapshot
+        attention: PanelAttentionSnapshot
     ) -> Bool {
         guard targetWorkspaceID == identity.workspaceID,
               owner == identity.owner,

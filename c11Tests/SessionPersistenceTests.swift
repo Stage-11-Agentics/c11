@@ -119,7 +119,7 @@ final class SessionPersistenceTests: XCTestCase {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let panel = try XCTUnwrap(
-            workspace.newMarkdownTab(
+            workspace.newMarkdownPanel(
                 inPane: paneId,
                 filePath: markdownURL.path,
                 focus: true
@@ -134,8 +134,8 @@ final class SessionPersistenceTests: XCTestCase {
         restored.restoreSessionSnapshot(snapshot)
 
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
-        let restoredTab = try XCTUnwrap(restored.markdownTab(for: restoredPanelId))
-        XCTAssertEqual(restoredTab.filePath, markdownURL.path)
+        let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
+        XCTAssertEqual(restoredPanel.filePath, markdownURL.path)
         XCTAssertEqual(restored.customTitle, "Docs")
         XCTAssertEqual(restored.tabTitle(panelId: restoredPanelId), "Readme")
     }
@@ -148,7 +148,7 @@ final class SessionPersistenceTests: XCTestCase {
         var app = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
         var workspace = app.windows[0].workspaceManager.workspaces[0]
         let id = UUID()
-        let tab = SessionTabSnapshot(
+        let tab = SessionPanelSnapshot(
             id: id, type: .terminal, title: "Synthetic", customTitle: nil,
             directory: "/tmp", isPinned: false, isManuallyUnread: false,
             gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
@@ -179,7 +179,7 @@ final class SessionPersistenceTests: XCTestCase {
         var duplicateSnapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
         var duplicateWorkspace = duplicateSnapshot.windows[0].workspaceManager.workspaces[0]
         let duplicateID = UUID()
-        let duplicatePanel = SessionTabSnapshot(
+        let duplicatePanel = SessionPanelSnapshot(
             id: duplicateID, type: .terminal, title: "Synthetic", customTitle: nil,
             directory: "/tmp", isPinned: false, isManuallyUnread: false,
             gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
@@ -491,7 +491,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testSessionTabSnapshotCustomColorRoundTrip() throws {
         let panelId = UUID()
-        let snapshot = SessionTabSnapshot(
+        let snapshot = SessionPanelSnapshot(
             id: panelId,
             type: .terminal,
             title: nil,
@@ -515,13 +515,13 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertTrue(json.contains("\"customColor\""))
         XCTAssertTrue(json.contains("#C0392B"))
 
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
         XCTAssertEqual(decoded.customColor, "#C0392B")
         XCTAssertEqual(decoded.id, panelId)
     }
 
     func testSessionTabSnapshotCustomColorOmittedWhenNil() throws {
-        let snapshot = SessionTabSnapshot(
+        let snapshot = SessionPanelSnapshot(
             id: UUID(),
             type: .terminal,
             title: nil,
@@ -547,7 +547,7 @@ final class SessionPersistenceTests: XCTestCase {
             "Nil customColor should not bloat snapshots — JSONEncoder omits the key"
         )
 
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
         XCTAssertNil(decoded.customColor)
     }
 
@@ -565,7 +565,7 @@ final class SessionPersistenceTests: XCTestCase {
         }
         """
         let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
 
         XCTAssertEqual(decoded.id, panelId)
         XCTAssertNil(decoded.customColor)
@@ -583,7 +583,7 @@ final class SessionPersistenceTests: XCTestCase {
     func testSessionTabSnapshotLastActivityAtRoundTrip() throws {
         let panelId = UUID()
         let floor = Date(timeIntervalSince1970: 1_700_000_123)
-        var snapshot = SessionTabSnapshot(
+        var snapshot = SessionPanelSnapshot(
             id: panelId, type: .terminal, title: nil, customTitle: nil,
             customColor: nil, directory: nil, isPinned: false, isManuallyUnread: false,
             gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
@@ -596,7 +596,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertTrue(json.contains("\"last_activity_at\""),
                       "lastActivityAt must be in CodingKeys or it silently never encodes")
 
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
         XCTAssertEqual(decoded.lastActivityAt, floor)
     }
 
@@ -614,14 +614,14 @@ final class SessionPersistenceTests: XCTestCase {
         }
         """
         let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         XCTAssertEqual(decoded.id, panelId)
         XCTAssertNil(decoded.lastActivityAt)
     }
 
     func testSessionTabSnapshotLogicalCreationRoundTrip() throws {
         let createdAt = Date(timeIntervalSince1970: 1_700_000_456)
-        let snapshot = SessionTabSnapshot(
+        let snapshot = SessionPanelSnapshot(
             id: UUID(),
             createdAt: createdAt,
             type: .browser,
@@ -642,7 +642,7 @@ final class SessionPersistenceTests: XCTestCase {
         )
 
         let encoded = try JSONEncoder().encode(snapshot)
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
         XCTAssertEqual(decoded.createdAt, createdAt)
     }
 
@@ -659,7 +659,7 @@ final class SessionPersistenceTests: XCTestCase {
         """
 
         let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         XCTAssertNil(decoded.createdAt)
     }
 
@@ -866,7 +866,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testSessionBrowserTabSnapshotHistoryRoundTrip() throws {
         let profileID = try XCTUnwrap(UUID(uuidString: "8F03A658-5A84-428B-AD03-5A6D04692F64"))
-        let source = SessionBrowserTabSnapshot(
+        let source = SessionBrowserPanelSnapshot(
             urlString: "https://example.com/current",
             profileID: profileID,
             shouldRenderWebView: true,
@@ -882,7 +882,7 @@ final class SessionPersistenceTests: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(source)
-        let decoded = try JSONDecoder().decode(SessionBrowserTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionBrowserPanelSnapshot.self, from: data)
         XCTAssertEqual(decoded.urlString, source.urlString)
         XCTAssertEqual(decoded.profileID, source.profileID)
         XCTAssertEqual(decoded.backHistoryURLStrings, source.backHistoryURLStrings)
@@ -891,7 +891,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testSessionBrowserCompanionLinkRoundTripsWithoutChangingSchemaVersion() throws {
         let linkedID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
-        var source = SessionBrowserTabSnapshot(
+        var source = SessionBrowserPanelSnapshot(
             urlString: "https://example.com/current",
             profileID: nil,
             shouldRenderWebView: true,
@@ -900,13 +900,13 @@ final class SessionPersistenceTests: XCTestCase {
             backHistoryURLStrings: nil,
             forwardHistoryURLStrings: nil
         )
-        source.linkedAgent = AgentTabLink(
+        source.linkedAgent = AgentPanelLink(
             surfaceID: linkedID,
             lastKnownName: "Build agent"
         )
 
         let decoded = try JSONDecoder().decode(
-            SessionBrowserTabSnapshot.self,
+            SessionBrowserPanelSnapshot.self,
             from: JSONEncoder().encode(source)
         )
         XCTAssertEqual(decoded.linkedAgent, source.linkedAgent)
@@ -923,7 +923,7 @@ final class SessionPersistenceTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let decoded = try JSONDecoder().decode(SessionBrowserTabSnapshot.self, from: json)
+        let decoded = try JSONDecoder().decode(SessionBrowserPanelSnapshot.self, from: json)
         XCTAssertEqual(decoded.urlString, "https://example.com/current")
         XCTAssertNil(decoded.profileID)
         XCTAssertNil(decoded.backHistoryURLStrings)
@@ -1025,7 +1025,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(workspace.customTitle, "Fixture workspace")
         XCTAssertEqual(workspace.panels.count, 2)
         let link = try XCTUnwrap(workspace.panels[1].browser?.linkedAgent)
-        XCTAssertEqual(link, AgentTabLink(surfaceID: agentID, lastKnownName: "Fixture agent"))
+        XCTAssertEqual(link, AgentPanelLink(surfaceID: agentID, lastKnownName: "Fixture agent"))
 
         // The real loader path (all-or-nothing decode + version gate).
         let tempDir = FileManager.default.temporaryDirectory
@@ -1870,9 +1870,9 @@ final class SessionPersistenceTests: XCTestCase {
             var workspace = template
             workspace.id = UUID()
             workspace.customTitle = "\(titlePrefix) \(workspaceIndex)"
-            let panels = (0..<surfacesPerWorkspace).map { panelIndex -> SessionTabSnapshot in
+            let panels = (0..<surfacesPerWorkspace).map { panelIndex -> SessionPanelSnapshot in
                 let id = UUID()
-                return SessionTabSnapshot(
+                return SessionPanelSnapshot(
                     id: id,
                     type: .terminal,
                     title: "Terminal \(panelIndex)",

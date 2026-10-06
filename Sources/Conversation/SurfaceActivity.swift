@@ -18,8 +18,8 @@ import Foundation
 ///
 /// Persisted in workspace snapshots as part of `SessionPanelSnapshot`
 /// (added in step 8).
-final class TabActivityTracker: @unchecked Sendable {
-    static let shared = TabActivityTracker()
+final class PanelActivityTracker: @unchecked Sendable {
+    static let shared = PanelActivityTracker()
 
     /// Debounce window. Two updates within this interval coalesce.
     static let debounceInterval: TimeInterval = 0.250

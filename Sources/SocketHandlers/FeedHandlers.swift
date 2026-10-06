@@ -1,7 +1,7 @@
 import Foundation
 
 private struct FeedAnswerPrepared {
-    let resolved: TerminalController.TabSendPhaseAResolved
+    let resolved: TerminalController.PanelSendPhaseAResolved
     let terminalSurface: TerminalSurface
     let nativeSurface: ghostty_surface_t
     let surfaceLifetimeID: UUID
@@ -146,8 +146,8 @@ extension TerminalController {
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
             )
         }
-        let actorRaw = params["by"] as? String ?? TabAttentionActor.agent.rawValue
-        guard let actor = TabAttentionActor(rawValue: actorRaw) else {
+        let actorRaw = params["by"] as? String ?? PanelAttentionActor.agent.rawValue
+        guard let actor = PanelAttentionActor(rawValue: actorRaw) else {
             return .err(code: "invalid_params", message: "by must be agent or operator", data: nil)
         }
 
@@ -313,7 +313,7 @@ extension TerminalController {
             }
             let owner = JournalCoordinator.shared.exactOwner(tabID: tabID)
             let snapshot = JournalCoordinator.shared.snapshot(tabID: tabID)
-            let attention = TabMetadataStore.shared.attentionSnapshot(workspaceId: workspaceID, surfaceId: tabID)
+            let attention = PanelMetadataStore.shared.attentionSnapshot(workspaceId: workspaceID, surfaceId: tabID)
             guard let projectedRow = FeedProjectionBridge.shared.answerRow(tabID: tabID),
                   let identity = FeedAnswerEligibility.capture(
                     workspaceID: workspaceID,
@@ -362,7 +362,7 @@ extension TerminalController {
         _ prepared: FeedAnswerPrepared,
         body: String,
         answer: String,
-        actor: TabAttentionActor
+        actor: PanelAttentionActor
     ) -> FeedAnswerDeliveryStart {
         guard feedAnswerTargetIsCurrent(prepared) else {
             return .error(feedAnswerError(
@@ -438,7 +438,7 @@ extension TerminalController {
         _ prepared: FeedAnswerPrepared,
         body: String,
         answer: String,
-        actor: TabAttentionActor
+        actor: PanelAttentionActor
     ) -> FeedAnswerSubmitOutcome {
         let targetIsCurrent = feedAnswerTargetIsCurrent(prepared)
         let rowIsCurrent = targetIsCurrent && feedAnswerRowIsCurrent(prepared)
@@ -474,7 +474,7 @@ extension TerminalController {
         ) {
             guard let expectedEpoch = prepared.identity.flagEpoch else { return .unavailable }
             do {
-                let result = try TabAttentionService.shared.lower(
+                let result = try PanelAttentionService.shared.lower(
                     workspaceId: prepared.identity.workspaceID,
                     surfaceId: prepared.identity.tabID,
                     by: actor,
@@ -509,7 +509,7 @@ extension TerminalController {
         }
         let owner = JournalCoordinator.shared.exactOwner(tabID: identity.tabID)
         let snapshot = JournalCoordinator.shared.snapshot(tabID: identity.tabID)
-        let attention = TabMetadataStore.shared.attentionSnapshot(
+        let attention = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: identity.workspaceID,
             surfaceId: identity.tabID
         )

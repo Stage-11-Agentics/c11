@@ -13,11 +13,11 @@ final class SessionRestoreNormalizationTests: XCTestCase {
 
     private func fixture() -> SessionWorkspaceSnapshot {
         let panels = [a, b, c].map { id in
-            SessionTabSnapshot(
+            SessionPanelSnapshot(
                 id: id, type: .terminal, title: "Synthetic", customTitle: nil,
                 directory: "/tmp", isPinned: false, isManuallyUnread: false,
                 gitBranch: nil, listeningPorts: [], ttyName: nil,
-                terminal: SessionTerminalTabSnapshot(workingDirectory: "/tmp", scrollback: nil),
+                terminal: SessionTerminalPanelSnapshot(workingDirectory: "/tmp", scrollback: nil),
                 browser: nil, markdown: nil, metadata: ["fixture": .string("first")],
                 metadataSources: nil
             )
@@ -51,7 +51,7 @@ final class SessionRestoreNormalizationTests: XCTestCase {
     func testStartupPreparationDeduplicatesCodexBeforeReconciliationAndPreservesFirstActivityFloor() async throws {
         var workspace = fixture()
         let firstFloor = Date(timeIntervalSince1970: 100)
-        workspace.panels[0].metadata = [TabMetadataKeyName.terminalType: .string("codex")]
+        workspace.panels[0].metadata = [PanelMetadataKeyName.terminalType: .string("codex")]
         workspace.panels[0].lastActivityAt = firstFloor
         var duplicate = workspace.panels[0]
         duplicate.directory = "/tmp/discarded"

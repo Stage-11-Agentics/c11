@@ -80,7 +80,7 @@ final class AreaMetadataPersistenceTests: XCTestCase {
     // MARK: - Bridge helpers (pane label)
 
     func testEnforcePaneSizeCapDropsOversizedKeysUntilUnderLimit() {
-        let cap = TabMetadataStore.payloadCapBytes
+        let cap = PanelMetadataStore.payloadCapBytes
         // Two big strings that together exceed the cap; the largest-first
         // policy must drop the bigger one and leave the smaller intact.
         let bigger = String(repeating: "a", count: cap)
@@ -110,7 +110,7 @@ final class AreaMetadataPersistenceTests: XCTestCase {
     /// dataFromSnapshot` exercises, plus that the surviving metadata installs
     /// while the dropped key's sidecar is filtered out alongside it.
     func testRestoreCapDropsOversizedKeyAndAlignsSources() throws {
-        let cap = TabMetadataStore.payloadCapBytes
+        let cap = PanelMetadataStore.payloadCapBytes
         let huge = String(repeating: "a", count: cap)
         let persistedValues: [String: PersistedJSONValue] = [
             "title": .string("Parent :: Restored"),

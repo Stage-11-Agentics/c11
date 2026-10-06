@@ -1236,31 +1236,31 @@ final class GhosttyTerminalStartupEnvironmentTests: XCTestCase {
 @MainActor
 final class BrowserTabRemoteStoreTests: XCTestCase {
     func testRemoteWorkspaceTabsShareWorkspaceScopedWebsiteDataStore() {
-        let localTab = BrowserTab(workspaceId: UUID(), isRemoteWorkspace: false)
+        let localPanel = BrowserPanel(workspaceId: UUID(), isRemoteWorkspace: false)
         let remoteWorkspaceId = UUID()
-        let firstRemoteTab = BrowserTab(
+        let firstRemotePanel = BrowserPanel(
             workspaceId: remoteWorkspaceId,
             isRemoteWorkspace: true,
             remoteWebsiteDataStoreIdentifier: remoteWorkspaceId
         )
-        let secondRemoteTab = BrowserTab(
+        let secondRemotePanel = BrowserPanel(
             workspaceId: remoteWorkspaceId,
             isRemoteWorkspace: true,
             remoteWebsiteDataStoreIdentifier: remoteWorkspaceId
         )
 
-        XCTAssertTrue(localTab.webView.configuration.websiteDataStore === BrowserProfileStore.shared.websiteDataStore(for: localTab.profileID))
-        XCTAssertFalse(firstRemoteTab.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
+        XCTAssertTrue(localPanel.webView.configuration.websiteDataStore === BrowserProfileStore.shared.websiteDataStore(for: localPanel.profileID))
+        XCTAssertFalse(firstRemotePanel.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
         XCTAssertTrue(
-            firstRemoteTab.webView.configuration.websiteDataStore ===
-                secondRemoteTab.webView.configuration.websiteDataStore
+            firstRemotePanel.webView.configuration.websiteDataStore ===
+                secondRemotePanel.webView.configuration.websiteDataStore
         )
     }
 
     func testRemoteWorkspaceDefersInitialNavigationUntilProxyEndpointIsReady() {
         let remoteWorkspaceId = UUID()
         let url = URL(string: "http://localhost:3000/demo")!
-        let panel = BrowserTab(
+        let panel = BrowserPanel(
             workspaceId: remoteWorkspaceId,
             initialURL: url,
             isRemoteWorkspace: true,
@@ -1282,7 +1282,7 @@ final class BrowserTabRemoteStoreTests: XCTestCase {
     func testRemoteWorkspaceKeepsHTTPSLoopbackUnaliased() {
         let remoteWorkspaceId = UUID()
         let url = URL(string: "https://localhost:3443/demo")!
-        let panel = BrowserTab(
+        let panel = BrowserPanel(
             workspaceId: remoteWorkspaceId,
             initialURL: url,
             isRemoteWorkspace: true,
@@ -1329,11 +1329,11 @@ final class BrowserTabRemoteStoreTests: XCTestCase {
         let destinationStore = destinationBrowser.webView.configuration.websiteDataStore
         XCTAssertFalse(destinationStore === WKWebsiteDataStore.default())
 
-        let detached = try XCTUnwrap(source.detachTab(panelId: sourceBrowser.id))
+        let detached = try XCTUnwrap(source.detachPanel(panelId: sourceBrowser.id))
         let attachedPanelId = try XCTUnwrap(
-            destination.attachDetachedTab(detached, inPane: destinationPaneId, focus: false)
+            destination.attachDetachedPanel(detached, inPane: destinationPaneId, focus: false)
         )
-        let movedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserTab)
+        let movedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserPanel)
 
         XCTAssertTrue(movedBrowser.webView.configuration.websiteDataStore === destinationStore)
         XCTAssertFalse(movedBrowser.webView.configuration.websiteDataStore === localStore)
@@ -1364,11 +1364,11 @@ final class BrowserTabRemoteStoreTests: XCTestCase {
 
         let destination = Workspace()
         let destinationPaneId = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
-        let detached = try XCTUnwrap(source.detachTab(panelId: movedBrowser.id))
+        let detached = try XCTUnwrap(source.detachPanel(panelId: movedBrowser.id))
         let attachedPanelId = try XCTUnwrap(
-            destination.attachDetachedTab(detached, inPane: destinationPaneId, focus: false)
+            destination.attachDetachedPanel(detached, inPane: destinationPaneId, focus: false)
         )
-        let attachedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserTab)
+        let attachedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserPanel)
 
         XCTAssertTrue(attachedBrowser.webView.configuration.websiteDataStore === BrowserProfileStore.shared.websiteDataStore(for: attachedBrowser.profileID))
         XCTAssertTrue(remainingRemoteBrowser.webView.configuration.websiteDataStore === remoteStore)
@@ -1769,8 +1769,8 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
         XCTAssertNil(stack.pop())
     }
 
-    private func makeSnapshot(index: Int) -> ClosedBrowserTabRestoreSnapshot {
-        ClosedBrowserTabRestoreSnapshot(
+    private func makeSnapshot(index: Int) -> ClosedBrowserPanelRestoreSnapshot {
+        ClosedBrowserPanelRestoreSnapshot(
             workspaceId: UUID(),
             url: URL(string: "https://example.com/\(index)"),
             profileID: nil,

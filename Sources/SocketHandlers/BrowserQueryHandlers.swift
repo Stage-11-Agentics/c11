@@ -1343,8 +1343,8 @@ extension TerminalController {
         var payload: [String: Any]?
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
-            let browserPanels = orderedPanels(in: ws).compactMap { panel -> BrowserTab? in
-                panel as? BrowserTab
+            let browserPanels = orderedPanels(in: ws).compactMap { panel -> BrowserPanel? in
+                panel as? BrowserPanel
             }
             let browserTabs: [[String: Any]] = browserPanels.enumerated().map { index, panel in
                 [
@@ -1427,7 +1427,7 @@ extension TerminalController {
             }
 
             let browserIds = orderedPanels(in: ws).compactMap { panel -> UUID? in
-                (panel as? BrowserTab)?.id
+                (panel as? BrowserPanel)?.id
             }
 
             let targetId: UUID? = {
@@ -1469,7 +1469,7 @@ extension TerminalController {
             }
 
             let browserIds = orderedPanels(in: ws).compactMap { panel -> UUID? in
-                (panel as? BrowserTab)?.id
+                (panel as? BrowserPanel)?.id
             }
             guard !browserIds.isEmpty else {
                 result = .err(code: "not_found", message: "No browser panels", data: nil)

@@ -6,12 +6,12 @@ import Bonsplit
 /// TerminalPanel wraps an existing TerminalSurface and conforms to the Panel protocol.
 /// This allows TerminalSurface to be used within the bonsplit-based layout system.
 @MainActor
-final class TerminalTab: TabContent, ObservableObject {
+final class TerminalPanel: Panel, ObservableObject {
     let id: UUID
     /// Ownership is tied to this object, independent of a restored/reused tab UUID.
     let launchPromptOwner = UUID()
     let createdAt: Date?
-    let panelType: TabContentType = .terminal
+    let panelType: PanelType = .terminal
 
     /// The underlying terminal surface
     let surface: TerminalSurface
@@ -64,7 +64,7 @@ final class TerminalTab: TabContent, ObservableObject {
     /// `lifecycle_state` metadata mirror and dispatches occlusion to
     /// libghostty on state transitions. Visibility is driven from
     /// `TerminalPanelView` via `applyVisibility(_:)`.
-    let lifecycle: TabLifecycleController
+    let lifecycle: PanelLifecycleController
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -173,7 +173,7 @@ final class TerminalTab: TabContent, ObservableObject {
         self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.surface = surface
-        self.lifecycle = TabLifecycleController(
+        self.lifecycle = PanelLifecycleController(
             workspaceId: workspaceId,
             surfaceId: surface.id,
             initial: .active
@@ -195,7 +195,7 @@ final class TerminalTab: TabContent, ObservableObject {
         // every couple of seconds to track the foreground process.
         // Until that report lands, the surface is registered without
         // a pid and the sidebar renders `—`.
-        TabMetricsSampler.shared.register(surfaceId: surface.id)
+        PanelMetricsSampler.shared.register(surfaceId: surface.id)
 
         // Subscribe to surface's search state changes
         surface.$searchState
@@ -336,7 +336,7 @@ final class TerminalTab: TabContent, ObservableObject {
         unfocus()
         hostedView.setVisibleInUI(false)
         TerminalWindowPortalRegistry.detach(hostedView: hostedView)
-        TabMetricsSampler.shared.unregister(surfaceId: id)
+        PanelMetricsSampler.shared.unregister(surfaceId: id)
 #if DEBUG
         dlog(
             "surface.panel.close.end panel=\(id.uuidString.prefix(5)) " +
@@ -394,21 +394,21 @@ final class TerminalTab: TabContent, ObservableObject {
         surface.applyWindowBackgroundIfActive()
     }
 
-    func captureFocusIntent(in window: NSWindow?) -> TabFocusIntent {
+    func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent {
         .terminal(hostedView.capturePanelFocusIntent(in: window))
     }
 
-    func preferredFocusIntentForActivation() -> TabFocusIntent {
+    func preferredFocusIntentForActivation() -> PanelFocusIntent {
         .terminal(hostedView.preferredPanelFocusIntentForActivation())
     }
 
-    func prepareFocusIntentForActivation(_ intent: TabFocusIntent) {
+    func prepareFocusIntentForActivation(_ intent: PanelFocusIntent) {
         guard case .terminal(let target) = intent else { return }
         hostedView.preparePanelFocusIntentForActivation(target)
     }
 
     @discardableResult
-    func restoreFocusIntent(_ intent: TabFocusIntent) -> Bool {
+    func restoreFocusIntent(_ intent: PanelFocusIntent) -> Bool {
         switch intent {
         case .panel:
             focus()
@@ -420,14 +420,14 @@ final class TerminalTab: TabContent, ObservableObject {
         }
     }
 
-    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> TabFocusIntent? {
+    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> PanelFocusIntent? {
         _ = window
         guard let intent = hostedView.ownedPanelFocusIntent(for: responder) else { return nil }
         return .terminal(intent)
     }
 
     @discardableResult
-    func yieldFocusIntent(_ intent: TabFocusIntent, in window: NSWindow) -> Bool {
+    func yieldFocusIntent(_ intent: PanelFocusIntent, in window: NSWindow) -> Bool {
         guard case .terminal(let target) = intent else { return false }
         return hostedView.yieldPanelFocusIntent(target, in: window)
     }

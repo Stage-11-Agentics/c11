@@ -271,12 +271,12 @@ final class WorkspaceSnapshotConverterTests: XCTestCase {
             "converter never synthesizes a command; that's the executor's job"
         )
         XCTAssertEqual(
-            surface.metadata?[TabMetadataKeyName.terminalType],
-            .string(TabMetadataKeyName.terminalTypeClaudeCode),
+            surface.metadata?[PanelMetadataKeyName.terminalType],
+            .string(PanelMetadataKeyName.terminalTypeClaudeCode),
             "terminal_type metadata round-trips through the converter"
         )
         XCTAssertEqual(
-            surface.metadata?[TabMetadataKeyName.claudeSessionId],
+            surface.metadata?[PanelMetadataKeyName.claudeSessionId],
             .string("abc12345-ef67-890a-bcde-f0123456789a"),
             "claude.session_id metadata round-trips through the converter"
         )
@@ -366,7 +366,7 @@ final class WorkspaceSnapshotConverterTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(title: "Converter Test"),
             layout: .pane(.init(surfaceIds: ["a"])),
-            surfaces: [TabSpec(id: "a", kind: .terminal)]
+            surfaces: [PanelSpec(id: "a", kind: .terminal)]
         )
     }
 

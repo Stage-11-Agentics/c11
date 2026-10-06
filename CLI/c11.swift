@@ -3065,11 +3065,11 @@ struct CMUXCLI {
             }
 
             var params: [String: Any] = ["type": agentKind]
-            let callerTabId = try resolveCallingSurface(
+            let callerPanelId = try resolveCallingSurface(
                 environment: ProcessInfo.processInfo.environment
             )
-            if let callerTabId {
-                params["caller_panel_id"] = callerTabId
+            if let callerPanelId {
+                params["caller_panel_id"] = callerPanelId
             }
             if let flagReason = optionValue(commandArgs, name: "--flag") {
                 params["flag"] = flagReason
@@ -3078,7 +3078,7 @@ struct CMUXCLI {
                     throw CLIError(message: "launch-agent: --by must be operator or agent")
                 }
                 params["by"] = actor
-                if actor == "agent", callerTabId == nil {
+                if actor == "agent", callerPanelId == nil {
                     throw CLIError(
                         message: "launch-agent: agent-raised flags require C11_PANEL_ID"
                     )
@@ -3185,16 +3185,16 @@ struct CMUXCLI {
                     throw CLIError(message: "raise-flag requires exactly one reason argument")
                 }
                 params["reason"] = positionals[0]
-                let callerTabId = try resolveCallingSurface(
+                let callerPanelId = try resolveCallingSurface(
                     environment: ProcessInfo.processInfo.environment
                 )
-                if actor == "agent", callerTabId == nil {
+                if actor == "agent", callerPanelId == nil {
                     throw CLIError(
                         message: "raise-flag: agent-raised flags require C11_PANEL_ID"
                     )
                 }
-                if let callerTabId {
-                    params["caller_panel_id"] = callerTabId
+                if let callerPanelId {
+                    params["caller_panel_id"] = callerPanelId
                 }
             case "lower-flag": method = "flag.lower"
             case "suppress": method = "flag.suppress"
@@ -3677,8 +3677,8 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["panel_id"] = sfId }
-            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
-                params["caller_panel_id"] = callerTabId
+            if let callerPanelId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_panel_id"] = callerPanelId
             }
             let payload: [String: Any]
             do {
@@ -3722,8 +3722,8 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["panel_id"] = sfId }
-            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
-                params["caller_panel_id"] = callerTabId
+            if let callerPanelId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_panel_id"] = callerPanelId
             }
             let payload = try client.sendV2(method: "panel.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
@@ -3749,8 +3749,8 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["panel_id"] = sfId }
-            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
-                params["caller_panel_id"] = callerTabId
+            if let callerPanelId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_panel_id"] = callerPanelId
             }
             let payload = try client.sendV2(method: "panel.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
@@ -15000,7 +15000,7 @@ struct CMUXCLI {
     }
 
     /// Per-panel verify result.
-    private struct StateVerifyTab {
+    private struct StateVerifyPanel {
         let kind: String
         let id: String
         let state: String
@@ -15321,7 +15321,7 @@ struct CMUXCLI {
         ownership: ResumeOwnershipStatus,
         mode: ResumeRecoveryMode,
         home: String
-    ) -> StateVerifyTab {
+    ) -> StateVerifyPanel {
         let persistedState = ResumePersistedState(rawValue: input.state) ?? .unknown
         let idValid: Bool
         switch input.kind {
@@ -15410,13 +15410,13 @@ struct CMUXCLI {
         ))
         switch decision {
         case .command(let command):
-            return StateVerifyTab(
+            return StateVerifyPanel(
                 kind: input.kind, id: input.id, state: input.state, cwd: input.cwd,
                 ownership: ownership, transcriptEvidence: transcriptEvidence,
                 wouldResume: true, action: command.text, skipCode: nil
             )
         case .skip(let code, let reason):
-            return StateVerifyTab(
+            return StateVerifyPanel(
                 kind: input.kind, id: input.id, state: input.state, cwd: input.cwd,
                 ownership: ownership, transcriptEvidence: transcriptEvidence,
                 wouldResume: false, action: "skip: \(reason)", skipCode: code.rawValue
@@ -20960,7 +20960,7 @@ extension CMUXCLI {
         client: SocketClient,
         fromOverride: String?,
         surfaceOverride: String?
-    ) throws -> (workspaceId: UUID, tabName: String, tabId: UUID?) {
+    ) throws -> (workspaceId: UUID, panelName: String, tabId: UUID?) {
         let env = ProcessInfo.processInfo.environment
         let workspaceIdStr = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
         guard
@@ -21008,14 +21008,14 @@ extension CMUXCLI {
     private func resolveMailboxInboxTabId(
         client: SocketClient,
         workspaceId: UUID,
-        tabName: String,
+        panelName: String,
         tabId: UUID?
     ) -> UUID? {
         if let tabId { return tabId }
         guard let payload = try? client.sendV2(
             method: "mailbox.resolve",
             params: [
-                "to": tabName,
+                "to": panelName,
                 "sender_workspace_id": workspaceId.uuidString,
                 "workspace": workspaceId.uuidString
             ]
@@ -21081,14 +21081,14 @@ extension CMUXCLI {
             )
         }
 
-        let (workspaceId, tabName, _) = try resolveMailboxCaller(
+        let (workspaceId, panelName, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: fromOverride,
             surfaceOverride: nil
         )
 
         let envelope = try MailboxEnvelope.build(
-            from: fromOverride ?? tabName,
+            from: fromOverride ?? panelName,
             to: to,
             topic: topic,
             body: body,
@@ -21254,7 +21254,7 @@ extension CMUXCLI {
         let drain = hasFlag(subArgs, name: "--drain") || !peek
         let surfaceOverride = optionValue(subArgs, name: "--panel")
 
-        let (workspaceId, tabName, callerTabId) = try resolveMailboxCaller(
+        let (workspaceId, panelName, callerPanelId) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: surfaceOverride
@@ -21262,8 +21262,8 @@ extension CMUXCLI {
         let tabId = resolveMailboxInboxTabId(
             client: client,
             workspaceId: workspaceId,
-            tabName: tabName,
-            tabId: callerTabId
+            panelName: panelName,
+            tabId: callerPanelId
         )
 
         // The UUID-keyed inbox plus, when one exists on disk, the title-keyed
@@ -21273,7 +21273,7 @@ extension CMUXCLI {
             state: stateURL,
             workspaceId: workspaceId,
             tabId: tabId,
-            tabName: tabName
+            panelName: panelName
         )
         guard drain else {
             let entries = inboxURLs
@@ -21301,7 +21301,7 @@ extension CMUXCLI {
         // override's resolved UUID with it, nil when a `--tab` name matched no
         // single live tab (the event then carries no surface rather than the
         // caller's).
-        writeDeliveryReceipts(claimed, recipientTabId: tabId, recipient: { _ in tabName })
+        writeDeliveryReceipts(claimed, recipientTabId: tabId, recipient: { _ in panelName })
     }
 
     /// Checked stdout write: false when the bytes could not be written.
@@ -21760,7 +21760,7 @@ extension CMUXCLI {
         client: SocketClient
     ) throws {
         let surfaceOverride = optionValue(subArgs, name: "--panel")
-        let (workspaceId, tabName, callerTabId) = try resolveMailboxCaller(
+        let (workspaceId, panelName, callerPanelId) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: surfaceOverride
@@ -21768,14 +21768,14 @@ extension CMUXCLI {
         guard let tabId = resolveMailboxInboxTabId(
             client: client,
             workspaceId: workspaceId,
-            tabName: tabName,
-            tabId: callerTabId
+            panelName: panelName,
+            tabId: callerPanelId
         ) else {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.surface-not-found",
                     defaultValue: "No panel named %@ in this workspace."
-                ).replacingOccurrences(of: "%@", with: tabName)
+                ).replacingOccurrences(of: "%@", with: panelName)
             )
         }
         let stateURL = try MailboxLayout.defaultStateURL()
@@ -21791,11 +21791,11 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (_, tabName, _) = try resolveMailboxCaller(
+        let (_, panelName, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil
         )
-        print(tabName)
+        print(panelName)
     }
 }

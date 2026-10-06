@@ -64,7 +64,7 @@ final class SocketDerivedSourceRejectionTests: XCTestCase {
     // MARK: - AC17
 
     func testGetMetadataReturnsDerivedWorktreeAndBranchValuesWithDerivedSource() {
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let workspaceId = UUID()
         let surfaceId = UUID()
         // Fresh UUIDs per test → no contamination from sibling tests
@@ -121,7 +121,7 @@ final class SocketDerivedSourceRejectionTests: XCTestCase {
         // readers that depend on the worktree+branch values. Pin
         // the behavior with an explicit "derived keys ARE returned
         // alongside explicit keys" check.
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let workspaceId = UUID()
         let surfaceId = UUID()
         // Fresh UUIDs → no defer cleanup needed.

@@ -15,69 +15,69 @@ final class SocketTabRefValidatorTests: XCTestCase {
 
     func testClassifyDistinguishesAbsentEmptyPresent() {
         // Missing key → absent.
-        XCTAssertEqual(SocketTabRefValidator.classify(([String: Any]())["surface_id"]), .absent)
+        XCTAssertEqual(SocketPanelRefValidator.classify(([String: Any]())["surface_id"]), .absent)
         // Explicit JSON null → absent.
-        XCTAssertEqual(SocketTabRefValidator.classify(NSNull()), .absent)
+        XCTAssertEqual(SocketPanelRefValidator.classify(NSNull()), .absent)
         // Empty / whitespace-only string → empty.
-        XCTAssertEqual(SocketTabRefValidator.classify(""), .empty)
-        XCTAssertEqual(SocketTabRefValidator.classify("   "), .empty)
-        XCTAssertEqual(SocketTabRefValidator.classify("\t\n"), .empty)
+        XCTAssertEqual(SocketPanelRefValidator.classify(""), .empty)
+        XCTAssertEqual(SocketPanelRefValidator.classify("   "), .empty)
+        XCTAssertEqual(SocketPanelRefValidator.classify("\t\n"), .empty)
         // Non-string, non-null (malformed ref) → empty.
-        XCTAssertEqual(SocketTabRefValidator.classify(42), .empty)
+        XCTAssertEqual(SocketPanelRefValidator.classify(42), .empty)
         // Valid string → present, trimmed.
-        XCTAssertEqual(SocketTabRefValidator.classify("  surface:3  "), .present("surface:3"))
-        XCTAssertEqual(SocketTabRefValidator.classify("6E7C…"), .present("6E7C…"))
+        XCTAssertEqual(SocketPanelRefValidator.classify("  surface:3  "), .present("surface:3"))
+        XCTAssertEqual(SocketPanelRefValidator.classify("6E7C…"), .present("6E7C…"))
     }
 
     // MARK: - rejection(): empty_ref
 
     func testPresentButEmptyPinnedRefIsEmptyRef() {
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: ["surface_id": ""],
             targetKeys: ["surface_id", "workspace_id", "tab_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.emptyRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.emptyRefCode)
     }
 
     func testWhitespaceOnlyRefIsEmptyRef() {
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: ["surface_id": "   "],
             targetKeys: ["surface_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.emptyRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.emptyRefCode)
     }
 
     func testEmptyNonRequiredTargetKeyStillRejects() {
         // An explicitly-empty ref is always a bug even if it is not the
         // required/pinning key — the caller clearly meant to target something.
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: ["surface_id": "surface:3", "workspace_id": ""],
             targetKeys: ["surface_id", "workspace_id", "tab_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.emptyRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.emptyRefCode)
     }
 
     // MARK: - rejection(): missing_ref (no focused fallback)
 
     func testAbsentPinnedRefIsMissingRef() {
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: [:],
             targetKeys: ["surface_id", "workspace_id", "tab_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.missingRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.missingRefCode)
     }
 
     func testExplicitNullPinnedRefIsMissingRef() {
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: ["surface_id": NSNull()],
             targetKeys: ["surface_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.missingRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.missingRefCode)
     }
 
     func testCoarserRefDoesNotSatisfyPinnedRequirement() {
@@ -85,18 +85,18 @@ final class SocketTabRefValidatorTests: XCTestCase {
         // because the resolver still falls to `workspace.focusedPanelId`.
         // `requiredAnyOf` is the granularity-pinning key (surface_id), so a
         // workspace_id-only call is missing_ref.
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: ["workspace_id": "workspace:2"],
             targetKeys: ["surface_id", "workspace_id", "tab_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.missingRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.missingRefCode)
     }
 
     // MARK: - rejection(): accept
 
     func testValidPinnedRefIsAccepted() {
-        XCTAssertNil(SocketTabRefValidator.rejection(
+        XCTAssertNil(SocketPanelRefValidator.rejection(
             params: ["surface_id": "surface:3"],
             targetKeys: ["surface_id", "workspace_id", "tab_id"],
             requiredAnyOf: ["surface_id"]
@@ -105,7 +105,7 @@ final class SocketTabRefValidatorTests: XCTestCase {
 
     func testRenameAcceptsEitherSurfaceOrTabId() {
         // rename pins on surface_id OR tab_id (both resolve to a surface id).
-        XCTAssertNil(SocketTabRefValidator.rejection(
+        XCTAssertNil(SocketPanelRefValidator.rejection(
             params: ["tab_id": "tab:5"],
             targetKeys: ["surface_id", "tab_id", "workspace_id"],
             requiredAnyOf: ["surface_id", "tab_id"]
@@ -115,12 +115,12 @@ final class SocketTabRefValidatorTests: XCTestCase {
     func testMixedValidAndEmptyIsRejectedNotIgnored() {
         // A valid surface_id present alongside an empty tab_id must still be
         // rejected — an empty ref is never silently ignored.
-        let r = SocketTabRefValidator.rejection(
+        let r = SocketPanelRefValidator.rejection(
             params: ["surface_id": "surface:3", "tab_id": ""],
             targetKeys: ["surface_id", "tab_id", "workspace_id"],
             requiredAnyOf: ["surface_id", "tab_id"]
         )
-        XCTAssertEqual(r?.code, SocketTabRefValidator.emptyRefCode)
+        XCTAssertEqual(r?.code, SocketPanelRefValidator.emptyRefCode)
     }
 
     // MARK: - v1 tab-scoped shape (set_status / set_progress / log)
@@ -128,19 +128,19 @@ final class SocketTabRefValidatorTests: XCTestCase {
     func testV1TabWriteRequiresTab() {
         // v1 sidebar-metadata writes are tab-scoped; the pinning key is `tab`.
         XCTAssertEqual(
-            SocketTabRefValidator.rejection(
+            SocketPanelRefValidator.rejection(
                 params: [:], targetKeys: ["tab"], requiredAnyOf: ["tab"]
             )?.code,
-            SocketTabRefValidator.missingRefCode
+            SocketPanelRefValidator.missingRefCode
         )
         XCTAssertEqual(
-            SocketTabRefValidator.rejection(
+            SocketPanelRefValidator.rejection(
                 params: ["tab": ""], targetKeys: ["tab"], requiredAnyOf: ["tab"]
             )?.code,
-            SocketTabRefValidator.emptyRefCode
+            SocketPanelRefValidator.emptyRefCode
         )
         XCTAssertNil(
-            SocketTabRefValidator.rejection(
+            SocketPanelRefValidator.rejection(
                 params: ["tab": "tab:2"], targetKeys: ["tab"], requiredAnyOf: ["tab"]
             )
         )

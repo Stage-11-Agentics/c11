@@ -19,78 +19,78 @@ final class TabTypeAvailabilityTests: XCTestCase {
 
     func testTerminalAlwaysEnabledRegardlessOfDefaultsOrEnv() {
         let defaults = freshDefaults()
-        defaults.set(false, forKey: TabTypeAvailability.internalBrowserEnabledKey)
-        defaults.set(false, forKey: TabTypeAvailability.markdownTabsEnabledKey)
+        defaults.set(false, forKey: PanelTypeAvailability.internalBrowserEnabledKey)
+        defaults.set(false, forKey: PanelTypeAvailability.markdownPanelsEnabledKey)
         let env = [
-            TabTypeAvailability.disableBrowserEnvKey: "1",
-            TabTypeAvailability.disableMarkdownEnvKey: "1",
+            PanelTypeAvailability.disableBrowserEnvKey: "1",
+            PanelTypeAvailability.disableMarkdownEnvKey: "1",
         ]
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.terminal, defaults: defaults, environment: env))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.terminal, defaults: defaults, environment: env))
     }
 
     // MARK: - Defaults (no keys, no env) → everything enabled
 
     func testBrowserEnabledByDefaultWhenKeyUnset() {
         let defaults = freshDefaults()
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
     }
 
     func testMarkdownEnabledByDefaultWhenKeyUnset() {
         let defaults = freshDefaults()
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
     }
 
     // MARK: - Persisted toggle drives each type independently
 
     func testBrowserDisabledWhenKeyFalse() {
         let defaults = freshDefaults()
-        defaults.set(false, forKey: TabTypeAvailability.internalBrowserEnabledKey)
-        XCTAssertFalse(TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
+        defaults.set(false, forKey: PanelTypeAvailability.internalBrowserEnabledKey)
+        XCTAssertFalse(PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
         // Markdown is unaffected by the browser switch.
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
     }
 
     func testMarkdownDisabledWhenKeyFalse() {
         let defaults = freshDefaults()
-        defaults.set(false, forKey: TabTypeAvailability.markdownTabsEnabledKey)
-        XCTAssertFalse(TabTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
+        defaults.set(false, forKey: PanelTypeAvailability.markdownPanelsEnabledKey)
+        XCTAssertFalse(PanelTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
         // Browser is unaffected by the markdown switch.
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
     }
 
     func testExplicitTrueKeyKeepsTypeEnabled() {
         let defaults = freshDefaults()
-        defaults.set(true, forKey: TabTypeAvailability.internalBrowserEnabledKey)
-        defaults.set(true, forKey: TabTypeAvailability.markdownTabsEnabledKey)
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
+        defaults.set(true, forKey: PanelTypeAvailability.internalBrowserEnabledKey)
+        defaults.set(true, forKey: PanelTypeAvailability.markdownPanelsEnabledKey)
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: [:]))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: [:]))
     }
 
     // MARK: - Environment override forces disable (and only disable)
 
     func testBrowserEnvOverrideDisablesEvenWhenKeyTrue() {
         let defaults = freshDefaults()
-        defaults.set(true, forKey: TabTypeAvailability.internalBrowserEnabledKey)
-        let env = [TabTypeAvailability.disableBrowserEnvKey: "1"]
-        XCTAssertFalse(TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env))
+        defaults.set(true, forKey: PanelTypeAvailability.internalBrowserEnabledKey)
+        let env = [PanelTypeAvailability.disableBrowserEnvKey: "1"]
+        XCTAssertFalse(PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env))
         // Only browser; markdown stays enabled.
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: env))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: env))
     }
 
     func testMarkdownEnvOverrideDisablesEvenWhenKeyTrue() {
         let defaults = freshDefaults()
-        defaults.set(true, forKey: TabTypeAvailability.markdownTabsEnabledKey)
-        let env = [TabTypeAvailability.disableMarkdownEnvKey: "1"]
-        XCTAssertFalse(TabTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: env))
-        XCTAssertTrue(TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env))
+        defaults.set(true, forKey: PanelTypeAvailability.markdownPanelsEnabledKey)
+        let env = [PanelTypeAvailability.disableMarkdownEnvKey: "1"]
+        XCTAssertFalse(PanelTypeAvailability.isEnabled(.markdown, defaults: defaults, environment: env))
+        XCTAssertTrue(PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env))
     }
 
     func testEnvOverrideAcceptsCommonTruthyTokens() {
         let defaults = freshDefaults()
         for token in ["1", "true", "yes", "on", "TRUE", "On"] {
-            let env = [TabTypeAvailability.disableBrowserEnvKey: token]
+            let env = [PanelTypeAvailability.disableBrowserEnvKey: token]
             XCTAssertFalse(
-                TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env),
+                PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env),
                 "token \(token) should disable the browser"
             )
         }
@@ -99,9 +99,9 @@ final class TabTypeAvailabilityTests: XCTestCase {
     func testEnvOverrideIgnoresEmptyOrFalsyTokens() {
         let defaults = freshDefaults()
         for token in ["", "0", "false", "no", "off", "  "] {
-            let env = [TabTypeAvailability.disableBrowserEnvKey: token]
+            let env = [PanelTypeAvailability.disableBrowserEnvKey: token]
             XCTAssertTrue(
-                TabTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env),
+                PanelTypeAvailability.isEnabled(.browser, defaults: defaults, environment: env),
                 "token \(token.debugDescription) should not disable the browser"
             )
         }
@@ -110,11 +110,11 @@ final class TabTypeAvailabilityTests: XCTestCase {
     // MARK: - Disabled messages name the type and where to re-enable
 
     func testDisabledMessagesAreActionable() {
-        let browser = TabTypeAvailability.disabledMessage(for: .browser)
+        let browser = PanelTypeAvailability.disabledMessage(for: .browser)
         XCTAssertTrue(browser.contains("browser"))
         XCTAssertTrue(browser.contains("Settings"))
 
-        let markdown = TabTypeAvailability.disabledMessage(for: .markdown)
+        let markdown = PanelTypeAvailability.disabledMessage(for: .markdown)
         XCTAssertTrue(markdown.contains("markdown"))
         XCTAssertTrue(markdown.contains("Settings"))
     }

@@ -25,13 +25,13 @@ enum JournalTestData {
 final class JournalReducerTests: XCTestCase {
     // C11-263 seen/sibling repair: unread can disappear independently of a blocked ask.
     func testJournalAttentionSurvivesSeenAndRespectsSuppressionAndFlag() {
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code"), .waiting)
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code", suppressed: true), .idle)
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code", flagged: true, suppressed: true), .waiting)
-        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
             hasJournalAttention: false, derivedActivity: .working, terminalType: "claude-code"), .running)
     }
 

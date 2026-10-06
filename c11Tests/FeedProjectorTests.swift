@@ -45,7 +45,7 @@ final class FeedProjectorTests: XCTestCase {
     @MainActor
     func testAttentionServiceRemovalAndPruningRetireClosedTargets() throws {
         let bridge = FeedProjectionBridge()
-        let service = TabAttentionService(feedProjection: bridge)
+        let service = PanelAttentionService(feedProjection: bridge)
         let workspace = UUID()
         let flagOnly = UUID(), askTab = UUID(), survivor = UUID()
         for tab in [flagOnly, askTab, survivor] {

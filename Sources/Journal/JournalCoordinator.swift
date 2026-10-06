@@ -217,7 +217,7 @@ final class JournalCoordinator: @unchecked Sendable {
         do {
             let eligible = draft.owner.map { isEligible($0) && target(tabID: $0.tabID) == draft.workspaceID } ?? false
             let model = draft.tabID.flatMap { tabID in target(tabID: tabID).flatMap { workspaceID in
-                TabMetadataStore.shared.metadataValue(workspaceId: workspaceID, surfaceId: tabID, key: MetadataKey.model) as? String
+                PanelMetadataStore.shared.metadataValue(workspaceId: workspaceID, surfaceId: tabID, key: MetadataKey.model) as? String
             } }.flatMap { value in
                 !value.isEmpty && value.utf8.count <= 128 && value.utf8.allSatisfy {
                     (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 58, 95].contains($0)

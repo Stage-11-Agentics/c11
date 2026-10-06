@@ -20,13 +20,13 @@ struct WorkspaceApplyPlan: Codable, Sendable, Equatable {
     /// Surfaces keyed by plan-local `SurfaceSpec.id`; referenced from
     /// `LayoutTreeSpec.pane.surfaceIds`. Wire key `panels`; the legacy
     /// `surfaces` key is still read.
-    var surfaces: [TabSpec]
+    var surfaces: [PanelSpec]
 
     init(
         version: Int,
         workspace: WorkspaceSpec,
         layout: LayoutTreeSpec,
-        surfaces: [TabSpec]
+        surfaces: [PanelSpec]
     ) {
         self.version = version
         self.workspace = workspace
@@ -47,9 +47,9 @@ struct WorkspaceApplyPlan: Codable, Sendable, Equatable {
         workspace = try c.decode(WorkspaceSpec.self, forKey: .workspace)
         layout = try c.decode(LayoutTreeSpec.self, forKey: .layout)
         if c.contains(.panels) {
-            surfaces = try c.decode([TabSpec].self, forKey: .panels)
+            surfaces = try c.decode([PanelSpec].self, forKey: .panels)
         } else {
-            surfaces = try c.decode([TabSpec].self, forKey: .surfaces)
+            surfaces = try c.decode([PanelSpec].self, forKey: .surfaces)
         }
     }
 
@@ -87,17 +87,17 @@ struct WorkspaceSpec: Codable, Sendable, Equatable {
     }
 }
 
-enum TabSpecKind: String, Codable, Sendable, Equatable {
+enum PanelSpecKind: String, Codable, Sendable, Equatable {
     case terminal
     case browser
     case markdown
 }
 
-struct TabSpec: Codable, Sendable, Equatable {
+struct PanelSpec: Codable, Sendable, Equatable {
     /// Plan-local stable id, referenced from `LayoutTreeSpec.pane.surfaceIds`.
     /// Never persisted beyond `ApplyResult`; live refs replace it at apply time.
     var id: String
-    var kind: TabSpecKind
+    var kind: PanelSpecKind
     /// Applied via `Workspace.setPanelCustomTitle`, which writes the canonical
     /// `title` key into `SurfaceMetadataStore` — no double-write.
     var title: String?
@@ -137,7 +137,7 @@ struct TabSpec: Codable, Sendable, Equatable {
 
     init(
         id: String,
-        kind: TabSpecKind,
+        kind: PanelSpecKind,
         title: String? = nil,
         description: String? = nil,
         workingDirectory: String? = nil,
@@ -183,7 +183,7 @@ struct TabSpec: Codable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        kind = try c.decode(TabSpecKind.self, forKey: .kind)
+        kind = try c.decode(PanelSpecKind.self, forKey: .kind)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         workingDirectory = try c.decodeIfPresent(String.self, forKey: .workingDirectory)

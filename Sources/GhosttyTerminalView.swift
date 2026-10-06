@@ -4273,7 +4273,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // itself is not the per-keystroke typing-hot path
         // (`forceRefresh`/`hitTest`/`TabItemView` are — sendText handles
         // bigger composed input and synthesised pastes).
-        TabActivityTracker.shared.recordActivity(surfaceId: id.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: id.uuidString)
         guard let surface = surface else {
             enqueuePendingText(data)
             return
@@ -4592,7 +4592,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         captureNativeHandoff: Bool = false
     ) -> Bool {
         if case .returnKey = key {
-            TabLivenessDeriver.onAgentLifecycleChanged(
+            PanelLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: id,
                 workspaceId: workspaceId,
                 activity: .working,
@@ -6252,7 +6252,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             let suppressFlagLower = isSynthesizingKey && suppressNextSyntheticFlagLower
             if suppressFlagLower { suppressNextSyntheticFlagLower = false }
             if !suppressFlagLower {
-                _ = try? TabAttentionService.shared.lowerIfFlagged(
+                _ = try? PanelAttentionService.shared.lowerIfFlagged(
                     workspaceId: terminalSurface.workspaceId,
                     surfaceId: terminalSurface.id,
                     by: .operator
@@ -6263,7 +6263,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                (event.keyCode == 36 || event.keyCode == 76),
                !submitFlags.contains(.command),
                !hasMarkedText() {
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: terminalSurface.id,
                     workspaceId: terminalSurface.workspaceId,
                     activity: .working,
@@ -7045,7 +7045,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             // CMUX-10: click cancels any persistent flash on this surface. Mouse-only
             // path; the keyDown / typing hot path is not touched here.
             if let workspace = AppDelegate.shared?.workspaceManager?.workspaces.first(where: { $0.id == terminalSurface.workspaceId }),
-               workspace.persistentFlashTabs[terminalSurface.id] != nil {
+               workspace.persistentFlashPanels[terminalSurface.id] != nil {
                 workspace.cancelPersistentFlash(panelId: terminalSurface.id)
             }
             AppDelegate.shared?.workspaceManager?.dismissNotificationOnDirectInteraction(
@@ -7179,7 +7179,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     @objc private func showSurfaceManifest(_ sender: Any?) {
         guard let workspaceId = self.workspaceId,
               let surfaceId = terminalSurface?.id else { return }
-        TabManifestViewerWindowController.show(
+        PanelManifestViewerWindowController.show(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             kind: .terminal
@@ -7578,7 +7578,7 @@ func shouldAllowEnsureFocusWindowActivation(
     return true
 }
 
-private struct TabFlagBanner: View {
+private struct PanelFlagBanner: View {
     let reason: String
     let onDismiss: () -> Void
 
@@ -7659,8 +7659,8 @@ final class GhosttySurfaceScrollView: NSView {
     private let keyboardCopyModeBadgeView: GhosttyPassthroughVisualEffectView
     private let keyboardCopyModeBadgeIconView: NSImageView
     private let keyboardCopyModeBadgeLabel: NSTextField
-    private var searchOverlayHostingView: NSHostingView<TabSearchOverlay>?
-    private var flagBannerHostingView: NSHostingView<TabFlagBanner>?
+    private var searchOverlayHostingView: NSHostingView<PanelSearchOverlay>?
+    private var flagBannerHostingView: NSHostingView<PanelFlagBanner>?
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var lastSearchOverlayStateID: ObjectIdentifier?
     private var searchOverlayMutationGeneration: UInt64 = 0
@@ -8213,7 +8213,7 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
         guard let terminalSurface = surfaceView.terminalSurface else { return }
-        let snapshot = TabAttentionIndex.shared.snapshot(
+        let snapshot = PanelAttentionIndex.shared.snapshot(
             workspaceId: terminalSurface.workspaceId,
             surfaceId: terminalSurface.id
         )
@@ -8223,9 +8223,9 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
 
-        let root = TabFlagBanner(reason: reason) { [weak self, weak terminalSurface] in
+        let root = PanelFlagBanner(reason: reason) { [weak self, weak terminalSurface] in
             guard let self, let terminalSurface else { return }
-            _ = try? TabAttentionService.shared.lower(
+            _ = try? PanelAttentionService.shared.lower(
                 workspaceId: terminalSurface.workspaceId,
                 surfaceId: terminalSurface.id,
                 by: .operator
@@ -8516,8 +8516,8 @@ final class GhosttySurfaceScrollView: NSView {
     private func makeSearchOverlayRootView(
         terminalSurface: TerminalSurface,
         searchState: TerminalSurface.SearchState
-    ) -> TabSearchOverlay {
-        TabSearchOverlay(
+    ) -> PanelSearchOverlay {
+        PanelSearchOverlay(
             workspaceId: terminalSurface.workspaceId,
             surfaceId: terminalSurface.id,
             searchState: searchState,
@@ -9644,7 +9644,7 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    func capturePanelFocusIntent(in window: NSWindow?) -> TerminalTabFocusIntent {
+    func capturePanelFocusIntent(in window: NSWindow?) -> TerminalPanelFocusIntent {
         if surfaceView.terminalSurface?.searchState != nil {
             if let firstResponder = window?.firstResponder as? NSView,
                (firstResponder === surfaceView || firstResponder.isDescendant(of: surfaceView)) {
@@ -9661,14 +9661,14 @@ final class GhosttySurfaceScrollView: NSView {
         return .surface
     }
 
-    func preferredPanelFocusIntentForActivation() -> TerminalTabFocusIntent {
+    func preferredPanelFocusIntentForActivation() -> TerminalPanelFocusIntent {
         if surfaceView.terminalSurface?.searchState != nil, searchFocusTarget == .searchField {
             return .findField
         }
         return .surface
     }
 
-    func preparePanelFocusIntentForActivation(_ intent: TerminalTabFocusIntent) {
+    func preparePanelFocusIntentForActivation(_ intent: TerminalPanelFocusIntent) {
         switch intent {
         case .surface:
             searchFocusTarget = .terminal
@@ -9685,7 +9685,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     @discardableResult
-    func restorePanelFocusIntent(_ intent: TerminalTabFocusIntent) -> Bool {
+    func restorePanelFocusIntent(_ intent: TerminalPanelFocusIntent) -> Bool {
         switch intent {
         case .surface:
             searchFocusTarget = .terminal
@@ -9715,7 +9715,7 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    func ownedPanelFocusIntent(for responder: NSResponder) -> TerminalTabFocusIntent? {
+    func ownedPanelFocusIntent(for responder: NSResponder) -> TerminalPanelFocusIntent? {
         if isCurrentSurfaceSearchResponder(responder) {
             return .findField
         }
@@ -9737,7 +9737,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     @discardableResult
-    func yieldPanelFocusIntent(_ intent: TerminalTabFocusIntent, in window: NSWindow) -> Bool {
+    func yieldPanelFocusIntent(_ intent: TerminalPanelFocusIntent, in window: NSWindow) -> Bool {
         guard let firstResponder = window.firstResponder,
               ownedPanelFocusIntent(for: firstResponder) == intent else {
             return false
@@ -9788,7 +9788,7 @@ final class GhosttySurfaceScrollView: NSView {
         guard let view = responder as? NSView else { return false }
         var current: NSView? = view
         while let v = current {
-            if v is NSHostingView<TabSearchOverlay> { return true }
+            if v is NSHostingView<PanelSearchOverlay> { return true }
             let typeName = String(describing: type(of: v))
             if typeName.contains("BrowserSearchOverlay") { return true }
             current = v.superview

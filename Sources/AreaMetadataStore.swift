@@ -25,18 +25,18 @@ final class AreaMetadataStore: @unchecked Sendable {
     // MARK: - Constants
 
     /// Same 64 KiB per-pane cap used for surfaces.
-    static let payloadCapBytes: Int = TabMetadataStore.payloadCapBytes
+    static let payloadCapBytes: Int = PanelMetadataStore.payloadCapBytes
 
     /// Reserved canonical keys recognised at the pane layer. Title and
     /// description start; the rest of the surface canonical set is allowed
     /// for future use without a schema bump and validates against the same
     /// rules. Keys outside this set accept any JSON value.
-    static let reservedKeys: Set<String> = TabMetadataStore.reservedKeys
+    static let reservedKeys: Set<String> = PanelMetadataStore.reservedKeys
 
-    typealias SourceRecord = TabMetadataStore.SourceRecord
-    typealias WriteError = TabMetadataStore.WriteError
-    typealias WriteMode = TabMetadataStore.WriteMode
-    typealias WriteResult = TabMetadataStore.WriteResult
+    typealias SourceRecord = PanelMetadataStore.SourceRecord
+    typealias WriteError = PanelMetadataStore.WriteError
+    typealias WriteMode = PanelMetadataStore.WriteMode
+    typealias WriteResult = PanelMetadataStore.WriteResult
 
     // MARK: - State
 
@@ -215,7 +215,7 @@ final class AreaMetadataStore: @unchecked Sendable {
             if let cur = sblob[key], source.precedence < cur.source.precedence {
                 return false
             }
-            if TabMetadataStore.validateReservedKey(key, value) != nil {
+            if PanelMetadataStore.validateReservedKey(key, value) != nil {
                 return false
             }
             if let existing = blob[key], sameJSONValue(existing, value), sblob[key]?.source == source {
@@ -250,8 +250,8 @@ final class AreaMetadataStore: @unchecked Sendable {
         }
 
         for (k, v) in partial {
-            if TabMetadataStore.reservedKeys.contains(k) {
-                if let err = TabMetadataStore.validateReservedKey(k, v) {
+            if PanelMetadataStore.reservedKeys.contains(k) {
+                if let err = PanelMetadataStore.validateReservedKey(k, v) {
                     throw err
                 }
             }

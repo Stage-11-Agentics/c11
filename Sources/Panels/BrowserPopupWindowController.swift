@@ -69,7 +69,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     let webView: CmuxWebView
     private let panel: NSPanel
     private let urlLabel: NSTextField
-    private weak var openerPanel: BrowserTab?
+    private weak var openerPanel: BrowserPanel?
     private weak var parentPopupController: BrowserPopupWindowController?
     private let nestingDepth: Int
     private var titleObservation: NSKeyValueObservation?
@@ -84,7 +84,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     init(
         configuration: WKWebViewConfiguration,
         windowFeatures: WKWindowFeatures,
-        openerPanel openerTab: BrowserTab?,
+        openerPanel openerTab: BrowserPanel?,
         parentPopupController: BrowserPopupWindowController? = nil,
         nestingDepth: Int = 0
     ) {

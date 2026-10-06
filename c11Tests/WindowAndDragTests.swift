@@ -228,7 +228,7 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
             directory: reportedDirectory
         )
 
-        XCTAssertEqual(workspaceB.tabDirectories[surfaceB], reportedDirectory)
+        XCTAssertEqual(workspaceB.panelDirectories[surfaceB], reportedDirectory)
         XCTAssertEqual(workspaceA.currentDirectory, initialDirectoryA)
         XCTAssertTrue(app.workspaceManager === managerA, "PWD routing must preserve the active window manager")
     }
@@ -1114,7 +1114,7 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let focusExpectation = expectation(description: "observer forwards focus callback")
         var pointerDownCount = 0
@@ -1142,7 +1142,7 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let noFocusExpectation = expectation(description: "observer ignores invalid clicks")
         noFocusExpectation.isInverted = true
@@ -1168,7 +1168,7 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
     }
 
     func testObserverDoesNotParticipateInHitTesting() {
-        let overlay = MarkdownTabPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let overlay = MarkdownPanelPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         XCTAssertNil(overlay.hitTest(NSPoint(x: 40, y: 30)))
     }
 }

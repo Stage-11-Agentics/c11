@@ -1686,7 +1686,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let original = try XCTUnwrap(manager.selectedWorkspaceId)
         let target = manager.addWorkspace(select: false)
         let tabID = try XCTUnwrap(target.panels.keys.first)
-        FeedProjectionBridge.shared.noteAttention(TabAttentionSnapshot(
+        FeedProjectionBridge.shared.noteAttention(PanelAttentionSnapshot(
             workspaceId: target.id, surfaceId: tabID, flagReason: "Synthetic quick view flag",
             flagRaisedAt: Date(), suppressed: false))
         let deadline = Date().addingTimeInterval(3)
@@ -1703,7 +1703,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
     private func tearDownQuickViewFixture(_ fixture: QuickViewFixture) {
         fixture.controller.dismissNotificationsPopover()
-        FeedProjectionBridge.shared.noteAttention(TabAttentionSnapshot(
+        FeedProjectionBridge.shared.noteAttention(PanelAttentionSnapshot(
             workspaceId: fixture.target.id, surfaceId: fixture.tabID, flagReason: nil,
             flagRaisedAt: nil, suppressed: false))
         closeWindow(withId: fixture.windowId)
@@ -1733,7 +1733,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     func testSocketSimulatedReturnInQuickViewIsRefusedAndAttributed() throws {
         let fixture = try makeQuickViewFixture()
         defer { tearDownQuickViewFixture(fixture) }
-        let socket = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        let socket = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerPanelId: UUID())
         XCTAssertTrue(openQuickView(fixture, under: socket), "a socket Command-I opens the quick view")
         XCTAssertEqual(fixture.manager.selectedWorkspaceId, fixture.original, "opening never switches")
         SocketCommandContext.withContext(socket) {

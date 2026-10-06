@@ -21,14 +21,14 @@ final class AgentDetector: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "com.stage11.c11.agent-detector", qos: .utility)
 
-    private struct TabKey: Hashable {
+    private struct PanelKey: Hashable {
         let workspaceId: UUID
         let panelId: UUID
     }
 
-    private var ttyNames: [TabKey: String] = [:]
-    private var detectedTerminalTypes: [TabKey: String] = [:]
-    private var pendingKicks: Set<TabKey> = []
+    private var ttyNames: [PanelKey: String] = [:]
+    private var detectedTerminalTypes: [PanelKey: String] = [:]
+    private var pendingKicks: Set<PanelKey> = []
     private var coalesceTimer: DispatchSourceTimer?
     private var scanInFlight = false
     private var sweepTimer: DispatchSourceTimer?
@@ -37,7 +37,7 @@ final class AgentDetector: @unchecked Sendable {
 
     func registerTTY(workspaceId: UUID, panelId: UUID, ttyName: String) {
         queue.async { [self] in
-            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames[key] = ttyName
             pendingKicks.insert(key)
             startCoalesce(delaySeconds: 0.25)
@@ -47,7 +47,7 @@ final class AgentDetector: @unchecked Sendable {
 
     func unregister(workspaceId: UUID, panelId: UUID) {
         queue.async { [self] in
-            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
             detectedTerminalTypes.removeValue(forKey: key)
             pendingKicks.remove(key)
@@ -57,7 +57,7 @@ final class AgentDetector: @unchecked Sendable {
     /// Request a scan for a specific panel. Coalesces with others.
     func kick(workspaceId: UUID, panelId: UUID) {
         queue.async { [self] in
-            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             guard ttyNames[key] != nil else { return }
             pendingKicks.insert(key)
             startCoalesce(delaySeconds: 0.2)
@@ -102,13 +102,13 @@ final class AgentDetector: @unchecked Sendable {
             // work. Decays stale `working` surfaces to `idle` as a backstop
             // for missed prompt reports.
             for key in self.ttyNames.keys {
-                TabLivenessDeriver.reconcile(
+                PanelLivenessDeriver.reconcile(
                     surfaceId: key.panelId,
                     workspaceId: key.workspaceId,
                     detectedTerminalType: self.detectedTerminalTypes[key]
                 )
             }
-            TabLivenessDeriver.retainPromptCacheState(forLiveSurfaces: Set(self.ttyNames.keys.map(\.panelId)))
+            PanelLivenessDeriver.retainPromptCacheState(forLiveSurfaces: Set(self.ttyNames.keys.map(\.panelId)))
             // Live model detection rides the same sweep: tail each agent's own
             // session file off-main; surfaces with no agent in front clear any
             // derived model left by a session that ended.
@@ -130,7 +130,7 @@ final class AgentDetector: @unchecked Sendable {
 
     // MARK: - Scan
 
-    private func runScan(panelsToWrite tabsToWrite: Set<TabKey>) {
+    private func runScan(panelsToWrite: Set<PanelKey>) {
         scanInFlight = true
         defer { scanInFlight = false }
         guard !ttyNames.isEmpty else { return }
@@ -143,7 +143,7 @@ final class AgentDetector: @unchecked Sendable {
         let ttyList = uniqueTTYs.joined(separator: ",")
         let foregroundPerTTY = Self.runPS(ttyList: ttyList)
 
-        for key in tabsToWrite {
+        for key in panelsToWrite {
             guard let tty = snapshot[key] else { continue }
             guard let info = foregroundPerTTY[tty] else {
                 // TTY exists but no foreground process — skip (no-op).
@@ -158,7 +158,7 @@ final class AgentDetector: @unchecked Sendable {
             if detectionChanged {
                 detectedTerminalTypes[key] = classification
             }
-            let changed = TabMetadataStore.shared.setInternal(
+            let changed = PanelMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
                 surfaceId: key.panelId,
                 key: "terminal_type",

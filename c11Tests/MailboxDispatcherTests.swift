@@ -53,7 +53,7 @@ final class MailboxDispatcherTests: XCTestCase {
         if let delivery {
             partial["mailbox.delivery"] = delivery
         }
-        _ = try? TabMetadataStore.shared.setMetadata(
+        _ = try? PanelMetadataStore.shared.setMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             partial: partial,
@@ -64,9 +64,9 @@ final class MailboxDispatcherTests: XCTestCase {
     }
 
     private func makeDispatcher(surfaces: [UUID]) -> MailboxDispatcher {
-        let resolver = MailboxTabResolver(
+        let resolver = MailboxPanelResolver(
             workspaceId: workspaceId,
-            liveTabs: { surfaces }
+            livePanels: { surfaces }
         )
         let dispatcher = MailboxDispatcher(
             workspaceId: workspaceId,

@@ -92,13 +92,13 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "browser before agent"),
             layout: .pane(.init(surfaceIds: ["browser", "agent"])),
             surfaces: [
-                TabSpec(
+                PanelSpec(
                     id: "browser",
                     kind: .browser,
                     url: "https://example.com",
                     linkedAgentSurfacePlanId: "agent"
                 ),
-                TabSpec(
+                PanelSpec(
                     id: "agent",
                     kind: .terminal,
                     declaredAgentKind: "codex"
@@ -133,12 +133,12 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "invalid target"),
             layout: .pane(.init(surfaceIds: ["browser", "terminal"])),
             surfaces: [
-                TabSpec(
+                PanelSpec(
                     id: "browser",
                     kind: .browser,
                     linkedAgentSurfacePlanId: "terminal"
                 ),
-                TabSpec(id: "terminal", kind: .terminal)
+                PanelSpec(id: "terminal", kind: .terminal)
             ]
         )
         var mutationCount = 0
@@ -184,8 +184,8 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "capture remap"),
             layout: .pane(.init(surfaceIds: ["browser", "agent"])),
             surfaces: [
-                TabSpec(id: "browser", kind: .browser, url: "https://example.com"),
-                TabSpec(id: "agent", kind: .terminal)
+                PanelSpec(id: "browser", kind: .browser, url: "https://example.com"),
+                PanelSpec(id: "agent", kind: .terminal)
             ]
         )
         let seed = WorkspaceLayoutExecutor.apply(
@@ -206,7 +206,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: workspace,
             companionBridge: WorkspacePlanCompanionCaptureBridge(
                 linkedAgentForBrowser: { id in
-                    id == browserID ? AgentTabLink(
+                    id == browserID ? AgentPanelLink(
                         surfaceID: agentID,
                         lastKnownName: "Agent"
                     ) : nil
@@ -222,7 +222,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let missingAgentID = UUID()
         let orphanBridge = WorkspacePlanCompanionCaptureBridge(
             linkedAgentForBrowser: { id in
-                id == browserID ? AgentTabLink(
+                id == browserID ? AgentPanelLink(
                     surfaceID: missingAgentID,
                     lastKnownName: "Gone"
                 ) : nil
@@ -245,7 +245,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
         let declassifiedBridge = WorkspacePlanCompanionCaptureBridge(
             linkedAgentForBrowser: { id in
-                id == browserID ? AgentTabLink(
+                id == browserID ? AgentPanelLink(
                     surfaceID: agentID,
                     lastKnownName: "Former Agent"
                 ) : nil
@@ -305,7 +305,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "b4 whitespace"),
             layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["t"])),
             surfaces: [
-                TabSpec(
+                PanelSpec(
                     id: "t",
                     kind: .terminal,
                     title: "whitespace terminal",
@@ -338,7 +338,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         guard let panelId = parseUUIDSuffix(result.surfaceRefs["t"]),
-              let terminal = workspace.panels[panelId] as? TerminalTab else {
+              let terminal = workspace.panels[panelId] as? TerminalPanel else {
             return XCTFail("terminal panel not resolvable")
         }
         #if DEBUG
@@ -365,7 +365,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "submit opt-in"),
             layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["t"])),
             surfaces: [
-                TabSpec(
+                PanelSpec(
                     id: "t",
                     kind: .terminal,
                     title: "launcher",
@@ -387,7 +387,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         let panelId = try XCTUnwrap(parseUUIDSuffix(result.surfaceRefs["t"]))
-        let terminal = try XCTUnwrap(workspace.panels[panelId] as? TerminalTab)
+        let terminal = try XCTUnwrap(workspace.panels[panelId] as? TerminalPanel)
         return terminal.surface
     }
 
@@ -544,7 +544,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             version: 99,
             workspace: WorkspaceSpec(title: "bad-version"),
             layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s"])),
-            surfaces: [TabSpec(id: "s", kind: .terminal)]
+            surfaces: [PanelSpec(id: "s", kind: .terminal)]
         )
         let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
             plan,
@@ -567,7 +567,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(title: title),
             layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s"])),
-            surfaces: [TabSpec(id: "s", kind: .terminal, title: title)]
+            surfaces: [PanelSpec(id: "s", kind: .terminal, title: title)]
         )
     }
 
@@ -825,11 +825,11 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 continue
             }
             guard let panelId = parseUUIDSuffix(result.surfaceRefs[spec.id]),
-                  let terminalTab = workspace.panels[panelId] as? TerminalTab else {
+                  let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
                 XCTFail("[\(fixtureName)] terminal surface[\(spec.id)] with workingDirectory did not produce a resolvable panel")
                 continue
             }
-            let landed = terminalTab.requestedWorkingDirectory?
+            let landed = terminalPanel.requestedWorkingDirectory?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if landed == expectedCwd {
                 continue
@@ -881,7 +881,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             let paneUUID = workspace.paneIdForTab(panelId)?.id
 
             // Surface-level metadata.
-            let (surfaceMetadata, _) = TabMetadataStore.shared.getMetadata(
+            let (surfaceMetadata, _) = PanelMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId
             )

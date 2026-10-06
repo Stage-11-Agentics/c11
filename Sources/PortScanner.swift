@@ -23,10 +23,10 @@ final class PortScanner: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.stage11.c11.port-scanner", qos: .utility)
 
     /// TTY name per (workspace, panel).
-    private var ttyNames: [TabKey: String] = [:]
+    private var ttyNames: [PanelKey: String] = [:]
 
     /// Panels that requested a scan since the last coalesce snapshot.
-    private var pendingKicks: Set<TabKey> = []
+    private var pendingKicks: Set<PanelKey> = []
 
     /// Whether a burst sequence is currently running.
     private var burstActive = false
@@ -41,14 +41,14 @@ final class PortScanner: @unchecked Sendable {
 
     // MARK: - Public API
 
-    struct TabKey: Hashable {
+    struct PanelKey: Hashable {
         let workspaceId: UUID
         let panelId: UUID
     }
 
     func registerTTY(workspaceId: UUID, panelId: UUID, ttyName: String) {
         queue.async { [self] in
-            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             guard ttyNames[key] != ttyName else { return }
             ttyNames[key] = ttyName
         }
@@ -56,7 +56,7 @@ final class PortScanner: @unchecked Sendable {
 
     func unregisterPanel(workspaceId: UUID, panelId: UUID) {
         queue.async { [self] in
-            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
             pendingKicks.remove(key)
         }
@@ -64,7 +64,7 @@ final class PortScanner: @unchecked Sendable {
 
     func kick(workspaceId: UUID, panelId: UUID) {
         queue.async { [self] in
-            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             guard ttyNames[key] != nil else { return }
             pendingKicks.insert(key)
 
@@ -160,7 +160,7 @@ final class PortScanner: @unchecked Sendable {
         }
 
         // 4. Map to per-panel port lists.
-        var results: [(TabKey, [Int])] = []
+        var results: [(PanelKey, [Int])] = []
         for (key, tty) in snapshot {
             let ports = portsByTTY[tty].map { Array($0).sorted() } ?? []
             results.append((key, ports))
@@ -169,7 +169,7 @@ final class PortScanner: @unchecked Sendable {
         deliverResults(results)
     }
 
-    private func deliverResults(_ results: [(TabKey, [Int])]) {
+    private func deliverResults(_ results: [(PanelKey, [Int])]) {
         guard let callback = onPortsUpdated else { return }
         DispatchQueue.main.async {
             for (key, ports) in results {

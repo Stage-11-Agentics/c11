@@ -41,7 +41,7 @@ final class MailboxDispatcher {
 
     let workspaceId: UUID
     let stateURL: URL
-    let resolver: MailboxTabResolver
+    let resolver: MailboxPanelResolver
     let log: MailboxDispatchLog
     let queue: DispatchQueue
 
@@ -60,7 +60,7 @@ final class MailboxDispatcher {
     init(
         workspaceId: UUID,
         stateURL: URL,
-        resolver: MailboxTabResolver,
+        resolver: MailboxPanelResolver,
         queue: DispatchQueue = DispatchQueue(
             label: "com.stage11.c11.mailbox.dispatcher",
             qos: .utility
@@ -362,9 +362,9 @@ final class MailboxDispatcher {
 
     private func resolveRecipients(
         envelope: MailboxEnvelope
-    ) -> [MailboxTabResolver.TabMetadata] {
+    ) -> [MailboxPanelResolver.PanelMetadata] {
         guard let to = envelope.to else { return [] }
-        let all = resolver.tabsWithMailboxMetadata()
+        let all = resolver.panelsWithMailboxMetadata()
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
         // address > role > title; `panel:`/`role:` qualifiers honored).
@@ -379,7 +379,7 @@ final class MailboxDispatcher {
 
     private func copyToInbox(
         envelope: MailboxEnvelope,
-        recipient: MailboxTabResolver.TabMetadata,
+        recipient: MailboxPanelResolver.PanelMetadata,
         envelopeBytes: Data
     ) {
         do {
@@ -427,7 +427,7 @@ final class MailboxDispatcher {
 
     private func runHandlers(
         envelope: MailboxEnvelope,
-        recipients: [MailboxTabResolver.TabMetadata]
+        recipients: [MailboxPanelResolver.PanelMetadata]
     ) {
         for recipient in recipients {
             for handlerName in recipient.delivery {
@@ -468,7 +468,7 @@ final class MailboxDispatcher {
         handler: @escaping HandlerFunction,
         name: String,
         envelope: MailboxEnvelope,
-        recipient: MailboxTabResolver.TabMetadata
+        recipient: MailboxPanelResolver.PanelMetadata
     ) {
         let semaphore = DispatchSemaphore(value: 0)
         var result = HandlerInvocationResult(outcome: .timeout)

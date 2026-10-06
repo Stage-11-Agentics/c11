@@ -550,7 +550,7 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: title),
                 layout: .pane(.init(surfaceIds: ["a"])),
-                surfaces: [TabSpec(id: "a", kind: .terminal, title: "shell")]
+                surfaces: [PanelSpec(id: "a", kind: .terminal, title: "shell")]
             )
         )
     }

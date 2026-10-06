@@ -289,7 +289,7 @@ final class EventLogTests: XCTestCase {
         EventEmitter.shared.emitTabInputSent(
             workspace: workspace,
             surface: textSurface,
-            callerTabId: nil,
+            callerPanelId: nil,
             callerTitle: nil,
             targetTitle: "outside target",
             kind: "text",
@@ -299,7 +299,7 @@ final class EventLogTests: XCTestCase {
         EventEmitter.shared.emitTabInputSent(
             workspace: workspace,
             surface: keySurface,
-            callerTabId: caller,
+            callerPanelId: caller,
             callerTitle: "caller",
             targetTitle: "key target",
             kind: "key",
@@ -330,7 +330,7 @@ final class EventLogTests: XCTestCase {
 
     func testTabInputPayloadRecordsQueuedAndSubmitState() {
         let payload = EventEmitter.tabInputPayload(
-            callerTabId: UUID(),
+            callerPanelId: UUID(),
             callerTitle: "caller",
             targetTitle: "target",
             kind: "text",
@@ -346,7 +346,7 @@ final class EventLogTests: XCTestCase {
     func testTabInputPayloadTruncatesBodyAtUTF8Boundary() {
         let text = "a" + String(repeating: "🙂", count: 100_000)
         let payload = EventEmitter.tabInputPayload(
-            callerTabId: nil,
+            callerPanelId: nil,
             callerTitle: nil,
             targetTitle: "target",
             kind: "text",
@@ -473,14 +473,14 @@ final class EventLogTests: XCTestCase {
         let log = EventLog(url: logURL(), instance: "mirror-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "mirror-inst")
         let ws = UUID(), sf = UUID()
-        defer { TabMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
+        defer { PanelMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
 
         // Only canonical keys mirror; non-canonical display chips do not.
         XCTAssertEqual(TerminalController.sidebarStatusCanonicalMirrorKey("status"), "status")
         XCTAssertNil(TerminalController.sidebarStatusCanonicalMirrorKey("build"))
 
         // Mirror the canonical status exactly as the fast path does.
-        XCTAssertTrue(TabMetadataStore.shared.setInternal(
+        XCTAssertTrue(PanelMetadataStore.shared.setInternal(
             workspaceId: ws, surfaceId: sf,
             key: TerminalController.sidebarStatusCanonicalMirrorKey("status")!,
             value: "working", source: .explicit))
@@ -503,9 +503,9 @@ final class EventLogTests: XCTestCase {
         let log = EventLog(url: logURL(), instance: "prog-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "prog-inst")
         let ws = UUID(), sf = UUID()
-        defer { TabMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
+        defer { PanelMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
 
-        XCTAssertTrue(TabMetadataStore.shared.setInternal(
+        XCTAssertTrue(PanelMetadataStore.shared.setInternal(
             workspaceId: ws, surfaceId: sf,
             key: MetadataKey.progress, value: 0.5, source: .explicit))
         EventEmitter.shared.flush()
@@ -526,7 +526,7 @@ final class EventLogTests: XCTestCase {
             workspace: workspace,
             surface: surface,
             reason: "Needs schema decision",
-            callerTabId: callerSurface,
+            callerPanelId: callerSurface,
             by: .agent
         )
         EventEmitter.shared.emitFlagLowered(workspace: workspace, surface: surface, by: .operator)
@@ -653,8 +653,8 @@ extension EventLogTests {
         let log = EventLog(url: logURL(), instance: "select-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "select-inst")
         let target = UUID(), caller = UUID()
-        EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: "workspace.select", callerTabId: caller)
-        EventEmitter.shared.emitWorkspaceSelected(previous: nil, selected: target, cause: "socket", method: "workspace.select", callerTabId: nil)
+        EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: "workspace.select", callerPanelId: caller)
+        EventEmitter.shared.emitWorkspaceSelected(previous: nil, selected: target, cause: "socket", method: "workspace.select", callerPanelId: nil)
         EventEmitter.shared.flush()
 
         let events = readLines(logURL()).map(parse)

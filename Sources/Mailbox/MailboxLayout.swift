@@ -61,10 +61,10 @@ enum MailboxLayout {
 
     enum Error: Swift.Error, Equatable {
         case stateDirectoryUnavailable
-        case invalidSurfaceName(name: String, reason: TabNameRejection)
+        case invalidSurfaceName(name: String, reason: PanelNameRejection)
     }
 
-    enum TabNameRejection: String, Equatable {
+    enum PanelNameRejection: String, Equatable {
         case empty
         case containsPathSeparator
         case containsNullByte
@@ -137,12 +137,12 @@ enum MailboxLayout {
     /// never have been a directory (it fails `validateSurfaceName`) or names
     /// one of the tree's own directories (`_outbox`, `blobs`, ...), which
     /// `recv --drain` must never read as an inbox.
-    static func legacyInboxURL(state: URL, workspaceId: UUID, tabName: String) -> URL? {
-        guard (try? validateSurfaceName(tabName)) != nil,
-              !tabName.hasPrefix("_"),
-              tabName != blobsDirectoryName else { return nil }
+    static func legacyInboxURL(state: URL, workspaceId: UUID, panelName: String) -> URL? {
+        guard (try? validateSurfaceName(panelName)) != nil,
+              !panelName.hasPrefix("_"),
+              panelName != blobsDirectoryName else { return nil }
         return mailboxesRoot(state: state, workspaceId: workspaceId)
-            .appendingPathComponent(tabName, isDirectory: true)
+            .appendingPathComponent(panelName, isDirectory: true)
     }
 
     /// Inboxes `recv` reads, in order: the canonical UUID inbox (when the
@@ -152,15 +152,15 @@ enum MailboxLayout {
         state: URL,
         workspaceId: UUID,
         tabId: UUID?,
-        tabName: String?,
+        panelName: String?,
         fileManager: FileManager = .default
     ) -> [URL] {
         var urls: [URL] = []
         if let tabId {
             urls.append(inboxURL(state: state, workspaceId: workspaceId, tabId: tabId))
         }
-        if let tabName,
-           let legacy = legacyInboxURL(state: state, workspaceId: workspaceId, tabName: tabName),
+        if let panelName,
+           let legacy = legacyInboxURL(state: state, workspaceId: workspaceId, panelName: panelName),
            !urls.contains(where: { $0.standardizedFileURL == legacy.standardizedFileURL }) {
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: legacy.path, isDirectory: &isDir), isDir.boolValue {

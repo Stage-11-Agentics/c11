@@ -19,7 +19,7 @@ extension TerminalController {
     /// seen, null if never seen) and `being_seen` on a surface item. Main-actor
     /// read; formats one timestamp string per surface, with a shared formatter.
     func v2SetSeenFields(_ item: inout [String: Any], panelId: UUID) {
-        let tracker = TabSeenTracker.shared
+        let tracker = PanelSeenTracker.shared
         item["last_seen_at"] = tracker.lastSeenAt(panelId: panelId)
             .map { Self.seenTimestampFormatter.string(from: $0) } ?? NSNull()
         item["being_seen"] = tracker.isBeingSeen(panelId: panelId)
@@ -151,17 +151,17 @@ extension TerminalController {
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
                     "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
-                    "tty": v2OrNull(ws.tabTTYNames[panel.id]),
+                    "tty": v2OrNull(ws.panelTTYNames[panel.id]),
                     "custom_color": v2OrNull(ws.tabCustomColor(panelId: panel.id))
                 ]
                 v2SetSeenFields(&item, panelId: panel.id)
                 v2SetPromptCacheField(&item, panelId: panel.id)
-                if let browserTab = panel as? BrowserTab {
-                    item["developer_tools_visible"] = browserTab.isDeveloperToolsVisible()
-                    item["profile_id"] = browserTab.profileID.uuidString
+                if let browserPanel = panel as? BrowserPanel {
+                    item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
+                    item["profile_id"] = browserPanel.profileID.uuidString
                 }
-                if let markdownTab = panel as? MarkdownTab {
-                    item["file_path"] = markdownTab.filePath
+                if let markdownPanel = panel as? MarkdownPanel {
+                    item["file_path"] = markdownPanel.filePath
                 }
                 // C11-25 fix DoD #5: expose the SurfaceMetricsSampler
                 // snapshot for terminal + browser surfaces so callers
@@ -173,7 +173,7 @@ extension TerminalController {
                 // converges (~one tick after pid registration).
                 switch panel.panelType {
                 case .terminal, .browser:
-                    let sample = TabMetricsSampler.shared.sample(forSurfaceId: panel.id)
+                    let sample = PanelMetricsSampler.shared.sample(forSurfaceId: panel.id)
                     var metrics: [String: Any] = [
                         "cpu_pct": v2OrNull(sample?.cpuPct),
                         "rss_mb": v2OrNull(sample?.rssMb)
@@ -564,7 +564,7 @@ extension TerminalController {
                     sticksAsPreferred: sticksAsPreferred
                 )?.id
             case .markdown:
-                newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
+                newPanelId = ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
             case .terminal:
                 newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride, initialInput: initialInput)?.id
             }
@@ -791,18 +791,18 @@ extension TerminalController {
                 return
             }
 
-            guard let transfer = sourceWorkspace.detachTab(panelId: surfaceId) else {
+            guard let transfer = sourceWorkspace.detachPanel(panelId: surfaceId) else {
                 result = .err(code: "internal_error", message: "Failed to detach panel", data: nil)
                 return
             }
 
-            if targetWorkspace.attachDetachedTab(transfer, inPane: destinationPane, atIndex: targetIndex, focus: focus) == nil {
+            if targetWorkspace.attachDetachedPanel(transfer, inPane: destinationPane, atIndex: targetIndex, focus: focus) == nil {
                 // Roll back to source workspace if attach fails.
                 let rollbackPane = sourcePane.flatMap { sp in sourceWorkspace.bonsplitController.allPaneIds.first(where: { $0 == sp }) }
                     ?? sourceWorkspace.bonsplitController.focusedPaneId
                     ?? sourceWorkspace.bonsplitController.allPaneIds.first
                 if let rollbackPane {
-                    _ = sourceWorkspace.attachDetachedTab(transfer, inPane: rollbackPane, atIndex: sourceIndex, focus: focus)
+                    _ = sourceWorkspace.attachDetachedPanel(transfer, inPane: rollbackPane, atIndex: sourceIndex, focus: focus)
                 }
                 result = .err(code: "internal_error", message: "Failed to attach panel to destination", data: nil)
                 return
@@ -908,8 +908,8 @@ extension TerminalController {
             }
             var refreshedCount = 0
             for panel in ws.panels.values {
-                if let terminalTab = panel as? TerminalTab {
-                    terminalTab.surface.forceRefresh(reason: "terminalController.v2SurfaceRefresh")
+                if let terminalPanel = panel as? TerminalPanel {
+                    terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceRefresh")
                     refreshedCount += 1
                 }
             }
@@ -930,9 +930,9 @@ extension TerminalController {
             let panels = orderedPanels(in: ws)
             let items: [[String: Any]] = panels.enumerated().map { index, panel in
                 var inWindow: Any = NSNull()
-                if let tp = panel as? TerminalTab {
+                if let tp = panel as? TerminalPanel {
                     inWindow = tp.surface.isViewInWindow
-                } else if let bp = panel as? BrowserTab {
+                } else if let bp = panel as? BrowserPanel {
                     inWindow = bp.webView.window != nil
                 }
                 return [
@@ -1000,14 +1000,14 @@ extension TerminalController {
         }
 
         let phaseASema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
+        nonisolated(unsafe) var phaseAOutcome: PanelSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
         Task { @MainActor in
             defer { phaseASema.signal() }
             phaseAOutcome = resolveSurfaceSendTargets(params: params)
         }
         phaseASema.wait()
 
-        let resolved: TabSendPhaseAResolved
+        let resolved: PanelSendPhaseAResolved
         switch phaseAOutcome {
         case .err(let err):
             return err
@@ -1114,7 +1114,7 @@ extension TerminalController {
         #if DEBUG
         let sendMs = (ProcessInfo.processInfo.systemUptime - sendStart) * 1000.0
         dlog(
-            "socket.surface.send_text workspace=\(resolved.workspaceIdString.prefix(8)) surface=\(resolved.tabIdString.prefix(8)) queued=\(queued ? 1 : 0) chars=\(text.count) ms=\(String(format: "%.2f", sendMs))"
+            "socket.surface.send_text workspace=\(resolved.workspaceIdString.prefix(8)) surface=\(resolved.panelIdString.prefix(8)) queued=\(queued ? 1 : 0) chars=\(text.count) ms=\(String(format: "%.2f", sendMs))"
         )
         #endif
 
@@ -1126,7 +1126,7 @@ extension TerminalController {
         EventEmitter.shared.emitTabInputSent(
             workspace: resolved.workspaceId,
             surface: resolved.tabId,
-            callerTabId: resolved.callerTabId,
+            callerPanelId: resolved.callerPanelId,
             callerTitle: resolved.callerTitle,
             targetTitle: resolved.targetTitle,
             kind: "text",
@@ -1147,14 +1147,14 @@ extension TerminalController {
         }
 
         let phaseASema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send key", data: nil))
+        nonisolated(unsafe) var phaseAOutcome: PanelSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send key", data: nil))
         Task { @MainActor in
             defer { phaseASema.signal() }
             phaseAOutcome = resolveSurfaceSendTargets(params: params)
         }
         phaseASema.wait()
 
-        let resolved: TabSendPhaseAResolved
+        let resolved: PanelSendPhaseAResolved
         switch phaseAOutcome {
         case .err(let err):
             return err
@@ -1169,7 +1169,7 @@ extension TerminalController {
             resolvedSurface = waitForTerminalSurfaceOffMain(resolved.terminalPanel, waitUpTo: 2.0)
         }
         guard resolvedSurface != nil else {
-            return .err(code: "internal_error", message: "Panel not ready", data: ["surface_id": resolved.tabIdString])
+            return .err(code: "internal_error", message: "Panel not ready", data: ["surface_id": resolved.panelIdString])
         }
 
         enum PhaseBOutcome {
@@ -1211,7 +1211,7 @@ extension TerminalController {
             EventEmitter.shared.emitTabInputSent(
                 workspace: resolved.workspaceId,
                 surface: resolved.tabId,
-                callerTabId: resolved.callerTabId,
+                callerPanelId: resolved.callerPanelId,
                 callerTitle: resolved.callerTitle,
                 targetTitle: resolved.targetTitle,
                 kind: "key",
@@ -1222,7 +1222,7 @@ extension TerminalController {
         case .unknownKey:
             return .err(code: "invalid_params", message: "Unknown key", data: ["key": key])
         case .surfaceNotReady:
-            return .err(code: "internal_error", message: "Panel not ready", data: ["surface_id": resolved.tabIdString])
+            return .err(code: "internal_error", message: "Panel not ready", data: ["surface_id": resolved.panelIdString])
         }
     }
 
@@ -1289,8 +1289,8 @@ extension TerminalController {
         guard CapabilityFeatures.current.supports(.terminalInputState) else {
             return .err(code: "not_supported", message: String(localized: "socket.input_state.unsupported", defaultValue: "Terminal input-state inspection is unavailable."), data: nil)
         }
-        guard let tabRef = params["surface_id"] as? String,
-              !tabRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let panelRef = params["surface_id"] as? String,
+              !panelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .err(code: "invalid_params", message: String(localized: "socket.input_state.tab_required", defaultValue: "A panel identifier is required."), data: nil)
         }
 
@@ -1393,7 +1393,7 @@ extension TerminalController {
                 fail("not_found", String(localized: "socket.terminalRead.not_found", defaultValue: "Terminal panel not found."))
                 return
             }
-            guard let terminal = tab as? TerminalTab else {
+            guard let terminal = tab as? TerminalPanel else {
                 fail("invalid_params", String(localized: "socket.error.tab_not_terminal", defaultValue: "Panel is not a terminal."))
                 return
             }
@@ -1478,7 +1478,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "lines must be greater than 0", data: nil)
         }
         let includeScrollback = lineLimit != nil || (v2Bool(params, "scrollback") ?? false)
-        typealias Target = (WorkspaceManager, Workspace, TerminalTab)
+        typealias Target = (WorkspaceManager, Workspace, TerminalPanel)
         let resolution = TerminalReadCompletion<Result<Target, V2CallResult>>(deadline: deadline)
         Task { @MainActor in
             guard !resolution.isAbandoned else { return }
@@ -1800,7 +1800,7 @@ extension TerminalController {
         }
 
         let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
-        guard let mode = TabMetadataStore.WriteMode(rawValue: modeStr) else {
+        guard let mode = PanelMetadataStore.WriteMode(rawValue: modeStr) else {
             return .err(code: "invalid_mode", message: "mode must be 'merge' or 'replace'", data: nil)
         }
 
@@ -1845,7 +1845,7 @@ extension TerminalController {
             MetadataKey.flagCallerPanelId,
             MetadataKey.suppressed,
         ])
-        let existingAttention = TabMetadataStore.shared.attentionSnapshot(
+        let existingAttention = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
@@ -1859,7 +1859,7 @@ extension TerminalController {
         }
 
         do {
-            let result = try TabMetadataStore.shared.setMetadata(
+            let result = try PanelMetadataStore.shared.setMetadata(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
                 partial: metadataObj,
@@ -1880,7 +1880,7 @@ extension TerminalController {
                 workspaceManager: resolved.workspaceManager,
                 result: result
             ))
-        } catch let err as TabMetadataStore.WriteError {
+        } catch let err as PanelMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
@@ -1903,7 +1903,7 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Panel not found", data: nil)
         }
 
-        let (storedMetadata, fullSources) = TabMetadataStore.shared.getMetadata(
+        let (storedMetadata, fullSources) = PanelMetadataStore.shared.getMetadata(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
@@ -1983,7 +1983,7 @@ extension TerminalController {
             MetadataKey.flagCallerPanelId,
             MetadataKey.suppressed,
         ])
-        let existingAttention = TabMetadataStore.shared.attentionSnapshot(
+        let existingAttention = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
@@ -1997,7 +1997,7 @@ extension TerminalController {
         }
 
         do {
-            let result = try TabMetadataStore.shared.clearMetadata(
+            let result = try PanelMetadataStore.shared.clearMetadata(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
                 keys: keys,
@@ -2017,7 +2017,7 @@ extension TerminalController {
                 workspaceManager: resolved.workspaceManager,
                 result: result
             ))
-        } catch let err as TabMetadataStore.WriteError {
+        } catch let err as PanelMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)

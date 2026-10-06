@@ -1,7 +1,7 @@
 import Foundation
 import Bonsplit
 
-enum TabActivityResolver {
+enum PanelActivityResolver {
     static func resolve(
         hasExactSurfaceNotification: Bool,
         hasJournalAttention: Bool = false,
@@ -54,7 +54,7 @@ enum AgentLifecycleSource: Equatable {
     case headless
 }
 
-enum TabActivityTerminalKindResolver {
+enum PanelActivityTerminalKindResolver {
     static func resolve(
         detectedTerminalType: String?,
         declaredTerminalType: String?
@@ -84,7 +84,7 @@ enum TabActivityTerminalKindResolver {
 /// `Workspace.setDerivedActivity` mirror, which is dispatched explicitly via
 /// `DispatchQueue.main.async` + `MainActor.assumeIsolated`. Nothing here ever
 /// runs on the typing hot paths.
-enum TabLivenessDeriver {
+enum PanelLivenessDeriver {
 
     /// Off-main compute queue for the realtime transition path. Keeps the
     /// caller's thread (which may be the main actor, since
@@ -113,7 +113,7 @@ enum TabLivenessDeriver {
     /// - `.promptIdle`     ⇒ `.idle`
     /// - `.unknown`        ⇒ `nil` (no truth; the key is cleared)
     static func activityState(
-        for shell: Workspace.TabShellActivityState
+        for shell: Workspace.PanelShellActivityState
     ) -> SidebarActivityState? {
         switch shell {
         case .commandRunning: return .working
@@ -134,11 +134,11 @@ enum TabLivenessDeriver {
     static func onShellActivityChanged(
         surfaceId: UUID,
         workspaceId: UUID,
-        state: Workspace.TabShellActivityState,
+        state: Workspace.PanelShellActivityState,
         workspace: Workspace
     ) {
         let derived = activityState(for: state)
-        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
             // Reconcile and realtime writes share this queue with journal projection.
@@ -179,7 +179,7 @@ enum TabLivenessDeriver {
         at eventAt: Date = Date(),
         agentPid: pid_t? = nil
     ) {
-        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             if JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection == .live {
                 // A Return still closes the mailbox prompt gate, but cannot invent a journal turn.
@@ -241,7 +241,7 @@ enum TabLivenessDeriver {
                 $0.phase == .unknown || ($0.isHistorical && !$0.paintsAttention) ? nil : ($0.phase == .working ? .working : .idle)
             }
             if let snapshot, !snapshot.isHistorical {
-                TabActivityTracker.shared.recordActivity(surfaceId: tabID.uuidString,
+                PanelActivityTracker.shared.recordActivity(surfaceId: tabID.uuidString,
                     at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
             }
             let prior = currentActivityRaw(workspaceId: workspaceID, surfaceId: tabID)
@@ -326,7 +326,7 @@ enum TabLivenessDeriver {
             return
         }
         journalCacheExpiredSurfaceIds.remove(surfaceId)
-        let snap = TabMetadataStore.shared.getMetadata(
+        let snap = PanelMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
@@ -338,7 +338,7 @@ enum TabLivenessDeriver {
             return
         }
 
-        let last = TabActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
+        let last = PanelActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
         let metadataTouch = (record["ts"] as? Double).map(Date.init(timeIntervalSince1970:))
         let lastTouched = [last, metadataTouch].compactMap { $0 }.max()
 
@@ -381,7 +381,7 @@ enum TabLivenessDeriver {
         guard isStale else { return }
 
         applyToStore(derived: .idle, workspaceId: workspaceId, surfaceId: surfaceId)
-        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString, at: now)
+        PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString, at: now)
         emitLivenessTransition(
             from: SidebarActivityState.working.rawValue,
             to: SidebarActivityState.idle.rawValue,
@@ -506,7 +506,7 @@ enum TabLivenessDeriver {
                 guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
                 if isCold,
                    let observedLastTouchedAt,
-                   let currentLastTouchedAt = TabActivityTracker.shared.lastActivity(
+                   let currentLastTouchedAt = PanelActivityTracker.shared.lastActivity(
                        for: surfaceId.uuidString
                    ),
                    currentLastTouchedAt > observedLastTouchedAt {
@@ -524,7 +524,7 @@ enum TabLivenessDeriver {
 
     /// Read the current raw `activity` value (nil when unset). Off-main-safe.
     private static func currentActivityRaw(workspaceId: UUID, surfaceId: UUID) -> String? {
-        let snap = TabMetadataStore.shared.getMetadata(
+        let snap = PanelMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
@@ -542,7 +542,7 @@ enum TabLivenessDeriver {
     ) {
         guard journal || JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
         if let derived {
-            TabMetadataStore.shared.setInternal(
+            PanelMetadataStore.shared.setInternal(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 key: MetadataKey.activity,
@@ -550,7 +550,7 @@ enum TabLivenessDeriver {
                 source: .derived
             )
         } else {
-            _ = try? TabMetadataStore.shared.clearMetadata(
+            _ = try? PanelMetadataStore.shared.clearMetadata(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 keys: [MetadataKey.activity],

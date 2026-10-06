@@ -291,11 +291,11 @@ final class AgentLaunchOverlayCompositionTests: XCTestCase {
     /// `.launched` is the only outcome that reports a launch, and it is the only
     /// one without a reason to show.
     func testLaunchOutcomeMapsToDidLaunchAndDecline() {
-        let launched = Workspace.AgentTabLaunchOutcome.launched
+        let launched = Workspace.AgentPanelLaunchOutcome.launched
         XCTAssertTrue(launched.didLaunch)
         XCTAssertNil(launched.decline)
 
-        let declined = Workspace.AgentTabLaunchOutcome
+        let declined = Workspace.AgentPanelLaunchOutcome
             .declined(.emptyCommand(harness: "custom"))
         XCTAssertFalse(declined.didLaunch)
         XCTAssertEqual(declined.decline, .emptyCommand(harness: "custom"))

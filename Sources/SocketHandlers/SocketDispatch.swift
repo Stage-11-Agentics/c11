@@ -188,7 +188,7 @@ extension TerminalController {
         let context = SocketCommandContext(
             method: method,
             allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: method, isV2: request != nil),
-            callerTabId: SocketCommandContext.current?.callerTabId
+            callerPanelId: SocketCommandContext.current?.callerPanelId
                 ?? (request?.params["caller_panel_id"] as? String
                     ?? request?.params["caller_tab_id"] as? String
                     ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
@@ -598,7 +598,7 @@ extension TerminalController {
                         )?.workspace.id
                     }
                 ) else { return }
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity,
@@ -1225,7 +1225,7 @@ extension TerminalController {
 
         let launchFlagReason: String?
         if params["flag"] != nil {
-            switch TabAttentionReason.validate(params["flag"]) {
+            switch PanelAttentionReason.validate(params["flag"]) {
             case .success(let reason):
                 launchFlagReason = reason
             case .failure(let error):
@@ -1234,9 +1234,9 @@ extension TerminalController {
         } else {
             launchFlagReason = nil
         }
-        let launchFlagActor: TabAttentionActor
+        let launchFlagActor: PanelAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = TabAttentionActor(rawValue: rawActor) else {
+            guard let parsed = PanelAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -1340,7 +1340,7 @@ extension TerminalController {
                 let workspaceRoot = fallbackWorkspace?.rootDirectory
                 let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
                 let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
-                    callerTabId: callerWorkspace == nil ? nil : launchCallerSurfaceId
+                    callerPanelId: callerWorkspace == nil ? nil : launchCallerSurfaceId
                 )
                 return .success(
                     workspaceManager: workspaceManager,
@@ -1472,7 +1472,7 @@ extension TerminalController {
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
             let ws: Workspace
-            let panel: TerminalTab
+            let panel: TerminalPanel
             let paneUUID: UUID?
             if newWorkspace {
                 // Identity env rides workspace creation so it is present at
@@ -1491,12 +1491,12 @@ extension TerminalController {
                     eagerLoadTerminal: !focus,
                     autoWelcomeIfNeeded: false
                 )
-                guard let initialTab = created.focusedTerminalTab else {
+                guard let initialPanel = created.focusedTerminalPanel else {
                     result = .err(code: "internal_error", message: "New workspace has no terminal panel", data: nil)
                     return result
                 }
                 ws = created
-                panel = initialTab
+                panel = initialPanel
                 paneUUID = created.bonsplitController.focusedPaneId?.id
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
@@ -1552,7 +1552,7 @@ extension TerminalController {
                     },
                     stampSuppression: {
                         if launchSuppressed {
-                            _ = try TabAttentionService.shared.suppress(
+                            _ = try PanelAttentionService.shared.suppress(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 by: .operator
@@ -1561,11 +1561,11 @@ extension TerminalController {
                     },
                     stampFlag: {
                         if let launchFlagReason {
-                            _ = try TabAttentionService.shared.raise(
+                            _ = try PanelAttentionService.shared.raise(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 reason: launchFlagReason,
-                                callerTabId: launchCallerSurfaceId,
+                                callerPanelId: launchCallerSurfaceId,
                                 by: launchFlagActor,
                                 title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
                             )
@@ -1587,7 +1587,7 @@ extension TerminalController {
                         }
                     }
                 )
-            } catch let error as TabMetadataStore.WriteError {
+            } catch let error as PanelMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
                 return result
             } catch {
@@ -1690,7 +1690,7 @@ extension TerminalController {
                 MainActor.assumeIsolated {
                     guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
                           ws.terminalPanel(for: tabId) != nil else { return nil }
-                    return ws.tabTTYNames[tabId]
+                    return ws.panelTTYNames[tabId]
                 }
             }
             snapshot.enqueueOnMain()

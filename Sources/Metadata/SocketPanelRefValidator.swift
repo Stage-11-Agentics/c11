@@ -25,7 +25,7 @@ import Foundation
 /// granularity* — e.g. `["surface_id"]` for surface metadata, not the
 /// coarser `workspace_id`, because the resolver still falls to
 /// `workspace.focusedPanelId` when only a workspace ref is present.
-internal enum SocketTabRefValidator {
+internal enum SocketPanelRefValidator {
     static let emptyRefCode = "empty_ref"
     static let missingRefCode = "missing_ref"
 

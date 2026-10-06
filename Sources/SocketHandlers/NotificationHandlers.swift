@@ -144,7 +144,7 @@ extension TerminalController {
             if !appendLegacyCodexCompletion(params: params, tabID: surfaceId, workspaceID: ws.id),
                params[LegacyCodexNotifyGuard.payloadKey] != nil,
                let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
                     workspaceId: ws.id,
                     activity: .idle,
@@ -200,7 +200,7 @@ extension TerminalController {
             if !appendLegacyCodexCompletion(params: params, tabID: surfaceId, workspaceID: ws.id),
                params[LegacyCodexNotifyGuard.payloadKey] != nil,
                let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
-                TabLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
                     workspaceId: ws.id,
                     activity: .idle,

@@ -125,7 +125,7 @@ final class BrowserTabProfileIsolationTests: XCTestCase {
             alternateStore.clearHistory()
         }
 
-        let panel = BrowserTab(
+        let panel = BrowserPanel(
             workspaceId: UUID(),
             profileID: BrowserProfileStore.shared.builtInDefaultProfileID
         )
@@ -228,7 +228,7 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
         XCTAssertEqual(openCode, "busy")
         XCTAssertEqual(Set(workspace.panels.keys), existingTabIDs, "A reserved profile open must not create a tab")
 
-        let switchTab = BrowserTab(
+        let switchTab = BrowserPanel(
             workspaceId: workspace.id,
             profileID: store.builtInDefaultProfileID,
             sticksAsPreferred: false
@@ -328,7 +328,7 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
 @MainActor
 final class BrowserTabAddressBarFocusRequestTests: XCTestCase {
     func testRequestPersistsUntilAcknowledged() {
-        let panel = BrowserTab(workspaceId: UUID())
+        let panel = BrowserPanel(workspaceId: UUID())
         XCTAssertNil(panel.pendingAddressBarFocusRequestId)
 
         let requestId = panel.requestAddressBarFocus()
@@ -346,7 +346,7 @@ final class BrowserTabAddressBarFocusRequestTests: XCTestCase {
     }
 
     func testRequestCoalescesWhilePending() {
-        let panel = BrowserTab(workspaceId: UUID())
+        let panel = BrowserPanel(workspaceId: UUID())
         let firstRequest = panel.requestAddressBarFocus()
         let secondRequest = panel.requestAddressBarFocus()
 
@@ -355,7 +355,7 @@ final class BrowserTabAddressBarFocusRequestTests: XCTestCase {
     }
 
     func testStaleAcknowledgementDoesNotClearNewestRequest() {
-        let panel = BrowserTab(workspaceId: UUID())
+        let panel = BrowserPanel(workspaceId: UUID())
         let firstRequest = panel.requestAddressBarFocus()
         panel.acknowledgeAddressBarFocusRequest(firstRequest)
         let secondRequest = panel.requestAddressBarFocus()

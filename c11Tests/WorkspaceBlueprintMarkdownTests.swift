@@ -38,7 +38,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Single Terminal"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
                 surfaces: [
-                    TabSpec(id: "s1", kind: .terminal, title: "Main", workingDirectory: "~/work")
+                    PanelSpec(id: "s1", kind: .terminal, title: "Main", workingDirectory: "~/work")
                 ]
             )
         )
@@ -60,8 +60,8 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                     second: .pane(.init(surfaceIds: ["s2"]))
                 )),
                 surfaces: [
-                    TabSpec(id: "s1", kind: .terminal, title: "shell"),
-                    TabSpec(id: "s2", kind: .browser, title: "docs", url: "https://stage11.ai")
+                    PanelSpec(id: "s1", kind: .terminal, title: "shell"),
+                    PanelSpec(id: "s2", kind: .browser, title: "docs", url: "https://stage11.ai")
                 ]
             )
         )
@@ -251,12 +251,12 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Portable link"),
                 layout: .pane(.init(surfaceIds: ["browser", "agent"])),
                 surfaces: [
-                    TabSpec(
+                    PanelSpec(
                         id: "browser",
                         kind: .browser,
                         linkedAgentSurfacePlanId: "agent"
                     ),
-                    TabSpec(
+                    PanelSpec(
                         id: "agent",
                         kind: .terminal,
                         declaredAgentKind: "codex"
@@ -296,9 +296,9 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                     ))
                 )),
                 surfaces: [
-                    TabSpec(id: "s1", kind: .terminal, title: "Main terminal", workingDirectory: "~/Projects/Stage11/code/c11"),
-                    TabSpec(id: "s2", kind: .browser, title: "Lattice", url: "http://localhost:8799/"),
-                    TabSpec(id: "s3", kind: .markdown, title: "Notes", filePath: "~/notes/today.md")
+                    PanelSpec(id: "s1", kind: .terminal, title: "Main terminal", workingDirectory: "~/Projects/Stage11/code/c11"),
+                    PanelSpec(id: "s2", kind: .browser, title: "Lattice", url: "http://localhost:8799/"),
+                    PanelSpec(id: "s3", kind: .markdown, title: "Notes", filePath: "~/notes/today.md")
                 ]
             )
         )
@@ -314,7 +314,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: "Colored", customColor: "#C0392B"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
-                surfaces: [TabSpec(id: "s1", kind: .terminal)]
+                surfaces: [PanelSpec(id: "s1", kind: .terminal)]
             )
         )
         let r = try roundTrip(file)
@@ -329,7 +329,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: "Agent Room"),  // human-friendly
                 layout: .pane(.init(surfaceIds: ["s1"])),
-                surfaces: [TabSpec(id: "s1", kind: .terminal)]
+                surfaces: [PanelSpec(id: "s1", kind: .terminal)]
             )
         )
         let r = try roundTrip(file)
@@ -406,7 +406,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
 
     // MARK: - Opt-in submit flag (`submit: true`)
 
-    private func parseSingleTerminal(submitLine: String) throws -> TabSpec {
+    private func parseSingleTerminal(submitLine: String) throws -> PanelSpec {
         let source = """
         ---
         title: Launcher
@@ -454,7 +454,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Launcher"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
                 surfaces: [
-                    TabSpec(
+                    PanelSpec(
                         id: "s1",
                         kind: .terminal,
                         title: "Dashboard",
@@ -482,7 +482,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Plain"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
                 surfaces: [
-                    TabSpec(id: "s1", kind: .terminal, command: "ls")
+                    PanelSpec(id: "s1", kind: .terminal, command: "ls")
                 ]
             )
         )

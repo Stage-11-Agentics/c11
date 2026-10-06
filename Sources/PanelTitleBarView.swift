@@ -12,7 +12,7 @@ import MarkdownUI
 // scrollable. Title and description editing live on the tab (context menu and
 // the metadata CLI), not in this bar.
 
-struct TabTitleBarState: Equatable {
+struct PanelTitleBarState: Equatable {
     var title: String?
     var description: String?
     var titleSource: MetadataSource?
@@ -32,8 +32,8 @@ struct TabTitleBarState: Equatable {
 /// Used as an explicit frame cap when the description exceeds 5 lines.
 let titleBarDescriptionMaxHeight: CGFloat = 90
 
-struct TabTitleBarView: View {
-    let state: TabTitleBarState
+struct PanelTitleBarView: View {
+    let state: PanelTitleBarState
     var onToggleCollapsed: () -> Void = {}
 
     @ObservedObject private var themeManager = ThemeManager.shared

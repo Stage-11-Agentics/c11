@@ -147,7 +147,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // acceptance fixture reads through).
         for surfaceSpec in registryPlan.surfaces where surfaceSpec.kind == .terminal {
             guard let panelId = parseUUIDSuffix(restoreResult.surfaceRefs[surfaceSpec.id]),
-                  let terminal = restoredWorkspace.panels[panelId] as? TerminalTab else {
+                  let terminal = restoredWorkspace.panels[panelId] as? TerminalPanel else {
                 XCTFail("restored terminal surface[\(surfaceSpec.id)] not resolvable")
                 continue
             }
@@ -240,7 +240,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         let restored = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         for spec in plan.surfaces where spec.kind == .terminal {
             guard let panelId = parseUUIDSuffix(result.surfaceRefs[spec.id]),
-                  let terminal = restored.panels[panelId] as? TerminalTab else {
+                  let terminal = restored.panels[panelId] as? TerminalPanel else {
                 continue
             }
             let pending = terminalPendingInput(terminal) ?? ""
@@ -292,7 +292,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     private func runMixedFirstFixtureRoundTrip(
         fixtureName: String,
         firstSurfaceId: String,
-        firstSurfaceKind firstTabKind: TabSpecKind,
+        firstSurfaceKind firstPanelKind: PanelSpecKind,
         distinguishingValue: String,
         trailingTerminalId: String
     ) throws {
@@ -345,10 +345,10 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // exactly one non-terminal first surface + one trailing terminal,
         // so `kind` is unique enough to identify the right one.
         let firstSurfaceInRoundTrip = try XCTUnwrap(
-            convertedPlan.surfaces.first { $0.kind == firstTabKind }
+            convertedPlan.surfaces.first { $0.kind == firstPanelKind }
         )
-        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstTabKind)
-        switch firstTabKind {
+        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstPanelKind)
+        switch firstPanelKind {
         case .browser:
             XCTAssertEqual(firstSurfaceInRoundTrip.url, distinguishingValue)
         case .markdown:
@@ -380,7 +380,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         _ = trailingTerminalId
         let terminalSpec = try XCTUnwrap(convertedPlan.surfaces.first { $0.kind == .terminal })
         let panelId = try XCTUnwrap(parseUUIDSuffix(restoreResult.surfaceRefs[terminalSpec.id]))
-        let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalTab)
+        let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalPanel)
         let sessionId = try XCTUnwrap(stringMetadataValue(terminalSpec.metadata, key: "claude.session_id"))
         // `sendSubmitFormText` trims the registry's trailing newline
         // before queueing — see the mixed-claude-mailbox acceptance above.
@@ -452,7 +452,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     /// Observed through the `#if DEBUG` test-only accessor on
     /// `TerminalSurface` (`pendingInitialInputForTests`) — a small seam
     /// added in Phase 1 rather than making `pendingTextQueue` internal.
-    private func terminalPendingInput(_ panel: TerminalTab) -> String? {
+    private func terminalPendingInput(_ panel: TerminalPanel) -> String? {
         #if DEBUG
         return panel.surface.pendingInitialInputForTests
         #else

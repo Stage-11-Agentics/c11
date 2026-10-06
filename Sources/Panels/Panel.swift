@@ -3,27 +3,27 @@ import Combine
 import AppKit
 
 /// Type of panel content
-public enum TabContentType: String, Codable, Sendable {
+public enum PanelType: String, Codable, Sendable {
     case terminal
     case browser
     case markdown
 }
 
-public enum TerminalTabFocusIntent: Equatable {
+public enum TerminalPanelFocusIntent: Equatable {
     case surface
     case findField
 }
 
-public enum BrowserTabFocusIntent: Equatable {
+public enum BrowserPanelFocusIntent: Equatable {
     case webView
     case addressBar
     case findField
 }
 
-public enum TabFocusIntent: Equatable {
+public enum PanelFocusIntent: Equatable {
     case panel
-    case terminal(TerminalTabFocusIntent)
-    case browser(BrowserTabFocusIntent)
+    case terminal(TerminalPanelFocusIntent)
+    case browser(BrowserPanelFocusIntent)
 }
 
 enum FocusFlashCurve: Equatable {
@@ -75,7 +75,7 @@ enum FocusFlashPattern {
 
 /// Protocol for all panel types (terminal, browser, etc.)
 @MainActor
-public protocol TabContent: AnyObject, Identifiable, ObservableObject where ID == UUID {
+public protocol Panel: AnyObject, Identifiable, ObservableObject where ID == UUID {
     /// Unique identifier for this panel
     var id: UUID { get }
 
@@ -84,7 +84,7 @@ public protocol TabContent: AnyObject, Identifiable, ObservableObject where ID =
     var createdAt: Date? { get }
 
     /// The type of panel
-    var panelType: TabContentType { get }
+    var panelType: PanelType { get }
 
     /// Display title shown in tab bar
     var displayTitle: String { get }
@@ -114,28 +114,28 @@ public protocol TabContent: AnyObject, Identifiable, ObservableObject where ID =
     func triggerFlash(appearance: FlashAppearance)
 
     /// Capture the panel-local focus target that should be restored later.
-    func captureFocusIntent(in window: NSWindow?) -> TabFocusIntent
+    func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent
 
     /// Return the best focus target to restore when this panel becomes active again.
-    func preferredFocusIntentForActivation() -> TabFocusIntent
+    func preferredFocusIntentForActivation() -> PanelFocusIntent
 
     /// Prime panel-local focus state before activation side effects run.
-    func prepareFocusIntentForActivation(_ intent: TabFocusIntent)
+    func prepareFocusIntentForActivation(_ intent: PanelFocusIntent)
 
     /// Restore a previously captured focus target.
     @discardableResult
-    func restoreFocusIntent(_ intent: TabFocusIntent) -> Bool
+    func restoreFocusIntent(_ intent: PanelFocusIntent) -> Bool
 
     /// Return the semantic focus target currently owned by this panel, if any.
-    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> TabFocusIntent?
+    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> PanelFocusIntent?
 
     /// Explicitly yield a previously owned focus target before another panel restores focus.
     @discardableResult
-    func yieldFocusIntent(_ intent: TabFocusIntent, in window: NSWindow) -> Bool
+    func yieldFocusIntent(_ intent: PanelFocusIntent, in window: NSWindow) -> Bool
 }
 
 /// Extension providing default implementations
-extension TabContent {
+extension Panel {
     public var displayIcon: String? { nil }
     public var isDirty: Bool { false }
 
@@ -146,34 +146,34 @@ extension TabContent {
         triggerFlash()
     }
 
-    func captureFocusIntent(in window: NSWindow?) -> TabFocusIntent {
+    func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent {
         _ = window
         return preferredFocusIntentForActivation()
     }
 
-    func preferredFocusIntentForActivation() -> TabFocusIntent {
+    func preferredFocusIntentForActivation() -> PanelFocusIntent {
         .panel
     }
 
-    func prepareFocusIntentForActivation(_ intent: TabFocusIntent) {
+    func prepareFocusIntentForActivation(_ intent: PanelFocusIntent) {
         _ = intent
     }
 
     @discardableResult
-    func restoreFocusIntent(_ intent: TabFocusIntent) -> Bool {
+    func restoreFocusIntent(_ intent: PanelFocusIntent) -> Bool {
         guard intent == .panel else { return false }
         focus()
         return true
     }
 
-    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> TabFocusIntent? {
+    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> PanelFocusIntent? {
         _ = responder
         _ = window
         return nil
     }
 
     @discardableResult
-    func yieldFocusIntent(_ intent: TabFocusIntent, in window: NSWindow) -> Bool {
+    func yieldFocusIntent(_ intent: PanelFocusIntent, in window: NSWindow) -> Bool {
         _ = intent
         _ = window
         return false

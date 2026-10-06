@@ -775,7 +775,7 @@ final class LastTabCloseShortcutSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        XCTAssertTrue(LastTabCloseShortcutSettings.closesWorkspace(defaults: defaults))
+        XCTAssertTrue(LastPanelCloseShortcutSettings.closesWorkspace(defaults: defaults))
     }
 
     func testStoredTrueClosesWorkspace() {
@@ -786,8 +786,8 @@ final class LastTabCloseShortcutSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.set(true, forKey: LastTabCloseShortcutSettings.key)
-        XCTAssertTrue(LastTabCloseShortcutSettings.closesWorkspace(defaults: defaults))
+        defaults.set(true, forKey: LastPanelCloseShortcutSettings.key)
+        XCTAssertTrue(LastPanelCloseShortcutSettings.closesWorkspace(defaults: defaults))
     }
 
     func testStoredFalseKeepsWorkspaceOpen() {
@@ -798,8 +798,8 @@ final class LastTabCloseShortcutSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.set(false, forKey: LastTabCloseShortcutSettings.key)
-        XCTAssertFalse(LastTabCloseShortcutSettings.closesWorkspace(defaults: defaults))
+        defaults.set(false, forKey: LastPanelCloseShortcutSettings.key)
+        XCTAssertFalse(LastPanelCloseShortcutSettings.closesWorkspace(defaults: defaults))
     }
 }
 

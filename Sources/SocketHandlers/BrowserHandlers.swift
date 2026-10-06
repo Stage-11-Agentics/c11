@@ -51,7 +51,7 @@ extension TerminalController {
     struct V2BrowserOffMainTarget {
         let workspaceId: UUID
         let surfaceId: UUID
-        let browserTab: BrowserTab
+        let browserTab: BrowserPanel
         let webView: WKWebView
         let cookieStore: WKHTTPCookieStore
         let currentURL: URL?
@@ -527,7 +527,7 @@ extension TerminalController {
 
     func v2BrowserWithPanel(
         params: [String: Any],
-        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserTab: BrowserTab) -> V2CallResult
+        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserPanel: BrowserPanel) -> V2CallResult
     ) -> V2CallResult {
         var result: V2CallResult = .err(code: "internal_error", message: "Browser operation failed", data: nil)
         v2MainSync {
@@ -544,11 +544,11 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "No focused browser panel", data: nil)
                 return
             }
-            guard let browserTab = ws.browserPanel(for: surfaceId) else {
+            guard let browserPanel = ws.browserPanel(for: surfaceId) else {
                 result = .err(code: "invalid_params", message: "Panel is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            result = body(workspaceManager, ws, surfaceId, browserTab)
+            result = body(workspaceManager, ws, surfaceId, browserPanel)
         }
         return result
     }
@@ -614,8 +614,8 @@ extension TerminalController {
             currentURL: browserPanel.currentURL,
             frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
             resolvedSelector: resolvedSelector,
-            telemetryBootstrap: BrowserTab.telemetryHookBootstrapScriptSource,
-            dialogBootstrap: BrowserTab.dialogTelemetryHookBootstrapScriptSource,
+            telemetryBootstrap: BrowserPanel.telemetryHookBootstrapScriptSource,
+            dialogBootstrap: BrowserPanel.dialogTelemetryHookBootstrapScriptSource,
             hasIssuedLoad: Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView),
             responseEnvelope: [
                 "workspace_id": ws.id.uuidString,
@@ -884,7 +884,7 @@ extension TerminalController {
     }
 
     nonisolated func v2BrowserNavigateForStateLoadOffMain(
-        _ browserTab: BrowserTab,
+        _ browserPanel: BrowserPanel,
         url: URL,
         timeout: TimeInterval
     ) -> BrowserStateLoadNavigationResult {
@@ -896,7 +896,7 @@ extension TerminalController {
         let result: BrowserStateLoadNavigationResult? = v2AwaitCallback(timeout: timeout) { finish in
             DispatchQueue.main.async {
                 guard gate.begin() else { return }
-                browserTab.navigateForStateLoad(to: url) { navigationResult in
+                browserPanel.navigateForStateLoad(to: url) { navigationResult in
                     guard gate.complete() else { return }
                     finish(navigationResult)
                 }
@@ -1256,11 +1256,11 @@ extension TerminalController {
     /// hibernated) has a URL already and needs to be told that instead, or the
     /// agent re-issues the same navigate in a loop.
     func v2BrowserNoDocumentResultIfNeeded(
-        browserPanel browserTab: BrowserTab,
+        browserPanel: BrowserPanel,
         surfaceId: UUID
     ) -> V2CallResult? {
-        guard !Self.v2BrowserWebViewHasIssuedLoad(browserTab.webView) else { return nil }
-        let currentURL = browserTab.currentURL?.absoluteString
+        guard !Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView) else { return nil }
+        let currentURL = browserPanel.currentURL?.absoluteString
         let message = currentURL.map { Self.v2BrowserNavigationWithheldMessage(url: $0) }
             ?? Self.v2BrowserNoDocumentMessage
         return .err(
@@ -1269,7 +1269,7 @@ extension TerminalController {
             data: [
                 "surface_id": surfaceId.uuidString,
                 "current_url": v2OrNull(currentURL),
-                "lifecycle_state": browserTab.lifecycleState.rawValue
+                "lifecycle_state": browserPanel.lifecycleState.rawValue
             ]
         )
     }
@@ -1454,9 +1454,9 @@ extension TerminalController {
 
             var createdSplit = true
             var placementStrategy = "split_right"
-            let createdTab: BrowserTab?
+            let createdPanel: BrowserPanel?
             if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                    createdTab = ws.newBrowserSurface(
+                    createdPanel = ws.newBrowserSurface(
                         inPane: targetPane,
                         url: url,
                         focus: true,
@@ -1467,7 +1467,7 @@ extension TerminalController {
                 createdSplit = false
                 placementStrategy = "reuse_right_sibling"
             } else {
-                createdTab = ws.newBrowserSplit(
+                createdPanel = ws.newBrowserSplit(
                     from: sourceSurfaceId,
                     orientation: .horizontal,
                     url: url,
@@ -1477,12 +1477,12 @@ extension TerminalController {
                 )
             }
 
-            guard let browserTabId = createdTab?.id else {
+            guard let browserPanelId = createdPanel?.id else {
                 result = .err(code: "internal_error", message: "Failed to create browser", data: nil)
                 return
             }
 
-            let targetPaneUUID = ws.paneId(forPanelId: browserTabId)?.id
+            let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -1491,15 +1491,15 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
-                "surface_id": browserTabId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: browserTabId),
+                "surface_id": browserPanelId.uuidString,
+                "surface_ref": v2Ref(kind: .surface, uuid: browserPanelId),
                 "source_surface_id": sourceSurfaceId.uuidString,
                 "source_surface_ref": v2Ref(kind: .surface, uuid: sourceSurfaceId),
                 "source_pane_id": v2OrNull(sourcePaneUUID?.uuidString),
                 "source_pane_ref": v2Ref(kind: .pane, uuid: sourcePaneUUID),
                 "target_pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
-                "profile_id": createdTab?.profileID.uuidString ?? NSNull(),
+                "profile_id": createdPanel?.profileID.uuidString ?? NSNull(),
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
             ]
@@ -1508,7 +1508,7 @@ extension TerminalController {
             // in the payload rather than as an error, so the caller keeps the
             // surface/pane refs it needs to retry with `allow_insecure_http`
             // or to close the surface.
-            if let insecureHTTP = browserInsecureHTTPPayload(for: createdTab?.lastNavigationDisposition) {
+            if let insecureHTTP = browserInsecureHTTPPayload(for: createdPanel?.lastNavigationDisposition) {
                 payload["insecure_http"] = insecureHTTP
             }
             result = .ok(payload)

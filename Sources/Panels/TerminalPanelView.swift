@@ -3,8 +3,8 @@ import Foundation
 import AppKit
 
 /// View for rendering a terminal panel
-struct TerminalTabView: View {
-    @ObservedObject var panel: TerminalTab
+struct TerminalPanelView: View {
+    @ObservedObject var panel: TerminalPanel
     @ObservedObject var paneInteractionRuntime: AreaInteractionRuntime
     @ObservedObject private var themeManager = ThemeManager.shared
     @AppStorage(NotificationAreaRingSettings.enabledKey)
@@ -23,7 +23,7 @@ struct TerminalTabView: View {
     let isVisibleInUI: Bool
     let portalPriority: Int
     let isSplit: Bool
-    let appearance: TabAppearance
+    let appearance: PanelAppearance
     let hasUnreadNotification: Bool
     let onFocus: () -> Void
     let onTriggerFlash: () -> Void
@@ -81,7 +81,7 @@ struct TerminalTabView: View {
     /// the surface; `TextBoxAppDetection` falls back to title regex in
     /// that case.
     private var terminalTypeFromMetadata: String? {
-        let snapshot = TabMetadataStore.shared.getMetadata(
+        let snapshot = PanelMetadataStore.shared.getMetadata(
             workspaceId: panel.workspaceId, surfaceId: panel.id
         )
         return snapshot.metadata[MetadataKey.terminalType] as? String
@@ -157,13 +157,13 @@ struct TerminalTabView: View {
 }
 
 /// Shared appearance settings for panels
-struct TabAppearance {
+struct PanelAppearance {
     let dividerColor: Color
     let unfocusedOverlayNSColor: NSColor
     let unfocusedOverlayOpacity: Double
 
-    static func fromConfig(_ config: GhosttyConfig) -> TabAppearance {
-        TabAppearance(
+    static func fromConfig(_ config: GhosttyConfig) -> PanelAppearance {
+        PanelAppearance(
             dividerColor: Color(nsColor: config.resolvedSplitDividerColor),
             unfocusedOverlayNSColor: config.unfocusedSplitOverlayFill,
             unfocusedOverlayOpacity: config.unfocusedSplitOverlayOpacity

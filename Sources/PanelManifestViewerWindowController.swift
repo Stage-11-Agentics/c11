@@ -1,12 +1,12 @@
 import AppKit
 import SwiftUI
 
-final class TabManifestViewerWindowController: NSWindowController, NSWindowDelegate {
-    private static var openControllers: [UUID: TabManifestViewerWindowController] = [:]
+final class PanelManifestViewerWindowController: NSWindowController, NSWindowDelegate {
+    private static var openControllers: [UUID: PanelManifestViewerWindowController] = [:]
 
     private let surfaceId: UUID
 
-    private init(workspaceId: UUID, surfaceId: UUID, kind: TabManifestKind) {
+    private init(workspaceId: UUID, surfaceId: UUID, kind: PanelManifestKind) {
         self.surfaceId = surfaceId
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
@@ -21,7 +21,7 @@ final class TabManifestViewerWindowController: NSWindowController, NSWindowDeleg
         panel.center()
         let handle = TerminalController.shared.surfaceHandleInfo(workspaceId: workspaceId, surfaceId: surfaceId)
         panel.contentView = NSHostingView(
-            rootView: TabManifestView(workspaceId: workspaceId, surfaceId: surfaceId, kind: kind, handle: handle)
+            rootView: PanelManifestView(workspaceId: workspaceId, surfaceId: surfaceId, kind: kind, handle: handle)
         )
         AppDelegate.shared?.applyWindowDecorations(to: panel)
         super.init(window: panel)
@@ -34,12 +34,12 @@ final class TabManifestViewerWindowController: NSWindowController, NSWindowDeleg
     }
 
     @MainActor
-    class func show(workspaceId: UUID, surfaceId: UUID, kind: TabManifestKind) {
+    class func show(workspaceId: UUID, surfaceId: UUID, kind: PanelManifestKind) {
         if let existing = openControllers[surfaceId] {
             existing.window?.makeKeyAndOrderFront(nil)
             return
         }
-        let controller = TabManifestViewerWindowController(
+        let controller = PanelManifestViewerWindowController(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             kind: kind

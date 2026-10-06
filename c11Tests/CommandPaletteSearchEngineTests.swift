@@ -744,7 +744,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
                             displayName: "Workspace Alpha",
                             metadata: CommandPaletteSwitcherSearchMetadata(),
                             surfaces: [
-                                ContentView.CommandPaletteSwitcherFingerprintTab(
+                                ContentView.CommandPaletteSwitcherFingerprintPanel(
                                     id: surfaceID,
                                     displayName: "Terminal",
                                     kindLabel: "Terminal",
@@ -772,7 +772,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
                             displayName: "Workspace Alpha",
                             metadata: CommandPaletteSwitcherSearchMetadata(),
                             surfaces: [
-                                ContentView.CommandPaletteSwitcherFingerprintTab(
+                                ContentView.CommandPaletteSwitcherFingerprintPanel(
                                     id: surfaceID,
                                     displayName: "Terminal",
                                     kindLabel: "Terminal",
@@ -800,7 +800,7 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
                             displayName: "Workspace Alpha",
                             metadata: CommandPaletteSwitcherSearchMetadata(),
                             surfaces: [
-                                ContentView.CommandPaletteSwitcherFingerprintTab(
+                                ContentView.CommandPaletteSwitcherFingerprintPanel(
                                     id: surfaceID,
                                     displayName: "Terminal",
                                     kindLabel: "Browser",

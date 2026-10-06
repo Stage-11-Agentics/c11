@@ -17,7 +17,7 @@ import XCTest
 /// Per `CLAUDE.md`, never run locally — CI only.
 final class TabMetadataStoreValidationTests: XCTestCase {
 
-    private let store = TabMetadataStore.shared
+    private let store = PanelMetadataStore.shared
 
     func testStoreAcceptsValidUUIDv4ClaudeSessionId() throws {
         let workspace = UUID()
@@ -49,7 +49,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? TabMetadataStore.WriteError else {
+            guard let writeError = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -71,7 +71,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? TabMetadataStore.WriteError else {
+            guard let writeError = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -92,7 +92,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? TabMetadataStore.WriteError else {
+            guard let writeError = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -177,7 +177,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? TabMetadataStore.WriteError else {
+            guard let writeError = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -226,7 +226,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? TabMetadataStore.WriteError else {
+            guard let writeError = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -244,7 +244,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
         let raised = try store.mutateAttention(
-            workspaceId: workspace, surfaceId: surface, flag: .raise("Synthetic decision"), callerTabId: caller
+            workspaceId: workspace, surfaceId: surface, flag: .raise("Synthetic decision"), callerPanelId: caller
         )
         XCTAssertEqual(raised.after.flagCallerTabId, caller)
         let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
@@ -283,17 +283,17 @@ final class TabMetadataStoreValidationTests: XCTestCase {
         let surfaceCaller = UUID()
         let panelCaller = UUID()
         let tabCaller = UUID()
-        XCTAssertEqual(TabMetadataStore.flagCallerValue([
+        XCTAssertEqual(PanelMetadataStore.flagCallerValue([
             "flag_caller_surface_id": surfaceCaller.uuidString,
             "flag_caller_panel_id": panelCaller.uuidString,
             "flag_caller_tab_id": tabCaller.uuidString,
         ]), surfaceCaller.uuidString)
-        XCTAssertEqual(TabMetadataStore.flagCallerValue([
+        XCTAssertEqual(PanelMetadataStore.flagCallerValue([
             "flag_caller_panel_id": panelCaller.uuidString,
             "flag_caller_tab_id": tabCaller.uuidString,
         ]), panelCaller.uuidString)
-        XCTAssertEqual(TabMetadataStore.flagCallerValue(["flag_caller_tab_id": tabCaller.uuidString]), tabCaller.uuidString)
-        XCTAssertNil(TabMetadataStore.flagCallerValue([:]))
+        XCTAssertEqual(PanelMetadataStore.flagCallerValue(["flag_caller_tab_id": tabCaller.uuidString]), tabCaller.uuidString)
+        XCTAssertNil(PanelMetadataStore.flagCallerValue([:]))
 
         let workspace = UUID()
         let surface = UUID()
@@ -323,7 +323,7 @@ final class TabMetadataStoreValidationTests: XCTestCase {
             mode: .merge,
             source: .explicit
         )) { error in
-            guard case .attentionRequiresService? = error as? TabMetadataStore.WriteError else {
+            guard case .attentionRequiresService? = error as? PanelMetadataStore.WriteError else {
                 return XCTFail("expected attentionRequiresService, got \(error)")
             }
         }
@@ -338,9 +338,9 @@ final class TabMetadataStoreValidationTests: XCTestCase {
 /// blank-write-clears contract that `c11 set-tab-icon ""` relies on.
 final class TabIconColorMetadataTests: XCTestCase {
 
-    private let store = TabMetadataStore.shared
+    private let store = PanelMetadataStore.shared
 
-    private func write(_ partial: [String: Any], ws: UUID, tab: UUID, source: MetadataSource = .explicit) throws -> TabMetadataStore.WriteResult {
+    private func write(_ partial: [String: Any], ws: UUID, tab: UUID, source: MetadataSource = .explicit) throws -> PanelMetadataStore.WriteResult {
         try store.setMetadata(workspaceId: ws, surfaceId: tab, partial: partial, mode: .merge, source: source)
     }
 
@@ -348,7 +348,7 @@ final class TabIconColorMetadataTests: XCTestCase {
         let ws = UUID(), tab = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: tab) }
         XCTAssertThrowsError(try write(partial, ws: ws, tab: tab), file: file, line: line) { error in
-            XCTAssertEqual((error as? TabMetadataStore.WriteError)?.code, "reserved_key_invalid_type", file: file, line: line)
+            XCTAssertEqual((error as? PanelMetadataStore.WriteError)?.code, "reserved_key_invalid_type", file: file, line: line)
         }
     }
 

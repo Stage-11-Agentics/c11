@@ -41,7 +41,7 @@ final class TabIdentityRestoreTests: XCTestCase {
         XCTAssertEqual(Set(restored.panels.keys), Set([a, b, c]))
         XCTAssertEqual(restored.paneId(forPanelId: a), restored.paneId(forPanelId: b))
         XCTAssertNotEqual(restored.paneId(forPanelId: a), restored.paneId(forPanelId: c))
-        let metadata = TabMetadataStore.shared.getMetadata(workspaceId: restored.id, surfaceId: a)
+        let metadata = PanelMetadataStore.shared.getMetadata(workspaceId: restored.id, surfaceId: a)
         XCTAssertEqual(metadata.metadata["fixture"] as? String, "first")
         XCTAssertEqual(restored.focusedPanelId, c)
 
@@ -60,7 +60,7 @@ final class TabIdentityRestoreTests: XCTestCase {
         relaunched.restoreSessionSnapshot(decoded)
         XCTAssertEqual(Set(relaunched.panels.keys), Set([a, b, c]))
         XCTAssertEqual(relaunched.focusedPanelId, c)
-        XCTAssertEqual(TabMetadataStore.shared.getMetadata(
+        XCTAssertEqual(PanelMetadataStore.shared.getMetadata(
             workspaceId: relaunched.id, surfaceId: a
         ).metadata["fixture"] as? String, "first")
     }
@@ -98,11 +98,11 @@ final class TabIdentityRestoreTests: XCTestCase {
 
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
-        let markdownTab = try XCTUnwrap(
-            workspace.newMarkdownTab(inPane: paneId, filePath: markdownURL.path, focus: true)
+        let markdownPanel = try XCTUnwrap(
+            workspace.newMarkdownPanel(inPane: paneId, filePath: markdownURL.path, focus: true)
         )
         let expectedIds = Set(workspace.panels.keys)
-        XCTAssertTrue(expectedIds.contains(markdownTab.id))
+        XCTAssertTrue(expectedIds.contains(markdownPanel.id))
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
 
@@ -112,7 +112,7 @@ final class TabIdentityRestoreTests: XCTestCase {
         let restoredIds = Set(restored.panels.keys)
         XCTAssertEqual(restoredIds, expectedIds)
         XCTAssertNotNil(
-            restored.markdownTab(for: markdownTab.id),
+            restored.markdownPanel(for: markdownPanel.id),
             "Markdown panel UUID should round-trip and resolve on the restored workspace"
         )
     }
@@ -163,14 +163,14 @@ final class TabIdentityRestoreTests: XCTestCase {
                 focus: false
             )
         )
-        let markdownTab = try XCTUnwrap(
-            workspace.newMarkdownTab(inPane: paneId, filePath: markdownURL.path, focus: false)
+        let markdownPanel = try XCTUnwrap(
+            workspace.newMarkdownPanel(inPane: paneId, filePath: markdownURL.path, focus: false)
         )
 
         let expected = Set(workspace.panels.keys)
         XCTAssertTrue(expected.contains(terminalTab.id))
         XCTAssertTrue(expected.contains(browserPanel.id))
-        XCTAssertTrue(expected.contains(markdownTab.id))
+        XCTAssertTrue(expected.contains(markdownPanel.id))
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
 
@@ -179,7 +179,7 @@ final class TabIdentityRestoreTests: XCTestCase {
 
         XCTAssertEqual(Set(restored.panels.keys), expected)
         XCTAssertEqual(restored.bonsplitController.allPaneIds.count, 2)
-        XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: markdownTab.id))
+        XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: markdownPanel.id))
         XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: browserPanel.id))
         XCTAssertNotEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: terminalTab.id))
         XCTAssertEqual(restored.focusedPanelId, snapshot.focusedPanelId)

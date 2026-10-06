@@ -104,7 +104,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
         }
     }
 
-    func noteAttention(_ snapshot: TabAttentionSnapshot) {
+    func noteAttention(_ snapshot: PanelAttentionSnapshot) {
         let fact = FeedAttentionFact(
             workspaceID: snapshot.workspaceId,
             tabID: snapshot.surfaceId,
@@ -123,7 +123,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
         }
     }
 
-    func replaceAttention(_ snapshots: [TabAttentionSnapshot]) {
+    func replaceAttention(_ snapshots: [PanelAttentionSnapshot]) {
         let facts = snapshots.map { snapshot in
             FeedAttentionFact(
                 workspaceID: snapshot.workspaceId,

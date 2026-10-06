@@ -20,11 +20,11 @@ import Foundation
 /// environment override (`C11_DISABLE_BROWSER` / `C11_DISABLE_MARKDOWN`) for
 /// headless runs and tests. The environment override only ever *disables* a
 /// type; it never force-enables one the operator turned off.
-enum TabTypeAvailability {
+enum PanelTypeAvailability {
     /// `@AppStorage` key — `true` (or unset) means the internal browser can be spawned.
     static let internalBrowserEnabledKey = "internalBrowserEnabled"
     /// `@AppStorage` key — `true` (or unset) means markdown surfaces can be spawned.
-    static let markdownTabsEnabledKey = "markdownSurfacesEnabled"
+    static let markdownPanelsEnabledKey = "markdownSurfacesEnabled"
     /// `@AppStorage` key — `true` (or unset) shows the Markdown spawn button in
     /// the tab bar. Distinct from `markdownSurfacesEnabledKey`: hiding the
     /// button keeps markdown surfaces fully available to the CLI, socket, and
@@ -41,7 +41,7 @@ enum TabTypeAvailability {
 
     /// Single source of truth for the gate. Terminal surfaces are never gated.
     static func isEnabled(
-        _ type: TabContentType,
+        _ type: PanelType,
         defaults: UserDefaults = .standard,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
@@ -57,7 +57,7 @@ enum TabTypeAvailability {
             )
         case .markdown:
             return resolve(
-                storageKey: markdownTabsEnabledKey,
+                storageKey: markdownPanelsEnabledKey,
                 disableEnvKey: disableMarkdownEnvKey,
                 defaults: defaults,
                 environment: environment
@@ -94,7 +94,7 @@ enum TabTypeAvailability {
 
     /// Actionable message for a blocked creation attempt. Plain English — these
     /// surface as CLI/socket error envelopes, not localized in-app UI strings.
-    static func disabledMessage(for type: TabContentType) -> String {
+    static func disabledMessage(for type: PanelType) -> String {
         switch type {
         case .browser:
             return "browser panels are disabled (Settings → General → Areas & Panels → Internal Browser)"
@@ -111,12 +111,12 @@ enum TabTypeAvailability {
 /// Mirrors `ChromeScaleObserver`: observe the two `@AppStorage` keys, hop to
 /// the main actor, invoke the callback (which rebuilds the Bonsplit config so
 /// the spawn buttons appear/disappear).
-final class TabAvailabilityObserver: NSObject {
+final class PanelAvailabilityObserver: NSObject {
     private let onChange: () -> Void
     private static let observedKeys = [
-        TabTypeAvailability.internalBrowserEnabledKey,
-        TabTypeAvailability.markdownTabsEnabledKey,
-        TabTypeAvailability.markdownSpawnButtonVisibleKey,
+        PanelTypeAvailability.internalBrowserEnabledKey,
+        PanelTypeAvailability.markdownPanelsEnabledKey,
+        PanelTypeAvailability.markdownSpawnButtonVisibleKey,
     ]
     private let defaults: UserDefaults
 

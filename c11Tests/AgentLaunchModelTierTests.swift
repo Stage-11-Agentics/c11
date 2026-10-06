@@ -21,12 +21,12 @@ final class AgentLaunchModelTierTests: XCTestCase {
     }
 
     override func tearDown() {
-        TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: surface)
+        PanelMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: surface)
         super.tearDown()
     }
 
     private func snapshot() -> (values: [String: Any], sources: [String: MetadataSource]) {
-        let (values, raw) = TabMetadataStore.shared.getMetadata(workspaceId: workspace.id, surfaceId: surface)
+        let (values, raw) = PanelMetadataStore.shared.getMetadata(workspaceId: workspace.id, surfaceId: surface)
         var sources: [String: MetadataSource] = [:]
         for (key, entry) in raw {
             if let name = entry["source"] as? String, let source = MetadataSource(rawValue: name) { sources[key] = source }
@@ -67,14 +67,14 @@ final class AgentLaunchModelTierTests: XCTestCase {
         workspace.stampAgentLaunchIdentity(surfaceId: surface, kind: "claude-code", model: "claude-opus-4-7", task: nil, title: nil)
         XCTAssertEqual(effective().model, "claude-opus-4-7", "launch stamp shows until something better")
 
-        TabMetadataStore.shared.setInternal(
+        PanelMetadataStore.shared.setInternal(
             workspaceId: workspace.id, surfaceId: surface,
             key: AgentModelDetector.MetadataKeys.detected, value: "claude-sonnet-4-6", source: .derived
         )
         XCTAssertEqual(effective().model, "claude-sonnet-4-6", "a /model switch shows over the launch stamp")
 
         // What `c11 set-agent --model` (and nothing else now) writes: tier declare.
-        _ = try? TabMetadataStore.shared.setMetadata(
+        _ = try? PanelMetadataStore.shared.setMetadata(
             workspaceId: workspace.id, surfaceId: surface,
             partial: ["model": "claude-haiku-4-5"], mode: .merge, source: .declare
         )

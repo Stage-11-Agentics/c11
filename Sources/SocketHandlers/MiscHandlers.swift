@@ -107,7 +107,7 @@ extension TerminalController {
         }
 
         if let existingTab = targetWorkspace.panels.values
-            .compactMap({ $0 as? BrowserTab })
+            .compactMap({ $0 as? BrowserPanel })
             .first(where: { tab in
                 guard let currentURL = tab.currentURL else { return false }
                 return currentURL.standardizedFileURL.path == pageURL.standardizedFileURL.path
@@ -301,7 +301,7 @@ extension TerminalController {
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
-                guard let newTab = workspace.newBrowserSurface(
+                guard let newPanel = workspace.newBrowserSurface(
                     inPane: paneId,
                     url: browserPanel.currentURL,
                     focus: true
@@ -309,12 +309,12 @@ extension TerminalController {
                     result = .err(code: "internal_error", message: "Failed to duplicate panel", data: nil)
                     return
                 }
-                _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
+                _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
                 finish([
-                    "created_surface_id": newTab.id.uuidString,
-                    "created_surface_ref": v2Ref(kind: .surface, uuid: newTab.id),
-                    "created_tab_id": newTab.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newTab.id)
+                    "created_surface_id": newPanel.id.uuidString,
+                    "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
+                    "created_tab_id": newPanel.id.uuidString,
+                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
                 ])
 
             case "new_terminal_right", "new_terminal_to_right", "new_terminal_panel_to_right", "new_terminal_tab_to_right":
@@ -325,16 +325,16 @@ extension TerminalController {
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
-                guard let newTab = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
+                guard let newPanel = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
-                _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
+                _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
                 finish([
-                    "created_surface_id": newTab.id.uuidString,
-                    "created_surface_ref": v2Ref(kind: .surface, uuid: newTab.id),
-                    "created_tab_id": newTab.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newTab.id)
+                    "created_surface_id": newPanel.id.uuidString,
+                    "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
+                    "created_tab_id": newPanel.id.uuidString,
+                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
                 ])
 
             case "new_browser_right", "new_browser_to_right", "new_browser_panel_to_right", "new_browser_tab_to_right":
@@ -352,16 +352,16 @@ extension TerminalController {
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
-                guard let newTab = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
+                guard let newPanel = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
-                _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
+                _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
                 finish([
-                    "created_surface_id": newTab.id.uuidString,
-                    "created_surface_ref": v2Ref(kind: .surface, uuid: newTab.id),
-                    "created_tab_id": newTab.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newTab.id)
+                    "created_surface_id": newPanel.id.uuidString,
+                    "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
+                    "created_tab_id": newPanel.id.uuidString,
+                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
                 ])
 
             case "close_left", "close_to_left":

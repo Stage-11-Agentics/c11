@@ -231,7 +231,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second, third, fourth],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 337,
                     label: "PR",
@@ -281,7 +281,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -310,7 +310,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -342,7 +342,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            tabPullRequests: [
+            panelPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -388,7 +388,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        XCTAssertEqual(workspace.tabPullRequests[panelId]?.checks, .pass)
+        XCTAssertEqual(workspace.panelPullRequests[panelId]?.checks, .pass)
         XCTAssertEqual(workspace.pullRequest?.checks, .pass)
     }
 
@@ -401,7 +401,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
         )
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [],
-            tabPullRequests: [:],
+            panelPullRequests: [:],
             fallbackPullRequest: fallback
         )
 
@@ -428,7 +428,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
         workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
 
         XCTAssertNil(workspace.pullRequest)
-        XCTAssertNil(workspace.tabPullRequests[panelId])
+        XCTAssertNil(workspace.panelPullRequests[panelId])
         XCTAssertTrue(workspace.sidebarPullRequestsInDisplayOrder().isEmpty)
     }
 

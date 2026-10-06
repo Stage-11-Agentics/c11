@@ -15,19 +15,19 @@ final class TabSeenClockTests: XCTestCase {
     private func t(_ s: TimeInterval) -> Date { Date(timeIntervalSince1970: 1_000 + s) }
 
     func testNeverSeenPanelReportsNil() {
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.observe(seen: a, at: t(0))
         XCTAssertNil(clock.lastSeenAt(b, now: t(5)))
     }
 
     func testBeingSeenReportsNow() {
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.observe(seen: a, at: t(0))
         XCTAssertEqual(clock.lastSeenAt(a, now: t(42)), t(42))
     }
 
     func testStampedWhenTabSwitchedAway() {
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.observe(seen: a, at: t(0))
         XCTAssertTrue(clock.observe(seen: b, at: t(10)))
         XCTAssertEqual(clock.lastSeenAt(a, now: t(99)), t(10))
@@ -36,7 +36,7 @@ final class TabSeenClockTests: XCTestCase {
 
     func testStampedWhenNothingSeenAnymore() {
         // App deactivated, window resigned key, screen locked: seen becomes nil.
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.observe(seen: a, at: t(0))
         clock.observe(seen: nil, at: t(7))
         XCTAssertEqual(clock.lastSeenAt(a, now: t(50)), t(7))
@@ -48,7 +48,7 @@ final class TabSeenClockTests: XCTestCase {
     }
 
     func testRepeatedObservationOfSamePanelDoesNotRestamp() {
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.observe(seen: a, at: t(0))
         XCTAssertFalse(clock.observe(seen: a, at: t(5)))
         clock.observe(seen: nil, at: t(9))
@@ -57,13 +57,13 @@ final class TabSeenClockTests: XCTestCase {
 
     func testNoStampWhenNothingWasSeen() {
         // Background/programmatic focus change while c11 is inactive: seen stays nil.
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         XCTAssertFalse(clock.observe(seen: nil, at: t(1)))
         XCTAssertNil(clock.lastSeenAt(a, now: t(2)))
     }
 
     func testSeedRestoresStampButNeverOverridesLiveState() {
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.seed(a, at: t(3))
         XCTAssertEqual(clock.lastSeenAt(a, now: t(50)), t(3))
         clock.observe(seen: a, at: t(10))
@@ -77,7 +77,7 @@ final class TabSeenClockTests: XCTestCase {
     }
 
     func testForgetClearsPanel() {
-        var clock = TabSeenClock()
+        var clock = PanelSeenClock()
         clock.observe(seen: a, at: t(0))
         clock.observe(seen: b, at: t(1))
         clock.forget(a)
@@ -88,8 +88,8 @@ final class TabSeenClockTests: XCTestCase {
 
     func testLastSeenAtRoundTripsThroughTabSnapshot() throws {
         let stamp = Date(timeIntervalSince1970: 1_700_000_123)
-        func snapshot(_ lastSeenAt: Date?) -> SessionTabSnapshot {
-            SessionTabSnapshot(
+        func snapshot(_ lastSeenAt: Date?) -> SessionPanelSnapshot {
+            SessionPanelSnapshot(
                 id: UUID(), type: .terminal, title: nil, customTitle: nil,
                 directory: nil, isPinned: false, isManuallyUnread: false,
                 gitBranch: nil, listeningPorts: [], ttyName: nil,
@@ -99,11 +99,11 @@ final class TabSeenClockTests: XCTestCase {
         }
         let data = try JSONEncoder().encode(snapshot(stamp))
         XCTAssertTrue((String(data: data, encoding: .utf8) ?? "").contains("\"last_seen_at\""))
-        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         XCTAssertEqual(decoded.lastSeenAt, stamp)
 
         let legacy = try JSONEncoder().encode(snapshot(nil))
-        XCTAssertNil(try JSONDecoder().decode(SessionTabSnapshot.self, from: legacy).lastSeenAt)
+        XCTAssertNil(try JSONDecoder().decode(SessionPanelSnapshot.self, from: legacy).lastSeenAt)
     }
 
     // MARK: - Tracker (injected seen provider and clock)
@@ -112,7 +112,7 @@ final class TabSeenClockTests: XCTestCase {
     private final class Harness {
         var seen: UUID?
         var time = Date(timeIntervalSince1970: 5_000)
-        lazy var tracker = TabSeenTracker(seenProvider: { [unowned self] in self.seen }, now: { [unowned self] in self.time }, screenLockedProvider: { false })
+        lazy var tracker = PanelSeenTracker(seenProvider: { [unowned self] in self.seen }, now: { [unowned self] in self.time }, screenLockedProvider: { false })
         func advance(_ s: TimeInterval) { time = time.addingTimeInterval(s) }
     }
 
@@ -204,7 +204,7 @@ final class TabSeenClockTests: XCTestCase {
     func testActivationRederivesLockFromWindowServer() {
         var locked = true
         let seen = a
-        let tracker = TabSeenTracker(seenProvider: { seen }, now: { Date() }, screenLockedProvider: { locked })
+        let tracker = PanelSeenTracker(seenProvider: { seen }, now: { Date() }, screenLockedProvider: { locked })
         tracker.appBecameActive()
         XCTAssertEqual(tracker.interruptions, [.locked])
         XCTAssertFalse(tracker.isBeingSeen(panelId: a))

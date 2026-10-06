@@ -12,23 +12,23 @@ import Foundation
 ///   * The dispatcher can bind to `Workspace.orderedPanels` (main-thread) at
 ///     construction time.
 ///   * Tests can inject a fixed list without spinning up a Workspace.
-struct MailboxTabResolver {
+struct MailboxPanelResolver {
 
     /// Reserved metadata prefix owned by C11-13 per CMUX-37 alignment doc §2.
     static let metadataPrefix = "mailbox."
 
     let workspaceId: UUID
-    let metadataStore: TabMetadataStore
-    let liveTabs: () -> [UUID]
+    let metadataStore: PanelMetadataStore
+    let livePanels: () -> [UUID]
 
     init(
         workspaceId: UUID,
-        metadataStore: TabMetadataStore = .shared,
-        liveTabs: @escaping () -> [UUID]
+        metadataStore: PanelMetadataStore = .shared,
+        livePanels: @escaping () -> [UUID]
     ) {
         self.workspaceId = workspaceId
         self.metadataStore = metadataStore
-        self.liveTabs = liveTabs
+        self.livePanels = livePanels
     }
 
     // MARK: - Name → surface
@@ -42,14 +42,14 @@ struct MailboxTabResolver {
     /// which honors address > role > title precedence. This title-only lookup
     /// has no production caller; it survives as a focused unit-test fixture.
     func surfaceIds(forName name: String) -> [UUID] {
-        liveTabs().filter { surfaceId in
-            tabName(for: surfaceId) == name
+        livePanels().filter { surfaceId in
+            panelName(for: surfaceId) == name
         }
     }
 
     /// Returns the surface's current `title` metadata, if any. Used by CLI
     /// helpers that auto-fill the sender's `from` from its own surface.
-    func tabName(for surfaceId: UUID) -> String? {
+    func panelName(for surfaceId: UUID) -> String? {
         let (metadata, _) = metadataStore.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
@@ -66,11 +66,11 @@ struct MailboxTabResolver {
     ///     v1 metadata values are strings; non-string entries are dropped).
     ///
     /// Surfaces without a title can't be addressed and are filtered out.
-    func tabsWithMailboxMetadata() -> [TabMetadata] {
-        liveTabs().compactMap { tabId in
+    func panelsWithMailboxMetadata() -> [PanelMetadata] {
+        livePanels().compactMap { panelId in
             let (metadata, _) = metadataStore.getMetadata(
                 workspaceId: workspaceId,
-                surfaceId: tabId
+                surfaceId: panelId
             )
             guard let title = metadata[MetadataKey.title] as? String else {
                 return nil
@@ -81,15 +81,15 @@ struct MailboxTabResolver {
                     mailboxKeys[key] = stringValue
                 }
             }
-            return TabMetadata(
-                surfaceId: tabId,
+            return PanelMetadata(
+                surfaceId: panelId,
                 name: title,
                 mailboxKeys: mailboxKeys
             )
         }
     }
 
-    struct TabMetadata: Equatable {
+    struct PanelMetadata: Equatable {
         let surfaceId: UUID
         let name: String
         /// Parsed from mailbox.* metadata keys. Comma-split helpers live on
@@ -174,7 +174,7 @@ struct MailboxGlobalResolver {
     /// optional stable identities a surface declares via `mailbox.address` /
     /// `mailbox.role`. Defaulted to nil so existing call sites that only know
     /// the title keep compiling.
-    struct TabRecord: Equatable {
+    struct PanelRecord: Equatable {
         let workspaceId: UUID
         let surfaceId: UUID
         let name: String
@@ -205,7 +205,7 @@ struct MailboxGlobalResolver {
         case unique(workspaceId: UUID, surfaceIds: [UUID])
         /// `name` matches surfaces in more than one workspace and no qualifier
         /// was supplied. Carries the candidates for a helpful error message.
-        case ambiguous(candidates: [TabRecord])
+        case ambiguous(candidates: [PanelRecord])
         /// No live surface carries `name` (within the qualifier, if given).
         case unresolved
     }
@@ -213,7 +213,7 @@ struct MailboxGlobalResolver {
     /// Enumerates all addressable surfaces. Injected so the resolver is pure:
     /// tests pass a fixed list, the socket handler binds it to the live
     /// windows' workspaces.
-    let surfaces: () -> [TabRecord]
+    let surfaces: () -> [PanelRecord]
 
     /// `name` is the raw `to` string. It may be a bare name (precedence
     /// address > role > title) or a qualifier form (`panel:<addr>` /

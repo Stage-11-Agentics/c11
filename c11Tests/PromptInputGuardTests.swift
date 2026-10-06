@@ -534,7 +534,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
         let owner = JournalOwner(tabID: tabID, agentKind: "claude", sessionID: "fixture-session")
         let epoch = Date(timeIntervalSince1970: 1_000)
         let flagSnapshot = snapshot(owner: owner, workspaceID: workspaceID, phase: .working, sequence: 41)
-        let attention = TabAttentionSnapshot(
+        let attention = PanelAttentionSnapshot(
             workspaceId: workspaceID,
             surfaceId: tabID,
             flagReason: "fixture blocker",
@@ -619,7 +619,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
             targetWorkspaceID: workspaceID,
             owner: owner,
             snapshot: completed,
-            attention: TabAttentionSnapshot(
+            attention: PanelAttentionSnapshot(
                 workspaceId: workspaceID,
                 surfaceId: tabID,
                 flagReason: nil,
@@ -737,7 +737,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
     #endif
 
     func testReplacedFlagEpochCannotBeLoweredByDelayedAnswer() throws {
-        let store = TabMetadataStore.shared
+        let store = PanelMetadataStore.shared
         let workspaceID = UUID()
         let tabID = UUID()
         let originalEpoch = Date(timeIntervalSince1970: 2_000)
@@ -794,7 +794,7 @@ final class FeedAnswerSafetyTests: XCTestCase {
 
     private func row(
         for snapshot: JournalSnapshot,
-        attention: TabAttentionSnapshot?
+        attention: PanelAttentionSnapshot?
     ) throws -> FeedAnswerProjectionRow {
         let attentionFacts = attention.map { value in
             [FeedAttentionFact(

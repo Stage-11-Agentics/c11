@@ -110,9 +110,9 @@ final class AttentionOrderTests: XCTestCase {
     }
 
     func testMenuCountsKeepAttentionAndUnreadSemanticsSeparate() {
-        let flag = TabAttentionSnapshot(workspaceId: uuid(99), surfaceId: uuid(1), flagReason: "synthetic",
+        let flag = PanelAttentionSnapshot(workspaceId: uuid(99), surfaceId: uuid(1), flagReason: "synthetic",
                                         flagRaisedAt: Date(), suppressed: true)
-        let suppressed = TabAttentionSnapshot(workspaceId: uuid(99), surfaceId: uuid(2), flagReason: nil,
+        let suppressed = PanelAttentionSnapshot(workspaceId: uuid(99), surfaceId: uuid(2), flagReason: nil,
                                               flagRaisedAt: nil, suppressed: true)
         let notices = [1, 2, 3].map { tab in
             TerminalNotification(id: uuid(tab + 10), workspaceId: uuid(99), surfaceId: uuid(tab), title: "synthetic",

@@ -112,8 +112,8 @@ public enum MetadataSource: String, CaseIterable, Codable, Sendable {
 /// The store is *in-memory only*. Consumers that need durability persist
 /// externally. Entries are pruned when surfaces close (see
 /// `Workspace.pruneSurfaceMetadata`).
-final class TabMetadataStore: @unchecked Sendable {
-    static let shared = TabMetadataStore()
+final class PanelMetadataStore: @unchecked Sendable {
+    static let shared = PanelMetadataStore()
 
     // MARK: - Constants
 
@@ -272,13 +272,13 @@ final class TabMetadataStore: @unchecked Sendable {
             guard let s = value as? String else {
                 return .reservedKeyInvalidType(key, "expected string")
             }
-            if s.count > TabLifecycleState.metadataMaxLength {
+            if s.count > PanelLifecycleState.metadataMaxLength {
                 return .reservedKeyInvalidType(
                     key,
-                    "exceeds max length \(TabLifecycleState.metadataMaxLength)"
+                    "exceeds max length \(PanelLifecycleState.metadataMaxLength)"
                 )
             }
-            guard let parsed = TabLifecycleState(rawValue: s) else {
+            guard let parsed = PanelLifecycleState(rawValue: s) else {
                 return .reservedKeyInvalidType(
                     key,
                     "must be one of: active, throttled, hibernated"
@@ -320,10 +320,10 @@ final class TabMetadataStore: @unchecked Sendable {
             guard reason == trimmed else {
                 return .reservedKeyInvalidType(key, "reason must not have leading or trailing whitespace")
             }
-            guard reason.count <= TabAttentionReason.maxLength else {
+            guard reason.count <= PanelAttentionReason.maxLength else {
                 return .reservedKeyInvalidType(
                     key,
-                    "exceeds max length \(TabAttentionReason.maxLength)"
+                    "exceeds max length \(PanelAttentionReason.maxLength)"
                 )
             }
             guard !reason.contains("\n"), !reason.contains("\r") else {
@@ -616,16 +616,16 @@ final class TabMetadataStore: @unchecked Sendable {
 
     /// Canonical attention read. The flag source timestamp is the original
     /// active-epoch timestamp; reason revisions deliberately preserve it.
-    func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> TabAttentionSnapshot {
+    func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> PanelAttentionSnapshot {
         queue.sync {
             let blob = metadata[workspaceId]?[surfaceId] ?? [:]
             let source = sources[workspaceId]?[surfaceId]?[MetadataKey.flag]
-            return TabAttentionSnapshot(
+            return PanelAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
+                flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -638,21 +638,21 @@ final class TabMetadataStore: @unchecked Sendable {
     func mutateAttention(
         workspaceId: UUID,
         surfaceId: UUID,
-        flag: TabAttentionFlagMutation = .unchanged,
-        suppression: TabAttentionSuppressionMutation = .unchanged,
-        callerTabId: UUID? = nil,
+        flag: PanelAttentionFlagMutation = .unchanged,
+        suppression: PanelAttentionSuppressionMutation = .unchanged,
+        callerPanelId: UUID? = nil,
         expectedFlagEpoch: Date? = nil,
         now: Date = Date()
-    ) throws -> (result: WriteResult, before: TabAttentionSnapshot, after: TabAttentionSnapshot) {
+    ) throws -> (result: WriteResult, before: PanelAttentionSnapshot, after: PanelAttentionSnapshot) {
         try queue.sync {
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sourceBlob = sources[workspaceId]?[surfaceId] ?? [:]
-            let before = TabAttentionSnapshot(
+            let before = PanelAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
+                flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -666,9 +666,9 @@ final class TabMetadataStore: @unchecked Sendable {
                     throw error
                 }
                 let priorReason = blob[MetadataKey.flag] as? String
-                let existingCaller = TabMetadataStore.flagCallerValue(blob)
+                let existingCaller = PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:))
-                let shouldSetCaller = existingCaller == nil && callerTabId != nil
+                let shouldSetCaller = existingCaller == nil && callerPanelId != nil
                 if priorReason != reason
                     || sourceBlob[MetadataKey.flag]?.source != .explicit
                     || shouldSetCaller {
@@ -676,9 +676,9 @@ final class TabMetadataStore: @unchecked Sendable {
                     blob[MetadataKey.flag] = reason
                     let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
                     sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
-                    if let callerTabId, existingCaller == nil {
+                    if let callerPanelId, existingCaller == nil {
                         for key in MetadataKey.flagCallerKeys {
-                            blob[key] = callerTabId.uuidString
+                            blob[key] = callerPanelId.uuidString
                             sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
                         }
                     }
@@ -746,7 +746,7 @@ final class TabMetadataStore: @unchecked Sendable {
             guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
                 throw WriteError.encodeFailed
             }
-            if encoded.count > TabMetadataStore.payloadCapBytes {
+            if encoded.count > PanelMetadataStore.payloadCapBytes {
                 throw WriteError.payloadTooLarge
             }
             metadata[workspaceId, default: [:]][surfaceId] = blob
@@ -755,12 +755,12 @@ final class TabMetadataStore: @unchecked Sendable {
             result.metadata = blob
             result.sources = sourceBlob.mapValues { $0.toJSON() }
 
-            let after = TabAttentionSnapshot(
+            let after = PanelAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
+                flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -771,7 +771,7 @@ final class TabMetadataStore: @unchecked Sendable {
     /// Canonical lifecycle restore used when a live surface crosses workspace
     /// ownership. This preserves the active flag epoch without emitting a new
     /// raise or notification.
-    func restoreAttention(_ snapshot: TabAttentionSnapshot) {
+    func restoreAttention(_ snapshot: PanelAttentionSnapshot) {
         queue.sync {
             var blob = metadata[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
             var sourceBlob = sources[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
@@ -793,9 +793,9 @@ final class TabMetadataStore: @unchecked Sendable {
                     source: .explicit,
                     ts: epoch
                 )
-                if let callerTabId = snapshot.flagCallerTabId {
+                if let callerPanelId = snapshot.flagCallerTabId {
                     for key in MetadataKey.flagCallerKeys {
-                        blob[key] = callerTabId.uuidString
+                        blob[key] = callerPanelId.uuidString
                         sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
                     }
                 }
@@ -1047,8 +1047,8 @@ final class TabMetadataStore: @unchecked Sendable {
         }
         // Canonical stored form (e.g. `color` → `#RRGGBB`). A blank `icon` /
         // `color` is a clear, which this single-key setter does not perform.
-        let value = TabMetadataStore.normalizedReservedValue(key, value)
-        if MetadataKey.blankClearsKeys.contains(key), TabMetadataStore.isBlank(value) {
+        let value = PanelMetadataStore.normalizedReservedValue(key, value)
+        if MetadataKey.blankClearsKeys.contains(key), PanelMetadataStore.isBlank(value) {
             return false
         }
         return queue.sync {
@@ -1058,7 +1058,7 @@ final class TabMetadataStore: @unchecked Sendable {
             if let cur = sblob[key], source.precedence < cur.source.precedence {
                 return false
             }
-            if TabMetadataStore.validateReservedKey(key, value) != nil {
+            if PanelMetadataStore.validateReservedKey(key, value) != nil {
                 return false
             }
             // Avoid churn on no-op same-source same-value writes.
@@ -1071,7 +1071,7 @@ final class TabMetadataStore: @unchecked Sendable {
             sblob[key] = SourceRecord(source: source, ts: Date().timeIntervalSince1970)
 
             if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
-               encoded.count > TabMetadataStore.payloadCapBytes {
+               encoded.count > PanelMetadataStore.payloadCapBytes {
                 return false
             }
 
@@ -1123,8 +1123,8 @@ final class TabMetadataStore: @unchecked Sendable {
         // Pre-validate every reserved key *before* taking the mutation path so
         // a single bad value aborts the whole write (matches M2 spec).
         for (k, v) in partial {
-            if TabMetadataStore.reservedKeys.contains(k) {
-                if let err = TabMetadataStore.validateReservedKey(k, v) {
+            if PanelMetadataStore.reservedKeys.contains(k) {
+                if let err = PanelMetadataStore.validateReservedKey(k, v) {
                     throw err
                 }
             }
@@ -1168,9 +1168,9 @@ final class TabMetadataStore: @unchecked Sendable {
                 result.reasons[k] = "lower_precedence"
                 continue
             }
-            let v = TabMetadataStore.normalizedReservedValue(k, rawValue)
+            let v = PanelMetadataStore.normalizedReservedValue(k, rawValue)
             // A blank `icon` / `color` clears the key, the same as clear_metadata.
-            if MetadataKey.blankClearsKeys.contains(k), TabMetadataStore.isBlank(v) {
+            if MetadataKey.blankClearsKeys.contains(k), PanelMetadataStore.isBlank(v) {
                 let hadValue = blob.removeValue(forKey: k) != nil
                 let hadSource = sblob.removeValue(forKey: k) != nil
                 if hadValue || hadSource || mode == .replace {
@@ -1205,7 +1205,7 @@ final class TabMetadataStore: @unchecked Sendable {
         guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
             throw WriteError.encodeFailed
         }
-        if encoded.count > TabMetadataStore.payloadCapBytes {
+        if encoded.count > PanelMetadataStore.payloadCapBytes {
             throw WriteError.payloadTooLarge
         }
 

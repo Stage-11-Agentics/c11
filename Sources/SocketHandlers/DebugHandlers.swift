@@ -34,10 +34,10 @@ extension TerminalController {
                 guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id"),
                       let located = AppDelegate.shared?.workspaceContainingPanel(
                         panelId: tabId, preferredWorkspaceId: v2UUID(params, "workspace_id")
-                      ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+                      ), let terminal = located.workspace.panels[tabId] as? TerminalPanel else {
                     return .err(code: "not_found", message: "Terminal panel not found", data: nil)
                 }
-                let fixture: TerminalTab
+                let fixture: TerminalPanel
                 if v2Bool(params, "create") == true {
                     // Create and hold on this same main turn, before the normal
                     // eager-load callbacks can start the new fixture runtime.
@@ -165,7 +165,7 @@ extension TerminalController {
                 let workspaceIndex: Int
                 let workspaceSelected: Bool
                 let workspace: Workspace
-                let terminalPanel: TerminalTab
+                let terminalPanel: TerminalPanel
                 let paneId: PaneID?
                 let paneIndex: Int?
                 let surfaceIndex: Int
@@ -274,7 +274,7 @@ extension TerminalController {
                     }
 
                     for (surfaceIndex, panel) in orderedPanels(in: workspace).enumerated() {
-                        guard let terminalTab = panel as? TerminalTab else { continue }
+                        guard let terminalTab = panel as? TerminalPanel else { continue }
                         mappedLocations[ObjectIdentifier(terminalTab.surface)] = MappedTerminalLocation(
                             windowIndex: windowIndex,
                             windowId: state.windowId,
@@ -305,13 +305,13 @@ extension TerminalController {
                 let panelId = mapped?.terminalPanel.id ?? terminalSurface.id
                 let portalState = hostedView.portalBindingGuardState()
                 let portalHostLease = terminalSurface.debugPortalHostLease()
-                let gitBranchState = workspace?.tabGitBranches[panelId]
-                let listeningPorts = (workspace?.tabListeningPorts[panelId] ?? []).sorted()
+                let gitBranchState = workspace?.panelGitBranches[panelId]
+                let listeningPorts = (workspace?.panelListeningPorts[panelId] ?? []).sorted()
                 let title = workspace?.tabTitle(panelId: panelId)
                 let paneId = mapped?.paneId
                 let treeVisible = mapped?.bonsplitTabId != nil && paneId != nil
-                let ttyName = workspace?.tabTTYNames[panelId]
-                let currentDirectory = nonEmpty(workspace?.tabDirectories[panelId] ?? mapped?.terminalPanel.directory)
+                let ttyName = workspace?.panelTTYNames[panelId]
+                let currentDirectory = nonEmpty(workspace?.panelDirectories[panelId] ?? mapped?.terminalPanel.directory)
                 let teardownRequest = terminalSurface.debugTeardownRequest()
                 let lastKnownWorkspaceId = terminalSurface.debugLastKnownWorkspaceId()
 
@@ -423,7 +423,7 @@ extension TerminalController {
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: tabID, preferredWorkspaceId: workspaceID
-            ), located.workspace.panels[tabID] is TerminalTab else {
+            ), located.workspace.panels[tabID] is TerminalPanel else {
                 return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             guard FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: holdMilliseconds) else {
@@ -521,7 +521,7 @@ extension TerminalController {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: tabId,
                 preferredWorkspaceId: nil
-            ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+            ), let terminal = located.workspace.panels[tabId] as? TerminalPanel else {
                 return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             let delivered = terminal.surface.debugSimulateOperatorKeys(text)
@@ -547,7 +547,7 @@ extension TerminalController {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: tabId,
                 preferredWorkspaceId: nil
-            ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+            ), let terminal = located.workspace.panels[tabId] as? TerminalPanel else {
                 return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             guard terminal.surface.performBindingAction("scroll_page_lines:\(lines)") else {

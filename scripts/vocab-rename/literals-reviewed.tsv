@@ -73,18 +73,18 @@ Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceSendText	id	stable identif
 Sources/SocketHandlers/WindowHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/SocketHandlers/WorkspaceHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/SurfaceLifecycle.swift	SurfaceLifecycleController	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-Sources/TabManifestView.swift	surfaceUUID	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/TabTypeAvailability.swift	markdownSurfacesEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/Tabs/AreaInteractionOverlayHost.swift	paneInteraction	log	debug/diagnostic log text, never looked up: leave
-Sources/Tabs/BrowserTab.swift	BrowserPanel	log	debug/diagnostic log text, never looked up: leave
-Sources/Tabs/BrowserTab.swift	currentTab	log	debug/diagnostic log text, never looked up: leave
-Sources/Tabs/BrowserTab.swift	newTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/Tabs/BrowserTab.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/Tabs/BrowserTabView.swift	currentPane	log	debug/diagnostic log text, never looked up: leave
-Sources/Tabs/BrowserTabView.swift	isPanelFocused	log	debug/diagnostic log text, never looked up: leave
-Sources/Tabs/BrowserTabView.swift	switchToTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/Tabs/TerminalTab.swift	runtimeSurface	log	debug/diagnostic log text, never looked up: leave
-Sources/Tabs/TerminalTab.swift	terminalPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/PanelManifestView.swift	surfaceUUID	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/PanelTypeAvailability.swift	markdownSurfacesEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Panels/AreaInteractionOverlayHost.swift	paneInteraction	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/BrowserPanel.swift	BrowserPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/BrowserPanel.swift	currentTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/BrowserPanel.swift	newTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Panels/BrowserPanel.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Panels/BrowserPanelView.swift	currentPane	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/BrowserPanelView.swift	isPanelFocused	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/BrowserPanelView.swift	switchToTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Panels/TerminalPanel.swift	runtimeSurface	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/TerminalPanel.swift	terminalPanel	log	debug/diagnostic log text, never looked up: leave
 Sources/TerminalController.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/TerminalController.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/TerminalNotificationStore.swift	notificationPaneFlashEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave

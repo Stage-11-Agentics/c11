@@ -19,7 +19,7 @@ enum TabSheetDetailBuilder {
     static let optInClocks = ["touched", "turn", "tools", "tokens", "cache"]
 
     struct Inputs {
-        var panelType: TabContentType
+        var panelType: PanelType
         /// Full title (custom or process title), untruncated.
         var title: String?
         /// The kind used for live agent presentation (`nil` for a plain shell).
@@ -151,8 +151,8 @@ enum TabSheetDetailBuilder {
     }
 
     /// The tab's kind for the sheet's Type column, shown when it hosts no agent.
-    static func typeLabel(_ tabType: TabContentType) -> String {
-        switch tabType {
+    static func typeLabel(_ panelType: PanelType) -> String {
+        switch panelType {
         case .terminal:
             return String(localized: "tabSheet.type.terminal", defaultValue: "Terminal")
         case .browser:
@@ -359,7 +359,7 @@ extension Workspace {
     /// metadata/activity events, never on a timer.
     func tabSheetDetail(panelId: UUID) -> BonsplitTabDetail? {
         guard let panel = panels[panelId] else { return nil }
-        let snapshot = TabMetadataStore.shared.getMetadata(
+        let snapshot = PanelMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
             keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel, AgentModelDetector.MetadataKeys.detected]
@@ -375,7 +375,7 @@ extension Workspace {
         let terminalKind = panel.panelType == .terminal ? surfaceActivityTerminalKind(panelId: panelId) : nil
         let fullTitle = resolvedTabTitle(
             panelId: panelId,
-            fallback: tabTitles[panelId] ?? panel.displayTitle
+            fallback: panelTitles[panelId] ?? panel.displayTitle
         )
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
@@ -391,7 +391,7 @@ extension Workspace {
         )
         let signals = tabSheetSignals(panel: panel, panelId: panelId, terminalKind: terminalKind)
         let legacyActivityAt = help?.lastActivityAt
-            ?? TabActivityTracker.shared.lastActivity(for: panelId.uuidString)
+            ?? PanelActivityTracker.shared.lastActivity(for: panelId.uuidString)
         let journal = JournalCoordinator.shared.snapshot(tabID: panelId)
         let sheetActivity: AgentRoster.SheetActivity
         if activity == .running { sheetActivity = .running }
@@ -419,9 +419,9 @@ extension Workspace {
             model: effectiveModel.model,
             modelLabel: effectiveModel.label,
             description: snapshot.metadata[MetadataKey.description] as? String,
-            directory: tabDirectories[panelId],
-            browserURL: (panel as? BrowserTab)?.currentURL,
-            markdownPath: (panel as? MarkdownTab)?.filePath,
+            directory: panelDirectories[panelId],
+            browserURL: (panel as? BrowserPanel)?.currentURL,
+            markdownPath: (panel as? MarkdownPanel)?.filePath,
             activity: activity,
             isFlagged: attention.isFlagged,
             stateEnteredAt: entered,
@@ -431,8 +431,8 @@ extension Workspace {
             createdAt: panel.createdAt,
             activeAt: signals.activeAt,
             touchedAt: signals.touchedAt,
-            seenAt: TabSeenTracker.shared.storedLastSeenAt(panelId: panelId),
-            isBeingSeen: TabSeenTracker.shared.isBeingSeen(panelId: panelId),
+            seenAt: PanelSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: PanelSeenTracker.shared.isBeingSeen(panelId: panelId),
             turnStartedAt: journal != nil ? managedTurn : signals.turnStartedAt,
             turnToolCalls: signals.turnToolCalls,
             tokens: signals.tokens,
@@ -453,20 +453,20 @@ extension Workspace {
     /// `tokens`. Plain reads of stores the panels keep up to date; no work here
     /// scales with output.
     private func tabSheetSignals(
-        panel: any TabContent,
+        panel: any Panel,
         panelId: UUID,
         terminalKind: String?
     ) -> (activeAt: Date?, touchedAt: Date?, turnStartedAt: Date?, turnToolCalls: Int?, tokens: Int?, lastAgentEventAt: Date?) {
         switch panel.panelType {
         case .terminal:
-            let surface = (panel as? TerminalTab)?.surface
+            let surface = (panel as? TerminalPanel)?.surface
             let touched = surface?.lastOperatorInputAt
             // Plain terminal, or an agent whose files say nothing (Kimi, Copilot,
             // no transcript yet): output that scrolled while visible, or a command
             // starting/finishing. Hidden terminals only see command edges. Operator
             // input is never part of Active; with no signal the clock reads `—`.
             let growth = surface?.lastOutputGrowthAt
-            let edge = tabShellEdgeAt[panelId]
+            let edge = panelShellEdgeAt[panelId]
             let plainActive = TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: growth, commandEdgeAt: edge)
             if AgentIdentityPolicy.isAgentKind(terminalKind),
                let signals = AgentModelDetector.shared.signals(forSurface: panelId) {
@@ -482,9 +482,9 @@ extension Workspace {
             }
             return (plainActive, touched, nil, nil, nil, nil)
         case .markdown:
-            return ((panel as? MarkdownTab)?.lastContentChangeAt, nil, nil, nil, nil, nil)
+            return ((panel as? MarkdownPanel)?.lastContentChangeAt, nil, nil, nil, nil, nil)
         case .browser:
-            let browser = panel as? BrowserTab
+            let browser = panel as? BrowserPanel
             return (browser?.lastLoadedAt, browser?.lastOperatorInputAt, nil, nil, nil, nil)
         }
     }
@@ -528,7 +528,7 @@ extension Workspace {
             at = TabSheetDetailBuilder.seededEnteredAt(
                 kind: kind,
                 now: now,
-                lastActivityAt: TabActivityTracker.shared.lastActivity(for: panelId.uuidString),
+                lastActivityAt: PanelActivityTracker.shared.lastActivity(for: panelId.uuidString),
                 exactStart: kind == .waiting || kind == .cold
                     ? resolvedAgentActivityHelp(panelId: panelId, activityState: activity)?.stateStartedAt
                     : nil

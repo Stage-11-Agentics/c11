@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-enum TabManifestKind: String {
+enum PanelManifestKind: String {
     case terminal
     case browser
     case markdown
@@ -23,9 +23,9 @@ enum TabManifestKind: String {
 /// This is the data the operator opens Surface Details to find — chiefly the
 /// `surface:N` / `tab:N` numbers, which are otherwise only reachable via the
 /// CLI.
-struct TabHandleInfo {
+struct PanelHandleInfo {
     let surfaceRef: String
-    let tabRef: String
+    let panelRef: String
     let paneRef: String?
     let workspaceRef: String
     let windowRef: String?
@@ -36,26 +36,26 @@ struct TabHandleInfo {
     let filePath: String?
 }
 
-struct TabManifestSnapshot {
+struct PanelManifestSnapshot {
     let metadata: [String: Any]
     let sources: [String: [String: Any]]
-    let activity: TabActivityDetailsSnapshot
+    let activity: PanelActivityDetailsSnapshot
     let capturedAt: Date
 
     @MainActor
-    static func capture(workspaceId: UUID, surfaceId: UUID) -> TabManifestSnapshot {
-        let result = TabMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+    static func capture(workspaceId: UUID, surfaceId: UUID) -> PanelManifestSnapshot {
+        let result = PanelMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
         let workspace = AppDelegate.shared?
             .workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces
             .first(where: { $0.id == workspaceId })
-        let activity = workspace?.tabActivityDetailsSnapshot(panelId: surfaceId)
-            ?? TabActivityDetailsSnapshot(
+        let activity = workspace?.panelActivityDetailsSnapshot(panelId: surfaceId)
+            ?? PanelActivityDetailsSnapshot(
                 activityHelp: nil,
                 createdAt: nil,
                 lastActivityAt: nil
             )
-        return TabManifestSnapshot(
+        return PanelManifestSnapshot(
             metadata: result.metadata,
             sources: result.sources,
             activity: activity,
@@ -75,24 +75,24 @@ struct TabManifestSnapshot {
     }
 }
 
-struct TabManifestView: View {
+struct PanelManifestView: View {
     let workspaceId: UUID
     let surfaceId: UUID
-    let kind: TabManifestKind
-    let handle: TabHandleInfo
+    let kind: PanelManifestKind
+    let handle: PanelHandleInfo
 
-    @State private var snapshot: TabManifestSnapshot
+    @State private var snapshot: PanelManifestSnapshot
     // Which field's Copy button most recently fired — flips that one button to
     // "Copied" briefly. Only one row shows the confirmation at a time.
     @State private var copiedField: String?
     @State private var copyResetWorkItem: DispatchWorkItem?
 
-    init(workspaceId: UUID, surfaceId: UUID, kind: TabManifestKind, handle: TabHandleInfo) {
+    init(workspaceId: UUID, surfaceId: UUID, kind: PanelManifestKind, handle: PanelHandleInfo) {
         self.workspaceId = workspaceId
         self.surfaceId = surfaceId
         self.kind = kind
         self.handle = handle
-        _snapshot = State(initialValue: TabManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId))
+        _snapshot = State(initialValue: PanelManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId))
     }
 
     var body: some View {
@@ -126,7 +126,7 @@ struct TabManifestView: View {
         VStack(alignment: .leading, spacing: 8) {
             refRow(
                 label: String(localized: "surfaceManifest.ref.tab", defaultValue: "Panel"),
-                value: handle.tabRef,
+                value: handle.panelRef,
                 field: "tab",
                 size: .extraLarge
             )
@@ -479,7 +479,7 @@ struct TabManifestView: View {
     }
 
     private func refresh() {
-        snapshot = TabManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId)
+        snapshot = PanelManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId)
     }
 
     private static let timestampFormatter: DateFormatter = {

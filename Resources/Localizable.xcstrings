@@ -2,6 +2,18 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "tabBar.layoutSwitch.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Switch Tab Layout for every area. Also in Settings > General > Tabs & Areas."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "すべてのエリアのタブのレイアウトを切り替えます。「設定 > 一般 > タブとエリア」でも変更できます。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перемикає розташування вкладок для всіх областей. Також доступно в Налаштуваннях > Загальні > Вкладки та області."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "모든 영역의 탭 레이아웃을 전환합니다. 설정 > 일반 > 탭 및 영역에서도 바꿀 수 있어요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换所有区域的标签页布局。也可在「设置 > 通用 > 标签页和区域」中更改。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換所有區域的分頁版面。也可在「設定 > 一般 > 分頁與區域」中更改。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Переключает расположение вкладок во всех областях. Также доступно в «Настройки > Общие > Вкладки и области»."}}
+      }
+    },
     "feed.answer.multilineUnsupported": {
       "extractionState": "manual",
       "localizations": {

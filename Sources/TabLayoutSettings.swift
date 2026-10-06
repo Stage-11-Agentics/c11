@@ -37,6 +37,21 @@ enum TabLayoutSettings {
         case .rail: return .rail
         }
     }
+
+    /// The Tabs | Rail switch in each area's tab sheet and rail. It writes this
+    /// same setting, so it and the Settings picker never disagree; bonsplit has
+    /// already opened or closed the area's rail. Labels match the picker.
+    static func layoutSwitch(defaults: UserDefaults = .standard) -> BonsplitController.TabLayoutSwitch {
+        BonsplitController.TabLayoutSwitch(
+            tabsLabel: String(localized: "settings.app.tabLayout.tabs", defaultValue: "Tabs"),
+            railLabel: String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"),
+            accessibilityLabel: String(localized: "settings.app.tabLayout", defaultValue: "Tab Layout"),
+            help: String(localized: "tabBar.layoutSwitch.help", defaultValue: "Switch Tab Layout for every area. Also in Settings > General > Tabs & Areas."),
+            apply: { layout, _ in
+                setMode(layout == .rail ? .rail : .tabs, defaults: defaults)
+            }
+        )
+    }
 }
 
 /// KVO bridge so each `Workspace` can react to the tab layout setting live.

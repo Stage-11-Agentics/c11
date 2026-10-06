@@ -245,7 +245,7 @@ defaults write com.stage11.c11 c11.tabSheet.clocks -string "active,touched,turn,
 defaults delete com.stage11.c11 c11.tabSheet.clocks                           # back to active,seen,launched
 ```
 
-**Tab layout** is a setting: `tabs` (default) or `rail`. In `rail` the count cell toggles a vertical tab list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible tab's `TabN · title`, and each area remembers its rail open or closed across relaunch. It is also in Settings > General > Tabs & Areas > Tab Layout. Change it in one command:
+**Tab layout** is a setting: `tabs` (default) or `rail`. In `rail` the count cell toggles a vertical tab list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible tab's `TabN · title`, and each area remembers its rail open or closed across relaunch. The tab sheet's footer and the rail's header both carry a `Tabs | Rail` switch for the same setting: Rail from the sheet closes the sheet and opens that area's rail; Tabs from the rail closes that area's rail first, so a later Rail starts it closed. It is also in Settings > General > Tabs & Areas > Tab Layout. Change it in one command:
 
 ```bash
 defaults write com.stage11.c11 tabLayoutMode -string rail     # or: tabs

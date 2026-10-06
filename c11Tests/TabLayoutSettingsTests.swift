@@ -98,6 +98,24 @@ final class TabLayoutSettingsTests: XCTestCase {
         XCTAssertEqual(suite.string(forKey: TabLayoutSettings.legacyModeKey), "tabs")
     }
 
+    func testRuntimeWriteToTheOldKeyCarriesForwardToTheNewKey() {
+        let suiteName = "TabLayoutSettingsTests.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let observer = TabLayoutObserver(defaults: suite) {}
+
+        // New key unset: an old-key write is copied forward, so Settings and the live layout agree.
+        suite.set("rail", forKey: TabLayoutSettings.legacyModeKey)
+        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "rail")
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
+
+        // New key set: it keeps winning over later old-key writes.
+        suite.set("tabs", forKey: TabLayoutSettings.legacyModeKey)
+        XCTAssertEqual(suite.string(forKey: TabLayoutSettings.modeKey), "rail")
+        XCTAssertEqual(TabLayoutSettings.mode(defaults: suite), .rail)
+        withExtendedLifetime(observer) {}
+    }
+
     func testRailOpenSurvivesTheSnapshotAndOldSnapshotsDecodeClosed() throws {
         var area = SessionAreaLayoutSnapshot(panelIds: [UUID()], selectedPanelId: nil)
         area.railOpen = true

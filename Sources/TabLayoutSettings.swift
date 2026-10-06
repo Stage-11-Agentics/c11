@@ -119,6 +119,12 @@ final class TabLayoutObserver: NSObject {
         context: UnsafeMutableRawPointer?
     ) {
         guard let keyPath, Self.observedKeys.contains(keyPath) else { return }
+        // A runtime write to the old key while the new one is unset: carry it
+        // forward so the Settings picker (which reads the new key) agrees with
+        // the live layout.
+        if keyPath == TabLayoutSettings.legacyModeKey {
+            TabLayoutSettings.migrateLegacyKeys(defaults: defaults)
+        }
         let onChange = self.onChange
         Task { @MainActor in onChange() }
     }

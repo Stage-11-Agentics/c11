@@ -3021,7 +3021,7 @@ class WorkspaceManager: ObservableObject {
         if let collapsed, !collapsed.isEmpty {
             return collapsed
         }
-        return "Untitled Tab"
+        return String(localized: "workspace.closePane.alert.tab.untitled", defaultValue: "Untitled panel")
     }
 
     private func orderedClosableWorkspaces(_ workspaceIds: [UUID], allowPinned: Bool) -> [Workspace] {

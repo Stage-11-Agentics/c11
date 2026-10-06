@@ -285,10 +285,18 @@ final class TabRailTipPolicyTests: XCTestCase {
     // MARK: Old `c11.tabRailTip.*` keys
 
     func testTipRecordLivesUnderThePanelKeys() {
-        XCTAssertEqual(TabRailTipPolicy.overflowDaysKey, "c11.panelRailTip.overflowDays")
-        XCTAssertEqual(TabRailTipPolicy.lastOfferedKey, "c11.panelRailTip.lastOffered")
-        XCTAssertEqual(TabRailTipPolicy.dismissedKey, "c11.panelRailTip.dismissed")
-        XCTAssertEqual(TabRailTipPolicy.forceOfferKey, "c11.panelRailTip.forceOffer")
+        let suite = "c11.panelRailTip.keys.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let tip = TabRailTipPolicy(calendar: pacificCalendar(), store: UserDefaultsTabRailTipStore(defaults: defaults))
+
+        tip.dismiss()
+        XCTAssertTrue(defaults.bool(forKey: "c11.panelRailTip.dismissed"))
+        XCTAssertNil(defaults.object(forKey: "c11.tabRailTip.dismissed"))
+
+        XCTAssertTrue(tip.recordOverflow(now: day(2026, 9, 30, calendar: tip.calendar)))
+        XCTAssertEqual(defaults.stringArray(forKey: "c11.panelRailTip.overflowDays"), ["2026-09-30"])
+        XCTAssertNil(defaults.object(forKey: "c11.tabRailTip.overflowDays"))
     }
 
     func testTipDismissedUnderTheOldKeyStaysDismissed() {

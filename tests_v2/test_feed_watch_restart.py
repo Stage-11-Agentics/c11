@@ -61,16 +61,16 @@ def main():
             client._call("agent.event.append", {"event": draft})
             client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
                 "kind": "agent.turn.completed", "native_event": "Stop"}})
-            watcher.until(lambda value: any(row.get("tab_id") == tab and row.get("kind") == "turn_end" for row in value.get("rows", [])))
+            watcher.until(lambda value: any(row.get("panel_id") == tab and row.get("kind") == "turn_end" for row in value.get("rows", [])))
             # Bounded Foundation churn: repeatedly refresh changed rows/event logs
             # after warming the watcher. RSS is observed on the actual CLI process.
             time.sleep(2)
             before = rss(watcher.process.pid)
             for index in range(60):
                 client._call("flag.raise", {"surface_id": tab, "reason": f"memory-{index}", "by": "operator"})
-                watcher.until(lambda value: any(row.get("tab_id") == tab and (row.get("flag") or {}).get("reason") == f"memory-{index}" for row in value.get("rows", [])))
+                watcher.until(lambda value: any(row.get("panel_id") == tab and (row.get("flag") or {}).get("reason") == f"memory-{index}" for row in value.get("rows", [])))
                 client._call("flag.lower", {"surface_id": tab, "by": "operator"})
-                watcher.until(lambda value: any(row.get("tab_id") == tab and not row.get("flag") for row in value.get("rows", [])))
+                watcher.until(lambda value: any(row.get("panel_id") == tab and not row.get("flag") for row in value.get("rows", [])))
             after = rss(watcher.process.pid)
             assert after - before < 24 * 1024, (before, after)
             print(f"PASS actual restart recovered instance and all-scope turn_end with old log retained; watch RSS {before}->{after} KiB across 120 changes")

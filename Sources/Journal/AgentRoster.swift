@@ -98,8 +98,6 @@ enum AgentRoster {
             "live_identity": "unavailable",
             "coverage": ["health": "degraded", "storage": "unavailable", "unattributed": 0],
             "panels": [],
-            // C11-337: legacy spelling, emitted beside panels for one release.
-            "tabs": [],
             "restore_candidates": [],
         ]
     }
@@ -141,8 +139,6 @@ enum AgentRoster {
                 "unattributed": storageAvailable ? unattributed : 0,
             ],
             "panels": panels,
-            // C11-337: legacy spelling, emitted beside panels for one release.
-            "tabs": panels,
             "restore_candidates": candidates,
         ]
     }
@@ -298,8 +294,6 @@ enum AgentRoster {
         let snap = row.snapshot
         return [
             "panel_id": row.panelID.uuidString,
-            // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": row.panelID.uuidString,
             "workspace_id": row.workspaceID.uuidString,
             "session_id": row.sessionID ?? NSNull(),
             "kind": row.kind ?? NSNull(),
@@ -323,8 +317,6 @@ enum AgentRoster {
     private static func candidateJSON(_ row: JournalSnapshot, classification: RestoreClassification) -> [String: Any] {
         [
             "panel_id": row.owner.panelID.uuidString,
-            // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": row.owner.panelID.uuidString,
             "workspace_id": row.workspaceID?.uuidString ?? NSNull(),
             "session_id": row.owner.sessionID,
             "agent_kind": row.owner.agentKind,

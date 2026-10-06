@@ -337,14 +337,14 @@ final class MailboxReceiptRecorderTests: XCTestCase {
     }
 }
 
-// MARK: - C11-337: receipts carry panel_id beside tab_id
+// MARK: - C11-337 / C11-345: receipts write panel_id, read tab_id too
 
 extension MailboxReceiptRecorderTests {
-    func testNewReceiptWritesPanelIdAndTabId() throws {
+    func testNewReceiptWritesOnlyPanelId() throws {
         let url = try XCTUnwrap(writeReceipt([idA]))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         XCTAssertEqual(object["panel_id"] as? String, panel.uuidString)
-        XCTAssertEqual(object["tab_id"] as? String, panel.uuidString, "tab_id is still written for one release")
+        XCTAssertNil(object["tab_id"], "tab_id is read, never written")
     }
 
     func testReceiptWithOnlyLegacyTabIdIsRecordedWithItsPanel() throws {

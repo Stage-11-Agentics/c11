@@ -47,7 +47,9 @@ def _old(args: list[str], caller: str, ws: str) -> subprocess.CompletedProcess[s
 def _tree_panel_rows(node: object) -> list[dict]:
     rows: list[dict] = []
     if isinstance(node, dict):
-        for key in ("tabs", "surfaces"):
+        # The app emits `panels` only (C11-345); v0.67's tree copies the app's area node
+        # through, so the panel rows arrive under `panels` with their `tab:N` echo.
+        for key in ("panels", "tabs", "surfaces"):
             for row in node.get(key) or []:
                 if isinstance(row, dict) and row.get("ref"):
                     rows.append(row)

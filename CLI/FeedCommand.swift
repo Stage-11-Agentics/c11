@@ -124,7 +124,7 @@ enum FeedCommand {
                 throw CLIError(message: "feed open requires a panel")
             }
             do {
-                let payload = try client.sendV2(method: "feed.open", params: ["workspace_id": workspace, "tab_id": panel])
+                let payload = try client.sendV2(method: "feed.open", params: ["workspace_id": workspace, "panel_id": panel])
                 if json {
                     print(jsonLine(payload))
                 } else {
@@ -163,7 +163,7 @@ enum FeedCommand {
             do {
                 payload = try client.sendV2(method: "feed.answer", params: [
                     "workspace_id": workspace,
-                    "tab_id": panel,
+                    "panel_id": panel,
                     "text": text,
                     "by": actor,
                 ])
@@ -221,7 +221,7 @@ enum FeedCommand {
         guard deadline > 0, let sessionID, !sessionID.isEmpty else { return }
         var params: [String: Any] = [
             "workspace_id": workspaceID,
-            "tab_id": panelID,
+            "panel_id": panelID,
             "agent_kind": "claude-code",
             "session_id": sessionID,
             "event_id": eventID,

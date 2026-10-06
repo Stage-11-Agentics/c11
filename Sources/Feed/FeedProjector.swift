@@ -66,8 +66,6 @@ struct FeedRow: Equatable {
         var object: [String: Any] = [
             "workspace_id": workspaceID.uuidString,
             "panel_id": panelID.uuidString,
-            // C11-337: legacy spelling, emitted beside panel_id.
-            "tab_id": panelID.uuidString,
             "kind": kind?.rawValue ?? NSNull(),
             "prompt": prompt ?? NSNull(),
             "options": options ?? NSNull(),
@@ -85,8 +83,6 @@ struct FeedRow: Equatable {
                 "reason": flag.reason,
                 "raised_at_ms": flag.raisedAtMs.map { NSNumber(value: $0) } ?? NSNull(),
                 "caller_panel_id": flag.callerPanelID?.uuidString ?? NSNull(),
-                // C11-337: legacy spelling, emitted beside caller_panel_id.
-                "caller_tab_id": flag.callerPanelID?.uuidString ?? NSNull(),
             ]
         }
         return object

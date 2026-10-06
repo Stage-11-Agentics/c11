@@ -153,7 +153,6 @@ extension TerminalController {
                 "pane_id": paneId.id.uuidString,
                 "pane_ref": v2Ref(kind: .pane, uuid: paneId.id),
                 "panels": surfaces,
-                "tabs": surfaces,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
             ]

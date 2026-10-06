@@ -61,9 +61,9 @@ final class FeedProjectorTests: XCTestCase {
         bridge.noteJournal(panelID: askPanel, snapshot: ask)
         service.remove(workspaceId: workspace, surfaceId: flagOnly)
         XCTAssertEqual(rows().count, 2)
-        XCTAssertFalse(rows().contains { $0["tab_id"] as? String == flagOnly.uuidString })
+        XCTAssertFalse(rows().contains { $0["panel_id"] as? String == flagOnly.uuidString })
         service.prune(workspaceId: workspace, validSurfaceIds: [survivor])
-        XCTAssertEqual(rows().map { $0["tab_id"] as? String }, [survivor.uuidString])
+        XCTAssertEqual(rows().map { $0["panel_id"] as? String }, [survivor.uuidString])
         // Workspace closure prunes all remaining targets, including flag-only rows.
         service.prune(workspaceId: workspace, validSurfaceIds: [])
         XCTAssertTrue(rows().isEmpty)
@@ -441,24 +441,24 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertNotNil(object["flag"] as? [String: Any])
     }
 
-    // C11-337: rows and flags carry the panel spelling beside the legacy tab spelling.
-    func testRowsEmitPanelIdBesideTabIdAndCallerPanelIdBesideCallerTabId() throws {
+    // C11-345: rows and flags carry only the panel spelling.
+    func testRowsEmitOnlyPanelIdAndCallerPanelId() throws {
         let question = try blocked(.questionRequested, request: "ask-1")
         let row = try XCTUnwrap(project([question], attention: [flag()], scope: .attention).first)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: jsonData(row.jsonObject())) as? [String: Any])
         XCTAssertEqual(object["panel_id"] as? String, JournalTestData.panel.uuidString)
-        XCTAssertEqual(object["tab_id"] as? String, JournalTestData.panel.uuidString)
+        XCTAssertNil(object["tab_id"])
         XCTAssertNil(object["surface_id"])
         let flagObject = try XCTUnwrap(object["flag"] as? [String: Any])
         XCTAssertEqual(flagObject["caller_panel_id"] as? String, otherPanel.uuidString)
-        XCTAssertEqual(flagObject["caller_tab_id"] as? String, otherPanel.uuidString)
+        XCTAssertNil(flagObject["caller_tab_id"])
         XCTAssertNil(flagObject["caller_surface_id"])
 
         let noCaller = FeedAttentionFact(workspaceID: JournalTestData.workspace, panelID: question.owner.panelID, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerPanelID: nil, suppressed: false)
         let bare = try XCTUnwrap(project([question], attention: [noCaller], scope: .attention).first)
         let bareFlag = try XCTUnwrap(bare.jsonObject()["flag"] as? [String: Any])
         XCTAssertTrue(bareFlag["caller_panel_id"] is NSNull)
-        XCTAssertTrue(bareFlag["caller_tab_id"] is NSNull)
+        XCTAssertNil(bareFlag["caller_tab_id"])
     }
 
     func testFeedPanelParamPrefersPanelIdThenTabIdThenSurfaceId() {

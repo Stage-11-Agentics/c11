@@ -3821,7 +3821,6 @@ struct CMUXCLI {
                         "body": item.body
                     ]
                     dict["panel_id"] = item.surfaceId ?? NSNull()
-                    dict["tab_id"] = item.surfaceId ?? NSNull()
                     return dict
                 }
                 print(jsonString(payload))
@@ -8140,7 +8139,8 @@ struct CMUXCLI {
 
         // Browser-skill examples often place output flags at the end of the command.
         // Strip trailing display flags so they don't become part of a URL or selector.
-        while !browserArgs.isEmpty {
+        // After a `--` terminator the tail is literal text (`fill <sel> -- --json`).
+        while !browserArgs.isEmpty, !browserArgs.contains("--") {
             if browserArgs.last == "--json" {
                 effectiveJSONOutput = true
                 browserArgs.removeLast()
@@ -8309,7 +8309,6 @@ struct CMUXCLI {
                 let titlePayload = try client.sendV2(method: "browser.get.title", params: ["panel_id": surface])
                 var browser: [String: Any] = [:]
                 browser["panel"] = surface
-                browser["tab"] = surface
                 browser["url"] = urlPayload["url"] ?? ""
                 browser["title"] = titlePayload["title"] ?? ""
                 payload["browser"] = browser
@@ -8675,14 +8674,55 @@ struct CMUXCLI {
 
         if ["type", "fill"].contains(subcommand) {
             let sid = try requireSurface()
-            let (selectorOpt, rem1) = parseOption(subArgs, name: "--selector")
-            let (textOpt, rem2) = parseOption(rem1, name: "--text")
-            let selector = selectorOpt ?? rem2.first
+            // Consume the flags this verb accepts before joining the rest as text, so a
+            // trailing `--snapshot-after` / `--json` is never typed into the page. Unknown
+            // `--x` tokens stay text; after `--` everything is literal text.
+            var selectorOpt: String?
+            var textOpt: String?
+            var snapshotAfter = false
+            var positionals: [String] = []
+            var pastTerminator = false
+            var index = 0
+            while index < subArgs.count {
+                let arg = subArgs[index]
+                index += 1
+                if pastTerminator {
+                    positionals.append(arg)
+                    continue
+                }
+                switch arg {
+                case "--":
+                    pastTerminator = true
+                case "--snapshot-after":
+                    snapshotAfter = true
+                case "--json":
+                    effectiveJSONOutput = true
+                case "--selector", "--text", "--id-format":
+                    guard index < subArgs.count else {
+                        throw CLIError(message: "\(arg) requires a value")
+                    }
+                    let value = subArgs[index]
+                    index += 1
+                    if arg == "--selector" {
+                        selectorOpt = value
+                    } else if arg == "--text" {
+                        textOpt = value
+                    } else {
+                        guard let parsed = try CLIIDFormat.parse(value) else {
+                            throw CLIError(message: "--id-format must be one of: refs, uuids, both")
+                        }
+                        effectiveIDFormat = parsed
+                    }
+                default:
+                    positionals.append(arg)
+                }
+            }
+            let selector = selectorOpt ?? positionals.first
             guard let selector else {
                 throw CLIError(message: "browser \(subcommand) requires a selector")
             }
 
-            let positional = selectorOpt != nil ? rem2 : Array(rem2.dropFirst())
+            let positional = selectorOpt != nil ? positionals : Array(positionals.dropFirst())
             let hasExplicitText = textOpt != nil || !positional.isEmpty
             let text: String
             if let textOpt {
@@ -8698,7 +8738,7 @@ struct CMUXCLI {
 
             let method = (subcommand == "type") ? "browser.type" : "browser.fill"
             var params: [String: Any] = ["panel_id": sid, "selector": selector, "text": text]
-            if hasFlag(subArgs, name: "--snapshot-after") {
+            if snapshotAfter {
                 params["snapshot_after"] = true
             }
             let payload = try client.sendV2(method: method, params: params)
@@ -13075,7 +13115,7 @@ struct CMUXCLI {
             print(jsonString(response))
         } else {
             let applied = response["custom_color"] as? String ?? hex
-            print("OK tab_color=\(applied)")
+            print("OK panel_color=\(applied)")
         }
     }
 
@@ -15116,11 +15156,9 @@ struct CMUXCLI {
                 "snapshot_path": path,
                 "mode": mode.rawValue,
                 "ref_panels": refPanels,
-                "ref_tabs": refPanels,
                 "would_resume": resumable,
                 "all_resume": allResume,
-                "panels": panelNodes,
-                "tabs": panelNodes
+                "panels": panelNodes
             ]
             print(jsonString(payload))
         } else {
@@ -16271,9 +16309,9 @@ struct CMUXCLI {
             } else {
                 panelNodes = []
             }
-            // `panels` is canonical; `tabs` rides beside it as the old key.
+            // Output carries only `panels`; an older app's `tabs` / `surfaces` are dropped.
             paneNode["panels"] = panelNodes
-            paneNode["tabs"] = panelNodes
+            paneNode.removeValue(forKey: "tabs")
             paneNode.removeValue(forKey: "surfaces")
             return paneNode
         }
@@ -16372,9 +16410,9 @@ struct CMUXCLI {
                         surfaceNode["here"] = treeItemMatchesHandle(surfaceNode, handle: callerPath.surfaceHandle)
                         return surfaceNode
                     }
-                    // `panels` is canonical; `tabs` rides beside it as the old key.
+                    // Output carries only `panels`; an older app's `tabs` / `surfaces` are dropped.
                     paneNode["panels"] = panelNodes
-                    paneNode["tabs"] = panelNodes
+                    paneNode.removeValue(forKey: "tabs")
                     paneNode.removeValue(forKey: "surfaces")
                     return paneNode
                 }

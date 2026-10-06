@@ -53,10 +53,9 @@ def main():
         require(tail['entries'] == payload['entries'][-2:], ('tail order', tail, payload))
         for row in tail['entries']:
             require(set(row) == {'workspace_id', 'workspace_ref', 'workspace_title', 'panel_id',
-                                'panel_ref', 'tab_id', 'tab_ref', 'title', 'type', 'seen_at',
+                                'panel_ref', 'title', 'type', 'seen_at',
                                 'dwell_seconds', 'current'}, row)
-            require(row['tab_id'] == row['panel_id'], row)
-            require(row['panel_ref'].startswith('panel:') and row['tab_ref'] == 'tab:' + row['panel_ref'].split(':', 1)[1], row)
+            require(row['panel_ref'].startswith('panel:'), row)
 
         for value in [None, True, 0, -1, 201, 1.5, '2']:
             try:

@@ -62,8 +62,8 @@ final class LegacyWireRoutingKeyTests: XCTestCase {
     }
 }
 
-/// C11-337: the panel wire contract. Methods, refs and params accept every
-/// spelling; results carry `panel_*` beside `tab_*` and `area_*` alone.
+/// C11-337 / C11-345: the panel wire contract. Methods, refs and params accept
+/// every spelling; results carry only `panel_*` and `area_*`.
 final class LegacyWireCompletionTests: XCTestCase {
     private func complete(_ value: [String: Any]) -> [String: Any] {
         LegacyWireAliases.completeResult(value) as? [String: Any] ?? [:]
@@ -107,33 +107,31 @@ final class LegacyWireCompletionTests: XCTestCase {
         XCTAssertEqual(LegacyWireAliases.legacyHandle("area:2"), "area:2")
     }
 
-    func testEveryPanelPairEmitsPanelAndTabButNotSurface() {
-        let panelPairs = LegacyWireAliases.legacyKeyPairs.filter(\.emitOld)
+    func testEveryPanelPairEmitsPanelOnly() {
+        let panelPairs = LegacyWireAliases.legacyKeyPairs.filter { $0.old.lowercased().contains("tab") }
         XCTAssertEqual(panelPairs.count, 37)
         for pair in panelPairs {
             XCTAssertTrue(pair.new.lowercased().contains("panel"), pair.new)
-            XCTAssertTrue(pair.old.lowercased().contains("tab"), pair.old)
-            // The legacy surface spelling, given alone, completes to both
-            // emitted spellings and is itself dropped.
-            for input in [pair.old] + pair.extraOld {
-                let value: Any = pair.isRef ? "surface:4" : "fixture"
+            // Each old spelling, given alone, completes to the canonical key
+            // and is itself dropped, along with every other old spelling.
+            for input in pair.oldSpellings {
+                let value: Any = pair.isRef ? "tab:4" : "fixture"
                 let out = complete([input: value])
                 XCTAssertNotNil(out[pair.new], "\(input) -> \(pair.new)")
-                XCTAssertNotNil(out[pair.old], "\(input) -> \(pair.old)")
-                for extra in pair.extraOld {
-                    XCTAssertNil(out[extra], "\(extra) must not be emitted")
+                for old in pair.oldSpellings {
+                    XCTAssertNil(out[old], "\(old) must not be emitted")
                 }
                 if pair.isRef {
                     XCTAssertEqual(out[pair.new] as? String, "panel:4", pair.new)
-                    XCTAssertEqual(out[pair.old] as? String, "tab:4", pair.old)
                 }
             }
         }
     }
 
     func testEveryAreaPairEmitsAreaOnly() {
-        let areaPairs = LegacyWireAliases.legacyKeyPairs.filter { !$0.emitOld }
+        let areaPairs = LegacyWireAliases.legacyKeyPairs.filter { $0.old.lowercased().contains("pane") }
         XCTAssertEqual(areaPairs.count, 10)
+        XCTAssertEqual(LegacyWireAliases.legacyKeyPairs.count, 47)
         for pair in areaPairs {
             XCTAssertTrue(pair.old.lowercased().contains("pane"), pair.old)
             let out = complete([pair.old: pair.isRef ? "pane:2" : "fixture"])
@@ -152,45 +150,46 @@ final class LegacyWireCompletionTests: XCTestCase {
             "surface_refs": ["panel:1", "panel:2"],
         ])
         XCTAssertEqual(out["panel_id"] as? String, "fixture-uuid")
-        XCTAssertEqual(out["tab_id"] as? String, "fixture-uuid")
         XCTAssertEqual(out["panel_ref"] as? String, "panel:7")
-        XCTAssertEqual(out["tab_ref"] as? String, "tab:7")
         XCTAssertEqual(out["area_ref"] as? String, "area:3")
         XCTAssertEqual(out["panel_refs"] as? [String], ["panel:1", "panel:2"])
-        XCTAssertEqual(out["tab_refs"] as? [String], ["tab:1", "tab:2"])
-        for gone in ["surface_id", "surface_ref", "pane_ref", "surface_refs"] {
+        for gone in ["surface_id", "surface_ref", "pane_ref", "surface_refs", "tab_id", "tab_ref", "tab_refs"] {
             XCTAssertNil(out[gone], gone)
         }
         let item = (out["tabs"] as? [[String: Any]])?.first ?? [:]
         XCTAssertEqual(item["panel_ref"] as? String, "panel:8")
-        XCTAssertEqual(item["tab_ref"] as? String, "tab:8")
         XCTAssertEqual(item["panel_type"] as? String, "terminal")
-        XCTAssertEqual(item["tab_type"] as? String, "terminal")
-        XCTAssertNil(item["surface_ref"])
-        XCTAssertNil(item["surface_type"])
+        for gone in ["surface_ref", "surface_type", "tab_ref", "tab_type"] {
+            XCTAssertNil(item[gone], gone)
+        }
     }
 
     func testCanonicalValueWinsAndNullsPass() {
         let out = complete(["panel_id": "a", "tab_id": "b", "selected_surface_ref": NSNull()])
         XCTAssertEqual(out["panel_id"] as? String, "a")
-        XCTAssertEqual(out["tab_id"] as? String, "b")
+        XCTAssertNil(out["tab_id"])
         XCTAssertTrue(out["selected_panel_ref"] is NSNull)
-        XCTAssertTrue(out["selected_tab_ref"] is NSNull)
+        XCTAssertNil(out["selected_tab_ref"])
+        XCTAssertNil(out["selected_surface_ref"])
+        // An old spelling alone still fills the canonical key.
+        XCTAssertEqual(complete(["tab_ref": "tab:2"])["panel_ref"] as? String, "panel:2")
     }
 
-    func testCamelCaseApplyMapsAndInvertedTerminalPair() {
+    func testCamelCaseApplyMapsAndTerminalCount() {
         let out = complete([
             "surfaceRefs": ["plan-a": "panel:5"],
             "paneRefs": ["plan-b": "area:6"],
             "terminal_tabs": 2,
         ])
         XCTAssertEqual(out["panelRefs"] as? [String: String], ["plan-a": "panel:5"])
-        XCTAssertEqual(out["tabRefs"] as? [String: String], ["plan-a": "tab:5"])
         XCTAssertEqual(out["areaRefs"] as? [String: String], ["plan-b": "area:6"])
-        XCTAssertNil(out["surfaceRefs"])
-        XCTAssertNil(out["paneRefs"])
         XCTAssertEqual(out["terminal_panels"] as? Int, 2)
-        XCTAssertEqual(out["terminal_tabs"] as? Int, 2)
+        for gone in ["surfaceRefs", "paneRefs", "tabRefs", "terminal_tabs"] {
+            XCTAssertNil(out[gone], gone)
+        }
+        let tabMap = complete(["tabRefs": ["plan-c": "tab:9"]])
+        XCTAssertEqual(tabMap["panelRefs"] as? [String: String], ["plan-c": "panel:9"])
+        XCTAssertNil(tabMap["tabRefs"])
     }
 
     func testOpaqueSubtreesAreUntouched() {
@@ -236,20 +235,33 @@ final class LegacyWireCompletionTests: XCTestCase {
         XCTAssertNil(LegacyWireAliases.legacyRefPrefix(
             forRawMethod: "workspace.list", params: ["caller": ["tab_id": "t"]]))
 
-        let response = #"{"id":7,"ok":true,"result":{"panels":[{"ref":"panel:3","panel_ref":"panel:3","tab_ref":"tab:3"}],"workspace_ref":"workspace:1","metadata":{"ref":"panel:9"}}}"#
+        let response = #"{"id":7,"ok":true,"result":{"panels":[{"ref":"panel:3","panel_ref":"panel:3"}],"workspace_ref":"workspace:1","metadata":{"ref":"panel:9"}}}"#
         let echoed = LegacyWireAliases.echoLegacyRefs(response, prefix: "tab:")
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(echoed.utf8)) as? [String: Any])
         XCTAssertEqual(object["id"] as? Int, 7)
         let result = try XCTUnwrap(object["result"] as? [String: Any])
         let row = try XCTUnwrap((result["panels"] as? [[String: Any]])?.first)
         XCTAssertEqual(row["ref"] as? String, "tab:3")
-        XCTAssertEqual(row["panel_ref"] as? String, "panel:3", "paired keys keep their own spelling")
+        XCTAssertEqual(row["panel_ref"] as? String, "panel:3", "canonical keys keep their own spelling")
+        // A v0.67 client reads `tab_*` keys and `tabs` lists, so its responses get those twins back.
         XCTAssertEqual(row["tab_ref"] as? String, "tab:3")
+        let tabRow = try XCTUnwrap((result["tabs"] as? [[String: Any]])?.first)
+        XCTAssertEqual(tabRow["tab_ref"] as? String, "tab:3")
+        XCTAssertNil(row["surface_ref"])
         XCTAssertEqual(result["workspace_ref"] as? String, "workspace:1")
         XCTAssertEqual((result["metadata"] as? [String: Any])?["ref"] as? String, "panel:9", "user data is untouched")
         // Errors and responses with nothing to echo pass through byte-for-byte.
         let error = #"{"id":1,"ok":false,"error":{"code":"not_found","message":"Panel not found"}}"#
         XCTAssertEqual(LegacyWireAliases.echoLegacyRefs(error, prefix: "tab:"), error)
+
+        // Older `surface:` clients get their ref spelling, never `tab_*` twins.
+        let surfaceEchoed = LegacyWireAliases.echoLegacyRefs(response, prefix: "surface:")
+        let surfaceObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(surfaceEchoed.utf8)) as? [String: Any])
+        let surfaceResult = try XCTUnwrap(surfaceObject["result"] as? [String: Any])
+        let surfaceRow = try XCTUnwrap((surfaceResult["panels"] as? [[String: Any]])?.first)
+        XCTAssertEqual(surfaceRow["ref"] as? String, "surface:3")
+        XCTAssertNil(surfaceRow["tab_ref"])
+        XCTAssertNil(surfaceResult["tabs"])
     }
 
     func testCapabilityFeatureIdsSayPanel() {

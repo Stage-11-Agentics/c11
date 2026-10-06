@@ -117,7 +117,7 @@ extension TerminalController {
             return .ok([
                 "url": pageURL.absoluteString,
                 "workspace_id": targetWorkspace.id.uuidString,
-                "tab_id": existingPanel.id.uuidString,
+                "panel_id": existingPanel.id.uuidString,
                 "reused": true,
             ])
         }
@@ -130,7 +130,7 @@ extension TerminalController {
         return .ok([
             "url": pageURL.absoluteString,
             "workspace_id": targetWorkspace.id.uuidString,
-            "tab_id": panel.id.uuidString,
+            "panel_id": panel.id.uuidString,
             "reused": false,
         ])
     }
@@ -185,8 +185,6 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "Panel not found", data: [
                     "surface_id": surfaceId.uuidString,
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "tab_id": surfaceId.uuidString,
-                    "tab_ref": v2PanelRef(uuid: surfaceId)
                 ])
                 return
             }
@@ -203,8 +201,6 @@ extension TerminalController {
                     "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
                     "surface_id": surfaceId.uuidString,
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "tab_id": surfaceId.uuidString,
-                    "tab_ref": v2PanelRef(uuid: surfaceId)
                 ]
                 if let paneId = workspace.paneId(forPanelId: surfaceId)?.id {
                     payload["pane_id"] = paneId.uuidString
@@ -313,8 +309,6 @@ extension TerminalController {
                 finish([
                     "created_surface_id": newPanel.id.uuidString,
                     "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2PanelRef(uuid: newPanel.id)
                 ])
 
             case "new_terminal_right", "new_terminal_to_right", "new_terminal_panel_to_right", "new_terminal_tab_to_right":
@@ -333,8 +327,6 @@ extension TerminalController {
                 finish([
                     "created_surface_id": newPanel.id.uuidString,
                     "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2PanelRef(uuid: newPanel.id)
                 ])
 
             case "new_browser_right", "new_browser_to_right", "new_browser_panel_to_right", "new_browser_tab_to_right":
@@ -360,8 +352,6 @@ extension TerminalController {
                 finish([
                     "created_surface_id": newPanel.id.uuidString,
                     "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2PanelRef(uuid: newPanel.id)
                 ])
 
             case "close_left", "close_to_left":

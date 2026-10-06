@@ -119,7 +119,7 @@ def main():
 
             def listed():
                 payload = client._call("feed.list", {"scope": "attention"})
-                rows = [row for row in payload.get("rows") or [] if row.get("tab_id") == ask_tab]
+                rows = [row for row in payload.get("rows") or [] if row.get("panel_id") == ask_tab]
                 return payload if rows and rows[0].get("prompt") == SENTINEL and rows[0].get("flag") else None
             payload = None
             deadline = time.monotonic() + 5
@@ -128,15 +128,15 @@ def main():
                 if payload is None:
                     time.sleep(0.05)
             assert payload is not None, "feed list did not show the flagged question"
-            row = next(row for row in payload["rows"] if row["tab_id"] == ask_tab)
+            row = next(row for row in payload["rows"] if row["panel_id"] == ask_tab)
             assert row["kind"] == "question" and row["state"] == "open"
             assert row["workspace_id"] == ask_workspace
-            assert all(other.get("tab_id") != other_tab or other.get("kind") is not None for other in payload["rows"])
+            assert all(other.get("panel_id") != other_tab or other.get("kind") is not None for other in payload["rows"])
 
             listed_cli = cli_json(cli, path, ["feed", "list", "--json"])
             assert listed_cli.returncode == 0, listed_cli.stderr
             body = json.loads(listed_cli.stdout)
-            assert any(item.get("tab_id") == ask_tab and item.get("prompt") == SENTINEL for item in body["rows"])
+            assert any(item.get("panel_id") == ask_tab and item.get("prompt") == SENTINEL for item in body["rows"])
             before = client.identify().get("focused")
             again = cli_json(cli, path, ["feed", "list", "--json"])
             assert again.returncode == 0
@@ -152,32 +152,32 @@ def main():
 
             watch = FeedWatcher(cli, path)
             try:
-                watched = watch.until(lambda value: any(item.get("tab_id") == ask_tab for item in value.get("rows", [])))
+                watched = watch.until(lambda value: any(item.get("panel_id") == ask_tab for item in value.get("rows", [])))
                 client._call("flag.lower", {"surface_id": ask_tab, "by": "operator"})
                 client._call("flag.suppress", {"surface_id": ask_tab, "by": "operator"})
-                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                watch.until(lambda value: "rows" in value and not any(item.get("panel_id") == ask_tab for item in value["rows"]))
                 client._call("flag.unsuppress", {"surface_id": ask_tab, "by": "operator"})
-                watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("kind") == "question" for item in value.get("rows", [])))
+                watch.until(lambda value: any(item.get("panel_id") == ask_tab and item.get("kind") == "question" for item in value.get("rows", [])))
                 client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
                     "kind": "agent.state.changed", "signal": "tool_activity", "native_event": "PreToolUse"}})
                 client._call("notification.create_for_panel", {"workspace_id": ask_workspace, "panel_id": ask_tab,
                     "title": "Synthetic telemetry", "body": "Unrelated update"})
-                assert any(item.get("tab_id") == ask_tab for item in client._call("feed.list")["rows"])
+                assert any(item.get("panel_id") == ask_tab for item in client._call("feed.list")["rows"])
                 client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
                     "kind": "agent.attention.resolved", "resolution": "resumed", "native_event": "PostToolUse"}})
-                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                watch.until(lambda value: "rows" in value and not any(item.get("panel_id") == ask_tab for item in value["rows"]))
                 assert client.identify().get("focused") == before, "feed watch lifecycle updates moved focus"
                 client._call("flag.raise", {"surface_id": ask_tab, "reason": "closure", "by": "operator"})
-                watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("flag") for item in value.get("rows", [])))
+                watch.until(lambda value: any(item.get("panel_id") == ask_tab and item.get("flag") for item in value.get("rows", [])))
                 client._call("panel.close", {"workspace_id": ask_workspace, "panel_id": ask_tab})
-                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                watch.until(lambda value: "rows" in value and not any(item.get("panel_id") == ask_tab for item in value["rows"]))
                 client._call("flag.raise", {"surface_id": other_tab, "reason": "workspace-closure", "by": "operator"})
-                watch.until(lambda value: any(item.get("tab_id") == other_tab for item in value.get("rows", [])))
+                watch.until(lambda value: any(item.get("panel_id") == other_tab for item in value.get("rows", [])))
                 client.close_workspace(other_workspace)
-                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == other_tab for item in value["rows"]))
+                watch.until(lambda value: "rows" in value and not any(item.get("panel_id") == other_tab for item in value["rows"]))
             finally:
                 watch.close()
-            assert any(item.get("tab_id") == ask_tab for item in watched.get("rows") or [])
+            assert any(item.get("panel_id") == ask_tab for item in watched.get("rows") or [])
             print("PASS live watch covers suppression, resolution, flagged tab/workspace closure")
         finally:
             client.close_window(window)

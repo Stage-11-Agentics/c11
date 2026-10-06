@@ -479,8 +479,6 @@ struct MailboxDeliveryReceipt: Equatable {
         ]
         if let panelId {
             object["panel_id"] = panelId.uuidString
-            // C11-337: legacy spelling, still written so an older reader keeps the panel.
-            object["tab_id"] = panelId.uuidString
         }
         return object
     }

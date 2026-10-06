@@ -165,7 +165,7 @@ class SubmitProbe(base.Probe):
             payload = json.loads(launch.stdout)
         except json.JSONDecodeError as error:
             raise AssertionError('Tagged launch-agent did not return machine-readable refs') from error
-        tab = payload.get('tab_id') or payload.get('surface_id')
+        tab = payload.get('panel_id')
         if not tab:
             after = self.rpc('panel.list', {'workspace_id': self.workspace})['panels']
             created = [item['id'] for item in after if item['id'] not in before]

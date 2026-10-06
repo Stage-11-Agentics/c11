@@ -70,7 +70,7 @@ def main():
             )
             assert opened.returncode == 0, opened.stderr
             payload = json.loads(opened.stdout)
-            assert payload["workspace_id"] == ask_workspace and payload["tab_id"] == ask_tab
+            assert payload["workspace_id"] == ask_workspace and payload["panel_id"] == ask_tab and "tab_id" not in payload
             target_tabs = client._call("panel.list", {"workspace_id": ask_workspace, "window_id": window})["panels"]
             assert any(row["id"] == ask_tab and row["focused"] for row in target_tabs), target_tabs
             target_workspaces = client.list_workspaces(window)

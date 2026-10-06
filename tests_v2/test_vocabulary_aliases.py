@@ -14,9 +14,9 @@ behavior:
 - CLI: `new-tab` / `new-surface` / `list-tabs` / `focus-tab` ... , flags `--tab` /
   `--surface` / `--pane`, env `C11_TAB_ID` / `C11_SURFACE_ID` / `CMUX_*`.
 
-Results carry `panel_*` beside the v0.67 `tab_*` spelling (the `tab_*` ref values
-keep `tab:N`), `area_*` alone, `panels` + `tabs` arrays, and never `surface_*` /
-`pane_*` / `surfaces` / `panes`.
+Old spellings are input-only. Results carry only `panel_*` / `area_*` keys and
+`panels` / `areas` arrays: never `tab_*` / `surface_*` / `pane_*` / `tabs` /
+`surfaces` / `panes` (C11-345).
 
 Runs against a live tagged build, like the rest of tests_v2:
 
@@ -164,27 +164,35 @@ def _walk_keys(value: Any, path: str = "") -> Iterator[Tuple[str, str]]:
             yield from _walk_keys(child, f"{path}[{idx}]")
 
 
+# Keys that say "tab" but are not the old panel spelling (Bonsplit's own name).
+NON_LEGACY_TAB_KEYS = {"bonsplit_tab_id"}
+
+
 def _is_legacy_key(key: str) -> bool:
-    """`surface_*` / `pane_*` spellings (and their camelCase and array forms) are never emitted."""
+    """`tab_*` / `surface_*` / `pane_*` spellings (and their camelCase and array forms) are input-only."""
     low = key.lower()
+    if low in NON_LEGACY_TAB_KEYS:
+        return False
     if "surface" in low:
         return True
-    if low in ("panes", "panerefs", "paneids"):
+    if low in ("panes", "panerefs", "paneids", "tabs", "tabrefs", "tabids"):
         return True
-    return re.search(r"(^|_)pane(_|$)", low) is not None
+    return re.search(r"(^|_)(pane|tabs?)(_|$)", low) is not None
 
 
 def _assert_wire_clean(payload: Any, what: str) -> None:
     bad = [f"{path}.{key}" for path, key in _walk_keys(payload) if _is_legacy_key(key)]
-    _must(not bad, f"{what}: results must not emit surface_*/pane_* keys, found {bad[:6]}")
+    _must(not bad, f"{what}: results must not emit tab_*/surface_*/pane_* keys, found {bad[:6]}")
 
 
-def _check_dual_panel(block: Dict[str, Any], what: str, prefix: str = "") -> None:
-    """`<prefix>panel_id` == `<prefix>tab_id`; `panel_ref` says panel:N, `tab_ref` says tab:N."""
-    _same(block.get(f"{prefix}panel_id"), block.get(f"{prefix}tab_id"), f"{what}: {prefix}panel_id/{prefix}tab_id")
-    if f"{prefix}panel_ref" in block or f"{prefix}tab_ref" in block:
-        _same_ref(block.get(f"{prefix}panel_ref"), "panel", block.get(f"{prefix}tab_ref"), "tab",
-                  f"{what}: {prefix}panel_ref/{prefix}tab_ref")
+def _check_panel_keys(block: Dict[str, Any], what: str, prefix: str = "") -> None:
+    """`<prefix>panel_id` is present and `<prefix>panel_ref` says panel:N; no old spelling rides beside them."""
+    _must(bool(block.get(f"{prefix}panel_id")), f"{what}: {prefix}panel_id missing in {sorted(block)}")
+    if f"{prefix}panel_ref" in block:
+        _ordinal(block.get(f"{prefix}panel_ref"), "panel")
+    for old in ("tab", "surface"):
+        for suffix in ("_id", "_ref"):
+            _must(f"{prefix}{old}{suffix}" not in block, f"{what}: {prefix}{old}{suffix} must not be emitted")
 
 
 def _check_area_keys(block: Dict[str, Any], what: str) -> None:
@@ -383,11 +391,10 @@ def test_read_methods_resolve_to_same_handlers(c: cmux, f: Fixture) -> None:
         if baseline_ids is None:
             baseline_ids = _ids(rows)
         _must(_ids(rows) == baseline_ids, f"{family}.list disagrees: {_ids(rows)} != {baseline_ids}")
-        _must(_ids(_rows(res, "tabs")) == baseline_ids, f"{family}.list `tabs` array should mirror `panels`")
         _assert_wire_clean(res, f"{family}.list")
 
         cur = _call(c, f"{family}.current", {"workspace_id": ws})
-        _same(cur.get("panel_id"), cur.get("tab_id"), f"{family}.current panel_id/tab_id")
+        _check_panel_keys(cur, f"{family}.current")
         _assert_wire_clean(cur, f"{family}.current")
 
         health = _call(c, f"{family}.health", {"workspace_id": ws})
@@ -416,7 +423,6 @@ def test_read_methods_resolve_to_same_handlers(c: cmux, f: Fixture) -> None:
     for method, key in (("area.panels", "area_id"), ("area.tabs", "area_id"), ("pane.surfaces", "pane_id")):
         res = _call(c, method, {"workspace_id": ws, key: f.area_a})
         _must(_ids(_rows(res, "panels")) == sorted([f.p1, f.p2]), f"{method} should list the area's two panels: {res}")
-        _must(_ids(_rows(res, "tabs")) == sorted([f.p1, f.p2]), f"{method} `tabs` array should mirror `panels`: {res}")
         _same(res.get("area_id"), f.area_a, f"{method} area_id")
         _assert_wire_clean(res, method)
 
@@ -517,7 +523,7 @@ def test_write_methods_cross_over(c: cmux, f: Fixture) -> None:
     created = []
     for family in PANEL_FAMILIES:
         res = _call(c, f"{family}.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
-        _check_dual_panel(res, f"{family}.create")
+        _check_panel_keys(res, f"{family}.create")
         _assert_wire_clean(res, f"{family}.create")
         created.append((family, str(res["panel_id"])))
     via_pane_key = _call(c, "panel.create", {"workspace_id": ws, "pane_id": f.area_a, "focus": False})
@@ -547,7 +553,6 @@ def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
         mine = [n for n in items if n.get("title") == title]
         _must(len(mine) == 1, f"{method} ({key}) should create a notification, got {mine}")
         _same(mine[0].get("panel_id"), f.p3, f"notification panel_id for {method} ({key})")
-        _same(mine[0].get("tab_id"), f.p3, f"notification tab_id for {method} ({key})")
         _assert_wire_clean(mine[0], f"notification row for {method}")
         try:
             _call(c, "notification.clear")
@@ -557,7 +562,7 @@ def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
         _call(c, "notification.clear")
     except Exception:
         pass
-    print("PASS: notification.create_for_panel == create_for_tab == create_for_surface; rows carry panel_id + tab_id")
+    print("PASS: notification.create_for_panel == create_for_tab == create_for_surface; rows carry panel_id only")
 
 
 def test_panel_action_values(c: cmux, f: Fixture) -> None:
@@ -566,7 +571,7 @@ def test_panel_action_values(c: cmux, f: Fixture) -> None:
     for family in PANEL_FAMILIES:
         title = f"{family}-{uuid.uuid4().hex[:6]}"
         res = _call(c, f"{family}.action", {"workspace_id": ws, f"{family}_id": f.p2, "action": "rename", "title": title})
-        _check_dual_panel(res, f"{family}.action result")
+        _check_panel_keys(res, f"{family}.action result")
         _assert_wire_clean(res, f"{family}.action result")
         _same(_panel_row(c, ws, f.p2).get("title"), title, f"{family}.action rename should retitle the panel")
         pinned = _call(c, f"{family}.action", {"workspace_id": ws, f"{family}_id": f.p2, "action": "pin"})
@@ -617,21 +622,20 @@ def test_browser_panel_aliases(c: cmux, f: Fixture) -> None:
         for method, key in (("browser.panel.list", "panel_id"), ("browser.tab.list", "tab_id"),
                             ("browser.tab.list", "surface_id"), ("browser.panel.list", "surface_id")):
             res = _call(c, method, {"workspace_id": ws, key: browser_id})
-            rows = _rows(res, "panels", "tabs")
+            rows = _rows(res, "panels")
             _must(browser_id in _ids(rows), f"{method} ({key}) should list the browser panel: {res}")
             if baseline is None:
                 baseline = _ids(rows)
             _must(_ids(rows) == baseline, f"{method} ({key}) disagrees: {_ids(rows)} != {baseline}")
             _assert_wire_clean(res, method)
 
-        # reload and duplicate through every action spelling; duplicates carry both id keys.
+        # reload and duplicate through every action spelling; duplicates carry created_panel_* only.
         for action in ("reload_panel", "reload_tab", "reload"):
             _call(c, "panel.action", {"workspace_id": ws, "panel_id": browser_id, "action": action})
         duplicates: List[str] = []
         for action in ("duplicate_panel", "duplicate_tab", "duplicate"):
             res = _call(c, "panel.action", {"workspace_id": ws, "panel_id": browser_id, "action": action})
-            _same(res.get("created_panel_id"), res.get("created_tab_id"), f"{action} created_panel_id/created_tab_id")
-            _same_ref(res.get("created_panel_ref"), "panel", res.get("created_tab_ref"), "tab", f"{action} created refs")
+            _check_panel_keys(res, f"panel.action {action}", "created_")
             _assert_wire_clean(res, f"panel.action {action}")
             duplicates.append(str(res["created_panel_id"]))
         for action in ("new_browser_panel_to_right", "new_browser_tab_to_right"):
@@ -669,7 +673,7 @@ def test_debug_method_aliases(c: cmux, f: Fixture) -> None:
         except cmuxError as exc:
             outcomes.append(("error", str(exc).split(":", 1)[0]))
             continue
-        _check_dual_panel(snap, method)
+        _check_panel_keys(snap, method)
         _same(snap.get("panel_id"), f.p3, f"{method} panel_id")
         _assert_wire_clean(snap, method)
         outcomes.append(("ok", ""))
@@ -696,52 +700,51 @@ def _check_panel_row(row: Dict[str, Any], what: str) -> None:
     _ordinal(row.get("ref"), "panel")
 
 
-def test_results_carry_panel_and_tab_keys(c: cmux, f: Fixture) -> None:
+def test_results_carry_panel_keys(c: cmux, f: Fixture) -> None:
     ws = f.ws
     res = _call(c, "panel.list", {"workspace_id": ws})
-    panels, tabs = _rows(res, "panels"), _rows(res, "tabs")
-    _must(_ids(panels) == _ids(tabs) and len(panels) == 3, f"panel.list panels/tabs arrays differ: {res}")
+    panels = _rows(res, "panels")
+    _must(len(panels) == 3, f"panel.list should list 3 panels: {res}")
     for row in panels:
         _check_panel_row(row, "panel.list row")
-    _must("surfaces" not in res and "panes" not in res, f"panel.list must not emit surfaces/panes: {sorted(res)}")
+    for old in ("tabs", "surfaces", "panes"):
+        _must(old not in res, f"panel.list must not emit `{old}`: {sorted(res)}")
     _assert_wire_clean(res, "panel.list")
 
     res = _call(c, "area.list", {"workspace_id": ws})
     areas = _rows(res, "areas")
     _must(len(areas) == 2 and "panes" not in res, f"area.list should carry `areas` only: {sorted(res)}")
     for row in areas:
-        _same(row.get("panel_ids"), row.get("tab_ids"), "area row panel_ids/tab_ids")
-        _must(len(row["panel_ids"]) > 0, f"area row should list its panels: {row}")
-        _must(len(row["panel_refs"]) == len(row["tab_refs"]) == len(row["panel_ids"]), f"area row refs mismatch: {row}")
-        for new_ref, old_ref in zip(row["panel_refs"], row["tab_refs"]):
-            _same_ref(new_ref, "panel", old_ref, "tab", "area row panel_refs/tab_refs")
-        _same(row.get("panel_count"), row.get("tab_count"), "area row panel_count/tab_count")
+        _must(len(row.get("panel_ids") or []) > 0, f"area row should list its panels: {row}")
+        _must(len(row["panel_refs"]) == len(row["panel_ids"]), f"area row refs mismatch: {row}")
+        for ref in row["panel_refs"]:
+            _ordinal(ref, "panel")
         _same(row.get("panel_count"), len(row["panel_ids"]), "area row panel_count vs panel_ids")
-        _same(row.get("selected_panel_id"), row.get("selected_tab_id"), "selected_panel_id/selected_tab_id")
-        _same_ref(row.get("selected_panel_ref"), "panel", row.get("selected_tab_ref"), "tab", "selected refs")
+        _check_panel_keys(row, "area row", "selected_")
         _ordinal(row.get("ref"), "area")
     _assert_wire_clean(res, "area.list")
 
     res = _call(c, "area.panels", {"workspace_id": ws, "area_id": f.area_a})
-    _must(_ids(_rows(res, "panels")) == _ids(_rows(res, "tabs")), f"area.panels panels/tabs differ: {res}")
+    _must(_ids(_rows(res, "panels")) == sorted([f.p1, f.p2]), f"area.panels should list the area's panels: {res}")
     _same(res.get("area_id"), f.area_a, "area.panels area_id")
     _ordinal(res.get("area_ref"), "area")
+    _assert_wire_clean(res, "area.panels")
 
     res = _call(c, "panel.current", {"workspace_id": ws})
-    _check_dual_panel(res, "panel.current")
+    _check_panel_keys(res, "panel.current")
     _check_area_keys(res, "panel.current")
-    _same(res.get("panel_type"), res.get("tab_type"), "panel.current panel_type/tab_type")
+    _must(bool(res.get("panel_type")), f"panel.current panel_type missing: {sorted(res)}")
     _assert_wire_clean(res, "panel.current")
 
     created = _call(c, "panel.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
-    _check_dual_panel(created, "panel.create")
+    _check_panel_keys(created, "panel.create")
     _check_area_keys(created, "panel.create")
     _same(created.get("area_id"), f.area_a, "panel.create area_id")
     _assert_wire_clean(created, "panel.create")
     _call(c, "panel.close", {"workspace_id": ws, "panel_id": created["panel_id"]})
 
     split = _call(c, "panel.split", {"workspace_id": ws, "panel_id": f.p3, "direction": "down"})
-    _check_dual_panel(split, "panel.split")
+    _check_panel_keys(split, "panel.split")
     _assert_wire_clean(split, "panel.split")
     _call(c, "panel.close", {"workspace_id": ws, "panel_id": split["panel_id"]})
     time.sleep(0.2)
@@ -749,7 +752,7 @@ def test_results_carry_panel_and_tab_keys(c: cmux, f: Fixture) -> None:
     ident = _call(c, "system.identify", {"caller": {"workspace_id": ws, "panel_id": f.p2}})
     for scope in ("focused", "caller"):
         block = ident.get(scope) or {}
-        _check_dual_panel(block, f"identify.{scope}")
+        _check_panel_keys(block, f"identify.{scope}")
         _check_area_keys(block, f"identify.{scope}")
     _same((ident.get("caller") or {}).get("panel_id"), f.p2, "identify did not resolve the caller panel")
     _assert_wire_clean(ident, "system.identify")
@@ -757,7 +760,7 @@ def test_results_carry_panel_and_tab_keys(c: cmux, f: Fixture) -> None:
     for key in ("tab_id", "surface_id"):
         ident_old = _call(c, "system.identify", {"caller": {"workspace_id": ws, key: f.p2}})
         _same((ident_old.get("caller") or {}).get("panel_id"), f.p2, f"identify caller.{key} not resolved")
-    print("PASS: panel.list/area.list/current/create/split/identify carry panel_* + tab_* (and area_*), never surface_*/pane_*")
+    print("PASS: panel.list/area.list/current/create/split/identify carry panel_* and area_* only, never tab_*/surface_*/pane_*")
 
 
 def test_tree_results(c: cmux, cli: str, f: Fixture) -> None:
@@ -775,7 +778,7 @@ def test_tree_results(c: cmux, cli: str, f: Fixture) -> None:
     nodes = [n for n in _walk(payload) if "areas" in n and ws in (n.get("id"), n.get("ref"))]
     _must(len(nodes) == 1, f"tree --json has no node for workspace {ws}")
     _check_tree_node(nodes[0], "tree --json")
-    print("PASS: system.tree and tree --json carry areas, panels + tabs, panel_count + tab_count")
+    print("PASS: system.tree and tree --json carry areas, panels and panel_count only")
 
 
 def _check_tree_node(ws_node: Dict[str, Any], what: str) -> None:
@@ -783,18 +786,14 @@ def _check_tree_node(ws_node: Dict[str, Any], what: str) -> None:
     _must(isinstance(areas, list) and len(areas) == 2, f"{what}: workspace node should carry two `areas`: {sorted(ws_node)}")
     _must("panes" not in ws_node, f"{what}: workspace node must not carry `panes`")
     for area in areas:
-        panels, tabs = area.get("panels"), area.get("tabs")
-        _must(isinstance(panels, list) and isinstance(tabs, list) and len(panels) == len(tabs) > 0,
-              f"{what}: area node should carry both `panels` and `tabs`: {sorted(area)}")
-        _must("surfaces" not in area, f"{what}: area node must not carry `surfaces`")
+        panels = area.get("panels")
+        _must(isinstance(panels, list) and len(panels) > 0, f"{what}: area node should carry `panels`: {sorted(area)}")
+        for old in ("tabs", "surfaces"):
+            _must(old not in area, f"{what}: area node must not carry `{old}`")
         _ordinal(area.get("ref"), "area")
-        _same(area.get("panel_count"), area.get("tab_count"), f"{what}: area panel_count/tab_count")
         _same(area.get("panel_count"), len(panels), f"{what}: area panel_count vs panels")
-        for panel, tab in zip(panels, tabs):
-            _same(panel.get("id"), tab.get("id"), f"{what}: panels/tabs entries should be the same panel")
-            # `ref` has no legacy twin: both arrays hold the canonical `panel:N` value.
+        for panel in panels:
             _ordinal(panel.get("ref"), "panel")
-            _same(panel.get("ref"), tab.get("ref"), f"{what}: panels/tabs entries should share one ref")
             _check_area_keys(panel, f"{what} panel")
 
 
@@ -819,18 +818,19 @@ def test_old_ref_params_and_caller_keys(c: cmux, f: Fixture) -> None:
             pass
 
     # flag.raise takes the caller as caller_panel_id, caller_tab_id or caller_surface_id and the
-    # target under any id key. The result carries the panel + tab spellings only. The
-    # `flag_caller_*` metadata the handler stores keeps the tab spelling older readers use.
+    # target under any id key. The result carries caller_panel_id only. The handler stores
+    # `flag_caller_panel_id` beside the permanent `flag_caller_surface_id`, never the tab spelling.
     for caller_key in ("caller_panel_id", "caller_tab_id", "caller_surface_id"):
         for panel_key in ("panel_id", "tab_id", "surface_id"):
             reason = f"vocab {caller_key} {panel_key}"
             raised = _call(c, "flag.raise", {"workspace_id": ws, panel_key: f.p2, "reason": reason, caller_key: f.p1})
             _same(raised.get("flag"), reason, "flag.raise result flag")
             _same(raised.get("caller_panel_id"), f.p1, f"flag.raise result caller_panel_id ({caller_key})")
-            _same(raised.get("caller_tab_id"), f.p1, f"flag.raise result caller_tab_id ({caller_key})")
             _assert_wire_clean(raised, "flag.raise result")
             md = _metadata(c, ws, f.p2)
-            _same(md.get("flag_caller_tab_id"), f.p1, f"flag_caller_tab_id after raise ({caller_key}, {panel_key})")
+            for key in ("flag_caller_panel_id", "flag_caller_surface_id"):
+                _same(md.get(key), f.p1, f"{key} after raise ({caller_key}, {panel_key})")
+            _must("flag_caller_tab_id" not in md, f"flag.raise must not write flag_caller_tab_id ({caller_key}, {panel_key}): {md}")
             _call(c, "flag.lower", {"workspace_id": ws, panel_key: f.p2})
             md = _metadata(c, ws, f.p2)
             for key in ("flag", "flag_caller_panel_id", "flag_caller_tab_id", "flag_caller_surface_id"):
@@ -846,7 +846,7 @@ def test_old_panel_layout_methods(c: cmux) -> None:
         for family in PANEL_FAMILIES:
             before = len(_areas(c, ws))
             split = _call(c, f"{family}.split", {"workspace_id": ws, f"{family}_id": f.p1, "direction": "down"})
-            _check_dual_panel(split, f"{family}.split")
+            _check_panel_keys(split, f"{family}.split")
             time.sleep(0.3)
             _must(len(_areas(c, ws)) == before + 1, f"{family}.split should add an area")
             _call(c, f"{family}.close", {"workspace_id": ws, f"{family}_id": split["panel_id"]})
@@ -903,7 +903,7 @@ def test_old_panel_presentation_methods(c: cmux, f: Fixture) -> None:
     ws = f.ws
     for family in PANEL_FAMILIES:
         res = _call(c, f"{family}.trigger_flash", {"workspace_id": ws, f"{family}_id": f.p1})
-        _check_dual_panel(res, f"{family}.trigger_flash")
+        _check_panel_keys(res, f"{family}.trigger_flash")
         _assert_wire_clean(res, f"{family}.trigger_flash")
         res = _call(c, f"{family}.cancel_flash", {"workspace_id": ws, f"{family}_id": f.p1})
         _same(res.get("panel_id"), f.p1, f"{family}.cancel_flash panel_id")
@@ -911,7 +911,7 @@ def test_old_panel_presentation_methods(c: cmux, f: Fixture) -> None:
     for family, hex_ in (("panel", "#336699"), ("tab", "#996633"), ("surface", "#669933")):
         res = _call(c, f"{family}.set_custom_color", {"workspace_id": ws, f"{family}_id": f.p2, "hex": hex_})
         _same(res.get("custom_color"), hex_, f"{family}.set_custom_color custom_color")
-        _check_dual_panel(res, f"{family}.set_custom_color")
+        _check_panel_keys(res, f"{family}.set_custom_color")
     cleared = _call(c, "surface.set_custom_color", {"workspace_id": ws, "surface_id": f.p2, "clear": True})
     _must(cleared.get("cleared") is True and cleared.get("custom_color") is None, f"clear through the old method: {cleared}")
 
@@ -949,7 +949,7 @@ def test_old_panel_presentation_methods(c: cmux, f: Fixture) -> None:
         _must(_wait_for(lambda m=marker: f"42{m}" in _screen_text(c, ws, f.p3)),
               f"{family}.send_key enter never ran the typed command")
         res = _call(c, f"{family}.clear_history", {"workspace_id": ws, f"{family}_id": f.p3})
-        _check_dual_panel(res, f"{family}.clear_history")
+        _check_panel_keys(res, f"{family}.clear_history")
         _assert_wire_clean(res, f"{family}.clear_history")
 
     # area.confirm / pane.confirm are off-main methods that open a modal; a call without a title fails
@@ -966,7 +966,7 @@ def test_old_area_methods(c: cmux) -> None:
     try:
         ws = f.ws
 
-        # pane.create / area.create: the result carries area_* and panel_* + tab_*, never pane_*/surface_*.
+        # pane.create / area.create: the result carries area_* and panel_* only, never tab_*/pane_*/surface_*.
         before = len(_areas(c, ws))
         made_all = [_call(c, "pane.create", {"workspace_id": ws, "direction": "down"}),
                     _call(c, "area.create", {"workspace_id": ws, "direction": "down"})]
@@ -974,7 +974,7 @@ def test_old_area_methods(c: cmux) -> None:
         _must(len(_areas(c, ws)) == before + 2, f"pane.create / area.create should each add an area: {made_all}")
         for made in made_all:
             _check_area_keys(made, "area create")
-            _check_dual_panel(made, "area create")
+            _check_panel_keys(made, "area create")
             _assert_wire_clean(made, "area create")
             _call(c, "panel.close", {"workspace_id": ws, "panel_id": str(made["panel_id"])})
         time.sleep(0.3)
@@ -1010,8 +1010,8 @@ def test_old_area_methods(c: cmux) -> None:
             expected_area = f.area_b if expected_area == f.area_a else f.area_a
             _same(_area_of(c, ws, sel_a), expected_area, f"{method} {sorted(params)} should move the selected panel")
             _must(bool(res.get("area_id")) and bool(res.get("target_area_id")), f"{method} result needs area_id/target_area_id: {res}")
-            _check_dual_panel(res, f"{method} result", "source_")
-            _check_dual_panel(res, f"{method} result", "target_")
+            _check_panel_keys(res, f"{method} result", "source_")
+            _check_panel_keys(res, f"{method} result", "target_")
             _assert_wire_clean(res, method)
 
         # pane.join / area.join: any panel key picks the panel, target_* the destination.
@@ -1055,7 +1055,7 @@ def test_old_area_methods(c: cmux) -> None:
 
 
 def test_workspace_apply_ref_maps(c: cmux) -> None:
-    """workspace.apply returns panelRefs (panel:N) beside tabRefs (tab:N), and areaRefs; never surfaceRefs/paneRefs."""
+    """workspace.apply returns panelRefs (panel:N) and areaRefs; never tabRefs/surfaceRefs/paneRefs."""
     # The plan schema's own words (`surfaces`, `surfaceIds`) are input, not wire keys.
     plan = {
         "version": 1,
@@ -1070,16 +1070,15 @@ def test_workspace_apply_ref_maps(c: cmux) -> None:
     ws_ref = str(res.get("workspaceRef") or "")
     try:
         _must(bool(ws_ref), f"workspace.apply returned no workspaceRef: {res}")
-        maps = {name: res.get(name) for name in ("panelRefs", "tabRefs", "areaRefs")}
+        maps = {name: res.get(name) for name in ("panelRefs", "areaRefs")}
         for name, value in maps.items():
             _must(isinstance(value, dict) and sorted(value) == ["a", "b"], f"workspace.apply {name} should map both plan ids: {value!r}")
         for plan_id in ("a", "b"):
-            _same(_ordinal(maps["panelRefs"][plan_id], "panel"), _ordinal(maps["tabRefs"][plan_id], "tab"),
-                  f"panelRefs/tabRefs ordinal for plan id {plan_id}")
+            _ordinal(maps["panelRefs"][plan_id], "panel")
             _ordinal(maps["areaRefs"][plan_id], "area")
         _must(_ordinal(maps["panelRefs"]["a"], "panel") != _ordinal(maps["panelRefs"]["b"], "panel"), "the two panels should have distinct refs")
         _same(maps["areaRefs"]["a"], maps["areaRefs"]["b"], "both plan panels live in one area")
-        for legacy in ("surfaceRefs", "paneRefs"):
+        for legacy in ("tabRefs", "surfaceRefs", "paneRefs"):
             _must(legacy not in res, f"workspace.apply must not emit {legacy}: {sorted(res)}")
     finally:
         if ws_ref:
@@ -1087,7 +1086,7 @@ def test_workspace_apply_ref_maps(c: cmux) -> None:
                 _call(c, "workspace.close", {"workspace_id": ws_ref})
             except cmuxError:
                 pass
-    print("PASS: workspace.apply carries panelRefs/tabRefs and areaRefs with matching ordinals and prefixes")
+    print("PASS: workspace.apply carries panelRefs and areaRefs only, with canonical prefixes")
 
 
 # ---------------------------------------------------------------------------
@@ -1143,7 +1142,7 @@ def test_cli_read_command_aliases(cli: str, f: Fixture) -> None:
         _assert_wire_clean(new_out, f"{new_args[0]} --json")
         _assert_wire_clean(old_out, f"{old_args[0]} --json")
     listing = _cli_json(cli, ["list-panels", "--workspace", f.ws])
-    _must(_ids(_rows(listing, "panels")) == _ids(_rows(listing, "tabs")), f"list-panels --json should carry panels and tabs: {sorted(listing)}")
+    _must("tabs" not in listing, f"list-panels --json should carry `panels` only: {sorted(listing)}")
     for command in ("refresh-panels", "refresh-tabs", "refresh-surfaces"):
         _cli(cli, [command])
 
@@ -1157,14 +1156,14 @@ def test_cli_read_command_aliases(cli: str, f: Fixture) -> None:
     text = _cli_text(cli, ["list-areas", "--workspace", ws])
     _must(re.search(r"\barea:\d+", text) is not None and re.search(r"\bpane:\d+", text) is None, f"list-areas text output: {text!r}")
 
-    # identify --json: panel_* + tab_* (and area_*), no surface_*/pane_*.
+    # identify --json: panel_* (and area_*) only, no tab_*/surface_*/pane_*.
     env = _cli_env({"C11_WORKSPACE_ID": ws})
     ident = _cli_json(cli, ["identify", "--workspace", ws, "--panel", f.p2], env=env)
     _assert_wire_clean(ident, "identify --json")
     for scope in ("focused", "caller"):
         block = ident.get(scope) or {}
         if block:
-            _check_dual_panel(block, f"identify --json {scope}")
+            _check_panel_keys(block, f"identify --json {scope}")
     print("PASS: read-only CLI commands (panel == tab == surface names) with panel:N output and no surface/pane keys")
 
 
@@ -1182,7 +1181,7 @@ def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
         _cli_json(cli, ["new-panel", "--workspace", ws, "--area", f.area_a, "--no-focus"], id_format="uuids"),
     ]
     _must(len(_panels(c, ws)) == before + 4, f"new-panel / new-tab / new-surface should each add a panel: {created}")
-    ids = [str(x.get("panel_id") or x.get("tab_id")) for x in created]
+    ids = [str(x.get("panel_id") or "") for x in created]
     _must(all(ids), f"create results should carry panel_id: {created}")
     for x in created:
         _assert_wire_clean(x, "new-panel --json")
@@ -1279,23 +1278,29 @@ def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
     _must(len(_areas(c, ws)) == areas_before + 2, f"new-area / new-pane should each add an area: {made_new} {made_old}")
     for made in (made_new, made_old):
         _assert_wire_clean(made, "new-area --json")
-        _call(c, "panel.close", {"workspace_id": ws, "panel_id": str(made.get("panel_id") or made.get("tab_id"))})
+        _call(c, "panel.close", {"workspace_id": ws, "panel_id": str(made.get("panel_id"))})
     time.sleep(0.3)
     _must(len(_areas(c, ws)) == areas_before, "closing the new areas' panels should remove them")
 
-    # drag-panel-to-split / drag-tab-to-split / drag-surface-to-split speak the v1
-    # text protocol, which resolves panels in the selected workspace only; the
-    # scratch workspace stays in the background (agents cannot select it). Each
-    # spelling must reach the same command and give the same outcome.
-    outcomes = []
-    for command, flag in (("drag-panel-to-split", "--panel"), ("drag-tab-to-split", "--tab"),
-                          ("drag-surface-to-split", "--surface")):
-        proc = _cli(cli, [command, flag, f.p2, "right"], env=_cli_env({"C11_WORKSPACE_ID": ws}), check=False)
-        outcomes.append((proc.returncode, (proc.stdout + proc.stderr).strip()))
-        if proc.returncode == 0:
-            break  # a real split happened (selected workspace); don't split again
-    _must(len(set(o[0] for o in outcomes)) == 1 and all("Unknown command" not in o[1] for o in outcomes),
-          f"drag-*-to-split spellings disagree: {outcomes}")
+    # drag-panel-to-split / drag-tab-to-split / drag-surface-to-split speak the v1 text
+    # protocol. The scratch workspace stays in the background (agents cannot select it),
+    # so `--window` scopes the command to it; every spelling must really split the
+    # panel off into a new area. Each drags a fresh sibling so its source area keeps one.
+    window = _window_ref_of(c, ws)
+    for command, flag, direction in (("drag-panel-to-split", "--panel", "right"),
+                                     ("drag-tab-to-split", "--tab", "down"),
+                                     ("drag-surface-to-split", "--surface", "right")):
+        sibling = _spare_panel(c, ws, f.area_b)
+        areas_before = len(_areas(c, ws))
+        proc = _cli(cli, ["--window", window, command, "--workspace", ws, flag, sibling, direction], check=False)
+        out = (proc.stdout + proc.stderr).strip()
+        _must(proc.returncode == 0 and out.startswith("OK"), f"{command} {flag} should split the panel: {out!r}")
+        time.sleep(0.3)
+        _must(len(_areas(c, ws)) == areas_before + 1, f"{command} should add an area: {out!r}")
+        _must(_area_of(c, ws, sibling) not in (f.area_a, f.area_b), f"{command} should leave the panel in a new area")
+        _call(c, "panel.close", {"workspace_id": ws, "panel_id": sibling})
+        time.sleep(0.3)
+    _must(len(_areas(c, ws)) == 2, "closing the dragged panels should remove their areas")
 
     # area-confirm / pane-confirm open a modal; only check both names are recognized.
     for cmd in ("area-confirm", "pane-confirm"):
@@ -1310,9 +1315,11 @@ def test_flag_caller_metadata_keys(c: cmux, cli: str, f: Fixture) -> None:
         try:
             _cli(cli, ["raise-flag", flag, f.p2, "vocabulary alias check"], env=env)
             md = _metadata(c, f.ws, f.p2)
-            _same(md.get("flag_caller_tab_id"), f.p2, f"flag_caller_tab_id after raise-flag {flag}")
+            _same(md.get("flag_caller_surface_id"), f.p2, f"flag_caller_surface_id after raise-flag {flag}")
+            _must("flag_caller_tab_id" not in md, f"raise-flag {flag} must not write flag_caller_tab_id: {md}")
             cli_md = _cli_json(cli, ["get-metadata", flag, f.p2], env=env)
-            _same((cli_md.get("metadata") or {}).get("flag_caller_tab_id"), f.p2, f"get-metadata {flag} lost flag_caller_tab_id")
+            _same((cli_md.get("metadata") or {}).get("flag_caller_surface_id"), f.p2,
+                  f"get-metadata {flag} lost flag_caller_surface_id")
         finally:
             lowered = _cli(cli, ["lower-flag", flag, f.p2], env=env, check=False)
         _must(lowered.returncode == 0, f"lower-flag {flag} failed: {lowered.stdout!r} {lowered.stderr!r}")
@@ -1481,7 +1488,7 @@ def main() -> int:
             test_panel_action_values(c, fixture)
             test_old_panel_presentation_methods(c, fixture)
             test_old_ref_params_and_caller_keys(c, fixture)
-            test_results_carry_panel_and_tab_keys(c, fixture)
+            test_results_carry_panel_keys(c, fixture)
             test_tree_results(c, cli, fixture)
             test_browser_panel_aliases(c, fixture)
             test_flag_caller_metadata_keys(c, cli, fixture)

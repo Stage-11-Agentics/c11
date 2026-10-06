@@ -87,7 +87,7 @@ def main() -> int:
                 ids = _browser_ids(client, ws)
                 res = client._call(method, {"workspace_id": ws, "surface_id": context, "index": ids.index(target)}) or {}
                 _must(res.get("panel_id") == target, f"{method} by index should select the indexed panel: {res}")
-                _must(res.get("tab_id") == target and "surface_id" not in res, f"{method} result keys: {res}")
+                _must("tab_id" not in res and "surface_id" not in res, f"{method} result keys: {res}")
 
             # CLI: `c11 browser <context> panel close <index>` (and the tab-era spelling).
             for verb in ("panel", "tab"):

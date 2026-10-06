@@ -193,8 +193,7 @@ extension TerminalController {
             payload = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "panels": surfaces,
-                "tabs": surfaces
+                "panels": surfaces
             ]
         }
 
@@ -948,7 +947,6 @@ extension TerminalController {
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "panels": items,
-                "tabs": items,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
             ]

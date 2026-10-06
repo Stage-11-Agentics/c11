@@ -340,12 +340,12 @@ def read_conversations(cli_path) -> dict:
 
 def oracle_table(conversations: list) -> list:
     """Classify every surface. Returns a list of dicts:
-    {tab_id, kind, cwd, id, state, placeholder, classification, detail}."""
+    {panel_id, kind, cwd, id, state, placeholder, classification, detail}."""
     rows = []
     for c in conversations:
         cls, detail = classify_conversation(c)
         rows.append({
-            "tab_id": c.get("tab_id"),
+            "panel_id": c.get("panel_id"),
             "kind": c.get("kind"),
             "cwd": c.get("cwd"),
             "id": c.get("id"),

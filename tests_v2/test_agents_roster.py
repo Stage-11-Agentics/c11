@@ -125,7 +125,7 @@ def main():
             return json.loads(result.stdout)
 
         def row(document, tab):
-            matches = [item for item in document["tabs"] if str(item["tab_id"]).lower() == tab.lower()]
+            matches = [item for item in document["panels"] if str(item["panel_id"]).lower() == tab.lower()]
             if len(matches) != 1:
                 raise AssertionError("roster row missing")
             return matches[0]
@@ -200,7 +200,7 @@ def main():
         print("PASS skipped event-stream interval, degraded-source snapshot recovery, and unchanged focus")
 
         def candidate(document, tab):
-            matches = [item for item in document["restore_candidates"] if str(item["tab_id"]).lower() == tab.lower()]
+            matches = [item for item in document["restore_candidates"] if str(item["panel_id"]).lower() == tab.lower()]
             if len(matches) != 1:
                 raise AssertionError("restore candidate missing")
             return matches[0]

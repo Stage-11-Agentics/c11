@@ -152,7 +152,7 @@ struct MessagesPageRecord: Equatable {
         if let senderID { result["sender_id"] = senderID }
         if channel == "send" {
             result["caller_title"] = callerTitle ?? NSNull()
-            result["caller_tab_id"] = senderID ?? NSNull()
+            result["caller_panel_id"] = senderID ?? NSNull()
         }
         if let recipient { result["recipient"] = recipient }
         if let targetTitle { result["target_title"] = targetTitle }

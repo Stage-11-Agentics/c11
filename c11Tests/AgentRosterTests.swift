@@ -45,13 +45,13 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(coverage?["health"] as? String, "ok")
         XCTAssertEqual(coverage?["storage"] as? String, "ok")
         XCTAssertEqual(coverage?["unattributed"] as? Int, 2)
-        let tabs = document["tabs"] as? [[String: Any]] ?? []
-        XCTAssertEqual(tabs.map { $0["tab_id"] as? String }, [panelA.uuidString, panelB.uuidString, panelC.uuidString])
-        // C11-337: `panels` is canonical; `tabs` carries the same rows for one release.
+        // C11-345: `panels` is the only row list; the `tabs` twin is gone.
+        XCTAssertNil(document["tabs"])
         let panels = document["panels"] as? [[String: Any]] ?? []
         XCTAssertEqual(panels.map { $0["panel_id"] as? String }, [panelA.uuidString, panelB.uuidString, panelC.uuidString])
         XCTAssertEqual((AgentRoster.unavailableDocument()["panels"] as? [Any])?.count, 0)
-        let ask = tabs[0]
+        XCTAssertNil(AgentRoster.unavailableDocument()["tabs"])
+        let ask = panels[0]
         XCTAssertEqual(ask["state"] as? String, "blocked")
         XCTAssertEqual(ask["reason"] as? String, "question")
         XCTAssertEqual(ask["source"] as? String, "hook")
@@ -59,12 +59,12 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(ask["freshness"] as? String, "fresh")
         XCTAssertEqual(ask["since"] as? String, AgentRoster.isoSeconds(ms: blocked.sinceMs))
         XCTAssertEqual(ask["suppressed"] as? Bool, true)
-        let worker = tabs[1]
+        let worker = panels[1]
         XCTAssertEqual(worker["state"] as? String, "working")
         XCTAssertTrue(worker["reason"] is NSNull)
         XCTAssertEqual(worker["model"] as? String, "synthetic-model")
         XCTAssertEqual(worker["turn_started_at"] as? String, AgentRoster.isoSeconds(ms: 1_699_000_000_000))
-        let bare = tabs[2]
+        let bare = panels[2]
         XCTAssertTrue(bare["state"] is NSNull)
         XCTAssertTrue(bare["session_id"] is NSNull)
         XCTAssertTrue(bare["kind"] is NSNull)
@@ -78,11 +78,10 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(candidates[0]["confirmation"] as? String, "unconfirmed")
         XCTAssertEqual(candidates[0]["connection"] as? String, "unknown")
         XCTAssertEqual(candidates[0]["coverage"] as? String, "retained")
-        // C11-337: roster rows carry the panel spelling beside the legacy tab spelling.
-        XCTAssertEqual(tabs.map { $0["panel_id"] as? String }, [panelA.uuidString, panelB.uuidString, panelC.uuidString])
-        XCTAssertTrue(tabs.allSatisfy { $0["surface_id"] == nil })
+        // C11-345: roster rows carry only the panel spelling.
+        XCTAssertTrue(panels.allSatisfy { $0["surface_id"] == nil && $0["tab_id"] == nil })
         XCTAssertEqual(candidates[0]["panel_id"] as? String, panelC.uuidString)
-        XCTAssertEqual(candidates[0]["tab_id"] as? String, panelC.uuidString)
+        XCTAssertNil(candidates[0]["tab_id"])
     }
 
     func testRestoreLabelsKeepEndedAfterALaterConnectionObservation() {

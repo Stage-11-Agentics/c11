@@ -2760,7 +2760,6 @@ class TerminalController {
                 "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedPanelUUID),
                 "surface_count": surfaceUUIDs.count,
                 "panels": surfacesByPane[paneId.id] ?? [],
-                "tabs": surfacesByPane[paneId.id] ?? [],
                 "layout": layoutObj
             ]
         }
@@ -2863,7 +2862,7 @@ class TerminalController {
         return v2Encode([
             "id": v2OrNull(id),
             "ok": true,
-            // C11-337: canonical + legacy key pairs (see LegacyWireAliases).
+            // C11-345: old key spellings fold onto canonical keys (see LegacyWireAliases).
             "result": LegacyWireAliases.completeResult(result)
         ])
     }
@@ -2871,7 +2870,7 @@ class TerminalController {
     nonisolated func v2Error(id: Any?, code: String, message: String, data: Any? = nil) -> String {
         var err: [String: Any] = ["code": code, "message": message]
         if let data {
-            // C11-337: error payloads carry the same canonical + legacy key pairs as results.
+            // C11-345: error payloads carry the same canonical-only keys as results.
             err["data"] = LegacyWireAliases.completeResult(data)
         }
         return v2Encode([
@@ -3674,7 +3673,7 @@ class TerminalController {
             return .err(.err(code: "invalid_params", message: "Panel is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
 
-        // Match `flag_caller_tab_id` validation: caller attribution is an
+        // Match `flag_caller_panel_id` validation: caller attribution is an
         // identity UUID, not a target handle, and old callers arrive here as
         // `caller_surface_id` after wire canonicalization.
         let rawCaller = params["caller_surface_id"] as? String

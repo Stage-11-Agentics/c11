@@ -381,8 +381,6 @@ extension TerminalController {
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "surface_id": v2OrNull(surfaceUUID?.uuidString),
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceUUID),
-                    "tab_id": v2OrNull(surfaceUUID?.uuidString),
-                    "tab_ref": v2PanelRef(uuid: surfaceUUID),
                     "surface_type": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType.rawValue }),
                     "is_browser_surface": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType == .browser })
                 ]
@@ -416,8 +414,6 @@ extension TerminalController {
                         let paneUUID = ws.paneId(forPanelId: surfaceId)?.id
                         payload["surface_id"] = surfaceId.uuidString
                         payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
-                        payload["tab_id"] = surfaceId.uuidString
-                        payload["tab_ref"] = v2PanelRef(uuid: surfaceId)
                         payload["surface_type"] = v2OrNull(ws.panels[surfaceId]?.panelType.rawValue)
                         payload["is_browser_surface"] = v2OrNull(ws.panels[surfaceId]?.panelType == .browser)
                         payload["pane_id"] = v2OrNull(paneUUID?.uuidString)
@@ -425,8 +421,6 @@ extension TerminalController {
                     } else {
                         payload["surface_id"] = NSNull()
                         payload["surface_ref"] = NSNull()
-                        payload["tab_id"] = NSNull()
-                        payload["tab_ref"] = NSNull()
                         payload["surface_type"] = NSNull()
                         payload["is_browser_surface"] = NSNull()
                         payload["pane_id"] = NSNull()

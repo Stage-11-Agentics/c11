@@ -7,12 +7,10 @@ import Foundation
 // methods, `tab:N` / `surface:N` / `pane:N` refs, `tab_*` / `surface_*` /
 // `pane_*` keys. This file is the one place that knows the old names.
 //
-// Output: results carry `panel_*` beside the v0.67 `tab_*` spelling (whose ref
-// values say `tab:N`), and `area_*` alone. `surface_*` / `pane_*` are no longer
-// emitted; they had their one release.
-//
-// C11-337: stop emitting `tab_*` at 1.1 (set `emitOld: false` on the panel
-// family); input aliases stay forever.
+// Output: results carry only the canonical `panel_*` / `area_*` keys. The old
+// `tab_*` / `surface_*` / `pane_*` spellings are input-only (C11-345); input
+// aliases stay forever. A request in an old method spelling still gets its
+// generic `ref` values echoed in that spelling (`echoLegacyRefs`).
 enum LegacyWireAliases {
     // MARK: - Methods
 
@@ -94,8 +92,8 @@ enum LegacyWireAliases {
         }
     }
 
-    /// `panel:N` (or any spelling of it) -> `tab:N`: the v0.67 value that rides
-    /// beside the canonical one in `tab_*` keys. Area refs keep `area:N`.
+    /// `panel:N` (or any spelling of it) -> `tab:N`, the v0.67 spelling (shown
+    /// as an alternate handle in the UI). Area refs keep `area:N`.
     nonisolated static func legacyHandle(_ handle: String) -> String {
         let canonical = canonicalHandle(handle)
         if canonical.hasPrefix("panel:") { return "tab:" + canonical.dropFirst("panel:".count) }
@@ -124,10 +122,12 @@ enum LegacyWireAliases {
 
     /// Old CLIs resolve `--tab tab:N` client-side by matching the generic `ref`
     /// of `tab.list` items, so a response to an old-spelling request carries its
-    /// generic `ref` values (`panel:N`) in that spelling. Paired keys already
-    /// carry `tab:N` in `tab_*`. Only old clients pay for the re-encode.
+    /// generic `ref` values (`panel:N`) in that spelling. Canonical keys keep
+    /// `panel:N`. A v0.67 (`tab:`) client also reads `tab_*` keys and `tabs`
+    /// lists, so its responses get those twins back. Only old clients pay for
+    /// the re-encode.
     nonisolated static func echoLegacyRefs(_ response: String, prefix: String) -> String {
-        guard response.contains("\"panel:"),
+        guard prefix == "tab:" || response.contains("\"panel:"),
               let data = response.data(using: .utf8),
               var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let result = object["result"] else { return response }
@@ -150,35 +150,54 @@ enum LegacyWireAliases {
                 dict[key] = echoGenericRefs(child, prefix: prefix)
             }
         }
+        if prefix == "tab:" {
+            for pair in v067TabPairs where dict[pair.old] == nil {
+                if let value = dict[pair.new] {
+                    dict[pair.old] = pair.isRef ? legacyRefValue(value) : value
+                }
+            }
+            if dict["tabs"] == nil, let panels = dict["panels"] { dict["tabs"] = panels }
+        }
         return dict
+    }
+
+    /// The `tab_*` pairs a v0.67 client reads.
+    nonisolated private static let v067TabPairs = legacyKeyPairs.filter {
+        $0.old.hasPrefix("tab") || $0.old.contains("_tab")
+    }
+
+    nonisolated private static func legacyRefValue(_ value: Any) -> Any {
+        if let ref = value as? String { return legacyHandle(ref) }
+        if let refs = value as? [String] { return refs.map(legacyHandle) }
+        return value
     }
 
     // MARK: - Key table
 
-    /// `new` is canonical and always emitted. `old` is the previous spelling:
-    /// when `emitOld`, it is filled from `new` (and `new` from it); otherwise
-    /// it is accepted on input and dropped from output. `extraOld` spellings
-    /// are input-only: they fill `new` and are dropped from output.
+    /// `new` is canonical and the only spelling emitted. `old` (the v0.67
+    /// spelling) and `extraOld` (older ones) are input-only: they fill `new`
+    /// when it is absent and are dropped from output.
     struct KeyPair {
         let new: String
         let old: String
         var extraOld: [String] = []
         /// Values are handles (`panel:N` / `area:N`) or arrays of them.
         var isRef: Bool = false
-        var emitOld: Bool = true
+
+        /// Every input-only spelling, in precedence order.
+        var oldSpellings: [String] { [old] + extraOld }
     }
 
-    /// The panel family: `panel_*` canonical, `tab_*` emitted beside it,
-    /// `surface_*` input-only.
+    /// The panel family: `panel_*` canonical, `tab_*` and `surface_*` input-only.
     nonisolated private static func panel(
         _ new: String, _ old: String, _ surface: String? = nil, ref: Bool = false
     ) -> KeyPair {
         KeyPair(new: new, old: old, extraOld: surface.map { [$0] } ?? [], isRef: ref)
     }
 
-    /// The area family: `area_*` canonical and alone on output, `pane_*` input-only.
+    /// The area family: `area_*` canonical, `pane_*` input-only.
     nonisolated private static func area(_ new: String, _ old: String, ref: Bool = false) -> KeyPair {
-        KeyPair(new: new, old: old, isRef: ref, emitOld: false)
+        KeyPair(new: new, old: old, isRef: ref)
     }
 
     nonisolated static let legacyKeyPairs: [KeyPair] = [
@@ -318,7 +337,7 @@ enum LegacyWireAliases {
             let selector = ["_id", "_ids", "_ref", "_refs"].contains { pair.new.hasSuffix($0) }
                 || pair.isRef
             guard selector else { continue }
-            for key in [pair.new, pair.old] + pair.extraOld {
+            for key in [pair.new] + pair.oldSpellings {
                 keys.add(key, canonical: pair.new)
             }
         }
@@ -349,11 +368,9 @@ enum LegacyWireAliases {
 
     // MARK: - Results (outbound)
 
-    /// Walks a JSON-shaped result and completes every key pair (never
-    /// overwriting a canonical key a handler set): `new` always, carrying
-    /// `panel:N` / `area:N` values; `old` beside it when `emitOld`, carrying
-    /// `tab:N`; input-only spellings (`extraOld`, and `old` when not emitted)
-    /// are removed.
+    /// Walks a JSON-shaped result and canonicalizes every key pair (never
+    /// overwriting a canonical key a handler set): `new` carries the value,
+    /// with `panel:N` / `area:N` refs; every old spelling is removed.
     nonisolated static func completeResult(_ value: Any) -> Any {
         if let dict = value as? [String: Any] {
             return completeDict(dict)
@@ -372,19 +389,12 @@ enum LegacyWireAliases {
         }
         for pair in legacyKeyPairs {
             var found: Any? = out[pair.new]
-            if found == nil { found = out[pair.old] }
-            for key in pair.extraOld {
+            for key in pair.oldSpellings {
                 if found == nil { found = out[key] }
                 out.removeValue(forKey: key)
             }
             guard let value = found else { continue }
             out[pair.new] = pair.isRef ? convertRef(value, using: canonicalHandle) : value
-            if pair.emitOld {
-                let old = out[pair.old] ?? value
-                out[pair.old] = pair.isRef ? convertRef(old, using: legacyHandle) : old
-            } else {
-                out.removeValue(forKey: pair.old)
-            }
         }
         return out
     }

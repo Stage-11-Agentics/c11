@@ -231,8 +231,8 @@ class Harness:
         return 1 + max((row['seq'] for row in self.events()), default=-1)
 
     def scoped_inputs(self, floor):
-        return [row for row in self.events(floor) if row.get('type') == 'tab.input_sent'
-                and row.get('workspace') == self.workspace and row.get('surface') == self.tab]
+        return [row for row in self.events(floor) if row.get('type') in ('panel.input_sent', 'tab.input_sent')
+                and row.get('workspace') == self.workspace and row.get('panel', row.get('surface')) == self.tab]
 
     def assert_one_event(self, floor, kind, text):
         self.wait(lambda: len(self.scoped_inputs(floor)) >= 1, 'input event persisted')

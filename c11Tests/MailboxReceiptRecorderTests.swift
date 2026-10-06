@@ -336,3 +336,50 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         XCTAssertEqual(sink.snapshot.map(\.id), [idB])
     }
 }
+
+// MARK: - C11-337: receipts carry panel_id beside tab_id
+
+extension MailboxReceiptRecorderTests {
+    func testNewReceiptWritesPanelIdAndTabId() throws {
+        let url = try XCTUnwrap(writeReceipt([idA]))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        XCTAssertEqual(object["panel_id"] as? String, tab.uuidString)
+        XCTAssertEqual(object["tab_id"] as? String, tab.uuidString, "tab_id is still written for one release")
+    }
+
+    func testReceiptWithOnlyLegacyTabIdIsRecordedWithItsPanel() throws {
+        try FileManager.default.createDirectory(at: spool(workspace), withIntermediateDirectories: true)
+        let json = #"{"version":1,"via":"drain","ts":"t","tab_id":"\#(tab.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
+        let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(json.utf8)))
+        XCTAssertEqual(decoded.receipt.tabId, tab)
+        XCTAssertTrue(decoded.dropped.isEmpty)
+
+        try Data(json.utf8).write(to: spool(workspace).appendingPathComponent("\(idB).receipt"))
+        let sink = Sink()
+        sweep(makeRecorder(sink))
+        XCTAssertEqual(sink.snapshot, [Emitted(workspace: workspace, id: idA, recipient: "w", surface: tab)])
+        XCTAssertEqual(names(spool(workspace)), [])
+    }
+
+    func testReceiptWithOnlyPanelIdIsRecordedWithItsPanel() throws {
+        try FileManager.default.createDirectory(at: spool(workspace), withIntermediateDirectories: true)
+        let json = #"{"version":1,"via":"drain","ts":"t","panel_id":"\#(tab.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"}]}"#
+        let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(json.utf8)))
+        XCTAssertEqual(decoded.receipt.tabId, tab)
+
+        try Data(json.utf8).write(to: spool(workspace).appendingPathComponent("\(idB).receipt"))
+        let sink = Sink()
+        sweep(makeRecorder(sink))
+        XCTAssertEqual(sink.snapshot, [Emitted(workspace: workspace, id: idA, recipient: "w", surface: tab)])
+    }
+
+    func testLeftoverReceiptAlreadyInAV2EventLogIsNotRecordedAgain() throws {
+        writeReceipt([idA, idB])
+        let line = #"{"instance":"old","panel":"\#(tab.uuidString)","payload":{"id":"\#(idA)","recipient":"watcher","via":"drain"},"seq":9,"ts":"2026-10-06T12:00:00Z","type":"mailbox.delivered","v":2,"workspace":"\#(workspace.uuidString)"}"#
+        try Data((line + "\n").utf8).write(to: eventsDir.appendingPathComponent("events-old.ndjson"))
+        let sink = Sink()
+        let recorder = makeRecorder(sink, startedAt: Date().addingTimeInterval(60))
+        sweep(recorder)
+        XCTAssertEqual(sink.snapshot.map(\.id), [idB])
+    }
+}

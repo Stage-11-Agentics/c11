@@ -48,9 +48,10 @@ enum MessagesPageLayout {
     }
 }
 
-/// One decoded line from the v1 event stream. The page deliberately keeps the
+/// One decoded line from the event stream (v1 or v2). The page deliberately keeps the
 /// payload as JSON values so a new mailbox field can be displayed before the
-/// page writer needs a schema migration of its own.
+/// page writer needs a schema migration of its own. `type` holds the canonical
+/// (v2) spelling and `surface` the subject panel from either envelope key.
 struct MessagesPageEvent {
     let instance: String?
     let sequence: UInt64?
@@ -81,9 +82,10 @@ struct MessagesPageEvent {
         self.instance = MessagesPageJSON.string(object["instance"])
         self.sequence = MessagesPageJSON.uint64(object["seq"])
         self.timestamp = timestamp
-        self.type = type
+        // C11-337: v1 lines (`tab.input_sent`, `surface`) are read as their v2 forms.
+        self.type = EventEnvelope.canonicalType(type)
         self.workspace = MessagesPageJSON.string(object["workspace"])
-        self.surface = MessagesPageJSON.string(object["surface"])
+        self.surface = EventEnvelope.panelRef(in: object)
         self.payload = object["payload"] as? [String: Any] ?? [:]
     }
 }
@@ -326,7 +328,7 @@ enum MessagesPageBuilder {
         }
 
         for (index, event) in events.enumerated() {
-            if event.type == "tab.input_sent" {
+            if event.type == EventEnvelope.EventType.tabInputSent.rawValue {
                 sends.append(makeSendRecord(event: event, fallbackIndex: index))
             } else if event.type.hasPrefix("mailbox.") {
                 merge(mailboxEvent: event, into: &mailbox)
@@ -383,7 +385,7 @@ enum MessagesPageBuilder {
 
     private static func makeSendRecord(event: MessagesPageEvent, fallbackIndex: Int) -> MessagesPageRecord {
         let payload = event.payload
-        let callerID = MessagesPageJSON.string(payload["caller_tab_id"])
+        let callerID = EventEnvelope.callerPanelId(inPayload: payload)
         let callerTitle = MessagesPageJSON.string(payload["caller_title"])
         let targetTitle = MessagesPageJSON.string(payload["target_title"])
         let submitted = MessagesPageJSON.bool(payload["submitted"])
@@ -609,7 +611,12 @@ fileprivate struct MessagesPageEventLogSignature: Equatable {
 }
 
 enum MessagesPageSource {
-    private static let sendEventMarker = Data(#""type":"tab.input_sent""#.utf8)
+    /// Raw-byte prefilters for the send event: the v2 spelling and the v1
+    /// spelling old logs keep (C11-337).
+    private static let sendEventMarkers = [
+        Data(#""type":"panel.input_sent""#.utf8),
+        Data(#""type":"tab.input_sent""#.utf8),
+    ]
     private static let mailboxEventMarker = Data(#""type":"mailbox."#.utf8)
 
     private struct DispatchHistory {
@@ -677,7 +684,7 @@ enum MessagesPageSource {
 
             var parsedEvents: [MessagesPageEvent] = []
             guard let data = try? Data(contentsOf: url),
-                  data.range(of: sendEventMarker) != nil || data.range(of: mailboxEventMarker) != nil else {
+                  containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil else {
                 eventLogCache.signatures[url] = signature
                 eventLogCache.eventsByURL[url] = []
                 continue
@@ -688,10 +695,11 @@ enum MessagesPageSource {
             // events. This keeps a qualifying 8 MiB log from turning into a
             // retained dictionary for every unrelated event.
             for line in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
-                guard line.range(of: sendEventMarker) != nil
+                guard containsSendMarker(line)
                         || line.range(of: mailboxEventMarker) != nil else { continue }
                 if let event = MessagesPageEvent(data: Data(line)) {
-                    guard event.type == "tab.input_sent" || event.type.hasPrefix("mailbox.") else {
+                    guard event.type == EventEnvelope.EventType.tabInputSent.rawValue
+                            || event.type.hasPrefix("mailbox.") else {
                         continue
                     }
                     parsedEvents.append(event)
@@ -702,6 +710,10 @@ enum MessagesPageSource {
             events.append(contentsOf: parsedEvents)
         }
         return events
+    }
+
+    private static func containsSendMarker(_ bytes: Data) -> Bool {
+        sendEventMarkers.contains { bytes.range(of: $0) != nil }
     }
 
     /// Reads every envelope tree below each workspace mailbox root, not just

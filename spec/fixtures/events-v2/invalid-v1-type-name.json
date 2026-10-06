@@ -1,0 +1,17 @@
+{
+  "seq": 19,
+  "ts": "2026-10-06T08:20:11.114Z",
+  "type": "tab.input_sent",
+  "instance": "com.stage11.c11-12345",
+  "v": 2,
+  "panel": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "payload": {
+    "caller_panel_id": null,
+    "caller_title": null,
+    "target_title": "builder",
+    "kind": "text",
+    "text": "x",
+    "bytes": 1,
+    "submitted": true
+  }
+}

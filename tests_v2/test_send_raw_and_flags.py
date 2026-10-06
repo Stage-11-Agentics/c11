@@ -361,13 +361,13 @@ def live(cli, socket_path, event_log):
                 assert actual == expected, (len(actual), len(expected), hashlib.sha256(actual).hexdigest(), hashlib.sha256(expected).hexdigest())
                 sent = wait_until(lambda: [event for event in events()
                                            if event["seq"] > last_seq
-                                           and event["type"] == "tab.input_sent"
-                                           and event.get("surface", "").lower() == tab.lower()],
+                                           and event["type"] in ("panel.input_sent", "tab.input_sent")
+                                           and event.get("panel", event.get("surface", "")).lower() == tab.lower()],
                                   "send event was not recorded")
                 assert len(sent) == 1, sent
                 record = sent[0]["payload"]
                 assert record["text"] == (body if event_text is None else event_text), record
-                assert record["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", record
+                assert record.get("caller_panel_id", record.get("caller_tab_id")) == "33333333-3333-4333-8333-333333333333", record
                 assert record["submitted"] is submitted and not record.get("queued", False), record
 
             collect(["send", "--raw", "--no-submit", r"literal\n"], None, r"literal\n", False)
@@ -432,13 +432,13 @@ def queued(cli, socket_path, event_log):
             assert "command not found" not in text.lower(), "queued no-submit dispatched Return"
             sent = [json.loads(line) for line in Path(event_log).read_text().splitlines()]
             sent = [event for event in sent if event["seq"] > last_seq
-                    and event["type"] == "tab.input_sent"
-                    and event.get("surface", "").lower() == tab.lower()]
+                    and event["type"] in ("panel.input_sent", "tab.input_sent")
+                    and event.get("panel", event.get("surface", "")).lower() == tab.lower()]
             assert len(sent) == 2, sent
             for event, expected in zip(sent, [body, suffix]):
                 record = event["payload"]
                 assert record["text"] == expected and record["queued"] and not record["submitted"], record
-                assert record["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", record
+                assert record.get("caller_panel_id", record.get("caller_tab_id")) == "33333333-3333-4333-8333-333333333333", record
             print("PASS C11-281 actual queued response/human status, one attributed event per send, attach flush")
         finally:
             client.close_workspace(workspace)
@@ -498,12 +498,12 @@ def queued_bytes(cli, socket_path, event_log):
                 actual = path.read_bytes()
                 assert actual == expected, (index, actual, expected)
                 sent = [json.loads(line) for line in Path(event_log).read_text().splitlines()]
-                sent = [event for event in sent if event["seq"] > last_seq and event["type"] == "tab.input_sent"
-                        and event.get("surface", "").lower() == tab.lower() and event["payload"]["text"] != command]
+                sent = [event for event in sent if event["seq"] > last_seq and event["type"] in ("panel.input_sent", "tab.input_sent")
+                        and event.get("panel", event.get("surface", "")).lower() == tab.lower() and event["payload"]["text"] != command]
                 assert len(sent) == 1, sent
                 record = sent[0]["payload"]
                 assert record["text"] == body and record["queued"] and record["submitted"] is submitted, record
-                assert record["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", record
+                assert record.get("caller_panel_id", record.get("caller_tab_id")) == "33333333-3333-4333-8333-333333333333", record
                 (root / "stop").touch()
                 print("PASS C11-281 queued byte/Return oracle", index, len(body.encode()), "submitted", submitted)
                 client.close_workspace(workspace)

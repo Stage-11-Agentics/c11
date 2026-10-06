@@ -336,6 +336,7 @@ final class MessagesPageWriter {
     }
 
     private static func isMessageEvent(_ type: String) -> Bool {
-        type == "tab.input_sent" || type.hasPrefix("mailbox.")
+        EventEnvelope.canonicalType(type) == EventEnvelope.EventType.tabInputSent.rawValue
+            || type.hasPrefix("mailbox.")
     }
 }

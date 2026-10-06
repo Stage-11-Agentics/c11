@@ -19,7 +19,7 @@ import Foundation
 /// non-atomic multi-writer append corruption. Per-instance files sidestep that
 /// and let `seq` reset cleanly per boot.
 ///
-/// See `spec/event-envelope.v1.schema.json` for the line format and
+/// See `spec/event-envelope.v2.schema.json` (v1 lines: `.v1.schema.json`) for the line format and
 /// `skills/c11/references/events.md` for the consumer contract.
 enum EventLogLayout {
 

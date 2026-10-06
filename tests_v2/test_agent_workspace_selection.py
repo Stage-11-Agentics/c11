@@ -163,7 +163,7 @@ def main():
             if row.get("type") == "workspace.switch_blocked" and row.get("payload", {}).get("target", "").lower() == c.lower():
                 records.append(row)
     assert records, "Missing workspace.switch_blocked events"
-    assert all(row["payload"]["caller_tab_id"].lower() == b_tab.lower() for row in records), records
+    assert all(row["payload"].get("caller_panel_id", row["payload"].get("caller_tab_id", "")).lower() == b_tab.lower() for row in records), records
     assert any(row["payload"]["method"] == "select_workspace" for row in records)
     print("PASS: workspace selection remains A; raw and CLI callers attributed to B")
 

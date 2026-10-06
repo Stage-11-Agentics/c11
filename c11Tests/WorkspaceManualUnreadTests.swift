@@ -148,6 +148,14 @@ final class CommandPaletteFuzzyMatcherTests: XCTestCase {
         XCTAssertGreaterThan(renameTabScore ?? 0, reopenTabScore ?? 0)
     }
 
+    func testRepanPrefersRenamePanelOverReopenBrowserPanel() {
+        let renamePanelScore = CommandPaletteFuzzyMatcher.score(query: "repan", candidate: "Rename Panel…")
+        let reopenPanelScore = CommandPaletteFuzzyMatcher.score(query: "repan", candidate: "Reopen Closed Browser Panel")
+
+        XCTAssertNotNil(renamePanelScore)
+        XCTAssertGreaterThan(renamePanelScore ?? 0, reopenPanelScore ?? 0)
+    }
+
     func testRenameScoresHigherThanUnrelatedCommand() {
         let renameScore = CommandPaletteFuzzyMatcher.score(
             query: "rename",

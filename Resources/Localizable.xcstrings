@@ -455,12 +455,12 @@
       "extractionState": "manual",
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background panels remain fully drivable." } },
-        "ja": { "stringUnit": { "state": "needs_review", "value": "エージェントはオペレーターのワークスペースを切り替えられません。切り替えが必要な場合はフラグを立ててください。バックグラウンドのタブもすべて操作できます。" } },
-        "uk": { "stringUnit": { "state": "needs_review", "value": "Агенти не можуть змінювати робочий простір оператора. Якщо оператору потрібно перейти до іншого простору, підніміть прапорець; фоновими вкладками можна повноцінно керувати." } },
-        "ko": { "stringUnit": { "state": "needs_review", "value": "에이전트는 운영자의 작업 공간을 변경할 수 없습니다. 운영자가 전환해야 한다면 플래그를 설정해 알리세요. 백그라운드 탭은 모두 조작할 수 있습니다." } },
-        "zh-Hans": { "stringUnit": { "state": "needs_review", "value": "智能体无法更改操作员的工作区。如需操作员切换，请发出标记提醒；后台标签页仍可完整操作。" } },
-        "zh-Hant": { "stringUnit": { "state": "needs_review", "value": "代理程式無法更改操作員的工作區。如需操作員切換，請發出標記提醒；背景分頁仍可完整操作。" } },
-        "ru": { "stringUnit": { "state": "needs_review", "value": "Агенты не могут менять рабочее пространство оператора. Если оператору нужно переключиться, поднимите флаг; вкладками в фоне можно полноценно управлять." } }
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントはオペレーターのワークスペースを切り替えられません。切り替えが必要な場合はフラグを立ててください。バックグラウンドのパネルもすべて操作できます。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Агенти не можуть змінювати робочий простір оператора. Якщо оператору потрібно перейти до іншого простору, підніміть прапорець; фоновими панелями можна повноцінно керувати." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트는 운영자의 작업 공간을 변경할 수 없습니다. 운영자가 전환해야 한다면 플래그를 설정해 알리세요. 백그라운드 패널은 모두 조작할 수 있습니다." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体无法更改操作员的工作区。如需操作员切换，请发出标记提醒；后台面板仍可完整操作。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "代理程式無法更改操作員的工作區。如需操作員切換，請發出標記提醒；背景面板仍可完整操作。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Агенты не могут менять рабочее пространство оператора. Если оператору нужно переключиться, поднимите флаг; панелями в фоне можно полноценно управлять." } }
       }
     },
     "socket.send.guard_refused": {

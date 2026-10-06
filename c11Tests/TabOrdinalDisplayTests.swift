@@ -15,12 +15,12 @@ final class TabOrdinalDisplayTests: XCTestCase {
 
     // MARK: - Settings resolver
 
-    func testShowsSurfaceIdsDefaultsToFalseWhenUnset() {
+    func testShowsSurfaceIdsDefaultsToTrueWhenUnset() {
         let suite = "TabOrdinalDisplayTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertFalse(TabOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
+        XCTAssertTrue(TabOrdinalDisplaySettings.showsSurfaceIds(defaults: defaults))
     }
 
     func testShowsSurfaceIdsRespectsExplicitValues() {

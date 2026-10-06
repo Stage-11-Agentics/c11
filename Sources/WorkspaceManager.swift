@@ -121,7 +121,7 @@ enum SidebarBranchLayoutSettings {
 /// "N: " title prefix so a voice operator can address any tab by its number.
 enum TabOrdinalDisplaySettings {
     static let showSurfaceIdsInTabTitlesKey = "showSurfaceIdsInTabTitles"
-    static let defaultShowSurfaceIds = false
+    static let defaultShowSurfaceIds = true
 
     static func showsSurfaceIds(defaults: UserDefaults = .standard) -> Bool {
         if defaults.object(forKey: showSurfaceIdsInTabTitlesKey) == nil {

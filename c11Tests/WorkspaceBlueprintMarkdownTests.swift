@@ -101,8 +101,79 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 return XCTFail("expected duplicateSurfaceID, got \(error)")
             }
             XCTAssertEqual(id, "agent")
-            XCTAssertTrue(String(describing: error).contains("blueprint_duplicate_surface_id"))
+            XCTAssertTrue(String(describing: error).contains("blueprint_duplicate_panel_id"))
         }
+    }
+
+    // MARK: - C11-337 `panels:` list key (legacy `tabs:` accepted forever)
+
+    private func multiPanelSource(listKey: String) -> String {
+        """
+        ---
+        title: Multi Panel
+        ---
+
+        ## Layout
+
+        ```yaml
+        layout:
+          - direction: horizontal
+            split: 50/50
+            children:
+              - type: terminal
+                id: main
+              - \(listKey):
+                  - id: docs
+                    type: browser
+                    url: https://example.invalid/
+                  - id: notes
+                    type: markdown
+                    file: /tmp/fixture-notes.md
+                selected: 1
+        ```
+        """
+    }
+
+    func testLegacyTabsAndPanelsListKeysParseToTheSamePlan() throws {
+        let legacy = try WorkspaceBlueprintMarkdown.parse(Data(multiPanelSource(listKey: "tabs").utf8))
+        let current = try WorkspaceBlueprintMarkdown.parse(Data(multiPanelSource(listKey: "panels").utf8))
+        XCTAssertEqual(legacy, current)
+        XCTAssertEqual(current.plan.surfaces.map(\.id), ["main", "docs", "notes"])
+        guard case .split(let split) = current.plan.layout,
+              case .pane(let area) = split.second else {
+            return XCTFail("expected a split whose second side is a multi-panel area")
+        }
+        XCTAssertEqual(area.surfaceIds, ["docs", "notes"])
+        XCTAssertEqual(area.selectedIndex, 1)
+    }
+
+    func testSerializerWritesPanelsListKey() throws {
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(multiPanelSource(listKey: "tabs").utf8))
+        let emitted = String(
+            data: try WorkspaceBlueprintMarkdown.serialize(parsed),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(emitted.contains("- panels:"), emitted)
+        XCTAssertFalse(emitted.contains("tabs:"), emitted)
+        XCTAssertEqual(try WorkspaceBlueprintMarkdown.parse(Data(emitted.utf8)), parsed)
+    }
+
+    func testPanelsListKeyWinsWhenBothSpellingsArePresent() throws {
+        let source = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - panels:
+              - id: kept
+                type: terminal
+            tabs:
+              - id: ignored
+                type: terminal
+        ```
+        """
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))
+        XCTAssertEqual(parsed.plan.surfaces.map(\.id), ["kept"])
     }
 
     func testParseRejectsInvalidAgentKindWithStableCode() throws {

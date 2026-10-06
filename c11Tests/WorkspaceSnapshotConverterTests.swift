@@ -115,6 +115,139 @@ final class WorkspaceSnapshotConverterTests: XCTestCase {
         XCTAssertTrue(json.contains("\"auto-restart\""), "origin enum serializes with hyphen form")
     }
 
+    // MARK: - C11-337 panel keys (legacy spellings accepted forever)
+
+    private func envelopeJSON(countKey: String?, planListKey: String, areaIdsKey: String) -> String {
+        let countLine = countKey.map { "\"\($0)\": 2," } ?? ""
+        return """
+        {
+          "version": 1,
+          "snapshot_id": "01KQ0PANELKEYS000000000000",
+          "created_at": "2026-04-24T18:00:00Z",
+          "c11_version": "0.01.0+1",
+          "origin": "manual",
+          \(countLine)
+          "plan": {
+            "version": 1,
+            "workspace": {"title": "panel keys"},
+            "layout": {"type": "pane", "pane": {"\(areaIdsKey)": ["a", "b"]}},
+            "\(planListKey)": [
+              {"id": "a", "kind": "terminal"},
+              {"id": "b", "kind": "terminal"}
+            ]
+          }
+        }
+        """
+    }
+
+    private func decodeEnvelope(_ json: String) throws -> WorkspaceSnapshotFile {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(WorkspaceSnapshotFile.self, from: Data(json.utf8))
+    }
+
+    func testEnvelopeDecodesLegacySurfaceCountAndPanelCountToTheSameValue() throws {
+        let legacy = try decodeEnvelope(envelopeJSON(
+            countKey: "surface_count", planListKey: "surfaces", areaIdsKey: "surfaceIds"
+        ))
+        let current = try decodeEnvelope(envelopeJSON(
+            countKey: "panel_count", planListKey: "panels", areaIdsKey: "panelIds"
+        ))
+        XCTAssertEqual(legacy, current)
+        XCTAssertEqual(current.surfaceCount, 2)
+        XCTAssertEqual(current.plan.surfaces.map(\.id), ["a", "b"])
+
+        let absent = try decodeEnvelope(envelopeJSON(
+            countKey: nil, planListKey: "panels", areaIdsKey: "panelIds"
+        ))
+        XCTAssertNil(absent.surfaceCount)
+    }
+
+    func testEnvelopePrefersPanelCountWhenBothSpellingsArePresent() throws {
+        let json = envelopeJSON(countKey: "panel_count", planListKey: "panels", areaIdsKey: "panelIds")
+            .replacingOccurrences(of: "\"panel_count\": 2,", with: "\"panel_count\": 2, \"surface_count\": 9,")
+        XCTAssertEqual(try decodeEnvelope(json).surfaceCount, 2)
+    }
+
+    func testEnvelopeEncodesPanelCountAndPanelKeysOnly() throws {
+        var value = try decodeEnvelope(envelopeJSON(
+            countKey: "surface_count", planListKey: "surfaces", areaIdsKey: "surfaceIds"
+        ))
+        value.surfaceCount = 2
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let json = String(data: try encoder.encode(value), encoding: .utf8) ?? ""
+        XCTAssertTrue(json.contains("\"panel_count\":2"), json)
+        XCTAssertTrue(json.contains("\"panels\":"), json)
+        XCTAssertTrue(json.contains("\"panelIds\":"), json)
+        XCTAssertFalse(json.contains("\"surface_count\""), json)
+        XCTAssertFalse(json.contains("\"surfaces\""), json)
+        XCTAssertFalse(json.contains("\"surfaceIds\""), json)
+    }
+
+    func testSnapshotIndexDecodesBothCountSpellingsAndWritesWireSpelling() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        func index(countKey: String) -> Data {
+            Data("""
+            {
+              "snapshot_id": "01KQ0INDEXCOUNT00000000000",
+              "path": "/tmp/fixture.json",
+              "created_at": "2026-04-24T18:00:00Z",
+              "\(countKey)": 3,
+              "origin": "manual",
+              "source": "current",
+              "readability": {"status": "ok"}
+            }
+            """.utf8)
+        }
+        let legacy = try decoder.decode(WorkspaceSnapshotIndex.self, from: index(countKey: "surface_count"))
+        let current = try decoder.decode(WorkspaceSnapshotIndex.self, from: index(countKey: "panel_count"))
+        XCTAssertEqual(legacy, current)
+        XCTAssertEqual(current.surfaceCount, 3)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try encoder.encode(current)) as? [String: Any]
+        )
+        // Socket response: the wire alias layer owns the output spelling.
+        XCTAssertEqual(object["surface_count"] as? Int, 3)
+        XCTAssertNil(object["panel_count"])
+    }
+
+    func testStoreListReadsPanelCountAndPanelsFallback() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-snapshot-panel-keys-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("legacy"),
+            fileManager: .default
+        )
+
+        let explicitID = "01KQ0PANELCOUNTEXPLICIT000"
+        let explicit = envelopeJSON(countKey: "panel_count", planListKey: "panels", areaIdsKey: "panelIds")
+            .replacingOccurrences(of: "01KQ0PANELKEYS000000000000", with: explicitID)
+            .replacingOccurrences(of: "\"panel_count\": 2,", with: "\"panel_count\": 7,")
+        try Data(explicit.utf8).write(to: tmp.appendingPathComponent("\(explicitID).json"))
+
+        let fallbackID = "01KQ0PANELCOUNTFALLBACK000"
+        let fallback = envelopeJSON(countKey: nil, planListKey: "panels", areaIdsKey: "panelIds")
+            .replacingOccurrences(of: "01KQ0PANELKEYS000000000000", with: fallbackID)
+        try Data(fallback.utf8).write(to: tmp.appendingPathComponent("\(fallbackID).json"))
+
+        let list = try store.list()
+        let explicitEntry = try XCTUnwrap(list.first { $0.snapshotId == explicitID })
+        XCTAssertEqual(explicitEntry.surfaceCount, 7)
+        XCTAssertEqual(explicitEntry.readability, .ok)
+        let fallbackEntry = try XCTUnwrap(list.first { $0.snapshotId == fallbackID })
+        XCTAssertEqual(fallbackEntry.surfaceCount, 2, "falls back to plan.panels.count")
+        XCTAssertEqual(fallbackEntry.workspaceTitle, "panel keys")
+    }
+
     // MARK: - Fixture matrix
 
     func testMinimalSingleTerminalFixtureConverts() throws {

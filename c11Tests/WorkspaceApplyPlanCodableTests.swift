@@ -352,6 +352,108 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertTrue(decoded.companionDiagnostics.isEmpty)
     }
 
+    // MARK: - C11-337 panel keys (legacy spellings accepted forever)
+
+    private let legacyKeyPlanJSON = #"""
+    {
+      "version": 1,
+      "workspace": {"title": "Fixture"},
+      "layout": {
+        "type": "split",
+        "split": {
+          "orientation": "horizontal",
+          "dividerPosition": 0.5,
+          "first": {"type": "pane", "pane": {"surfaceIds": ["agent"]}},
+          "second": {"type": "pane", "pane": {"surfaceIds": ["docs", "notes"], "selectedIndex": 1}}
+        }
+      },
+      "surfaces": [
+        {"id": "agent", "kind": "terminal", "declaredAgentKind": "codex"},
+        {"id": "docs", "kind": "browser", "url": "https://example.invalid/", "linkedAgentSurfacePlanId": "agent"},
+        {"id": "notes", "kind": "markdown", "filePath": "/tmp/fixture-notes.md"}
+      ]
+    }
+    """#
+
+    private let panelKeyPlanJSON = #"""
+    {
+      "version": 1,
+      "workspace": {"title": "Fixture"},
+      "layout": {
+        "type": "split",
+        "split": {
+          "orientation": "horizontal",
+          "dividerPosition": 0.5,
+          "first": {"type": "pane", "pane": {"panelIds": ["agent"]}},
+          "second": {"type": "pane", "pane": {"panelIds": ["docs", "notes"], "selectedIndex": 1}}
+        }
+      },
+      "panels": [
+        {"id": "agent", "kind": "terminal", "declaredAgentKind": "codex"},
+        {"id": "docs", "kind": "browser", "url": "https://example.invalid/", "linkedAgentPanelPlanId": "agent"},
+        {"id": "notes", "kind": "markdown", "filePath": "/tmp/fixture-notes.md"}
+      ]
+    }
+    """#
+
+    func testPlanDecodesLegacyAndPanelKeysToTheSamePlan() throws {
+        let legacy = try decode(WorkspaceApplyPlan.self, from: Data(legacyKeyPlanJSON.utf8))
+        let current = try decode(WorkspaceApplyPlan.self, from: Data(panelKeyPlanJSON.utf8))
+        XCTAssertEqual(legacy, current)
+        XCTAssertEqual(current.surfaces.map(\.id), ["agent", "docs", "notes"])
+        XCTAssertEqual(current.surfaces[1].linkedAgentSurfacePlanId, "agent")
+        guard case .split(let split) = current.layout,
+              case .pane(let second) = split.second else {
+            return XCTFail("expected split layout with a pane on the second side")
+        }
+        XCTAssertEqual(second.surfaceIds, ["docs", "notes"])
+        XCTAssertEqual(second.selectedIndex, 1)
+    }
+
+    func testPlanEncodesOnlyPanelKeys() throws {
+        let plan = try decode(WorkspaceApplyPlan.self, from: Data(legacyKeyPlanJSON.utf8))
+        let json = try XCTUnwrap(String(data: try encode(plan), encoding: .utf8))
+        for key in ["\"panels\"", "\"panelIds\"", "\"linkedAgentPanelPlanId\""] {
+            XCTAssertTrue(json.contains(key), "expected \(key) in \(json)")
+        }
+        for key in ["\"surfaces\"", "\"surfaceIds\"", "\"linkedAgentSurfacePlanId\""] {
+            XCTAssertFalse(json.contains(key), "unexpected legacy \(key) in \(json)")
+        }
+        XCTAssertEqual(try decode(WorkspaceApplyPlan.self, from: Data(json.utf8)), plan)
+    }
+
+    func testPlanPrefersPanelKeysWhenBothSpellingsArePresent() throws {
+        let json = #"""
+        {
+          "version": 1,
+          "workspace": {},
+          "layout": {"type": "pane", "pane": {"panelIds": ["new"], "surfaceIds": ["old"]}},
+          "panels": [{"id": "new", "kind": "browser", "linkedAgentPanelPlanId": "newAgent", "linkedAgentSurfacePlanId": "oldAgent"}],
+          "surfaces": [{"id": "old", "kind": "terminal"}]
+        }
+        """#
+        let plan = try decode(WorkspaceApplyPlan.self, from: Data(json.utf8))
+        XCTAssertEqual(plan.surfaces.map(\.id), ["new"])
+        XCTAssertEqual(plan.surfaces.first?.linkedAgentSurfacePlanId, "newAgent")
+        XCTAssertEqual(plan.layout, .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["new"])))
+    }
+
+    func testCompanionDiagnosticCodeWritesPanelSpellingAndReadsLegacy() throws {
+        let encoded = try XCTUnwrap(String(
+            data: try encode([CompanionPlanDiagnosticCode.duplicateSurfaceID]),
+            encoding: .utf8
+        ))
+        XCTAssertEqual(encoded, #"["blueprint_duplicate_panel_id"]"#)
+        let legacy = Data(#"["blueprint_duplicate_surface_id","blueprint_duplicate_panel_id"]"#.utf8)
+        XCTAssertEqual(
+            try decode([CompanionPlanDiagnosticCode].self, from: legacy),
+            [.duplicateSurfaceID, .duplicateSurfaceID]
+        )
+        XCTAssertThrowsError(
+            try decode([CompanionPlanDiagnosticCode].self, from: Data(#"["not_a_code"]"#.utf8))
+        )
+    }
+
     // MARK: - Validation (review cycle 1 R6: I4a/I4b/I4d)
 
     /// Helper: build a plan with the minimum valid layout (one terminal).

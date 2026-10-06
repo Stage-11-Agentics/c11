@@ -468,8 +468,9 @@ struct WorkspaceSnapshotStore: Sendable {
     ///
     /// Uses a `JSONSerialization`-based shallow decode that reads envelope
     /// keys (`snapshot_id`, `created_at`, `c11_version`, `origin`,
-    /// `surface_count`) and probes `plan.workspace.title` +
-    /// `plan.surfaces.count` without materialising the full
+    /// `panel_count` or legacy `surface_count`) and probes
+    /// `plan.workspace.title` + `plan.panels.count` (or legacy
+    /// `plan.surfaces.count`) without materialising the full
     /// `WorkspaceApplyPlan`. `snapshot.list` gets slower as snapshots
     /// accumulate; a header-only summary keeps enumeration proportional to
     /// envelope size, not embedded plan size.
@@ -548,8 +549,9 @@ struct WorkspaceSnapshotStore: Sendable {
     }
 
     /// Parse just the envelope-level fields + shallow workspace/surfaces
-    /// probes. Falls back to `plan.surfaces.count` when the envelope's
-    /// `surface_count` is missing (legacy files written before P1 landed).
+    /// probes. Falls back to the plan's `panels` (or legacy `surfaces`)
+    /// count when the envelope's `panel_count` / `surface_count` is missing
+    /// (legacy files written before P1 landed).
     /// Throws `StoreError.decodeFailed` on parse failure; the caller in
     /// `enumerate` drops throwing rows into the silent-skip bucket (I8
     /// will re-emit them as `unreadable` entries).
@@ -598,8 +600,13 @@ struct WorkspaceSnapshotStore: Sendable {
         // navigation. Never instantiates the full Codable tree.
         let plan = dict["plan"] as? [String: Any]
         let workspaceTitle = (plan?["workspace"] as? [String: Any])?["title"] as? String
-        let fallbackSurfaceCount = (plan?["surfaces"] as? [Any])?.count ?? 0
-        let surfaceCount = (dict["surface_count"] as? Int) ?? fallbackSurfaceCount
+        // C11-337: `panels` / `panel_count` are canonical; the legacy
+        // `surfaces` / `surface_count` spellings are accepted forever.
+        let planPanels = (plan?["panels"] as? [Any]) ?? (plan?["surfaces"] as? [Any])
+        let fallbackSurfaceCount = planPanels?.count ?? 0
+        let surfaceCount = (dict["panel_count"] as? Int)
+            ?? (dict["surface_count"] as? Int)
+            ?? fallbackSurfaceCount
         return SnapshotSummary(
             snapshotId: rawId,
             createdAt: createdAt,

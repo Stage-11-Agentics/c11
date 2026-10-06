@@ -1,0 +1,455 @@
+# Pass r8b hand rows: curated renames the evidence generator cannot derive (class X). Appended to pass-r8b.tsv.
+# The three surface-named files c11 owns, and the v2 socket handlers they declare (Ghostty wrapper Surface names stay).
+@path	Sources/SurfaceLifecycle.swift	Sources/PanelLifecycle.swift	ev:X
+@path	Sources/Conversation/SurfaceActivity.swift	Sources/Conversation/PanelActivity.swift	ev:X
+@path	Sources/SocketHandlers/SurfaceHandlers.swift	Sources/SocketHandlers/PanelHandlers.swift	ev:X
+v2SurfaceReadText	v2PanelReadText	Sources/*,c11Tests/*		ev:X
+v2SurfaceTypeDenial	v2PanelTypeDenial	Sources/*,c11Tests/*		ev:X
+v2SurfaceSplit	v2PanelSplit	Sources/*,c11Tests/*		ev:X
+v2SurfaceMove	v2PanelMove	Sources/*,c11Tests/*		ev:X
+v2SurfaceTargetNotFound	v2PanelTargetNotFound	Sources/*,c11Tests/*		ev:X
+v2SurfaceList	v2PanelList	Sources/*,c11Tests/*		ev:X
+v2SurfaceCurrent	v2PanelCurrent	Sources/*,c11Tests/*		ev:X
+v2SurfaceSetCustomColor	v2PanelSetCustomColor	Sources/*,c11Tests/*		ev:X
+v2SurfaceFocus	v2PanelFocus	Sources/*,c11Tests/*		ev:X
+v2SurfaceCreate	v2PanelCreate	Sources/*,c11Tests/*		ev:X
+v2SurfaceClose	v2PanelClose	Sources/*,c11Tests/*		ev:X
+v2SurfaceReorder	v2PanelReorder	Sources/*,c11Tests/*		ev:X
+v2SurfaceDragToSplit	v2PanelDragToSplit	Sources/*,c11Tests/*		ev:X
+v2SurfaceRefresh	v2PanelRefresh	Sources/*,c11Tests/*		ev:X
+v2SurfaceHealth	v2PanelHealth	Sources/*,c11Tests/*		ev:X
+v2SurfaceTriggerFlash	v2PanelTriggerFlash	Sources/*,c11Tests/*		ev:X
+v2SurfaceCancelFlash	v2PanelCancelFlash	Sources/*,c11Tests/*		ev:X
+v2SurfaceSetMetadata	v2PanelSetMetadata	Sources/*,c11Tests/*		ev:X
+v2SurfaceGetMetadata	v2PanelGetMetadata	Sources/*,c11Tests/*		ev:X
+v2SurfaceClearMetadata	v2PanelClearMetadata	Sources/*,c11Tests/*		ev:X
+v2SurfaceGetTitleBarState	v2PanelGetTitleBarState	Sources/*,c11Tests/*		ev:X
+v2SurfaceSetTitleBarVisibility	v2PanelSetTitleBarVisibility	Sources/*,c11Tests/*		ev:X
+v2SurfaceSetTitleBarCollapsed	v2PanelSetTitleBarCollapsed	Sources/*,c11Tests/*		ev:X
+v2SurfaceSendText	v2PanelSendText	Sources/*,c11Tests/*		ev:X
+v2SurfaceSendKey	v2PanelSendKey	Sources/*,c11Tests/*		ev:X
+v2SurfaceClearHistory	v2PanelClearHistory	Sources/*,c11Tests/*		ev:X
+v2SurfaceInputState	v2PanelInputState	Sources/*,c11Tests/*		ev:X
+v2SurfaceReadSelection	v2PanelReadSelection	Sources/*,c11Tests/*		ev:X
+# In these tests `controller` is a TerminalController, not a Bonsplit controller: its renamed members follow
+@novendor	c11Tests/BrowserAwaitPolicyTests.swift	controller.
+@novendor	c11Tests/BrowserTabTests.swift	controller.
+@novendor	c11Tests/NotificationAndMenuBarTests.swift	controller.
+@novendor	c11Tests/TabOrdinalDisplayTests.swift	controller.
+@novendor	c11Tests/TerminalAndGhosttyTests.swift	controller.
+@novendor	c11Tests/WorkspaceManagerUnitTests.swift	controller.
+@novendor	c11Tests/SocketTabRefRejectionWiringTests.swift	controller.
+# ---- data
+# tabID: Panel/surface UUID in journal, feed, roster, attention; Codable JournalOwner and JournalDraft CodingKeys are explicit strings ("tabID", "tab_id") so keys stay pinned
+tabID	panelID	c11Tests/AgentModelDetectionTests.swift,c11Tests/AgentRosterTests.swift,c11Tests/AppDelegateShortcutRoutingTests.swift,c11Tests/AttentionOrderTests.swift,c11Tests/ClaudeHookMappingTests.swift,c11Tests/FeedProjectorTests.swift,c11Tests/FeedQuickViewTests.swift,c11Tests/JournalExportTests.swift,c11Tests/JournalQueryTests.swift,c11Tests/JournalReducerTests.swift,c11Tests/JournalStoreTests.swift,c11Tests/LifecycleFixtureCatalog.swift,c11Tests/NotificationAndMenuBarTests.swift,c11Tests/PromptInputGuardTests.swift,c11Tests/TabLivenessDeriverTests.swift,c11Tests/TerminalAndGhosttyTests.swift,CLI/c11.swift,CLI/FeedCommand.swift,CLI/JournalCommand.swift,Sources/AppDelegate.swift,Sources/AttentionModel.swift,Sources/Conversation/Store.swift,Sources/Feed/AskDisplayCache.swift,Sources/Feed/AttentionOrder.swift,Sources/Feed/FeedAnswer.swift,Sources/Feed/FeedProjectionBridge.swift,Sources/Feed/FeedProjector.swift,Sources/Feed/FeedQuickView.swift,Sources/Feed/FeedQuickViewSelection.swift,Sources/GhosttyTerminalView.swift,Sources/Journal/AgentRoster.swift,Sources/Journal/JournalCoordinator.swift,Sources/Journal/JournalEvent.swift,Sources/Journal/JournalExport.swift,Sources/Journal/JournalStore.swift,Sources/Journal/JournalTranscriptProducer.swift,Sources/PanelLivenessDeriver.swift,Sources/SocketHandlers/AgentRosterHandlers.swift,Sources/SocketHandlers/DebugHandlers.swift,Sources/SocketHandlers/FeedHandlers.swift,Sources/SocketHandlers/NotificationHandlers.swift,Sources/SocketHandlers/SurfaceHandlers.swift,Sources/TabSheetDetail.swift,Sources/TerminalNotificationStore.swift,Sources/TextBoxInput.swift,Sources/Update/UpdateTitlebarAccessory.swift,Sources/Workspace.swift		ev:X
+# tabIDs: Set/array of panel UUIDs (feed selection, in-flight answers, journal snapshots); panelIDs not present in these files
+tabIDs	panelIDs	Sources/Feed/FeedQuickViewSelection.swift,Sources/Journal/JournalCoordinator.swift,Sources/Feed/FeedAnswer.swift,c11Tests/FeedQuickViewSelectionTests.swift,Sources/Feed/FeedQuickView.swift		ev:X
+# visibleTabIDs: Visible feed rows keyed by panel id
+visibleTabIDs	visiblePanelIDs	Sources/Feed/FeedQuickViewSelection.swift		ev:X
+# tabTTYName: TTY name of a panel (Workspace.panelTTYNames); argument label only
+tabTTYName	panelTTYName	Sources/Mailbox/MailboxStdinBuffer.swift,c11Tests/MailboxStdinBufferTests.swift,Sources/Workspace.swift		ev:X
+# tabC: Test local panel UUID (sibling of tabA/tabB), passed to LivePanel(tabID:)
+tabC	panelC	c11Tests/AgentRosterTests.swift		ev:X
+# callerTabID: FeedRow.Flag field: panel that raised the flag; not Codable (Equatable struct), wire keys are explicit strings; EventEnvelope.callerPanelId is a different token
+callerTabID	callerPanelID	Sources/Feed/FeedProjector.swift,c11Tests/AttentionOrderTests.swift,c11Tests/FeedQuickViewTests.swift,c11Tests/FeedProjectorTests.swift		ev:X
+# tabInputSent: EventType case with explicit raw "panel.input_sent"; raw value unchanged
+tabInputSent	panelInputSent	Sources/Messages/MessagesPage.swift,Sources/Events/EventEnvelope.swift,Sources/Messages/MessagesPageWriter.swift,Sources/Events/EventEmitter.swift,c11Tests/EventLogTests.swift		ev:X
+# tabTerminalDevice: Terminal device of the panel, argument label and local in mailbox foreground check
+tabTerminalDevice	panelTerminalDevice	Sources/Mailbox/MailboxStdinBuffer.swift,c11Tests/MailboxStdinBufferTests.swift		ev:X
+# tabDevice: Local tty dev_t of a panel (panelTTYNames loop in socketCallerTabId; mailbox foreground check)
+tabDevice	panelDevice	Sources/Mailbox/MailboxStdinBuffer.swift,Sources/TerminalController.swift		ev:X
+# rawTab: Raw JSON value of the panel_id/tab_id key in drain decode; CLI/c11.swift rawTab is the raw value of the legacy --tab flag, which may be a workspace, so it is excluded
+rawTab	rawPanel	Sources/Mailbox/MailboxDrain.swift		ev:X
+# expectedTab: Argument label of SendInputGuard.targetIsCurrent; callers pass resolved.terminalPanel
+expectedTab	expectedPanel	Sources/Feed/SendInputGuard.swift,Sources/SocketHandlers/SurfaceHandlers.swift,c11Tests/PromptInputGuardTests.swift		ev:X
+# tabInputPayload: Static builder for the panel input_sent event payload
+tabInputPayload	panelInputPayload	Sources/Events/EventEmitter.swift,c11Tests/EventLogTests.swift		ev:X
+# removeTab: FeedProjectionBridge.removeTab(workspaceID:tabID:), c11-owned; not the Bonsplit removeTab (bonsplit files excluded)
+removeTab	removePanel	Sources/AttentionModel.swift,Sources/Feed/FeedProjectionBridge.swift,c11Tests/NotificationAndMenuBarTests.swift,c11Tests/AttentionOrderTests.swift		ev:X
+# validTabIDs: pruneWorkspace label, set of live panel ids
+validTabIDs	validPanelIDs	Sources/AttentionModel.swift,Sources/Feed/FeedProjectionBridge.swift		ev:X
+# tabsReady: Private flag set when startup session restore has registered panels; startupTabsReady is a separate token
+tabsReady	panelsReady	Sources/Journal/JournalCoordinator.swift		ev:X
+# suppressedTab: Test local panel UUID passed as surfaceId
+suppressedTab	suppressedPanel	c11Tests/NotificationAndMenuBarTests.swift		ev:X
+# retireTab: Private helper dropping a panel from feed journal state
+retireTab	retirePanel	Sources/Feed/FeedProjectionBridge.swift		ev:X
+# flaggedTab: Test local panel UUID passed as surfaceId
+flaggedTab	flaggedPanel	c11Tests/NotificationAndMenuBarTests.swift		ev:X
+# toolTab: Test local: step.tab (panel) of the tool step
+toolTab	toolPanel	c11Tests/LifecycleFixtureCatalog.swift		ev:X
+# tabJSON: Private static builder of one LivePanel row JSON; wire keys are strings
+tabJSON	panelJSON	Sources/Journal/AgentRoster.swift		ev:X
+# tabInboxURL: Inbox directory of one panel (uuid-keyed); function name only
+tabInboxURL	panelInboxURL	Sources/Mailbox/MailboxDrain.swift,c11Tests/MailboxDrainTests.swift		ev:X
+# sessionEndedOnLiveTab: Replay oracle helper comparing step.tab (panel); not a test function
+sessionEndedOnLiveTab	sessionEndedOnLivePanel	c11Tests/LifecycleFixtureCatalog.swift		ev:X
+# sameTab: Test local: rows with the same panel id in different workspaces
+sameTab	samePanel	c11Tests/AttentionOrderTests.swift		ev:X
+# notificationTabs: Test local array of panel UUIDs used as notification surfaceId
+notificationTabs	notificationPanels	c11Tests/NotificationAndMenuBarTests.swift		ev:X
+# notesByTab: AskDisplayCache notes grouped by panel id
+notesByTab	notesByPanel	Sources/Feed/FeedProjectionBridge.swift,Sources/Feed/AskDisplayCache.swift		ev:X
+# ---- socketcli
+# becameTab: flag: new pane collapsed into a panel of an existing area; wire value already 'panel'
+becameTab	becamePanel	Sources/SocketHandlers/PaneHandlers.swift,Sources/TerminalController.swift,Sources/SocketHandlers/SurfaceHandlers.swift		ev:X
+# v2TabRef: returns surface/panel ref handle; wire keys are strings
+v2TabRef	v2PanelRef	Sources/TerminalController.swift,Sources/SocketHandlers/MiscHandlers.swift,Sources/SocketHandlers/SystemHandlers.swift		ev:X
+# emitTabInputSent: event emitter for input sent to a panel; func name only
+emitTabInputSent	emitPanelInputSent	Sources/Events/EventEmitter.swift,Sources/TerminalController.swift,Sources/SocketHandlers/SurfaceHandlers.swift,c11Tests/EventLogTests.swift		ev:X
+# browserTab: BrowserPanel-typed member/closure param; no existing browserPanel member in V2BrowserOffMainTarget
+browserTab	browserPanel	Sources/SocketHandlers/BrowserHandlers.swift,Sources/SocketHandlers/BrowserQueryHandlers.swift,Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# tabIndex: enumerate index of a panel within an area; locals; JS tabindex in BrowserHandlers is a string and out of glob
+tabIndex	panelIndex	Sources/TerminalController.swift,CLI/c11.swift		ev:X
+# targetPaneForTab: local: area the new panel lands in
+targetPaneForTab	targetPaneForPanel	Sources/SocketHandlers/PaneHandlers.swift		ev:X
+# browserTabs: local payload array of browser panels; plain browserPanels already exists in same func
+browserTabs	browserPanelPayloads	Sources/SocketHandlers/BrowserQueryHandlers.swift	browserPanelPayloads	ev:X
+# v2TabAction: handler for panel.action
+v2TabAction	v2PanelAction	Sources/SocketHandlers/MiscHandlers.swift		ev:X
+# v2DebugTabStripScroll: debug seam for panel strip scroll (private func)
+v2DebugTabStripScroll	v2DebugPanelStripScroll	Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# v2DebugTabSheetOpen: debug seam for panel sheet (private func)
+v2DebugTabSheetOpen	v2DebugPanelSheetOpen	Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# v2DebugTabSheetHover: debug seam for panel sheet hover (private func)
+v2DebugTabSheetHover	v2DebugPanelSheetHover	Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# v2DebugTabSheetDetail: debug seam for panel sheet detail (private func)
+v2DebugTabSheetDetail	v2DebugPanelSheetDetail	Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# v2DebugTabRailOpen: debug seam for panel rail (private func)
+v2DebugTabRailOpen	v2DebugPanelRailOpen	Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# v2DebugOpenCommandPaletteRenameTabInput: debug seam: palette 'Rename Panel'; Notification.Name usage is a different token
+v2DebugOpenCommandPaletteRenameTabInput	v2DebugOpenCommandPaletteRenamePanelInput	Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# v2BrowserTabSwitch: handler for browser.panel.switch
+v2BrowserTabSwitch	v2BrowserPanelSwitch	Sources/SocketHandlers/BrowserHandlers.swift,Sources/SocketHandlers/BrowserQueryHandlers.swift		ev:X
+# v2BrowserTabNew: handler for browser.panel.new
+v2BrowserTabNew	v2BrowserPanelNew	Sources/SocketHandlers/BrowserHandlers.swift,Sources/SocketHandlers/BrowserQueryHandlers.swift		ev:X
+# v2BrowserTabList: handler for browser.panel.list
+v2BrowserTabList	v2BrowserPanelList	Sources/SocketHandlers/BrowserHandlers.swift,Sources/SocketHandlers/BrowserQueryHandlers.swift		ev:X
+# v2BrowserTabClose: handler for browser.panel.close
+v2BrowserTabClose	v2BrowserPanelClose	Sources/SocketHandlers/BrowserHandlers.swift,Sources/SocketHandlers/BrowserQueryHandlers.swift		ev:X
+# socketCallerTabId: returns the calling panel id from tty
+socketCallerTabId	socketCallerPanelId	Sources/TerminalController.swift,Sources/WorkspaceManager.swift		ev:X
+# seedDragPasteboardTabTransfer: func name only; wire command seed_drag_pasteboard_tabtransfer and pasteboard type string unchanged
+seedDragPasteboardTabTransfer	seedDragPasteboardPanelTransfer	Sources/TerminalController.swift,Sources/SocketHandlers/SocketDispatch.swift		ev:X
+# callerTabEnv: reads C11_PANEL_ID (panel env) with hidden alias keys; static func name only
+callerTabEnv	callerPanelEnv	CLI/c11.swift		ev:X
+# tabRaw: locals holding a panel id string; no panelRaw in these files; CLI/c11.swift tabRaw intentionally excluded from globs (kept per brief)
+tabRaw	panelRaw	CLI/FeedCommand.swift,Sources/SocketHandlers/FeedHandlers.swift,Sources/SocketHandlers/SocketDispatch.swift		ev:X
+# tabFlag: local for --panel flag value in feed command
+tabFlag	panelFlag	CLI/FeedCommand.swift		ev:X
+# tabVerb: browser 'panel' subcommand verb local
+tabVerb	panelVerb	CLI/c11.swift		ev:X
+# tabArgs: browser 'panel' subcommand args local; no collision
+tabArgs	panelArgs	CLI/c11.swift		ev:X
+# tabNodes: local array of panel JSON nodes / YAML panel list nodes; panelNodes in c11.swift is in other funcs
+tabNodes	panelNodes	CLI/c11.swift,Sources/WorkspaceBlueprintMarkdown.swift		ev:X
+# tabOpt: locals for --panel option in runTabAction/runRenameTab; no collision
+tabOpt	panelOpt	CLI/c11.swift		ev:X
+# resolveTab: closure parameter/label resolving a panel handle in feed command
+resolveTab	resolvePanel	CLI/FeedCommand.swift,CLI/c11.swift		ev:X
+# recipientTabId: mailbox receipt recipient panel id param
+recipientTabId	recipientPanelId	CLI/c11.swift		ev:X
+# tabLine: summary line '1 panel / N panels' in area render
+tabLine	panelLine	CLI/c11.swift		ev:X
+# runTabAction: CLI panel-action implementation
+runTabAction	runPanelAction	CLI/c11.swift		ev:X
+# runSetTabMarker: CLI set-panel-icon/color implementation
+runSetTabMarker	runSetPanelMarker	CLI/c11.swift		ev:X
+# resolveMailboxInboxTabId: resolves recipient panel UUID for mailbox inbox
+resolveMailboxInboxTabId	resolveMailboxInboxPanelId	CLI/c11.swift		ev:X
+# explicitTab: local: explicit --panel handle in input-state; .explicitPanel enum case is a distinct member access
+explicitTab	explicitPanel	CLI/c11.swift		ev:X
+# displayTabHandle: formats panel handle for display
+displayTabHandle	displayPanelHandle	CLI/c11.swift		ev:X
+# tabHandle: local in runTabAction; string key browser.profile.cli.tabHandle is a string, untouched
+tabHandle	panelHandle	CLI/c11.swift		ev:X
+# runRenameTab: CLI rename-panel implementation
+runRenameTab	runRenamePanel	CLI/c11.swift		ev:X
+# normalizeCanonicalTabHandle: normalizes a panel handle
+normalizeCanonicalTabHandle	normalizeCanonicalPanelHandle	CLI/c11.swift		ev:X
+# journalTab: local: journal hook panel id
+journalTab	journalPanel	CLI/c11.swift		ev:X
+# formatTabHandle: formats panel handle from payload
+formatTabHandle	formatPanelHandle	CLI/c11.swift		ev:X
+# formatCreatedTabHandle: formats created_panel handle from payload
+formatCreatedTabHandle	formatCreatedPanelHandle	CLI/c11.swift		ev:X
+# envTab: local: caller panel from env in send
+envTab	envPanel	CLI/c11.swift		ev:X
+# canonicalTabID: resolves panel handle to uuid via panel.list
+canonicalTabID	canonicalPanelID	CLI/c11.swift		ev:X
+# canonicalSurfaceHandleFromTabInput: canonicalizes panel/tab/surface-prefixed handle input
+canonicalSurfaceHandleFromTabInput	canonicalSurfaceHandleFromPanelInput	CLI/c11.swift		ev:X
+# ---- browser-ui
+# currentTab: BrowserInsecureHTTPNavigationIntent case (private, current vs new panel) and SendInputGuard.targetIsCurrent label (a terminal panel); AppDelegate/WorkspaceManager locals are workspaces so excluded. BrowserPanel.swift:7127 uses .newTab/.currentTab inside a string interpolation \(...) - the tool must rewrite it or hand-fix
+currentTab	currentPanel	Sources/Panels/BrowserPanel.swift,Sources/Feed/SendInputGuard.swift,Sources/SocketHandlers/SurfaceHandlers.swift,c11Tests/PromptInputGuardTests.swift		ev:X
+# newTab: BrowserInsecureHTTPNavigationIntent case; Workspace.swift newTab: is a Bonsplit tooltips init label and UpdateTitlebarAccessory newTab is the workspace titlebar button, both excluded. BrowserPanel.swift:7127 interpolation contains .newTab
+newTab	newPanel	Sources/Panels/BrowserPanel.swift		ev:X
+# switchToTab: Omnibar suggestion kind: switch to an open browser panel (UI string already Switch to panel); localization key string unaffected
+switchToTab	switchToPanel	Sources/Panels/BrowserPanelView.swift		ev:X
+# openTabMatches: Omnibar open-panel matches label/local; internal param is already openPanelMatches (label collapses)
+openTabMatches	openPanelMatches	Sources/Panels/BrowserPanelView.swift,c11Tests/OmnibarAndToolsTests.swift		ev:X
+# showOnBlankTabs: blank browser panel import hint param/var/func; defaults key string unchanged
+showOnBlankTabs	showOnBlankPanels	Sources/c11App.swift,Sources/Panels/BrowserPanel.swift,Sources/Panels/BrowserPanelView.swift,c11Tests/BrowserImportMappingTests.swift		ev:X
+# showOnBlankTabsKey: identifier only; UserDefaults key string browserImportHintShowOnBlankTabs stays
+showOnBlankTabsKey	showOnBlankPanelsKey	Sources/Panels/BrowserPanel.swift,Sources/c11App.swift,Sources/AppDelegate.swift,Sources/Panels/BrowserPanelView.swift		ev:X
+# defaultShowOnBlankTabs: default constant for blank-panel hint setting
+defaultShowOnBlankTabs	defaultShowOnBlankPanels	Sources/c11App.swift,Sources/Panels/BrowserPanel.swift,Sources/Panels/BrowserPanelView.swift		ev:X
+# showBrowserImportHintOnBlankTabs: @AppStorage property name; key comes from showOnBlankTabsKey string, unchanged
+showBrowserImportHintOnBlankTabs	showBrowserImportHintOnBlankPanels	Sources/c11App.swift,Sources/Panels/BrowserPanelView.swift		ev:X
+# blankTabPlacement: property of BrowserImportHintPresentation (type already BrowserImportHintBlankPanelPlacement). c11App.swift:2813 uses presentation.blankTabPlacement inside a string interpolation \(...) - tool must rewrite it or hand-fix
+blankTabPlacement	blankPanelPlacement	Sources/Panels/BrowserPanel.swift,Sources/Panels/BrowserPanelView.swift,Sources/c11App.swift,c11Tests/BrowserImportMappingTests.swift		ev:X
+# renameTab: KeyboardShortcutSettings.Action case (Rename Panel); pinned raw: case renamePanel = "renameTab"; defaultsKey string explicit shortcut.renameTab unchanged; all uses are Action members
+renameTab	renamePanel	Sources/KeyboardShortcutSettings.swift,Sources/c11App.swift,c11Tests/WorkspaceUnitTests.swift,Sources/Workspace.swift,Sources/AppDelegate.swift,Sources/ContentView.swift,c11Tests/AppDelegateShortcutRoutingTests.swift		ev:X
+# browserNavigationShouldOpenInNewTab: free function deciding whether a link opens a new browser panel
+browserNavigationShouldOpenInNewTab	browserNavigationShouldOpenInNewPanel	Sources/Panels/BrowserPanel.swift,c11Tests/BrowserConfigTests.swift		ev:X
+# browserNavigationShouldFallbackNilTargetToNewTab: free function: nil-target link opens new browser panel
+browserNavigationShouldFallbackNilTargetToNewTab	browserNavigationShouldFallbackNilTargetToNewPanel	Sources/Panels/BrowserPanel.swift,c11Tests/BrowserConfigTests.swift		ev:X
+# openInNewTab: closure property on navigation/UI delegates that opens link in new panel; string kind=openInNewTab in dlog is text only
+openInNewTab	openInNewPanel	Sources/Panels/BrowserPanel.swift		ev:X
+# shouldOpenInNewTab: local in decidePolicy. BrowserPanel.swift:7112 uses it inside a string interpolation \(shouldOpenInNewTab ? 1 : 0) - tool must rewrite or hand-fix
+shouldOpenInNewTab	shouldOpenInNewPanel	Sources/Panels/BrowserPanel.swift		ev:X
+# onContextMenuOpenLinkInNewTab: webview callback: Open Link in New Panel
+onContextMenuOpenLinkInNewTab	onContextMenuOpenLinkInNewPanel	Sources/Panels/CmuxWebView.swift,Sources/Panels/BrowserPanel.swift,Sources/Panels/BrowserPopupWindowController.swift		ev:X
+# openerTab: opener BrowserPanel param/local; label already openerPanel (collapses). Line 227 uses it inside a dlog string interpolation \(openerTab?...) - tool must rewrite or hand-fix
+openerTab	openerPanel	Sources/Panels/BrowserPopupWindowController.swift		ev:X
+# lifecycleByTab: lifecycle map keyed by panel id (type WorkspaceGroupPanelLifecycle); init param already lifecycleByPanel; not Codable
+lifecycleByTab	lifecycleByPanel	Sources/Sidebar/WorkspaceGroupSidebarProjection.swift,c11Tests/WorkspaceGroupSidebarProjectionTests.swift		ev:X
+# tabLayoutMode: @AppStorage var in settings view bound to PanelLayoutSettings.modeKey; other occurrences are comments/strings
+tabLayoutMode	panelLayoutMode	Sources/c11App.swift		ev:X
+# showSurfaceIdsInTabTitles: @AppStorage var bound to showSurfaceIdsInPanelTitlesKey; localization key strings unaffected
+showSurfaceIdsInTabTitles	showSurfaceIdsInPanelTitles	Sources/c11App.swift		ev:X
+# tabLayoutSelection: Panel Layout picker binding (Strip|Rail)
+tabLayoutSelection	panelLayoutSelection	Sources/c11App.swift		ev:X
+# showOnBlankTabsBinding: binding for the blank browser panel import hint toggle
+showOnBlankTabsBinding	showOnBlankPanelsBinding	Sources/c11App.swift		ev:X
+# renameTabShortcutData: @AppStorage var for the Rename Panel shortcut; key comes from Action.renameTab.defaultsKey string, unchanged
+renameTabShortcutData	renamePanelShortcutData	Sources/c11App.swift		ev:X
+# renameTabMenuShortcut: computed menu shortcut for Rename Panel
+renameTabMenuShortcut	renamePanelMenuShortcut	Sources/c11App.swift		ev:X
+# openInOpenerTab: popup opens link in opener BrowserPanel
+openInOpenerTab	openInOpenerPanel	Sources/Panels/BrowserPopupWindowController.swift		ev:X
+# isUserNewTab: local in navigation helper, tied to browserNavigationShouldOpenInNewPanel
+isUserNewTab	isUserNewPanel	Sources/Panels/BrowserPanel.swift		ev:X
+# existingTabIDs: test local: Set(workspace.panels.keys)
+existingTabIDs	existingPanelIDs	c11Tests/BrowserTabTests.swift		ev:X
+# contextMenuOpenLinkInNewTab: @objc private func used only via #selector token in the same file; no string lookup (grep -w confirms)
+contextMenuOpenLinkInNewTab	contextMenuOpenLinkInNewPanel	Sources/Panels/CmuxWebView.swift		ev:X
+# closeOtherTabsInFocusedPane: private menu helper closing other panels in the focused area; sibling WorkspaceManager names handled by other chunks
+closeOtherTabsInFocusedPane	closeOtherPanelsInFocusedPane	Sources/c11App.swift		ev:X
+# canCloseOtherTabsInFocusedPane: WorkspaceManager query: can other panels in focused area be closed
+canCloseOtherTabsInFocusedPane	canCloseOtherPanelsInFocusedPane	Sources/c11App.swift,Sources/WorkspaceManager.swift		ev:X
+# filteredOpenTabMatches: use at 2706 of a declaration already renamed to filteredOpenPanelMatches (2568); dangling use fix
+filteredOpenTabMatches	filteredOpenPanelMatches	Sources/Panels/BrowserPanelView.swift		ev:X
+# ---- workspace1
+# tab: locals/params/labels/props naming a c11 panel id or handle (journal, mailbox, feed, notification tests; OperatorResponseGate.tab; EventEmitter.emitLifecycleChanged(tab:); SendTextParse.tab for --panel handle; TerminalController.SizeAwareSplitPlan.tab case). AreaSizeMode.tab: pinned raw (case panel = "tab", persisted, parse("panel") still maps). Excluded: Workspace.swift/TabSheetDetail.swift/WorkspaceUnitTests.swift/TabOrdinalDisplayTests.swift (only bonsplitController.tab(...)), TextBoxInput*/KeyboardShortcutSettings (Tab key), JournalEvent.swift (legacy tab_id alias beside panel local), FeedProjectorTests.swift (own row), MessagesPage*/LegacyWireRoutingKeyTests (raw-string JSON only)
+tab	panel	c11Tests/MailboxStdinBufferTests.swift,c11Tests/TabMetadataStoreValidationTests.swift,c11Tests/AgentRosterTests.swift,c11Tests/ClaudeHookMappingTests.swift,c11Tests/JournalQueryTests.swift,c11Tests/NotificationCommandEnvironmentTests.swift,c11Tests/EventLogTests.swift,c11Tests/MailboxReceiptRecorderTests.swift,c11Tests/MailboxDrainTests.swift,c11Tests/LifecycleFixtureCatalog.swift,c11Tests/AttentionOrderTests.swift,c11Tests/MailboxLayoutTests.swift,c11Tests/JournalStoreTests.swift,c11Tests/AreaSizePolicyTests.swift,c11Tests/MailboxDispatcherTests.swift,c11Tests/JournalExportTests.swift,c11Tests/WorkspaceGroupSidebarProjectionTests.swift,c11Tests/WorkspaceManagerUnitTests.swift,c11Tests/JournalReducerTests.swift,c11Tests/SendTextParseTests.swift,Sources/Journal/JournalCoordinator.swift,Sources/Journal/AgentRoster.swift,Sources/AreaSizePolicy.swift,Sources/SocketHandlers/SurfaceHandlers.swift,Sources/SendTextParse.swift,Sources/TerminalController.swift,Sources/SocketHandlers/PaneHandlers.swift,Sources/Events/EventEmitter.swift,CLI/FeedCommand.swift	panelHandle	ev:X
+# tab: panel locals/params; testFeedPanelParamPrefersPanelIdThenTabIdThenSurfaceId has panel+tab+surface locals for the legacy tab_id alias, so the shadowing site takes fallback legacyTab
+tab	panel	c11Tests/FeedProjectorTests.swift	legacyTab	ev:X
+# tab=panel: closure param is the journal owner panel id (passed to onJournalProjection(tabID:) / noteJournal(tabID:)); no other tab token in this member
+@regionrename	Sources/AppDelegate.swift	JournalCoordinator\.shared\.start \{ tab, snap	tab=panel
+# tab=panel: parsed is SendTextParse (property tab->panel); only tab token in run(); tabArg/tabRaw stay (collide with panelArg)
+@regionrename	CLI/c11.swift	requireNonEmptyHandle\(parsed\.tab, flag: "--panel"	tab=panel
+# tab=panel: local loop var over panel rows from agents/history/browser.panel.list payload; no panel token in this func; PanelKey.tab and parsed.tab elsewhere untouched
+@regionrename	CLI/c11.swift	func printAgents\(	tab=panel
+# tab=panel: local loop var over panel rows from agents/history/browser.panel.list payload; no panel token in this func; PanelKey.tab and parsed.tab elsewhere untouched
+@regionrename	CLI/c11.swift	func runHistoryCommand\(	tab=panel
+# tab=panel: local loop var over panel rows from agents/history/browser.panel.list payload; no panel token in this func; PanelKey.tab and parsed.tab elsewhere untouched
+@regionrename	CLI/c11.swift	func fetchTreeBrowserURLs\(	tab=panel
+# tab=panel: CommandPaletteRenameTarget.Kind.tab (rename a panel) and its switch sites; other ContentView tab tokens are CodingKeys.tab for Bonsplit TabInfo (keep). If one regex hits a larger enclosing member, it still only contains rename-target uses
+@regionrename	Sources/ContentView.swift	case tab\(workspaceId: UUID, panelId: UUID\)|case \.tab[:(]|kind: \.tab\(|commandPalette\.rename\.workspace(Title|Description|Placeholder)"|func rename(Input|Confirm)HintText\(	tab=panel
+# tab=panel: applyRenameFlow switch on CommandPaletteRenameTarget.Kind.tab
+@regionrename	Sources/ContentView.swift	case \.tab\(let workspaceId, let panelId\)	tab=panel
+# tabs: WorkspaceGroupMemberAttention init label/ObservedMember.tabs hold panel attention; AgentRoster local is the panel JSON list. Yields `panels panels:` (valid). Not AgentRosterTests (legacy "tabs" key local beside panels local)
+tabs	panels	Sources/Sidebar/WorkspaceGroupSidebarProjection.swift,c11Tests/WorkspaceGroupSidebarProjectionTests.swift,Sources/Journal/AgentRoster.swift	panelList	ev:X
+# tabs=panels: local holding panel dicts from agents doc / panel.list / browser.panel.list / tree area; no panels token in this func
+@regionrename	CLI/c11.swift	func printAgents\(	tabs=panels
+# tabs=panels: local holding panel dicts from agents doc / panel.list / browser.panel.list / tree area; no panels token in this func
+@regionrename	CLI/c11.swift	func runDefaultAgentLaunchCommand\(	tabs=panels
+# tabs=panels: local holding panel dicts from agents doc / panel.list / browser.panel.list / tree area; no panels token in this func
+@regionrename	CLI/c11.swift	func fetchTreeBrowserURLs\(	tabs=panels
+# tabs=panels: local holding panel dicts from agents doc / panel.list / browser.panel.list / tree area; no panels token in this func; nested appendWorkspace is inside renderTreeText
+@regionrename	CLI/c11.swift	func renderTreeText\(	tabs=panels
+# tab=panel: tree loop var over area panels; only tab token in this member
+@regionrename	CLI/c11.swift	func renderTreeText\(	tab=panel
+# selectedTab: test local holding workspace.focusedPanelId; every other selectedTab is bonsplitController.selectedTab(inPane:) (Bonsplit API) or AppleScript @objc(selectedTab) on ScriptWindow -> workspace (keep)
+selectedTab	selectedPanel	c11Tests/TerminalAndGhosttyTests.swift		ev:X
+# tabA: UUID fixture for a panel; panelA does not exist in these files
+tabA	panelA	c11Tests/ClaudeHookMappingTests.swift,c11Tests/AgentRosterTests.swift		ev:X
+# selectedTabID: Feed quick view selection of a row keyed by panel id (row.tabID)
+selectedTabID	selectedPanelID	Sources/Feed/FeedQuickViewSelection.swift,c11Tests/FeedQuickViewSelectionTests.swift,c11Tests/FeedQuickViewTests.swift,Sources/Feed/FeedQuickView.swift,Sources/Update/UpdateTitlebarAccessory.swift		ev:X
+# applyTabSelection: private Workspace helper: side effects of selecting a panel (takes bonsplitTabId:), c11-owned, not a Bonsplit name
+applyTabSelection	applyPanelSelection	Sources/Workspace.swift		ev:X
+# Tab: generic placeholder for the target panel object in targetIsCurrent; other Tab tokens are Bonsplit.Tab (keep)
+Tab	PanelObject	Sources/Feed/SendInputGuard.swift		ev:X
+# resolvedSurfaceTabActivityState: Workspace method taking panelId: and resolving that panel activity state (used by sidebar and panel sheet); returns BonsplitTabActivityState (type name unaffected)
+resolvedSurfaceTabActivityState	resolvedSurfacePanelActivityState	Sources/Workspace.swift,c11Tests/WorkspaceUnitTests.swift,Sources/WorkspaceContentView.swift,Sources/TabSheetDetail.swift,Sources/ContentView.swift,Sources/Sidebar/WorkspaceGroupSidebarProjection.swift		ev:X
+# tabsPerWorkspace: stress config count of panels per workspace; env var name is a string
+tabsPerWorkspace	panelsPerWorkspace	c11Tests/WorkspaceStressProfileTests.swift		ev:X
+# normalizePinnedTabs: private Workspace helper reordering pinned panels in an area (calls bonsplitController.reorderTab internally)
+normalizePinnedTabs	normalizePinnedPanels	Sources/Workspace.swift		ev:X
+# flagCallerTabID: FeedAttentionFact stored property (not Codable here) holding the flag-calling panel id
+flagCallerTabID	flagCallerPanelID	Sources/Feed/FeedProjector.swift,Sources/Feed/FeedProjectionBridge.swift,c11Tests/FeedProjectorTests.swift,c11Tests/PromptInputGuardTests.swift,c11Tests/AttentionOrderTests.swift		ev:X
+# tabIds: test local of focused panel ids; SessionPersistenceTests "tabIds" is a string only
+tabIds	panelIds	c11Tests/WorkspaceManagerSessionSnapshotTests.swift		ev:X
+# tabInboxURLs: MailboxDrain static func finding per-panel inboxes (tabId: -> panel); CLI compiles MailboxDrain and calls it
+tabInboxURLs	panelInboxURLs	Sources/Mailbox/MailboxDrain.swift,c11Tests/MailboxDrainTests.swift,CLI/c11.swift		ev:X
+# commandPaletteRenameTabRequested: Notification.Name static with explicit string "cmux.commandPaletteRenameTabRequested" that stays unchanged; action renames the focused panel
+commandPaletteRenameTabRequested	commandPaletteRenamePanelRequested	Sources/AppDelegate.swift,Sources/WorkspaceManager.swift,Sources/ContentView.swift,Sources/SocketHandlers/DebugHandlers.swift,c11Tests/AppDelegateShortcutRoutingTests.swift		ev:X
+# terminalTab: Workspace.swift: argument label `terminalTab terminalPanel: TerminalPanel` becomes `terminalPanel terminalPanel:` (valid) with call sites; test local is a TerminalPanel; terminalPanel absent in the test file
+terminalTab	terminalPanel	Sources/Workspace.swift,c11Tests/TabIdentityRestoreTests.swift		ev:X
+# debugStressTabsPerPane: debug stress knob: panels created per area
+debugStressTabsPerPane	debugStressPanelsPerPane	Sources/AppDelegate.swift		ev:X
+# tabsPerPane: debug stress function param; "tabsPerPane=" log strings untouched
+tabsPerPane	panelsPerPane	Sources/AppDelegate.swift		ev:X
+# tabNode: loop var over a blueprint `panels:` (legacy `tabs:`) list nodes; each is a panel spec
+tabNode	panelNode	Sources/WorkspaceBlueprintMarkdown.swift		ev:X
+# sameTabGraceInterval: shouldClearManualUnread param: grace when focus stays on the same panel
+sameTabGraceInterval	samePanelGraceInterval	Sources/Workspace.swift,c11Tests/WorkspaceManualUnreadTests.swift		ev:X
+# tabSheetDetail: Workspace.tabSheetDetail(panelId:) builds the panel sheet detail; tab sheet -> panel sheet (panelSheetDetail absent)
+tabSheetDetail	panelSheetDetail	Sources/TabSheetDetail.swift,Sources/SocketHandlers/DebugHandlers.swift		ev:X
+# startupTabsReady: JournalCoordinator gate that panels are restored before journal drain
+startupTabsReady	startupPanelsReady	Sources/AppDelegate.swift,Sources/Journal/JournalCoordinator.swift		ev:X
+# missingSelectedTabCount: debug counter of areas with no selected panel; UI tests read the "missingSelectedTabCount" dictionary key string, which stays
+missingSelectedTabCount	missingSelectedPanelCount	Sources/WorkspaceManager.swift		ev:X
+# isApplyingTabSelection: reentrancy flag of applyTabSelection (renamed applyPanelSelection)
+isApplyingTabSelection	isApplyingPanelSelection	Sources/Workspace.swift		ev:X
+# initialTab: test local = workspace.panels.keys.first
+initialTab	initialPanel	c11Tests/WorkspaceManagerUnitTests.swift		ev:X
+# closeOtherTabsInFocusedPaneWithConfirmation: closes other panels in the focused area (backed by closeOtherPanelsInFocusedAreaPlan); only tab->panel segment changed
+closeOtherTabsInFocusedPaneWithConfirmation	closeOtherPanelsInFocusedPaneWithConfirmation	Sources/AppDelegate.swift,Sources/c11App.swift,Sources/WorkspaceManager.swift		ev:X
+# syncPinnedStateForTab: private Workspace helper syncing pin state for a panel (takes panelId:)
+syncPinnedStateForTab	syncPinnedStateForPanel	Sources/Workspace.swift		ev:X
+# isCloseTabAlertPresent: UI helper detecting the "Close panel?" alert
+isCloseTabAlertPresent	isClosePanelAlertPresent	c11UITests/CloseWorkspaceCmdDUITests.swift		ev:X
+# applyTabLayout: live update of the Panel Layout setting (PanelLayoutSettings), c11-owned
+applyTabLayout	applyPanelLayout	Sources/Workspace.swift		ev:X
+# workspaceCloseTakesOneTab: true when the workspace holds exactly one panel (closing it closes one panel)
+workspaceCloseTakesOneTab	workspaceCloseTakesOnePanel	Sources/WorkspaceManager.swift		ev:X
+# tabOffset: debug stress loop index creating additional panels per area
+tabOffset	panelOffset	Sources/AppDelegate.swift		ev:X
+# sharedTab: test UUID of a panel shared by two owners
+sharedTab	sharedPanel	c11Tests/JournalQueryTests.swift		ev:X
+# replacementTabID: panel id passed to FeedAnswerDebugHold.consume(tabID:)
+replacementTabID	replacementPanelID	c11Tests/PromptInputGuardTests.swift		ev:X
+# legacyRenameTabShortcut: test local of the legacy Cmd+R binding for the rename-panel action; no collision
+legacyRenameTabShortcut	legacyRenamePanelShortcut	c11Tests/AppDelegateShortcutRoutingTests.swift		ev:X
+# installTabSheetDetailProviders: Workspace extension installing panel sheet detail providers into the controller (tab sheet -> panel sheet)
+installTabSheetDetailProviders	installPanelSheetDetailProviders	Sources/Workspace.swift,Sources/TabSheetDetail.swift		ev:X
+# forTab: setJournalSnapshot(_:forTab tabID:) argument label naming the panel
+forTab	forPanel	Sources/Workspace.swift,Sources/PanelLivenessDeriver.swift		ev:X
+# detachedTab: test local = workspace.detachPanel(...) result
+detachedTab	detachedPanel	c11Tests/WorkspaceManagerUnitTests.swift		ev:X
+# createNewTabOfFocusedKind: private Workspace helper creating a new panel of the focused panel kind
+createNewTabOfFocusedKind	createNewPanelOfFocusedKind	Sources/Workspace.swift		ev:X
+# clickCloseOnCloseTabAlert: UI helper clicking Close on the "Close panel?" alert
+clickCloseOnCloseTabAlert	clickCloseOnClosePanelAlert	c11UITests/CloseWorkspaceCmdDUITests.swift		ev:X
+# capturedTab: test local = captured.panels.first{...}
+capturedTab	capturedPanel	c11Tests/WorkspaceConversationResumeTests.swift		ev:X
+# applyTabOrdinalDisplay: live update of the ordinal-in-panel-titles setting (PanelOrdinalDisplaySettings), c11-owned
+applyTabOrdinalDisplay	applyPanelOrdinalDisplay	Sources/Workspace.swift		ev:X
+# ---- workspace2
+# tabId: c11 panel id: mailbox recipient id (Mailbox*, CLI inbox resolve, tests), registerAgentPID label, sidebar projection key, SessionPersistence.Drop, PanelSendPhaseAResolved, locals; all other tabId in these files are strings; receipt JSON uses explicit panel_id/tab_id keys
+tabId	panelId	CLI/c11.swift,Sources/Mailbox/MailboxDrain.swift,Sources/Mailbox/MailboxLayout.swift,Sources/Mailbox/MailboxReceiptRecorder.swift,Sources/Mailbox/MailboxDispatcher.swift,c11Tests/MailboxDrainTests.swift,c11Tests/MailboxLayoutTests.swift,c11Tests/MailboxReceiptRecorderTests.swift,c11Tests/MailboxDispatcherTests.swift,Sources/Sidebar/WorkspaceGroupSidebarProjection.swift,c11Tests/WorkspaceManagerUnitTests.swift,c11Tests/WorkspaceManagerSessionSnapshotTests.swift,Sources/TerminalController.swift,Sources/SocketHandlers/SurfaceHandlers.swift,Sources/SocketHandlers/FeedHandlers.swift,Sources/SessionPersistence.swift,c11Tests/SessionRestoreNormalizationTests.swift,Sources/WorkspaceManager.swift,Sources/SocketHandlers/SocketDispatch.swift,Sources/AppDelegate.swift		ev:X
+# tabId: agentPIDPanels tuple label, registerAgentPID param, startMailboxPush inboxURL label; nomember keeps Bonsplit request.tabId (external drop) - hand fix needed for association.tabId in removeAgentPID
+tabId	panelId	Sources/Workspace.swift		nomember,ev:X
+# tabId: locals from v2UUID(params,"tab_id") in debug.terminal.runtime_start_hold, operator_keys, scroll_viewport; nolabel keeps Bonsplit setLinkedHover(tabId:)
+tabId	panelId	Sources/SocketHandlers/DebugHandlers.swift		nomember,nolabel,ev:X
+# tabTitle: Workspace.tabTitle(panelId:) = display title of a panel, every use in these files is that method (or its local); AppDelegate mixed - hand fixall needed: "workspace.tabTitle(panelId:" -> "workspace.panelTitle(panelId:" and "workspace?.tabTitle(panelId:" -> "workspace?.panelTitle(panelId:" in Sources/AppDelegate.swift
+tabTitle	panelTitle	Sources/Workspace.swift,Sources/TerminalController.swift,Sources/WorkspaceManager.swift,Sources/ContentView.swift,Sources/Update/UpdateTitlebarAccessory.swift,Sources/SocketHandlers/SurfaceHandlers.swift,Sources/SocketHandlers/AttentionHandlers.swift,Sources/SocketHandlers/SocketDispatch.swift,Sources/SocketHandlers/HistoryHandlers.swift,Sources/SocketHandlers/DebugHandlers.swift,c11Tests/SessionPersistenceTests.swift,c11Tests/WorkspaceUnitTests.swift		ev:X
+# closeTab: Workspace.closeTab(_:force:) closes a panel by panel id; bonsplitController./controller. closeTab calls are vendor-qualified and untouched; noimplicit skips the Bonsplit-owned .closeTab (TabContextAction, shortcuts[.closeTab]); a comment already says Workspace.closePanel
+closeTab	closePanel	Sources/AppleScriptSupport.swift,Sources/WorkspaceLayoutExecutor.swift,Sources/Workspace.swift,Sources/TerminalController.swift,Sources/WorkspaceManager.swift,Sources/SocketHandlers/PaneHandlers.swift,Sources/SocketHandlers/SurfaceHandlers.swift,Sources/SocketHandlers/MiscHandlers.swift,Sources/SocketHandlers/BrowserQueryHandlers.swift,c11Tests/TerminalAndGhosttyTests.swift,c11Tests/WorkspaceUnitTests.swift,c11Tests/WorkspaceManagerUnitTests.swift		noimplicit,ev:X
+# flagCallerTabId: PanelAttentionSnapshot.flagCallerTabId (UUID? of the panel that raised the flag; Equatable struct, not Codable). EXCLUDED: PanelMetadataStore.swift and SurfaceHandlers.swift where MetadataKey.flagCallerTabId = "flag_caller_tab_id" is the legacy key constant (flagCallerPanelId key already exists beside it). Hand fixall needed in Sources/PanelMetadataStore.swift: "flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)" -> "flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)" and fix "snapshot.flagCallerTabId" -> "snapshot.flagCallerPanelId"
+flagCallerTabId	flagCallerPanelId	Sources/AttentionModel.swift,Sources/Feed/FeedProjectionBridge.swift,Sources/SocketHandlers/AttentionHandlers.swift,c11Tests/AttentionModelTests.swift,c11Tests/TabMetadataStoreValidationTests.swift,c11Tests/PromptInputGuardTests.swift		ev:X
+# layoutIsTabs: shouldOffer(layoutIsTabs:) means Panel Layout is Strip (the old "tabs" mode is now strip); true is passed only when mode == .strip
+layoutIsTabs	layoutIsStrip	Sources/PanelRailTipPolicy.swift,Sources/PanelRailTipCenter.swift,c11Tests/TabRailTipPolicyTests.swift		ev:X
+# tabB: Test local panel UUID (sibling of tabA/tabC); passed as tab:/tabID: panel ids
+tabB	panelB	c11Tests/JournalQueryTests.swift,c11Tests/AgentRosterTests.swift,c11Tests/ClaudeHookMappingTests.swift		ev:X
+# tabCount: closePaneConfirmation*/closePaneConfirmLabel(tabCount:) = number of panels in the area being closed (bonsplitTabs.count); WorkspaceManager/AppDelegate/ContentView tabCount counts WORKSPACES (surfaceShapeSummary, sentry strings) so excluded
+tabCount	panelCount	Sources/Workspace.swift		ev:X
+# renameTabExpectation: Test local: expectation for the rename-panel command palette request (Rename Panel)
+renameTabExpectation	renamePanelExpectation	c11Tests/AppDelegateShortcutRoutingTests.swift		ev:X
+# renameTabToken: Test local: observer token for commandPaletteRenameTabRequested (rename of the focused panel)
+renameTabToken	renamePanelToken	c11Tests/AppDelegateShortcutRoutingTests.swift		ev:X
+# observedRenameTabWindow: Test local: window observed on the rename-panel request notification
+observedRenameTabWindow	observedRenamePanelWindow	c11Tests/AppDelegateShortcutRoutingTests.swift		ev:X
+# closeTabs: Workspace.closeTabs([TabID]) context-menu bulk close and MiscHandlers local closeTabs both close panels; ContentView.closeTabs closes WORKSPACES (sidebar) so excluded
+closeTabs	closePanels	Sources/Workspace.swift,Sources/SocketHandlers/MiscHandlers.swift		ev:X
+# otherTab: Test local panel UUID used as flagCallerTabID/tabID (other panel in the workspace)
+otherTab	otherPanel	c11Tests/FeedProjectorTests.swift		ev:X
+# askTab: Test local panel UUID that asked a question (journal tab id)
+askTab	askPanel	c11Tests/FeedProjectorTests.swift,c11Tests/LifecycleFixtureCatalog.swift		ev:X
+# shouldFocusNewTab: Local in newTerminalSurface/newBrowserSurface/newMarkdownSurface: whether the newly created panel takes focus
+shouldFocusNewTab	shouldFocusNewPanel	Sources/Workspace.swift		ev:X
+# tabTransferPasteboardType: Private static let pasteboard type for dragging a panel (tab) between areas; string "com.stage11.c11.tabtransfer" is explicit and unchanged
+tabTransferPasteboardType	panelTransferPasteboardType	Sources/GhosttyTerminalView.swift		ev:X
+# tabDetailReplacingTitle: Workspace extension helper building the panel sheet detail with a replaced title (tab sheet -> panel sheet)
+tabDetailReplacingTitle	panelDetailReplacingTitle	Sources/Workspace.swift,Sources/TabSheetDetail.swift		ev:X
+# tabAStates: Test local: states owned by panel A
+tabAStates	panelAStates	c11Tests/ClaudeHookMappingTests.swift		ev:X
+# tabBStates: Test local: states owned by panel B
+tabBStates	panelBStates	c11Tests/ClaudeHookMappingTests.swift		ev:X
+# captureTab: Test local: fixture event "tab" field naming which panel (A or sibling B) the capture belongs to
+captureTab	capturePanel	c11Tests/ClaudeHookMappingTests.swift		ev:X
+# checkpointTab: Test local: panel UUID (tabA or tabB) for the oracle checkpoint
+checkpointTab	checkpointPanel	c11Tests/ClaudeHookMappingTests.swift		ev:X
+# paneTabs: orderedPanelIds(tree:paneTabs:...) label and local: pane id string -> [panel UUID]; no other uses
+paneTabs	panePanels	Sources/Workspace.swift		ev:X
+# initialTabId: Test local: first panel id of a workspace (workspace.panels.keys.first)
+initialTabId	initialPanelId	c11Tests/TabIdentityRestoreTests.swift		ev:X
+# debugDidMoveTabEventCount: DEBUG-only private counter of panel moves between areas (log strings unchanged)
+debugDidMoveTabEventCount	debugDidMovePanelEventCount	Sources/Workspace.swift		ev:X
+# debugLastDidMoveTabTimestamp: DEBUG-only private timestamp of the last panel move (log strings unchanged)
+debugLastDidMoveTabTimestamp	debugLastDidMovePanelTimestamp	Sources/Workspace.swift		ev:X
+# tabKind: Private func tabKind(for: any Panel) -> String; panelKind(panelId:) already exists in Workspace and its body calls tabKind, so plain panelKind would trip the collision guard; distinct name avoids it
+tabKind	panelKindName	Sources/Workspace.swift		ev:X
+# syncSurfaceTabActivityStates: Workspace method re-syncing every panel's activity state onto its Bonsplit tab (c11-owned)
+syncSurfaceTabActivityStates	syncSurfacePanelActivityStates	Sources/Workspace.swift,Sources/TerminalNotificationStore.swift		ev:X
+# resolvedSurfaceTabActivityPresentation: Workspace method resolving a panel's activity presentation (c11-owned)
+resolvedSurfaceTabActivityPresentation	resolvedSurfacePanelActivityPresentation	Sources/Workspace.swift,Sources/WorkspaceContentView.swift		ev:X
+# recordTabSheetStatusTransition: Workspace extension recording a panel's status transition for the panel sheet (tab sheet -> panel sheet); takes panelId:
+recordTabSheetStatusTransition	recordPanelSheetStatusTransition	Sources/TabSheetDetail.swift,Sources/Workspace.swift,Sources/WorkspaceContentView.swift		ev:X
+# isNormalizingPinnedTabOrder: Private reentrancy flag of pinned-panel order normalization
+isNormalizingPinnedTabOrder	isNormalizingPinnedPanelOrder	Sources/Workspace.swift		ev:X
+# internalOnlyTabDrag: View modifier wrapping InternalPanelDragConfigurationModifier (already panel-named)
+internalOnlyTabDrag	internalOnlyPanelDrag	Sources/ContentView.swift,Sources/WorkspaceContentView.swift		ev:X
+# tabRefs: Test local: panel ref map from snapshot.panels; other tabRefs are legacy wire strings
+tabRefs	panelRefs	c11Tests/WorkspaceManagerUnitTests.swift		ev:X
+# requestCommandPaletteRenameTab: AppDelegate method opening the palette rename of the focused panel (Rename Panel); source: strings unchanged
+requestCommandPaletteRenameTab	requestCommandPaletteRenamePanel	Sources/AppDelegate.swift,Sources/c11App.swift		ev:X
+# publishedTabIds: Test local: panel ids dropped from workspace.$panels
+publishedTabIds	publishedPanelIds	c11Tests/WorkspaceManagerUnitTests.swift		ev:X
+# beginRenameTabFlow: Starts the rename flow for the focused panel (focusedPanelContext, panelDisplayName)
+beginRenameTabFlow	beginRenamePanelFlow	Sources/ContentView.swift		ev:X
+# openCommandPaletteRenameTabInput: Opens the rename-panel input; calls beginRenameTabFlow
+openCommandPaletteRenameTabInput	openCommandPaletteRenamePanelInput	Sources/ContentView.swift		ev:X
+# additionalTabsPerPane: Debug-stress local: extra terminal panels created per area
+additionalTabsPerPane	additionalPanelsPerPane	Sources/AppDelegate.swift		ev:X
+# waitForCloseTabAlert: UI-test helper waiting for the "Close panel?" confirmation (Cmd+W closes the panel)
+waitForCloseTabAlert	waitForClosePanelAlert	c11UITests/CloseWorkspaceCmdDUITests.swift		ev:X
+# tabTitlePattern: Agent-detection regex matched against the terminal panel's title; private computed property
+tabTitlePattern	panelTitlePattern	Sources/TextBoxInput.swift		ev:X
+# replacementTab: Test local PromptInputTargetIdentity passed as currentTab: to SendInputGuard (expected/current panel)
+replacementTab	replacementPanel	c11Tests/PromptInputGuardTests.swift		ev:X
+# originalTab: Test local PromptInputTargetIdentity passed as expectedTab: (panel identity)
+originalTab	originalPanel	c11Tests/PromptInputGuardTests.swift		ev:X
+# paneCloseTabTitle: Private static helper building the display title of a panel in the close-area dialog
+paneCloseTabTitle	paneClosePanelTitle	Sources/Workspace.swift		ev:X
+# launchDefaultAgentFromTabBar: Private method run when the panel bar's new-panel control is used (tab bar -> panel bar)
+launchDefaultAgentFromTabBar	launchDefaultAgentFromPanelBar	Sources/Workspace.swift		ev:X
+# closeOtherTabsDisplayTitle: Display-title helper for the close-other-panels plan (closeOtherPanelsInFocusedAreaPlan)
+closeOtherTabsDisplayTitle	closeOtherPanelsDisplayTitle	Sources/WorkspaceManager.swift		ev:X
+# bashTab: Test local: workspace.focusedPanelId (sibling of zshPanel)
+bashTab	bashPanel	c11Tests/WorkspaceManagerUnitTests.swift		ev:X
+# applyTabSelectionNow: Private method applying a pending panel selection request (pendingPanelSelection); its bonsplitTabId argument keeps the Bonsplit name
+applyTabSelectionNow	applyPanelSelectionNow	Sources/Workspace.swift		ev:X
+# ---- curated one-off edits the per-name rows leave (workspace chunk notes)
+@fix	Sources/Workspace.swift	return association.tabId	return association.panelId
+@fixall	Sources/AppDelegate.swift	workspace.tabTitle(panelId:	workspace.panelTitle(panelId:
+@fixall	Sources/AppDelegate.swift	workspace?.tabTitle(panelId:	workspace?.panelTitle(panelId:
+@fixall	Sources/PanelMetadataStore.swift	flagCallerTabId: PanelMetadataStore.flagCallerValue(blob)	flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
+@fix	Sources/PanelMetadataStore.swift	snapshot.flagCallerTabId	snapshot.flagCallerPanelId
+@fixall	CLI/c11.swift	requireNonEmptyHandle(parsed.tab, flag:	requireNonEmptyHandle(parsed.panel, flag:
+# CommandPaletteRenameTarget.Kind.tab -> .panel: its implicit-member uses (a region rule skips `.name`)
+@fixall	Sources/ContentView.swift	case .tab:	case .panel:
+@fixall	Sources/ContentView.swift	kind: .tab(workspaceId:	kind: .panel(workspaceId:
+@fixall	Sources/ContentView.swift	case .tab(let workspaceId, let panelId):	case .panel(let workspaceId, let panelId):

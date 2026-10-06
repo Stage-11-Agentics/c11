@@ -215,3 +215,58 @@ c11Tests/AreaMetadataPersistenceTests.swift	panelIds	wire	JSON fixture of an on-
 c11Tests/WorkspaceBlueprintFileCodableTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
 c11Tests/WorkspaceSnapshotCaptureTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
 Sources/TerminalController.swift	selectedTabs	harness	debug layout JSON key (area/tab vocabulary) read by tests and tests_v2: leave
+# C11-337 R8 (Tab -> Panel), pass A: hits on main since C11-248 plus the old Tab spellings r8a renamed
+CLI/c11.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+CLI/c11.swift	tabHandle	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+CLI/c11.swift	tabRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AgentCompanionContext.swift	surfaceID	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	browserTabId	harness	debug payload key shared by the app and c11UITests: leave
+Sources/ContentView.swift	markTabRead	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/ContentView.swift	markTabUnread	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/ContentView.swift	reopenClosedBrowserTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/GhosttyTerminalView.swift	sourceTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Metadata/SocketPanelRefValidator.swift	tabRef	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SessionPersistence.swift	activeAgentSurfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/SessionPersistence.swift	focusedPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/SocketHandlers/LegacyWireAliases.swift	tabRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/TerminalController.swift	tabType	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/TerminalNotificationStore.swift	panelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	closePane	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/WorkspaceManager.swift	topLeftTabId	harness	debug payload key shared by the app and c11UITests: leave
+c11Tests/LegacyWireRoutingKeyTests.swift	affectedSurfaceIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	paneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	paneRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	panelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	surfaceRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	tabRef	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/LegacyWireRoutingKeyTests.swift	tabRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/NotificationCommandEnvironmentTests.swift	panelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/NotificationCommandEnvironmentTests.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/SessionPersistenceTests.swift	activeAgentSurfaceId	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/SessionPersistenceTests.swift	focusedPanelId	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/SessionPersistenceTests.swift	selectedPanelId	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/SessionPersistenceTests.swift	surfaceID	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceApplyPlanCodableTests.swift	linkedAgentSurfacePlanId	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceApplyPlanCodableTests.swift	panelIds	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceBlueprintFileCodableTests.swift	linkedAgentSurfacePlanId	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceBlueprintFileCodableTests.swift	panelIds	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceBlueprintStoreTests.swift	panelIds	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceBlueprintStoreTests.swift	surfaceIds	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceManagerUnitTests.swift	newPanels	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceSnapshotConverterTests.swift	panelIds	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11Tests/WorkspaceSnapshotConverterTests.swift	surfaceIds	fixture	JSON fixture of an on-disk or wire shape (legacy key decoded on purpose): leave
+c11UITests/BrowserPaneNavigationKeybindUITests.swift	browserTabId	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/MenuKeyEquivalentRoutingUITests.swift	browserTabId	harness	debug payload key shared by the app and c11UITests: leave
+# C11-337 R8 pass B
+Sources/PanelLayoutSettings.swift	tabLayoutMode	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Panels/BrowserPanel.swift	openInNewTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Panels/CmuxWebView.swift	openLinkInNewTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+c11Tests/TabLayoutSettingsTests.swift	tabLayoutMode	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+# C11-337 R8 pass C
+c11Tests/PanelLayoutSettingsTests.swift	TabLayoutSettingsTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave
+c11Tests/PanelOrdinalDisplayTests.swift	TabOrdinalDisplayTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave
+c11Tests/PanelSheetDetailBuilderTests.swift	TabSheetDetailBuilderTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave
+c11Tests/PanelTypeAvailabilityTests.swift	TabTypeAvailabilityTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave
+c11Tests/ShortcutAndCommandPaletteTests.swift	LastTabCloseShortcutSettingsTests	fixture	test-local UserDefaults suite name prefix, any unique string works: leave

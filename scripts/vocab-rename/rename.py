@@ -8,6 +8,7 @@ Applies a TSV symbol table of whole-identifier renames to Swift sources.
   rename.py check-domains [--root DIR]            # table-independent gate: Ghostty / Bonsplit leaf / c11 names
   rename.py check-evidence <log.tsv> <base> <head> # every renamed token must be in the pass's evidence log
   rename.py check-literals [--allow F]            # string literals that still name a renamed identifier
+  rename.py check-rows <table.tsv> <base> [log]   # the renames landed: new names present and declared
 
 Table format (one entry per line, `#` comments and blank lines ignored):
 
@@ -334,6 +335,8 @@ def regions(src, lx):
                 if src[a:b] in TYPE_KEYWORDS:
                     is_type = True
                     break
+            # a type declared inside a function body is part of that member: it opens no region of its own
+            is_type = is_type and all(stack)
             stack.append(is_type)
             if is_type:
                 region += 1
@@ -551,6 +554,21 @@ def is_func_decl_param(src, a, b):
         return False
     m = re.search(r"(?:\b(?:func|case)\s+[A-Za-z_]\w*\s*(?:<[^>]*>)?|\binit[?!]?\s*(?:<[^>]*>)?)\s*$", src[max(0, k - 120):k])
     return m is not None
+
+
+def decl_label(src, a, b):
+    """(start, end) of the external label in front of the parameter name at [a,b) of a func/init declaration
+    (`f(conversationsByPanelId conversationsByTabId: T)`), or None."""
+    if not re.match(r"[ \t]*:", src[b:b + 40]):
+        return None
+    m = re.search(r"([(,]\s*)([A-Za-z_]\w*)[ \t]+$", src[max(0, a - 200):a])
+    if not m:
+        return None
+    start = a - (len(m.group(0)) - len(m.group(1)))
+    # the label must open a parameter of a func/init declaration: test it as a parameter name of its own
+    if not is_func_decl_param(src[:start + len(m.group(2))] + ":", start, start + len(m.group(2))):
+        return None
+    return start, start + len(m.group(2))
 
 
 def is_call_label(src, a, b):
@@ -832,6 +850,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
     prop_names = {src[a:b] for a in prop_owner for b in [next((y for x, y in lx.idents if x == a), a)]}
     label_kept_names = prop_names | KEPT_PROPERTY_NAMES
     scopes = Scopes(src, lx)
+    type_spans = [(op, cl) for kind, name, header, op, cl in bodies if cl is not None]
     protected = set()  # (region, name): parameters of `keep` callees keep their name through the body
     if callees:
         for (a, b), r in zip(lx.idents, reg):
@@ -844,6 +863,8 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
         elog = []
         out, last, count = [], 0, 0
         for (a, b), r in zip(lx.idents, reg):
+            if a < last:
+                continue  # consumed by the edit before it (a parameter name dropped for its label)
             tok = src[a:b]
             lst = renames.get(tok)
             if not lst or tok in KEEP_FUNC_NAMES:
@@ -869,6 +890,14 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
                 continue  # vendor member / ObjC runtime name (an external contract)
             is_label = is_call_label(src, a, b)
             is_param = (not is_label) and is_func_decl_param(src, a, b)
+            # the external label of a declared parameter (`f(tabs panels: [P])`): a label never shadows anything
+            decl_inner = None
+            if not is_label and not is_param:
+                mi = re.match(r"[ \t]+([A-Za-z_]\w*)[ \t]*:", src[b:b + 120])
+                if mi:
+                    lab = decl_label(src, b + mi.start(1), b + mi.end(1))
+                    if lab and lab[0] == a:
+                        decl_inner = (b + mi.start(1), b + mi.end(1))
             rule = None
             if callees:
                 if is_label or is_param:
@@ -917,13 +946,14 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
             ls_ = src.rfind("\n", 0, a) + 1
             is_tuple_label = (not is_param and src[b:b + 1] == ":" and re.search(r"[(,]\s*$", src[max(ls_, a - 60):a]) is not None
                               and "->" in src[ls_:a])
-            if blocked is None and not member and not is_label and not is_tuple_label:
+            implicit = a >= 1 and src[a - 1] == "."  # `.tab(let id)`: an implicit member is never shadowed by a local
+            if blocked is None and not member and not implicit and not is_label and not is_tuple_label and decl_inner is None:
                 clash, local = scopes.conflict(a, tok, new)
                 if (r, tok) in force_fb and fallback and not is_param and local:
                     new, clash = fallback, False
                     used_fb.add((r, tok))
                 if clash:
-                    if not local and not is_param:
+                    if not local and not is_param and any(op < a < cl for op, cl in type_spans):
                         new = "self." + new  # a member use: qualify so a same-named local cannot capture it
                     elif is_param:
                         inner = fallback if fallback and not scopes.conflict(a, tok, fallback)[0] else tok
@@ -931,6 +961,10 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
                     elif fallback and not scopes.conflict(a, tok, fallback)[0]:
                         new = fallback
                         used_fb.add((r, tok))
+                    elif not local and not is_param:
+                        blocked = "collision"  # outside a type `self.` does not exist: leave it
+                        if rule != "rename" and report is not None:
+                            report.append(f"COLLISION {rel}:{src.count(chr(10), 0, a) + 1} {tok} -> {new} (free function; left as is)")
                     else:
                         blocked = "collision"
                         if rule != "rename" and report is not None:
@@ -948,6 +982,10 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
                 out.append(f'{new} = "{pin_enum[a]}"')
             else:
                 out.append(new)
+            logged_old = tok
+            if decl_inner is not None and src[decl_inner[0]:decl_inner[1]] == new:
+                logged_old = f"{tok} {new}"
+                b = decl_inner[1]  # `openPanelMatches openPanelMatches:` -> `openPanelMatches:`
             if a in hazard_pos and report is not None:
                 line = src.count("\n", 0, a) + 1
                 report.append(f"CODABLE {rel}:{line} {tok} -> {new} in {hazard_pos[a]} (no CodingKeys: pin the old key by hand)")
@@ -958,7 +996,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
                     site_ = "owner=%s; %s" % member_decl[a]
                 else:
                     cls_ = "Muse" if cls_ == "M" else "Leafuse"
-            elog.append((rel, src.count("\n", 0, a) + 1, tok, new, cls_, site_))
+            elog.append((rel, src.count("\n", 0, a) + 1, logged_old, new, cls_, site_))
             last = b
             count += 1
         out.append(src[last:])
@@ -1027,6 +1065,8 @@ def _find_tainted_once(text, rx, names, exclude=None, skip=frozenset(), funcs=Fa
                 if text.find(name, m.start()) in skip:
                     continue  # the declaration of a stored property: it keeps its name
                 stmt = m.group(0).replace(name, " ", 1)  # the bound name is not part of its own source
+                if re.search(r"(?:\[|,|\bweak|\bunowned)\s*$", text[max(0, m.start() - 12):m.start()]) and "]" in stmt:
+                    stmt = stmt[:stmt.index("]")]  # a capture list `[weak NAME = expr] in ...`: the source ends at `]`
                 if rx.search(stmt) and not (exclude and exclude.search(stmt)):
                     tainted.add(name)
                     SNIP.setdefault(name, m.group(0).strip()[:140])
@@ -1267,7 +1307,19 @@ def taint_pass(src, rel, taint_rules, report=None):
             tainted -= props_here  # already renamed file-wide
             if not tainted:
                 continue
-            present = {src[a:b] for a, b in toks if not is_call_label(src, a, b)}  # a call label is not a binding
+            # a call label is not a binding, and a qualified member (`ws.terminalPanel(for:)`) cannot be shadowed by a local
+            present = collections.Counter(src[a:b] for a, b in toks if not is_call_label(src, a, b) and not (a >= 1 and src[a - 1] == "."))
+            # `f(panelsToWrite tabsToWrite: T)` whose name takes its label's spelling: the duplicate name is dropped
+            collapse = {}
+            for a, b in toks:
+                tok = src[a:b]
+                if tok in tainted and a not in prop_decl_pos and mp[tok] != "@keep":
+                    lab = decl_label(src, a, b)
+                    if lab and src[lab[0]:lab[1]] == target(tok):
+                        collapse[a] = lab
+            for a, (la, lb) in collapse.items():
+                present[src[la:lb]] -= 1
+            present = {t for t, n in present.items() if n > 0}
             for a, b in toks:
                 tok = src[a:b]
                 if tok in tainted and a not in prop_decl_pos and not (a >= 1 and src[a - 1] == ".") and not is_call_label(src, a, b) \
@@ -1278,6 +1330,11 @@ def taint_pass(src, rel, taint_rules, report=None):
                     if tgt in present and tgt != tok and mp[tok] != "@keep":
                         if report is not None:
                             report.append(f"TAINT-COLLISION {rel}:{src.count(chr(10), 0, a) + 1} {tok} -> {tgt}")
+                        continue
+                    if a in collapse:
+                        la, lb = collapse[a]
+                        edits[lb] = (b, "", _ev_class(opts), SNIP.get(tok, ""))
+                        EVIDENCE.append((rel, src.count("\n", 0, a) + 1, src[la:b], src[la:lb], _ev_class(opts), SNIP.get(tok, "")))
                         continue
                     if is_func_decl_param(src, a, b) and mp[tok] != "@keep" and "relabel" not in opts:
                         tgt = f"{tok} {tgt}"  # `f(panel: P)` -> `f(panel tab: P)`: the call-site label keeps its spelling
@@ -1291,7 +1348,7 @@ def taint_pass(src, rel, taint_rules, report=None):
             continue
         out.append(src[last:a])
         out.append(t)
-        if not t.endswith(KEEP_SENTINEL):
+        if t and not t.endswith(KEEP_SENTINEL):  # a dropped duplicate name (empty text) was logged as `label name` -> `label`
             EVIDENCE.append((rel, src.count("\n", 0, a) + 1, src[a:b], t, cls, site))
         last = b
     out.append(src[last:])
@@ -1478,22 +1535,26 @@ LEAF_LABEL_DECLS = set()  # external labels of our own functions whose parameter
 GHOSTTY_RETURNING = set()  # names of functions declared to return the Ghostty handle or wrapper (filled by check_domains_main)
 DOMAIN_LEAF = (r"\btabs\(\s*inPane:|\bselectedTab\(\s*inPane:|\ballTabIds\b|"
                r"\bbonsplitController\??\.(?:tabs|selectedTab|allTabIds|tab\(|createTab\b)|\bcreateTab\(|"
-               r"\bsurfaceIdFromPanelId\b|\bbonsplitTabIdFromTabId\b|\bBonsplit\.Tab\b|\bTabInfo\b|\bTabID\b|"
+               r"\bsurfaceIdFromPanelId\b|\bbonsplitTabIdFrom(?:Tab|Panel)Id\b|\bBonsplit\.Tab\b|\bTabInfo\b|\bTabID\b|"
                r"\b\w*[pP]ane\.(?:tabs|selectedTabId)\b|\bExternalPaneNode\b|\bExternalTab\w*|"
                r"\blayout\.panes\b|\b\w*BonsplitTab\w*\b|\bbonsplitTab\w*\b")
-DOMAIN_LEAF_EXCLUDE = (r"=\s*(?:[\w?!.()]*\.)?(?:tabIdFromBonsplitTabId|panelIdFromSurfaceId)\b|"
+DOMAIN_LEAF_EXCLUDE = (r"=\s*(?:[\w?!.()]*\.)?(?:tabIdFromBonsplitTabId|panelIdFromBonsplitTabId|panelIdFromSurfaceId)\b|"
                        # c11 resolvers that take a Bonsplit id as an argument and return a c11 tab or id
-                       r"=\s*(?![\w?!.()]*bonsplitController)(?:[\w?!.()]*\.)?(?:tab|terminalTab|browserTab|markdownTab|tabID|tabId|sessionTabID|newTab\w*)\s*\(|"
-                       r"=\s*(?:self\.)?createTab\s*\(|"
-                       r"\bbonsplitTabIdToTabId\b|"
+                       r"=\s*(?![\w?!.()]*bonsplitController)(?:[\w?!.()]*\.)?(?:tab|terminalTab|browserTab|markdownTab|tabID|tabId|sessionTabID|newTab\w*|"
+                       r"panel|terminalPanel|browserPanel|markdownPanel|panelID|panelId|sessionPanelID|newPanel\w*)\s*\(|"
+                       r"=\s*(?:self\.)?create(?:Tab|Panel)\s*\(|"
+                       r"\bbonsplitTabIdTo(?:Tab|Panel)Id\b|"
                        r"\.(?:map|compactMap|flatMap|reduce|enumerated)\b(?!\s*\{\s*\$0\.id\s*\})")
 DOMAIN_C11 = (r"\bnew(?:Terminal|Browser|Markdown)(?:Panel|Surface|Tab)\w*\(|\.(?:panels|surfaces|tabs)\[|"
               r"\b(?:terminalPanel|browserPanel|markdownPanel|terminalTab|browserTab|markdownTab)\(for\b|"
-              r"\b(?:TerminalPanel|BrowserPanel|MarkdownPanel|TerminalTab|BrowserTab|MarkdownTab|TabContent)\b|"
-              r"=\s*(?:[\w?!.()]*\.)?(?:tabIdFromBonsplitTabId|panelIdFromSurfaceId)\b")
+              r"\b(?:TerminalPanel|BrowserPanel|MarkdownPanel|TerminalTab|BrowserTab|MarkdownTab|TabContent|Panel)\b|"
+              r"=\s*(?:[\w?!.()]*\.)?(?:tabIdFromBonsplitTabId|panelIdFromBonsplitTabId|panelIdFromSurfaceId)\b")
 DOMAIN_GHOSTTY_LIFECYCLE = (r"createTab|teardownTab|releaseTabForTesting|allTabs|runtimeTab\w*|recordRuntimeTabCreation|"
                             r"requestBackgroundTabStartIfNeeded|backgroundTabStartQueued|tabLog\w*|sendTextToTab|"
-                            r"hasTab(?![A-Z])|waitForTerminalTab\w*|resolveTerminalTab\w*|initialTab|liveTab")
+                            r"hasTab(?![A-Z])|waitForTerminalTab\w*|resolveTerminalTab\w*|initialTab|liveTab|"
+                            r"createPanel|teardownPanel|releasePanelForTesting|allPanels|runtimePanel\w*|recordRuntimePanelCreation|"
+                            r"requestBackgroundPanelStartIfNeeded|backgroundPanelStartQueued|panelLog\w*|sendTextToPanel|"
+                            r"hasPanel(?![A-Z])|waitForTerminalPanel\w*|resolveTerminalPanel\w*|initialPanel|livePanel")
 # pane domain: a Bonsplit PaneID value is a Bonsplit pane and never carries the c11 area name
 DOMAIN_PANE_LEAF = (r"\bPaneID\b|\bPaneState\b|\bExternalPaneNode\b|\bPaneGeometry\b|\bPaneBounds\b|\binPane\s*:|"
                     r"\bbonsplitController\??\.(?:focusedPaneId|allPaneIds|selectedPane\w*|pane\(|paneIds)\b|\bfocusedPaneId\b|\ballPaneIds\b")
@@ -1509,7 +1570,8 @@ def _is_area_name(name):
     return name[0].islower() and bool(_AREA_SEGMENT.search(name)) and not re.search(r"(?i)safe|tracking|overflow|content|text|intersection|portalHost|threshold", name)
 
 
-_TAB_SEGMENT = re.compile(r"(?:^|[a-z0-9])[Tt]ab(?:s|Id|Ids|ID|IDs|Raw)?(?=[A-Z]|$)")
+# the c11 leaf word in either spelling: `tab` (C11-248) and `panel` (C11-337)
+_TAB_SEGMENT = re.compile(r"(?:^|[a-z0-9])(?:[Tt]ab|[Pp]anel)(?:s|Id|Ids|ID|IDs|Raw)?(?=[A-Z]|$)")
 
 
 def _is_c11_tab_name(name):
@@ -1654,24 +1716,41 @@ def check_domains_main(argv):
 
 def literal_old_names(tables_dir):
     """Old spellings the pass tables and evidence logs renamed: camel/Pascal-case identifiers of 6+ characters
-    (a plain word such as `surface` or `pane` is too common in prose to judge by spelling)."""
-    old = {}
+    (a plain word such as `surface` or `pane` is too common in prose to judge by spelling). Passes are read in order,
+    and a name a later pass brought back (2b's `BrowserPanel` -> `BrowserTab`, r8a's `BrowserTab` -> `BrowserPanel`)
+    is current again, not old."""
+    per_tag = {}
     for path in sorted(glob.glob(os.path.join(tables_dir, "pass-*.tsv"))):
+        if path.endswith(".hand.tsv"):
+            continue  # appended to its generated table
         tag = os.path.basename(path)[5:-4]
         renames, paths, deletes, keeps, callees, taints, fixes, receivers, region_renames = load_table(path)
+        pairs = per_tag.setdefault(tag, [])
         for o, lst in renames.items():
             if lst and lst[0][0] != o:
-                old.setdefault(o, f"pass {tag}")
+                pairs.append((o, lst[0][0]))
+        if os.path.exists(os.path.join(tables_dir, f"evidence-{tag}.tsv")):
+            continue  # the log records what the taint rules actually renamed; their candidate lists are wider
         for g, rx, mp, rr, ex, opts in taints:
             for o, n in mp.items():
                 if n != "@keep" and n != o:
-                    old.setdefault(o, f"pass {tag}")
+                    pairs.append((o, n))
     for path in sorted(glob.glob(os.path.join(tables_dir, "evidence-*.tsv"))):
         tag = os.path.basename(path)[9:-4]
+        pairs = per_tag.setdefault(tag, [])
         for line in open(path, encoding="utf-8"):
             cols = line.rstrip("\n").split("\t")
             if len(cols) > 4 and cols[2] and cols[2] != cols[3].split()[-1]:
-                old.setdefault(cols[2], f"pass {tag}")
+                pairs.append((cols[2], cols[3].split()[-1]))
+    old = {}
+    for tag in sorted(per_tag, key=lambda t: (t.startswith("r8"), t)):  # C11-248's passes, then C11-337's
+        news = set()
+        for o, n in per_tag[tag]:
+            old.setdefault(o, f"pass {tag}")
+            news.add(n)
+        for n in news:
+            if n in old and old[n] != f"pass {tag}":
+                del old[n]  # renamed back by this pass: the current spelling again
     return {o: w for o, w in old.items() if re.fullmatch(r"[A-Za-z_]\w{5,}", o) and re.search(r"[a-z][A-Z]|^[A-Z][a-z]+[A-Z]", o)}
 
 
@@ -1734,6 +1813,8 @@ def _align(a, b, old_path, new_path, logged):
             continue
         if tag == "insert" and i1 > 0:
             pairs.append((a[i1 - 1], a[i1 - 1] + " " + " ".join(b[j1:j2])))
+        elif tag == "delete" and i1 > 0 and j1 > 0 and b[j1 - 1] == a[i1 - 1]:
+            pairs.append((a[i1 - 1] + " " + " ".join(a[i1:i2]), a[i1 - 1]))  # a parameter name dropped for its label
         elif tag == "replace" and (i2 - i1) == (j2 - j1):
             pairs.extend(zip(a[i1:i2], b[j1:j2]))
         else:
@@ -1754,6 +1835,32 @@ def _merge_params(tokens, logged, old_path, new_path):
     return out
 
 
+_MERGED = {}
+
+
+def _merged_olds(logged):
+    """(file, `label name`) for every logged rename whose old side is two tokens (a dropped parameter name)."""
+    key = id(logged)
+    if key not in _MERGED:
+        _MERGED.clear()
+        _MERGED[key] = {(f, o) for f, o, n in logged if " " in o}
+    return _MERGED[key]
+
+
+def _merge_dropped(tokens, logged, old_path, new_path):
+    """`label name` where the log records `label name` -> `label`: a parameter name dropped for its label (one token)."""
+    out, i = [], 0
+    while i < len(tokens):
+        pair = tokens[i] + " " + tokens[i + 1] if i + 1 < len(tokens) else None
+        if pair and any((f, pair) in _merged_olds(logged) for f in (old_path, new_path)):
+            out.append(tokens[i] + " " + tokens[i + 1])
+            i += 2
+        else:
+            out.append(tokens[i])
+            i += 1
+    return out
+
+
 def check_evidence_main(argv):
     """rename.py check-evidence <evidence.tsv> <base-ref> <head-ref>
 
@@ -1762,6 +1869,8 @@ def check_evidence_main(argv):
     than UNPROVEN. Added and deleted lines that are not CodingKeys pins are listed for review.
     """
     log, base, head = argv[2], argv[3], argv[4]
+    if os.path.basename(log).startswith("evidence-r8"):
+        use_test_vocab("r8")
     logged, classes, entries = {}, {}, []
     for line in open(log, encoding="utf-8"):
         f, ln, old, new, cls, site = (line.rstrip("\n").split("\t") + [""])[:6]
@@ -1787,15 +1896,21 @@ def check_evidence_main(argv):
         for m, p in zip(minus, plus):
             if m == p:
                 continue
-            a = _tokens(m)
+            pin = re.match(r'(\s*case\s+)(\w+)(\s*=\s*)"(\w+)"', p)
+            if pin and (logged.get((old_path, pin.group(4), pin.group(2))) or logged.get((new_path, pin.group(4), pin.group(2)))) \
+                    and not re.search(r'=\s*"', m):
+                p = p[:pin.end(2)] + p[pin.end():]  # the pinned raw value is the old spelling, kept on purpose
+
+            def unlogged(pairs):
+                return sum(1 for o, n in pairs if not (logged.get((old_path, o, n)) or logged.get((new_path, o, n))))
             best = None
-            for b in (_tokens(p), _merge_params(_tokens(p), logged, old_path, new_path)):
-                pairs, bad = _align(a, b, old_path, new_path, logged)
-                if best is None or (len(bad), len(pairs) * -1) < (len(best[1]), -len(best[0])):
-                    best = (pairs, bad)
-                if not bad:
-                    break
-            pairs, bad = best
+            for a in (_tokens(m), _merge_dropped(_tokens(m), logged, old_path, new_path)):
+                for b in (_tokens(p), _merge_params(_tokens(p), logged, old_path, new_path)):
+                    pairs, bad = _align(a, b, old_path, new_path, logged)
+                    score = (len(bad), unlogged(pairs), -len(pairs))
+                    if best is None or score < best[0]:
+                        best = (score, pairs, bad)
+            _, pairs, bad = best
             for o, n in pairs:
                 cls = logged.get((old_path, o, n)) or logged.get((new_path, o, n))
                 if cls and cls != {"UNPROVEN"}:
@@ -1860,8 +1975,32 @@ TEST_DOMAIN_RX = {"Surface": r"\bTerminalSurface\b|\bGhosttySurface\w*|ghostty_s
                   "TabManager": r"(?!x)x"}
 
 
+# C11-337 R8 (pass r8c): Tab -> Panel. `use_test_vocab("r8")` switches the three tables above; renamed subjects are then
+# read from the r8 passes only (`TEST_TABLES`), and only from names that are types or members, not short locals.
+TEST_VOCABS = {
+    "c11-248": (list(TEST_WORDS), dict(TEST_OLD_RX), dict(TEST_DOMAIN_RX), None),
+    "r8": ([("Tabs", "Panels"), ("Tab", "Panel")],
+           {"Tab": r"(?-i:(?<![a-z])[tT]abs?(?![a-z])|[a-z]Tabs?(?![a-z]))"},
+           # the Tab key and workspace-meaning sidebar names: a body about them is not about the c11 panel
+           {"Tab": r"\bkVK_Tab\b|\binsertTab\b|\binsertBacktab\b|\bNSTabView\w*|\bsidebar_activeTab\w*|\bactiveTab(?:Fill|Rail)\w*"},
+           ("r8a", "r8b")),
+}
+TEST_TABLES = None  # pass tags whose renames count as test evidence (None: every pass)
+
+
+def use_test_vocab(name):
+    global TEST_TABLES
+    words, old_rx, dom_rx, tables = TEST_VOCABS[name]
+    TEST_WORDS[:] = words
+    TEST_OLD_RX.clear()
+    TEST_OLD_RX.update(old_rx)
+    TEST_DOMAIN_RX.clear()
+    TEST_DOMAIN_RX.update(dom_rx)
+    TEST_TABLES = tables
+
+
 def test_word_of(word):
-    return {"Surfaces": "Surface", "Panels": "Panel", "Panes": "Pane"}.get(word, word)
+    return {"Surfaces": "Surface", "Panels": "Panel", "Panes": "Pane", "Tabs": "Tab"}.get(word, word)
 
 
 def test_new_name(name):
@@ -1875,24 +2014,36 @@ def test_new_name(name):
         if pat.search(out):
             words.append(test_word_of(old))
             out = pat.sub(new, out)
-    out = out.replace("TabTab", "Tab")
+    out = out.replace("TabTab", "Tab").replace("PanelPanel", "Panel")
     return (out, words) if out != name else (None, [])
 
 
 def renamed_new_names(tables_dir):
     """{new name: old name} for every identifier the pass tables and evidence logs renamed (old-word spellings only)."""
     pairs = {}
+    def wanted(path, prefix):
+        tag = os.path.basename(path)[len(prefix):-4]
+        return TEST_TABLES is None or tag in TEST_TABLES
+    def subject(old):  # r8: a type or member name, not a short local (`tabA`, `tabId`)
+        return TEST_TABLES is None or (len(old) >= 8 and bool(re.search(r"^[A-Z]|[a-z][A-Z]\w*[A-Z]", old)))
     for path in sorted(glob.glob(os.path.join(tables_dir, "pass-*.tsv"))):
+        if not wanted(path, "pass-") or path.endswith(".hand.tsv"):
+            continue
         renames = load_table(path)[0]
         for o, lst in renames.items():
             for n, *_ in lst:
-                if n != o:
+                if n != o and subject(o):
                     pairs.setdefault(n, o)
     for path in sorted(glob.glob(os.path.join(tables_dir, "evidence-*.tsv"))):
+        if not wanted(path, "evidence-"):
+            continue
         for line in open(path, encoding="utf-8"):
             cols = line.rstrip("\n").split("\t")
-            if len(cols) > 4 and cols[2] and cols[3] and cols[2] != cols[3].split()[-1]:
-                pairs.setdefault(cols[3].split()[-1], cols[2])
+            if len(cols) > 4 and cols[2] and cols[3] and cols[2] != cols[3].split()[-1] and " " not in cols[2]:
+                if TEST_TABLES is not None and cols[4] == "L":
+                    continue
+                if subject(cols[2]):
+                    pairs.setdefault(cols[3].split()[-1], cols[2])
     return pairs
 
 
@@ -2040,6 +2191,91 @@ def verify_classes(entries, head, logdir="."):
     return bad
 
 
+
+
+def _code_tokens(text):
+    lx = Lexer(text)
+    lx.scan(0, False)
+    return [text[a:b] for a, b in lx.idents]
+
+
+def _declared_names(text):
+    """Every name the file declares: types, members, locals and cases, and the parameter labels and names of its
+    declared functions (strings and comments masked)."""
+    lx = Lexer(text)
+    lx.scan(0, False)
+    masked = list(text)
+    for a, b in lx.strings:
+        masked[a:b] = " " * (b - a)
+    code = "".join(masked)
+    out = set(re.findall(r"\b(?:func|var|let|case|class|struct|enum|protocol|typealias|actor)\s+([A-Za-z_]\w*)", code))
+    for m in re.finditer(r"\b(?:func\s+[A-Za-z_]\w*|init[?!]?)\s*(?:<[^>{}]*>)?\(", code):
+        depth, i = 1, m.end()
+        while i < len(code) and depth:
+            depth += {"(": 1, ")": -1}.get(code[i], 0)
+            i += 1
+        for pm in re.finditer(r"(?:^|[(,])\s*([A-Za-z_]\w*)(?:\s+([A-Za-z_]\w*))?\s*:", code[m.end() - 1:i]):
+            out.update(x for x in pm.groups() if x)
+    return out
+
+
+def check_rows_main(argv):
+    """rename.py check-rows <table.tsv> <base-ref> [<evidence.tsv>]
+
+    The renames landed under their new names (not only that the old word is gone):
+      NOT-LANDED  a file a row is scoped to held the old name before the pass and holds no new name after it
+      UNDECLARED  a row's new name is used after the pass but declared nowhere, while the old name was declared before
+                  (a use followed the rename and its declaration did not: the declaration's file was out of scope)
+      MISSING     an evidence-log entry whose new name is not in its file after the pass
+    """
+    import tempfile
+    table, base = argv[2], argv[3]
+    log = argv[4] if len(argv) > 4 else None
+    renames, paths, *_ = load_table(table)
+    root = os.getcwd()
+    btmp = tempfile.mkdtemp(prefix="vr-base-")
+    tar = subprocess.run(["git", "archive", base, *SCAN_DIRS], capture_output=True, check=True).stdout
+    subprocess.run(["tar", "-x", "-C", btmp], input=tar, check=True)
+
+    def moved(rel):
+        for old, new in paths:
+            if rel == old or rel.startswith(old + "/"):
+                rel = new + rel[len(old):]
+        return rel
+
+    btext = {os.path.relpath(f, btmp): open(f, encoding="utf-8").read() for f in swift_files(btmp)}
+    htext = {os.path.relpath(f, root): open(f, encoding="utf-8").read() for f in swift_files(root)}
+    btok = {rel: set(_code_tokens(t)) for rel, t in btext.items()}
+    htok = {rel: set(_code_tokens(t)) for rel, t in htext.items()}
+    bdecl = set().union(*(_declared_names(t) for t in btext.values()))
+    hdecl = set().union(*(_declared_names(t) for t in htext.values()))
+    hall = set().union(*htok.values()) if htok else set()
+    bad = []
+    for old, lst in renames.items():
+        for new, globs, fallback, flags in lst:
+            scoped = [rel for rel in btext if glob_match(rel, globs) and old in btok[rel]]
+            for rel in scoped:
+                head = htok.get(moved(rel), set())
+                if new not in head and (not fallback or fallback not in head) and old in head:
+                    bad.append(f"NOT-LANDED {moved(rel)} {old} -> {new}")
+            if new in hall and old in bdecl and new not in hdecl:
+                bad.append(f"UNDECLARED {new} (was {old}): used after the pass, declared nowhere")
+    if log and os.path.exists(log):
+        seen = set()
+        for line in open(log, encoding="utf-8"):
+            f, ln, old, new, cls, site = (line.rstrip("\n").split("\t") + [""] * 6)[:6]
+            n1 = new.split()[-1].removeprefix("self.") if new else ""
+            if (f, n1) in seen or not n1 or n1 == old or site == "@path":  # a moved file's stem is not a token
+                continue
+            seen.add((f, n1))
+            if f in htok and n1 not in htok[f] and not (cls == "F" and n1 in htext[f]):  # a curated @fix may edit a string
+                bad.append(f"MISSING {f} {n1} (logged from {old})")
+    for line in bad[:120]:
+        print(line)
+    print(f"rows landed: {len(bad)} problems ({sum(len(l) for l in renames.values())} rows checked)")
+    return 1 if bad else 0
+
+
 def check_main(argv):
     """rename.py check-leaf <table.tsv> [--root DIR]: exit 1 if any leaf binding carries a workspace name."""
     table = argv[2]
@@ -2058,6 +2294,8 @@ def check_main(argv):
 def main(argv):
     if len(argv) >= 5 and argv[1] == "check-evidence":
         return check_evidence_main(argv)
+    if len(argv) >= 4 and argv[1] == "check-rows":
+        return check_rows_main(argv)
     if len(argv) >= 2 and argv[1] == "check-literals":
         return check_literals_main(argv)
     if len(argv) >= 2 and argv[1] == "check-domains":
@@ -2075,6 +2313,18 @@ def main(argv):
         root = argv[argv.index("--root") + 1]
     renames, paths, deletes, keeps, callees, taints, fixes, receivers, region_renames = load_table(table)
     validate(renames)
+    # a row scoped to a file that is not in the tree on entry renames nothing there: the declaration it was meant for
+    # keeps its old name while its uses elsewhere follow (C11-337 R8: rows written against post-pass paths)
+    named = [(g, o) for o, lst in renames.items() for _n, gl, _f, _fl in lst for g in gl]
+    named += [(g, "@regionrename") for gl, _rr, _mp in region_renames for g in gl.split(",")]
+    named += [(rel, "@fix") for rel, *_ in fixes]
+    stale_globs = sorted({(g.lstrip("!"), o) for g, o in named
+                          if g.lstrip("!") and not any(c in g for c in "*?[") and not os.path.exists(os.path.join(root, g.lstrip("!")))})
+    for g, o in stale_globs:
+        print(f"GLOB STALE {g} ({o}): no such file on entry")
+    if stale_globs and not dry:
+        print(f"{len(stale_globs)} rows name files that do not exist: fix the table", file=sys.stderr)
+        return 3
     for rel, text in deletes:
         full = os.path.join(root, rel)
         if not os.path.exists(full):

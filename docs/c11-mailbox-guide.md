@@ -29,7 +29,7 @@ flowchart LR
 
 Two facts to internalize:
 
-1. **The filesystem is the contract.** The CLI is convenience over file I/O. Any process that can write a JSON file to a directory can send a message; any process that can list a directory can receive one.
+1. **The filesystem is the contract.** The CLI is convenience over file I/O. Any process that can write a JSON file to a directory can send a message; any process that can list a directory can receive one. The `tests_v2/test_mailbox_parity.py` test asserts CLI sends and raw file writes produce byte-identical envelopes.
 2. **A panel is addressed by a stable handle, falling back to its name.** The resolver matches `to` with precedence **address → role → title** (see [Addressing](#addressing-stable-handles-and-the-title-fallback) below). A panel is addressable as long as it has a `title` (set with `c11 set-title` / `c11 rename-panel`); the optional `mailbox.address` / `mailbox.role` keys give it a rename-proof handle on top.
 
 ---
@@ -676,6 +676,7 @@ sequenceDiagram
 | Production handler registration   | `Sources/Workspace.swift` `startMailboxDispatcher()` |
 | CLI subcommand                    | `CLI/c11.swift` `runMailboxCommand` (~17248)    |
 | Bash example                      | `Resources/bin/c11-mailbox-send-bash-example.sh`|
+| Parity test (CLI vs raw)          | `tests_v2/test_mailbox_parity.py`               |
 | Swift unit tests                  | `c11Tests/Mailbox*Tests.swift`                  |
 | Design doc (RFC)                  | `docs/c11-messaging-primitive-design.md`        |
 | CMUX-37 alignment                 | `docs/c11-13-cmux-37-alignment.md`              |

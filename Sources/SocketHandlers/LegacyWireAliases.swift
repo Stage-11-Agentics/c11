@@ -153,7 +153,7 @@ enum LegacyWireAliases {
         if prefix == "tab:" {
             for pair in v067TabPairs where dict[pair.old] == nil {
                 if let value = dict[pair.new] {
-                    dict[pair.old] = pair.isRef ? legacyRefValue(value) : value
+                    dict[pair.old] = pair.isRef ? convertRef(value, using: legacyHandle) : value
                 }
             }
             if dict["tabs"] == nil, let panels = dict["panels"] { dict["tabs"] = panels }
@@ -164,12 +164,6 @@ enum LegacyWireAliases {
     /// The `tab_*` pairs a v0.67 client reads.
     nonisolated private static let v067TabPairs = legacyKeyPairs.filter {
         $0.old.hasPrefix("tab") || $0.old.contains("_tab")
-    }
-
-    nonisolated private static func legacyRefValue(_ value: Any) -> Any {
-        if let ref = value as? String { return legacyHandle(ref) }
-        if let refs = value as? [String] { return refs.map(legacyHandle) }
-        return value
     }
 
     // MARK: - Key table

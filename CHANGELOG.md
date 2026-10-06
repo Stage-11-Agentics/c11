@@ -17,7 +17,7 @@ Headline: **c11's vocabulary is now window → workspace → area → panel.** A
 ### Compatibility
 
 - Every tab and surface spelling stays accepted: commands, flags, refs, environment variables, socket methods and input keys. The `C11_TAB_*`, `C11_SURFACE_*` and `CMUX_*` environment variables are still exported.
-- Old keys are accepted as input; output is panel-only. Socket results and CLI `--json` carry `panel_*` / `area_*` keys and `panels` / `areas` arrays, never `tab_*`, `surface_*`, `pane_*`, `tabs`, `surfaces` or `panes`. Flag raises store `flag_caller_panel_id` (with `flag_caller_surface_id` for older readers) and no longer write `flag_caller_tab_id`; all three are still read. The tmux-compat `#{tab_id}` format variable still renders. A 0.67 CLI talking to this app still gets the `tab_*` keys and `tabs` lists it reads, on its old-spelling requests only.
+- Old keys are accepted as input; output is panel-only. Socket results and CLI `--json` carry `panel_*` / `area_*` keys and `panels` / `areas` arrays, never `tab_*`, `surface_*`, `pane_*`, `tabs`, `surfaces` or `panes`. Flag raises store `flag_caller_panel_id` (with `flag_caller_surface_id` for older readers) and no longer write `flag_caller_tab_id`; all three are still read. The tmux-compat `#{tab_id}` format variable still renders. A 0.67 CLI talking to this app gets `tab:` refs, `tab_*` keys and `tabs` lists back only on its `tab.*` requests and caller-tagged `tree` / `identify`, so its `--tab tab:N` targeting keeps working; its other commands see panel-only output.
 - Blueprints and snapshots with the old keys still load. Existing files and settings are never rewritten. A blueprint or snapshot exported by this version uses the new keys and does not load in 0.67.
 
 ## [0.67.0] - 2026-10-01

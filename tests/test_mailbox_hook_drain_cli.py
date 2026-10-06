@@ -248,8 +248,8 @@ def main() -> int:
     proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
                   fx.env(rec.path), stop_input)
     receipts = fx.receipts()
-    check(len(receipts) == 1 and receipts[0].get("tab_id", "").upper() == TAB and receipts[0].get("via") == "drain",
-          "hook drain receipt names the recipient tab", json.dumps(receipts))
+    check(len(receipts) == 1 and receipts[0].get("panel_id", "").upper() == TAB and receipts[0].get("via") == "drain",
+          "hook drain receipt names the recipient panel", json.dumps(receipts))
     check(bool(receipts) and receipts[0].get("deliveries") == [{"id": ulid, "recipient": "lane-c-agent"}],
           "hook drain receipt names the envelope recipient", json.dumps(receipts))
     spool = os.path.join(fx.mailboxes, "_receipts")
@@ -275,8 +275,8 @@ def main() -> int:
     check(all(i in printed for i in ids) and root == [] and len(read) == 3,
           "plain drain to a live pipe: all printed and claimed")
     receipts = fx.receipts()
-    check(len(receipts) == 1 and "tab_id" not in receipts[0] and sorted(fx.receipt_ids()) == sorted(ids),
-          "recv --tab <name>: receipt carries no tab_id rather than the caller's", json.dumps(receipts))
+    check(len(receipts) == 1 and "panel_id" not in receipts[0] and "tab_id" not in receipts[0] and sorted(fx.receipt_ids()) == sorted(ids),
+          "recv --tab <name>: receipt carries no panel_id rather than the caller's", json.dumps(receipts))
     # `--tab <name>` resolves the name to its tab's UUID inbox through
     # `mailbox.resolve` (C5) before anything is claimed; the delivery itself is
     # recorded only through the receipt spool, never over the socket.

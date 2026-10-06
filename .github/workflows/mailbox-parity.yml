@@ -1,12 +1,12 @@
 name: Mailbox parity
 
 # Drift-enforcement lock for the c11 mailbox primitive (C11-13 Stage 2).
-# Push and PR events stay cheap: this workflow only compiles the Python
-# mailbox hook-drain CLI test. Native Mailbox* and StdinHandler* coverage runs in the main
+# Push and PR events stay cheap: this workflow only compiles the Python parity
+# harness. Native Mailbox* and StdinHandler* coverage runs in the main
 # backstop's `c11-logic` lane in `ci-hourly.yml`.
 #
 # Out of scope (follow-up): launching a real c11 app on a virtual display and
-# running Python mailbox tests against its socket. The host-driven UI test
+# running the Python parity test against its socket. The host-driven UI test
 # harness was removed in C11-99 Area D (the `test-e2e.yml` workflow had been
 # bit-rotted against a renamed scheme); the byte-level lock this workflow owns
 # is too narrow to justify rebuilding the ffmpeg + TCC harness on every push.
@@ -14,6 +14,7 @@ name: Mailbox parity
 on:
   push:
     paths:
+      - "tests_v2/test_mailbox_parity.py"
       - "tests/test_mailbox_hook_drain_cli.py"
       - "Resources/bin/codex"
       - "Sources/Mailbox/**"
@@ -24,6 +25,7 @@ on:
       - ".github/workflows/mailbox-parity.yml"
   pull_request:
     paths:
+      - "tests_v2/test_mailbox_parity.py"
       - "tests/test_mailbox_hook_drain_cli.py"
       - "Resources/bin/codex"
       - "Sources/Mailbox/**"
@@ -50,5 +52,5 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Compile mailbox CLI test (syntax check)
-        run: python3 -m py_compile tests/test_mailbox_hook_drain_cli.py
+      - name: Compile parity test (syntax check)
+        run: python3 -m py_compile tests_v2/test_mailbox_parity.py tests/test_mailbox_hook_drain_cli.py

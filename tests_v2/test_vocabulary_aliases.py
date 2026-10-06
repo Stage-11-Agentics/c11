@@ -180,9 +180,23 @@ def _is_legacy_key(key: str) -> bool:
     return re.search(r"(^|_)(pane|tabs?)(_|$)", low) is not None
 
 
+# Methods a v0.67 CLI sends. Their results keep `tab_*` / `tabs` twins (with
+# `tab:N` refs) so a pinned 0.67 CLI still resolves `--tab tab:N`.
+V067_METHOD = re.compile(r"^(tab\.|browser\.tab\.|area\.tabs\b)")
+
+
 def _assert_wire_clean(payload: Any, what: str) -> None:
-    bad = [f"{path}.{key}" for path, key in _walk_keys(payload) if _is_legacy_key(key)]
+    """Canonical requests get canonical keys only. `what` names the method; a
+    v0.67-spelled method may carry `tab_*` twins, which must mirror `panel_*`,
+    but never `surface_*` / `pane_*`."""
+    v067 = bool(V067_METHOD.match(what))
+    bad = [f"{path}.{key}" for path, key in _walk_keys(payload)
+           if _is_legacy_key(key) and not (v067 and "tab" in key.lower() and "surface" not in key.lower())]
     _must(not bad, f"{what}: results must not emit tab_*/surface_*/pane_* keys, found {bad[:6]}")
+    if v067:
+        for node in _walk(payload):
+            if isinstance(node, dict) and node.get("panel_id") and "tab_id" in node:
+                _must(node["tab_id"] == node["panel_id"], f"{what}: tab_id twin must mirror panel_id: {node}")
 
 
 def _check_panel_keys(block: Dict[str, Any], what: str, prefix: str = "") -> None:
@@ -190,9 +204,12 @@ def _check_panel_keys(block: Dict[str, Any], what: str, prefix: str = "") -> Non
     _must(bool(block.get(f"{prefix}panel_id")), f"{what}: {prefix}panel_id missing in {sorted(block)}")
     if f"{prefix}panel_ref" in block:
         _ordinal(block.get(f"{prefix}panel_ref"), "panel")
-    for old in ("tab", "surface"):
+    v067 = bool(V067_METHOD.match(what))
+    for old in ("surface",) if v067 else ("tab", "surface"):
         for suffix in ("_id", "_ref"):
             _must(f"{prefix}{old}{suffix}" not in block, f"{what}: {prefix}{old}{suffix} must not be emitted")
+    if v067 and f"{prefix}tab_id" in block:
+        _must(block[f"{prefix}tab_id"] == block[f"{prefix}panel_id"], f"{what}: {prefix}tab_id must mirror panel_id")
 
 
 def _check_area_keys(block: Dict[str, Any], what: str) -> None:

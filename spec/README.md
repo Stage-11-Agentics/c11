@@ -64,7 +64,6 @@ In each fixture directory, `valid-*.json` must all parse successfully and `inval
 `fixtures/envelopes/valid-*.json` must all parse successfully. `fixtures/envelopes/invalid-*.json` must all violate exactly one documented rule. These fixtures drive:
 
 - `c11Tests/MailboxEnvelopeValidationTests.swift` — Swift validator unit tests.
-- `tests_v2/test_mailbox_parity.py` — CLI vs raw-file parity test.
 
 See `docs/c11-messaging-primitive-design.md` §3 for the full envelope contract and `docs/c11-13-cmux-37-alignment.md` for the alignment with CMUX-37.
 

@@ -124,17 +124,17 @@ enum WorkspaceBlueprintMarkdown {
             case .unsupportedSurfaceKind(let raw):
                 return String(
                     localized: "blueprint.markdown.error.unsupportedSurfaceKind",
-                    defaultValue: "blueprint markdown: unsupported tab kind '\(raw)' (expected terminal/browser/markdown)"
+                    defaultValue: "blueprint markdown: unsupported panel kind '\(raw)' (expected terminal/browser/markdown)"
                 )
             case .duplicateSurfaceID(let id):
                 return String(
                     localized: "blueprint.markdown.error.duplicateSurfaceID",
-                    defaultValue: "blueprint markdown: duplicate tab id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
+                    defaultValue: "blueprint markdown: duplicate panel id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
                 )
             case .invalidAgentKind(let surfaceID, let kind):
                 return String(
                     localized: "blueprint.markdown.error.invalidAgentKind",
-                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on tab '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
+                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on panel '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
                 )
             case .invalidCompanionLink(let code, let sourceID, let targetID):
                 let target = targetID.map { " -> '\($0)'" } ?? ""
@@ -341,8 +341,8 @@ enum WorkspaceBlueprintMarkdown {
             }
             return
         }
-        if keys.contains("tabs") {
-            for tabNode in node.lookup("tabs")?.asList ?? [] {
+        if let listKey = panelListKey(in: keys) {
+            for tabNode in node.lookup(listKey)?.asList ?? [] {
                 try reserveExplicitSurfaceIDs(in: tabNode, reserved: &reserved)
             }
             return
@@ -351,6 +351,15 @@ enum WorkspaceBlueprintMarkdown {
         guard reserved.insert(id).inserted else {
             throw ParseError.duplicateSurfaceID(id)
         }
+    }
+
+    /// The key of a multi-panel area's list: `panels:` is canonical, and
+    /// `tabs:` is still read. `panels:` wins when both are present.
+    private static func panelListKey(in keys: Set<String>) -> String? {
+        if keys.contains("panels") { return "panels" }
+        // C11-337: legacy spelling, accepted forever.
+        if keys.contains("tabs") { return "tabs" }
+        return nil
     }
 
     private static func surfaceID(
@@ -391,9 +400,9 @@ enum WorkspaceBlueprintMarkdown {
             ))
         }
 
-        // Multi-tab pane: has `tabs:` list.
-        if keys.contains("tabs") {
-            let tabNodes = node.lookup("tabs")?.asList ?? []
+        // Multi-panel area: has a `panels:` (or legacy `tabs:`) list.
+        if let listKey = panelListKey(in: keys) {
+            let tabNodes = node.lookup(listKey)?.asList ?? []
             var ids: [String] = []
             for tabNode in tabNodes {
                 let id = surfaceID(from: tabNode, generator: &idGen)
@@ -557,9 +566,9 @@ enum WorkspaceBlueprintMarkdown {
         if resolved.count == 1 {
             return emitSurfaceFields(resolved[0], firstLinePad: firstLinePad, restPad: pad)
         }
-        // Multi-tab pane.
+        // Multi-panel area.
         var out = ""
-        out += "\(firstLinePad)tabs:\n"
+        out += "\(firstLinePad)panels:\n"
         for surface in resolved {
             out += emitSurfaceFields(
                 surface,

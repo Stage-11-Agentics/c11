@@ -21398,7 +21398,9 @@ extension CMUXCLI {
     /// because the mailbox log never rotates.
     private func runEventsTail(subArgs: [String]) throws {
         let follow = hasFlag(subArgs, name: "--follow") || hasFlag(subArgs, name: "-f")
-        let typeFilter = eventsTypeFilter(subArgs)
+        // C11-337: compare canonical types so a v1 spelling (`surface.created`,
+        // `tab.input_sent`) and its v2 name (`panel.*`) match either line form.
+        let typeFilter = eventsTypeFilter(subArgs).map(EventEnvelope.canonicalType(_:))
         let sinceSeq = eventsSinceSeq(subArgs)
         let sinceDate = eventsSinceDate(subArgs)
         let instance = optionValue(subArgs, name: "--instance")
@@ -21421,7 +21423,7 @@ extension CMUXCLI {
         func emit(_ line: String) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
-            if let typeFilter, EventEnvelope.type(fromLine: trimmed) != typeFilter { return }
+            if let typeFilter, EventEnvelope.canonicalType(fromLine: trimmed) != typeFilter { return }
             if let sinceSeq, let s = EventEnvelope.seq(fromLine: trimmed), s < sinceSeq { return }
             if let sinceDate, let ts = EventEnvelope.timestamp(fromLine: trimmed), ts < sinceDate { return }
             print(trimmed)

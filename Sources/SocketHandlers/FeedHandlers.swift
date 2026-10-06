@@ -10,6 +10,21 @@ private struct FeedAnswerPrepared {
     let operatorInputAt: Date?
 }
 
+/// The feed methods name their panel by `panel_id`. C11-337: `tab_id` and
+/// `surface_id` are legacy spellings, accepted forever; `panel_id` wins.
+enum FeedPanelParam {
+    static let keys = ["panel_id", "tab_id", "surface_id"]
+
+    /// The first panel key the caller set, or `panel_id` when none is.
+    static func key(in params: [String: Any]) -> String {
+        keys.first { params[$0] != nil } ?? keys[0]
+    }
+
+    static func rawValue(in params: [String: Any]) -> String? {
+        params[key(in: params)] as? String
+    }
+}
+
 private enum FeedAnswerPreparation {
     case ready(FeedAnswerPrepared)
     case error(TerminalController.V2CallResult)
@@ -39,7 +54,7 @@ extension TerminalController {
             return .err(code: "method_not_found", message: "Unknown method", data: nil)
         }
         guard let workspaceRaw = params["workspace_id"] as? String, let workspaceID = UUID(uuidString: workspaceRaw),
-              let tabRaw = params["tab_id"] as? String, let tabID = UUID(uuidString: tabRaw),
+              let tabRaw = FeedPanelParam.rawValue(in: params), let tabID = UUID(uuidString: tabRaw),
               let eventRaw = params["event_id"] as? String, let eventID = UUID(uuidString: eventRaw),
               let agentKind = params["agent_kind"] as? String, !agentKind.isEmpty,
               let sessionID = params["session_id"] as? String, !sessionID.isEmpty else {
@@ -77,14 +92,19 @@ extension TerminalController {
         guard CapabilityFeatures.current.supports(.feedAsks) else {
             return .err(code: "method_not_found", message: "Unknown method", data: nil)
         }
-        guard let workspaceID = v2UUID(params, "workspace_id"), let tabID = v2UUID(params, "tab_id") else {
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              let tabID = v2UUID(params, FeedPanelParam.key(in: params)) else {
             return .err(code: "invalid_params", message: "invalid_params", data: nil)
         }
         return v2MainSync {
             guard AppDelegate.shared?.selectFeedTarget(.init(workspaceID: workspaceID, tabID: tabID)) == true else {
                 return .err(code: "unavailable", message: "unavailable", data: nil)
             }
-            return .ok(["workspace_id": workspaceID.uuidString, "tab_id": tabID.uuidString])
+            return .ok([
+                "workspace_id": workspaceID.uuidString,
+                "panel_id": tabID.uuidString,
+                "tab_id": tabID.uuidString,
+            ])
         }
     }
 
@@ -96,10 +116,10 @@ extension TerminalController {
         }
         guard let workspaceRaw = params["workspace_id"] as? String,
               let workspaceID = UUID(uuidString: workspaceRaw),
-              let tabRaw = params["tab_id"] as? String,
+              let tabRaw = FeedPanelParam.rawValue(in: params),
               let tabID = UUID(uuidString: tabRaw),
               let text = params["text"] as? String else {
-            return .err(code: "invalid_params", message: "feed.answer requires workspace_id, tab_id, and text", data: nil)
+            return .err(code: "invalid_params", message: "feed.answer requires workspace_id, panel_id, and text", data: nil)
         }
         if let refusalCode = FeedAnswerTextPolicy.refusalCode(for: text) {
             var data = feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
@@ -109,7 +129,7 @@ extension TerminalController {
                 code: refusalCode,
                 message: String(
                     localized: "feed.answer.multilineUnsupported",
-                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the tab."
+                    defaultValue: "Multiline feed answers are unsupported in c11 1.0. Nothing was sent; use c11 feed open to answer in the panel."
                 ),
                 data: data
             )
@@ -222,7 +242,7 @@ extension TerminalController {
                     defer { blockedTarget = SocketCommandContext.current?.blockedTarget }
                     return v2FeedOpen(params: [
                         "workspace_id": workspaceID.uuidString,
-                        "tab_id": tabID.uuidString,
+                        "panel_id": tabID.uuidString,
                     ])
                 }
             }

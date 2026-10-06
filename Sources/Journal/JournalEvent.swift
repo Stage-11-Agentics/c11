@@ -79,6 +79,10 @@ struct JournalOwner: Codable, Hashable {
     let tabID: UUID
     let agentKind: String
     let sessionID: String
+    // Pinned: `journal_current.state` blobs hold these exact on-disk keys.
+    enum CodingKeys: String, CodingKey {
+        case tabID = "tabID", agentKind = "agentKind", sessionID = "sessionID"
+    }
     // JSON is unambiguous even when an opaque session ID contains punctuation.
     var key: String { String(data: try! JSONEncoder().encode([tabID.uuidString, agentKind, sessionID]), encoding: .utf8)! }
 }
@@ -122,8 +126,20 @@ struct JournalDraft: Codable, Equatable {
 
     static func decode(_ data: Data) throws -> JournalDraft {
         guard data.count <= 4096,
-              var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              Set(object.keys).isSubset(of: Set(CodingKeys.allCases.map(\.rawValue))) else { throw JournalError.invalidEvent }
+              var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw JournalError.invalidEvent }
+        // `panel_id` is accepted as input; the stored and hashed key stays `tab_id`.
+        if let panel = object.removeValue(forKey: "panel_id") {
+            if let tab = object["tab_id"] {
+                // Both must name one panel; UUID strings compare case-insensitively.
+                let tabUUID = (tab as? String).flatMap(UUID.init(uuidString:))
+                let panelUUID = (panel as? String).flatMap(UUID.init(uuidString:))
+                let same = tabUUID != nil ? tabUUID == panelUUID : (tab as? NSObject)?.isEqual(panel) == true
+                guard same else { throw JournalError.invalidEvent }
+            } else {
+                object["tab_id"] = panel
+            }
+        }
+        guard Set(object.keys).isSubset(of: Set(CodingKeys.allCases.map(\.rawValue))) else { throw JournalError.invalidEvent }
         for (key, value) in ["time_quality": "missing", "is_child": false, "adapter_version": "1", "native_event": "other"] as [String: Any] where object[key] == nil {
             object[key] = value
         }

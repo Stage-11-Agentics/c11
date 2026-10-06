@@ -47,6 +47,10 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(coverage?["unattributed"] as? Int, 2)
         let tabs = document["tabs"] as? [[String: Any]] ?? []
         XCTAssertEqual(tabs.map { $0["tab_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        // C11-337: `panels` is canonical; `tabs` carries the same rows for one release.
+        let panels = document["panels"] as? [[String: Any]] ?? []
+        XCTAssertEqual(panels.map { $0["panel_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        XCTAssertEqual((AgentRoster.unavailableDocument()["panels"] as? [Any])?.count, 0)
         let ask = tabs[0]
         XCTAssertEqual(ask["state"] as? String, "blocked")
         XCTAssertEqual(ask["reason"] as? String, "question")
@@ -74,6 +78,11 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(candidates[0]["confirmation"] as? String, "unconfirmed")
         XCTAssertEqual(candidates[0]["connection"] as? String, "unknown")
         XCTAssertEqual(candidates[0]["coverage"] as? String, "retained")
+        // C11-337: roster rows carry the panel spelling beside the legacy tab spelling.
+        XCTAssertEqual(tabs.map { $0["panel_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        XCTAssertTrue(tabs.allSatisfy { $0["surface_id"] == nil })
+        XCTAssertEqual(candidates[0]["panel_id"] as? String, tabC.uuidString)
+        XCTAssertEqual(candidates[0]["tab_id"] as? String, tabC.uuidString)
     }
 
     func testRestoreLabelsKeepEndedAfterALaterConnectionObservation() {

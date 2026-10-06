@@ -53,12 +53,14 @@ final class EventLogTests: XCTestCase {
         XCTAssertTrue(line.hasSuffix("\n"))
         let obj = parse(line)
         XCTAssertEqual(obj["seq"] as? Int, 7)
-        XCTAssertEqual(obj["type"] as? String, "surface.created")
+        XCTAssertEqual(obj["type"] as? String, "panel.created")
         XCTAssertEqual(obj["instance"] as? String, "inst-1")
-        XCTAssertEqual(obj["v"] as? Int, 1)
+        XCTAssertEqual(obj["v"] as? Int, 2)
         XCTAssertEqual(obj["workspace"] as? String, "ws-uuid")
-        XCTAssertEqual(obj["surface"] as? String, "sf-uuid")
-        XCTAssertNil(obj["pane"], "nil refs must be omitted, not encoded as null")
+        XCTAssertEqual(obj["panel"] as? String, "sf-uuid")
+        XCTAssertNil(obj["surface"], "v2 writes the subject panel under `panel` only")
+        XCTAssertNil(obj["area"], "nil refs must be omitted, not encoded as null")
+        XCTAssertNil(obj["pane"])
         XCTAssertNotNil(obj["ts"] as? String)
         let payload = obj["payload"] as? [String: Any]
         XCTAssertEqual(payload?["kind"] as? String, "terminal")
@@ -264,15 +266,16 @@ final class EventLogTests: XCTestCase {
 
         let objs = readLines(logURL()).map(parse)
         XCTAssertEqual(objs.count, 2)
-        XCTAssertEqual(objs[0]["type"] as? String, "surface.created")
-        XCTAssertEqual(objs[0]["surface"] as? String, sf.uuidString)
+        XCTAssertEqual(objs[0]["type"] as? String, "panel.created")
+        XCTAssertEqual(objs[0]["panel"] as? String, sf.uuidString)
+        XCTAssertNil(objs[0]["surface"])
         XCTAssertEqual(objs[1]["type"] as? String, "metadata.changed")
         let payload = objs[1]["payload"] as? [String: Any]
         XCTAssertEqual(payload?["key"] as? String, "status")
         XCTAssertEqual(payload?["value"] as? String, "working")
         XCTAssertEqual(payload?["prior"] as? String, "idle")
         XCTAssertEqual(payload?["source"] as? String, "explicit")
-        XCTAssertEqual(payload?["scope"] as? String, "surface")
+        XCTAssertEqual(payload?["scope"] as? String, "panel", "the caller's v1 scope is written as v2 `panel`")
     }
 
     func testTabInputPayloadRecordsNullCallerAndKeyAttribution() {
@@ -306,10 +309,11 @@ final class EventLogTests: XCTestCase {
         EventEmitter.shared.flush()
 
         let events = readLines(logURL()).map(parse)
-        XCTAssertEqual(events.map { $0["type"] as? String }, ["tab.input_sent", "tab.input_sent"])
+        XCTAssertEqual(events.map { $0["type"] as? String }, ["panel.input_sent", "panel.input_sent"])
 
         let textPayload = events[0]["payload"] as? [String: Any]
-        XCTAssertTrue(textPayload?["caller_tab_id"] is NSNull)
+        XCTAssertTrue(textPayload?["caller_panel_id"] is NSNull)
+        XCTAssertNil(textPayload?["caller_tab_id"], "v2 payloads carry only caller_panel_id")
         XCTAssertTrue(textPayload?["caller_title"] is NSNull)
         XCTAssertEqual(textPayload?["target_title"] as? String, "outside target")
         XCTAssertEqual(textPayload?["kind"] as? String, "text")
@@ -318,7 +322,7 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(textPayload?["submitted"] as? Bool, true)
 
         let keyPayload = events[1]["payload"] as? [String: Any]
-        XCTAssertEqual(keyPayload?["caller_tab_id"] as? String, caller.uuidString)
+        XCTAssertEqual(keyPayload?["caller_panel_id"] as? String, caller.uuidString)
         XCTAssertEqual(keyPayload?["caller_title"] as? String, "caller")
         XCTAssertEqual(keyPayload?["kind"] as? String, "key")
         XCTAssertEqual(keyPayload?["text"] as? String, "enter")
@@ -439,7 +443,7 @@ final class EventLogTests: XCTestCase {
 
         XCTAssertEqual(events[1]["type"] as? String, "conversation.resume.decision")
         XCTAssertEqual(events[1]["workspace"] as? String, ws.uuidString)
-        XCTAssertEqual(events[1]["surface"] as? String, skippedSurface.uuidString)
+        XCTAssertEqual(events[1]["panel"] as? String, skippedSurface.uuidString)
         let skipPayload = events[1]["payload"] as? [String: Any]
         XCTAssertEqual(skipPayload?["kind"] as? String, "claude-code")
         XCTAssertEqual(
@@ -451,7 +455,7 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(skipPayload?["skip_code"] as? String, "transcript-missing")
         XCTAssertEqual(skipPayload?["reason"] as? String, "transcript not found")
 
-        XCTAssertEqual(events[2]["surface"] as? String, commandSurface.uuidString)
+        XCTAssertEqual(events[2]["panel"] as? String, commandSurface.uuidString)
         let commandPayload = events[2]["payload"] as? [String: Any]
         XCTAssertEqual(commandPayload?["decision"] as? String, "command")
         XCTAssertTrue(commandPayload?["skip_code"] is NSNull)
@@ -489,7 +493,7 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload?["key"] as? String, "status")
         XCTAssertEqual(payload?["value"] as? String, "working")
         XCTAssertEqual(payload?["source"] as? String, "explicit")
-        XCTAssertEqual(events[0]["surface"] as? String, sf.uuidString)
+        XCTAssertEqual(events[0]["panel"] as? String, sf.uuidString)
     }
 
     /// `progress` mirrors into the store (records a ts, TEL-1) but is
@@ -539,10 +543,10 @@ final class EventLogTests: XCTestCase {
             (events[0]["payload"] as? [String: Any])?["reason"] as? String,
             "Needs schema decision"
         )
-        XCTAssertEqual(
-            (events[0]["payload"] as? [String: Any])?["caller_surface_id"] as? String,
-            callerSurface.uuidString
-        )
+        let raisedPayload = events[0]["payload"] as? [String: Any]
+        XCTAssertEqual(raisedPayload?["caller_panel_id"] as? String, callerSurface.uuidString)
+        XCTAssertNil(raisedPayload?["caller_tab_id"], "v2 flag.raised writes only caller_panel_id")
+        XCTAssertNil(raisedPayload?["caller_surface_id"])
         XCTAssertEqual((events[0]["payload"] as? [String: Any])?["by"] as? String, "agent")
         XCTAssertEqual((events[1]["payload"] as? [String: Any])?["by"] as? String, "operator")
         XCTAssertEqual((events[2]["payload"] as? [String: Any])?["by"] as? String, "agent")
@@ -562,5 +566,143 @@ extension EventLogTests {
         let selected = parse(EventEnvelope(type: .workspaceSelected, instance: "fixture", ts: Date(timeIntervalSince1970: 1770000000), workspace: target.uuidString,
             payload: ["cause": "sidebar"]).serialize(seq: 2))
         XCTAssertEqual((selected["payload"] as? [String: Any])?["cause"] as? String, "sidebar")
+    }
+}
+
+// MARK: - C11-337: schema v2 writer and v1/v2 readers
+
+extension EventLogTests {
+    private static let v1Line = #"{"instance":"fixture","payload":{"caller_tab_id":"11111111-1111-4111-8111-111111111111","caller_title":"caller","kind":"text","text":"hi"},"pane":"33333333-3333-4333-8333-333333333333","seq":1,"surface":"22222222-2222-4222-8222-222222222222","ts":"2026-10-01T00:00:00.000Z","type":"tab.input_sent","v":1,"workspace":"44444444-4444-4444-8444-444444444444"}"#
+    private static let v2Line = #"{"area":"33333333-3333-4333-8333-333333333333","instance":"fixture","panel":"22222222-2222-4222-8222-222222222222","payload":{"caller_panel_id":"11111111-1111-4111-8111-111111111111","caller_title":"caller","kind":"text","text":"hi"},"seq":2,"ts":"2026-10-06T00:00:00.000Z","type":"panel.input_sent","v":2,"workspace":"44444444-4444-4444-8444-444444444444"}"#
+
+    func testV2EnvelopeWritesPanelAndAreaKeysOnly() {
+        let line = EventEnvelope(
+            type: .surfaceClosed,
+            instance: "i",
+            ts: Date(timeIntervalSince1970: 1_770_000_000),
+            workspace: "ws",
+            surface: "panel-ref",
+            pane: "area-ref"
+        ).serialize(seq: 3)
+        let object = parse(line)
+        XCTAssertEqual(object["v"] as? Int, EventEnvelope.schemaVersion)
+        XCTAssertEqual(EventEnvelope.schemaVersion, 2)
+        XCTAssertEqual(object["type"] as? String, "panel.closed")
+        XCTAssertEqual(object["panel"] as? String, "panel-ref")
+        XCTAssertEqual(object["area"] as? String, "area-ref")
+        XCTAssertNil(object["surface"])
+        XCTAssertNil(object["pane"])
+        XCTAssertEqual(
+            Set(object.keys),
+            ["seq", "ts", "type", "instance", "v", "workspace", "panel", "area"]
+        )
+    }
+
+    func testV2TypeNamesForRenamedEvents() {
+        XCTAssertEqual(EventEnvelope.EventType.surfaceCreated.rawValue, "panel.created")
+        XCTAssertEqual(EventEnvelope.EventType.surfaceClosed.rawValue, "panel.closed")
+        XCTAssertEqual(EventEnvelope.EventType.tabInputSent.rawValue, "panel.input_sent")
+        // Every alias resolves to a live v2 type, and no v2 type is itself an alias.
+        let live = Set(EventEnvelope.EventType.allCases.map(\.rawValue))
+        for (legacy, current) in EventEnvelope.legacyTypeAliases {
+            XCTAssertTrue(live.contains(current), "\(legacy) must alias a live type")
+            XCTAssertFalse(live.contains(legacy), "\(legacy) must not be emitted in v2")
+        }
+    }
+
+    func testMetadataScopeIsWrittenAsPanelOrArea() {
+        let log = EventLog(url: logURL(), instance: "scope-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "scope-inst")
+        let ws = UUID(), panel = UUID()
+        for scope in ["surface", "pane", "panel", "area"] {
+            EventEmitter.shared.emitMetadataChanged(
+                scope: scope, workspace: ws, surface: panel,
+                key: "title", value: "t", prior: nil, source: "explicit")
+        }
+        EventEmitter.shared.flush()
+
+        let scopes = readLines(logURL()).map(parse)
+            .compactMap { ($0["payload"] as? [String: Any])?["scope"] as? String }
+        XCTAssertEqual(scopes, ["panel", "area", "panel", "area"])
+        XCTAssertEqual(EventEnvelope.canonicalScope("surface"), "panel")
+        XCTAssertEqual(EventEnvelope.canonicalScope("pane"), "area")
+        XCTAssertEqual(EventEnvelope.canonicalScope("workspace"), "workspace")
+    }
+
+    func testLifecycleChangedEmitterWritesPanelPayloadKey() {
+        let log = EventLog(url: logURL(), instance: "lifecycle-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "lifecycle-inst")
+        let ws = UUID(), tab = UUID()
+        EventEmitter.shared.emitLifecycleChanged(
+            workspace: ws, tab: tab,
+            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"])
+        EventEmitter.shared.flush()
+
+        let object = readLines(logURL()).map(parse).first
+        XCTAssertEqual(object?["type"] as? String, "lifecycle.changed")
+        XCTAssertEqual(object?["panel"] as? String, tab.uuidString)
+        let payload = object?["payload"] as? [String: Any] ?? [:]
+        XCTAssertEqual(payload["panel"] as? String, tab.uuidString)
+        XCTAssertNil(payload["tab"], "v2 lifecycle payloads carry `panel`, not `tab`")
+        XCTAssertEqual(payload["to"] as? String, "blocked")
+        XCTAssertEqual(EventEnvelope.lifecyclePanel(inPayload: payload), tab.uuidString)
+        XCTAssertEqual(EventEnvelope.lifecyclePanel(inPayload: ["tab": "legacy"]), "legacy")
+    }
+
+    func testWorkspaceSelectionEventsCarryCallerPanelId() {
+        let log = EventLog(url: logURL(), instance: "select-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "select-inst")
+        let target = UUID(), caller = UUID()
+        EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: "workspace.select", callerTabId: caller)
+        EventEmitter.shared.emitWorkspaceSelected(previous: nil, selected: target, cause: "socket", method: "workspace.select", callerTabId: nil)
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["workspace.switch_blocked", "workspace.selected"])
+        let blocked = events[0]["payload"] as? [String: Any] ?? [:]
+        XCTAssertEqual(blocked["caller_panel_id"] as? String, caller.uuidString)
+        XCTAssertNil(blocked["caller_tab_id"])
+        let selected = events[1]["payload"] as? [String: Any] ?? [:]
+        XCTAssertTrue(selected["caller_panel_id"] is NSNull)
+        XCTAssertNil(selected["caller_tab_id"])
+    }
+
+    func testReaderHelpersAcceptV1AndV2Lines() throws {
+        for line in [Self.v1Line, Self.v2Line] {
+            XCTAssertEqual(EventEnvelope.canonicalType(fromLine: line), "panel.input_sent")
+            XCTAssertEqual(EventEnvelope.panelRef(fromLine: line), "22222222-2222-4222-8222-222222222222")
+            XCTAssertEqual(EventEnvelope.areaRef(fromLine: line), "33333333-3333-4333-8333-333333333333")
+            let object = try XCTUnwrap(EventEnvelope.object(fromLine: line))
+            let payload = try XCTUnwrap(object["payload"] as? [String: Any])
+            XCTAssertEqual(EventEnvelope.callerPanelId(inPayload: payload), "11111111-1111-4111-8111-111111111111")
+        }
+        // Raw types are preserved; only the canonical form is shared.
+        XCTAssertEqual(EventEnvelope.type(fromLine: Self.v1Line), "tab.input_sent")
+        XCTAssertEqual(EventEnvelope.type(fromLine: Self.v2Line), "panel.input_sent")
+        // The flag.raised v1 key and null callers.
+        XCTAssertEqual(EventEnvelope.callerPanelId(inPayload: ["caller_surface_id": "s"]), "s")
+        XCTAssertNil(EventEnvelope.callerPanelId(inPayload: ["caller_panel_id": NSNull()]))
+        // Untouched types and junk.
+        XCTAssertEqual(EventEnvelope.canonicalType("mailbox.delivered"), "mailbox.delivered")
+        XCTAssertNil(EventEnvelope.canonicalType(fromLine: "not json"))
+        XCTAssertNil(EventEnvelope.panelRef(fromLine: #"{"type":"log.opened","v":2}"#))
+    }
+
+    /// `c11 events tail --filter type=<t>` compares canonical forms on both
+    /// sides, so old filter spellings match v2 lines and new ones match v1 lines.
+    func testTypeFilterMatchesAcrossSpellings() {
+        let v1Created = #"{"seq":1,"surface":"22222222-2222-4222-8222-222222222222","ts":"2026-10-01T00:00:00.000Z","type":"surface.created","v":1}"#
+        let v2Created = EventEnvelope(type: .surfaceCreated, instance: "i", ts: Date(), surface: "p").serialize(seq: 2)
+        for filter in ["surface.created", "panel.created"] {
+            let canonical = EventEnvelope.canonicalType(filter)
+            XCTAssertEqual(EventEnvelope.canonicalType(fromLine: v1Created), canonical, filter)
+            XCTAssertEqual(EventEnvelope.canonicalType(fromLine: v2Created), canonical, filter)
+        }
+        for filter in ["tab.input_sent", "panel.input_sent"] {
+            let canonical = EventEnvelope.canonicalType(filter)
+            XCTAssertEqual(EventEnvelope.canonicalType(fromLine: Self.v1Line), canonical, filter)
+            XCTAssertEqual(EventEnvelope.canonicalType(fromLine: Self.v2Line), canonical, filter)
+            XCTAssertNotEqual(EventEnvelope.canonicalType(fromLine: v2Created), canonical, filter)
+        }
     }
 }

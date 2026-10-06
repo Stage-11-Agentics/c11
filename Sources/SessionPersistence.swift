@@ -555,6 +555,30 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// Session-only active companion context. Blueprints and snapshots do not
     /// carry this transient focus-derived value.
     var activeAgentSurfaceId: UUID? = nil
+
+    // Pinned on-disk keys: session decode is all-or-nothing, so these raw
+    // strings never change even when the Swift names do.
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case processTitle = "processTitle"
+        case customTitle = "customTitle"
+        case stableDefaultTitle = "stableDefaultTitle"
+        case customColor = "customColor"
+        case isPinned = "isPinned"
+        case groupId = "groupId"
+        case currentDirectory = "currentDirectory"
+        case rootDirectory = "rootDirectory"
+        case rootAdoptionArmed = "rootAdoptionArmed"
+        case focusedPanelId = "focusedPanelId"
+        case layout = "layout"
+        case panels = "panels"
+        case statusEntries = "statusEntries"
+        case logEntries = "logEntries"
+        case progress = "progress"
+        case gitBranch = "gitBranch"
+        case metadata = "metadata"
+        case activeAgentSurfaceId = "activeAgentSurfaceId"
+    }
 }
 
 /// Repair the duplicate identities seen in B024 before any restore consumer

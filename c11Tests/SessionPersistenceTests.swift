@@ -946,6 +946,117 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(browser.linkedAgent)
     }
 
+    /// Session decode is all-or-nothing (`decodeSnapshot`), so the on-disk
+    /// keys of the companion fields are pinned by decoding a literal file in
+    /// the current format, not by round-tripping a constructed snapshot.
+    private static let currentFormatCompanionSessionJSON = """
+    {
+      "version": \(SessionSnapshotSchema.currentVersion),
+      "createdAt": 0,
+      "windows": [
+        {
+          "tabManager": {
+            "selectedWorkspaceIndex": 0,
+            "workspaces": [
+              {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "processTitle": "Fixture",
+                "customTitle": "Fixture workspace",
+                "isPinned": false,
+                "currentDirectory": "/tmp",
+                "focusedPanelId": "22222222-2222-2222-2222-222222222222",
+                "layout": {
+                  "type": "pane",
+                  "pane": {
+                    "panelIds": [
+                      "22222222-2222-2222-2222-222222222222",
+                      "33333333-3333-3333-3333-333333333333"
+                    ],
+                    "selectedPanelId": "33333333-3333-3333-3333-333333333333"
+                  }
+                },
+                "panels": [
+                  {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "type": "terminal",
+                    "isPinned": false,
+                    "isManuallyUnread": false,
+                    "listeningPorts": [],
+                    "terminal": {"workingDirectory": "/tmp"}
+                  },
+                  {
+                    "id": "33333333-3333-3333-3333-333333333333",
+                    "type": "browser",
+                    "isPinned": false,
+                    "isManuallyUnread": false,
+                    "listeningPorts": [],
+                    "browser": {
+                      "urlString": "https://example.invalid/",
+                      "shouldRenderWebView": true,
+                      "pageZoom": 1,
+                      "developerToolsVisible": false,
+                      "linkedAgent": {
+                        "surfaceID": "22222222-2222-2222-2222-222222222222",
+                        "lastKnownName": "Fixture agent"
+                      }
+                    }
+                  }
+                ],
+                "statusEntries": [],
+                "logEntries": [],
+                "activeAgentSurfaceId": "22222222-2222-2222-2222-222222222222"
+              }
+            ]
+          },
+          "sidebar": {"isVisible": true, "selection": "tabs"}
+        }
+      ]
+    }
+    """
+
+    func testCurrentFormatSessionFileDecodesCompanionFieldsAndReencodesSameKeys() throws {
+        let agentID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let data = Data(Self.currentFormatCompanionSessionJSON.utf8)
+
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: data)
+        XCTAssertEqual(decoded.version, SessionSnapshotSchema.currentVersion)
+        let workspace = try XCTUnwrap(decoded.windows.first?.workspaceManager.workspaces.first)
+        XCTAssertEqual(workspace.activeAgentSurfaceId, agentID)
+        XCTAssertEqual(workspace.customTitle, "Fixture workspace")
+        XCTAssertEqual(workspace.panels.count, 2)
+        let link = try XCTUnwrap(workspace.panels[1].browser?.linkedAgent)
+        XCTAssertEqual(link, AgentTabLink(surfaceID: agentID, lastKnownName: "Fixture agent"))
+
+        // The real loader path (all-or-nothing decode + version gate).
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-session-pin-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        try data.write(to: fileURL)
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: fileURL))
+        let loadedWorkspace = try XCTUnwrap(loaded.windows.first?.workspaceManager.workspaces.first)
+        XCTAssertEqual(loadedWorkspace.activeAgentSurfaceId, agentID)
+        XCTAssertEqual(loadedWorkspace.panels[1].browser?.linkedAgent?.surfaceID, agentID)
+
+        // Re-encoding writes the same on-disk keys.
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+        )
+        let window = try XCTUnwrap((object["windows"] as? [[String: Any]])?.first)
+        let manager = try XCTUnwrap(window["tabManager"] as? [String: Any])
+        let workspaceObject = try XCTUnwrap((manager["workspaces"] as? [[String: Any]])?.first)
+        XCTAssertEqual(workspaceObject["activeAgentSurfaceId"] as? String, agentID.uuidString)
+        XCTAssertNotNil(workspaceObject["panels"])
+        XCTAssertNotNil(workspaceObject["focusedPanelId"])
+        let panels = try XCTUnwrap(workspaceObject["panels"] as? [[String: Any]])
+        let browser = try XCTUnwrap(panels[1]["browser"] as? [String: Any])
+        let linkObject = try XCTUnwrap(browser["linkedAgent"] as? [String: Any])
+        XCTAssertEqual(Set(linkObject.keys), ["surfaceID", "lastKnownName"])
+        XCTAssertEqual(linkObject["surfaceID"] as? String, agentID.uuidString)
+        XCTAssertEqual(linkObject["lastKnownName"] as? String, "Fixture agent")
+    }
+
     func testSessionActiveAgentContextRoundTripsButIsOptional() throws {
         let activeID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-1111-2222-3333-BBBBBBBBBBBB"))
         var snapshot = makeSnapshot(version: 1)

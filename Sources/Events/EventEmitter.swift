@@ -107,7 +107,7 @@ final class EventEmitter {
         currentLog()?.flush()
     }
 
-    // MARK: - Emit helpers (v1 taxonomy)
+    // MARK: - Emit helpers
 
     func emitSurfaceCreated(
         workspace: UUID,
@@ -134,18 +134,22 @@ final class EventEmitter {
         var payload: [String: Any] = [:]
         if let previous { payload["previous"] = previous.uuidString }
         payload["cause"] = cause
-        if let method { payload["method"] = method; payload["caller_tab_id"] = callerTabId?.uuidString ?? NSNull() }
+        if let method {
+            payload["method"] = method
+            payload[EventEnvelope.PayloadKey.callerPanelId] = callerTabId?.uuidString ?? NSNull()
+        }
         emit(.workspaceSelected, workspace: selected, payload: payload)
     }
 
     func emitWorkspaceSwitchBlocked(target: UUID, method: String, callerTabId: UUID?) {
         emit(.workspaceSwitchBlocked, workspace: target, payload: [
             "target": target.uuidString, "method": method,
-            "caller_tab_id": callerTabId?.uuidString ?? NSNull()
+            EventEnvelope.PayloadKey.callerPanelId: callerTabId?.uuidString ?? NSNull()
         ])
     }
 
-    /// `scope` is "surface" or "pane"; `source` is the `MetadataSource` raw
+    /// `scope` is "surface" or "pane" (callers' v1 spelling); it is written as
+    /// the v2 "panel" / "area". `source` is the `MetadataSource` raw
     /// value stringified by the caller (the pure envelope never names the enum).
     /// `prior` is optional — the surface store does not retain it for free.
     func emitMetadataChanged(
@@ -158,7 +162,7 @@ final class EventEmitter {
         source: String
     ) {
         var payload: [String: Any] = [
-            "scope": scope,
+            EventEnvelope.PayloadKey.scope: EventEnvelope.canonicalScope(scope),
             "key": key,
             "source": source,
         ]
@@ -175,7 +179,13 @@ final class EventEmitter {
         emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
     }
 
+    /// The journal builds the payload with a `tab` key; v2 writes it as `panel`.
     func emitLifecycleChanged(workspace: UUID, tab: UUID, payload: [String: Any]) {
+        var payload = payload
+        if let legacy = payload.removeValue(forKey: EventEnvelope.PayloadKey.legacyTab),
+           payload[EventEnvelope.PayloadKey.panel] == nil {
+            payload[EventEnvelope.PayloadKey.panel] = legacy
+        }
         emit(.lifecycleChanged, workspace: workspace, surface: tab, payload: payload)
     }
 
@@ -192,10 +202,9 @@ final class EventEmitter {
             surface: surface,
             payload: [
                 "reason": reason,
-                // C11-248: `caller_tab_id` is canonical; `caller_surface_id` carries the
-                // same UUID for v1 consumers (remove after one release).
-                "caller_tab_id": callerTabId?.uuidString ?? NSNull(),
-                "caller_surface_id": callerTabId?.uuidString ?? NSNull(),
+                // C11-337: v2 writes only `caller_panel_id`; readers accept the
+                // v1 `caller_tab_id` / `caller_surface_id` via `EventEnvelope.callerPanelId`.
+                EventEnvelope.PayloadKey.callerPanelId: callerTabId?.uuidString ?? NSNull(),
                 "by": actor.rawValue,
             ]
         )
@@ -246,7 +255,7 @@ final class EventEmitter {
     ) -> [String: Any] {
         let recorded = recordedText(text)
         var payload: [String: Any] = [
-            "caller_tab_id": callerTabId?.uuidString ?? NSNull(),
+            EventEnvelope.PayloadKey.callerPanelId: callerTabId?.uuidString ?? NSNull(),
             "caller_title": callerTitle ?? NSNull(),
             "target_title": targetTitle,
             "kind": kind,

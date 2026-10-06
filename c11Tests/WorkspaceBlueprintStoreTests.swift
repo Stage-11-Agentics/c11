@@ -280,4 +280,87 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(readBack.plan.surfaces.first?.title, "shell")
     }
 
+    // MARK: - C11-337 panel keys
+
+    func testReadAcceptsLegacySurfaceKeyJSONAndWriteEmitsPanelKeys() throws {
+        let store = makeStore()
+        let legacyURL = tmpRoot.appendingPathComponent("legacy.json")
+        try Data("""
+        {
+          "version": 1,
+          "name": "Legacy Keys",
+          "plan": {
+            "version": 1,
+            "workspace": {},
+            "layout": {"type": "pane", "pane": {"surfaceIds": ["a", "b"]}},
+            "surfaces": [{"id": "a", "kind": "terminal"}, {"id": "b", "kind": "terminal"}]
+          }
+        }
+        """.utf8).write(to: legacyURL)
+
+        let legacy = try store.read(url: legacyURL)
+        XCTAssertEqual(legacy.plan.surfaces.map(\.id), ["a", "b"])
+        XCTAssertEqual(legacy.plan.layout, .pane(.init(surfaceIds: ["a", "b"])))
+
+        let rewrittenURL = tmpRoot.appendingPathComponent("rewritten.json")
+        try store.write(legacy, to: rewrittenURL)
+        let written = try XCTUnwrap(String(data: Data(contentsOf: rewrittenURL), encoding: .utf8))
+        XCTAssertTrue(written.contains("\"panels\""))
+        XCTAssertTrue(written.contains("\"panelIds\""))
+        XCTAssertFalse(written.contains("\"surfaces\""))
+        XCTAssertFalse(written.contains("\"surfaceIds\""))
+        XCTAssertEqual(try store.read(url: rewrittenURL), legacy)
+    }
+
+    func testReadAcceptsLegacyTabsMarkdownAndWriteEmitsPanels() throws {
+        let store = makeStore()
+        let legacyURL = tmpRoot.appendingPathComponent("legacy.md")
+        try Data("""
+        ---
+        title: Legacy Tabs
+        ---
+
+        ## Layout
+
+        ```yaml
+        layout:
+          - tabs:
+              - id: one
+                type: terminal
+              - id: two
+                type: terminal
+        ```
+        """.utf8).write(to: legacyURL)
+
+        let legacy = try store.read(url: legacyURL)
+        XCTAssertEqual(legacy.plan.layout, .pane(.init(surfaceIds: ["one", "two"])))
+
+        let rewrittenURL = tmpRoot.appendingPathComponent("rewritten.md")
+        try store.write(legacy, to: rewrittenURL)
+        let written = try XCTUnwrap(String(data: Data(contentsOf: rewrittenURL), encoding: .utf8))
+        XCTAssertTrue(written.contains("panels:"))
+        XCTAssertFalse(written.contains("tabs:"))
+        XCTAssertEqual(try store.read(url: rewrittenURL).plan, legacy.plan)
+    }
+
+    func testBundledBlueprintsDecodeAndValidate() throws {
+        let resources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources", isDirectory: true)
+        guard FileManager.default.fileExists(
+            atPath: resources.appendingPathComponent("Blueprints").path
+        ) else {
+            throw XCTSkip("Resources/Blueprints is not present")
+        }
+        let store = WorkspaceBlueprintStore(directoryOverride: resources)
+        let urls = store.builtInBlueprintURLs().filter { $0.pathExtension == "json" }
+        XCTAssertFalse(urls.isEmpty, "expected bundled blueprints under \(resources.path)")
+        for url in urls {
+            let file = try store.read(url: url)
+            XCTAssertFalse(file.plan.surfaces.isEmpty, url.lastPathComponent)
+            XCTAssertNil(WorkspaceLayoutExecutor.validate(plan: file.plan), url.lastPathComponent)
+        }
+    }
+
 }

@@ -371,7 +371,7 @@ final class BrowserCompanionPolicyTests: XCTestCase {
                 "companion_link_orphan_omitted", "companion_link_source_not_browser",
                 "companion_link_target_missing", "companion_link_target_not_terminal",
                 "companion_link_target_not_agent", "companion_link_apply_failed",
-                "blueprint_duplicate_surface_id", "blueprint_invalid_agent_kind",
+                "blueprint_duplicate_panel_id", "blueprint_invalid_agent_kind",
             ]
         )
     }

@@ -18,8 +18,48 @@ struct WorkspaceApplyPlan: Codable, Sendable, Equatable {
     /// Snapshot capture is a structural copy.
     var layout: LayoutTreeSpec
     /// Surfaces keyed by plan-local `SurfaceSpec.id`; referenced from
-    /// `LayoutTreeSpec.pane.surfaceIds`.
+    /// `LayoutTreeSpec.pane.surfaceIds`. Wire key `panels`; the legacy
+    /// `surfaces` key is still read.
     var surfaces: [TabSpec]
+
+    init(
+        version: Int,
+        workspace: WorkspaceSpec,
+        layout: LayoutTreeSpec,
+        surfaces: [TabSpec]
+    ) {
+        self.version = version
+        self.workspace = workspace
+        self.layout = layout
+        self.surfaces = surfaces
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, workspace, layout
+        case panels
+        // C11-337: legacy spelling, accepted forever (user-authored blueprints, saved snapshots).
+        case surfaces
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        workspace = try c.decode(WorkspaceSpec.self, forKey: .workspace)
+        layout = try c.decode(LayoutTreeSpec.self, forKey: .layout)
+        if c.contains(.panels) {
+            surfaces = try c.decode([TabSpec].self, forKey: .panels)
+        } else {
+            surfaces = try c.decode([TabSpec].self, forKey: .surfaces)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(workspace, forKey: .workspace)
+        try c.encode(layout, forKey: .layout)
+        try c.encode(surfaces, forKey: .panels)
+    }
 }
 
 struct WorkspaceSpec: Codable, Sendable, Equatable {
@@ -135,7 +175,9 @@ struct TabSpec: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, description, workingDirectory, command, url
         case filePath, metadata, paneMetadata, submitCommand
-        case linkedAgentSurfacePlanId, declaredAgentKind
+        case linkedAgentPanelPlanId, declaredAgentKind
+        // C11-337: legacy spelling, accepted forever.
+        case linkedAgentSurfacePlanId
     }
 
     init(from decoder: Decoder) throws {
@@ -150,7 +192,11 @@ struct TabSpec: Codable, Sendable, Equatable {
         filePath = try c.decodeIfPresent(String.self, forKey: .filePath)
         metadata = try c.decodeIfPresent([String: PersistedJSONValue].self, forKey: .metadata)
         paneMetadata = try c.decodeIfPresent([String: PersistedJSONValue].self, forKey: .paneMetadata)
-        linkedAgentSurfacePlanId = try c.decodeIfPresent(String.self, forKey: .linkedAgentSurfacePlanId)
+        if let linked = try c.decodeIfPresent(String.self, forKey: .linkedAgentPanelPlanId) {
+            linkedAgentSurfacePlanId = linked
+        } else {
+            linkedAgentSurfacePlanId = try c.decodeIfPresent(String.self, forKey: .linkedAgentSurfacePlanId)
+        }
         declaredAgentKind = try c.decodeIfPresent(String.self, forKey: .declaredAgentKind)
         submitCommand = try c.decodeIfPresent(Bool.self, forKey: .submitCommand) ?? false
     }
@@ -167,7 +213,7 @@ struct TabSpec: Codable, Sendable, Equatable {
         try c.encodeIfPresent(filePath, forKey: .filePath)
         try c.encodeIfPresent(metadata, forKey: .metadata)
         try c.encodeIfPresent(paneMetadata, forKey: .paneMetadata)
-        try c.encodeIfPresent(linkedAgentSurfacePlanId, forKey: .linkedAgentSurfacePlanId)
+        try c.encodeIfPresent(linkedAgentSurfacePlanId, forKey: .linkedAgentPanelPlanId)
         try c.encodeIfPresent(declaredAgentKind, forKey: .declaredAgentKind)
         // Omit when false so pre-existing serialized specs stay byte-identical.
         if submitCommand { try c.encode(submitCommand, forKey: .submitCommand) }
@@ -223,6 +269,28 @@ indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
         init(surfaceIds: [String], selectedIndex: Int? = nil) {
             self.surfaceIds = surfaceIds
             self.selectedIndex = selectedIndex
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case panelIds, selectedIndex
+            // C11-337: legacy spelling, accepted forever.
+            case surfaceIds
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if c.contains(.panelIds) {
+                surfaceIds = try c.decode([String].self, forKey: .panelIds)
+            } else {
+                surfaceIds = try c.decode([String].self, forKey: .surfaceIds)
+            }
+            selectedIndex = try c.decodeIfPresent(Int.self, forKey: .selectedIndex)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(surfaceIds, forKey: .panelIds)
+            try c.encodeIfPresent(selectedIndex, forKey: .selectedIndex)
         }
     }
 
@@ -442,12 +510,12 @@ enum CompanionPlanDiagnosticMessage {
         case .duplicateSurfaceID:
             return String(
                 localized: "workspace.companion.diagnostic.duplicateSurfaceID",
-                defaultValue: "Blueprint tab ID '\(sourcePlanID)' is duplicated."
+                defaultValue: "Blueprint panel ID '\(sourcePlanID)' is duplicated."
             )
         case .invalidAgentKind:
             return String(
                 localized: "workspace.companion.diagnostic.invalidAgentKind",
-                defaultValue: "Blueprint tab '\(sourcePlanID)' declares an invalid agent kind."
+                defaultValue: "Blueprint panel '\(sourcePlanID)' declares an invalid agent kind."
             )
         }
     }

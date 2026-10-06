@@ -367,7 +367,7 @@ final class MailboxDispatcher {
         let all = resolver.tabsWithMailboxMetadata()
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
-        // address > role > title; `surface:`/`role:` qualifiers honored).
+        // address > role > title; `panel:`/`role:` qualifiers honored).
         return MailboxMatcher.select(
             MailboxAddress.parse(to),
             from: all,
@@ -506,7 +506,7 @@ final class MailboxDispatcher {
     /// vanishing. Distinct reason string so `c11 mailbox trace` can tell a
     /// malformed envelope from an unknown recipient.
     private func rejectUnresolved(id: String, processingURL: URL, to: String) {
-        let reason = "no live tab named '\(to)' in workspace \(workspaceId.uuidString)"
+        let reason = "no live panel named '\(to)' in workspace \(workspaceId.uuidString)"
         let rejectedDir = MailboxLayout.rejectedURL(state: stateURL, workspaceId: workspaceId)
         let rejectedMsg = rejectedDir.appendingPathComponent(
             MailboxLayout.envelopeFilename(id: id)

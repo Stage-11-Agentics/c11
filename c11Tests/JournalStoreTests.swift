@@ -440,4 +440,86 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(candidates[0]["label"] as? String, "historical_candidate")
         XCTAssertEqual(candidates[0]["connection"] as? String, "unknown")
     }
+
+    // MARK: - C11-337 on-disk pins
+
+    private func jsonColumn(_ connection: OpaquePointer?, _ sql: String) throws -> [String: Any] {
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(connection, sql, -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        let pointer = try XCTUnwrap(sqlite3_column_blob(statement, 0))
+        let data = Data(bytes: pointer, count: Int(sqlite3_column_bytes(statement, 0)))
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// `journal_current.state` keeps the owner keys `tabID` / `agentKind` /
+    /// `sessionID`, the stored draft keeps `tab_id`, and a state blob in the
+    /// current on-disk format decodes through the real store.
+    func testCurrentStateBlobKeepsPinnedKeysAndDecodesTheCurrentFormat() throws {
+        var store: JournalStore? = try JournalStore(layout: layout, clock: { 1000 })
+        let draft = JournalTestData.draft(.questionRequested)
+        _ = try store!.append(draft: draft, context: JournalContext(eligible: true))
+        store = nil
+
+        var connection: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(layout.database.path, &connection), SQLITE_OK)
+        defer { sqlite3_close(connection) }
+        let state = try jsonColumn(connection, "SELECT state FROM journal_current")
+        let owner = try XCTUnwrap(state["owner"] as? [String: Any])
+        XCTAssertEqual(Set(owner.keys), ["tabID", "agentKind", "sessionID"])
+        XCTAssertEqual(owner["tabID"] as? String, JournalTestData.tab.uuidString)
+        let storedDraft = try jsonColumn(connection, "SELECT draft FROM journal_events")
+        XCTAssertEqual(storedDraft["tab_id"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertNil(storedDraft["panel_id"])
+
+        let fixture = """
+        {"owner":{"tabID":"00000000-0000-0000-0000-000000000001","agentKind":"claude-code","sessionID":"fixture-session"},\
+        "workspaceID":"00000000-0000-0000-0000-000000000002","phase":"blocked","reason":"question",\
+        "requestID":"synthetic-ask","turnID":"synthetic-turn","source":"hook","adapter":"claude_hook","rank":3,\
+        "sinceMs":900,"observedAtMs":900,"observedTickNs":7,"appInstanceID":"00000000-0000-0000-0000-0000000000e1",\
+        "lastSequence":1,"nativeWatermarks":{},"terminalBarrier":false,"terminalRank":0,"confirmation":"confirmed",\
+        "connection":"live","health":"ok","timingUncertain":false,"lastLiveSequence":1,"lastLiveEmittedAtMs":900}
+        """
+        XCTAssertEqual(sqlite3_exec(connection, "UPDATE journal_current SET state=CAST('\(fixture)' AS BLOB)", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(connection)
+        connection = nil
+
+        let reopened = try JournalStore(layout: layout, clock: { 1000 })
+        let decoded = try XCTUnwrap(try reopened.current(owner: XCTUnwrap(draft.owner)))
+        XCTAssertEqual(decoded.owner, JournalOwner(tabID: JournalTestData.tab, agentKind: "claude-code", sessionID: "fixture-session"))
+        XCTAssertEqual(decoded.workspaceID, JournalTestData.workspace)
+        XCTAssertEqual(decoded.phase, .blocked)
+        XCTAssertEqual(decoded.requestID, "synthetic-ask")
+        XCTAssertEqual(decoded.appInstanceID, UUID(uuidString: "00000000-0000-0000-0000-0000000000e1"))
+        XCTAssertEqual(decoded.lastSequence, 1)
+    }
+
+    /// Draft input accepts `panel_id`; the stored and hashed bytes keep `tab_id`.
+    func testDraftDecodeAcceptsPanelIdWithoutChangingCanonicalBytes() throws {
+        let draft = JournalTestData.draft(.questionRequested)
+        let canonical = try draft.canonicalData()
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: canonical) as? [String: Any])
+        XCTAssertEqual(object["tab_id"] as? String, JournalTestData.tab.uuidString)
+        XCTAssertNil(object["panel_id"])
+
+        XCTAssertEqual(try JournalDraft.decode(canonical), draft)
+
+        object["panel_id"] = object.removeValue(forKey: "tab_id")
+        let panelOnly = try JournalDraft.decode(JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(panelOnly.tabID, JournalTestData.tab)
+        XCTAssertEqual(try panelOnly.canonicalData(), canonical)
+
+        object["tab_id"] = JournalTestData.tab.uuidString
+        XCTAssertEqual(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object)), draft)
+
+        // The same UUID in a different case names the same panel.
+        object["panel_id"] = JournalTestData.tab.uuidString.lowercased()
+        XCTAssertEqual(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object)), draft)
+
+        object["tab_id"] = JournalTestData.workspace.uuidString
+        XCTAssertThrowsError(try JournalDraft.decode(JSONSerialization.data(withJSONObject: object))) {
+            XCTAssertEqual($0 as? JournalError, .invalidEvent)
+        }
+    }
 }

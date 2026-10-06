@@ -7,6 +7,13 @@ import Foundation
 struct AgentTabLink: Codable, Equatable, Sendable {
     var surfaceID: UUID
     var lastKnownName: String?
+
+    // Pinned on-disk keys: session decode is all-or-nothing, so these raw
+    // strings never change even when the Swift names do.
+    private enum CodingKeys: String, CodingKey {
+        case surfaceID = "surfaceID"
+        case lastKnownName = "lastKnownName"
+    }
 }
 
 /// A live surface identity. Refs and ordinals are live presentation hints and
@@ -254,8 +261,25 @@ enum CompanionPlanDiagnosticCode: String, Codable, Equatable, Sendable {
     case targetNotTerminal = "companion_link_target_not_terminal"
     case targetNotAgent = "companion_link_target_not_agent"
     case applyFailed = "companion_link_apply_failed"
-    case duplicateSurfaceID = "blueprint_duplicate_surface_id"
+    case duplicateSurfaceID = "blueprint_duplicate_panel_id"
     case invalidAgentKind = "blueprint_invalid_agent_kind"
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        // C11-337: legacy spelling, accepted forever.
+        if raw == "blueprint_duplicate_surface_id" {
+            self = .duplicateSurfaceID
+            return
+        }
+        guard let code = CompanionPlanDiagnosticCode(rawValue: raw) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown companion diagnostic code '\(raw)'"
+            )
+        }
+        self = code
+    }
 }
 
 enum CompanionPlanDiagnosticSeverity: String, Codable, Equatable, Sendable {

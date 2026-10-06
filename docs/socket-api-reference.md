@@ -122,7 +122,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `workspace.set_metadata`
 - `workspace.set_root`
 
-### Panels (`panel.*`) — 25
+### Panels (`panel.*`) — 27
 
 - `panel.action`
 - `panel.cancel_flash`
@@ -136,8 +136,10 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `panel.get_metadata`
 - `panel.get_titlebar_state`
 - `panel.health`
+- `panel.input_state`
 - `panel.list`
 - `panel.move`
+- `panel.read_selection`
 - `panel.read_text`
 - `panel.refresh`
 - `panel.reorder`
@@ -327,7 +329,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 - `auth.login`
 
-### Debug (`debug.*`) — 36
+### Debug (`debug.*`) — 43
 
 - `debug.app.activate`
 - `debug.bonsplit_underflow.count`
@@ -346,12 +348,19 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `debug.command_palette.visible`
 - `debug.empty_area.count`
 - `debug.empty_area.reset`
+- `debug.feed_answer.hold_after_paste`
 - `debug.flash.count`
 - `debug.flash.reset`
 - `debug.layout`
 - `debug.notification.focus`
+- `debug.panel_rail.open`
+- `debug.panel_sheet.detail`
+- `debug.panel_sheet.hover`
+- `debug.panel_sheet.motion_scale`
+- `debug.panel_sheet.open`
 - `debug.panel_snapshot`
 - `debug.panel_snapshot.reset`
+- `debug.panel_strip.scroll`
 - `debug.portal.stats`
 - `debug.session.round_trip`
 - `debug.session.round_trip_workspaces`

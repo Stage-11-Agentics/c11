@@ -260,6 +260,11 @@ c11 set-panel-icon  --panel <id|ref> --clear
     # Color marks a set (one fan-out group, one role family) or a risk (a production
     # shell). Avoid purple and magenta; they read as flagged.
 
+# Workspace frame color: a palette name (red, teal, navy, …) or #RRGGBB
+c11 workspace-color set navy [--workspace <id|ref>]   # quote hex: "#RRGGBB"
+c11 workspace-color get|clear [--workspace <id|ref>]
+c11 workspace-color list-palette                      # the accepted names
+
 # Close
 c11 close-panel [--panel <id|ref>]      # Close a panel (defaults to caller's)
 c11 close-workspace --workspace <id|ref>    # Close entire workspace

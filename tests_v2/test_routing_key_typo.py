@@ -23,7 +23,15 @@ from cmux import cmux, cmuxError
 
 
 def screen(client, workspace, panel):
-    return str(client._call("panel.read_text", {"workspace_id": workspace, "panel_id": panel}).get("text", ""))
+    # `busy` is the documented retry signal (a cold background terminal attaching).
+    deadline = time.time() + 10
+    while True:
+        try:
+            return str(client._call("panel.read_text", {"workspace_id": workspace, "panel_id": panel}).get("text", ""))
+        except cmuxError as error:
+            if not str(error).startswith("busy") or time.time() > deadline:
+                raise
+            time.sleep(0.25)
 
 
 def reject(client, method, params, key, canonical):

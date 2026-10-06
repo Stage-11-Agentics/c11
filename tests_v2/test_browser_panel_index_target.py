@@ -65,6 +65,21 @@ def main() -> int:
                 _must(target not in after, f"{method} by index should close the indexed panel: {res} {after}")
                 _must(context in after, f"{method} by index must keep the context panel: {res} {after}")
 
+            # Precedence: an explicit target beats the index, and the context never wins.
+            for method in ("browser.panel.close", "browser.tab.close"):
+                explicit = _new_browser(client, ws)
+                indexed = _new_browser(client, ws)
+                time.sleep(0.2)
+                ids = _browser_ids(client, ws)
+                res = client._call(method, {"workspace_id": ws, "surface_id": context,
+                                            "target_panel_id": explicit, "index": ids.index(indexed)}) or {}
+                time.sleep(0.2)
+                after = _browser_ids(client, ws)
+                _must(explicit not in after, f"{method}: explicit target_panel_id should be closed: {res} {after}")
+                _must(indexed in after and context in after,
+                      f"{method}: the indexed and context panels must stay: {res} {after}")
+                client._call("browser.panel.close", {"workspace_id": ws, "target_panel_id": indexed})
+
             # Socket, both method spellings: switch to B by index while naming A as context.
             target = _new_browser(client, ws)
             time.sleep(0.2)

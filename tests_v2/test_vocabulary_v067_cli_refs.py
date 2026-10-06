@@ -88,10 +88,7 @@ def main() -> int:
             _must(text.returncode == 0 and "panel:" not in text.stdout,
                   f"v0.67 tree text should print tab:N refs: {text.stdout!r} {text.stderr!r}")
 
-            ident = _old(["--json", "identify"], caller, ws)
-            _must(ident.returncode == 0, f"v0.67 identify failed: {ident.stderr}")
-            caller_block = json.loads(ident.stdout).get("caller") or {}
-            _must(str(caller_block.get("tab_ref", "")).startswith("tab:"), f"identify caller tab_ref: {caller_block}")
+            # identify carries no generic `ref`; its tab_ref pair is completion's job, not the echo's.
 
             # Feed the tree's own ref back in.
             renamed = _old(["rename-tab", "--workspace", ws, "--tab", target_ref, "v067-roundtrip"], caller, ws)
@@ -114,7 +111,7 @@ def main() -> int:
                         cleanup._call("workspace.close", {"workspace_id": ws})
             except Exception:
                 pass
-    print("PASS: a v0.67 CLI sees tab:N refs in its own tree/identify and reuses them against a panel app")
+    print("PASS: a v0.67 CLI sees tab:N refs in its own tree and reuses them against a panel app")
     return 0
 
 

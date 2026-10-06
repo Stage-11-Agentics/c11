@@ -218,7 +218,7 @@ final class SocketCommandContext: @unchecked Sendable {
     }
 
     static var blockedMessage: String {
-        String(localized: "socket.error.workspaceSwitchBlocked", defaultValue: "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable.")
+        String(localized: "socket.error.workspaceSwitchBlocked", defaultValue: "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background panels remain fully drivable.")
     }
 }
 
@@ -440,12 +440,12 @@ class TerminalController {
         "workspace.last",
         "history.back",
         "history.forward",
-        "tab.focus",
+        "panel.focus",
         "area.focus",
         "area.last",
         "browser.focus_webview",
         "browser.focus",
-        "browser.tab.switch",
+        "browser.panel.switch",
         "debug.command_palette.toggle",
         "debug.notification.focus",
         "debug.app.activate",
@@ -463,16 +463,16 @@ class TerminalController {
     // C11-159: widened private->internal so per-domain socket handler
     // extensions in Sources/SocketHandlers/ can name this type. Module-internal
     // only (app target, no library API surface). See DX-5 widening inventory.
-    // C11-248: the raw value IS the ref prefix. Canonical prefixes are
-    // `area:N` and `tab:N`; `pane:N` / `surface:N` stay accepted on input via
-    // `LegacyWireAliases.canonicalHandle`. The ordinal counter is per kind, so
-    // `tab:N` and `surface:N` are the same handle.
+    // C11-337: the raw value IS the ref prefix. Canonical prefixes are
+    // `area:N` and `panel:N`; `pane:N` / `tab:N` / `surface:N` stay accepted on
+    // input via `LegacyWireAliases.canonicalHandle`. The ordinal counter is per
+    // kind, so `panel:N`, `tab:N` and `surface:N` are the same handle.
     enum V2HandleKind: String, CaseIterable {
         case window
         case workspace
         case workspaceGroup = "workspace_group"
         case pane = "area"
-        case surface = "tab"
+        case surface = "panel"
     }
 
     var v2NextHandleOrdinal: [V2HandleKind: Int] = [
@@ -547,7 +547,7 @@ class TerminalController {
     /// `evaluateJavaScript`'s completion handler is never invoked and the await
     /// would burn its full timeout holding main. See C11-209.
     nonisolated static let v2BrowserNoDocumentMessage =
-        "Browser tab has not loaded a document; navigate first (c11 browser goto <url>)."
+        "Browser panel has not loaded a document; navigate first (c11 browser goto <url>)."
 
     /// Same condition, but the surface does have a target URL — a load was asked
     /// for and withheld. Reachable when the insecure-HTTP prompt is pending, when
@@ -555,7 +555,7 @@ class TerminalController {
     /// surface. "Navigate first" would be wrong advice there.
     nonisolated static func v2BrowserNavigationWithheldMessage(url: String) -> String {
         "Navigation to \(url) was requested but no load has been issued yet — "
-            + "check the insecure-HTTP prompt, a pending remote-workspace proxy, or a hibernated tab."
+            + "check the insecure-HTTP prompt, a pending remote-workspace proxy, or a hibernated panel."
     }
 
     /// True when a JS eval against this view can expect a completion handler.
@@ -2358,6 +2358,9 @@ class TerminalController {
         let id: Any?
         let method: String
         let params: [String: Any]
+        /// C11-337: set when the request used an old method spelling; the
+        /// response's generic `ref` values are echoed in that spelling.
+        var legacyRefPrefix: String? = nil
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
@@ -2390,12 +2393,12 @@ class TerminalController {
         // Resize dimensions are validated on the worker; live window resolution
         // and the bounded AppKit frame operation share one main-actor hop.
         "window.resize",
-        "tab.send_text",
-        "tab.send_key",
-        "tab.read_text",
-        "tab.read_selection",
-        "tab.input_state",
-        "tab.clear_history",
+        "panel.send_text",
+        "panel.send_key",
+        "panel.read_text",
+        "panel.read_selection",
+        "panel.input_state",
+        "panel.clear_history",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI
         // snapshots and the final surface creation.
@@ -2756,8 +2759,8 @@ class TerminalController {
                 "selected_surface_id": v2OrNull(selectedTabUUID?.uuidString),
                 "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedTabUUID),
                 "surface_count": surfaceUUIDs.count,
+                "panels": surfacesByPane[paneId.id] ?? [],
                 "tabs": surfacesByPane[paneId.id] ?? [],
-                "surfaces": surfacesByPane[paneId.id] ?? [],
                 "layout": layoutObj
             ]
         }
@@ -2784,8 +2787,7 @@ class TerminalController {
             "group_id": v2OrNull(workspace.groupId?.uuidString),
             "root_directory": v2OrNull(workspace.rootDirectory),
             "content_area": contentArea,
-            "areas": panes,
-            "panes": panes
+            "areas": panes
         ]
     }
 
@@ -2861,7 +2863,7 @@ class TerminalController {
         return v2Encode([
             "id": v2OrNull(id),
             "ok": true,
-            // C11-248: canonical + legacy key pairs (see LegacyWireAliases).
+            // C11-337: canonical + legacy key pairs (see LegacyWireAliases).
             "result": LegacyWireAliases.completeResult(result)
         ])
     }
@@ -2869,7 +2871,8 @@ class TerminalController {
     nonisolated func v2Error(id: Any?, code: String, message: String, data: Any? = nil) -> String {
         var err: [String: Any] = ["code": code, "message": message]
         if let data {
-            err["data"] = data
+            // C11-337: error payloads carry the same canonical + legacy key pairs as results.
+            err["data"] = LegacyWireAliases.completeResult(data)
         }
         return v2Encode([
             "id": v2OrNull(id),
@@ -3137,7 +3140,7 @@ class TerminalController {
                 return .err(
                     code: SocketTabRefValidator.emptyRefCode,
                     message: "\(LegacyWireAliases.displayKey(key)) was provided but empty; destructive commands need a concrete ref and never fall back to the focused target",
-                    data: ["key": key]
+                    data: ["key": LegacyWireAliases.displayKey(key)]
                 )
             case .present(let handle):
                 let isLive: Bool = v2MainSync {
@@ -3242,6 +3245,13 @@ class TerminalController {
     /// surface — the exact misroute COR-1 forbids. Must run on the main actor
     /// (`v2UUID` resolves handle refs against live state). Returns a not_found
     /// rejection, or nil to proceed.
+    /// Canonical spellings for error text: `surface_id` / `tab_id` both read `panel_id`.
+    nonisolated static func displayPinningKeys(_ keys: [String]) -> String {
+        var seen: Set<String> = []
+        return keys.map(LegacyWireAliases.displayKey).filter { seen.insert($0).inserted }
+            .joined(separator: ", ")
+    }
+
     func v2RejectUnresolvedPin(_ params: [String: Any], pinningKeys: [String]) -> V2CallResult? {
         let anyResolves = pinningKeys.contains { key in
             v2HasNonNullParam(params, key) && v2UUID(params, key) != nil
@@ -3249,7 +3259,7 @@ class TerminalController {
         if anyResolves { return nil }
         return .err(
             code: "not_found",
-            message: "tab ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused tab",
+            message: "panel ref did not resolve to a known handle (one of \(Self.displayPinningKeys(pinningKeys))); refusing to fall back to the focused panel",
             data: nil
         )
     }
@@ -3554,7 +3564,7 @@ class TerminalController {
     ) {
         result["requested_direction"] = splitDirectionString(requested)
         result["applied_direction"] = splitDirectionString(applied)
-        result["size_outcome"] = becameTab ? "tab" : (requested == applied ? "split" : "flipped")
+        result["size_outcome"] = becameTab ? "panel" : (requested == applied ? "split" : "flipped")
         result["size_warning"] = v2OrNull(warning)
     }
 
@@ -3628,14 +3638,14 @@ class TerminalController {
         case .empty:
             return .err(.err(
                 code: SocketTabRefValidator.emptyRefCode,
-                message: "tab ref 'tab_id' was provided but empty — pass a concrete id (no focused-tab fallback)",
+                message: "panel ref 'panel_id' was provided but empty — pass a concrete id (no focused-panel fallback)",
                 data: nil
             ))
         case .present(let handle):
             guard let uuid = v2UUID(params, "surface_id") else {
                 return .err(.err(
                     code: "not_found",
-                    message: "Unknown tab: \(handle)",
+                    message: "Unknown panel: \(handle)",
                     data: ["surface_id": handle]
                 ))
             }
@@ -3646,7 +3656,7 @@ class TerminalController {
             resolvedSurfaceId = ws.focusedPanelId
         }
         guard let surfaceId = resolvedSurfaceId else {
-            return .err(.err(code: "not_found", message: "No focused tab", data: nil))
+            return .err(.err(code: "not_found", message: "No focused panel", data: nil))
         }
 
         // An explicit surface ref is a global handle. A caller inside workspace 1
@@ -3661,7 +3671,7 @@ class TerminalController {
         }
 
         guard let terminalPanel = targetWorkspace.terminalPanel(for: surfaceId) else {
-            return .err(.err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": surfaceId.uuidString]))
+            return .err(.err(code: "invalid_params", message: "Panel is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
 
         // Match `flag_caller_tab_id` validation: caller attribution is an
@@ -4553,7 +4563,7 @@ class TerminalController {
         guard let surfaceId = v2UUID(params, "surface_id") else {
             return .failure(.err(
                 code: "missing_surface",
-                message: "tab_id required (no focused-fallback for conversation commands)",
+                message: "panel_id required (no focused-fallback for conversation commands)",
                 data: nil
             ))
         }
@@ -4570,14 +4580,14 @@ class TerminalController {
         guard let rawSurfaceId = v2String(params, "surface_id"), !rawSurfaceId.isEmpty else {
             return .failure(.err(
                 code: "missing_surface",
-                message: "tab_id required for runtime capture",
+                message: "panel_id required for runtime capture",
                 data: nil
             ))
         }
         guard let surfaceId = UUID(uuidString: rawSurfaceId) else {
             return .failure(.err(
                 code: "invalid_surface",
-                message: "runtime capture tab_id must be a UUID",
+                message: "runtime capture panel_id must be a UUID",
                 data: nil
             ))
         }
@@ -4587,21 +4597,21 @@ class TerminalController {
               let panel = workspace.panels[surfaceId] else {
             return .failure(.err(
                 code: "stale_surface",
-                message: "tab_id is not present in this c11 instance",
+                message: "panel_id is not present in this c11 instance",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
         guard let terminalTab = panel as? TerminalTab else {
             return .failure(.err(
                 code: "surface_not_terminal",
-                message: "runtime capture requires a terminal tab",
+                message: "runtime capture requires a terminal panel",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
         guard terminalTab.surface.surface != nil else {
             return .failure(.err(
                 code: "surface_not_live",
-                message: "terminal tab is not live",
+                message: "terminal panel is not live",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }

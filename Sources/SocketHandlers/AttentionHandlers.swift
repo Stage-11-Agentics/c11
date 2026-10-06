@@ -12,13 +12,13 @@ extension TerminalController {
         guard let rawSurface = params["surface_id"] as? String else {
             return .err(
                 code: params["surface_id"] == nil ? "missing_ref" : "invalid_params",
-                message: "tab_id is required and must be a UUID",
+                message: "panel_id is required and must be a UUID",
                 data: nil
             )
         }
         let trimmedSurface = rawSurface.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSurface.isEmpty else {
-            return .err(code: "empty_ref", message: "tab_id must not be empty", data: nil)
+            return .err(code: "empty_ref", message: "panel_id must not be empty", data: nil)
         }
         let actor: TabAttentionActor
         if let rawActor = params["by"] as? String {
@@ -48,7 +48,7 @@ extension TerminalController {
                 guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
                     return .err(
                         code: "invalid_params",
-                        message: "caller_tab_id must be a UUID",
+                        message: "caller_panel_id must be a UUID",
                         data: nil
                     )
                 }
@@ -56,14 +56,14 @@ extension TerminalController {
             } else if params["caller_surface_id"] != nil {
                 return .err(
                     code: "invalid_params",
-                    message: "caller_tab_id must be a UUID",
+                    message: "caller_panel_id must be a UUID",
                     data: nil
                 )
             }
             if actor == .agent, callerTabId == nil {
                 return .err(
                     code: "missing_caller_surface",
-                    message: "agent-raised flags require caller_tab_id",
+                    message: "agent-raised flags require caller_panel_id",
                     data: nil
                 )
             }
@@ -74,7 +74,7 @@ extension TerminalController {
                 guard let surfaceId = self.v2UUIDAny(trimmedSurface) else {
                     return .err(
                         code: "invalid_params",
-                        message: "tab_id must be a UUID or tab ref",
+                        message: "panel_id must be a UUID or panel ref",
                         data: nil
                     )
                 }
@@ -86,7 +86,7 @@ extension TerminalController {
                    ) == nil {
                     return .err(
                         code: "caller_surface_not_found",
-                        message: "Calling tab not found",
+                        message: "Calling panel not found",
                         data: nil
                     )
                 }
@@ -94,7 +94,7 @@ extension TerminalController {
                     panelId: surfaceId,
                     preferredWorkspaceId: preferredWorkspaceId
                 ) else {
-                    return .err(code: "surface_not_found", message: "Tab not found", data: nil)
+                    return .err(code: "surface_not_found", message: "Panel not found", data: nil)
                 }
                 let workspace = located.workspace
                 do {

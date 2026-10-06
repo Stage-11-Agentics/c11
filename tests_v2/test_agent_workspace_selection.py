@@ -66,34 +66,34 @@ def agent_probe(scene):
     blocked("v1:simulate_shortcut", "simulate_shortcut cmd+%d" % scene["shortcut_index"])
     blocked_v2("debug.shortcut.simulate", {"combo": "cmd+%d" % scene["shortcut_index"]})
     cli(["last-window"], refused=True)
-    blocked_v2("browser.focus_webview", {"workspace_id": scene["c"], "tab_id": scene["browser"]})
+    blocked_v2("browser.focus_webview", {"workspace_id": scene["c"], "panel_id": scene["browser"]})
     blocked("v1:focus_webview", "focus_webview " + scene["browser"])
     cli(["select-workspace", "--workspace", scene["c"]], refused=True)
     cli(["next-window"], refused=True)
     cli(["previous-window"], refused=True)
     cli(["find-window", "--select", "C11-323 C"], refused=True)
     cli(["__tmux-compat", "select-window", "-t", scene["c"]], refused=True)
-    cli(["focus-tab", "--workspace", scene["c"], "--tab", scene["other_tab"]])
-    assert call("tab.current", {"workspace_id": scene["c"]}, path)["tab_id"] == scene["other_tab"]
+    cli(["focus-panel", "--workspace", scene["c"], "--panel", scene["other_tab"]])
+    assert call("panel.current", {"workspace_id": scene["c"]}, path)["panel_id"] == scene["other_tab"]
     cli(["focus-area", "--workspace", scene["c"], "--area", scene["other_area"]])
-    call("tab.focus", {"workspace_id": scene["c"], "tab_id": scene["c_tab"]}, path)
+    call("panel.focus", {"workspace_id": scene["c"], "panel_id": scene["c_tab"]}, path)
     call("area.focus", {"workspace_id": scene["c"], "area_id": scene["other_area"]}, path)
     assert wire("focus_surface " + scene["other_tab"], path).startswith("OK")
     assert wire("focus_pane " + scene["other_area"], path).startswith("OK")
     assert selected(path) == scene["a"]
-    cli(["set-metadata", "--workspace", scene["c"], "--tab", scene["other_tab"], "--key", "description", "--value", "background proof", "--type", "string"])
-    cli(["new-tab", "--workspace", scene["c"]])
-    cli(["new-surface", "--workspace", scene["c"]])
+    cli(["set-metadata", "--workspace", scene["c"], "--panel", scene["other_tab"], "--key", "description", "--value", "background proof", "--type", "string"])
+    cli(["new-panel", "--workspace", scene["c"]])
+    cli(["new-panel", "--workspace", scene["c"]])
     cli(["__tmux-compat", "display-message", "-p", "-t", "!", "#{session_id}"])
     cli(["launch-agent", "--type", "codex", "--workspace", scene["c"], "--title", "C11-323 launch proof"])
-    cli(["send", "--workspace", scene["c"], "--tab", scene["c_tab"], "printf 'background-send-ok\\n'"])
+    cli(["send", "--workspace", scene["c"], "--panel", scene["c_tab"], "printf 'background-send-ok\\n'"])
     cli(["browser", scene["browser"], "eval", "document.body.innerHTML='<button id=proof onclick=\"this.textContent=123\">click</button>'; true"])
     cli(["browser", scene["browser"], "click", "#proof"])
     cli(["browser", scene["browser"], "snapshot"])
     cli(["ssh", os.environ["USER"] + "@127.0.0.1", "--identity", scene["identity"],
          "--ssh-option", "UserKnownHostsFile=/dev/null", "--ssh-option", "StrictHostKeyChecking=no"])
     checks.append("raw-focus-and-background-work")
-    Path(scene["result"]).write_text(json.dumps({"ok": True, "checks": checks, "caller": os.environ.get("C11_TAB_ID")}))
+    Path(scene["result"]).write_text(json.dumps({"ok": True, "checks": checks, "caller": os.environ.get("C11_PANEL_ID")}))
 
 
 def main():
@@ -103,10 +103,10 @@ def main():
     a = selected(path)
     b = call("workspace.create", {"title": "C11-323 B"}, path)["workspace_id"]
     c = call("workspace.create", {"title": "C11-323 C"}, path)["workspace_id"]
-    b_tab = call("tab.list", {"workspace_id": b}, path)["tabs"][0]["id"]
-    c_tab = call("tab.list", {"workspace_id": c}, path)["tabs"][0]["id"]
-    split = call("tab.split", {"workspace_id": c, "tab_id": c_tab, "direction": "right"}, path)
-    browser = call("tab.create", {"workspace_id": c, "type": "browser", "url": "about:blank"}, path)["tab_id"]
+    b_tab = call("panel.list", {"workspace_id": b}, path)["panels"][0]["id"]
+    c_tab = call("panel.list", {"workspace_id": c}, path)["panels"][0]["id"]
+    split = call("panel.split", {"workspace_id": c, "panel_id": c_tab, "direction": "right"}, path)
+    browser = call("panel.create", {"workspace_id": c, "type": "browser", "url": "about:blank"}, path)["panel_id"]
     app_binary = str(Path(cli).parents[2] / "MacOS/c11")
     processes = subprocess.check_output(["/bin/ps", "-axo", "pid=,command="], text=True)
     pid = next(int(line.strip().split(None, 1)[0]) for line in processes.splitlines() if app_binary in line)
@@ -135,17 +135,17 @@ def main():
     ids = [w["id"] for w in call("workspace.list", path=path)["workspaces"]]
     shortcut_index = next(i for i in range(1, min(len(ids), 9) + 1) if ids[i - 1].lower() != a.lower())
     scene = {"shortcut_index": shortcut_index, "identity": str(identity), "socket": path, "cli": cli, "a": a, "b": b, "c": c, "c_tab": c_tab,
-             "other_tab": split["tab_id"], "other_area": split["area_id"], "browser": browser,
+             "other_tab": split["panel_id"], "other_area": split["area_id"], "browser": browser,
              "result": str(output)}
     scene_path = Path("/tmp/c11-323-scene.json")
     scene_path.write_text(json.dumps(scene))
     command = f"/usr/bin/python3 {Path(__file__).resolve()} --agent {scene_path}\n"
-    call("tab.send_text", {"workspace_id": b, "tab_id": b_tab, "text": command}, path)
+    call("panel.send_text", {"workspace_id": b, "panel_id": b_tab, "text": command}, path)
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline and not output.exists():
         assert selected(path) == a
         time.sleep(0.25)
-    assert output.exists(), call("tab.read_text", {"workspace_id": b, "tab_id": b_tab}, path)
+    assert output.exists(), call("panel.read_text", {"workspace_id": b, "panel_id": b_tab}, path)
     result = json.loads(output.read_text())
     assert result["ok"] and result["caller"].lower() == b_tab.lower(), result
     frontmost = front()

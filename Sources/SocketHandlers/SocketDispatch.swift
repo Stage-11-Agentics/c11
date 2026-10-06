@@ -65,7 +65,10 @@ extension TerminalController {
         return V2SocketRequest(
             id: dict["id"],
             method: LegacyWireAliases.canonicalMethod(method),
-            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
+            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:]),
+            legacyRefPrefix: LegacyWireAliases.legacyRefPrefix(
+                forRawMethod: method, params: dict["params"] as? [String: Any] ?? [:]
+            )
         )
     }
 
@@ -101,9 +104,9 @@ extension TerminalController {
             return v2Result(id: request.id, v2HistoryList(params: request.params))
         case "window.resize":
             return v2WindowResizeWorker(id: request.id, params: request.params)
-        case "tab.send_text":
+        case "panel.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
-        case "tab.send_key":
+        case "panel.send_key":
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
         case "agent.event.append":
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
@@ -119,13 +122,13 @@ extension TerminalController {
             return v2Result(id: request.id, v2FeedNoteDisplay(params: request.params))
         case "feed.answer":
             return v2Result(id: request.id, v2FeedAnswer(params: request.params))
-        case "tab.read_selection":
+        case "panel.read_selection":
             return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
-        case "tab.input_state":
+        case "panel.input_state":
             return v2Result(id: request.id, v2SurfaceInputState(params: request.params))
-        case "tab.read_text":
+        case "panel.read_text":
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
-        case "tab.clear_history":
+        case "panel.clear_history":
             return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
@@ -186,11 +189,16 @@ extension TerminalController {
             method: method,
             allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: method, isV2: request != nil),
             callerTabId: SocketCommandContext.current?.callerTabId
-                ?? (request?.params["caller_tab_id"] as? String).flatMap(UUID.init(uuidString:)),
+                ?? (request?.params["caller_panel_id"] as? String
+                    ?? request?.params["caller_tab_id"] as? String
+                    ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
             callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
         )
         return SocketCommandContext.withContext(context) {
-            let response = executeSocketCommand(command)
+            var response = executeSocketCommand(command)
+            if let prefix = request?.legacyRefPrefix {
+                response = LegacyWireAliases.echoLegacyRefs(response, prefix: prefix)
+            }
             guard let target = context.blockedTarget else { return response }
             if let request {
                 return v2Error(id: request.id, code: "workspace_switch_blocked", message: SocketCommandContext.blockedMessage,
@@ -1162,9 +1170,9 @@ extension TerminalController {
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
         if method.hasPrefix("area.") { return v2DispatchPane(method, id: id, params: params) }
-        // `tab.action` is the tab context-menu verb set (Misc); every other `tab.*` is the surface domain.
-        if method == "tab.action" { return v2DispatchMisc(method, id: id, params: params) }
-        if method.hasPrefix("tab.") { return v2DispatchSurface(method, id: id, params: params) }
+        // `panel.action` is the panel context-menu verb set (Misc); every other `panel.*` is the panel domain.
+        if method == "panel.action" { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("panel.") { return v2DispatchSurface(method, id: id, params: params) }
         if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }
         if method.hasPrefix("browser.") { return v2DispatchBrowser(method, id: id, params: params) }
         if method.hasPrefix("theme.") { return v2DispatchTheme(method, id: id, params: params) }
@@ -1245,7 +1253,7 @@ extension TerminalController {
             guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
                 return .err(
                     code: "invalid_params",
-                    message: "caller_tab_id must be a UUID",
+                    message: "caller_panel_id must be a UUID",
                     data: nil
                 )
             }
@@ -1253,7 +1261,7 @@ extension TerminalController {
         } else if params["caller_surface_id"] != nil {
             return .err(
                 code: "invalid_params",
-                message: "caller_tab_id must be a UUID",
+                message: "caller_panel_id must be a UUID",
                 data: nil
             )
         } else {
@@ -1264,7 +1272,7 @@ extension TerminalController {
            launchCallerSurfaceId == nil {
             return .err(
                 code: "missing_caller_surface",
-                message: "agent-raised flags require caller_tab_id",
+                message: "agent-raised flags require caller_panel_id",
                 data: nil
             )
         }
@@ -1455,7 +1463,7 @@ extension TerminalController {
                ) == nil {
                 result = .err(
                     code: "caller_surface_not_found",
-                    message: "Calling tab not found",
+                    message: "Calling panel not found",
                     data: nil
                 )
                 return result
@@ -1484,7 +1492,7 @@ extension TerminalController {
                     autoWelcomeIfNeeded: false
                 )
                 guard let initialTab = created.focusedTerminalTab else {
-                    result = .err(code: "internal_error", message: "New workspace has no terminal tab", data: nil)
+                    result = .err(code: "internal_error", message: "New workspace has no terminal panel", data: nil)
                     return result
                 }
                 ws = created
@@ -1515,7 +1523,7 @@ extension TerminalController {
                     workingDirectory: cwdResolution.path,
                     startupEnvironment: plan.env
                 ) else {
-                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return result
                 }
                 ws = target
@@ -1725,6 +1733,6 @@ extension TerminalController {
         for dir in dirs where fm.isExecutableFile(atPath: "\(dir)/\(binary)") {
             return nil
         }
-        return "binary '\(binary)' not found on the app PATH or common install dirs; the tab's login shell may still resolve it"
+        return "binary '\(binary)' not found on the app PATH or common install dirs; the panel's login shell may still resolve it"
     }
 }

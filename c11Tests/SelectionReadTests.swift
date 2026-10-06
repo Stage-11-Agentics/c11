@@ -7,8 +7,9 @@ import XCTest
 
 final class SelectionReadTests: XCTestCase {
     func testWorkerPolicyAndLegacyMethod() {
-        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "tab.read_selection"), .socketWorker)
-        XCTAssertEqual(LegacyWireAliases.canonicalMethod("surface.read_selection"), "tab.read_selection")
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "panel.read_selection"), .socketWorker)
+        XCTAssertEqual(LegacyWireAliases.canonicalMethod("surface.read_selection"), "panel.read_selection")
+        XCTAssertEqual(LegacyWireAliases.canonicalMethod("tab.read_selection"), "panel.read_selection")
     }
 
     func testWithinAndExactlyAtLimitKeepBytes() {

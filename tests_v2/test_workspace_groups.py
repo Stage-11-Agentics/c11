@@ -118,7 +118,7 @@ class Fixture:
                 window["selected_workspace_id"],
                 {ws["id"]: [(area["id"],
                               [(tab["id"], tab["focused"], tab["selected"])
-                               for tab in area["tabs"]])
+                               for tab in area["panels"]])
                              for area in ws["areas"]]
                  for ws in window["workspaces"]},
             ) for window in self.tree()["windows"] if window["id"] in self.windows
@@ -128,7 +128,7 @@ class Fixture:
         # All windows, including pre-existing ones: no hidden anchor workspace/tab.
         return {
             window["id"]: {
-                ws["id"]: sorted(tab["id"] for area in ws["areas"] for tab in area["tabs"])
+                ws["id"]: sorted(tab["id"] for area in ws["areas"] for tab in area["panels"])
                 for ws in window["workspaces"]
             } for window in self.tree()["windows"]
         }
@@ -166,8 +166,8 @@ class Fixture:
 
     def cli(self, *args, fail=False):
         env = dict(os.environ)
-        for key in ("C11_TAB_ID", "C11_SURFACE_ID", "C11_WORKSPACE_ID", "C11_WINDOW_ID",
-                    "CMUX_TAB_ID", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID", "CMUX_WINDOW_ID"):
+        for key in ("C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "C11_WORKSPACE_ID", "C11_WINDOW_ID",
+                    "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID", "CMUX_WINDOW_ID"):
             env.pop(key, None)
         proc = subprocess.run(
             [self.cli_path, "--socket", self.socket_path, "--json", "--id-format", "both", *args],

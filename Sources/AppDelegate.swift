@@ -7408,8 +7408,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let dependencies = WorkspaceLayoutExecutorDependencies(
             workspaceManager: context.workspaceManager,
             workspaceRefMinter: { uuid in "workspace:\(uuid.uuidString)" },
-            surfaceRefMinter: { uuid in "surface:\(uuid.uuidString)" },
-            paneRefMinter: { uuid in "pane:\(uuid.uuidString)" }
+            surfaceRefMinter: { uuid in "panel:\(uuid.uuidString)" },
+            paneRefMinter: { uuid in "area:\(uuid.uuidString)" }
         )
         let result = WorkspaceLayoutExecutor.apply(
             injected,
@@ -7418,7 +7418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         if let configuredLaunch,
            let ref = result.surfaceRefs[configuredLaunch.surfaceId],
-           let tabId = UUID(uuidString: ref.replacingOccurrences(of: "surface:", with: "")),
+           let tabId = UUID(uuidString: ref.replacingOccurrences(of: "panel:", with: "")),
            let workspace = context.workspaceManager.workspaces.first(where: { $0.terminalPanel(for: tabId) != nil }),
            let panel = workspace.terminalPanel(for: tabId) {
             panel.submitConfiguredAgentLaunch(agent: configuredLaunch.agent, launch: configuredLaunch.launch) { [weak workspace, weak panel] in

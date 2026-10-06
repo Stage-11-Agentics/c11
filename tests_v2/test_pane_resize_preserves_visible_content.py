@@ -64,10 +64,10 @@ def _run_once(socket_path: str) -> int:
             )
 
             split_payload = client._call(
-                "tab.split",
-                {"workspace_id": workspace_id, "tab_id": surface_id, "direction": "right"},
+                "panel.split",
+                {"workspace_id": workspace_id, "panel_id": surface_id, "direction": "right"},
             ) or {}
-            _must(bool(split_payload.get("tab_id")), f"tab.split returned no tab_id: {split_payload}")
+            _must(bool(split_payload.get("panel_id")), f"panel.split returned no panel_id: {split_payload}")
             _wait_for(lambda: len(_workspace_panes(client, workspace_id)) >= 2, timeout_s=4.0)
 
             client.focus_surface(surface_id)

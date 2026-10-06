@@ -125,7 +125,7 @@ def _open_rename_tab_input(client, window_id):
     client.open_command_palette_rename_tab_input(window_id=window_id)
     _wait_until(
         lambda: _palette_visible(client, window_id),
-        message="command palette failed to open rename-tab input",
+        message="command palette failed to open rename-panel input",
     )
 
 

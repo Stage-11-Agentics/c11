@@ -31,11 +31,11 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugTerminalScrollViewport(params: params))
         case "debug.terminal.runtime_start_hold":
             return v2Result(id: id, v2MainSync {
-                guard let tabId = v2UUID(params, "tab_id"),
+                guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id"),
                       let located = AppDelegate.shared?.workspaceContainingPanel(
                         panelId: tabId, preferredWorkspaceId: v2UUID(params, "workspace_id")
                       ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
-                    return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+                    return .err(code: "not_found", message: "Terminal panel not found", data: nil)
                 }
                 let fixture: TerminalTab
                 if v2Bool(params, "create") == true {
@@ -45,7 +45,7 @@ extension TerminalController {
                           let created = located.workspace.newTerminalSurface(inPane: pane, focus: false) else {
                         return .err(code: "internal_error", message: String(
                             localized: "socket.debug.runtime_hold_create",
-                            defaultValue: "Failed to create the fixture terminal tab."
+                            defaultValue: "Failed to create the fixture terminal panel."
                         ), data: nil)
                     }
                     fixture = created
@@ -70,7 +70,7 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugActivateApp())
         case "debug.command_palette.toggle":
             return v2Result(id: id, self.v2DebugToggleCommandPalette(params: params))
-        case "debug.command_palette.rename_tab.open":
+        case "debug.command_palette.rename_panel.open":
             return v2Result(id: id, self.v2DebugOpenCommandPaletteRenameTabInput(params: params))
         case "debug.command_palette.visible":
             return v2Result(id: id, self.v2DebugCommandPaletteVisible(params: params))
@@ -122,25 +122,25 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugFlashCount(params: params))
         case "debug.flash.reset":
             return v2Result(id: id, self.v2DebugResetFlashCounts())
-        case "debug.tab_snapshot":
+        case "debug.panel_snapshot":
             return v2Result(id: id, self.v2DebugPanelSnapshot(params: params))
-        case "debug.tab_snapshot.reset":
+        case "debug.panel_snapshot.reset":
             return v2Result(id: id, self.v2DebugPanelSnapshotReset(params: params))
         case "debug.window.screenshot":
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
-        case "debug.tab_sheet.open":
+        case "debug.panel_sheet.open":
             return v2Result(id: id, self.v2DebugTabSheetOpen(params: params))
-        case "debug.tab_rail.open":
+        case "debug.panel_rail.open":
             return v2Result(id: id, self.v2DebugTabRailOpen(params: params))
-        case "debug.tab_strip.scroll":
+        case "debug.panel_strip.scroll":
             return v2Result(id: id, self.v2DebugTabStripScroll(params: params))
-        case "debug.tab_sheet.hover":
+        case "debug.panel_sheet.hover":
             return v2Result(id: id, self.v2DebugTabSheetHover(params: params))
-        case "debug.tab_sheet.motion_scale":
+        case "debug.panel_sheet.motion_scale":
             let scale = debugDouble(params, "scale") ?? 1
             v2MainSync { BonsplitDebug.tabSheetMotionScale = scale }
             return v2Result(id: id, .ok(["scale": scale]))
-        case "debug.tab_sheet.detail":
+        case "debug.panel_sheet.detail":
             return v2Result(id: id, self.v2DebugTabSheetDetail(params: params))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
@@ -418,13 +418,13 @@ extension TerminalController {
               let tabID = v2UUID(params, FeedPanelParam.key(in: params)),
               let holdMilliseconds = v2Int(params, "hold_ms"),
               (1...5_000).contains(holdMilliseconds) else {
-            return .err(code: "invalid_params", message: "workspace_id, tab_id, and hold_ms (1...5000) are required", data: nil)
+            return .err(code: "invalid_params", message: "workspace_id, panel_id, and hold_ms (1...5000) are required", data: nil)
         }
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: tabID, preferredWorkspaceId: workspaceID
             ), located.workspace.panels[tabID] is TerminalTab else {
-                return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+                return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             guard FeedAnswerDebugHold.shared.arm(tabID: tabID, milliseconds: holdMilliseconds) else {
                 return .err(code: "invalid_state", message: "A feed-answer hold is already armed", data: nil)
@@ -515,18 +515,18 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
         guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: tabId,
                 preferredWorkspaceId: nil
             ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
-                return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+                return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             let delivered = terminal.surface.debugSimulateOperatorKeys(text)
             guard delivered > 0 else {
-                return .err(code: "unavailable", message: "Tab has no window to deliver keys to", data: nil)
+                return .err(code: "unavailable", message: "Panel has no window to deliver keys to", data: nil)
             }
             return .ok(["delivered": delivered])
         }
@@ -541,17 +541,17 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing lines", data: nil)
         }
         guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         return v2MainSync {
             guard let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: tabId,
                 preferredWorkspaceId: nil
             ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
-                return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+                return .err(code: "not_found", message: "Terminal panel not found", data: nil)
             }
             guard terminal.surface.performBindingAction("scroll_page_lines:\(lines)") else {
-                return .err(code: "unavailable", message: "Tab has no live surface to scroll", data: nil)
+                return .err(code: "unavailable", message: "Panel has no live surface to scroll", data: nil)
             }
             return .ok(["lines": lines])
         }
@@ -867,7 +867,7 @@ extension TerminalController {
 
     private func v2DebugIsTerminalFocused(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing panel_id", data: nil)
         }
         let resp = isTerminalFocused(surfaceId)
         if resp.hasPrefix("ERROR") {
@@ -956,7 +956,7 @@ extension TerminalController {
 
     private func v2DebugFlashCount(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing panel_id", data: nil)
         }
         let resp = flashCount(surfaceId)
         guard resp.hasPrefix("OK ") else { return .err(code: "internal_error", message: resp, data: nil) }
@@ -971,7 +971,7 @@ extension TerminalController {
 
     private func v2DebugPanelSnapshot(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing panel_id", data: nil)
         }
         let label = v2String(params, "label") ?? ""
         let args = label.isEmpty ? surfaceId : "\(surfaceId) \(label)"
@@ -993,7 +993,7 @@ extension TerminalController {
 
     private func v2DebugPanelSnapshotReset(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing panel_id", data: nil)
         }
         let resp = panelSnapshotReset(surfaceId)
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
@@ -1004,7 +1004,7 @@ extension TerminalController {
     /// Read-only; opens nothing. For validating the sheet's inputs without a screenshot.
     private func v2DebugTabSheetDetail(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "tab not found", data: nil)
+            return .err(code: "not_found", message: "panel not found", data: nil)
         }
         var payload: [String: Any]?
         v2MainSync {
@@ -1023,7 +1023,7 @@ extension TerminalController {
             ]
         }
         guard let payload else {
-            return .err(code: "not_found", message: "no detail for tab", data: nil)
+            return .err(code: "not_found", message: "no detail for panel", data: nil)
         }
         return .ok(payload)
     }
@@ -1032,7 +1032,7 @@ extension TerminalController {
     /// `surface_id` (or the focused surface), without a click.
     private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "tab not found", data: nil)
+            return .err(code: "not_found", message: "panel not found", data: nil)
         }
         let open = v2Bool(params, "open") ?? true
         var paneFound = false
@@ -1054,7 +1054,7 @@ extension TerminalController {
     /// Test seam: opens (default) or closes the rail of the pane hosting `surface_id`.
     private func v2DebugTabRailOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "tab not found", data: nil)
+            return .err(code: "not_found", message: "panel not found", data: nil)
         }
         let open = v2Bool(params, "open") ?? true
         var found = false
@@ -1069,7 +1069,7 @@ extension TerminalController {
     /// Test seam: scrolls the tab strip of the pane hosting `surface_id` to `offset`.
     private func v2DebugTabStripScroll(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "tab not found", data: nil)
+            return .err(code: "not_found", message: "panel not found", data: nil)
         }
         let offset = CGFloat(debugDouble(params, "offset") ?? 0)
         var found = false
@@ -1085,7 +1085,7 @@ extension TerminalController {
     /// hover would; `clear: true` clears. `from_sheet` picks the origin.
     private func v2DebugTabSheetHover(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "tab not found", data: nil)
+            return .err(code: "not_found", message: "panel not found", data: nil)
         }
         let clear = v2Bool(params, "clear") ?? false
         let fromSheet = v2Bool(params, "from_sheet") ?? true

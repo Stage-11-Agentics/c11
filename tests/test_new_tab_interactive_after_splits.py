@@ -66,11 +66,11 @@ def _wait_for_terminal_focus(c: cmux, panel_id: str, timeout_s: float = 8.0) -> 
     except Exception as e:
         dbg["current_workspace_error"] = repr(e)
     try:
-        dbg["surfaces"] = c.list_surfaces()
+        dbg["panels"] = c.list_surfaces()
     except Exception as e:
         dbg["surfaces_error"] = repr(e)
     try:
-        dbg["panes"] = c.list_panes()
+        dbg["areas"] = c.list_panes()
     except Exception as e:
         dbg["panes_error"] = repr(e)
     try:

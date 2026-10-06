@@ -25,9 +25,9 @@ def _must(cond: bool, msg: str) -> None:
 
 def _set_title(c, surface_id: str, title: str, source: str) -> dict:
     return c._call(
-        "tab.set_metadata",
+        "panel.set_metadata",
         {
-            "tab_id": surface_id,
+            "panel_id": surface_id,
             "mode": "merge",
             "source": source,
             "metadata": {"title": title},
@@ -36,7 +36,7 @@ def _set_title(c, surface_id: str, title: str, source: str) -> dict:
 
 
 def _titlebar_title(c, surface_id: str) -> tuple[Optional[str], Optional[str]]:
-    state = c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
+    state = c._call("panel.get_titlebar_state", {"panel_id": surface_id}) or {}
     return state.get("title"), state.get("title_source")
 
 
@@ -45,9 +45,9 @@ def _fresh_surface(c) -> tuple[str, str]:
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     c._call("workspace.select", {"workspace_id": ws_id})
-    current = c._call("tab.current", {"workspace_id": ws_id}) or {}
-    surface_id = str(current.get("tab_id") or "")
-    _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
+    current = c._call("panel.current", {"workspace_id": ws_id}) or {}
+    surface_id = str(current.get("panel_id") or "")
+    _must(bool(surface_id), f"panel.current returned no panel_id: {current}")
     return ws_id, surface_id
 
 
@@ -103,7 +103,7 @@ def main() -> int:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
         _must(
-            "tab.set_metadata" in methods and "tab.get_titlebar_state" in methods,
+            "panel.set_metadata" in methods and "panel.get_titlebar_state" in methods,
             f"Required M2/M7 methods missing. methods={sorted(methods)[:60]}",
         )
 

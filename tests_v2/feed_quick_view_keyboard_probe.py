@@ -40,7 +40,7 @@ class KeyboardProbe(QuickProbe):
         self.pause()
 
     def focused(self):
-        return self.rpc('system.identify')['focused'].get('tab_id')
+        return self.rpc('system.identify')['focused'].get('panel_id')
 
     def open_view(self):
         self.ui('activate')
@@ -52,11 +52,11 @@ class KeyboardProbe(QuickProbe):
         self.workspace = self.rpc('workspace.create')['workspace_id']
         self.rpc('workspace.rename', {'workspace_id': self.workspace,
                  'title': 'Synthetic long workspace 日本語 한국어 中文 Українська Русский ' * 8})
-        anchor = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        older, newer, flagged, turn, inserted = [self.rpc('tab.create', {'workspace_id': self.workspace,
-            'type': 'terminal', 'focus': False})['tab_id'] for _ in range(5)]
+        anchor = self.rpc('panel.list', {'workspace_id': self.workspace})['panels'][0]['id']
+        older, newer, flagged, turn, inserted = [self.rpc('panel.create', {'workspace_id': self.workspace,
+            'type': 'terminal', 'focus': False})['panel_id'] for _ in range(5)]
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': anchor})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': anchor})
         self.pause(0.5)
         self.safe = True
         self.open_view()
@@ -138,11 +138,11 @@ class KeyboardProbe(QuickProbe):
         self.screenshot('09-turns-return-opened-turn')
 
         # 5. Closed target: unavailable status, no redirect, Escape restores the originating responder.
-        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': newer})
+        self.rpc('panel.focus', {'workspace_id': self.workspace, 'panel_id': newer})
         self.pause(0.5)
         origin = self.focused()
         self.open_view()
-        self.rpc('tab.close', {'workspace_id': self.workspace, 'tab_id': flagged})  # Selected first row.
+        self.rpc('panel.close', {'workspace_id': self.workspace, 'panel_id': flagged})  # Selected first row.
         self.pause(0.8)
         self.screenshot('10-closed-target-unavailable')
         self.check(self.focused() == origin, 'Closed target never redirects focus')

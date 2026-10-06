@@ -49,7 +49,7 @@ def main():
         wait_for_session_ready(client)
         workspace = client.new_workspace()
         tabs = [client.list_surfaces(workspace)[0][1]]
-        tabs += [client._call('tab.create', {'workspace_id': workspace, 'type': 'terminal'})['tab_id'] for _ in range(2)]
+        tabs += [client._call('panel.create', {'workspace_id': workspace, 'type': 'terminal'})['panel_id'] for _ in range(2)]
         owners = [str(uuid.uuid4()) for _ in tabs]
         for tab, owner in zip(tabs, owners):
             client._call('conversation.push', {'tab_id': tab, 'kind': 'claude-code', 'id': owner, 'source': 'hook'})
@@ -121,7 +121,7 @@ def main():
             wait_for_session_ready(client)
 
         def state(index):
-            return client._call('tab.get_metadata', {'tab_id': tabs[index]})['metadata']['journal']
+            return client._call('panel.get_metadata', {'panel_id': tabs[index]})['metadata']['journal']
 
         # Query while the app is actually down. The confirmed working baseline
         # must be projected through replay policy as a candidate without writing
@@ -187,7 +187,7 @@ def main():
         with sqlite3.connect(root / 'lifecycle.sqlite3') as database:
             assert database.execute(
                 'SELECT count(*) FROM journal_events WHERE tab_id=?', (tabs[1],)).fetchone()[0] == attached_event_count
-        old_running = client._call('tab.get_metadata', {'tab_id': tabs[1]})['metadata']
+        old_running = client._call('panel.get_metadata', {'panel_id': tabs[1]})['metadata']
         assert old_running.get('activity') != 'working', 'old running must not paint present liveness'
         assert append(committed)['sequence'] == receipt['sequence']
         assert not list((root / 'spool').glob('*.ready'))

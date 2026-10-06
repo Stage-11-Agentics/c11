@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: explicit `rename-tab` CLI command parity with tab.action rename."""
+"""Regression: explicit `rename-panel` CLI command parity with panel.action rename."""
 
 import glob
 import os
@@ -30,10 +30,12 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: List[str], env: Optional[Dict[str, str]] = None) -> str:
     merged_env = dict(os.environ)
     merged_env.pop("CMUX_WORKSPACE_ID", None)
+    merged_env.pop("C11_PANEL_ID", None)
     merged_env.pop("C11_TAB_ID", None)
-    merged_env.pop("C11_TAB_ID", None)
+    merged_env.pop("C11_SURFACE_ID", None)
+    merged_env.pop("CMUX_PANEL_ID", None)
     merged_env.pop("CMUX_TAB_ID", None)
-    merged_env.pop("C11_TAB_ID", None)
+    merged_env.pop("CMUX_SURFACE_ID", None)
     if env:
         merged_env.update(env)
 
@@ -52,81 +54,81 @@ def main() -> int:
     with cmux(SOCKET_PATH) as c:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
-        _must("tab.action" in methods, f"Missing tab.action in capabilities: {sorted(methods)[:40]}")
+        _must("panel.action" in methods, f"Missing panel.action in capabilities: {sorted(methods)[:40]}")
 
         created = c._call("workspace.create") or {}
         ws_id = str(created.get("workspace_id") or "")
         _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
 
         c._call("workspace.select", {"workspace_id": ws_id})
-        current = c._call("tab.current", {"workspace_id": ws_id}) or {}
-        surface_id = str(current.get("tab_id") or "")
-        _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
+        current = c._call("panel.current", {"workspace_id": ws_id}) or {}
+        surface_id = str(current.get("panel_id") or "")
+        _must(bool(surface_id), f"panel.current returned no panel_id: {current}")
 
         socket_title = f"socket rename {stamp}"
         socket_payload = c._call(
-            "tab.action",
+            "panel.action",
             {
                 "workspace_id": ws_id,
-                "tab_id": surface_id,
+                "panel_id": surface_id,
                 "action": "rename",
                 "title": socket_title,
             },
         )
         _must(
             str((socket_payload or {}).get("title") or "") == socket_title,
-            f"tab.action rename response missing requested title: {socket_payload}",
+            f"panel.action rename response missing requested title: {socket_payload}",
         )
 
         cli_title = f"cli rename {stamp}"
-        cli_out = _run_cli(cli, ["rename-tab", "--workspace", ws_id, "--tab", surface_id, cli_title])
+        cli_out = _run_cli(cli, ["rename-panel", "--workspace", ws_id, "--panel", surface_id, cli_title])
         _must(
-            "action=rename" in cli_out.lower() and "tab=" in cli_out.lower(),
-            f"rename-tab --tab should route to tab.action rename summary, got: {cli_out!r}",
+            "action=rename" in cli_out.lower() and "panel=" in cli_out.lower(),
+            f"rename-panel --panel should route to panel.action rename summary, got: {cli_out!r}",
         )
 
         env_title = f"env rename {stamp}"
         env_out = _run_cli(
             cli,
-            ["rename-tab", env_title],
+            ["rename-panel", env_title],
             env={
                 "CMUX_WORKSPACE_ID": ws_id,
-                "CMUX_TAB_ID": surface_id,
+                "C11_PANEL_ID": surface_id,
             },
         )
         _must(
-            "action=rename" in env_out.lower() and "tab=" in env_out.lower(),
-            f"rename-tab via CMUX_TAB_ID should route to tab.action rename summary, got: {env_out!r}",
+            "action=rename" in env_out.lower() and "panel=" in env_out.lower(),
+            f"rename-panel via C11_PANEL_ID should route to panel.action rename summary, got: {env_out!r}",
         )
 
-        # M7: legacy rename-tab must land in the M2 metadata blob with source=explicit.
+        # M7: legacy rename-panel must land in the M2 metadata blob with source=explicit.
         titlebar_state = c._call(
-            "tab.get_titlebar_state",
-            {"tab_id": surface_id},
+            "panel.get_titlebar_state",
+            {"panel_id": surface_id},
         ) or {}
         _must(
             titlebar_state.get("title") == env_title,
-            f"rename-tab should write title canonical key, got: {titlebar_state}",
+            f"rename-panel should write title canonical key, got: {titlebar_state}",
         )
         _must(
             titlebar_state.get("title_source") == "explicit",
-            f"rename-tab should set title_source=explicit, got: {titlebar_state}",
+            f"rename-panel should set title_source=explicit, got: {titlebar_state}",
         )
 
         invalid = subprocess.run(
-            [cli, "--socket", SOCKET_PATH, "rename-tab", "--workspace", ws_id],
+            [cli, "--socket", SOCKET_PATH, "rename-panel", "--workspace", ws_id],
             capture_output=True,
             text=True,
             check=False,
-            env={k: v for k, v in os.environ.items() if k not in {"CMUX_WORKSPACE_ID", "C11_TAB_ID", "CMUX_TAB_ID"}},
+            env={k: v for k, v in os.environ.items() if k not in {"CMUX_WORKSPACE_ID", "C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"}},
         )
         invalid_output = f"{invalid.stdout}\n{invalid.stderr}"
-        _must(invalid.returncode != 0, "Expected rename-tab without title to fail")
-        _must("rename-tab requires a title" in invalid_output, f"Unexpected rename-tab error: {invalid_output!r}")
+        _must(invalid.returncode != 0, "Expected rename-panel without title to fail")
+        _must("rename-panel requires a title" in invalid_output, f"Unexpected rename-panel error: {invalid_output!r}")
 
         c.close_workspace(ws_id)
 
-    print("PASS: rename-tab CLI parity works with explicit and env-derived targets")
+    print("PASS: rename-panel CLI parity works with explicit and env-derived targets")
     return 0
 
 

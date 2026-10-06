@@ -90,13 +90,13 @@ extension TerminalController {
             return v2Result(id: id, self.v2BrowserGetTitle(params: params))
         case "browser.frame.main":
             return v2Result(id: id, self.v2BrowserFrameMain(params: params))
-        case "browser.tab.new":
+        case "browser.panel.new":
             return v2Result(id: id, self.v2BrowserTabNew(params: params))
-        case "browser.tab.list":
+        case "browser.panel.list":
             return v2Result(id: id, self.v2BrowserTabList(params: params))
-        case "browser.tab.switch":
+        case "browser.panel.switch":
             return v2Result(id: id, self.v2BrowserTabSwitch(params: params))
-        case "browser.tab.close":
+        case "browser.panel.close":
             return v2Result(id: id, self.v2BrowserTabClose(params: params))
         case "browser.viewport.set":
             return v2Result(id: id, self.v2BrowserViewportSet(params: params))
@@ -541,11 +541,11 @@ extension TerminalController {
             }
             let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused browser tab", data: nil)
+                result = .err(code: "not_found", message: "No focused browser panel", data: nil)
                 return
             }
             guard let browserTab = ws.browserPanel(for: surfaceId) else {
-                result = .err(code: "invalid_params", message: "Tab is not a browser", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "invalid_params", message: "Panel is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             result = body(workspaceManager, ws, surfaceId, browserTab)
@@ -576,12 +576,12 @@ extension TerminalController {
         }
         let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
         guard let surfaceId else {
-            return .result(.err(code: "not_found", message: "No focused browser tab", data: nil))
+            return .result(.err(code: "not_found", message: "No focused browser panel", data: nil))
         }
         guard let browserPanel = ws.browserPanel(for: surfaceId) else {
             return .result(.err(
                 code: "invalid_params",
-                message: "Tab is not a browser",
+                message: "Panel is not a browser",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
@@ -1442,11 +1442,11 @@ extension TerminalController {
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
+                result = .err(code: "not_found", message: "No focused panel to split", data: nil)
                 return
             }
             guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source tab not found", data: ["surface_id": sourceSurfaceId.uuidString])
+                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": sourceSurfaceId.uuidString])
                 return
             }
 
@@ -1536,7 +1536,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
         guard let url = v2String(params, "url") else {
             return .err(code: "invalid_params", message: "Missing url", data: nil)
@@ -1544,7 +1544,7 @@ extension TerminalController {
 
         let allowInsecureHTTP = v2Bool(params, "allow_insecure_http") ?? false
 
-        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Panel not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }

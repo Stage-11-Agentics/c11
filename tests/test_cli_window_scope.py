@@ -37,20 +37,20 @@ def fixture() -> list[dict]:
             workspace = {"id": identifier(f"{name}/workspace/{index}"),
                          "ref": f"workspace:{ordinal}", "index": index,
                          "title": f"{name} workspace {index}", "selected": index == 0,
-                         "areas": [], "tabs": [], "status": {},
+                         "areas": [], "panels": [], "status": {},
                          "notifications": [f"{name}-notification-{index}"]}
             for ti in range(2):
                 area = {"id": identifier(f"{name}/{index}/area/{ti}"),
                         "ref": f"area:{ordinal * 10 + ti}", "index": ti,
-                        "focused": ti == 0, "tab_count": 1}
+                        "focused": ti == 0, "panel_count": 1}
                 tab = {"id": identifier(f"{name}/{index}/tab/{ti}"),
-                       "ref": f"tab:{ordinal * 100 + ti}", "index": ti,
+                       "ref": f"panel:{ordinal * 100 + ti}", "index": ti,
                        "index_in_area": 0, "title": f"{name} tab {index}/{ti}",
                        "type": "terminal", "area_id": area["id"], "area_ref": area["ref"],
                        "selected": True, "selected_in_area": True,
                        "text": f"{name} screen {index}/{ti}", "metadata": {}}
                 workspace["areas"].append(area)
-                workspace["tabs"].append(tab)
+                workspace["panels"].append(tab)
             workspaces.append(workspace)
         windows.append({"id": identifier(f"window/{name}"), "ref": f"window:{wi + 1}",
                         "index": wi, "key": wi == 0, "visible": True,
@@ -124,7 +124,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
         for item in self.windows:
             for workspace in item["workspaces"]:
                 if matches(workspace, params.get("workspace_id")) or any(
-                    matches(tab, params.get("tab_id")) for tab in workspace["tabs"]
+                    matches(tab, params.get("panel_id")) for tab in workspace["panels"]
                 ):
                     return item
         return next(item for item in self.windows if item["key"])
@@ -136,17 +136,17 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 if matches(item, token):
                     return item
             raise RPCError("not_found", f"Workspace not found: {token}")
-        tab_token = params.get("tab_id")
+        tab_token = params.get("panel_id")
         if tab_token is not None:
             for item in window["workspaces"]:
-                if any(matches(tab, tab_token) for tab in item["tabs"]):
+                if any(matches(tab, tab_token) for tab in item["panels"]):
                     return item
-            raise RPCError("not_found", f"Tab not found: {tab_token}")
+            raise RPCError("not_found", f"Panel not found: {tab_token}")
         return next(item for item in window["workspaces"] if item["selected"])
 
     def target(self, workspace: dict, kind: str, params: dict) -> dict:
         token = params.get(f"{kind}_id")
-        items = workspace["areas" if kind == "area" else "tabs"]
+        items = workspace["areas" if kind == "area" else "panels"]
         if token is not None:
             for item in items:
                 if matches(item, token):
@@ -194,21 +194,21 @@ class Server(socketserver.ThreadingUnixStreamServer):
             workspace = self.workspace(window, params)
             if command == "drag_surface_to_split":
                 raw = args[1]
-                tab = next((item for item in workspace["tabs"]
+                tab = next((item for item in workspace["panels"]
                             if matches(item, raw) or str(item["index"]) == raw), None)
                 if tab is None:
                     raise RPCError("not_found", f"Tab not found: {raw}")
                 tab.setdefault("splits", []).append(args[2])
             elif command == "refresh_surfaces":
-                for tab in workspace["tabs"]:
+                for tab in workspace["panels"]:
                     tab["refresh_count"] = tab.get("refresh_count", 0) + 1
             elif "in-surface" in options:
-                tab = self.target(workspace, "tab", {"tab_id": options["in-surface"]})
+                tab = self.target(workspace, "panel", {"panel_id": options["in-surface"]})
                 tab["launch_count"] = tab.get("launch_count", 0) + 1
             else:
-                tab = copy.deepcopy(workspace["tabs"][0])
-                tab.update(id=identifier("legacy-agent/tab"), ref="tab:9002", index=len(workspace["tabs"]))
-                workspace["tabs"].append(tab)
+                tab = copy.deepcopy(workspace["panels"][0])
+                tab.update(id=identifier("legacy-agent/tab"), ref="panel:9002", index=len(workspace["panels"]))
+                workspace["panels"].append(tab)
             self.mutations.append((command, window["ref"], workspace["ref"]))
             return "OK"
         if command == "clear_notifications":
@@ -229,7 +229,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
             window = self.window(params)
             workspace = self.workspace(window, params)
             if "surface" in options:
-                self.target(workspace, "tab", {"tab_id": options["surface"]})
+                self.target(workspace, "panel", {"panel_id": options["surface"]})
             positionals = [arg for arg in args[1:] if not arg.startswith("--")]
             workspace["status"][command] = positionals
             self.mutations.append((command, window["ref"], workspace["ref"]))
@@ -241,25 +241,25 @@ class Server(socketserver.ThreadingUnixStreamServer):
         result = {"window_id": window["id"], "window_ref": window["ref"],
                   "workspace_id": workspace["id"], "workspace_ref": workspace["ref"]}
         if tab is not None:
-            result.update(tab_id=tab["id"], tab_ref=tab["ref"],
+            result.update(panel_id=tab["id"], panel_ref=tab["ref"],
                           area_id=tab["area_id"], area_ref=tab["area_ref"])
         return result
 
     def dispatch(self, method: str, params: dict) -> dict:
         if method == "system.capabilities":
             return {"methods": ["window.list", "workspace.list", "workspace.current",
-                                "workspace.select", "area.list", "area.tabs", "area.create",
-                                "tab.list", "tab.read_text", "tab.send_text", "tab.send_key",
-                                "tab.create", "tab.split", "tab.get_metadata", "tab.set_metadata",
+                                "workspace.select", "area.list", "area.panels", "area.create",
+                                "panel.list", "panel.read_text", "panel.send_text", "panel.send_key",
+                                "panel.create", "panel.split", "panel.get_metadata", "panel.set_metadata",
                                 "system.identify", "system.tree", "workspace.group.list",
-                                "notification.create", "notification.create_for_tab", "sidebar.state",
+                                "notification.create", "notification.create_for_panel", "sidebar.state",
                                 "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress",
                                 "snapshot.create", "snapshot.restore", "snapshot.restore_set",
-                                "tab.get_titlebar_state", "area.swap", "area.join",
-                                "tab.move", "tab.reorder", "config.launch"],
+                                "panel.get_titlebar_state", "area.swap", "area.join",
+                                "panel.move", "panel.reorder", "config.launch"],
                     "features_version": 1,
                     "features": [{"id": name, "version": 1} for name in
-                                 ("vocabulary.workspace_area_tab", "send.explicit_tab",
+                                 ("vocabulary.workspace_area_panel", "send.explicit_panel",
                                   "window.route_without_focus", "send.raw")],
                     "server": {"version": "synthetic", "commit": "synthetic"}}
         if method == "window.list":
@@ -296,20 +296,20 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 selected = self.workspace(target, {"workspace_id": explicit_workspace})
                 window_node = copy.deepcopy(target)
                 window_node["workspaces"] = [copy.deepcopy(selected)]
-                return {"active": self.context(key, key["workspaces"][0], key["workspaces"][0]["tabs"][0]),
+                return {"active": self.context(key, key["workspaces"][0], key["workspaces"][0]["panels"][0]),
                         "caller": None, "windows": [window_node]}
             windows = copy.deepcopy(self.windows if scope == "all" else [target])
             if scope == "workspace":
                 windows[0]["workspaces"] = [item for item in windows[0]["workspaces"] if item["selected"]]
-            return {"active": self.context(key, key["workspaces"][0], key["workspaces"][0]["tabs"][0]),
+            return {"active": self.context(key, key["workspaces"][0], key["workspaces"][0]["panels"][0]),
                     "caller": None, "windows": windows}
-        if method in ("tab.move", "tab.reorder"):
+        if method in ("panel.move", "panel.reorder"):
             # Existing endpoints locate the source globally and ignore window
             # routing for source membership. CLI admission must guard this seam.
-            window = self.window({"tab_id": params.get("tab_id")})
-            workspace = self.workspace(window, {"tab_id": params.get("tab_id")})
-            tab = self.target(workspace, "tab", params)
-            if method == "tab.move":
+            window = self.window({"panel_id": params.get("panel_id")})
+            workspace = self.workspace(window, {"panel_id": params.get("panel_id")})
+            tab = self.target(workspace, "panel", params)
+            if method == "panel.move":
                 # window_id is a destination selector, not source scope. Even
                 # same-window injection chooses its selected workspace, which
                 # would silently relocate a tab from a nonselected workspace.
@@ -320,18 +320,18 @@ class Server(socketserver.ThreadingUnixStreamServer):
                     area = self.target(destination, "area", params)
                     tab["area_id"], tab["area_ref"] = area["id"], area["ref"]
                 if destination is not workspace:
-                    workspace["tabs"].remove(tab)
-                    destination["tabs"].append(tab)
+                    workspace["panels"].remove(tab)
+                    destination["panels"].append(tab)
                     if "area_id" not in params:
                         tab["area_id"], tab["area_ref"] = destination["areas"][0]["id"], destination["areas"][0]["ref"]
                     workspace = destination
                     window = destination_window
                 if "index" in params:
-                    workspace["tabs"].remove(tab)
-                    workspace["tabs"].insert(params["index"], tab)
+                    workspace["panels"].remove(tab)
+                    workspace["panels"].insert(params["index"], tab)
             else:
-                workspace["tabs"].remove(tab)
-                workspace["tabs"].insert(params.get("index", 0), tab)
+                workspace["panels"].remove(tab)
+                workspace["panels"].insert(params.get("index", 0), tab)
             self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
             return self.context(window, workspace, tab)
         if method in ("area.swap", "area.join"):
@@ -348,11 +348,11 @@ class Server(socketserver.ThreadingUnixStreamServer):
             window, workspace, source = locate_area(params["area_id"])
             _, _, target = locate_area(params["target_area_id"])
             if method == "area.swap":
-                for tab in workspace["tabs"]:
+                for tab in workspace["panels"]:
                     replacement = target if tab["area_id"] == source["id"] else source
                     tab["area_id"], tab["area_ref"] = replacement["id"], replacement["ref"]
             else:
-                tabs = [self.target(workspace, "tab", params)] if "tab_id" in params else workspace["tabs"]
+                tabs = [self.target(workspace, "panel", params)] if "panel_id" in params else workspace["panels"]
                 for tab in tabs:
                     if tab["area_id"] == source["id"]:
                         tab["area_id"], tab["area_ref"] = target["id"], target["ref"]
@@ -365,7 +365,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
             # a foreign workspace_id when a valid window_id was supplied.
             selected = self.workspace(window, {})
             return {**self.context(window, selected), "workspaces": [
-                {key: copy.deepcopy(value) for key, value in item.items() if key not in ("areas", "tabs")}
+                {key: copy.deepcopy(value) for key, value in item.items() if key not in ("areas", "panels")}
                 for item in window["workspaces"]]}
         workspace = self.workspace(window, params)
         context = self.context(window, workspace)
@@ -379,17 +379,17 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 window["workspaces"].append(workspace)
                 window["workspace_count"] += 1
             self.mutations.append((method, window["ref"], workspace["ref"]))
-            return self.context(window, workspace, workspace["tabs"][0])
+            return self.context(window, workspace, workspace["panels"][0])
         if method == "sidebar.state":
             return {**context, "status": copy.deepcopy(workspace["status"])}
         if method == "snapshot.create":
             self.mutations.append((method, window["ref"], workspace["ref"]))
             return {**context, "snapshot_id": "synthetic-snapshot", "path": "synthetic-snapshot.json",
-                    "tab_count": len(workspace["tabs"])}
+                    "panel_count": len(workspace["panels"])}
         if method == "snapshot.restore":
             if params.get("in_place"):
                 workspace = self.workspace(window, {"workspace_id": params["target_workspace_id"]})
-                workspace["tabs"][0]["text"] = "Synthetic restored content"
+                workspace["panels"][0]["text"] = "Synthetic restored content"
             else:
                 workspace = copy.deepcopy(workspace)
                 workspace.update(id=identifier("restore/new-workspace"), ref="workspace:9001",
@@ -398,9 +398,9 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 window["workspace_count"] += 1
             self.mutations.append((method, window["ref"], workspace["ref"]))
             return self.context(window, workspace)
-        if method in ("notification.create", "notification.create_for_tab"):
-            if method == "notification.create_for_tab":
-                tab = self.target(workspace, "tab", params)
+        if method in ("notification.create", "notification.create_for_panel"):
+            if method == "notification.create_for_panel":
+                tab = self.target(workspace, "panel", params)
                 context = self.context(window, workspace, tab)
             workspace["notifications"].append(params.get("title", "synthetic"))
             self.mutations.append((method, window["ref"], workspace["ref"]))
@@ -415,49 +415,49 @@ class Server(socketserver.ThreadingUnixStreamServer):
             self.mutations.append((method, window["ref"], workspace["ref"]))
             return context
         if method == "system.identify":
-            return {"focused": self.context(window, workspace, workspace["tabs"][0]), "caller": None}
+            return {"focused": self.context(window, workspace, workspace["panels"][0]), "caller": None}
         if method == "area.list":
             return {**context, "areas": copy.deepcopy(workspace["areas"])}
-        if method == "tab.list":
-            return {**context, "tabs": copy.deepcopy(workspace["tabs"])}
-        if method == "area.tabs":
+        if method == "panel.list":
+            return {**context, "panels": copy.deepcopy(workspace["panels"])}
+        if method == "area.panels":
             area = self.target(workspace, "area", params)
             return {**context, "area_id": area["id"], "area_ref": area["ref"],
-                    "tabs": [copy.deepcopy(item) for item in workspace["tabs"]
+                    "panels": [copy.deepcopy(item) for item in workspace["panels"]
                              if item["area_id"] == area["id"]]}
-        if method in ("tab.create", "tab.split", "area.create"):
-            if method == "tab.split":
-                self.target(workspace, "tab", params)
-            if method == "tab.create":
+        if method in ("panel.create", "panel.split", "area.create"):
+            if method == "panel.split":
+                self.target(workspace, "panel", params)
+            if method == "panel.create":
                 area = self.target(workspace, "area", params)
             else:
                 area = {"id": identifier(f"created/{len(self.mutations)}/area"),
                         "ref": "area:9000", "index": len(workspace["areas"]),
-                        "focused": False, "tab_count": 1}
+                        "focused": False, "panel_count": 1}
                 workspace["areas"].append(area)
             tab = {"id": identifier(f"created/{len(self.mutations)}/tab"),
-                   "ref": "tab:9000", "index": len(workspace["tabs"]), "type": "terminal",
+                   "ref": "panel:9000", "index": len(workspace["panels"]), "type": "terminal",
                    "area_id": area["id"], "area_ref": area["ref"], "metadata": {}, "text": ""}
-            workspace["tabs"].append(tab)
+            workspace["panels"].append(tab)
             self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
             return self.context(window, workspace, tab)
-        tab = self.target(workspace, "tab", params)
+        tab = self.target(workspace, "panel", params)
         context = self.context(window, workspace, tab)
         if method.startswith("flag."):
             tab["attention"] = method
             self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
             return context
-        if method == "tab.read_text":
+        if method == "panel.read_text":
             return {**context, "text": tab["text"]}
-        if method == "tab.get_metadata":
+        if method == "panel.get_metadata":
             return {**context, "metadata": copy.deepcopy(tab["metadata"])}
-        if method == "tab.get_titlebar_state":
+        if method == "panel.get_titlebar_state":
             return {**context, "title": tab["metadata"].get("title", tab["title"]),
                     "description": tab["metadata"].get("description", "")}
-        if method in ("tab.send_text", "tab.send_key", "tab.set_metadata"):
-            if method == "tab.send_text":
+        if method in ("panel.send_text", "panel.send_key", "panel.set_metadata"):
+            if method == "panel.send_text":
                 tab["text"] += params["text"]
-            elif method == "tab.send_key":
+            elif method == "panel.send_key":
                 tab.setdefault("keys", []).append(params["key"])
             else:
                 tab["metadata"].update(params["metadata"])
@@ -479,8 +479,8 @@ def main() -> int:
         thread.start()
         a, b = fixture()
         a_ws, b_ws = a["workspaces"][0], b["workspaces"][0]
-        a_tab, b_tab = a_ws["tabs"][0], b_ws["tabs"][0]
-        caller = {"C11_TAB_ID": a_tab["id"], "CMUX_WORKSPACE_ID": a_ws["id"]}
+        a_tab, b_tab = a_ws["panels"][0], b_ws["panels"][0]
+        caller = {"C11_PANEL_ID": a_tab["id"], "CMUX_WORKSPACE_ID": a_ws["id"]}
         cases = 0
 
         def run(*args: str, window: str | None = b["ref"], success: bool = True,
@@ -505,11 +505,11 @@ def main() -> int:
         def routed(method: str, *, destination: dict | None = None) -> dict:
             calls = [params for name, params in server.calls if name == method]
             assert calls, (method, server.calls)
-            if method == "tab.move":
+            if method == "panel.move":
                 # Source membership is admitted in B; the endpoint's window_id
                 # only denotes an explicitly requested destination window.
-                assert all(any(matches(tab, params.get("tab_id")) for workspace in b["workspaces"]
-                               for tab in workspace["tabs"]) for params in calls), server.calls
+                assert all(any(matches(tab, params.get("panel_id")) for workspace in b["workspaces"]
+                               for tab in workspace["panels"]) for params in calls), server.calls
                 if destination is None:
                     assert all("window_id" not in params for params in calls), server.calls
                 else:
@@ -526,9 +526,9 @@ def main() -> int:
         try:
             # UUID, global ref, and 0-based window index all resolve B without focus.
             for token in (b["id"], "window:2", "1"):
-                payload = json.loads(run("read-screen", "--tab", b_tab["ref"], window=token).stdout)
+                payload = json.loads(run("read-screen", "--panel", b_tab["ref"], window=token).stdout)
                 assert payload["text"] == b_tab["text"] and payload["window_id"] == b["id"], payload
-                routed("tab.read_text")
+                routed("panel.read_text")
                 assert any(method == "window.list" for method, _ in server.calls), server.calls
                 unchanged()
 
@@ -541,7 +541,7 @@ def main() -> int:
             # Ambient A caller identities cannot override B for fleet reads/create.
             payload = json.loads(run("read-screen", env=caller).stdout)
             assert payload["text"] == b_tab["text"], payload
-            assert "tab_id" not in routed("tab.read_text"), server.calls
+            assert "panel_id" not in routed("panel.read_text"), server.calls
             unchanged()
             payload = json.loads(run("list-workspaces", env=caller).stdout)
             assert [item["ref"] for item in payload["workspaces"]] == [item["ref"] for item in b["workspaces"]]
@@ -560,68 +560,68 @@ def main() -> int:
             for command in ("read-screen", "select-workspace"):
                 args = [command, "--workspace", "1"]
                 if command == "read-screen":
-                    args += ["--tab", "0"]
+                    args += ["--panel", "0"]
                 payload = json.loads(run(*args).stdout)
                 assert payload["workspace_id"] == b["workspaces"][1]["id"], payload
                 routed("workspace.list")
-                params = routed("tab.read_text" if command == "read-screen" else "workspace.select")
+                params = routed("panel.read_text" if command == "read-screen" else "workspace.select")
                 assert matches(b["workspaces"][1], params["workspace_id"]), params
                 if command == "read-screen":
-                    routed("tab.list")
+                    routed("panel.list")
                     unchanged()
                 else:
                     assert server.windows[1]["workspaces"][1]["selected"], server.windows
                     assert server.windows[0] == a, server.windows[0]
 
             # Bare tab/area indexes must resolve in B even without --workspace.
-            payload = json.loads(run("read-screen", "--tab", "1").stdout)
-            assert payload["text"] == b_ws["tabs"][1]["text"], payload
-            routed("tab.list")
-            routed("tab.read_text")
+            payload = json.loads(run("read-screen", "--panel", "1").stdout)
+            assert payload["text"] == b_ws["panels"][1]["text"], payload
+            routed("panel.list")
+            routed("panel.read_text")
             unchanged()
-            payload = json.loads(run("list-area-tabs", "--area", "1").stdout)
-            assert [item["ref"] for item in payload["tabs"]] == [b_ws["tabs"][1]["ref"]], payload
+            payload = json.loads(run("list-area-panels", "--area", "1").stdout)
+            assert [item["ref"] for item in payload["panels"]] == [b_ws["panels"][1]["ref"]], payload
             routed("area.list")
-            routed("area.tabs")
+            routed("area.panels")
             unchanged()
             for command, key, expected in (("list-areas", "areas", b_ws["areas"]),
-                                           ("list-tabs", "tabs", b_ws["tabs"])):
+                                           ("list-panels", "panels", b_ws["panels"])):
                 payload = json.loads(run(command).stdout)
                 assert [item["ref"] for item in payload[key]] == [item["ref"] for item in expected], payload
-                routed("area.list" if key == "areas" else "tab.list")
+                routed("area.list" if key == "areas" else "panel.list")
                 unchanged()
 
-            for args, method in ((["new-tab", "--area", "1", "--no-focus"], "tab.create"),
-                                 (["new-split", "right", "--tab", "1"], "tab.split"),
+            for args, method in ((["new-panel", "--area", "1", "--no-focus"], "panel.create"),
+                                 (["new-split", "right", "--panel", "1"], "panel.split"),
                                  (["new-area", "--direction", "down"], "area.create")):
                 payload = json.loads(run(*args, env=caller).stdout)
                 assert payload["window_id"] == b["id"] and payload["workspace_id"] == b_ws["id"], payload
                 routed(method)
-                if method == "tab.create":
+                if method == "panel.create":
                     assert matches(b_ws["areas"][1], routed(method)["area_id"])
                     routed("area.list")
-                elif method == "tab.split":
-                    assert matches(b_ws["tabs"][1], routed(method)["tab_id"])
-                    routed("tab.list")
-                assert len(server.windows[1]["workspaces"][0]["tabs"]) == 3
+                elif method == "panel.split":
+                    assert matches(b_ws["panels"][1], routed(method)["panel_id"])
+                    routed("panel.list")
+                assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
 
-            for command, content, method in (("send", "B-only-sentinel", "tab.send_text"),
-                                             ("send-key", "enter", "tab.send_key")):
-                run(command, "--tab", "1", content, env=caller)
+            for command, content, method in (("send", "B-only-sentinel", "panel.send_text"),
+                                             ("send-key", "enter", "panel.send_key")):
+                run(command, "--panel", "1", content, env=caller)
                 params = routed(method)
-                routed("tab.list")
-                assert matches(b_ws["tabs"][1], params["tab_id"]), params
-                changed_tab = server.windows[1]["workspaces"][0]["tabs"][1]
+                routed("panel.list")
+                assert matches(b_ws["panels"][1], params["panel_id"]), params
+                changed_tab = server.windows[1]["workspaces"][0]["panels"][1]
                 assert content in (changed_tab["text"] if command == "send" else changed_tab["keys"])
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
 
                 # Suppression of caller env IDs must also suppress their admission.
                 out = run(command, content, env=caller, success=False)
-                assert "requires --tab" in out.stderr, out.stderr
+                assert "requires --panel" in out.stderr, out.stderr
                 assert not any(name == method for name, _ in server.calls), server.calls
                 unchanged()
-                out = run(command, "--tab", a_tab["ref"], content, success=False)
+                out = run(command, "--panel", a_tab["ref"], content, success=False)
                 assert "not_found" in out.stderr, out.stderr
                 routed(method)
                 unchanged()
@@ -629,46 +629,46 @@ def main() -> int:
             # Merged send parsing must preserve window admission for aliases
             # and raw sends while retaining the new payload semantics.
             for command, flags, content, expected in (
-                    ("send-tab", [], r"B-alias\n", "B-alias\r"),
+                    ("send-panel", [], r"B-alias\n", "B-alias\r"),
                     ("paste", ["--no-submit"], r"B-paste\n", r"B-paste\n"),
                     ("send", ["--raw", "--no-submit"], r"B-raw\n", r"B-raw\n")):
-                run(command, *flags, "--tab", "1", content, env=caller)
-                params = routed("tab.send_text")
-                assert matches(b_ws["tabs"][1], params["tab_id"]), params
+                run(command, *flags, "--panel", "1", content, env=caller)
+                params = routed("panel.send_text")
+                assert matches(b_ws["panels"][1], params["panel_id"]), params
                 assert params["text"] == expected, params
                 if command == "paste" or "--raw" in flags:
                     assert params["preserve_newlines"] and not params["submit"], params
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
                 assert server.windows[0]["key"] and not server.windows[1]["key"]
                 out = run(command, *flags, content, env=caller, success=False)
-                assert "requires --tab" in out.stderr, out.stderr
-                assert not any(name == "tab.send_text" for name, _ in server.calls), server.calls
+                assert "requires --panel" in out.stderr, out.stderr
+                assert not any(name == "panel.send_text" for name, _ in server.calls), server.calls
                 unchanged()
-                out = run(command, *flags, "--tab", a_tab["ref"], content, env=caller, success=False)
+                out = run(command, *flags, "--panel", a_tab["ref"], content, env=caller, success=False)
                 assert "not_found" in out.stderr, out.stderr
                 unchanged()
 
             # Metadata helpers must carry scope through target resolution and dispatch.
-            run("set-metadata", "--tab", "1", "--key", "scope-test", "--value", "B-only")
-            routed("tab.list")
-            routed("tab.set_metadata")
-            assert server.windows[1]["workspaces"][0]["tabs"][1]["metadata"] == {"scope-test": "B-only"}
+            run("set-metadata", "--panel", "1", "--key", "scope-test", "--value", "B-only")
+            routed("panel.list")
+            routed("panel.set_metadata")
+            assert server.windows[1]["workspaces"][0]["panels"][1]["metadata"] == {"scope-test": "B-only"}
             assert server.windows[0] == a, server.windows[0]
-            payload = json.loads(run("get-metadata", "--tab", "1", reset=False).stdout)
+            payload = json.loads(run("get-metadata", "--panel", "1", reset=False).stdout)
             assert payload["metadata"] == {"scope-test": "B-only"}, payload
-            routed("tab.get_metadata")
+            routed("panel.get_metadata")
 
             # Title helpers ignore A caller workspace when an explicit B tab
             # is supplied; get-titlebar-state reads those same applied values.
             for command, key, value, reset in (("set-title", "title", "Scoped title", True),
                                                 ("set-description", "description", "Scoped description", False)):
-                run(command, "--tab", b_tab["id"], value, env=caller, reset=reset)
-                routed("tab.set_metadata")
-                assert server.windows[1]["workspaces"][0]["tabs"][0]["metadata"][key] == value
+                run(command, "--panel", b_tab["id"], value, env=caller, reset=reset)
+                routed("panel.set_metadata")
+                assert server.windows[1]["workspaces"][0]["panels"][0]["metadata"][key] == value
                 assert server.windows[0] == a, server.windows[0]
-            payload = json.loads(run("get-titlebar-state", "--tab", b_tab["id"], env=caller, reset=False).stdout)
+            payload = json.loads(run("get-titlebar-state", "--panel", b_tab["id"], env=caller, reset=False).stdout)
             assert payload["title"] == "Scoped title" and payload["description"] == "Scoped description", payload
-            routed("tab.get_titlebar_state")
+            routed("panel.get_titlebar_state")
             assert len(server.mutations) == 2 and server.windows[0] == a, server.mutations
 
             # v1 notification clearing and sidebar writes need an explicit
@@ -713,24 +713,24 @@ def main() -> int:
                 routed("sidebar.state")
                 unchanged()
             for extra, method in (([], "notification.create"),
-                                  (["--tab", "1"], "notification.create_for_tab")):
+                                  (["--panel", "1"], "notification.create_for_panel")):
                 payload = json.loads(run("notify", "--title", "B-only", *extra, env=caller).stdout)
                 assert payload["workspace_id"] == b_ws["id"], payload
                 routed(method)
                 if extra:
-                    assert payload["tab_id"] == b_ws["tabs"][1]["id"], payload
+                    assert payload["panel_id"] == b_ws["panels"][1]["id"], payload
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
                 assert server.windows[1]["workspaces"][0]["notifications"][-1] == "B-only"
-            run("notify", "--title", "foreign", "--tab", a_tab["ref"], success=False)
+            run("notify", "--title", "foreign", "--panel", a_tab["ref"], success=False)
             unchanged()
 
             for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
                                     ("suppress", "flag.suppress"), ("unsuppress", "flag.unsuppress")):
-                args = [command, "--tab", "1", "--by", "operator"]
+                args = [command, "--panel", "1", "--by", "operator"]
                 if command == "raise-flag":
                     args.append("Synthetic reason")
                 payload = json.loads(run(*args, env=caller).stdout)
-                assert payload["window_id"] == b["id"] and payload["tab_id"] == b_ws["tabs"][1]["id"], payload
+                assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
                 routed(method)
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
                 args[2] = a_tab["ref"]
@@ -753,7 +753,7 @@ def main() -> int:
                 if extra:
                     routed("workspace.current")
                     assert params["target_workspace_id"] == b_ws["id"], params
-                    assert server.windows[1]["workspaces"][0]["tabs"][0]["text"] == "Synthetic restored content"
+                    assert server.windows[1]["workspaces"][0]["panels"][0]["text"] == "Synthetic restored content"
                 else:
                     assert len(server.windows[1]["workspaces"]) == 3
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
@@ -762,11 +762,11 @@ def main() -> int:
                 args = [command, "--pane", b_ws["areas"][0]["ref"],
                         "--target-pane", b_ws["areas"][1]["ref"]]
                 if command == "join-pane":
-                    args += ["--tab", b_tab["ref"], "--no-focus"]
+                    args += ["--panel", b_tab["ref"], "--no-focus"]
                 payload = json.loads(run(*args, env=caller).stdout)
                 assert payload["window_id"] == b["id"], payload
                 routed(method)
-                assert server.windows[1]["workspaces"][0]["tabs"][0]["area_ref"] == b_ws["areas"][1]["ref"]
+                assert server.windows[1]["workspaces"][0]["panels"][0]["area_ref"] == b_ws["areas"][1]["ref"]
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
                 for position in (2, 4):
                     foreign_args = list(args)
@@ -782,45 +782,45 @@ def main() -> int:
 
             # Global source lookup in move/reorder requires client membership
             # checks for the source, destination workspace/area, and anchor.
-            for command, extra, method in (("move-tab", ["--area", b_ws["areas"][1]["ref"]], "tab.move"),
-                                           ("reorder-tab", ["--index", "0"], "tab.reorder")):
-                payload = json.loads(run(command, "--tab", b_ws["tabs"][1]["ref"], *extra).stdout)
+            for command, extra, method in (("move-panel", ["--area", b_ws["areas"][1]["ref"]], "panel.move"),
+                                           ("reorder-panel", ["--index", "0"], "panel.reorder")):
+                payload = json.loads(run(command, "--panel", b_ws["panels"][1]["ref"], *extra).stdout)
                 assert payload["window_id"] == b["id"], payload
                 routed(method)
                 assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                run(command, "--tab", a_tab["ref"], *extra, success=False)
+                run(command, "--panel", a_tab["ref"], *extra, success=False)
                 assert not any(name == method for name, _ in server.calls), server.calls
                 unchanged()
-            for command, extra, method in (("move-tab", ["--workspace", a_ws["id"]], "tab.move"),
-                                           ("move-tab", ["--area", a_ws["areas"][0]["ref"]], "tab.move"),
-                                           ("move-tab", ["--before", a_tab["ref"]], "tab.move"),
-                                           ("reorder-tab", ["--after", a_tab["ref"]], "tab.reorder")):
-                run(command, "--tab", b_tab["ref"], *extra, success=False)
+            for command, extra, method in (("move-panel", ["--workspace", a_ws["id"]], "panel.move"),
+                                           ("move-panel", ["--area", a_ws["areas"][0]["ref"]], "panel.move"),
+                                           ("move-panel", ["--before", a_tab["ref"]], "panel.move"),
+                                           ("reorder-panel", ["--after", a_tab["ref"]], "panel.reorder")):
+                run(command, "--panel", b_tab["ref"], *extra, success=False)
                 assert not any(name == method for name, _ in server.calls), server.calls
                 unchanged()
             source_ws = b["workspaces"][1]
-            source_tab = source_ws["tabs"][1]
-            payload = json.loads(run("move-tab", "--tab", source_tab["ref"], "--index", "0").stdout)
+            source_tab = source_ws["panels"][1]
+            payload = json.loads(run("move-panel", "--panel", source_tab["ref"], "--index", "0").stdout)
             assert payload["workspace_id"] == source_ws["id"] and payload["area_id"] == source_tab["area_id"], payload
-            routed("tab.move")
-            assert server.mutations == [("tab.move", b["ref"], source_ws["ref"], source_tab["ref"])], server.mutations
+            routed("panel.move")
+            assert server.mutations == [("panel.move", b["ref"], source_ws["ref"], source_tab["ref"])], server.mutations
             assert server.windows[0] == a and server.windows[1]["workspaces"][0] == b_ws
-            assert len(server.windows[1]["workspaces"][1]["tabs"]) == 2
+            assert len(server.windows[1]["workspaces"][1]["panels"]) == 2
 
-            payload = json.loads(run("move-tab", "--tab", b_tab["ref"], "--window", a["ref"],
+            payload = json.loads(run("move-panel", "--panel", b_tab["ref"], "--window", a["ref"],
                                      "--workspace", a_ws["ref"]).stdout)
             assert payload["window_id"] == a["id"] and payload["workspace_id"] == a_ws["id"], payload
-            routed("tab.move", destination=a)
-            assert server.mutations == [("tab.move", a["ref"], a_ws["ref"], b_tab["ref"])], server.mutations
-            assert len(server.windows[0]["workspaces"][0]["tabs"]) == 3
-            assert len(server.windows[1]["workspaces"][0]["tabs"]) == 1
-            assert any(tab["id"] == b_tab["id"] for tab in server.windows[0]["workspaces"][0]["tabs"])
-            assert not any(tab["id"] == b_tab["id"] for tab in server.windows[1]["workspaces"][0]["tabs"])
+            routed("panel.move", destination=a)
+            assert server.mutations == [("panel.move", a["ref"], a_ws["ref"], b_tab["ref"])], server.mutations
+            assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
+            assert len(server.windows[1]["workspaces"][0]["panels"]) == 1
+            assert any(tab["id"] == b_tab["id"] for tab in server.windows[0]["workspaces"][0]["panels"])
+            assert not any(tab["id"] == b_tab["id"] for tab in server.windows[1]["workspaces"][0]["panels"])
 
             # Legacy routes need selected B's workspace on their v1 wire;
             # otherwise these same endpoints mutate the key window A.
-            legacy_cases = ((["drag-tab-to-split", "--tab", "0", "right"], "drag_surface_to_split"),
-                            (["refresh-tabs"], "refresh_surfaces"),
+            legacy_cases = ((["drag-panel-to-split", "--panel", "0", "right"], "drag_surface_to_split"),
+                            (["refresh-panels"], "refresh_surfaces"),
                             (["default-agent", "launch"], "default_agent"))
             for args, command in legacy_cases:
                 run(*args, env=caller)
@@ -830,19 +830,19 @@ def main() -> int:
                 assert len(wires) == 1, server.calls
                 if command == "default_agent":
                     assert wires[0][wires[0].index("--workspace") + 1] == b_ws["id"], wires
-                    assert len(server.windows[1]["workspaces"][0]["tabs"]) == 3
+                    assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
                 else:
                     assert f"--workspace={b_ws['id']}" in wires[0], wires
                     if command == "drag_surface_to_split":
                         assert wires[0][1:3] == [b_tab["id"], "right"], wires
-                        assert server.windows[1]["workspaces"][0]["tabs"][0]["splits"] == ["right"]
+                        assert server.windows[1]["workspaces"][0]["panels"][0]["splits"] == ["right"]
                     else:
-                        assert all(tab["refresh_count"] == 1 for tab in server.windows[1]["workspaces"][0]["tabs"])
+                        assert all(tab["refresh_count"] == 1 for tab in server.windows[1]["workspaces"][0]["panels"])
                 assert server.windows[0]["key"] and not server.windows[1]["key"]
-            for args, command in ((["drag-tab-to-split", "--tab", a_tab["id"], "right"], "drag_surface_to_split"),
-                                  (["default-agent", "launch", "--in-tab", a_tab["id"]], "default_agent"),
-                                  (["drag-tab-to-split", "--tab", "bogus", "right"], "drag_surface_to_split"),
-                                  (["default-agent", "launch", "--in-tab", "bogus"], "default_agent")):
+            for args, command in ((["drag-panel-to-split", "--panel", a_tab["id"], "right"], "drag_surface_to_split"),
+                                  (["default-agent", "launch", "--in-panel", a_tab["id"]], "default_agent"),
+                                  (["drag-panel-to-split", "--panel", "bogus", "right"], "drag_surface_to_split"),
+                                  (["default-agent", "launch", "--in-panel", "bogus"], "default_agent")):
                 run(*args, env=caller, success=False)
                 assert not any(name.startswith(command) for name, _ in server.calls), server.calls
                 unchanged()
@@ -853,11 +853,11 @@ def main() -> int:
                 wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
                 assert len(wires) == 1 and not any(arg.startswith("--workspace") for arg in wires[0]), wires
                 if command == "drag_surface_to_split":
-                    assert server.windows[0]["workspaces"][0]["tabs"][0]["splits"] == ["right"]
+                    assert server.windows[0]["workspaces"][0]["panels"][0]["splits"] == ["right"]
                 elif command == "refresh_surfaces":
-                    assert all(tab["refresh_count"] == 1 for tab in server.windows[0]["workspaces"][0]["tabs"])
+                    assert all(tab["refresh_count"] == 1 for tab in server.windows[0]["workspaces"][0]["panels"])
                 else:
-                    assert len(server.windows[0]["workspaces"][0]["tabs"]) == 3
+                    assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
 
             # config.launch carries scope even when requesting a new workspace.
             for extra in ([], ["--new-workspace"]):
@@ -901,18 +901,18 @@ def main() -> int:
 
             # A previously live handle must become invalid after closure, with
             # no command dispatch or mutation in the surviving key window.
-            run("read-screen", "--tab", b_tab["ref"])
+            run("read-screen", "--panel", b_tab["ref"])
             run("close-window", "--window", b["ref"], window=None, reset=False)
             assert (f"close_window {b['id']}", {}) in server.calls, server.calls
             closed_state, close_mutations = copy.deepcopy(server.windows), list(server.mutations)
             assert len(closed_state) == 1 and closed_state[0]["key"]
-            out = run("read-screen", "--tab", a_tab["ref"], success=False, reset=False)
+            out = run("read-screen", "--panel", a_tab["ref"], success=False, reset=False)
             assert b["ref"] in out.stderr, out.stderr
-            assert not any(name == "tab.read_text" for name, _ in server.calls), server.calls
+            assert not any(name == "panel.read_text" for name, _ in server.calls), server.calls
             assert server.windows == closed_state and server.mutations == close_mutations
 
             for token in ("", "  ", "not-a-window", "window:999999", identifier("missing-window"), "999999", "-1"):
-                out = run("read-screen", "--tab", b_tab["ref"], window=token, success=False)
+                out = run("read-screen", "--panel", b_tab["ref"], window=token, success=False)
                 assert "window" in out.stderr.lower() and f"'{token}'" in out.stderr, (token, out.stderr)
                 assert all(name in ("window.list", "system.capabilities", "auth synthetic-password")
                            for name, _ in server.calls), server.calls

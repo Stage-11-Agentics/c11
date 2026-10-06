@@ -194,10 +194,10 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Panel not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -229,10 +229,10 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Panel not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -258,10 +258,10 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Panel not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -299,7 +299,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
 
         var focused = false
@@ -1363,6 +1363,7 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": v2OrNull(ws.focusedPanelId?.uuidString),
                 "surface_ref": v2Ref(kind: .surface, uuid: ws.focusedPanelId),
+                "panels": browserTabs,
                 "tabs": browserTabs
             ]
         }
@@ -1379,7 +1380,7 @@ extension TerminalController {
         }
 
         let url = v2String(params, "url").flatMap(URL.init(string:))
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create browser tab", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create browser panel", data: nil)
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -1397,7 +1398,7 @@ extension TerminalController {
             }
 
             guard let panel = ws.newBrowserSurface(inPane: pane, url: url, focus: true) else {
-                result = .err(code: "internal_error", message: "Failed to create browser tab", data: nil)
+                result = .err(code: "internal_error", message: "Failed to create browser panel", data: nil)
                 return
             }
             result = .ok([
@@ -1418,7 +1419,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Browser tab not found", data: nil)
+        var result: V2CallResult = .err(code: "not_found", message: "Browser panel not found", data: nil)
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -1440,7 +1441,7 @@ extension TerminalController {
             }()
 
             guard let targetId, browserIds.contains(targetId) else {
-                result = .err(code: "not_found", message: "Browser tab not found", data: nil)
+                result = .err(code: "not_found", message: "Browser panel not found", data: nil)
                 return
             }
 
@@ -1460,7 +1461,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Browser tab not found", data: nil)
+        var result: V2CallResult = .err(code: "not_found", message: "Browser panel not found", data: nil)
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -1471,7 +1472,7 @@ extension TerminalController {
                 (panel as? BrowserTab)?.id
             }
             guard !browserIds.isEmpty else {
-                result = .err(code: "not_found", message: "No browser tabs", data: nil)
+                result = .err(code: "not_found", message: "No browser panels", data: nil)
                 return
             }
 
@@ -1489,12 +1490,12 @@ extension TerminalController {
             }()
 
             guard let targetId, browserIds.contains(targetId) else {
-                result = .err(code: "not_found", message: "Browser tab not found", data: nil)
+                result = .err(code: "not_found", message: "Browser panel not found", data: nil)
                 return
             }
 
             if ws.panels.count <= 1 {
-                result = .err(code: "invalid_state", message: "Cannot close the last tab", data: nil)
+                result = .err(code: "invalid_state", message: "Cannot close the last panel", data: nil)
                 return
             }
 
@@ -1506,7 +1507,7 @@ extension TerminalController {
                     "surface_id": targetId.uuidString,
                     "surface_ref": v2Ref(kind: .surface, uuid: targetId)
                 ])
-                : .err(code: "internal_error", message: "Failed to close browser tab", data: ["surface_id": targetId.uuidString])
+                : .err(code: "internal_error", message: "Failed to close browser panel", data: ["surface_id": targetId.uuidString])
         }
         return result
     }
@@ -1897,15 +1898,15 @@ extension TerminalController {
     }
 
     func v2BrowserViewportSet(params _: [String: Any]) -> V2CallResult {
-        v2BrowserNotSupported("browser.viewport.set", details: "WKWebView does not provide a per-tab programmable viewport emulation API equivalent to CDP")
+        v2BrowserNotSupported("browser.viewport.set", details: "WKWebView does not provide a per-panel programmable viewport emulation API equivalent to CDP")
     }
 
     func v2BrowserGeolocationSet(params _: [String: Any]) -> V2CallResult {
-        v2BrowserNotSupported("browser.geolocation.set", details: "WKWebView does not expose per-tab geolocation spoofing hooks equivalent to Playwright/CDP")
+        v2BrowserNotSupported("browser.geolocation.set", details: "WKWebView does not expose per-panel geolocation spoofing hooks equivalent to Playwright/CDP")
     }
 
     func v2BrowserOfflineSet(params _: [String: Any]) -> V2CallResult {
-        v2BrowserNotSupported("browser.offline.set", details: "WKWebView does not expose reliable per-tab offline emulation")
+        v2BrowserNotSupported("browser.offline.set", details: "WKWebView does not expose reliable per-panel offline emulation")
     }
 
     func v2BrowserTraceStart(params _: [String: Any]) -> V2CallResult {

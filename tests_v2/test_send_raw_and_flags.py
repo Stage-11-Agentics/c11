@@ -42,9 +42,10 @@ def collector(directory):
 
 def cli_run(cli, socket_path, *arguments, stdin=None, ok=True):
     environment = dict(os.environ)
-    for name in ("C11_TAB_ID", "C11_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID"):
+    for name in ("C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "C11_WORKSPACE_ID",
+                 "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID"):
         environment.pop(name, None)
-    environment["C11_TAB_ID"] = "33333333-3333-4333-8333-333333333333"
+    environment["C11_PANEL_ID"] = "33333333-3333-4333-8333-333333333333"
     proc = subprocess.run([cli, "--socket", socket_path, *arguments], input=stdin,
                           capture_output=True, text=True, timeout=25, env=environment)
     assert (proc.returncode == 0) == ok, (arguments, proc.returncode, proc.stderr)
@@ -119,7 +120,7 @@ def offline(cli):
         (["send", "--json", "body"], None, "body", False, True),
         (["send", "--raw", "--no-submit", "-"], "\nline1\nline2\r\n", "\nline1\nline2\r\n", True, False),
         (["paste", "--no-submit"], "\n", "\n", True, False),
-        (["send-tab", "--raw", "--no-submit", "body"], None, "body", True, False),
+        (["send-panel", "--raw", "--no-submit", "body"], None, "body", True, False),
         (["send", "--no-submit", "--", "--bogus"], None, "--bogus", False, False),
         (["send", "--no-submit", "--", "--help"], None, "--help", False, False),
     ]
@@ -153,11 +154,11 @@ def offline(cli):
                                 request = json.loads(line)
                                 requests.append(request)
                                 if request["method"] == "system.capabilities":
-                                    result = {"methods": ["system.capabilities", "tab.list", "tab.send_text"],
-                                              "features": [{"id": "send.raw", "version": 1}] if supported else []}
+                                    result = {"methods": ["system.capabilities", "panel.list", "panel.send_text"],
+                                              "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}] + ([{"id": "send.raw", "version": 1}] if supported else [])}
                                 else:
-                                    assert request["method"] == "tab.send_text", request
-                                    result = {"workspace_id": workspace, "tab_id": tab,
+                                    assert request["method"] == "panel.send_text", request
+                                    result = {"workspace_id": workspace, "panel_id": tab,
                                               "queued": queued, "delivered": not queued, "submitted": submit}
                                     if guard_state == "checked":
                                         result.update({"input_guard": "checked", "input_state": "empty",
@@ -175,13 +176,13 @@ def offline(cli):
                 peer = threading.Thread(target=serve, daemon=True)
                 peer.start()
                 # Insert targeting before any literal -- terminator.
-                targeted = [arguments[0], "--workspace", workspace, "--tab", tab, *arguments[1:]]
+                targeted = [arguments[0], "--workspace", workspace, "--panel", tab, *arguments[1:]]
                 try:
                     proc = cli_run(cli, path, *targeted, stdin=stdin, ok=bool(supported))
                 finally:
                     peer.join(timeout=25)
                 assert not peer.is_alive() and not errors, errors
-                sends = [r for r in requests if r["method"] == "tab.send_text"]
+                sends = [r for r in requests if r["method"] == "panel.send_text"]
                 if not supported:
                     assert not sends and len(requests) == 1, requests
                     assert "send.raw" in proc.stderr, proc.stderr
@@ -191,7 +192,7 @@ def offline(cli):
                 assert params["text"] == expected and params["submit"] is submit, params
                 assert params.get("preserve_newlines", False) is raw, params
                 assert params.get("allow_unguarded", False) is ("--allow-unguarded" in arguments), params
-                assert params["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", params
+                assert params["caller_panel_id"] == "33333333-3333-4333-8333-333333333333", params
                 expected_status = "queued, not delivered" if queued else (
                     "delivered, return scheduled" if submit else "delivered, not submitted")
                 if "--json" in arguments:
@@ -200,12 +201,12 @@ def offline(cli):
                     assert payload["input_state"] == ("empty" if guard_state == "checked" else "unknown"), payload
                 else:
                     assert expected_status in proc.stdout and "input_guard: unguarded" in proc.stdout, proc.stdout
-                assert all(r["method"] in ("system.capabilities", "tab.send_text") for r in requests), requests
+                assert all(r["method"] in ("system.capabilities", "panel.send_text") for r in requests), requests
 
     with tempfile.TemporaryDirectory(prefix="c11-281-absent-") as directory:
         dead = str(Path(directory) / "absent.sock")
         for flag in ("--bogus", "--text"):
-            proc = cli_run(cli, dead, "send", "--tab", tab, flag, "hello", ok=False)
+            proc = cli_run(cli, dead, "send", "--panel", tab, flag, "hello", ok=False)
             assert flag in proc.stderr and "Unknown flag" in proc.stderr, proc.stderr
         assert "send --raw" in cli_run(cli, dead, "paste", "--help").stdout
         send_help = cli_run(cli, dead, "send", "--help").stdout
@@ -234,9 +235,10 @@ def offline(cli):
                             requests.append(request)
                             if request["method"] == "system.capabilities":
                                 response = {"id": request["id"], "ok": True, "result": {
-                                    "methods": ["system.capabilities", "tab.list", "tab.send_text"], "features": []}}
+                                    "methods": ["system.capabilities", "panel.list", "panel.send_text"],
+                                    "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}}
                             else:
-                                assert request["method"] == "tab.send_text", request
+                                assert request["method"] == "panel.send_text", request
                                 response = {"id": request["id"], "ok": False, "error": {
                                     "code": "input_guard_refused", "message": "Input guard refused a draft.",
                                     "data": {"input_guard": "refused", "input_state": "draft",
@@ -251,7 +253,7 @@ def offline(cli):
             peer = threading.Thread(target=serve_refusal, daemon=True)
             peer.start()
             proc = cli_run(cli, path, "--json", "send", "--workspace", workspace,
-                           "--tab", tab, "body", ok=False)
+                           "--panel", tab, "body", ok=False)
             peer.join(timeout=25)
             assert not peer.is_alive() and not errors, errors
             payload = json.loads(proc.stdout)
@@ -261,7 +263,7 @@ def offline(cli):
             assert payload["error"]["data"]["hint"] == "Inspect or explicitly override.", payload
             assert "input_guard_refused" in proc.stderr and "input_guard: refused" in proc.stderr, proc.stderr
             assert "Nothing was sent; do not press Enter" in proc.stderr and "raise-flag" in proc.stderr, proc.stderr
-            assert [request["method"] for request in requests] == ["system.capabilities", "tab.send_text"], requests
+            assert [request["method"] for request in requests] == ["system.capabilities", "panel.send_text"], requests
 
     with tempfile.TemporaryDirectory(prefix="c11-267-input-state-") as directory:
         path = str(Path(directory) / "peer.sock")
@@ -283,11 +285,12 @@ def offline(cli):
                             request = json.loads(line)
                             requests.append(request)
                             if request["method"] == "system.capabilities":
-                                result = {"methods": ["system.capabilities", "tab.list", "tab.input_state"], "features": []}
+                                result = {"methods": ["system.capabilities", "panel.list", "panel.input_state"],
+                                          "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                             else:
-                                assert request["method"] == "tab.input_state", request
-                                assert request["params"].get("tab_id") == tab, request
-                                result = {"tab_id": tab, "input_state": "draft", "draft_length": 7,
+                                assert request["method"] == "panel.input_state", request
+                                assert request["params"].get("panel_id") == tab, request
+                                result = {"panel_id": tab, "input_state": "draft", "draft_length": 7,
                                           "source": "active_screen", "observed_at_ms": 123}
                             response = {"id": request["id"], "ok": True, "result": result}
                             stream.write((json.dumps(response) + "\n").encode())
@@ -297,12 +300,12 @@ def offline(cli):
 
             peer = threading.Thread(target=serve_input_state, daemon=True)
             peer.start()
-            proc = cli_run(cli, path, "input-state", "--workspace", workspace, "--tab", tab, "--json")
+            proc = cli_run(cli, path, "input-state", "--workspace", workspace, "--panel", tab, "--json")
             peer.join(timeout=25)
             assert not peer.is_alive() and not errors, errors
             payload = json.loads(proc.stdout)
             assert payload["input_state"] == "draft" and payload["draft_length"] == 7, payload
-            assert [request["method"] for request in requests] == ["system.capabilities", "tab.input_state"], requests
+            assert [request["method"] for request in requests] == ["system.capabilities", "panel.input_state"], requests
     print("PASS C11-281 built-CLI parser/protocol fixtures (not live PTY proof)")
 
 
@@ -326,11 +329,11 @@ def live(cli, socket_path, event_log):
             features = client._call("system.capabilities")["features"]
             assert any(item["id"] == "send.raw" and item["version"] == 1 for item in features), features
             client._call("workspace.select", {"workspace_id": workspace})
-            tab = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+            tab = client._call("panel.list", {"workspace_id": workspace})["panels"][0]["id"]
             # Launch the byte collector through the normal shell path.
             import shlex
             command = shlex.join([sys.executable, str(Path(__file__).resolve()), "--collector", directory])
-            client._call("tab.send_text", {"workspace_id": workspace, "tab_id": tab,
+            client._call("panel.send_text", {"workspace_id": workspace, "panel_id": tab,
                                           "text": command, "submit": True})
             wait_until(lambda: (root / "ready").exists(), "collector did not start")
 
@@ -349,7 +352,7 @@ def live(cli, socket_path, event_log):
                 before = len(path.read_bytes()) if path.exists() else 0
                 last_seq = max(event["seq"] for event in events())
                 proc = cli_run(cli, route or socket_path, "--json", arguments[0], "--workspace", workspace,
-                               "--tab", tab, *arguments[1:], stdin=stdin)
+                               "--panel", tab, *arguments[1:], stdin=stdin)
                 payload = json.loads(proc.stdout)
                 assert payload["delivered"] is True and payload["queued"] is False, payload
                 assert payload["submitted"] is submitted, payload
@@ -385,7 +388,7 @@ def live(cli, socket_path, event_log):
             before = (root / "bytes").read_bytes()
             for flag in ("--bogus", "--text"):
                 proc = cli_run(cli, socket_path, "send", "--workspace", workspace,
-                               "--tab", tab, flag, "hello", ok=False)
+                               "--panel", tab, flag, "hello", ok=False)
                 assert flag in proc.stderr, proc.stderr
             time.sleep(0.3)
             assert (root / "bytes").read_bytes() == before, "unknown flag reached the PTY"
@@ -405,27 +408,27 @@ def queued(cli, socket_path, event_log):
         try:
             # Normal create calls eagerly start terminals. The fixture creates
             # and holds one new tab atomically, before those callbacks run.
-            anchor = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+            anchor = client._call("panel.list", {"workspace_id": workspace})["panels"][0]["id"]
             created = client._call("debug.terminal.runtime_start_hold", {
-                "workspace_id": workspace, "tab_id": anchor, "create": True, "hold": True
+                "workspace_id": workspace, "panel_id": anchor, "create": True, "hold": True
             })
-            tab = created["tab_id"]
-            target = {"workspace_id": workspace, "tab_id": tab}
+            tab = created["panel_id"]
+            target = {"workspace_id": workspace, "panel_id": tab}
             last_seq = max(json.loads(line)["seq"] for line in Path(event_log).read_text().splitlines())
             body = r"C11_281_QUEUED\n_LITERAL"
             proc = cli_run(cli, socket_path, "--json", "send", "--workspace", workspace,
-                           "--tab", tab, "--raw", "--no-submit", body)
+                           "--panel", tab, "--raw", "--no-submit", body)
             payload = json.loads(proc.stdout)
             assert payload["queued"] and not payload["delivered"] and not payload["submitted"], payload
             suffix = " C11_281_QUEUED_SUFFIX"
             proc = cli_run(cli, socket_path, "paste", "--workspace", workspace,
-                           "--tab", tab, "--no-submit", suffix)
+                           "--panel", tab, "--no-submit", suffix)
             assert "queued, not delivered" in proc.stdout and "has not seen it" in proc.stdout, proc.stdout
             client._call("debug.terminal.runtime_start_hold", {**target, "hold": False})
             client._call("workspace.select", {"workspace_id": workspace})
 
             def screen():
-                return client._call("tab.read_text", target).get("text", "")
+                return client._call("panel.read_text", target).get("text", "")
 
             text = wait_until(lambda: (value if body + suffix in (value := screen()) else None),
                               "queued text did not appear after attach")
@@ -467,26 +470,26 @@ def queued_bytes(cli, socket_path, event_log):
             for index, (arguments, stdin, body, submitted) in enumerate(cases):
                 # An inactive workspace avoids the visible-tab eager-start path.
                 workspace = client._call("workspace.create")["workspace_id"]
-                anchor_tab = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+                anchor_tab = client._call("panel.list", {"workspace_id": workspace})["panels"][0]["id"]
                 root = Path(directory) / str(index)
                 root.mkdir()
                 tab = client._call("debug.terminal.runtime_start_hold", {
-                    "workspace_id": workspace, "tab_id": anchor_tab,
+                    "workspace_id": workspace, "panel_id": anchor_tab,
                     "create": True, "hold": True, "hold_flush": True
-                })["tab_id"]
-                target = {"workspace_id": workspace, "tab_id": tab}
+                })["panel_id"]
+                target = {"workspace_id": workspace, "panel_id": tab}
                 last_seq = max(json.loads(line)["seq"] for line in Path(event_log).read_text().splitlines())
                 proc = cli_run(cli, socket_path, "--json", arguments[0], "--workspace", workspace,
-                               "--tab", tab, *arguments[1:], stdin=stdin)
+                               "--panel", tab, *arguments[1:], stdin=stdin)
                 payload = json.loads(proc.stdout)
                 assert payload["queued"] and not payload["delivered"], payload
                 assert payload["submitted"] is submitted, payload
                 # Start the runtime while leaving its pending flush held.
                 client._call("debug.terminal.runtime_start_hold", {**target, "hold": False})
                 client._call("workspace.select", {"workspace_id": workspace})
-                client._call("tab.focus", target)
+                client._call("panel.focus", target)
                 command = shlex.join([sys.executable, str(Path(__file__).resolve()), "--collector", str(root)])
-                response = client._call("tab.send_text", {**target, "text": command, "submit": True})
+                response = client._call("panel.send_text", {**target, "text": command, "submit": True})
                 assert response["delivered"] and not response["queued"], response
                 wait_until(lambda: (root / "ready").exists(), "queued-byte collector did not start", timeout=5)
                 path = root / "bytes"

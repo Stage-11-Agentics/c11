@@ -28,9 +28,9 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _set_marker(client, workspace_id: str, tab_id: str, value: str) -> None:
-    result = client._call("tab.set_metadata", {
+    result = client._call("panel.set_metadata", {
         "workspace_id": workspace_id,
-        "tab_id": tab_id,
+        "panel_id": tab_id,
         "mode": "merge",
         "source": "explicit",
         "metadata": {METADATA_KEY: value},
@@ -44,18 +44,18 @@ def main() -> int:
     with cmux(SOCKET_PATH) as client:
         try:
             workspace_id = client.new_workspace()
-            current = client._call("tab.current", {"workspace_id": workspace_id}) or {}
-            survivor_id = str(current.get("tab_id") or "")
+            current = client._call("panel.current", {"workspace_id": workspace_id}) or {}
+            survivor_id = str(current.get("panel_id") or "")
             _must(bool(survivor_id), f"new workspace has no current tab: {current}")
 
-            split = client._call("tab.split", {
+            split = client._call("panel.split", {
                 "workspace_id": workspace_id,
-                "tab_id": survivor_id,
+                "panel_id": survivor_id,
                 "direction": "right",
             }) or {}
-            closed_id = str(split.get("tab_id") or "")
-            _must(bool(closed_id), f"tab.split returned no new tab: {split}")
-            tabs = (client._call("tab.list", {"workspace_id": workspace_id}) or {}).get("tabs") or []
+            closed_id = str(split.get("panel_id") or "")
+            _must(bool(closed_id), f"panel.split returned no new tab: {split}")
+            tabs = (client._call("panel.list", {"workspace_id": workspace_id}) or {}).get("panels") or []
             _must(len(tabs) == 2, f"expected two panels before save: {tabs}")
 
             old_value = f"before-{time.time_ns()}"
@@ -65,8 +65,8 @@ def main() -> int:
             _must(bool(seeded.get("snapshot_path")), f"session.save did not report a snapshot: {seeded}")
             saved_at = time.monotonic()
 
-            client._call("tab.close", {"workspace_id": workspace_id, "tab_id": closed_id})
-            remaining = (client._call("tab.list", {"workspace_id": workspace_id}) or {}).get("tabs") or []
+            client._call("panel.close", {"workspace_id": workspace_id, "panel_id": closed_id})
+            remaining = (client._call("panel.list", {"workspace_id": workspace_id}) or {}).get("panels") or []
             _must([str(row.get("id") or "") for row in remaining] == [survivor_id],
                   f"expected only survivor {survivor_id} after close: {remaining}")
             _must(time.monotonic() - saved_at < 5 * 60, "fixture exceeded the five-minute holdback window")
@@ -76,9 +76,9 @@ def main() -> int:
             _must((round_trip or {}).get("ok") is True,
                   f"debug.session.save_and_load did not report success: {round_trip}")
 
-            got = client._call("tab.get_metadata", {
+            got = client._call("panel.get_metadata", {
                 "workspace_id": workspace_id,
-                "tab_id": survivor_id,
+                "panel_id": survivor_id,
                 "include_sources": True,
             }) or {}
             metadata = got.get("metadata") or {}

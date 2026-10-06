@@ -175,7 +175,7 @@ def main() -> int:
             permission_notification = latest_notification_with_subtitle(items, "Permission")
             if permission_notification is None:
                 return fail("Expected a Permission subtitle notification")
-            if permission_notification.get("surface_id") != surface_id:
+            if (permission_notification.get("panel_id") or permission_notification.get("tab_id")) != surface_id:
                 return fail("Expected notification to route to mapped surface")
             if last_message not in permission_notification.get("body", ""):
                 return fail("Expected notification body to include mapped last message")
@@ -201,7 +201,7 @@ def main() -> int:
                 return fail("Expected stop notification body to include last activity summary")
             if "approve deploy migration" not in body.lower():
                 return fail("Expected stop notification body to include last Claude message context")
-            if completed_notification.get("surface_id") != surface_id:
+            if (completed_notification.get("panel_id") or completed_notification.get("tab_id")) != surface_id:
                 return fail("Expected stop notification to target mapped surface")
 
             with state_path.open("r", encoding="utf-8") as f:

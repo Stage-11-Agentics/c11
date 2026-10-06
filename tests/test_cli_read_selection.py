@@ -20,9 +20,10 @@ class Handler(socketserver.StreamRequestHandler):
                 request = json.loads(line)
                 method = request['method']
                 if method == 'system.capabilities':
-                    result = {'methods': ['tab.list', 'tab.read_selection']}
+                    result = {'methods': ['panel.list', 'panel.read_selection'],
+                              'features': [{'id': 'vocabulary.workspace_area_panel', 'version': 1}]}
                 else:
-                    assert method == 'tab.read_selection', method
+                    assert method == 'panel.read_selection', method
                     self.server.requests.append(request['params'])
                     result = self.server.selection
                 response = json.dumps({'id': request['id'], 'ok': True, 'result': result})
@@ -46,19 +47,19 @@ def main():
                 def run(args):
                     return subprocess.run([cli, '--socket', path, *args], env=fake_server_env(path),
                                           capture_output=True, text=True, timeout=10)
-                for args in [['read-selection', '--tab', 'tab:2', '--json'],
-                             ['--json', 'read-selection', '--tab', 'tab:2']]:
+                for args in [['read-selection', '--panel', 'panel:2', '--json'],
+                             ['--json', 'read-selection', '--panel', 'panel:2']]:
                     result = run(args)
                     assert result.returncode == 0, result.stderr
                     assert json.loads(result.stdout) == server.selection, result.stdout
-                    assert server.requests[-1] == {'tab_id': 'tab:2'}, server.requests[-1]
-                result = run(['read-selection', '--tab', 'tab:2'])
+                    assert server.requests[-1] == {'panel_id': 'panel:2'}, server.requests[-1]
+                result = run(['read-selection', '--panel', 'panel:2'])
                 assert result.returncode == 0 and result.stdout == 'SELECTIONFIXTURE\n'
                 server.selection.update(has_selection=False, text='', base64='')
-                result = run(['read-selection', '--tab', 'tab:2', '--json'])
+                result = run(['read-selection', '--panel', 'panel:2', '--json'])
                 assert result.returncode == 0 and json.loads(result.stdout) == server.selection
                 count = len(server.requests)
-                result = run(['read-selection', '--tab', 'tab:2', '--json', '--bad-flag'])
+                result = run(['read-selection', '--panel', 'panel:2', '--json', '--bad-flag'])
                 assert result.returncode != 0 and 'unexpected arguments' in result.stderr
                 assert len(server.requests) == count
                 print('PASS: exact skill trailing --json argv, global --json, human/empty output and unknown flag rejection')

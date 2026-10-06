@@ -24,9 +24,9 @@ AREA = "22222222-2222-4222-8222-222222222222"
 TAB = "33333333-3333-4333-8333-333333333333"
 METHODS = {
     "new-workspace": "workspace.create",
-    "new-split": "tab.split",
+    "new-split": "panel.split",
     "new-area": "area.create",
-    "new-tab": "tab.create",
+    "new-panel": "panel.create",
 }
 
 
@@ -49,12 +49,13 @@ class Handler(socketserver.StreamRequestHandler):
                 self.server.calls.append((method, params))
             ok = True
             if method == "system.capabilities":
-                payload = {"methods": ["tab.list", *METHODS.values()],
-                           "features": [{"id": "create.initial_input", "version": 1}]}
+                payload = {"methods": ["panel.list", *METHODS.values()],
+                           "features": [{"id": "create.initial_input", "version": 1},
+                                        {"id": "vocabulary.workspace_area_panel", "version": 1}]}
             elif method in METHODS.values():
                 payload = {"workspace_id": WORKSPACE, "workspace_ref": "workspace:1"}
                 if method != "workspace.create":
-                    payload.update({"tab_id": TAB, "tab_ref": "tab:3",
+                    payload.update({"panel_id": TAB, "panel_ref": "panel:3",
                                     "area_id": AREA, "area_ref": "area:2",
                                     "type": params.get("type", "terminal")})
                 if "initial_input" in params:
@@ -109,10 +110,10 @@ def main() -> int:
             def arguments(command: str, panel_type: str | None = None) -> list[str]:
                 args = [command]
                 if command == "new-split":
-                    args += ["down", "--workspace", WORKSPACE, "--tab", TAB]
-                elif command in ("new-area", "new-tab"):
+                    args += ["down", "--workspace", WORKSPACE, "--panel", TAB]
+                elif command in ("new-area", "new-panel"):
                     args += ["--workspace", WORKSPACE]
-                    if command == "new-tab":
+                    if command == "new-panel":
                         args += ["--area", AREA]
                     if panel_type is not None:
                         args += ["--type", panel_type]
@@ -127,7 +128,7 @@ def main() -> int:
                 calls = calls[len(previous):]
                 # Discovery is allowed, but exactly one create request owns
                 # the input. In particular, workspace.create must never be
-                # followed by the old tab.send_text (or any second mutation).
+                # followed by the old panel.send_text (or any second mutation).
                 creations = [(method, params) for method, params in calls if method != "system.capabilities"]
                 assert len(creations) == 1 and creations[0][0] == METHODS[command], calls
                 assert all(method in ("system.capabilities", METHODS[command]) for method, _ in calls), calls
@@ -163,7 +164,7 @@ def main() -> int:
             try:
                 body = "  printf '%s' " + r"literal\n" + " 日本語 🪨 café\n trailing  "
                 for command in METHODS:
-                    panel_types = (None, "terminal") if command in ("new-area", "new-tab") else (None,)
+                    panel_types = (None, "terminal") if command in ("new-area", "new-panel") else (None,)
                     for panel_type in panel_types:
                         args = arguments(command, panel_type)
                         # A --command value can itself spell another CLI flag.
@@ -181,7 +182,7 @@ def main() -> int:
                         require_creation(command, args, None, json_output=True)
                     print(f"PASS: {command} sends exact input once and renders queued/absent receipts")
 
-                for command in ("new-tab", "new-area"):
+                for command in ("new-panel", "new-area"):
                     for panel_type in ("browser", "markdown"):
                         require_rejection([*arguments(command, panel_type), "--command", body],
                                           ("--command", panel_type))

@@ -48,7 +48,7 @@ def main() -> int:
         ["set-description", "COR1-STOMP-desc"],
         ["set-agent", "--type", "claude-code"],
         ["set-metadata", "--key", "role", "--value", "COR1-STOMP"],
-        ["rename-tab", "COR1-STOMP-rename"],
+        ["rename-panel", "COR1-STOMP-rename"],
     ]
     failures = []
     for args in cases:

@@ -28,7 +28,9 @@ struct SendTextParse {
             let argument = arguments[index]
             if !literal && argument == "--" {
                 literal = true
-            } else if !literal && ["--workspace", "--tab", "--surface", "--panel"].contains(argument) {
+            } else if !literal && ["--workspace", "--panel", "--tab", "--surface"].contains(argument) {
+                // `--panel` is canonical; `--tab` / `--surface` are the CLI's hidden aliases
+                // (`CMUXCLI.flagAliasGroups`), spelled out here because this parser is shared with the app target.
                 guard index + 1 < arguments.count,
                       !arguments[index + 1].hasPrefix("--"),
                       !arguments[index + 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -123,7 +125,7 @@ struct SendTextDelivery {
     static func summary(queued: Bool, submitted: Bool) -> String {
         if queued {
             return String(localized: "cli.send.queued",
-                          defaultValue: "queued, not delivered (tab not attached; the agent has not seen it)")
+                          defaultValue: "queued, not delivered (panel not attached; the agent has not seen it)")
         }
         return submitted
             ? String(localized: "cli.send.delivered_submitted", defaultValue: "delivered, return scheduled")

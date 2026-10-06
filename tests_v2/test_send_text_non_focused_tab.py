@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pick #3129: tab.send_text delivers to a non-focused, non-selected surface."""
+"""Pick #3129: panel.send_text delivers to a non-focused, non-selected surface."""
 
 from __future__ import annotations
 
@@ -63,11 +63,11 @@ def test_send_text_non_focused_surface(c: cmux, cli: str) -> None:
 
     try:
         time.sleep(0.3)
-        surfaces_res = c._call("tab.list", {"workspace_id": target_ws}) or {}
-        surfaces = surfaces_res.get("tabs") or []
+        surfaces_res = c._call("panel.list", {"workspace_id": target_ws}) or {}
+        surfaces = surfaces_res.get("panels") or []
         _must(bool(surfaces), f"No surfaces in target workspace {target_ws}")
         target_surface_id = str(surfaces[0].get("id") or "")
-        _must(bool(target_surface_id), f"tab.list returned surface without id: {surfaces}")
+        _must(bool(target_surface_id), f"panel.list returned surface without id: {surfaces}")
 
         c._call("workspace.select", {"workspace_id": other_ws})
         time.sleep(0.1)
@@ -76,31 +76,33 @@ def test_send_text_non_focused_surface(c: cmux, cli: str) -> None:
         _must(current == other_ws, f"Expected selected workspace to be {other_ws!r}, got {current!r}")
 
         token = f"C11_SEND_NONFOCUS_{int(time.time() * 1000)}"
-        c._call("tab.send_text", {
+        c._call("panel.send_text", {
             "workspace_id": target_ws,
-            "tab_id": target_surface_id,
+            "panel_id": target_surface_id,
             "text": f"echo {token}\n",
         })
 
         def token_visible() -> bool:
-            payload = c._call("tab.read_text", {
+            payload = c._call("panel.read_text", {
                 "workspace_id": target_ws,
-                "tab_id": target_surface_id,
+                "panel_id": target_surface_id,
             }) or {}
             return token in str(payload.get("text") or "")
 
         _wait_for(token_visible, timeout_s=8.0)
 
         env = dict(os.environ)
+        env.pop("C11_PANEL_ID", None)
         env.pop("C11_TAB_ID", None)
-        env.pop("C11_TAB_ID", None)
+        env.pop("C11_SURFACE_ID", None)
+        env.pop("CMUX_PANEL_ID", None)
         env.pop("CMUX_TAB_ID", None)
-        env.pop("C11_TAB_ID", None)
+        env.pop("CMUX_SURFACE_ID", None)
         env.pop("CMUX_WORKSPACE_ID", None)
         env["CMUX_SOCKET"] = SOCKET_PATH
         proc = subprocess.run(
             [cli, "--socket", SOCKET_PATH, "read-screen",
-             "--workspace", target_ws, "--tab", target_surface_id],
+             "--workspace", target_ws, "--panel", target_surface_id],
             capture_output=True, text=True, check=False, env=env,
         )
         _must(proc.returncode == 0, f"c11 read-screen failed: {proc.stderr!r}")

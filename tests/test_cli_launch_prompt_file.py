@@ -38,10 +38,10 @@ def main():
     failures = []
     reply = {
         "workspace_id": WORKSPACE,
-        "tab_id": TAB,
+        "panel_id": TAB,
         "area_id": AREA,
         "workspace_ref": "workspace:1",
-        "tab_ref": "tab:1",
+        "panel_ref": "panel:1",
         "area_ref": "area:1",
         "startup": "pending",
         "startup_process": None,
@@ -58,7 +58,8 @@ def main():
                     request = json.loads(line)
                     method = request["method"]
                     if method == "system.capabilities":
-                        payload = {"methods": ["agent.launch"]}
+                        payload = {"methods": ["agent.launch"],
+                               "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                     elif method == "agent.launch":
                         launches.append(request)
                         payload = dict(reply)

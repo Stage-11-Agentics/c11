@@ -111,13 +111,13 @@ def groups(client: cmux, window_id: str) -> list[dict[str, Any]]:
 
 
 def tabs(client: cmux, workspace_id: str) -> list[dict[str, Any]]:
-    return list((client._call("tab.list", {"workspace_id": workspace_id}) or {}).get("tabs") or [])
+    return list((client._call("panel.list", {"workspace_id": workspace_id}) or {}).get("panels") or [])
 
 
 def tab_metadata(client: cmux, workspace_id: str, tab_id: str) -> dict[str, Any]:
     try:
-        return dict((client._call("tab.get_metadata", {
-            "workspace_id": workspace_id, "tab_id": tab_id,
+        return dict((client._call("panel.get_metadata", {
+            "workspace_id": workspace_id, "panel_id": tab_id,
         }) or {}).get("metadata") or {})
     except cmuxError:
         return {}
@@ -204,8 +204,8 @@ def workspace_snapshot(client: cmux, window_id: str) -> dict[str, Any]:
             "title": row.get("title"),
             "pinned": bool(row.get("pinned", False)),
             "group_id": row.get("group_id"),
-            "tabs": current_tabs,
-            "tab_ids": [tab["id"] for tab in current_tabs],
+            "panels": current_tabs,
+            "panel_ids": [tab["id"] for tab in current_tabs],
         }
     normalized_groups = []
     for group in current_groups:
@@ -246,8 +246,8 @@ def record_workspace(client: cmux, name: str, workspace_id: str) -> dict[str, An
     return {
         "name": name,
         "id": uuid_string(workspace_id),
-        "tab_ids": [uuid_string(tab["id"]) for tab in current_tabs],
-        "tabs": [tab_identity(client, workspace_id, tab) for tab in current_tabs],
+        "panel_ids": [uuid_string(tab["id"]) for tab in current_tabs],
+        "panels": [tab_identity(client, workspace_id, tab) for tab in current_tabs],
     }
 
 
@@ -269,9 +269,9 @@ def assert_identity(before: dict[str, Any], after: dict[str, Any],
     unknown: list[str] = []
     for wid in old_ids - removed:
         old, new = before["workspaces"][wid], after["workspaces"][wid]
-        old_tabs = {tab["id"]: tab for tab in old["tabs"]}
-        new_tabs = {tab["id"]: tab for tab in new["tabs"]}
-        require(len(new_tabs) == len(new["tabs"]), f"duplicate tab IDs in {wid}")
+        old_tabs = {tab["id"]: tab for tab in old["panels"]}
+        new_tabs = {tab["id"]: tab for tab in new["panels"]}
+        require(len(new_tabs) == len(new["panels"]), f"duplicate tab IDs in {wid}")
         require(set(new_tabs) - set(old_tabs) <= added_tabs and set(old_tabs) <= set(new_tabs),
                 f"surviving workspace {wid} lost/recreated tabs")
         for tid, tab in old_tabs.items():
@@ -284,7 +284,7 @@ def assert_identity(before: dict[str, Any], after: dict[str, Any],
                 else:
                     unknown.append(f"shell identity unavailable for terminal {tid}")
     for wid in removed:
-        for tab in before["workspaces"][wid]["tabs"]:
+        for tab in before["workspaces"][wid]["panels"]:
             for pid in tab["shell_pids"]:
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
@@ -297,7 +297,7 @@ def assert_identity(before: dict[str, Any], after: dict[str, Any],
                     raise AssertionError(f"closed workspace retained shell PID {pid}")
             if tab["type"] == "terminal" and not tab["shell_pids"]:
                 unknown.append(f"closed terminal process identity unavailable: {tab['id']}")
-    all_tabs = [tid for workspace in after["workspaces"].values() for tid in workspace["tab_ids"]]
+    all_tabs = [tid for workspace in after["workspaces"].values() for tid in workspace["panel_ids"]]
     require(len(all_tabs) == len(set(all_tabs)), "duplicate tabs across workspaces")
     return unknown
 
@@ -394,10 +394,10 @@ def assert_g60(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
     for name in PINNED_WORKSPACES:
         require(snap["workspaces"][workspace_id(state, name)]["pinned"], f"{name} must be pinned")
     for name, expected_type in SPECIAL_TABS.items():
-        actual = snap["workspaces"][workspace_id(state, name)]["tabs"]
+        actual = snap["workspaces"][workspace_id(state, name)]["panels"]
         require(len(actual) == 1 and actual[0]["type"] == expected_type,
                 f"{name} must contain one {expected_type} tab: {actual}")
-    require(all(record["tab_ids"] for record in state["workspaces"].values()),
+    require(all(record["panel_ids"] for record in state["workspaces"].values()),
             "every workspace must have a recorded tab ID")
     return snap
 
@@ -445,7 +445,7 @@ def provision(client: cmux, state_path: Path, fixture_root: Path, tag: str) -> d
 
         for name, tab_type in SPECIAL_TABS.items():
             record = state["workspaces"][name]
-            old_tabs = list(record["tab_ids"])
+            old_tabs = list(record["panel_ids"])
             params: dict[str, Any] = {
                 "workspace_id": record["id"], "type": tab_type, "focus": False,
             }
@@ -453,13 +453,13 @@ def provision(client: cmux, state_path: Path, fixture_root: Path, tag: str) -> d
                 params["url"] = "about:blank"
             else:
                 params["file"] = str(note)
-            created = client._call("tab.create", params) or {}
-            new_tab = created.get("tab_id") or created.get("surface_id")
-            require(new_tab, f"tab.create returned no tab for {name}: {created}")
+            created = client._call("panel.create", params) or {}
+            new_tab = created.get("panel_id")
+            require(new_tab, f"panel.create returned no tab for {name}: {created}")
             for old_tab in old_tabs:
-                client._call("tab.close", {"workspace_id": record["id"], "tab_id": old_tab})
+                client._call("panel.close", {"workspace_id": record["id"], "panel_id": old_tab})
             state["workspaces"][name] = record_workspace(client, name, record["id"])
-            require(state["workspaces"][name]["tab_ids"] == [str(new_tab)],
+            require(state["workspaces"][name]["panel_ids"] == [str(new_tab)],
                     f"{name} did not retain only its synthetic {tab_type} tab")
             atomic_write(state_path, state)
 
@@ -589,14 +589,14 @@ def run_step(client: cmux, state: dict[str, Any], output, name: str,
 def launch_agent_probe(client: cmux, state: dict[str, Any], workspace_name: str,
                        *, suppressed: bool = False, timeout: float = 60.0) -> dict[str, Any]:
     workspace = workspace_id(state, workspace_name)
-    caller = state["workspaces"]["g60-w03"]["tab_ids"][0]
+    caller = state["workspaces"]["g60-w03"]["panel_ids"][0]
     # This chapter uses a fresh, disposable tagged instance. Clear its notice
     # history once, before seeding the exact synthetic notice IDs.
     client._call("notification.clear")
     params: dict[str, Any] = {
         "type": "codex",
         "workspace_id": workspace,
-        "caller_tab_id": caller,
+        "caller_panel_id": caller,
         "prompt": "C11-261 synthetic lifecycle probe. Do one short turn, then wait.",
         "title": f"C11-261 {workspace_name} lifecycle probe",
         "cwd": state["fixture_root"],
@@ -605,7 +605,7 @@ def launch_agent_probe(client: cmux, state: dict[str, Any], workspace_name: str,
     if suppressed:
         params["suppressed"] = True
     launched = client._call("agent.launch", params) or {}
-    tab_id = launched.get("tab_id") or launched.get("surface_id")
+    tab_id = launched.get("panel_id")
     require(tab_id, f"agent.launch returned no tab ID: {launched}")
     tab_id = str(tab_id)
     state.setdefault("agent_probe_tab_ids", []).append(tab_id)
@@ -621,7 +621,7 @@ def launch_agent_probe(client: cmux, state: dict[str, Any], workspace_name: str,
             break
         time.sleep(1)
     return {
-        "tab_id": tab_id,
+        "panel_id": tab_id,
         "workspace_id": workspace,
         "launch": launched,
         "waiting_observed": waiting,
@@ -631,7 +631,7 @@ def launch_agent_probe(client: cmux, state: dict[str, Any], workspace_name: str,
 
 
 def signal_eligible(notice: dict[str, Any], records: list[dict[str, Any]]) -> bool:
-    tid = notice.get("tab_id") or notice.get("surface_id")
+    tid = notice.get("panel_id")
     if tid is None:
         return True
     metadata = next((tab["metadata"] for tab in records if tab["id"] == tid), {})
@@ -643,20 +643,20 @@ def setup_attention(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
     # This command is confined to the disposable tagged fixture. Reset its notice
     # history once so repeated C2 setup does not accumulate additional unread.
     client._call("notification.clear")
-    caller = state["workspaces"]["g60-w03"]["tab_ids"][0]
+    caller = state["workspaces"]["g60-w03"]["panel_ids"][0]
     for number in range(9, 15):
         name = f"g60-w{number:02d}"
-        params = {"workspace_id": workspace_id(state, name), "tab_id": state["workspaces"][name]["tab_ids"][0]}
+        params = {"workspace_id": workspace_id(state, name), "panel_id": state["workspaces"][name]["panel_ids"][0]}
         client._call("flag.lower", {**params, "by": "operator"})
         client._call("flag.unsuppress", {**params, "by": "operator"})
         if number in (10, 11, 14):
-            client._call("tab.set_metadata", {**params, "metadata": {"terminal_type": "codex"}, "source": "explicit"})
-            client._call("notification.create_for_tab", {**params, "title": "C11-261 synthetic waiting",
+            client._call("panel.set_metadata", {**params, "metadata": {"terminal_type": "codex"}, "source": "explicit"})
+            client._call("notification.create_for_panel", {**params, "title": "C11-261 synthetic waiting",
                                                         "body": name})
         if number in (11, 12):
             client._call("flag.suppress", {**params, "by": "operator"})
         if number in (9, 11):
-            client._call("flag.raise", {**params, "caller_tab_id": caller, "by": "operator",
+            client._call("flag.raise", {**params, "caller_panel_id": caller, "by": "operator",
                                        "reason": "C11-261 synthetic escalation"})
     oracle = attention_oracle(client, state)
     summary = oracle["group"][group_id(state, "collapsed_flag")]
@@ -695,7 +695,7 @@ def attention_oracle(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
     relevant = [notice for notice in notices if notice.get("workspace_id") in member_ids]
     workspaces: dict[str, Any] = {}
     for wid in member_ids:
-        records = snap["workspaces"].get(wid, {}).get("tabs", [])
+        records = snap["workspaces"].get(wid, {}).get("panels", [])
         flagged = []
         waiting = []
         for tab in records:
@@ -703,7 +703,7 @@ def attention_oracle(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
             if metadata.get("flag"):
                 flagged.append(tab["id"])
             exact_unread = [notice for notice in relevant if notice.get("workspace_id") == wid
-                            and (notice.get("tab_id") or notice.get("surface_id")) == tab["id"]
+                            and (notice.get("panel_id")) == tab["id"]
                             and not notice.get("is_read", False)]
             if exact_unread and metadata.get("suppressed") is not True:
                 waiting.append(tab["id"])
@@ -751,11 +751,11 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
             for record in state["workspaces"].values():
                 live = result["after"]["workspaces"].get(record["id"])
                 if live:
-                    known = set(record["tab_ids"])
-                    for tab in live["tabs"]:
+                    known = set(record["panel_ids"])
+                    for tab in live["panels"]:
                         if tab["id"] not in known and tab["id"] in state["agent_probe_tab_ids"]:
-                            record["tab_ids"].append(tab["id"])
-                            record["tabs"].append(tab)
+                            record["panel_ids"].append(tab["id"])
+                            record["panels"].append(tab)
             atomic_write(state_path, state)
 
         add("A1", lambda: (
@@ -853,7 +853,7 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
                 state["closed_workspace_ids"].append(wid)
                 after = workspace_snapshot(client, state["window_id"])
                 state["intermediate"].append({"operation": "close", "removed_workspace_ids": [wid],
-                    "removed_tabs": before["workspaces"][wid]["tabs"], "before": before, "after": after})
+                    "removed_tabs": before["workspaces"][wid]["panels"], "before": before, "after": after})
                 assert_identity(before, after, removed={wid})
                 require(after["workspace_order"] == [item for item in before["workspace_order"] if item != wid],
                         "close changed surviving order")
@@ -969,13 +969,13 @@ def cleanup(client: cmux, state_path: Path, out: Path | None) -> dict[str, Any]:
             wid = row["id"]
             current_tabs = tabs(client, wid)
             recorded = next((record for record in state["workspaces"].values() if record["id"] == wid), None)
-            recorded_tabs = set(recorded.get("tab_ids", [])) if recorded else set()
+            recorded_tabs = set(recorded.get("panel_ids", [])) if recorded else set()
             if wid not in owned_workspace_ids:
                 result["retained"].append({"kind": "workspace", "id": wid, "reason": "not fixture-owned"})
                 continue
             foreign = [tab["id"] for tab in current_tabs if tab["id"] not in recorded_tabs and tab["id"] not in state.get("agent_probe_tab_ids", [])]
             if foreign:
-                result["retained"].append({"kind": "workspace", "id": wid, "reason": "contains unowned tabs", "tabs": foreign})
+                result["retained"].append({"kind": "workspace", "id": wid, "reason": "contains unowned tabs", "panels": foreign})
                 continue
             client._call("workspace.close", {"window_id": window_id, "workspace_id": wid})
             result["removed"].append({"kind": "workspace", "id": wid})

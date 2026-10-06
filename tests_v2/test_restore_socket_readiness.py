@@ -90,12 +90,12 @@ def complete_tree(tree: dict) -> dict[str, dict]:
     for workspace in workspaces:
         areas = workspace.get("areas", [])
         require(len(areas) == 2, f"successful partial tree: areas in {workspace['id']}")
-        tabs = [tab for area in areas for tab in area.get("tabs", [])]
+        tabs = [tab for area in areas for tab in area.get("panels", [])]
         expected = {tab for ws, tab in PAIRS if ws == workspace["id"].lower()}
         require(len(tabs) == 2 and {tab["id"].lower() for tab in tabs} == expected, "wrong tab UUIDs/placement")
-        require(all(len(area.get("tabs", [])) == 1 for area in areas), "expected one tab in each area")
+        require(all(len(area.get("panels", [])) == 1 for area in areas), "expected one tab in each area")
         for tab in tabs:
-            require(isinstance(tab.get("ref"), str) and tab["ref"].startswith("tab:"), "missing canonical tab ref")
+            require(isinstance(tab.get("ref"), str) and tab["ref"].startswith("panel:"), "missing canonical tab ref")
             result[tab["id"].lower()] = tab
     return result
 
@@ -111,7 +111,7 @@ def retry_ready(path: str, method: str, params: dict, deadline: float, evidence:
 
 
 def probe(path: str, workspace: str, tab: str, allow_startup_wait: float = 0) -> dict:
-    evidence = {"workspace_id": workspace, "tab_id": tab, "started_at": time.time(), "not_ready": 0,
+    evidence = {"workspace_id": workspace, "panel_id": tab, "started_at": time.time(), "not_ready": 0,
                 "connection_retries": 0}
     deadline = time.monotonic() + allow_startup_wait
     while True:
@@ -127,11 +127,11 @@ def probe(path: str, workspace: str, tab: str, allow_startup_wait: float = 0) ->
     deadline = time.monotonic() + 10
     tree = retry_ready(path, "system.tree", {"scope": "all"}, deadline, evidence)
     tabs = complete_tree(tree)
-    ident = retry_ready(path, "system.identify", {"caller": {"workspace_id": workspace, "tab_id": tab}}, deadline, evidence)
+    ident = retry_ready(path, "system.identify", {"caller": {"workspace_id": workspace, "panel_id": tab}}, deadline, evidence)
     caller = ident.get("caller") or {}
     require(str(caller.get("workspace_id", "")).lower() == workspace, "identify returned wrong workspace")
-    require(str(caller.get("tab_id", "")).lower() == tab, "identify returned wrong tab")
-    retry_ready(path, "tab.read_text", {"workspace_id": workspace, "tab_id": tab}, deadline, evidence)
+    require(str(caller.get("panel_id", "")).lower() == tab, "identify returned wrong tab")
+    retry_ready(path, "panel.read_text", {"workspace_id": workspace, "panel_id": tab}, deadline, evidence)
     evidence.update(result="PASS", completed_at=time.time(), tab_ref=tabs[tab]["ref"], tree=tree)
     return evidence
 
@@ -172,7 +172,7 @@ def prepare(args: argparse.Namespace) -> None:
                           "--evidence-dir", str(args.evidence_dir)])
     (args.evidence_dir / "shell-probe.zsh").write_text(
         "# Source only from the disposable sandbox guest's shell startup.\n"
-        "if [[ ${C11_TAB_ID:-${CMUX_SURFACE_ID:-}} == 00000297-0000-0000-0001-* ]]; then\n"
+        "if [[ ${C11_PANEL_ID:-${C11_TAB_ID:-${CMUX_SURFACE_ID:-}}} == 00000297-0000-0000-0001-* ]]; then\n"
         f"  {command}\n"
         "fi\n"
     )
@@ -180,7 +180,7 @@ def prepare(args: argparse.Namespace) -> None:
 
 
 def shell_probe(args: argparse.Namespace) -> None:
-    tab = (os.environ.get("C11_TAB_ID") or os.environ.get("CMUX_SURFACE_ID") or "").lower()
+    tab = (os.environ.get("C11_PANEL_ID") or os.environ.get("C11_TAB_ID") or os.environ.get("CMUX_SURFACE_ID") or "").lower()
     require(tab in TABS, "shell-probe requires one of the synthetic fixture tab IDs")
     workspace = dict((tab_id, ws) for ws, tab_id in PAIRS)[tab]
     path = args.evidence_dir / f"shell-{tab}.json"
@@ -188,7 +188,7 @@ def shell_probe(args: argparse.Namespace) -> None:
     try:
         evidence = probe(args.socket, workspace, tab)
     except Exception as error:
-        save(path, {"result": "FAIL", "error": str(error), "tab_id": tab, "failed_at": time.time()})
+        save(path, {"result": "FAIL", "error": str(error), "panel_id": tab, "failed_at": time.time()})
         raise
     save(path, evidence)
     print(f"C11_SHELL_PROBE_PASS_{tab}")
@@ -236,7 +236,7 @@ def verify(args: argparse.Namespace) -> None:
         shell = json.loads((args.evidence_dir / f"shell-{tab}.json").read_text())
         require(shell.get("result") == "PASS" and shell.get("connection_retries") == 0,
                 f"listener was not ready at first shell call: {shell}")
-        require(shell["tab_id"] == tab and shell["workspace_id"] == workspace, "wrong shell evidence identity")
+        require(shell["panel_id"] == tab and shell["workspace_id"] == workspace, "wrong shell evidence identity")
         complete_tree(shell["tree"])
     log = args.diagnostics.read_text()
     begin_lines = [line for line in log.splitlines() if "session.restore.begin" in line]
@@ -248,11 +248,11 @@ def verify(args: argparse.Namespace) -> None:
     for workspace, tab in PAIRS:
         token = tokens[tab]
         command = "printf '%s%s\\n' " + shlex.quote(token[:12]) + " " + shlex.quote(token[12:]) + "\n"
-        request(args.socket, "tab.send_text", {"workspace_id": workspace, "tab_id": tab, "text": command})
+        request(args.socket, "panel.send_text", {"workspace_id": workspace, "panel_id": tab, "text": command})
     deadline = time.monotonic() + 10
     captures = {}
     while time.monotonic() < deadline:
-        captures = {tab: text_result(request(args.socket, "tab.read_text", {"workspace_id": ws, "tab_id": tab}))
+        captures = {tab: text_result(request(args.socket, "panel.read_text", {"workspace_id": ws, "panel_id": tab}))
                     for ws, tab in PAIRS}
         for tab, text in captures.items():
             require(not any(token in text for other, token in tokens.items() if other != tab),

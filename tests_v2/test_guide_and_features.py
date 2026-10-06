@@ -89,7 +89,10 @@ def main():
             info = plistlib.load(info_file)
         stamped_commit = info.get("C11Commit") or info.get("CMUXCommit")
         assert guide["cli"]["commit"] == (stamped_commit.strip().lower() if stamped_commit else None)
-        assert "rename-tab" in guide["body"] and "rename-tab" in run("--help")
+        # The bundled skill body is R6's to change; keep its assertion as is. `--help` says panel.
+        assert "rename-tab" in guide["body"]
+        help_text = run("--help")
+        assert "rename-panel" in help_text and "rename-tab" not in help_text
         assert "There is no `c11 list`" in guide["body"]
         assert "Usage: c11 guide" in run("--socket", dead_socket, "guide", "--help")
         assert "Discovery & state" in run("--socket", dead_socket, "guide", "api")
@@ -167,7 +170,8 @@ def main():
         payload = json.loads(run("--socket", live_socket, "--json", "capabilities"))
         ids = {item["id"] for item in payload["features"]}
         assert payload["features_version"] == 1
-        assert {"vocabulary.workspace_area_tab", "send.explicit_tab", "events.offline"} <= ids
+        assert {"vocabulary.workspace_area_panel", "send.explicit_panel", "events.offline"} <= ids
+        assert not ids & {"vocabulary.workspace_area_tab", "send.explicit_tab"}, ids
         if args.foundation_only:
             assert not ids & {"routing.canonical_keys", "create.initial_input", "send.raw",
                               "read_selection.terminal", "window.route_without_focus"}

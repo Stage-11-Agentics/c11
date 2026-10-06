@@ -40,7 +40,8 @@ def main() -> None:
                 method = request["method"]
                 result = {"workspace_id": WORKSPACE, "remote": {"state": "connecting"}}
                 if method == "system.capabilities":
-                    result = {"methods": ["tab.list", "area.list", "workspace.create", "workspace.remote.configure"]}
+                    result = {"methods": ["panel.list", "area.list", "workspace.create", "workspace.remote.configure"],
+                              "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
                 self.wfile.write((json.dumps({"id": request["id"], "ok": True, "result": result}) + "\n").encode())
 
     with tempfile.TemporaryDirectory(prefix="c11-ssh-shell-", dir="/tmp") as temp:

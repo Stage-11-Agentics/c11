@@ -68,9 +68,9 @@ def _run_cli_expect_failure(cli: str, args: list[str], code: str) -> None:
 
 
 def _tab_ids(c: cmux, workspace_id: str) -> set[str]:
-    payload = c._call("tab.list", {"workspace_id": workspace_id}) or {}
-    tabs = payload.get("tabs") or []
-    _must(isinstance(tabs, list), f"tab.list returned malformed tabs: {payload}")
+    payload = c._call("panel.list", {"workspace_id": workspace_id}) or {}
+    tabs = payload.get("panels") or []
+    _must(isinstance(tabs, list), f"panel.list returned malformed tabs: {payload}")
     return {str(tab["id"]) for tab in tabs if isinstance(tab, dict) and tab.get("id")}
 
 
@@ -116,7 +116,7 @@ def _expect_socket_profile_failure_without_tab(
 def _assert_invalid_profile_selection(c: cmux, cli: str, workspace_id: str) -> None:
     socket_endpoints = (
         ("browser.open_split", {"url": "https://example.com"}),
-        ("tab.create", {"type": "browser", "url": "https://example.com"}),
+        ("panel.create", {"type": "browser", "url": "https://example.com"}),
         ("area.create", {"type": "browser", "direction": "right", "url": "https://example.com"}),
     )
     invalid_values: list[Any] = ["", " \t\n", 17, None, {"name": PROFILE_A}]
@@ -138,7 +138,7 @@ def _assert_invalid_profile_selection(c: cmux, cli: str, workspace_id: str) -> N
 
     cli_endpoints = (
         ["browser", "open", "https://example.com", "--workspace", workspace_id],
-        ["new-tab", "--type", "browser", "--workspace", workspace_id],
+        ["new-panel", "--type", "browser", "--workspace", workspace_id],
         ["new-area", "--type", "browser", "--direction", "right", "--workspace", workspace_id],
     )
     for base in cli_endpoints:
@@ -215,7 +215,7 @@ def _close_tab(c: cmux, tab_id: Optional[str]) -> None:
     if not tab_id:
         return
     try:
-        c._call("tab.close", {"tab_id": tab_id})
+        c._call("panel.close", {"panel_id": tab_id})
     except cmuxError:
         # Cleanup must not hide the assertion that caused the test to fail.
         pass
@@ -310,7 +310,7 @@ def main() -> int:
                 cli,
                 ["browser", "open", "https://example.com", "--workspace", workspace_id],
             )
-            baseline_tab = str(baseline_open.get("tab_id") or baseline_open.get("surface_id") or "")
+            baseline_tab = str(baseline_open.get("panel_id") or "")
             baseline_profile_id = str(baseline_open.get("profile_id") or "")
             _must(baseline_tab and baseline_profile_id, f"baseline open returned incomplete profile data: {baseline_open}")
             _close_tab(c, baseline_tab)
@@ -328,7 +328,7 @@ def main() -> int:
                     PROFILE_MULTIWORD,
                 ],
             )
-            explicit_tab = str(explicit.get("tab_id") or explicit.get("surface_id") or "")
+            explicit_tab = str(explicit.get("panel_id") or "")
             _must(bool(explicit_tab), f"profile open returned no tab: {explicit}")
             created_tabs.append(explicit_tab)
             _must(
@@ -341,7 +341,7 @@ def main() -> int:
                 cli,
                 ["browser", "open", "https://example.com", "--workspace", workspace_id],
             )
-            unscoped_tab = str(unscoped.get("tab_id") or unscoped.get("surface_id") or "")
+            unscoped_tab = str(unscoped.get("panel_id") or "")
             _must(bool(unscoped_tab), f"unscoped open returned no tab: {unscoped}")
             created_tabs.append(unscoped_tab)
             _must(
@@ -380,15 +380,15 @@ def main() -> int:
                 "browser.open_split",
                 {"url": history_url_b, "profile": PROFILE_MULTIWORD, "workspace_id": workspace_id},
             )
-            tab_a = str(profile_a_tab.get("tab_id") or profile_a_tab.get("surface_id") or "")
-            tab_b = str(profile_b_tab.get("tab_id") or profile_b_tab.get("surface_id") or "")
+            tab_a = str(profile_a_tab.get("panel_id") or "")
+            tab_b = str(profile_b_tab.get("panel_id") or "")
             created_tabs.extend([tab_a, tab_b])
             _must(tab_a and tab_b, f"cookie setup tabs missing: {profile_a_tab}, {profile_b_tab}")
 
             c._call(
                 "browser.cookies.set",
                 {
-                    "tab_id": tab_a,
+                    "panel_id": tab_a,
                     "name": COOKIE_NAME,
                     "value": "profile-a",
                     "url": "https://example.com/",
@@ -406,7 +406,7 @@ def main() -> int:
             c._call(
                 "browser.cookies.set",
                 {
-                    "tab_id": tab_b,
+                    "panel_id": tab_b,
                     "name": COOKIE_NAME,
                     "value": "profile-b",
                     "url": "https://example.com/",
@@ -456,12 +456,12 @@ def main() -> int:
                 "browser.open_split",
                 {"url": "https://example.com", "profile": PROFILE_MULTIWORD, "workspace_id": workspace_id},
             )
-            check_a = str(malformed_recheck_a.get("tab_id") or malformed_recheck_a.get("surface_id") or "")
-            check_b = str(malformed_recheck_b.get("tab_id") or malformed_recheck_b.get("surface_id") or "")
+            check_a = str(malformed_recheck_a.get("panel_id") or "")
+            check_b = str(malformed_recheck_b.get("panel_id") or "")
             created_tabs.extend([check_a, check_b])
             _must(check_a and check_b, "could not reopen profiles after rejected destructive commands")
-            preserved_a = c._call("browser.cookies.get", {"tab_id": check_a}).get("cookies") or []
-            preserved_b = c._call("browser.cookies.get", {"tab_id": check_b}).get("cookies") or []
+            preserved_a = c._call("browser.cookies.get", {"panel_id": check_a}).get("cookies") or []
+            preserved_b = c._call("browser.cookies.get", {"panel_id": check_b}).get("cookies") or []
             _must(
                 any(cookie.get("name") == COOKIE_NAME and cookie.get("value") == "profile-a" for cookie in preserved_a),
                 f"rejected clear changed profile A cookie data: {preserved_a}",
@@ -485,13 +485,13 @@ def main() -> int:
                 "browser.open_split",
                 {"url": "https://example.com", "profile": PROFILE_MULTIWORD, "workspace_id": workspace_id},
             )
-            tab_a = str(reopened_a.get("tab_id") or reopened_a.get("surface_id") or "")
-            tab_b = str(reopened_b.get("tab_id") or reopened_b.get("surface_id") or "")
+            tab_a = str(reopened_a.get("panel_id") or "")
+            tab_b = str(reopened_b.get("panel_id") or "")
             created_tabs.extend([tab_a, tab_b])
             _must(tab_a and tab_b, "reopen after clear returned no tabs")
 
-            cookies_a = c._call("browser.cookies.get", {"tab_id": tab_a}).get("cookies") or []
-            cookies_b = c._call("browser.cookies.get", {"tab_id": tab_b}).get("cookies") or []
+            cookies_a = c._call("browser.cookies.get", {"panel_id": tab_a}).get("cookies") or []
+            cookies_b = c._call("browser.cookies.get", {"panel_id": tab_b}).get("cookies") or []
             _must(
                 not any(cookie.get("name") == COOKIE_NAME for cookie in cookies_a),
                 f"clear did not remove profile A cookie: {cookies_a}",

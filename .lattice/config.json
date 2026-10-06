@@ -92,6 +92,7 @@
       ],
       "in_validation": [
         "pr_open",
+        "done",
         "in_progress",
         "in_planning",
         "blocked",

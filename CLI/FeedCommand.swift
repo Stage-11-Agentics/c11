@@ -19,19 +19,19 @@ enum CLIHelpFlagScanner {
 enum FeedCommand {
     static let usageText = """
     Usage: c11 feed list [--json] [--scope attention|all]
-           c11 feed open <tab> [--workspace <id|ref>] [--json]
-           c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
+           c11 feed open <panel> [--workspace <id|ref>] [--json]
+           c11 feed answer <panel> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]
            c11 feed watch [--json] [--scope attention|all]
 
     List, open, answer, or follow typed asks. Default scope is attention: open blocking asks and flag rows.
     --scope all also includes non-suppressed turn_end rows. Generic input is unsupported.
-    feed open selects the named workspace and tab inside c11 and does not activate the app or send an answer.
-    A missing workspace or tab prints unavailable and changes nothing.
+    feed open selects the named workspace and panel inside c11 and does not activate the app or send an answer.
+    A missing workspace or panel prints unavailable and changes nothing.
     feed answer accepts only an eligible flag or turn_end row with a complete empty/suggestion prompt.
     c11 1.0 supports single-line answers only. Newlines return multiline_unsupported; nothing is sent.
-    Use c11 feed open to answer in the tab.
-    Blocking asks, drafts, dialogs, unknown input, and cold tabs are refused. Whitespace-only text opens
-    the exact tab without sending. --by defaults to agent. The result includes answered and retry; retry
+    Use c11 feed open to answer in the panel.
+    Blocking asks, drafts, dialogs, unknown input, and cold panels are refused. Whitespace-only text opens
+    the exact panel without sending. --by defaults to agent. The result includes answered and retry; retry
     is safe only when nothing was pasted. A keypress during the Feed answer paste-settle window can leave
     the answer pasted but unsubmitted, so retry is unsafe.
     Ask prompt text appears only in this process's live list/watch JSON. It is not stored in the journal or the event log.
@@ -111,24 +111,24 @@ enum FeedCommand {
             printList(payload, json: json)
         case "open":
             guard scopeFlag == nil, !args.contains(where: { $0.hasPrefix("--") }) else {
-                throw CLIError(message: "usage: c11 feed open <tab> [--workspace <id|ref>] [--json]")
+                throw CLIError(message: "usage: c11 feed open <panel> [--workspace <id|ref>] [--json]")
             }
             let tabRaw = tabFlag ?? args.first
             if tabFlag == nil { args = Array(args.dropFirst()) }
-            guard let tabRaw, args.isEmpty else { throw CLIError(message: "usage: c11 feed open <tab> [--workspace <id|ref>]") }
+            guard let tabRaw, args.isEmpty else { throw CLIError(message: "usage: c11 feed open <panel> [--workspace <id|ref>]") }
             let workspaceRaw = workspaceFlag ?? defaultWorkspace()
             guard let workspaceRaw, let workspace = try resolveWorkspace(workspaceRaw) else {
                 throw CLIError(message: "feed open requires a workspace")
             }
             guard let tab = try resolveTab(tabRaw, workspace) else {
-                throw CLIError(message: "feed open requires a tab")
+                throw CLIError(message: "feed open requires a panel")
             }
             do {
                 let payload = try client.sendV2(method: "feed.open", params: ["workspace_id": workspace, "tab_id": tab])
                 if json {
                     print(jsonLine(payload))
                 } else {
-                    print("focused \(payload["tab_id"] as? String ?? tab)")
+                    print("focused \((payload["panel_id"] ?? payload["tab_id"]) as? String ?? tab)")
                 }
             } catch let error as CLIError where error.message.hasPrefix("unavailable") {
                 throw CLIError(message: "unavailable")
@@ -143,21 +143,21 @@ enum FeedCommand {
             guard !args.contains(where: { $0.hasPrefix("--") }) else {
                 throw CLIError(message: "feed answer: unknown flag")
             }
-            guard let text else { throw CLIError(message: "usage: c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]") }
+            guard let text else { throw CLIError(message: "usage: c11 feed answer <panel> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]") }
             guard !(tabFlag != nil && !args.isEmpty) else {
-                throw CLIError(message: "feed answer accepts one tab target")
+                throw CLIError(message: "feed answer accepts one panel target")
             }
             let tabRaw = tabFlag ?? args.first
             if tabFlag == nil { args = Array(args.dropFirst()) }
             guard let tabRaw, args.isEmpty else {
-                throw CLIError(message: "usage: c11 feed answer <tab> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]")
+                throw CLIError(message: "usage: c11 feed answer <panel> --text <text> [--workspace <id|ref>] [--by agent|operator] [--json]")
             }
             let workspaceRaw = workspaceFlag ?? defaultWorkspace()
             guard let workspaceRaw, let workspace = try resolveWorkspace(workspaceRaw) else {
                 throw CLIError(message: "feed answer requires a workspace")
             }
             guard let tab = try resolveTab(tabRaw, workspace) else {
-                throw CLIError(message: "feed answer requires a tab")
+                throw CLIError(message: "feed answer requires a panel")
             }
             let payload: [String: Any]
             do {
@@ -175,7 +175,7 @@ enum FeedCommand {
                 }
                 let code = ((error.structuredResponse?["error"] as? [String: Any])?["code"] as? String)
                 if code == "input_guard_refused" {
-                    throw CLIError(message: "\(error.message)\nUse `c11 feed open <tab>` to inspect or resolve the prompt before answering.")
+                    throw CLIError(message: "\(error.message)\nUse `c11 feed open <panel>` to inspect or resolve the prompt before answering.")
                 }
                 throw error
             }
@@ -187,7 +187,7 @@ enum FeedCommand {
                 let submitted = payload["submitted"] as? Bool ?? false
                 let retry = payload["retry"] as? String ?? "unknown"
                 if payload["opened"] as? Bool == true {
-                    print("opened \((payload["tab_id"] as? String) ?? tab); delivered: false")
+                    print("opened \(((payload["panel_id"] ?? payload["tab_id"]) as? String) ?? tab); delivered: false")
                 } else {
                     print("answered: \(answered)  submitted: \(submitted)  retry: \(retry)")
                 }
@@ -255,7 +255,7 @@ enum FeedCommand {
             let prompt = (row["prompt_available"] as? Bool) == true ? "prompt" : "no-prompt"
             let flagPart = flag.map { "flag=\($0)" } ?? "no-flag"
             let workspace = row["workspace_id"] as? String ?? ""
-            let tab = row["tab_id"] as? String ?? ""
+            let tab = (row["panel_id"] ?? row["tab_id"]) as? String ?? ""
             print("\(workspace)  \(tab)  \(kind)  \(state)  \(flagPart)  \(prompt)")
         }
         fflush(stdout)

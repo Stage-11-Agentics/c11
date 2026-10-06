@@ -24,7 +24,10 @@ def entry(number: int, current: bool = False) -> dict:
         "workspace_id": "11111111-1111-4111-8111-111111111111",
         "workspace_ref": "workspace:1", "workspace_title": "Example workspace",
         "panel_id": f"22222222-2222-4222-8222-{number:012d}",
-        "panel_ref": f"panel:{number}", "title": f"Example {number}",
+        "panel_ref": f"panel:{number}",
+        # The app emits the v0.67 pair beside the canonical one.
+        "tab_id": f"22222222-2222-4222-8222-{number:012d}", "tab_ref": f"tab:{number}",
+        "title": f"Example {number}",
         "type": "terminal", "seen_at": "2026-10-01T22:00:00Z",
         "dwell_seconds": 2.0, "current": current,
     }

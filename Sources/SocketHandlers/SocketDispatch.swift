@@ -66,7 +66,9 @@ extension TerminalController {
             id: dict["id"],
             method: LegacyWireAliases.canonicalMethod(method),
             params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:]),
-            legacyRefPrefix: LegacyWireAliases.legacyRefPrefix(forRawMethod: method)
+            legacyRefPrefix: LegacyWireAliases.legacyRefPrefix(
+                forRawMethod: method, params: dict["params"] as? [String: Any] ?? [:]
+            )
         )
     }
 

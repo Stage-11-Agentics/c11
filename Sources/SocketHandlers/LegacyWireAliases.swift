@@ -104,13 +104,20 @@ enum LegacyWireAliases {
 
     /// The ref spelling an old client expects back, from the method name it
     /// sent: `tab.*` (v0.67) -> `tab:`, `surface.*` (older) -> `surface:`.
-    /// Canonical method names return nil.
-    nonisolated static func legacyRefPrefix(forRawMethod method: String) -> String? {
+    /// `system.tree` / `system.identify` kept their names, so there the old
+    /// client shows in its `caller` block: `tab_id` (or `surface_id`) without
+    /// `panel_id`. Canonical requests return nil.
+    nonisolated static func legacyRefPrefix(forRawMethod method: String, params: [String: Any] = [:]) -> String? {
         if method.hasPrefix("tab.") || method == "area.tabs" || method.hasPrefix("browser.tab.") {
             return "tab:"
         }
         if method.hasPrefix("surface.") || method == "pane.surfaces" {
             return "surface:"
+        }
+        if method == "system.tree" || method == "system.identify",
+           let caller = params["caller"] as? [String: Any], caller["panel_id"] == nil {
+            if caller["tab_id"] != nil { return "tab:" }
+            if caller["surface_id"] != nil { return "surface:" }
         }
         return nil
     }

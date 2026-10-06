@@ -226,6 +226,15 @@ final class LegacyWireCompletionTests: XCTestCase {
         XCTAssertEqual(LegacyWireAliases.legacyRefPrefix(forRawMethod: "surface.list"), "surface:")
         XCTAssertNil(LegacyWireAliases.legacyRefPrefix(forRawMethod: "panel.list"))
         XCTAssertNil(LegacyWireAliases.legacyRefPrefix(forRawMethod: "system.tree"))
+        // system.tree / system.identify kept their names: a v0.67 CLI shows in its caller block.
+        XCTAssertEqual(LegacyWireAliases.legacyRefPrefix(
+            forRawMethod: "system.tree", params: ["caller": ["workspace_id": "w", "tab_id": "t"]]), "tab:")
+        XCTAssertEqual(LegacyWireAliases.legacyRefPrefix(
+            forRawMethod: "system.identify", params: ["caller": ["surface_id": "t"]]), "surface:")
+        XCTAssertNil(LegacyWireAliases.legacyRefPrefix(
+            forRawMethod: "system.tree", params: ["caller": ["panel_id": "t", "tab_id": "t"]]))
+        XCTAssertNil(LegacyWireAliases.legacyRefPrefix(
+            forRawMethod: "workspace.list", params: ["caller": ["tab_id": "t"]]))
 
         let response = #"{"id":7,"ok":true,"result":{"panels":[{"ref":"panel:3","panel_ref":"panel:3","tab_ref":"tab:3"}],"workspace_ref":"workspace:1","metadata":{"ref":"panel:9"}}}"#
         let echoed = LegacyWireAliases.echoLegacyRefs(response, prefix: "tab:")

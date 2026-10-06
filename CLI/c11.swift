@@ -187,10 +187,12 @@ enum CLIVersionSkew {
         let prefixes: [(String, String)]
         switch tier {
         case .panel: return value
-        case .tab: prefixes = [("panel:", "tab:")]
-        case .surface: prefixes = [("panel:", "surface:"), ("tab:", "surface:"), ("area:", "pane:")]
+        case .tab: prefixes = [("panel:", "tab:"), ("tab:", "tab:"), ("surface:", "surface:")]
+        case .surface: prefixes = [("panel:", "surface:"), ("tab:", "surface:"), ("surface:", "surface:"), ("area:", "pane:"), ("pane:", "pane:")]
         }
-        for (modern, legacy) in prefixes where value.hasPrefix(modern) {
+        // Prefixes match in any case (`Panel:3`, `TAB:3`); the ordinal must be numeric.
+        let lowered = value.lowercased()
+        for (modern, legacy) in prefixes where lowered.hasPrefix(modern) {
             let rest = value.dropFirst(modern.count)
             if !rest.isEmpty, rest.allSatisfy(\.isNumber) { return legacy + rest }
         }
@@ -1704,9 +1706,11 @@ final class SocketClient {
     private func validateScopedTargets(_ params: [String: Any], window: String, deadline: SocketDeadline) throws {
         let payload = try sendV2(method: "workspace.list", params: ["window_id": window], deadline: deadline)
         let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
+        // Refs compare by canonical prefix, so `tab:N` / `surface:N` / `pane:N` match `panel:N` / `area:N`.
         func matches(_ item: [String: Any], _ value: String) -> Bool {
-            [item["id"] as? String, item["ref"] as? String].compactMap { $0 }
-                .contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+            let wanted = CMUXCLI.canonicalHandle(value).lowercased()
+            return [item["id"] as? String, item["ref"] as? String].compactMap { $0 }
+                .contains { CMUXCLI.canonicalHandle($0).lowercased() == wanted }
         }
         if let value = (params["workspace_id"] ?? params["workspace"]) as? String, !workspaces.contains(where: { matches($0, value) }) {
             throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceNotFound", defaultValue: "Workspace not found in scoped window"))
@@ -2853,15 +2857,17 @@ struct CMUXCLI {
 
         case "new-split":
             let (wsArg, rem0) = parseOption(createArgs, name: "--workspace")
-            let (panelArg, rem1) = parseOption(rem0, name: "--panel")
-            let (sfArg, rem2) = parseOption(rem1, name: "--panel")
+            let (panelValues, rem2) = parseRepeatedOption(rem0, name: "--panel")
+            guard panelValues.count <= 1 else {
+                throw CLIError(message: "new-split: pass --panel once")
+            }
             let (titleArg, rem3) = parseOption(rem2, name: "--title")
             let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
             let rem5 = rem4
             let createCommand = createCommandText
             let initialInput = try resolvedCreateInput(raw: createCommand, panelType: "terminal")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
+            let surfaceRaw = panelValues.first ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
             // The direction is the first non-flag token (so `--allow-undersized` can
             // appear on either side of it).
             guard let direction = rem5.first(where: { !$0.hasPrefix("-") }) else {
@@ -3576,8 +3582,8 @@ struct CMUXCLI {
 
         case "input-state":
             let (wsRaw, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (tabRaw, rem1) = parseOption(rem0, name: "--panel")
-            let (legacyTabRaw, rem2) = parseOption(rem1, name: "--panel")
+            // Every spelling (`--panel`, `--tab`, `--surface`) counts toward the one allowed target.
+            let (tabValues, rem2) = parseRepeatedOption(rem0, name: "--panel")
             let inputStateJSON = jsonOutput || rem2.contains("--json")
             let trailing = rem2.filter { $0 != "--json" }
             guard trailing.isEmpty else {
@@ -3586,10 +3592,10 @@ struct CMUXCLI {
                     defaultValue: "input-state: unexpected arguments: %@"
                 ), trailing.joined(separator: " ")))
             }
-            guard tabRaw == nil || legacyTabRaw == nil else {
+            guard tabValues.count <= 1 else {
                 throw CLIError(message: String(localized: "cli.input_state.duplicate_tab", defaultValue: "input-state: pass --panel once"))
             }
-            let explicitTab = try requireNonEmptyHandle(tabRaw ?? legacyTabRaw, flag: "--panel", command: "input-state")
+            let explicitTab = try requireNonEmptyHandle(tabValues.first, flag: "--panel", command: "input-state")
             guard let explicitTab else {
                 throw CLIError(message: String(localized: "cli.input_state.tab_required", defaultValue: "input-state requires --panel <id|ref>"))
             }
@@ -5955,8 +5961,10 @@ struct CMUXCLI {
         if let workspaceID { params["workspace_id"] = workspaceID }
         let listed = try client.sendV2(method: "panel.list", params: params)
         let items = listed["panels"] as? [[String: Any]] ?? []
+        // `panel:N`, `tab:N` and `surface:N` (any case) name the same panel.
+        let wanted = Self.canonicalHandle(handle).lowercased()
         guard let item = items.first(where: {
-            ($0["ref"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
+            ($0["ref"] as? String).map { Self.canonicalHandle($0).lowercased() == wanted } == true
                 || ($0["id"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
         }), let id = item["id"] as? String else {
             throw CLIError(message: "Panel handle no longer resolves: \(handle)")
@@ -9812,7 +9820,7 @@ struct CMUXCLI {
         let storage = agentsCell(coverage["storage"])
         let unattributed = agentsCell(coverage["unattributed"])
         print("Agents  live=\(live)  health=\(health)  storage=\(storage)  unattributed=\(unattributed)")
-        let tabs = document["tabs"] as? [[String: Any]] ?? []
+        let tabs = (document["panels"] ?? document["tabs"]) as? [[String: Any]] ?? []
         if tabs.isEmpty {
             print("No live panels.")
         }
@@ -9974,7 +9982,7 @@ struct CMUXCLI {
             Usage: c11 config <subcommand> [options]
 
             Manage saved launch configurations. File-backed commands work with
-            the app down; `launch` starts a configured surface in c11.
+            the app down; `launch` starts a configured panel in c11.
 
             Subcommands:
               list [--json]                         List saved configurations.
@@ -10043,7 +10051,7 @@ struct CMUXCLI {
                    c11 themes validate <path>
                    c11 themes diff <a> <b>
 
-            Manage c11 chrome themes: sidebar, title bars, tab bar, dividers,
+            Manage c11 chrome themes: sidebar, title bars, panel bar, dividers,
             browser chrome, markdown chrome, and workspace frame.
 
             Commands:
@@ -10336,7 +10344,7 @@ struct CMUXCLI {
             return """
             Usage: c11 panel-action --action <name> [flags]
 
-            Perform tab-strip panel context-menu actions from CLI/socket.
+            Perform panel context-menu actions (the panel bar's right-click menu) from CLI/socket.
 
             Actions:
               rename | clear-name
@@ -10631,9 +10639,9 @@ struct CMUXCLI {
             Size-aware splits: c11 will not create an area too small to be usable.
             If the requested direction would leave a child below the minimum for
             its panel kind (coding-agent TUIs need more room than a shell), c11
-            flips to the roomier axis, refuses with guidance, or — in `tab` mode —
+            flips to the roomier axis, refuses with guidance, or — in `panel` mode —
             adds a panel instead. Tune via Settings (paneSizeMode) or the
-            C11_SPLIT_SIZE_POLICY env var (off|warn|balance|tab).
+            C11_SPLIT_SIZE_POLICY env var (off|warn|balance|panel).
 
             Example:
               c11 new-split right
@@ -10760,8 +10768,8 @@ struct CMUXCLI {
             Size-aware splits: c11 will not create an area too small to be usable.
             If the requested direction would leave a child below the minimum for its
             panel kind, c11 flips to the roomier axis, refuses with guidance, or —
-            in `tab` mode — adds a panel instead. Tune via Settings (paneSizeMode) or
-            the C11_SPLIT_SIZE_POLICY env var (off|warn|balance|tab).
+            in `panel` mode — adds a panel instead. Tune via Settings (paneSizeMode) or
+            the C11_SPLIT_SIZE_POLICY env var (off|warn|balance|panel).
 
             Example:
               c11 new-area
@@ -10928,7 +10936,7 @@ struct CMUXCLI {
               --color <#hex>         One-shot color override (e.g. "#F5C518" or "#F5C518FF").
                                      Defaults to the c11 yellow signal color. Tints the
                                      terminal area ring and the sidebar workspace-row pulse.
-                                     Browser and Markdown panel overlays and the tab-bar
+                                     Browser and Markdown panel overlays and the panel-bar
                                      pulse keep their default accent — color override
                                      for those panels is a follow-up.
               --persistent           Keep pulsing until the operator clicks the panel or

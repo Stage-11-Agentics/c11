@@ -1322,6 +1322,35 @@ def test_flag_caller_metadata_keys(c: cmux, cli: str, f: Fixture) -> None:
     print("PASS: raise-flag / lower-flag accept --panel, --tab and --surface and clear every flag_caller_* key")
 
 
+def _window_ref_of(c: cmux, ws: str) -> str:
+    tree = _call(c, "system.tree", {"scope": "all", "all_windows": True})
+    for window in tree.get("windows") or []:
+        if any(str(w.get("id")) == ws for w in window.get("workspaces") or []):
+            return str(window.get("ref"))
+    raise cmuxError(f"no window holds workspace {ws}: {tree}")
+
+
+def test_scoped_window_and_feed_refs(c: cmux, cli: str, f: Fixture) -> None:
+    """Resolvers that compare refs client-side accept every prefix (panel:/tab:/surface:)."""
+    window = _window_ref_of(c, f.ws)
+    env = _cli_env({"C11_PANEL_ID": f.p2, "C11_WORKSPACE_ID": f.ws})
+    for prefix in ("panel", "tab", "surface", "TAB"):
+        ref = f.panel_ref(prefix)
+        try:
+            _cli(cli, ["--window", window, "raise-flag", "--workspace", f.ws, "--panel", ref, "scoped ref check"], env=env)
+            _must("flag" in _metadata(c, f.ws, f.p2), f"--window raise-flag {ref} set no flag")
+        finally:
+            lowered = _cli(cli, ["--window", window, "lower-flag", "--workspace", f.ws, "--panel", ref], env=env, check=False)
+        _must(lowered.returncode == 0, f"--window lower-flag {ref} failed: {lowered.stdout!r} {lowered.stderr!r}")
+        _must("flag" not in _metadata(c, f.ws, f.p2), f"--window lower-flag {ref} left the flag")
+        # feed open resolves the ref before anything else; any outcome but a resolution failure is fine
+        # (the scratch workspace is in the background, and agents cannot switch the operator's workspace).
+        opened = _cli(cli, ["feed", "open", ref, "--workspace", f.ws], env=env, check=False)
+        merged = f"{opened.stdout}\n{opened.stderr}"
+        _must("no longer resolves" not in merged and "Invalid" not in merged, f"feed open {ref} did not resolve: {merged!r}")
+    print("PASS: --window scoped commands and feed open accept panel:/tab:/surface: refs (any case)")
+
+
 def test_cli_env_vars_target_the_same_panel(c: cmux, cli: str, f: Fixture) -> None:
     ws = f.ws
     token = f"env-{uuid.uuid4().hex[:8]}"
@@ -1460,6 +1489,7 @@ def main() -> int:
             test_cli_read_command_aliases(cli, fixture)
             test_cli_env_vars_target_the_same_panel(c, cli, fixture)
             test_cli_action_command_aliases(c, cli, fixture)
+            test_scoped_window_and_feed_refs(c, cli, fixture)
             test_free_text_is_never_rewritten(c, cli, fixture)
         finally:
             fixture.close()

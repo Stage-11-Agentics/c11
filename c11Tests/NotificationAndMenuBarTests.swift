@@ -292,7 +292,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertTrue(appDelegate.workspaceManagerFor(workspaceId: workspace.id) === manager,
                       "Fixture must remain addressable across async host window synchronization")
         let response = controller.v2DispatchNotification(
-            "notification.create_for_tab",
+            "notification.create_for_panel",
             id: 1,
             params: [
                 "workspace_id": workspace.id.uuidString,
@@ -370,7 +370,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertTrue(appDelegate.workspaceManagerFor(workspaceId: workspace.id) === manager,
                       "Fixture must remain addressable across async host window synchronization")
         let response = controller.v2DispatchNotification(
-            "notification.create_for_tab",
+            "notification.create_for_panel",
             id: 2,
             params: [
                 "workspace_id": workspace.id.uuidString,
@@ -426,7 +426,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         let response = controller.v2DispatchNotification(
-            "notification.create_for_tab",
+            "notification.create_for_panel",
             id: 3,
             params: [
                 "workspace_id": workspace.id.uuidString,

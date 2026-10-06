@@ -1,6 +1,6 @@
 # `c11 launch-agent` — launching typed agents
 
-The canonical reference for launching a typed coding agent into a c11 tab with
+The canonical reference for launching a typed coding agent into a c11 panel with
 one command: correct invocation for the agent's CLI, model/effort pinned, identity
 stamped at birth, machine-readable refs back to the caller.
 
@@ -26,8 +26,8 @@ external controller (a Stream Deck, a MIDI deck, another agent) needs to say
 
 Hand-composing agent launches means re-implementing, per caller: the claude PATH
 wrapper + `--dangerously-skip-permissions`, codex `--yolo` (never `exec` for a
-visible tab), per-CLI model/effort flag syntax, `C11_AGENT_TYPE/MODEL/TASK`
-env declaration, `set-agent` metadata, and tab naming. c11 already knows every one
+visible panel), per-CLI model/effort flag syntax, `C11_AGENT_TYPE/MODEL/TASK`
+env declaration, `set-agent` metadata, and panel naming. c11 already knows every one
 of these facts (`AgentRegistry`, `DefaultAgentConfigStore`,
 `DefaultAgentResolver`); `launch-agent` makes it own them at the launch site.
 
@@ -108,27 +108,27 @@ flag renders after `--model`/`--effort` and before the positional prompt.
 
 ### Placement (`--area` | `--workspace` | `--new-workspace`)
 
-- Default: a new tab in the caller's area (the focused area of the current
+- Default: a new panel in the caller's area (the focused area of the current
   workspace — same target the A button would hit).
-- `--area <ref>`: a new tab in that area.
-- `--workspace <ref>`: a new tab in that workspace's focused area.
+- `--area <ref>`: a new panel in that area.
+- `--workspace <ref>`: a new panel in that workspace's focused area.
 - `--new-workspace`: a fresh workspace whose first terminal is the agent. The
   identity env rides workspace creation (present at PTY birth); the launch
   line is *typed* into the interactive shell (queue-until-ready), not baked as
   the ghostty spawn command — a spawn command execs over the shell, so agent
-  exit would kill the tab, and it skips shell rc.
+  exit would kill the panel, and it skips shell rc.
 
 The launch cwd resolves in this order:
 
 1. explicit `--cwd <path>` (resolved CLI-side relative to the caller and
    validated server-side),
 2. the target workspace's stable root directory, when set,
-3. the launching tab's cwd (the fallback for rootless workspaces, and for
+3. the launching panel's cwd (the fallback for rootless workspaces, and for
    a root that no longer exists),
 4. home.
 
-This is the same rule every new terminal in a workspace follows: tabs, splits,
-the tab-bar agent button, `default-agent launch`, `new-tab`, `new-split`,
+This is the same rule every new terminal in a workspace follows: panels, splits,
+the panel-bar agent button, `default-agent launch`, `new-panel`, `new-split`,
 and `new-area`. Set a root during creation with `c11 new-workspace --root
 <path>` (or `--cwd`, which establishes the same root by default); a workspace
 created without one starts in the selected workspace's root and adopts the
@@ -140,7 +140,7 @@ root stays cleared.
 Any resolved cwd inside a linked git worktree proceeds with one coded warning.
 The warning names the absolute worktree path and carries code
 `linked_worktree_cwd`. Explicit `--cwd` remains permitted; a configured
-workspace root also counts as explicit intent. A launching-tab cwd is
+workspace root also counts as explicit intent. A launching-panel cwd is
 marked inherited, but is warning-only because linked worktrees are the normal
 Lattice delegator shape.
 
@@ -154,15 +154,15 @@ overrides); trust gating is pre-existing and remains outside this change.
 
 Launches never steal focus or selection —
 `agent.launch` is not a focus-intent method under the socket focus policy, so
-the new tab is created unfocused regardless of flags (`--no-focus` is
-accepted as a no-op for symmetry with `new-tab`).
+the new panel is created unfocused regardless of flags (`--no-focus` is
+accepted as a no-op for symmetry with `new-panel`).
 
 ### Identity at birth
 
 The new PTY spawns with `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`
-in its environment, and the tab metadata
+in its environment, and the panel metadata
 is stamped server-side before the launch line is typed: `terminal_type`, `model`,
-`task` (source `declare`), plus the tab title (`--title`, else the standard
+`task` (source `declare`), plus the panel title (`--title`, else the standard
 launch placeholder). The sidebar chip, title bar, and `c11 tree` are correct with
 zero post-hoc calls; wrappers and skill-driven self-reporting only refine from
 there.
@@ -172,7 +172,7 @@ operator's configured overrides (caller wins on collision).
 
 ### Attention at dispatch (`--flag`, `--suppressed`)
 
-Both apply to the new tab before command delivery, so the attention state is
+Both apply to the new panel before command delivery, so the attention state is
 correct from the first frame. `--flag <reason>` raises a sticky flag — reserved
 for operator-designated priority missions (pair with the caller relaying explicit
 operator intent). `--suppressed` marks the worker parent-owned: routine
@@ -198,7 +198,7 @@ shell receives only `Read the file at <owned path> and follow it exactly.`:
 `--prompt-file` reads the caller's file and stages an independent copy. c11
 never deletes or rewrites the caller's file. Owned directories are mode 0700 and
 files 0600; creation rejects symlinks and existing files. The owned copy remains
-readable until its terminal tab closes, then is removed asynchronously. A crash
+readable until its terminal panel closes, then is removed asynchronously. A crash
 can leave files in that process's runtime directory; there is no cross-process
 sweep. Saved `config launch` uses the same delivery. Settings' Claude initial
 prompt and `default-agent launch` also stage copies; Settings retains its existing
@@ -216,7 +216,7 @@ Human-readable by default; `--json` prints one object:
   "window_ref": "window:1",
   "workspace_ref": "workspace:4",
   "area_ref": "area:9",
-  "tab_ref": "tab:341",
+  "panel_ref": "panel:341",
   "startup": "started",
   "startup_process": { "pid": 1234, "executable": "/path/to/codex" },
   "prompt_file": "/path/to/c11/runtime/launch-prompts/process/file.txt",
@@ -236,7 +236,7 @@ Human-readable by default; `--json` prints one object:
       "explicit_intent": true
     }
   }],
-  "workspace_id": "…", "area_id": "…", "tab_id": "…"
+  "workspace_id": "…", "area_id": "…", "panel_id": "…"
 }
 ```
 
@@ -269,10 +269,10 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 
 A conflicting `--prompt`/`--prompt-file` pair is rejected CLI-side before the
 socket call. A launch binary that can't be found is a **warning**, not an
-error — the app-process PATH is poorer than the login-shell PATH a tab
+error — the app-process PATH is poorer than the login-shell PATH a panel
 actually gets, so the result carries `"warnings": ["binary '<x>' not found …"]`
 and the launch proceeds (a truly missing binary shows the shell error in the
-tab). A linked-worktree cwd is also reported once in this string-only
+panel). A linked-worktree cwd is also reported once in this string-only
 warnings array and as a structured `warning_details` entry with code
 `linked_worktree_cwd`. The CLI prints the coded warning once to stderr in both
 human and `--json` modes while the launch proceeds.
@@ -368,7 +368,7 @@ with no axis).
 short refs client-side before sending, and direct socket callers must do the
 same (resolve via `system.tree` or `c11 identify`).
 
-The handler performs resolution, tab creation, env injection, metadata
+The handler performs resolution, panel creation, env injection, metadata
 stamping, and command typing **atomically server-side** — a caller never has to
 sequence create → stamp → send itself. Response is the JSON object above;
 `config_source` is the matched `.c11/agents.json` path or null.
@@ -378,8 +378,8 @@ scheduled on main) and the no-focus-steal policy.
 ## Relationship to existing commands
 
 - `c11 default-agent launch` — still "launch the operator's default." Its
-  `--in-tab` rail resolves project config from explicit `--cwd` or the
-  target tab's cwd, never the GUI app process cwd. Internally both share
+  `--in-panel` rail resolves project config from explicit `--cwd` or the
+  target panel's cwd, never the GUI app process cwd. Internally both share
   `DefaultAgentResolver` + `DefaultAgentLaunchComposition`.
 - The A button — unchanged; same resolver, same stamping.
 - `$C11_DEFAULT_AGENT_LAUNCH` — unchanged; the per-shell export still reflects

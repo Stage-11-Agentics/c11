@@ -415,7 +415,7 @@ extension TerminalController {
 #if DEBUG
     private func v2DebugFeedAnswerHoldAfterPaste(params: [String: Any]) -> V2CallResult {
         guard let workspaceID = v2UUID(params, "workspace_id"),
-              let tabID = v2UUID(params, "tab_id"),
+              let tabID = v2UUID(params, FeedPanelParam.key(in: params)),
               let holdMilliseconds = v2Int(params, "hold_ms"),
               (1...5_000).contains(holdMilliseconds) else {
             return .err(code: "invalid_params", message: "workspace_id, tab_id, and hold_ms (1...5000) are required", data: nil)

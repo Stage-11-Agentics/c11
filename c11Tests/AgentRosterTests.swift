@@ -47,6 +47,10 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(coverage?["unattributed"] as? Int, 2)
         let tabs = document["tabs"] as? [[String: Any]] ?? []
         XCTAssertEqual(tabs.map { $0["tab_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        // C11-337: `panels` is canonical; `tabs` carries the same rows for one release.
+        let panels = document["panels"] as? [[String: Any]] ?? []
+        XCTAssertEqual(panels.map { $0["panel_id"] as? String }, [tabA.uuidString, tabB.uuidString, tabC.uuidString])
+        XCTAssertEqual((AgentRoster.unavailableDocument()["panels"] as? [Any])?.count, 0)
         let ask = tabs[0]
         XCTAssertEqual(ask["state"] as? String, "blocked")
         XCTAssertEqual(ask["reason"] as? String, "question")

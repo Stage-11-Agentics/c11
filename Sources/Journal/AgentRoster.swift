@@ -97,6 +97,8 @@ enum AgentRoster {
             "schema_version": 1,
             "live_identity": "unavailable",
             "coverage": ["health": "degraded", "storage": "unavailable", "unattributed": 0],
+            "panels": [],
+            // C11-337: legacy spelling, emitted beside panels for one release.
             "tabs": [],
             "restore_candidates": [],
         ]
@@ -138,6 +140,8 @@ enum AgentRoster {
                 "storage": storageAvailable ? "ok" : "unavailable",
                 "unattributed": storageAvailable ? unattributed : 0,
             ],
+            "panels": tabs,
+            // C11-337: legacy spelling, emitted beside panels for one release.
             "tabs": tabs,
             "restore_candidates": candidates,
         ]

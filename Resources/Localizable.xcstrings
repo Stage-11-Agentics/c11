@@ -2,6 +2,18 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "surface.activity.promptCache.resetEffortChange": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Prompt cache reset by an effort change"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "推論の負荷レベルの変更によりプロンプトキャッシュがリセットされました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кеш промпту скинуто через зміну рівня зусиль"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "추론 강도 변경으로 프롬프트 캐시가 초기화됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "更改推理强度已重置提示词缓存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "更改推理強度已重置提示詞快取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кэш промпта сброшен из-за смены уровня усилий"}}
+      }
+    },
     "surface.activity.promptCache.resetModelSwitch": {
       "extractionState": "manual",
       "localizations": {

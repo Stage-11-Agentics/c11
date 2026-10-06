@@ -148,6 +148,11 @@ struct AgentActivityHelpProjection: Equatable {
                 localized: "surface.activity.promptCache.resetModelSwitch",
                 defaultValue: "Prompt cache reset by a model switch"
             ))
+        case (.effortChange?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetEffortChange",
+                defaultValue: "Prompt cache reset by an effort change"
+            ))
         case (.compaction?, _):
             lines.append(String(
                 localized: "surface.activity.promptCache.resetCompaction",

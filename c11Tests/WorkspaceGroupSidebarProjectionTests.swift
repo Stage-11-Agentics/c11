@@ -1,4 +1,5 @@
 import XCTest
+import Bonsplit
 import Combine
 
 #if canImport(c11_DEV)
@@ -149,6 +150,39 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         scheduler.drain()
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.flaggedCount, 0)
         XCTAssertEqual(publications, 2)
+    }
+
+    @MainActor
+    func testCoordinatorRepublishesWhenOnlyAnAgentLifecycleChanges() {
+        let fixture = ObservationFixture()
+        let group = WorkspaceGroup(name: "Work")
+        let member = ObservedMember(groupId: group.id)
+        let ungrouped = ObservedMember(groupId: nil)
+        fixture.groups = [group]; fixture.members = [member, ungrouped]
+        let scheduler = ManualScheduler()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule)
+        coordinator.attach(source: fixture.source())
+        var publications = 0
+        let subscription = coordinator.$projection.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        let tab = UUID()
+        let revision = coordinator.projection.pulseRevision
+
+        ungrouped.changes.send()
+        ungrouped.lifecycle = [tab: .init(state: .idle, promptCacheExpired: false)]
+        scheduler.drain()
+        XCTAssertEqual(publications, 1, "a lifecycle edge with no header change still rebuilds row pulses")
+        XCTAssertEqual(coordinator.projection.pulseRevision, revision + 1)
+
+        ungrouped.changes.send()
+        ungrouped.lifecycle = [tab: .init(state: .cold, promptCacheExpired: true)]
+        scheduler.drain()
+        XCTAssertEqual(publications, 2, "a cache-cold flip carries no notification")
+
+        ungrouped.changes.send() // A title or output event leaves the pulse alone.
+        scheduler.drain()
+        XCTAssertEqual(publications, 2)
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.waitingCount, 0)
     }
 
     @MainActor
@@ -306,6 +340,7 @@ private final class ObservedMember {
     var isPinned = false
     var tabs: [WorkspaceGroupTabAttention] = []
     var unread = 0
+    var lifecycle: [UUID: WorkspaceGroupTabLifecycle] = [:]
     var captures = 0
 
     init(id: UUID = UUID(), groupId: UUID?) { self.id = id; self.groupId = groupId }
@@ -316,7 +351,7 @@ private final class ObservedMember {
             orderEntry: { .init(id: self.id, isPinned: self.isPinned, groupId: self.groupId) },
             attention: {
                 self.captures += 1
-                return .init(tabs: self.tabs, unreadCount: self.unread)
+                return .init(tabs: self.tabs, unreadCount: self.unread, lifecycleByTab: self.lifecycle)
             })
     }
 }

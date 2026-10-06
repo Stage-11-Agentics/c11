@@ -27,7 +27,8 @@ cold. A process that exits leaves no mark at all: the tab becomes a plain termin
   expires, so the next message re-caches its whole context; without cache data they never
   go cold. The cache comes from the harness's own transcript: Claude Code names its tier on
   every request (5 minutes, or 1 hour on a subscription within plan), counted from when the
-  last request or prompt went out, and a `/model` switch or a compaction resets it at once;
+  last request or prompt went out, and a `/model` switch, an `/effort` change or a
+  compaction resets it at once;
   slash commands and `!` shell lines send no request and leave it alone. Codex and Grok
   Build publish no lifetime, so c11 estimates one (Codex 2 hours, Grok 1 hour) from measured
   reuse. A warm 1-hour agent stays an idle frame for the whole hour.
@@ -62,9 +63,9 @@ working `#E8E8E8`, waiting `#D0AA45` gold, idle `#9AA0A9`, cold `#62676F`.
 Color remains the fast day-to-day read — redundant reinforcement rather than the
 load-bearing channel.
 
-**Expired prompt cache: dark blue**, `#4677C4` on a dark theme and `#2C5597` on a light one
+**Expired prompt cache: dark blue**, `#5287D6` on a dark theme and `#2C5597` on a light one
 (`Workspace.promptCacheColdHex`), on the cold line only; each keeps a 2pt line above 3:1
-against its chrome. It marks a cold that is a cost: the next message re-caches the context.
+against its chrome (dark chrome up to `#3A3A3A`). It marks a cold that is a cost: the next message re-caches the context.
 A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two differ
 in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent keeps its
 gold mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its

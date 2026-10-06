@@ -118,6 +118,7 @@ struct TranscriptSignals: Equatable, Sendable {
     /// Not for lines that send nothing (slash commands, `!` shell lines).
     mutating func notePromptSent(_ at: Date?) {
         guard let at, var cache = promptCache, at > cache.requestAt else { return }
+        if let resetAt = cache.resetAt, at <= resetAt { return }
         cache.requestAt = at
         cache.reset = nil
         cache.resetAt = nil
@@ -127,12 +128,12 @@ struct TranscriptSignals: Equatable, Sendable {
     /// Something replaced the cached prefix (a model switch, a compaction):
     /// cold from that moment, until the next request writes a new cache.
     mutating func resetPromptCache(_ line: PromptCacheResetLine) {
-        guard let at = line.at else { return }
-        let basis = promptCacheBasis ?? .ttl(PromptCachePolicy.anthropicDefaultTTL)
+        // Before any request there is no cache to reset.
+        guard let at = line.at, let prior = promptCache else { return }
         promptCache = PromptCacheObservation(
-            requestAt: promptCache?.requestAt ?? at,
-            basis: basis,
-            promptTokens: line.promptTokens ?? promptCache?.promptTokens,
+            requestAt: prior.requestAt,
+            basis: promptCacheBasis ?? prior.basis,
+            promptTokens: line.promptTokens ?? prior.promptTokens,
             reset: line.reason,
             resetAt: at
         )
@@ -172,6 +173,8 @@ struct PromptCacheObservation: Equatable, Sendable {
 
     enum Reset: Equatable, Sendable {
         case modelSwitch
+        /// A thinking-effort change moves the prompt's cache breakpoints.
+        case effortChange
         case compaction
     }
 
@@ -854,6 +857,10 @@ struct AgentModelProbe: Sendable {
         switch object["type"] as? String {
         case "user":
             if (object["isMeta"] as? Bool) == true { return ParsedTranscriptLine() }
+            // The summary a compaction writes, and other transcript-only lines,
+            // are not prompts the model received.
+            let transcriptOnly = (object["isCompactSummary"] as? Bool) == true
+                || (object["isVisibleInTranscriptOnly"] as? Bool) == true
             let blocks = message?["content"] as? [[String: Any]]
             if blocks?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true {
                 return ParsedTranscriptLine(event: .toolResult(at: at))
@@ -861,13 +868,19 @@ struct AgentModelProbe: Sendable {
             let text = (message?["content"] as? String)
                 ?? blocks?.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String
             if let text, localCommandEchoPrefixes.contains(where: { text.hasPrefix($0) }) {
-                // `/model` swaps the model the cache belongs to.
-                let reset = text.hasPrefix("<local-command-stdout>Set model to ")
-                    ? PromptCacheResetLine(reason: .modelSwitch, at: at)
-                    : nil
+                // `/model` swaps the model the cache belongs to; `/effort`
+                // moves its breakpoints.
+                let reset: PromptCacheResetLine?
+                if text.hasPrefix("<local-command-stdout>Set model to ") {
+                    reset = PromptCacheResetLine(reason: .modelSwitch, at: at)
+                } else if text.hasPrefix("<local-command-stdout>Set effort level to ") {
+                    reset = PromptCacheResetLine(reason: .effortChange, at: at)
+                } else {
+                    reset = nil
+                }
                 return ParsedTranscriptLine(event: .prompt(at: at), promptCacheReset: reset, sendsNoRequest: true)
             }
-            return ParsedTranscriptLine(event: .prompt(at: at))
+            return ParsedTranscriptLine(event: .prompt(at: at), sendsNoRequest: transcriptOnly)
         case "assistant":
             guard let message else { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
             // Claude's placeholder assistant lines ("No response requested") are not the agent adding anything.
@@ -936,7 +949,11 @@ struct AgentModelProbe: Sendable {
         if hasType(line, "user") {
             if contains(line, "\"tool_result\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
             if contains(line, "\"isMeta\":true") { return ParsedTranscriptLine() }
-            return ParsedTranscriptLine(event: .prompt(at: at))
+            // A huge `!` output or compaction summary sends no request either.
+            let sendsNoRequest = contains(line, "\"isCompactSummary\":true")
+                || contains(line, "\"isVisibleInTranscriptOnly\":true")
+                || localCommandEchoPrefixes.contains { Self.contains(line, "\"content\":\"\($0)") }
+            return ParsedTranscriptLine(event: .prompt(at: at), sendsNoRequest: sendsNoRequest)
         }
         return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
     }

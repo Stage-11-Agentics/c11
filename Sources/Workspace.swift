@@ -5249,9 +5249,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// Dark blue: the cold line of an agent whose prompt cache expired, so the
     /// next message re-caches its whole context. Darker than the flag violet
     /// (`#9D8AD9`) so the two differ in lightness as well as hue; each theme's
-    /// value keeps a 2pt line above 3:1 against its chrome.
+    /// value keeps a 2pt line above 3:1 against its chrome (dark: up to #3A3A3A).
     nonisolated static func promptCacheColdHex(lightBackground: Bool) -> String {
-        lightBackground ? "#2C5597" : "#4677C4"
+        lightBackground ? "#2C5597" : "#5287D6"
     }
 
     /// The mark's recolor: the flag's violet wins, then an expired prompt cache.

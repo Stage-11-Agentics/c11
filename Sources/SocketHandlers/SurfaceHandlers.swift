@@ -55,6 +55,7 @@ extension TerminalController {
             "reset": cache.reset.map { reset -> Any in
                 switch reset {
                 case .modelSwitch: return "model_switch"
+                case .effortChange: return "effort_change"
                 case .compaction: return "compaction"
                 }
             } ?? NSNull(),

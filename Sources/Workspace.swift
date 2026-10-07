@@ -11747,6 +11747,7 @@ extension Workspace: BonsplitDelegate {
     func presentConfirmCloseWorkspace(
         title: String,
         message: String,
+        inventory: WorkspaceCloseInventory? = nil,
         defaultsToClose: Bool = false,
         source: InteractionSource,
         dedupeToken: String? = nil
@@ -11755,6 +11756,7 @@ extension Workspace: BonsplitDelegate {
             let content = ConfirmContent(
                 title: title,
                 message: message.isEmpty ? nil : message,
+                workspaceInventory: inventory,
                 confirmLabel: String(
                     localized: "dialog.closeWorkspace.confirmButton",
                     defaultValue: "Close Workspace"

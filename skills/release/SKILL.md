@@ -189,6 +189,15 @@ gh run watch --repo Stage-11-Agentics/c11
 
 Use the annotated form (`-a -m`). A lightweight `git tag vX.Y.Z` is rejected with "no tag message?" because of local git config (likely `tag.gpgSign` or equivalent forcing all tags to be annotated).
 
+## Local release (Actions unavailable)
+
+When `release.yml` cannot run (runner billing, outage), `scripts/release-local.sh vX.Y.Z` performs the same job: the Release build runs on Atlas through `scripts/remote-build.sh`, and the rest (daemon assets, Sparkle keys, codesign, notarize, staple, DMG, appcast, `gh release`) runs on this Mac. Walkthrough: `.claude/commands/release-local.md`.
+
+- Tag first (step 10). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
+- Run `--dry-run` first. It stops before notarization, rehearses the DMG and appcast with a throwaway Sparkle key, and publishes nothing.
+- A real run needs the `c11-notary` notarytool keychain profile. It also needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
+- The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`). The release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
+
 ## Reference
 
 - **Release asset:** `c11-macos.dmg`, attached to the tag

@@ -10,8 +10,13 @@ DMG_PATH="$1"
 TAG="$2"
 OUT_PATH="${3:-appcast.xml}"
 
+# SPARKLE_PRIVATE_KEY_FILE passes the key by path (release-local.sh), so it
+# stays out of the environment every child process inherits.
+if [[ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ]]; then
+  SPARKLE_PRIVATE_KEY="$(cat "$SPARKLE_PRIVATE_KEY_FILE")"
+fi
 if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
-  echo "SPARKLE_PRIVATE_KEY is required (exported from Sparkle generate_keys)." >&2
+  echo "SPARKLE_PRIVATE_KEY or SPARKLE_PRIVATE_KEY_FILE is required (exported from Sparkle generate_keys)." >&2
   exit 1
 fi
 
@@ -29,29 +34,38 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Cloning Sparkle ${SPARKLE_VERSION}..."
-git clone --depth 1 --branch "$SPARKLE_VERSION" https://github.com/sparkle-project/Sparkle "$work_dir/Sparkle"
+# SPARKLE_BIN_DIR points at prebuilt Sparkle tools (the bin/ of a Sparkle
+# release tarball). scripts/release-local.sh sets it so a local release
+# never runs xcodebuild on the operator's machine; CI leaves it unset and
+# builds the tools from source.
+if [[ -n "${SPARKLE_BIN_DIR:-}" ]]; then
+  generate_appcast="$SPARKLE_BIN_DIR/generate_appcast"
+  sign_update="$SPARKLE_BIN_DIR/sign_update"
+else
+  echo "Cloning Sparkle ${SPARKLE_VERSION}..."
+  git clone --depth 1 --branch "$SPARKLE_VERSION" https://github.com/sparkle-project/Sparkle "$work_dir/Sparkle"
 
-echo "Building Sparkle generate_appcast tool..."
-xcodebuild \
-  -project "$work_dir/Sparkle/Sparkle.xcodeproj" \
-  -scheme generate_appcast \
-  -configuration Release \
-  -derivedDataPath "$work_dir/build" \
-  CODE_SIGNING_ALLOWED=NO \
-  build >/dev/null
+  echo "Building Sparkle generate_appcast tool..."
+  xcodebuild \
+    -project "$work_dir/Sparkle/Sparkle.xcodeproj" \
+    -scheme generate_appcast \
+    -configuration Release \
+    -derivedDataPath "$work_dir/build" \
+    CODE_SIGNING_ALLOWED=NO \
+    build >/dev/null
 
-echo "Building Sparkle sign_update tool..."
-xcodebuild \
-  -project "$work_dir/Sparkle/Sparkle.xcodeproj" \
-  -scheme sign_update \
-  -configuration Release \
-  -derivedDataPath "$work_dir/build" \
-  CODE_SIGNING_ALLOWED=NO \
-  build >/dev/null
+  echo "Building Sparkle sign_update tool..."
+  xcodebuild \
+    -project "$work_dir/Sparkle/Sparkle.xcodeproj" \
+    -scheme sign_update \
+    -configuration Release \
+    -derivedDataPath "$work_dir/build" \
+    CODE_SIGNING_ALLOWED=NO \
+    build >/dev/null
 
-generate_appcast="$work_dir/build/Build/Products/Release/generate_appcast"
-sign_update="$work_dir/build/Build/Products/Release/sign_update"
+  generate_appcast="$work_dir/build/Build/Products/Release/generate_appcast"
+  sign_update="$work_dir/build/Build/Products/Release/sign_update"
+fi
 
 if [[ ! -x "$generate_appcast" ]]; then
   echo "generate_appcast binary not found at $generate_appcast" >&2
@@ -105,24 +119,32 @@ if ! grep -q 'sparkle:edSignature' "$generated_appcast_path"; then
   echo "  EdDSA signature: ${SIGNATURE:0:20}..."
   echo "  DMG length: $DMG_LENGTH"
 
-  # Inject sparkle:edSignature and correct length into the enclosure element
-  python3 -c "
+  # Rewrite the enclosure's length and signature in place. generate_appcast
+  # already writes a length attribute, so appending another would produce a
+  # duplicate attribute and an appcast Sparkle cannot parse.
+  python3 - "$generated_appcast_path" "$SIGNATURE" "$DMG_LENGTH" <<'PY_INJECT'
+import re
 import sys
-xml = open('$generated_appcast_path').read()
-sig = '$SIGNATURE'
-length = '$DMG_LENGTH'
-# Add edSignature to enclosure
-xml = xml.replace(
-    'type=\"application/octet-stream\"',
-    'sparkle:edSignature=\"' + sig + '\" length=\"' + length + '\" type=\"application/octet-stream\"'
-)
-open('$generated_appcast_path', 'w').write(xml)
-print('  Injected edSignature into appcast.xml')
-"
+
+path, sig, length = sys.argv[1:]
+xml = open(path, encoding="utf-8").read()
+enclosures = re.findall(r"<enclosure\b[^>]*>", xml)
+if len(enclosures) != 1:
+    sys.exit(f"expected one enclosure in {path}, found {len(enclosures)}")
+old = enclosures[0]
+new = re.sub(r'\s(?:length|sparkle:edSignature)="[^"]*"', "", old)
+new = new.replace("<enclosure", f'<enclosure sparkle:edSignature="{sig}" length="{length}"', 1)
+open(path, "w", encoding="utf-8").write(xml.replace(old, new, 1))
+print("  Injected edSignature into appcast.xml")
+PY_INJECT
 fi
 
 cp "$generated_appcast_path" "$OUT_PATH"
 echo "Generated appcast at $OUT_PATH"
+
+# A malformed appcast breaks every client's update check; refuse to emit one.
+python3 -c 'import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])' "$OUT_PATH" \
+  || { echo "ERROR: appcast is not well-formed XML!" >&2; exit 1; }
 
 # Verify the appcast has a signature
 if grep -q 'sparkle:edSignature' "$OUT_PATH"; then

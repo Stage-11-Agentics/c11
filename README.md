@@ -1,3 +1,4 @@
+<!-- README.md is Atin's voiced document. Agents: fix facts and add lines in this voice, but never rewrite, restructure, or replace sections without Atin's explicit sign-off on the exact diff. See CLAUDE.md. -->
 # c11
 
 <p align="center"><b><i>Agent-native Terminal Multiplexing for 10,000x hyperengineers</i></b></p>
@@ -73,6 +74,7 @@ agents don't just run inside c11. they reshape your spatial interface as they wo
 - resize areas to make room for a 200-column log
 - read the spatial layout of the whole workspace as an ASCII floor plan before acting
 - name their own tabs with lineage chains (`Feature :: Review :: Claude`) so the tree reads at a glance
+- mail another agent, even one in another workspace. idle, it wakes to the message as a new turn. busy, it reads it when the current turn ends. a prompt you've started typing is never trampled
 - report status, progress, role, and model to the sidebar, visible without a context switch
 
 the operator isn't managing a layout. the agents aren't waiting for instructions. both are first-class. both carve out the space they need and announce themselves. c11 is unopinionated about which side originates which move: splits, resizes, spawns, metadata writes are peers.

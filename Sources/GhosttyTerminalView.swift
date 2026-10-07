@@ -3035,8 +3035,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var portalLifecycleGeneration: UInt64 = 1
     private var activePortalHostLease: PortalHostLease?
     // Assigned once per host-to-surface assignment, never on a geometry
-    // callback. Retain the high-water mark after release so old hosts cannot
-    // reclaim a terminal while their replacement is being dismantled.
+    // callback. While a lease is held, only a newer host may take it over.
+    // After release the high-water mark no longer gates: SwiftUI can dismantle
+    // the newer host and keep the older one (an area's split collapsing), and
+    // that survivor must be able to reclaim or the terminal never rebinds.
     private static var nextPortalHostOrder: UInt64 = 0
     private var latestPortalHostOrder: UInt64 = 0
     private var latestPortalAreaId: UUID?
@@ -3404,7 +3406,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
             latestPortalHostOrder = 0
             latestPortalAreaId = currentAreaId
         }
-        guard order >= latestPortalHostOrder else { return false }
         let next = PortalHostLease(
             hostId: hostId,
             order: order,
@@ -3412,6 +3413,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
             inWindow: inWindow,
             area: Self.portalHostArea(for: bounds)
         )
+        if order < latestPortalHostOrder {
+            // An older host reclaims only an unheld lease, and only once it is
+            // usable, so a stale placeholder cannot take the terminal. A newer
+            // host needs no usability check here: the takeover rule below
+            // already keeps a usable holder from yielding to a placeholder.
+            guard activePortalHostLease == nil, Self.portalHostIsUsable(next) else { return false }
+        }
         if let current = activePortalHostLease, current.hostId != hostId {
             // A newly mounted, equally sized host wins as soon as it is usable.
             // A zero-sized placeholder must not displace a working portal yet.

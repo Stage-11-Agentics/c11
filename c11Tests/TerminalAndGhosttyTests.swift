@@ -3545,7 +3545,7 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         XCTAssertNil(surface.surface)
     }
 
-    func testNewSameSizeHostWinsAndOldHostCannotReclaimOrReleaseIt() {
+    func testNewSameSizeHostWinsAndSurvivingOldHostReclaimsAfterRelease() {
         let surface = makeSurface()
         defer { surface.teardownSurface() }
         let oldHost = NSView(), replacement = NSView()
@@ -3563,7 +3563,16 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         XCTAssertFalse(surface.releasePortalHostIfOwned(hostId: ObjectIdentifier(oldHost), order: oldOrder, reason: "stale-dismantle"))
         XCTAssertEqual(surface.debugPortalHostLease().hostId, String(describing: ObjectIdentifier(replacement)))
         XCTAssertTrue(surface.releasePortalHostIfOwned(hostId: ObjectIdentifier(replacement), order: replacementOrder, reason: "dismantle"))
-        XCTAssertFalse(claim(oldHost, oldOrder, bounds), "Release must not revive an older host")
+        XCTAssertFalse(claim(oldHost, oldOrder, .zero), "A placeholder cannot reclaim a released lease")
+        XCTAssertFalse(surface.claimPortalHost(hostId: ObjectIdentifier(oldHost), order: oldOrder,
+                                               inWindow: false, bounds: bounds, reason: "test"),
+                       "An older host outside the window cannot reclaim a released lease")
+        XCTAssertTrue(claim(oldHost, oldOrder, bounds),
+                      "A surviving older host reclaims once its replacement is dismantled")
+        XCTAssertTrue(claim(oldHost, oldOrder, bounds), "The reclaiming host keeps its own lease")
+        let newest = NSView()
+        XCTAssertTrue(claim(newest, TerminalSurface.allocatePortalHostOrder(), bounds), "A newer host still takes over")
+        XCTAssertFalse(claim(oldHost, oldOrder, bounds), "An older host cannot steal a held lease")
         surface.beginPortalCloseLifecycle(reason: "test")
         XCTAssertFalse(claim(replacement, replacementOrder, bounds))
     }

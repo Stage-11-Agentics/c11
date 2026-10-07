@@ -3564,6 +3564,9 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         XCTAssertEqual(surface.debugPortalHostLease().hostId, String(describing: ObjectIdentifier(replacement)))
         XCTAssertTrue(surface.releasePortalHostIfOwned(hostId: ObjectIdentifier(replacement), order: replacementOrder, reason: "dismantle"))
         XCTAssertFalse(claim(oldHost, oldOrder, .zero), "A placeholder cannot reclaim a released lease")
+        XCTAssertFalse(surface.claimPortalHost(hostId: ObjectIdentifier(oldHost), order: oldOrder,
+                                               inWindow: false, bounds: bounds, reason: "test"),
+                       "An older host outside the window cannot reclaim a released lease")
         XCTAssertTrue(claim(oldHost, oldOrder, bounds),
                       "A surviving older host reclaims once its replacement is dismantled")
         XCTAssertTrue(claim(oldHost, oldOrder, bounds), "The reclaiming host keeps its own lease")

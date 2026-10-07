@@ -3415,7 +3415,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         )
         if order < latestPortalHostOrder {
             // An older host reclaims only an unheld lease, and only once it is
-            // usable, so a stale placeholder cannot take the terminal.
+            // usable, so a stale placeholder cannot take the terminal. A newer
+            // host needs no usability check here: the takeover rule below
+            // already keeps a usable holder from yielding to a placeholder.
             guard activePortalHostLease == nil, Self.portalHostIsUsable(next) else { return false }
         }
         if let current = activePortalHostLease, current.hostId != hostId {

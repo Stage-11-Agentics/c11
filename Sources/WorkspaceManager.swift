@@ -2902,7 +2902,7 @@ class WorkspaceManager: ObservableObject {
         // isHidden=true (perf #127); their anchor view doesn't report a
         // window-coord frame, so mounting on one strands the runtime active
         // with no card visible (operator sees a no-op). The plan listing in
-        // `plan.message` names every workspace being closed, so anchoring
+        // the card's inventory names every workspace being closed, so anchoring
         // away from the close set doesn't lose context. Fall back to the
         // first workspace in the close set only when there's no selection
         // at all.
@@ -2911,7 +2911,8 @@ class WorkspaceManager: ObservableObject {
         Task { @MainActor [weak self] in
             let accepted = await host.presentConfirmCloseWorkspace(
                 title: plan.title,
-                message: plan.message,
+                message: plan.cardMessage,
+                inventory: WorkspaceCloseInventory(workspaces: plan.workspaces),
                 source: .local
             )
             guard accepted, let self else { return }
@@ -2979,7 +2980,11 @@ class WorkspaceManager: ObservableObject {
     private struct CloseWorkspacesPlan {
         let workspaces: [Workspace]
         let title: String
+        /// Names every workspace; the test seam's prompt text.
         let message: String
+        /// The overlay card's text. The card lists every workspace and its
+        /// panels below it, so this omits the workspace list.
+        let cardMessage: String
     }
 
     private func closeOtherPanelsInFocusedAreaPlan() -> CloseOtherPanelsInFocusedAreaPlan? {
@@ -3057,10 +3062,21 @@ class WorkspaceManager: ObservableObject {
                 defaultValue: "This will close %1$lld workspaces and all of their areas:\n%2$@"
             )
         let message = String(format: format, locale: .current, Int64(workspaces.count), titleLines)
+        let cardFormat = willCloseWindow
+            ? String(
+                localized: "dialog.closeWorkspacesWindow.cardMessage",
+                defaultValue: "This will close the current window, its %lld workspaces, and every panel in them."
+            )
+            : String(
+                localized: "dialog.closeWorkspaces.cardMessage",
+                defaultValue: "This will close %lld workspaces and every panel in them."
+            )
+        let cardMessage = String(format: cardFormat, locale: .current, Int64(workspaces.count))
         return CloseWorkspacesPlan(
             workspaces: workspaces,
             title: title,
-            message: message
+            message: message,
+            cardMessage: cardMessage
         )
     }
 
@@ -3112,6 +3128,7 @@ class WorkspaceManager: ObservableObject {
                 let accepted = await workspace.presentConfirmCloseWorkspace(
                     title: title,
                     message: message,
+                    inventory: WorkspaceCloseInventory(workspaces: [workspace]),
                     defaultsToClose: WorkspaceManager.workspaceCloseTakesOnePanel(workspace),
                     source: .local
                 )

@@ -44,6 +44,9 @@ public struct ConfirmContent: Identifiable {
     /// the user needs to see exactly what's about to be removed (e.g.
     /// pane-close listing each tab being closed).
     public let detailLines: [String]
+    /// Workspace-close only: every panel the close will take down, grouped by
+    /// workspace. `WorkspaceCloseCardView` renders it; other cards ignore it.
+    let workspaceInventory: WorkspaceCloseInventory?
     public let confirmLabel: String
     public let cancelLabel: String
     public let role: ConfirmRole
@@ -75,6 +78,7 @@ public struct ConfirmContent: Identifiable {
         title: String,
         message: String?,
         detailLines: [String] = [],
+        workspaceInventory: WorkspaceCloseInventory? = nil,
         confirmLabel: String,
         cancelLabel: String,
         role: ConfirmRole,
@@ -86,6 +90,7 @@ public struct ConfirmContent: Identifiable {
         self.title = title
         self.message = message
         self.detailLines = detailLines
+        self.workspaceInventory = workspaceInventory
         self.confirmLabel = confirmLabel
         self.cancelLabel = cancelLabel
         self.role = role

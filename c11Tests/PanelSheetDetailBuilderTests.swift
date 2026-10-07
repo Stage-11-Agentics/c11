@@ -342,3 +342,52 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "synthetic", "a warm cache adds nothing")
     }
 }
+
+/// The close-workspace card's scale line and live-state counts.
+final class WorkspaceCloseInventoryTests: XCTestCase {
+    private func row(
+        _ title: String,
+        agentTint: String? = nil,
+        status: BonsplitTabDetail.StatusKind? = nil
+    ) -> WorkspaceCloseInventory.Row {
+        WorkspaceCloseInventory.Row(
+            id: UUID(),
+            ordinal: nil,
+            title: title,
+            kindLabel: agentTint == nil ? "Terminal" : "Claude Code · Opus",
+            agentTintHex: agentTint,
+            subtitle: nil,
+            status: status
+        )
+    }
+
+    func testCountsPanelsAndAgentsAcrossWorkspaces() {
+        let inventory = WorkspaceCloseInventory(groups: [
+            .init(id: UUID(), title: "Alpha", rows: [
+                row("shell"),
+                row("builder", agentTint: "#FFFFFF", status: .working),
+                row("reviewer", agentTint: "#5AA0FF", status: .waiting),
+            ]),
+            .init(id: UUID(), title: "Beta", rows: [
+                row("planner", agentTint: "#AF5FFF", status: .flagged),
+                row("tester", agentTint: "#FFFFFF", status: .working),
+            ]),
+        ])
+
+        XCTAssertEqual(inventory.panelCount, 5)
+        XCTAssertEqual(inventory.agentCount, 4)
+        XCTAssertEqual(inventory.scaleSummary, "5 panels · 4 agents")
+        XCTAssertEqual(inventory.liveStateCounts.map(\.kind), [.flagged, .waiting, .working])
+        XCTAssertEqual(inventory.liveStateCounts.map(\.count), [1, 1, 2])
+        XCTAssertEqual(WorkspaceCloseInventory.stateCount(.working, 2), "2 working")
+    }
+
+    func testSinglePanelWithoutAgentsOmitsAgentsAndLiveStates() {
+        let inventory = WorkspaceCloseInventory(groups: [
+            .init(id: UUID(), title: "Alpha", rows: [row("shell", status: .idle)]),
+        ])
+
+        XCTAssertEqual(inventory.scaleSummary, "1 panel")
+        XCTAssertTrue(inventory.liveStateCounts.isEmpty, "idle and cold are not live work")
+    }
+}

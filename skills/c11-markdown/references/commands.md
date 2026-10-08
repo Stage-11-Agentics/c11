@@ -75,6 +75,7 @@ these commands reject bare panel indices because they are workspace-scoped.
 
 ```bash
 c11 markdown scroll --panel <id|ref> --heading "Installation"
+c11 markdown backlinks --panel <id|ref> --json
 c11 markdown visible --panel <id|ref> --json
 c11 markdown visible --panel <id|ref> --json --watch
 c11 markdown theme --panel <id|ref> --list
@@ -96,6 +97,11 @@ state. `not_ready` or `timeout` means the reader did not become ready in that
 window; agents cannot select a workspace to initialize it, so report the error.
 A hidden-panel scroll takes effect in its reader, and the gold flash appears
 when the panel is next shown.
+
+`backlinks` returns bounded references to the selected panel's current file.
+Each row includes the source file, source section and line, link text, and
+target fragment. The query is local and read-only; it does not change panel or
+workspace selection. An unready index returns `not_ready`.
 
 `visible --watch` prints the initial state and each coalesced change as
 newline-delimited JSON. It uses renderer state events, not polling, stays

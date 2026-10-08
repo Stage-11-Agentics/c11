@@ -475,11 +475,17 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private func finishRender(_ revision: Int) {
         guard !closed, revision == self.revision else { return }
         renderedRevision = revision
+        publishCorpusSnapshot()
         resolveRenderWaiters(success: true)
 #if DEBUG
         let elapsed = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
         dlog("markdown.renderer.ready panel=\(panel?.id.uuidString ?? "unknown") elapsedMs=\(String(format: "%.3f", elapsed))")
 #endif
+    }
+
+    func publishCorpusSnapshot() {
+        guard let panel, ready, !closed else { return }
+        call("setCorpus", arguments: [panel.corpusSnapshot.bridgeValue(currentPath: panel.filePath)])
     }
 
     private func restoreReadingPosition(
@@ -650,6 +656,32 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                 call("hideLinkPeek", arguments: [requestID])
             } else if let href = body["href"] as? String, href.utf8.count <= 16 * 1024 {
                 routePeek(href, requestID: requestID, rect: body["rect"] as? [String: Any] ?? [:])
+            }
+        case "corpusNavigate":
+            guard let panel,
+                  let path = body["path"] as? String,
+                  path.utf8.count <= 16 * 1024,
+                  let originValue = body["origin"] as? String,
+                  let origin = MarkdownNavigationOrigin(rawValue: originValue),
+                  origin == .palette || origin == .backlink else { return }
+            let fragment = (body["fragment"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(512)) }
+            let snapshot = panel.corpusSnapshot
+            guard let document = snapshot.documents.first(where: { $0.path == path }) else { return }
+            if let fragment {
+                guard document.headings.contains(where: { $0.slug == fragment }) else { return }
+            }
+            if origin == .backlink {
+                guard let currentPath = panel.filePath,
+                      snapshot.links.contains(where: {
+                          $0.sourcePath == path && $0.targetPath == currentPath && $0.sourceSectionSlug == fragment
+                      }) else { return }
+            }
+            Task { @MainActor [weak panel] in
+                _ = await panel?.navigate(
+                    to: URL(fileURLWithPath: path),
+                    fragment: fragment,
+                    origin: origin
+                )
             }
         case "copy":
             guard let text = body["text"] as? String, text.utf8.count <= 1024 * 1024 else { return }
@@ -910,6 +942,21 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         "findNext": String(localized: "markdown.reader.find.next", defaultValue: "Next match"),
         "findClose": String(localized: "markdown.reader.find.close", defaultValue: "Close find"),
         "findCount": String(localized: "markdown.reader.find.count", defaultValue: "%d / %d"),
+        "corpusOutline": String(localized: "markdown.corpus.outline", defaultValue: "Outline"),
+        "corpusBacklinks": String(localized: "markdown.corpus.backlinks", defaultValue: "Referenced by"),
+        "corpusFilter": String(localized: "markdown.corpus.filter", defaultValue: "Filter references"),
+        "corpusDocument": String(localized: "markdown.corpus.document", defaultValue: "This document"),
+        "corpusSection": String(localized: "markdown.corpus.section", defaultValue: "This section"),
+        "corpusNoReferences": String(localized: "markdown.corpus.noReferences", defaultValue: "No references"),
+        "corpusIndexing": String(localized: "markdown.corpus.indexing", defaultValue: "Indexing documents…"),
+        "corpusSearch": String(localized: "markdown.corpus.search", defaultValue: "Search files and headings"),
+        "corpusNoMatches": String(localized: "markdown.corpus.noMatches", defaultValue: "No matching files or headings"),
+        "corpusFile": String(localized: "markdown.corpus.file", defaultValue: "File"),
+        "corpusHeading": String(localized: "markdown.corpus.heading", defaultValue: "Heading"),
+        "corpusHint": String(localized: "markdown.corpus.hint", defaultValue: "Jump to a file or heading"),
+        "corpusTicketStatus": String(localized: "markdown.corpus.ticket.status", defaultValue: "Status"),
+        "corpusLine": String(localized: "markdown.corpus.line", defaultValue: "line"),
+        "corpusMore": String(localized: "markdown.corpus.more", defaultValue: "%d more references"),
         "brokenAnchorTitle": String(localized: "markdown.reader.navigation.brokenAnchor", defaultValue: "Heading “%s” not found. Closest headings:"),
         "linkPeekTitle": String(localized: "markdown.reader.navigation.preview", defaultValue: "Preview")
     ] }

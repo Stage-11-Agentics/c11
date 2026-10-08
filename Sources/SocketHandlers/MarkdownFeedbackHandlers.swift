@@ -301,6 +301,7 @@ extension TerminalController {
         case "markdown.navigate": return v2MarkdownNavigate(params: params)
         case "markdown.history": return v2MarkdownHistory(params: params)
         case "markdown.links": return v2MarkdownLinks(params: params)
+        case "markdown.backlinks": return v2MarkdownBacklinks(params: params)
         case "markdown.visible":
             guard v2Bool(params, "watch") != true else {
                 return .err(code: "invalid_params", message: "markdown.visible watch requires a streaming socket", data: nil)
@@ -763,6 +764,38 @@ extension TerminalController {
             }
             return .ok(MarkdownVisibleStateBuffer.snapshotForResponse(state))
         }
+    }
+
+    private nonisolated func v2MarkdownBacklinks(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        guard let state = v2BrowserMainHop({ (target.panel.filePath, target.panel.corpusSnapshot) }) else {
+            return v2BrowserMainHopTimeoutResult()
+        }
+        guard let path = state.0, let root = state.1.rootPath else {
+            return .err(code: "not_ready", message: "Markdown corpus index is not ready", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        let all = state.1.backlinks(to: path)
+        let values: [[String: Any]] = all.prefix(200).map { link in
+            [
+                "source_path": link.sourcePath,
+                "source_title": link.sourceTitle,
+                "section": link.sourceSection as Any? ?? NSNull(),
+                "section_slug": link.sourceSectionSlug as Any? ?? NSNull(),
+                "line": link.line,
+                "text": link.text,
+                "target_fragment": link.targetFragment as Any? ?? NSNull()
+            ]
+        }
+        return .ok([
+            "panel_id": target.surfaceId.uuidString,
+            "root_path": root,
+            "file_path": path,
+            "backlinks": values,
+            "total": all.count,
+            "truncated": state.1.truncated || all.count > values.count,
+            "revision": state.1.revision
+        ])
     }
 
     private nonisolated func v2MarkdownTheme(params: [String: Any]) -> V2CallResult {

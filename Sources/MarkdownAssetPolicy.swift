@@ -55,6 +55,23 @@ final class MarkdownAssetRoot: @unchecked Sendable {
     }
 }
 
+enum MarkdownDocumentRoot {
+    static func corpusRoot(for fileURL: URL) -> URL {
+        let source = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        var directory = source.deletingLastPathComponent()
+        let fallback = directory
+        while true {
+            if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
+                return directory.resolvingSymlinksInPath().standardizedFileURL
+            }
+            let parent = directory.deletingLastPathComponent()
+            guard parent.path != directory.path else { break }
+            directory = parent
+        }
+        return fallback.resolvingSymlinksInPath().standardizedFileURL
+    }
+}
+
 struct MarkdownAssetPolicy: Sendable {
     static let viewerScheme = "c11md"
     static let imageScheme = "c11md-asset"

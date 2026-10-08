@@ -10,6 +10,22 @@ Use this skill to display markdown files in a c11 markdown panel — a first-cla
 
 Rich rendering (headings, code blocks, tables, lists, Mermaid) with live file watching — the panel auto-updates when the file changes on disk.
 
+## Corpus Navigation
+
+- Press **⌘K** in a Markdown panel to search Markdown file names and headings in the containing Git repository. If the file is outside a Git repository, c11 searches its containing directory.
+- Open the panel outline and select **Referenced by** to see links to the current document and current section. Selecting a result navigates within the same panel and adds to its history.
+- The index skips .git, node_modules, DerivedData, build, dist, and .build; indexing is bounded, incremental and local to the open panel.
+- C11-123 references show a title/status card only when the indexed repository has a matching local .lattice board entry. The lookup is read-only; unmatched IDs stay plain text.
+
+Agent command:
+
+~~~bash
+c11 markdown backlinks --panel <id|ref> --json
+~~~
+
+It returns bounded references for the selected Markdown panel's current file
+without changing panel or workspace selection.
+
 ## Core Workflow
 
 1. Write your plan or notes to a `.md` file.

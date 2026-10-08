@@ -5513,7 +5513,7 @@ struct CMUXCLI {
         args = argsAfterPane
 
         if let first = args.first?.lowercased(),
-           ["scroll", "visible", "theme", "typeface", "font", "open-external", "history", "links"].contains(first) {
+           ["scroll", "backlinks", "visible", "theme", "typeface", "font", "open-external", "history", "links"].contains(first) {
             try runMarkdownAgentCommand(
                 subcommand: first,
                 arguments: Array(args.dropFirst()),
@@ -5685,6 +5685,14 @@ struct CMUXCLI {
         }
 
         switch subcommand {
+        case "backlinks":
+            let (jsonFlag, remaining) = removeMarkdownFlag(arguments, name: "--json")
+            guard remaining.isEmpty, jsonOutput || jsonFlag else {
+                throw CLIError(message: "Usage: c11 markdown backlinks --panel <id|ref> --json")
+            }
+            let result = try client.sendV2(method: "markdown.backlinks", params: ["panel_id": panelID])
+            print(jsonString(formatIDs(result, mode: idFormat)))
+
         case "scroll":
             let (headings, remaining) = parseRepeatedOption(arguments, name: "--heading")
             guard headings.count == 1, !headings[0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

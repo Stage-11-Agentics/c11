@@ -7,16 +7,18 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const surface = $('#surface'), scroller = $('#scroller'), srcScroller = $('#srcScroller');
 const article = $('#article'), col = $('#col'), layout = $('#layout'), source = $('#source');
-const outlinePanel = $('#outlinePanel'), outlineFilter = $('#outlineFilter'), outlineList = $('#outlineList');
+const outlinePanel = $('#outlinePanel'), outlineFilter = $('#outlineFilter'), outlineList = $('#outlineList'), backlinkList = $('#backlinkList');
 const findbar = $('#findbar'), findInput = $('#findInput'), findCount = $('#findCount'), findTicks = $('#findTicks');
 const anchorSuggestions = $('#anchorSuggestions'), linkPeek = $('#linkPeek');
 const findPreviousButton = $('#findPrevious'), findNextButton = $('#findNext'), findCloseButton = $('#findClose');
+const corpusScrim=$('#corpusScrim'), corpusSearch=$('#corpusSearch'), corpusResults=$('#corpusResults'), corpusCount=$('#corpusCount');
 let findDebounce=null;
-const defaults = {copy:'copy', copied:'copied', copyLink:'copy link to this section', expand:'expand ⤢', close:'close', diagram:'diagram', diagramError:'Diagram could not be rendered', imageBlocked:'Image unavailable', notes:'notes', back:'back to', source:'source', frontmatter:'frontmatter', outlineTitle:'Outline', outlineFilter:'Filter outline', outlineEmpty:'No headings', outlineNoMatches:'No headings match', outlineClearFilter:'Clear filter', outlineSummary:'%d min · %d words · %d lines', outlineTaskCount:'%d of %d tasks complete', findOpen:'Find (⌘F)', findPlaceholder:'Find in document', findPrevious:'Previous match', findNext:'Next match', findClose:'Close find', findCount:'%d / %d', brokenAnchorTitle:'Heading “%s” not found. Closest headings:', linkPeekTitle:'Preview'};
+const defaults = {copy:'copy', copied:'copied', copyLink:'copy link to this section', expand:'expand ⤢', close:'close', diagram:'diagram', diagramError:'Diagram could not be rendered', imageBlocked:'Image unavailable', notes:'notes', back:'back to', source:'source', frontmatter:'frontmatter', outlineTitle:'Outline', outlineFilter:'Filter outline', outlineEmpty:'No headings', outlineNoMatches:'No headings match', outlineClearFilter:'Clear filter', outlineSummary:'%d min · %d words · %d lines', outlineTaskCount:'%d of %d tasks complete', findOpen:'Find (⌘F)', findPlaceholder:'Find in document', findPrevious:'Previous match', findNext:'Next match', findClose:'Close find', findCount:'%d / %d', brokenAnchorTitle:'Heading “%s” not found. Closest headings:', linkPeekTitle:'Preview', corpusOutline:'Outline', corpusBacklinks:'Referenced by', corpusFilter:'Filter references', corpusDocument:'This document', corpusSection:'This section', corpusNoReferences:'No references', corpusIndexing:'Indexing documents…', corpusSearch:'Search files and headings', corpusNoMatches:'No matching files or headings', corpusFile:'File', corpusHeading:'Heading', corpusHint:'Jump to a file or heading', corpusTicketStatus:'Status', corpusLine:'line', corpusMore:'%d more references'};
 const S = {markdown:'', file:'', baseURL:'', revision:null, mode:'read', scale:1,
   theme:'system', typeface:'theme', outlineChoice:'auto', os:null, resolved:'dark', face:'serif',
   heads:[], tree:[], outlineSections:new Map(), blocks:[], generation:0, renderQueue:Promise.resolve(),
-  find:{query:'', draft:'', hits:[], index:-1}, findOpen:false, strings:{...defaults}, words:0, lines:1, diagram:null, peekGeneration:0};
+  find:{query:'', draft:'', hits:[], index:-1}, findOpen:false, strings:{...defaults}, words:0, lines:1, diagram:null,
+  corpus:null, corpusMode:'outline', corpusResults:[], corpusSelection:0, ticketCardPinned:false, peekGeneration:0};
 function post(message) { window.webkit?.messageHandlers?.c11md?.postMessage(message); }
 function error(code, e) { post({type:'error', code, message:String(e?.message || e).slice(0,400), revision:S.revision}); }
 const plain = t => (t.children || []).map(c => ['text','code_inline','image'].includes(c.type) ? c.content : '').join('').trim();
@@ -448,8 +450,14 @@ function updateOutlineSummary() {
 function renderOutlineList({scrollToCurrent=false}={}) {
   const query=outlineFilter.value.trim().toLocaleLowerCase(), active=activeOutlineSection();
   outlinePanel.classList.toggle('filtering',!!query);
-  outlineFilter.placeholder=S.strings.outlineFilter;
-  outlineFilter.setAttribute('aria-label',S.strings.outlineFilter);
+  const isBacklinks=S.corpusMode==='backlinks';
+  outlineList.hidden=isBacklinks;backlinkList.hidden=!isBacklinks;
+  $('#outlineTab').textContent=S.strings.corpusOutline;
+  $('#backlinkTabTitle').textContent=S.strings.corpusBacklinks;
+  $('#outlineTab').setAttribute('aria-selected',String(!isBacklinks));
+  $('#backlinksTab').setAttribute('aria-selected',String(isBacklinks));
+  outlineFilter.placeholder=isBacklinks?S.strings.corpusFilter:S.strings.outlineFilter;
+  outlineFilter.setAttribute('aria-label',outlineFilter.placeholder);
   outlinePanel.setAttribute('aria-label',S.strings.outlineTitle);
   $('#outlineList').setAttribute('aria-label',S.strings.outlineTitle);
   $('#outlineCount').textContent=String(S.heads.filter(heading=>heading.level===2).length);
@@ -477,14 +485,168 @@ function renderOutlineList({scrollToCurrent=false}={}) {
   outlineList.replaceChildren(fragment);
   $('#outlineClear').hidden=!outlineFilter.value;
   $('#outlineClear').setAttribute('aria-label',S.strings.outlineClearFilter);
+  renderBacklinks(query);
   updateOutlineActive(true);
   if(scrollToCurrent)scrollOutlineToCurrent();
+}
+function renderBacklinks(query=outlineFilter.value.trim().toLocaleLowerCase()) {
+  const links=(S.corpus?.links||[]).filter(link=>link.target===S.file);
+  const current=currentHeading();
+  const sectionLinks=current?links.filter(link=>String(link.fragment||'').toLocaleLowerCase()===current.slug.toLocaleLowerCase()):[];
+  $('#backlinkCount').textContent=String(links.length);
+  const fragment=document.createDocumentFragment();
+  if(!S.corpus?.root) {
+    const empty=document.createElement('div');empty.className='empty';empty.textContent=S.strings.corpusIndexing;fragment.append(empty);
+    backlinkList.replaceChildren(fragment);return;
+  }
+  const appendGroup=(label,items)=>{
+    const filtered=items.filter(link=>!query||`${link.source_title} ${link.section||''} ${link.text} ${link.line}`.toLocaleLowerCase().includes(query));
+    if(!filtered.length)return 0;
+    const heading=document.createElement('div');heading.className='ref-group';heading.textContent=label;fragment.append(heading);
+    for(const link of filtered.slice(0,100)) {
+      const button=document.createElement('button'),title=document.createElement('span'),detail=document.createElement('span');
+      button.type='button';button.className='ref-item';button.setAttribute('role','option');
+      title.className='ref-title';title.textContent=link.source_title||link.source;
+      detail.className='ref-detail';detail.textContent=[link.section,`${S.strings.corpusLine} ${link.line}`,link.text].filter(Boolean).join(' · ');
+      button.append(title,detail);
+      button.addEventListener('click',()=>post({type:'corpusNavigate',origin:'backlink',path:link.source,fragment:link.section_slug||null}));
+      fragment.append(button);
+    }
+    if(filtered.length>100) {
+      const more=document.createElement('div');more.className='empty';more.textContent=formatOutlineString(S.strings.corpusMore,[filtered.length-100]);fragment.append(more);
+    }
+    return filtered.length;
+  };
+  const documentCount=appendGroup(S.strings.corpusDocument,links);
+  const sectionCount=appendGroup(current?`${S.strings.corpusSection} · ${current.text}`:S.strings.corpusSection,sectionLinks);
+  if(!documentCount&&!sectionCount) {
+    const empty=document.createElement('div');empty.className='empty';empty.textContent=S.strings.corpusNoReferences;fragment.append(empty);
+  }
+  backlinkList.replaceChildren(fragment);
+}
+function refreshCorpusResults() {
+  const query=corpusSearch.value.trim().toLocaleLowerCase();
+  const words=query.split(/\s+/).filter(Boolean),matches=[];
+  const documents=S.corpus?.documents||[];
+  if(!S.corpus?.root) {
+    corpusResults.replaceChildren(Object.assign(document.createElement('div'),{className:'corpus-empty',textContent:S.strings.corpusIndexing}));
+    corpusCount.textContent='0';return;
+  }
+  for(const doc of documents) {
+    const path=String(doc.relative_path||doc.title||doc.path||'');
+    const fileText=`${doc.title||''} ${path}`.toLocaleLowerCase();
+    if(!words.length||words.every(word=>fileText.includes(word))) {
+      const score=!words.length?0:fileText.startsWith(query)?0:fileText.includes(query)?1:2;
+      matches.push({kind:'file',path:doc.path,title:doc.title||path,detail:path,fragment:null,score:score+(doc.path===S.file?-1:0)});
+    }
+    for(const heading of doc.headings||[]) {
+      const text=String(heading.text||''),combined=`${text} ${path}`.toLocaleLowerCase();
+      if(words.length&&!words.every(word=>combined.includes(word)))continue;
+      const score=!words.length?2:combined.startsWith(query)?0:combined.includes(query)?1:2;
+      matches.push({kind:'heading',path:doc.path,title:text,detail:path,fragment:heading.slug,score:score+(doc.path===S.file?-1:0)});
+    }
+  }
+  matches.sort((a,b)=>a.score-b.score||a.title.localeCompare(b.title)||a.detail.localeCompare(b.detail));
+  S.corpusResults=matches.slice(0,100);S.corpusSelection=clamp(S.corpusSelection,0,Math.max(0,S.corpusResults.length-1));
+  const fragment=document.createDocumentFragment();
+  if(!S.corpusResults.length) {
+    const empty=document.createElement('div');empty.className='corpus-empty';empty.textContent=S.strings.corpusNoMatches;fragment.append(empty);
+  } else for(const [index,result] of S.corpusResults.entries()) {
+    const button=document.createElement('button'),kind=document.createElement('span'),labels=document.createElement('span'),title=document.createElement('span'),path=document.createElement('span');
+    button.type='button';button.className='corpus-result'+(index===S.corpusSelection?' selected':'');button.setAttribute('role','option');
+    button.setAttribute('aria-selected',String(index===S.corpusSelection));button.dataset.index=String(index);
+    kind.className='corpus-kind';kind.textContent=result.kind==='file'?S.strings.corpusFile:S.strings.corpusHeading;
+    labels.className='corpus-labels';title.className='corpus-label';title.textContent=result.title;
+    path.className='corpus-path';path.textContent=result.detail;labels.append(title,path);button.append(kind,labels);
+    button.addEventListener('click',()=>selectCorpusResult(index));
+    button.addEventListener('pointermove',()=>{S.corpusSelection=index;$$('.corpus-result',corpusResults).forEach((row,i)=>row.classList.toggle('selected',i===index));});
+    fragment.append(button);
+  }
+  corpusResults.replaceChildren(fragment);corpusCount.textContent=String(matches.length);
+}
+function selectCorpusResult(index=S.corpusSelection) {
+  const result=S.corpusResults[index];if(!result)return;
+  closeCorpusPalette();
+  post({type:'corpusNavigate',origin:'palette',path:result.path,fragment:result.fragment});
+}
+function renderCorpusChrome() {
+  corpusSearch.placeholder=S.strings.corpusSearch;
+  corpusSearch.setAttribute('aria-label',S.strings.corpusSearch);
+  $('#corpusPalette').setAttribute('aria-label',S.strings.corpusSearch);
+  $('#corpusHint').textContent=S.strings.corpusHint;
+  $('#corpusClose').setAttribute('aria-label',S.strings.close);
+}
+let corpusReturnFocus=null;
+function openCorpusPalette() {
+  if(S.diagram!==null)return false;
+  renderCorpusChrome();
+  corpusReturnFocus=document.activeElement;
+  corpusSearch.value='';S.corpusSelection=0;corpusScrim.hidden=false;refreshCorpusResults();
+  requestAnimationFrame(()=>{if(!corpusScrim.hidden)corpusSearch.focus({preventScroll:true});});
+  return true;
+}
+function closeCorpusPalette() {
+  if(corpusScrim.hidden)return;
+  corpusScrim.hidden=true;
+  const target=corpusReturnFocus;corpusReturnFocus=null;
+  if(target instanceof HTMLElement&&target.isConnected)target.focus({preventScroll:true});
+}
+function setCorpus(value) {
+  if(!value||typeof value!=='object')return false;
+  S.corpus={root:typeof value.root==='string'?value.root:null,current:typeof value.current==='string'?value.current:null,
+    documents:Array.isArray(value.documents)?value.documents.slice(0,5000):[],
+    links:Array.isArray(value.links)?value.links.slice(0,20000):[],
+    tickets:value.tickets&&typeof value.tickets==='object'?value.tickets:{},truncated:value.truncated===true,revision:Number(value.revision)||0};
+  renderBacklinks();
+  if(!corpusScrim.hidden)refreshCorpusResults();
+  decorateTicketReferences();
+  return true;
+}
+function decorateTicketReferences() {
+  const card=$('#ticketCard');
+  card.hidden=true;S.ticketCardPinned=false;
+  $$('.ticket-ref',article).forEach(button=>button.replaceWith(document.createTextNode(button.dataset.ticket||button.textContent||'')));
+  const tickets=S.corpus?.tickets||{};
+  if(!Object.keys(tickets).length)return;
+  const walker=document.createTreeWalker(article,NodeFilter.SHOW_TEXT,{acceptNode:node=>{
+    const parent=node.parentElement;
+    return parent&&node.data.includes('C11-')&&!parent.closest('a,button,code,pre,textarea,script,style,.katex,.mermaid')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
+  }});
+  const nodes=[];let node;while((node=walker.nextNode()))nodes.push(node);
+  const pattern=/\bC11-[0-9]{1,9}\b/g;
+  for(const textNode of nodes) {
+    const text=textNode.data,fragment=document.createDocumentFragment();let last=0,match,changed=false;
+    pattern.lastIndex=0;
+    while((match=pattern.exec(text))) {
+      if(!tickets[match[0]])continue;
+      if(match.index>last)fragment.append(document.createTextNode(text.slice(last,match.index)));
+      const button=document.createElement('button');button.type='button';button.className='ticket-ref';button.dataset.ticket=match[0];button.textContent=match[0];
+      button.setAttribute('aria-describedby','ticketCard');button.setAttribute('aria-label',`${match[0]}: ${tickets[match[0]].title||''}. ${S.strings.corpusTicketStatus}: ${tickets[match[0]].status||''}`);
+      fragment.append(button);last=match.index+match[0].length;changed=true;
+    }
+    if(!changed)continue;
+    if(last<text.length)fragment.append(document.createTextNode(text.slice(last)));
+    textNode.replaceWith(fragment);
+  }
+}
+function showTicketCard(button) {
+  const data=S.corpus?.tickets?.[button?.dataset?.ticket];if(!data)return;
+  const card=$('#ticketCard'),title=document.createElement('strong'),status=document.createElement('span');
+  title.textContent=`${button.dataset.ticket} · ${data.title||''}`;
+  status.textContent=`${S.strings.corpusTicketStatus}: ${data.status||''}`;
+  card.replaceChildren(title,status);
+  const box=button.getBoundingClientRect(),surfaceBox=surface.getBoundingClientRect();
+  card.hidden=false;
+  const left=clamp(box.left-surfaceBox.left,10,surface.clientWidth-card.offsetWidth-10);
+  const top=clamp(box.bottom-surfaceBox.top+6,10,surface.clientHeight-card.offsetHeight-10);
+  card.style.left=`${left}px`;card.style.top=`${top}px`;
 }
 let lastOutlineHeading=undefined;
 function updateOutlineActive(force=false) {
   const current=currentHeading(), slug=current?.slug??null;
   if(!force&&lastOutlineHeading===slug)return;
   lastOutlineHeading=slug;
+  renderBacklinks();
   const activeSection=activeOutlineSection(current);
   for(const link of $$('.olist a[data-outline-slug]',outlinePanel)) {
     const line=Number(link.dataset.headingLine), level=Number(link.dataset.headingLevel);
@@ -853,7 +1015,7 @@ async function setSettings(input={}) {
     if('outlineOpen'in settings)S.outlineChoice=[true,false,'auto'].includes(settings.outlineOpen)?settings.outlineOpen:'auto';
     if('osAppearance'in settings)S.os=['light','dark'].includes(settings.osAppearance)?settings.osAppearance:null;
     if(settings.strings && typeof settings.strings==='object')for(const k of Object.keys(defaults))if(typeof settings.strings[k]==='string'&&settings.strings[k]!==S.strings[k]){S.strings[k]=settings.strings[k];stringsChanged=true;}
-    applyTheme();if(stringsChanged){renderOutlineList();renderFindChrome();}layoutAll();restore(a);
+    applyTheme();if(stringsChanged){renderOutlineList();renderFindChrome();renderCorpusChrome();}layoutAll();restore(a);
     await document.fonts.ready;if(generation!==S.generation)return visible();
     layoutAll();restore(a);await diagrams(generation);if(generation!==S.generation)return visible();
     for(const x of $$('.copy',article))x.textContent=S.strings.copy;
@@ -1035,15 +1197,36 @@ surface.addEventListener('pointerout',event=>{
 });
 outlineFilter.addEventListener('input',()=>renderOutlineList());
 $('#outlineClear').addEventListener('click',()=>{outlineFilter.value='';renderOutlineList();outlineFilter.focus({preventScroll:true});});
+$('#outlineTab').addEventListener('click',()=>{S.corpusMode='outline';renderOutlineList();});
+$('#backlinksTab').addEventListener('click',()=>{S.corpusMode='backlinks';renderOutlineList();});
 outlineFilter.addEventListener('keydown',e=>{
   if(!['ArrowDown','ArrowUp','Enter'].includes(e.key))return;
-  const links=$$('.olist a[data-outline-slug]',outlineList).filter(link=>link.getClientRects().length);
+  const links=(S.corpusMode==='backlinks'?$$('button.ref-item',backlinkList):$$('.olist a[data-outline-slug]',outlineList)).filter(link=>link.getClientRects().length);
   if(!links.length)return;
   const selected=links.findIndex(link=>link.classList.contains('kb'));
   if(e.key==='Enter') {e.preventDefault();links[selected>=0?selected:0].click();return;}
   e.preventDefault();links.forEach(link=>link.classList.remove('kb'));
   const index=clamp(selected+(e.key==='ArrowDown'?1:-1),0,links.length-1);
   links[index].classList.add('kb');links[index].scrollIntoView({block:'nearest'});
+});
+corpusSearch.addEventListener('input',()=>{S.corpusSelection=0;refreshCorpusResults();});
+corpusScrim.addEventListener('pointerdown',event=>{if(event.target===corpusScrim)closeCorpusPalette();});
+corpusResults.addEventListener('pointerover',event=>{
+  const row=event.target.closest('.corpus-result');if(!row)return;
+  S.corpusSelection=Number(row.dataset.index)||0;
+  $$('.corpus-result',corpusResults).forEach((item,index)=>item.classList.toggle('selected',index===S.corpusSelection));
+});
+article.addEventListener('pointerover',event=>{const button=event.target.closest('.ticket-ref');if(button)showTicketCard(button);});
+article.addEventListener('pointerout',event=>{
+  const button=event.target.closest('.ticket-ref');
+  if(button&&!S.ticketCardPinned&&!button.contains(event.relatedTarget))$('#ticketCard').hidden=true;
+});
+article.addEventListener('focusin',event=>{const button=event.target.closest('.ticket-ref');if(button)showTicketCard(button);});
+article.addEventListener('focusout',event=>{if(event.target.closest('.ticket-ref')&&!S.ticketCardPinned)$('#ticketCard').hidden=true;});
+article.addEventListener('click',event=>{
+  const button=event.target.closest('.ticket-ref');if(!button)return;
+  event.preventDefault();S.ticketCardPinned=!S.ticketCardPinned;
+  if(S.ticketCardPinned)showTicketCard(button);else $('#ticketCard').hidden=true;
 });
 findInput.addEventListener('input',()=>{
   S.find.draft=findInput.value;
@@ -1066,7 +1249,20 @@ pan.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,left:pan.sc
 pan.addEventListener('pointermove',e=>{if(drag){pan.scrollLeft=drag.left+drag.x-e.clientX;pan.scrollTop=drag.top+drag.y-e.clientY;}});
 pan.addEventListener('pointerup',()=>{drag=null;});pan.addEventListener('pointercancel',()=>{drag=null;});
 document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLocaleLowerCase()==='k') {e.preventDefault();openCorpusPalette();return;}
+  if(!corpusScrim.hidden) {
+    if(e.key==='Escape') {closeCorpusPalette();e.preventDefault();return;}
+    if(['ArrowDown','ArrowUp','Enter'].includes(e.key)) {
+      e.preventDefault();
+      if(e.key==='Enter') {selectCorpusResult();return;}
+      S.corpusSelection=clamp(S.corpusSelection+(e.key==='ArrowDown'?1:-1),0,Math.max(0,S.corpusResults.length-1));
+      $$('.corpus-result',corpusResults).forEach((row,index)=>row.classList.toggle('selected',index===S.corpusSelection));
+      $$('.corpus-result',corpusResults)[S.corpusSelection]?.scrollIntoView({block:'nearest'});
+      return;
+    }
+  }
   if(e.key!=='Escape')return;
+  if(!$('#ticketCard').hidden) {$('#ticketCard').hidden=true;S.ticketCardPinned=false;e.preventDefault();return;}
   if(S.diagram!==null) {closeDiagram();e.preventDefault();return;}
   if(!anchorSuggestions.hidden||!linkPeek.hidden) {hideNavigationOverlays();e.preventDefault();return;}
   if(!$('#note').hidden) {$('#note').hidden=true;e.preventDefault();return;}
@@ -1085,7 +1281,8 @@ document.addEventListener('selectionchange',publish);
 new ResizeObserver(()=>{const a=stableAnchor;layoutAll();restore(a);publish();}).observe(surface);
 article.addEventListener('load',()=>{const a=stableAnchor;layoutAll();restore(a);publish();},true);
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(S.theme==='system'&&!S.os)setSettings({});});
-window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,
+window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,setCorpus,openCorpusPalette,closeCorpusPalette,
+  corpusSnapshot:()=>S.corpus,corpusBacklinks:()=>({path:S.file,heading:currentHeading(),links:(S.corpus?.links||[]).filter(link=>link.target===S.file)}),
   openFind,find:query=>search(query),findNext:()=>nextHit(1),findPrevious:()=>nextHit(-1),findClose:closeFind,setSourceMode,expandDiagram,closeDiagram,
   themes:()=>[{id:'system',label:'system',scheme:'system',defaultTypeface:'serif'},...C11MD.themes.map(t=>({id:t.id,label:t.label,scheme:t.scheme,defaultTypeface:t.faceDef.id}))],
   typefaces:()=>[{id:'theme',label:'theme default',family:'theme',measure:null,leading:null},...C11MD.faces.map(f=>({id:f.id,label:f.label,family:f.family,measure:parseFloat(f.tokens['--face-measure']),leading:+f.tokens['--face-lh']}))]});

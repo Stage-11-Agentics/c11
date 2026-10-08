@@ -179,6 +179,49 @@ try {
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='outlineDismiss')?.type),'outlineDismiss','Escape did not request persistence of the closed choice');
   scenario('page outline filters with ancestor/task context, jumps without closing, and Esc reports the explicit closed choice');
 
+  const corpusDoc='/synthetic/reader.md', corpusSource='# Reader\n\n## Setup\n\nA local reference and ticket C11-123; C11-999 has no board match.\n';
+  await page.setViewportSize({width:900,height:720});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
+  await load(corpusSource,corpusDoc,1);
+  const corpusFixture={
+    root:'/synthetic',current:corpusDoc,revision:1,truncated:false,
+    documents:[
+      {path:corpusDoc,relative_path:'reader.md',title:'reader.md',headings:[{level:2,text:'Setup',slug:'setup',line:3}]},
+      {path:'/synthetic/guide.md',relative_path:'guide.md',title:'guide.md',headings:[{level:2,text:'Installation',slug:'installation',line:3}]}
+    ],
+    links:[{source:'/synthetic/guide.md',source_title:'guide.md',section:'Setup',section_slug:'setup',line:4,text:'Reader setup',target:corpusDoc,fragment:'setup'}],
+    tickets:{'C11-123':{title:'Synthetic task',status:'open'}}
+  };
+  await page.evaluate(snapshot=>c11md.setCorpus(snapshot),corpusFixture);
+  assert.equal(await page.locator('.ticket-ref').count(),1,'a ticket links only when a matching local board card exists');
+  assert.ok((await page.locator('#article').innerText()).includes('C11-999'),'unmatched ticket ID did not stay plain text');
+  await page.locator('.ticket-ref').hover();
+  assert.match(await page.locator('#ticketCard').innerText(),/Synthetic task[\s\S]*Status: open/);
+  await page.evaluate(()=>c11md.scrollToHeading('Setup'));
+  await page.waitForFunction(()=>c11md.visible().heading?.slug==='setup');
+  await page.locator('#backlinksTab').click();
+  assert.equal(await page.locator('#backlinkCount').innerText(),'1');
+  assert.equal(await page.locator('#backlinkList button.ref-item').count(),2,'the panel shows document and active-section references');
+  await page.evaluate(()=>{testMessages.length=0;});
+  await page.locator('#backlinkList button.ref-item').nth(1).click();
+  assert.deepEqual(await page.evaluate(()=>testMessages.findLast(x=>x.type==='corpusNavigate')),{
+    type:'corpusNavigate',origin:'backlink',path:'/synthetic/guide.md',fragment:'setup'
+  });
+  await page.evaluate(()=>{testMessages.length=0;});
+  await page.keyboard.press('Meta+k');
+  assert.equal(await page.locator('#corpusScrim').isVisible(),true,'⌘K did not open the corpus palette');
+  assert.equal(await page.locator('#corpusSearch').getAttribute('placeholder'),'Search files and headings');
+  await page.locator('#corpusSearch').fill('installation');
+  assert.equal(await page.locator('.corpus-result').count(),1);
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await page.evaluate(()=>testMessages.findLast(x=>x.type==='corpusNavigate')),{
+    type:'corpusNavigate',origin:'palette',path:'/synthetic/guide.md',fragment:'installation'
+  });
+  await page.evaluate(()=>c11md.openCorpusPalette());
+  await page.locator('#corpusSearch').fill('not-a-real-heading');
+  assert.equal(await page.locator('#corpusResults').innerText(),'No matching files or headings');
+  await page.keyboard.press('Escape');
+  scenario('corpus palette, document/section backlinks, native navigation messages, and board-only ticket cards');
+
   const n10Document='# Scrollspy\n\n'+Array.from({length:24},(_,i)=>`## Section ${i}\n\nA stable heading remains active when the outline list is filtered.\n`).join('\n');
   await page.setViewportSize({width:1200,height:820});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
   await load(n10Document,'/synthetic/n10-scrollspy.md',1);

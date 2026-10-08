@@ -317,6 +317,8 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             _ = workspace.newMarkdownPanel(inPane: pane, filePath: url.path, focus: true)
         case .web(let url):
             openC11WebLink(url, sourceWorkspaceId: panel.workspaceId, sourcePanelId: panel.id, optionHeld: optionHeld)
+        case .mailto(let url):
+            _ = NSWorkspace.shared.open(url)
         }
     }
 

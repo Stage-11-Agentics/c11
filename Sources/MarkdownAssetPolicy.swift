@@ -128,12 +128,16 @@ enum MarkdownLinkTarget: Equatable {
     case anchor
     case markdown(URL)
     case web(URL)
+    case mailto(URL)
     case blocked
 
     static func resolve(_ href: String, documentPath: String) -> Self {
         guard !href.isEmpty, !href.contains("\0"),
               href.rangeOfCharacter(from: .controlCharacters) == nil else { return .blocked }
         if href.hasPrefix("#") { return .anchor }
+        if let components = URLComponents(string: href), components.scheme?.lowercased() == "mailto" {
+            return validatedMailto(components)
+        }
         guard let url = URL(string: href, relativeTo: URL(fileURLWithPath: documentPath))?.absoluteURL else { return .blocked }
         if ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
            let host = url.host, !host.isEmpty, url.user == nil, url.password == nil { return .web(url) }
@@ -142,5 +146,51 @@ enum MarkdownLinkTarget: Equatable {
               URLComponents(url: url, resolvingAgainstBaseURL: true)?.percentEncodedPath.removingPercentEncoding?.rangeOfCharacter(from: .controlCharacters) == nil,
               url.isFileURL, ["md", "markdown", "mdown"].contains(url.pathExtension.lowercased()) else { return .blocked }
         return .markdown(url)
+    }
+
+    private static func validatedMailto(_ source: URLComponents) -> Self {
+        guard source.host == nil, source.user == nil, source.password == nil, source.port == nil,
+              source.fragment == nil,
+              let encodedRecipients = source.percentEncodedPath.removingPercentEncoding,
+              !encodedRecipients.isEmpty, encodedRecipients.rangeOfCharacter(from: .controlCharacters) == nil,
+              validMailboxes(encodedRecipients) else { return .blocked }
+
+        for item in source.queryItems ?? [] {
+            guard let value = item.value, value.rangeOfCharacter(from: .controlCharacters) == nil else { return .blocked }
+            switch item.name.lowercased() {
+            case "subject", "body": break
+            case "cc", "bcc":
+                guard validMailboxes(value) else { return .blocked }
+            default: return .blocked
+            }
+        }
+        guard let sourceURL = source.url,
+              var normalized = URLComponents(url: sourceURL, resolvingAgainstBaseURL: false) else { return .blocked }
+        normalized.scheme = "mailto"
+        guard let url = normalized.url else { return .blocked }
+        return .mailto(url)
+    }
+
+    private static func validMailboxes(_ value: String) -> Bool {
+        let mailboxes = value.split(separator: ",", omittingEmptySubsequences: false)
+        guard !mailboxes.isEmpty else { return false }
+        return mailboxes.allSatisfy { mailbox in
+            let parts = mailbox.split(separator: "@", omittingEmptySubsequences: false)
+            guard parts.count == 2 else { return false }
+            let local = String(parts[0]), domain = String(parts[1])
+            let localCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.!#$%&'*+/=?^_`{|}~-")
+            guard !local.isEmpty, local.utf8.count <= 64, local.unicodeScalars.allSatisfy(localCharacters.contains),
+                  local.first != ".", local.last != ".", !local.contains(".."),
+                  !domain.isEmpty, domain.utf8.count <= 253 else { return false }
+            let labels = domain.split(separator: ".", omittingEmptySubsequences: false)
+            let labelCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+            let alphanumeric = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+            return labels.allSatisfy { label in
+                let scalars = Array(label.unicodeScalars)
+                return !label.isEmpty && label.utf8.count <= 63 &&
+                    scalars.first.map(alphanumeric.contains) == true && scalars.last.map(alphanumeric.contains) == true &&
+                    label.unicodeScalars.allSatisfy(labelCharacters.contains)
+            }
+        }
     }
 }

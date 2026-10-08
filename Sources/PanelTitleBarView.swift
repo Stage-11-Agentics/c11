@@ -279,94 +279,231 @@ func sanitizeDescriptionMarkdown(_ input: String) -> String {
 /// Block structure stays native and lightweight: expanded descriptions never
 /// create a web view. The caller sanitizes unsupported constructs first.
 enum TitleBarDescriptionBlock: Equatable {
-    case paragraph(String)
-    case heading(level: Int, text: String)
-    case listItem(marker: String, text: String, depth: Int)
-    case quote(String)
+    case paragraph(AttributedString)
+    case heading(level: Int, text: AttributedString)
+    case listItem(marker: String, text: AttributedString, depth: Int)
+    case quote(AttributedString)
     case rule
 }
 
+private enum TitleBarDescriptionBlockKind: Equatable {
+    case paragraph
+    case heading(Int)
+    case listItem(marker: String, depth: Int)
+    case quote
+    case codeBlock
+    case rule
+}
+
+/// The first presentation-intent component identifies the enclosing block.
+/// Keep the semantic component identity too: list items share their enclosing
+/// list's first component, but must still become separate native rows.
+private struct TitleBarDescriptionBlockKey: Equatable {
+    let enclosingIdentity: Int
+    let blockIdentity: Int
+    let kind: TitleBarDescriptionBlockKind
+}
+
 func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
+    guard let parsed = try? AttributedString(
+        markdown: text,
+        options: .init(interpretedSyntax: .full)
+    ) else {
+        return text.isEmpty ? [] : [.paragraph(AttributedString(text))]
+    }
+
     var blocks: [TitleBarDescriptionBlock] = []
-    var paragraph: [String] = []
-    func flushParagraph() {
-        if !paragraph.isEmpty {
-            blocks.append(.paragraph(paragraph.joined(separator: " ")))
-            paragraph.removeAll(keepingCapacity: true)
-        }
-    }
+    var currentKey: TitleBarDescriptionBlockKey?
+    var currentText = AttributedString()
 
-    let listPattern = try? NSRegularExpression(pattern: #"^(\s*)([-+*]|[0-9]{1,9}[.)])\s+(.+)$"#)
-    for line in text.components(separatedBy: "\n") {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
-            flushParagraph()
-            continue
-        }
+    func flushCurrentBlock() {
+        guard let key = currentKey else { return }
+        let content = titleBarDescriptionTrimmed(currentText)
 
-        let hashes = trimmed.prefix(while: { $0 == "#" }).count
-        if (1...6).contains(hashes),
-           trimmed.count == hashes || trimmed.dropFirst(hashes).first?.isWhitespace == true {
-            flushParagraph()
-            let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
-            blocks.append(.heading(level: hashes, text: heading))
-            continue
-        }
-
-        let ruleCharacters = trimmed.filter { !$0.isWhitespace }
-        if ruleCharacters.count >= 3,
-           let first = ruleCharacters.first,
-           "*-_".contains(first), ruleCharacters.allSatisfy({ $0 == first }) {
-            flushParagraph()
-            blocks.append(.rule)
-            continue
-        }
-
-        if trimmed.hasPrefix(">") {
-            flushParagraph()
-            let quote = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
-            if let last = blocks.last, case .quote(let previous) = last {
-                blocks[blocks.count - 1] = .quote(previous + "\n" + quote)
-            } else {
-                blocks.append(.quote(quote))
+        switch key.kind {
+        case .paragraph:
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.paragraph(titleBarDescriptionInertLinks(content)))
+        case .codeBlock:
+            guard !content.characters.isEmpty else { break }
+            var code = titleBarDescriptionInertLinks(content)
+            for run in code.runs {
+                code[run.range].font = .system(size: 11, design: .monospaced)
             }
-            continue
-        }
-
-        let range = NSRange(line.startIndex..., in: line)
-        if let match = listPattern?.firstMatch(in: line, range: range),
-           let indentRange = Range(match.range(at: 1), in: line),
-           let markerRange = Range(match.range(at: 2), in: line),
-           let bodyRange = Range(match.range(at: 3), in: line) {
-            flushParagraph()
-            let marker = String(line[markerRange])
-            let indentation = line[indentRange].reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+            blocks.append(.paragraph(code))
+        case .heading(let level):
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.heading(level: level, text: titleBarDescriptionInertLinks(content)))
+        case .listItem(let marker, let depth):
+            guard !content.characters.isEmpty else { break }
             blocks.append(.listItem(
-                marker: "-+*".contains(marker) ? "•" : marker,
-                text: String(line[bodyRange]),
-                depth: indentation / 2
+                marker: marker,
+                text: titleBarDescriptionInertLinks(content),
+                depth: depth
             ))
-            continue
+        case .quote:
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.quote(titleBarDescriptionInertLinks(content)))
+        case .rule:
+            blocks.append(.rule)
         }
 
-        paragraph.append(trimmed)
+        currentKey = nil
+        currentText = AttributedString()
     }
-    flushParagraph()
+
+    for (runIndex, run) in parsed.runs.enumerated() {
+        let key = titleBarDescriptionBlockKey(
+            for: run.presentationIntent,
+            fallbackIdentity: runIndex
+        )
+
+        if currentKey != key {
+            flushCurrentBlock()
+            currentKey = key
+        }
+
+        var fragment = AttributedString(parsed[run.range])
+        if key.kind == .rule {
+            fragment = AttributedString(String(fragment.characters).replacingOccurrences(of: "\u{2E3B}", with: ""))
+        }
+        currentText.append(fragment)
+    }
+    flushCurrentBlock()
     return blocks
 }
 
-/// Foundation supplies inline emphasis/code parsing. Drop the URL attribute
-/// entirely so links retain their text but cannot navigate or become controls.
-func titleBarDescriptionInline(_ text: String) -> AttributedString {
-    var result = (try? AttributedString(
-        markdown: text,
-        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-    )) ?? AttributedString(text)
+private func titleBarDescriptionBlockKey(
+    for intent: PresentationIntent?,
+    fallbackIdentity: Int
+) -> TitleBarDescriptionBlockKey {
+    let components = intent?.components ?? []
+    let enclosingIdentity = components.first?.identity ?? fallbackIdentity
+
+    if let item = components.last(where: {
+        if case .listItem = $0.kind { return true }
+        return false
+    }), case .listItem(let ordinal) = item.kind {
+        let itemIndex = components.lastIndex(where: {
+            if case .listItem = $0.kind { return true }
+            return false
+        }) ?? components.endIndex
+        let parentList = components.dropFirst(itemIndex + 1).first(where: {
+            switch $0.kind {
+            case .orderedList, .unorderedList: return true
+            default: return false
+            }
+        })
+        let marker: String
+        if let parentList, case .orderedList = parentList.kind {
+            marker = "\(ordinal)."
+        } else {
+            marker = "•"
+        }
+        let depth = max(0, components.reduce(into: 0) { count, component in
+            switch component.kind {
+            case .orderedList, .unorderedList: count += 1
+            default: break
+            }
+        } - 1)
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: item.identity,
+            kind: .listItem(marker: marker, depth: depth)
+        )
+    }
+
+    if let heading = components.last(where: {
+        if case .header = $0.kind { return true }
+        return false
+    }), case .header(let level) = heading.kind {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: heading.identity,
+            kind: .heading(level)
+        )
+    }
+
+    if let rule = components.last(where: {
+        if case .thematicBreak = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: rule.identity,
+            kind: .rule
+        )
+    }
+
+    if let codeBlock = components.last(where: {
+        if case .codeBlock = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: codeBlock.identity,
+            kind: .codeBlock
+        )
+    }
+
+    if let quote = components.last(where: {
+        if case .blockQuote = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: quote.identity,
+            kind: .quote
+        )
+    }
+
+    if let paragraph = components.last(where: {
+        if case .paragraph = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: paragraph.identity,
+            kind: .paragraph
+        )
+    }
+
+    return TitleBarDescriptionBlockKey(
+        enclosingIdentity: enclosingIdentity,
+        blockIdentity: fallbackIdentity,
+        kind: .paragraph
+    )
+}
+
+private func titleBarDescriptionTrimmed(_ input: AttributedString) -> AttributedString {
+    guard let first = input.characters.firstIndex(where: { !$0.isWhitespace }),
+          let last = input.characters.lastIndex(where: { !$0.isWhitespace }) else {
+        return AttributedString()
+    }
+    return AttributedString(input[first..<input.index(afterCharacter: last)])
+}
+
+/// Full Markdown parsing retains inline styling while the native block mapper
+/// consumes presentation intents. Drop links after parsing so labels remain
+/// visible without creating controls or navigation.
+private func titleBarDescriptionInertLinks(_ input: AttributedString) -> AttributedString {
+    var result = input
     for run in result.runs where run.link != nil {
         result[run.range].foregroundColor = Color.accentColor
         result[run.range].link = nil
     }
     return result
+}
+
+/// Foundation supplies inline emphasis/code parsing for this compatibility
+/// helper. Drop the URL attribute entirely so links retain their text but
+/// cannot navigate or become controls.
+func titleBarDescriptionInline(_ text: String) -> AttributedString {
+    let parsed = (try? AttributedString(
+        markdown: text,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(text)
+    return titleBarDescriptionInertLinks(parsed)
 }
 
 private struct TitleBarDescriptionMarkdown: View {
@@ -383,9 +520,14 @@ private struct TitleBarDescriptionMarkdown: View {
         .foregroundColor(.secondary)
     }
 
-    private func inline(_ text: String, size: CGFloat = 11) -> Text {
-        var attributed = titleBarDescriptionInline(text)
-        for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
+    private func inline(_ text: AttributedString, size: CGFloat = 11) -> Text {
+        var attributed = titleBarDescriptionInertLinks(text)
+        for run in attributed.runs {
+            let isCodeBlock = run.presentationIntent?.components.contains(where: {
+                if case .codeBlock = $0.kind { return true }
+                return false
+            }) ?? false
+            guard isCodeBlock || run.inlinePresentationIntent?.contains(.code) == true else { continue }
             attributed[run.range].font = .system(size: size, design: .monospaced)
             attributed[run.range].foregroundColor = colorScheme == .dark
                 ? Color(red: 0.85, green: 0.6, blue: 0.95)

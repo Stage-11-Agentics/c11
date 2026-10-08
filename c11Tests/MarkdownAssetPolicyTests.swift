@@ -77,12 +77,28 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         }
     }
 
-    func testLinkPolicyAllowsAnchorsRelativeMarkdownAndWebOnly() {
+    func testLinkPolicyAllowsAnchorsRelativeMarkdownAndWeb() {
         let doc = "/tmp/docs/plan.md"
         XCTAssertEqual(MarkdownLinkTarget.resolve("#a", documentPath: doc), .anchor)
         XCTAssertEqual(MarkdownLinkTarget.resolve("other.md", documentPath: doc), .markdown(URL(fileURLWithPath: "/tmp/docs/other.md")))
         XCTAssertEqual(MarkdownLinkTarget.resolve("https://example.invalid/page", documentPath: doc), .web(URL(string: "https://example.invalid/page")!))
-        for href in ["javascript:alert(1)", "data:text/html,test", "file:///etc/passwd", "/tmp/test.md", "//example.invalid/x.md", "script.sh", "evil.command", "file:///System/Applications/Calculator.app", "hidden%00.md", "mailto:a@example.invalid", "https://user:pass@example.invalid/", "\nhttps://example.invalid/"] {
+        for href in ["javascript:alert(1)", "data:text/html,test", "file:///etc/passwd", "/tmp/test.md", "//example.invalid/x.md", "script.sh", "evil.command", "file:///System/Applications/Calculator.app", "hidden%00.md", "https://user:pass@example.invalid/", "\nhttps://example.invalid/"] {
+            XCTAssertEqual(MarkdownLinkTarget.resolve(href, documentPath: doc), .blocked, href)
+        }
+    }
+
+    func testLinkPolicyAllowsOnlyValidatedMailtoURLs() {
+        let doc = "/tmp/docs/plan.md"
+        let href = "mailto:reader@example.invalid?subject=Plan&body=Please%20review"
+        XCTAssertEqual(MarkdownLinkTarget.resolve(href, documentPath: doc), .mailto(URL(string: href)!))
+        XCTAssertEqual(MarkdownLinkTarget.resolve("MAILTO:reader@example.invalid", documentPath: doc), .mailto(URL(string: "mailto:reader@example.invalid")!))
+        for href in [
+            "mailto:", "mailto:not-an-address", "mailto:reader@-example.invalid",
+            "mailto:reader@example.invalid%0D%0ABcc:attacker@example.invalid",
+            "mailto:reader@example.invalid?bcc=attacker@example.invalid%0D%0Ato:other@example.invalid",
+            "mailto:reader@example.invalid?attachment=file%3A%2F%2F%2Fetc%2Fpasswd",
+            "mailto:reader@example.invalid#fragment", "mailto://reader@example.invalid"
+        ] {
             XCTAssertEqual(MarkdownLinkTarget.resolve(href, documentPath: doc), .blocked, href)
         }
     }

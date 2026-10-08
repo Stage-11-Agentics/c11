@@ -566,6 +566,18 @@ class ActivityCLI(unittest.TestCase):
         result = self.run_cli('usage', '--by', 'workspace', '--json')
         self.assertEqual(result['groups'][0]['key'], 'unattributed')
 
+    def test_unique_panel_survives_delayed_journal_registration(self):
+        row = self.claude_row(); row['timestamp'] = '2026-01-02T00:30:00Z'
+        self.write(self.claude / 'session-a.jsonl', [row])
+        self.link('panel-a', 'session-a', 'claude-code', 'workspace-a', 1767315600000)
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-a')
+        self.assertEqual(result['unattributed']['total_tokens'], 0)
+        result = self.run_cli('usage', '--by', 'workspace', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+        self.assertEqual(result['unattributed']['total_tokens'], 110)
+        self.assertIn('usage_before_journal_attribution', result['coverage_gaps'])
+
     def test_real_snapshot_order_exposes_foreground_bounds(self):
         rows = [
             ('2026-01-02T00:00:00Z', 'log.opened', {'pid': 123}),

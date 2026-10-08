@@ -33,7 +33,10 @@ Usage reads `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`.
 It joins native session IDs to the read-only lifecycle journal's `session_id`,
 `tab_id` (the persisted panel UUID), `agent_kind`, `workspace_id`, and
 `committed_at_ms` columns. Panel grouping considers distinct panel IDs, so a
-workspace move cannot make a known panel ambiguous. Workspace ownership follows
+workspace move cannot make a known panel ambiguous. A unique panel link survives
+asynchronous journal registration after a usage timestamp, while its earlier
+workspace stays unknown. Pruned history cannot establish earlier panel ownership.
+Workspace ownership follows
 the last journal mapping committed at or before the usage timestamp. Missing
 mapping time, missing usage time, tied mappings or pruned journal history remain
 visible gaps. No cwd or title heuristic guesses ownership. Missing/ambiguous

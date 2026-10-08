@@ -337,6 +337,7 @@ enum ActivityAnalysisCommand {
             var candidates = sessionIDs.reduce(into: Set<Link>()) { result, session in
                 result.formUnion(attribution[row.harness + ":" + session] ?? [])
             }
+            let sessionPanels = Set(candidates.map(\.panel))
             let timestamp = row.origins.values.min() ?? row.timestamp
             if sessionIDs.count == 1, let timestamp, !candidates.isEmpty, candidates.allSatisfy({ $0.committedAt != nil }) {
                 let at = Int64(timestamp.timeIntervalSince1970 * 1000)
@@ -346,13 +347,14 @@ enum ActivityAnalysisCommand {
                 } else { candidates.removeAll(); gaps.insert("usage_before_journal_attribution") }
             }
             let panels = Set(candidates.map(\.panel))
-            let panel = panels.count == 1 ? panels.first : nil
+            let uniqueSessionPanel = sessionPanels.count == 1 && !(gaps.contains("journal_history_pruned") && candidates.isEmpty)
+            let panel = uniqueSessionPanel ? sessionPanels.first : panels.count == 1 ? panels.first : nil
             let workspaceIDs = Set(candidates.compactMap(\.workspace))
             let workspace = panel != nil && workspaceIDs.count == 1 && candidates.allSatisfy({ $0.workspace != nil }) ? workspaceIDs.first : nil
             // On model/harness axes this aggregate still means no unique panel link.
             if panel == nil || (axis == "workspace" && workspace == nil) {
                 unattributed.add(row.tokens)
-                gaps.insert(candidates.isEmpty ? "session_attribution_missing" : "ambiguous_session_attribution")
+                gaps.insert(panel != nil ? "workspace_attribution_unknown" : candidates.isEmpty ? "session_attribution_missing" : "ambiguous_session_attribution")
             }
             let key: String
             switch axis { case "panel": key = panel ?? "unattributed"; case "workspace": key = workspace ?? "unattributed"; case "harness": key = row.harness; default: key = row.model }
@@ -408,7 +410,7 @@ enum ActivityAnalysisCommand {
         return ["schema_version": 1, "by": axis, "since": options.since.map(iso.string) as Any? ?? null,
                 "totals": totalJSON, "unattributed": unattributed.json, "groups": groupRows,
                 "until": until.map(iso.string) as Any? ?? null, "skipped_counts": counts,
-                "unattributed_basis": axis == "workspace" ? "No unique panel and workspace link at usage time" : "No unique panel link at usage time",
+                "unattributed_basis": axis == "workspace" ? "No unique native panel link or no workspace mapping at usage time" : "No unique native session-to-panel link",
                 "coverage_gaps": gaps.sorted(), "pricing_basis": "Current catalog standard API list rates, not subscription spend or historical billing. Unknown Codex cache writes have explicit lower/upper bounds; missing rates, TTL or request context can leave the upper bound unknown."]
     }
     private static func estimate(_ row: UsageRow, catalog: [String: ModelCostEntry]) -> Double? {

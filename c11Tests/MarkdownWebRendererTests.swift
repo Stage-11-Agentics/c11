@@ -114,9 +114,22 @@ final class MarkdownWebRendererTests: XCTestCase {
         let token = MarkdownRendererCache.shared.evictions.first(where: { $0 == panel.id }).sink { _ in evicted.fulfill() }
         first!.call("visible") // A genuine asynchronous query pins the renderer.
         XCTAssertTrue(first!.hasQueriesInFlight)
+        let hidden = expectation(description: "last native host dismantled")
+        let visibilityToken = MarkdownRendererCache.shared.visibilityChanges.first(where: {
+            $0 == panel.id && !panel.isRendererVisible
+        }).sink { _ in hidden.fulfill() }
         window.contentView = nil
         hosted = nil
         panel.setRendererVisible(false, hostID: host)
+        await fulfillment(of: [hidden], timeout: 10)
+        withExtendedLifetime(visibilityToken) {}
+        first!.call("visible")
+        XCTAssertTrue(first!.hasQueriesInFlight)
+        if !sourceMode {
+            // SwiftUI dismantling can zero the retained native view. Capturing
+            // that reflowed page must not replace the operator's reading anchor.
+            first!.webView.frame = .zero
+        }
         for _ in 0..<5 {
             let other = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
             others.append(other)

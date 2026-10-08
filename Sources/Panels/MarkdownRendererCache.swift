@@ -27,6 +27,7 @@ struct MarkdownReadingPosition: Equatable {
 final class MarkdownRendererCache {
     static let shared = MarkdownRendererCache()
     let evictions = PassthroughSubject<UUID, Never>()
+    let visibilityChanges = PassthroughSubject<UUID, Never>()
     private var policy = MarkdownRendererRetentionPolicy()
     @MainActor private final class Entry {
         weak var panel: MarkdownPanel?
@@ -54,6 +55,7 @@ final class MarkdownRendererCache {
 #endif
         entry.epoch += 1
         policy.setVisible(panel.id, panel.isRendererVisible)
+        visibilityChanges.send(panel.id)
         reconsider()
     }
 

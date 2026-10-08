@@ -105,7 +105,10 @@ final class MarkdownPanel: Panel, ObservableObject {
         let previous = isRendererVisible
         if visible { visibleRendererHosts.insert(hostID) }
         else { visibleRendererHosts.remove(hostID) }
-        if isRendererVisible != previous { MarkdownRendererCache.shared.visibilityChanged(self) }
+        if isRendererVisible != previous {
+            renderer?.webView.setViewportVisible(isRendererVisible)
+            MarkdownRendererCache.shared.visibilityChanged(self)
+        }
     }
 
     func evictRenderer(_ renderer: MarkdownWebRenderer, position: MarkdownReadingPosition) {

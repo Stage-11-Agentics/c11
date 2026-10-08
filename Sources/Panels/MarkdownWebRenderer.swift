@@ -52,6 +52,27 @@ final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
 final class MarkdownWKWebView: WKWebView {
     var allowsPanelFocus = false
     private var pointerFocus = false
+    private var retainedViewport: NSSize?
+
+    /// SwiftUI zeroes a dismantled host. Keep a hidden reader at its last
+    /// mounted size so later visible() capture uses the operator's geometry.
+    func setViewportVisible(_ visible: Bool) {
+        if visible { retainedViewport = nil }
+        else if frame.width > 0, frame.height > 0 { retainedViewport = frame.size }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(retainedViewport ?? newSize)
+    }
+
+    override var frame: NSRect {
+        get { super.frame }
+        set {
+            var rect = newValue
+            if let retainedViewport { rect.size = retainedViewport }
+            super.frame = rect
+        }
+    }
 
     override func becomeFirstResponder() -> Bool {
         guard allowsPanelFocus || pointerFocus else { return false }

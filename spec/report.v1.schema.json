@@ -22,7 +22,21 @@
     "hang_rate_by_working_load",
     "host_usage",
     "coverage_gaps",
-    "hang_rate_by_open_load"
+    "hang_rate_by_open_load",
+    "kinds_created",
+    "peak_open_kinds",
+    "peak_open_by_kind",
+    "observed_peak_open_kinds",
+    "observed_peak_open_by_kind",
+    "mail_from",
+    "flag_events",
+    "hang_causes",
+    "mailbox_accepted",
+    "mailbox_delivered",
+    "workspace_selection_unknown_hours",
+    "workspace_agent_hours_unattributed",
+    "waiting_entered_unattributed",
+    "hang_durations_ms"
   ],
   "properties": {
     "schema_version": {
@@ -79,7 +93,54 @@
     "workspaces": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "topics",
+          "panels_created",
+          "selections",
+          "waiting_entered",
+          "selected_dwell_hours",
+          "observed_agent_hours"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "panels_created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting_entered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selected_dwell_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_agent_hours": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
       }
     },
     "daily_utc": {
@@ -117,6 +178,155 @@
           "hangs",
           "hangs_per_hour"
         ]
+      }
+    },
+    "kinds_created": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "peak_open_kinds": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "peak_open_by_kind": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "observed_peak_open_kinds": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "observed_peak_open_by_kind": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "mail_from": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "flag_events": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "hang_causes": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "mailbox_accepted": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "mailbox_delivered": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "workspace_selection_unknown_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "workspace_agent_hours_unattributed": {
+      "type": "number",
+      "minimum": 0
+    },
+    "waiting_entered_unattributed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hang_durations_ms": {
+      "type": "object",
+      "required": [
+        "samples",
+        "unknown_precursors",
+        "total",
+        "max",
+        "observed_total",
+        "observed_max"
+      ],
+      "properties": {
+        "samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown_precursors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "observed_total": {
+          "type": "number",
+          "minimum": 0
+        },
+        "observed_max": {
+          "type": "number",
+          "minimum": 0
+        }
       }
     }
   }

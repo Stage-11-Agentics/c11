@@ -319,7 +319,8 @@ enum ActivityAnalysisCommand {
         }
         let selected = names.filter {
             let name = $0.lastPathComponent
-            guard name.hasPrefix("events-"), let marker = name.range(of: ".ndjson", options: .backwards) else { return false }
+            guard name.hasPrefix("events-"), let marker = name.range(of: ".ndjson", options: .backwards),
+                  marker.lowerBound > name.index(name.startIndex, offsetBy: "events-".count) else { return false }
             let suffix = String(name[marker.upperBound...])
             guard suffix.isEmpty || (suffix.hasPrefix(".") && (Int(suffix.dropFirst()) ?? 0) > 0) else { return false }
             if let instance { return name == "events-\(instance).ndjson" || name.hasPrefix("events-\(instance).ndjson.") }
@@ -338,6 +339,10 @@ enum ActivityAnalysisCommand {
         var replayIncomplete = malformedEnvelope
         var starts: [Date] = [], ends: [Date] = [], created = 0, peakOpen = 0, peakWorking = 0, agentSeconds = 0.0
         var foreground = 0.0, foregroundUnknown = 0.0, hangCount = 0
+        var kindsCreated: [String: Int] = [:], peakKinds: [String: Int] = [:], peakByKind: [String: Int] = [:]
+        var selectionUnknown = 0.0, workspaceAgentUnknown = 0.0, waitsUnattributed = 0
+        var mailboxAccepted = 0, mailboxDelivered = 0, mailFrom: [String: Int] = [:], flagCounts: [String: Int] = [:]
+        var hangCauses: [String: Int] = [:], hangDurationTotal = 0.0, hangDurationMax = 0.0, hangDurationSamples = 0, hangDurationUnknown = 0
         var workspaces: [String: Object] = [:], daily: [String: Object] = [:], rhythm: [String: Int] = [:]
         var lifetime: [Double] = [], censored = 0, openAtEnd = 0
         var loadSeconds: [String: Double] = [:], loadHangs: [String: Int] = [:]
@@ -347,6 +352,18 @@ enum ActivityAnalysisCommand {
         func bucket(_ n: Int) -> String { n < 10 ? "0-9" : n < 25 ? "10-24" : n < 50 ? "25-49" : "50+" }
         func openBucket(_ n: Int) -> String { n < 40 ? "under40" : n < 80 ? "40-79" : "80+" }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func workspaceRow(_ key: String) -> Object {
+            workspaces[key] ?? ["id": key, "name": null, "topics": [String](), "panels_created": 0,
+                                "selections": 0, "waiting_entered": 0, "selected_dwell_hours": 0.0,
+                                "observed_agent_hours": 0.0]
+        }
+        func updatePeaks(_ open: Set<String>, _ working: Set<String>, _ kinds: [String: String]) {
+            var composition: [String: Int] = [:]
+            for panel in open { composition[kinds[panel] ?? "unknown", default: 0] += 1 }
+            if open.count > peakOpen { peakOpen = open.count; peakKinds = composition }
+            for (kind, count) in composition { peakByKind[kind] = max(peakByKind[kind] ?? 0, count) }
+            peakWorking = max(peakWorking, working.count)
+        }
         func dailyRow(_ key: String) -> Object {
             daily[key] ?? ["date": key, "events": 0, "panels_created": 0, "peak_open": 0, "peak_working": 0,
                            "observed_hours": 0.0, "observed_agent_hours": 0.0, "observed_foreground_hours": 0.0,
@@ -380,6 +397,8 @@ enum ActivityAnalysisCommand {
             starts.append(start); ends.append(end)
             if first.seq != 1 { gaps.insert("event_history_truncated"); replayIncomplete = true }
             var open = Set<String>(), working = Set<String>(), births: [String: Date] = [:]
+            var panelKinds: [String: String] = [:], panelWorkspaces: [String: String] = [:]
+            var selectedWorkspace: String?
             var active: Bool?, locked: Bool?, asleep: Bool?
             var analyticsEnabled = true, historyEnabled = true
             var previous = first.ts, previousSeq = first.seq - 1
@@ -389,15 +408,31 @@ enum ActivityAnalysisCommand {
                 let sequenceGap = event.seq != previousSeq + 1 || event.type == "log.dropped"
                 if sequenceGap {
                     gaps.insert("event_sequence_gap"); replayIncomplete = true
-                    active = nil; locked = nil; asleep = nil
+                    active = nil; locked = nil; asleep = nil; selectedWorkspace = nil
                     open.removeAll(); working.removeAll(); censored += births.count; births.removeAll()
                 }
                 previousSeq = event.seq
                 if !sequenceGap && historyEnabled {
-                    if duration > 0 { peakOpen = max(peakOpen, open.count); peakWorking = max(peakWorking, working.count) }
+                    if duration > 0 { updatePeaks(open, working, panelKinds) }
                     agentSeconds += duration * Double(working.count)
                     loadSeconds[bucket(working.count), default: 0] += duration
                     openLoadSeconds[openBucket(open.count), default: 0] += duration
+                }
+                if duration > 0 {
+                    if !sequenceGap && historyEnabled, let selected = selectedWorkspace {
+                        var ws = workspaceRow(selected)
+                        ws["selected_dwell_hours"] = (ws["selected_dwell_hours"] as? Double ?? 0) + duration / 3600
+                        workspaces[selected] = ws
+                    } else { selectionUnknown += duration }
+                    if !sequenceGap && historyEnabled {
+                        for panel in working {
+                            if let w = panelWorkspaces[panel] {
+                                var ws = workspaceRow(w)
+                                ws["observed_agent_hours"] = (ws["observed_agent_hours"] as? Double ?? 0) + duration / 3600
+                                workspaces[w] = ws
+                            } else { workspaceAgentUnknown += duration / 3600 }
+                        }
+                    }
                 }
                 let presence: Bool?
                 if !analyticsEnabled { presence = nil }
@@ -414,7 +449,8 @@ enum ActivityAnalysisCommand {
                 let inRange = event.ts >= start
                 let panel = event.panel, payload = event.payload
                 if let w = event.workspace {
-                    var ws = workspaces[w] ?? ["id": w, "name": null, "topics": [String](), "panels_created": 0]
+                    if let panel { panelWorkspaces[panel] = w }
+                    var ws = workspaceRow(w)
                     if event.type.hasPrefix("workspace."), let title = text(payload["title"]) { ws["name"] = title }
                     if event.type == "metadata.changed", payload["key"] as? String == "title", let title = text(payload["value"]), ["explicit", "declare"].contains(payload["source"] as? String ?? "") {
                         var topics = ws["topics"] as? [String] ?? []; if !topics.contains(title), topics.count < 12 { topics.append(title) }; ws["topics"] = topics
@@ -424,14 +460,32 @@ enum ActivityAnalysisCommand {
                 }
                 switch event.type {
                 case "panel.created":
-                    if let panel { open.insert(panel); births[panel] = event.ts }
-                    if inRange { created += 1 }
+                    if let panel { open.insert(panel); births[panel] = event.ts; panelKinds[panel] = text(payload["kind"]) ?? "unknown" }
+                    if inRange { created += 1; kindsCreated[text(payload["kind"]) ?? "unknown", default: 0] += 1 }
                 case "panel.closed":
                     if let panel {
                         open.remove(panel); working.remove(panel)
                         if let born = births.removeValue(forKey: panel), born >= start, inRange { lifetime.append(max(0, event.ts.timeIntervalSince(born))) }
                         else if inRange { censored += 1 }
                     }
+                case "workspace.selected":
+                    selectedWorkspace = event.workspace
+                    if inRange, let w = selectedWorkspace {
+                        var ws = workspaceRow(w); ws["selections"] = (ws["selections"] as? Int ?? 0) + 1; workspaces[w] = ws
+                    }
+                case "workspace.closed":
+                    if selectedWorkspace == event.workspace { selectedWorkspace = nil }
+                case "waiting.entered":
+                    if inRange {
+                        if let w = event.workspace ?? panel.flatMap({ panelWorkspaces[$0] }) {
+                            var ws = workspaceRow(w); ws["waiting_entered"] = (ws["waiting_entered"] as? Int ?? 0) + 1; workspaces[w] = ws
+                        } else { waitsUnattributed += 1 }
+                    }
+                case "mailbox.accepted":
+                    if inRange { mailboxAccepted += 1; mailFrom[text(payload["from"]) ?? "unknown", default: 0] += 1 }
+                case "mailbox.delivered": if inRange { mailboxDelivered += 1 }
+                case "flag.raised", "flag.lowered", "flag.suppressed", "flag.unsuppressed":
+                    if inRange { flagCounts[event.type, default: 0] += 1 }
                 case "liveness.derived":
                     if let panel { if payload["state"] as? String == "working" { working.insert(panel) } else { working.remove(panel) } }
                 case "app.activated": active = true
@@ -446,17 +500,26 @@ enum ActivityAnalysisCommand {
                     if inRange {
                         hangCount += 1; loadHangs[bucket(working.count), default: 0] += 1
                         openLoadHangs[openBucket(open.count), default: 0] += 1
+                        hangCauses[text(payload["cause"]) ?? "unknown", default: 0] += 1
+                        let durations = (payload["durations_ms"] as? [NSNumber] ?? []).map(\.doubleValue)
+                        let valid = durations.filter { $0.isFinite && $0 >= 0 }
+                        hangDurationSamples += valid.count; hangDurationTotal += valid.reduce(0, +)
+                        hangDurationMax = max(hangDurationMax, valid.max() ?? 0)
+                        let reportedCount = (payload["count"] as? NSNumber)?.intValue ?? durations.count
+                        if durations.isEmpty || valid.count != durations.count || reportedCount > valid.count {
+                            hangDurationUnknown += 1; gaps.insert("hang_durations_unknown")
+                        }
                     }
                 case "log.policy":
                     historyEnabled = payload["enabled"] as? Bool != false
                     analyticsEnabled = historyEnabled && payload["analytics_enabled"] as? Bool != false
                     if !analyticsEnabled { active = nil; locked = nil; asleep = nil; gaps.insert("analytics_disabled_span") }
-                    if payload["enabled"] as? Bool == false { replayIncomplete = true; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
+                    if payload["enabled"] as? Bool == false { replayIncomplete = true; selectedWorkspace = nil; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
                 case "log.dropped": gaps.insert("event_log_dropped_events")
                 default: break
                 }
                 if inRange {
-                    peakOpen = max(peakOpen, open.count); peakWorking = max(peakWorking, working.count)
+                    updatePeaks(open, working, panelKinds)
                     let day = dayFormatter.string(from: event.ts)
                     var d = dailyRow(day)
                     d["events"] = (d["events"] as? Int ?? 0) + 1
@@ -489,6 +552,9 @@ enum ActivityAnalysisCommand {
                 "end": ends.max().map(iso.string) as Any? ?? null, "span_hours": starts.min().flatMap { s in ends.max().map { $0.timeIntervalSince(s) / 3600 } } as Any? ?? null,
                 "panels_created": starts.isEmpty ? null : created as Any,
                 "observed_peak_open_per_instance": peakOpen, "observed_peak_working_per_instance": peakWorking,
+                "kinds_created": starts.isEmpty ? null : kindsCreated as Any, "observed_peak_open_kinds": peakKinds, "observed_peak_open_by_kind": peakByKind,
+                "peak_open_kinds": starts.isEmpty || replayIncomplete ? null : peakKinds as Any,
+                "peak_open_by_kind": starts.isEmpty || replayIncomplete ? null : peakByKind as Any,
                 "peak_open_per_instance": starts.isEmpty || replayIncomplete ? null : peakOpen as Any,
                 "peak_working_per_instance": starts.isEmpty || replayIncomplete ? null : peakWorking as Any, "open_at_observed_end": starts.isEmpty || replayIncomplete ? null : openAtEnd as Any,
                 "observed_agent_hours": starts.isEmpty ? null : agentSeconds / 3600 as Any,
@@ -496,7 +562,16 @@ enum ActivityAnalysisCommand {
                 "observed_foreground_hours": foreground / 3600, "presence_unknown_hours": foregroundUnknown / 3600,
                 "closed_lifetimes_minutes": ["count": lifetime.count, "p10": percentile(0.1), "median": percentile(0.5), "p90": percentile(0.9), "censored_panels": censored],
                 "workspaces": workspaces.keys.sorted().compactMap { workspaces[$0] }, "daily_utc": daily.keys.sorted().compactMap { daily[$0] },
-                "hour_of_day_utc_events": rhythm, "hang_precursors": hangCount, "hang_rate_by_working_load": buckets, "hang_rate_by_open_load": openBuckets,
+                "workspace_selection_unknown_hours": selectionUnknown / 3600, "workspace_agent_hours_unattributed": workspaceAgentUnknown,
+                "waiting_entered_unattributed": waitsUnattributed,
+                "mailbox_accepted": starts.isEmpty ? null : mailboxAccepted as Any,
+                "mailbox_delivered": starts.isEmpty ? null : mailboxDelivered as Any,
+                "mail_from": starts.isEmpty ? null : mailFrom as Any, "flag_events": starts.isEmpty ? null : flagCounts as Any,
+                "hour_of_day_utc_events": rhythm, "hang_precursors": hangCount, "hang_causes": starts.isEmpty ? null : hangCauses as Any,
+                "hang_durations_ms": ["samples": hangDurationSamples, "unknown_precursors": hangDurationUnknown,
+                                      "total": hangDurationUnknown > 0 || starts.isEmpty || replayIncomplete ? null : hangDurationTotal as Any,
+                                      "max": hangDurationUnknown > 0 || starts.isEmpty || replayIncomplete ? null : hangDurationMax as Any,
+                                      "observed_total": hangDurationTotal, "observed_max": hangDurationMax], "hang_rate_by_working_load": buckets, "hang_rate_by_open_load": openBuckets,
                 "host_usage": tokens, "usage_scope": "Host transcripts during the observed span, across all instances; not exclusive instance usage. Unknown transcript timestamps are included separately in coverage.",
                 "coverage_gaps": gaps.sorted()]
     }
@@ -517,6 +592,9 @@ enum ActivityAnalysisCommand {
         for d in report["daily_utc"] as? [Object] ?? [] { output += "\(d["date"] ?? "") | \(d["events"] ?? 0) | \(d["panels_created"] ?? 0) | \(d["peak_open"] ?? 0) | \(d["peak_working"] ?? 0) | \(d["observed_hours"] ?? 0) | \(d["observed_agent_hours"] ?? 0)\n" }
         output += "\n## Workspaces and observed topics\n\n"
         for w in report["workspaces"] as? [Object] ?? [] { output += "- \(w["name"] is NSNull ? "unknown" : String(describing: w["name"] ?? "unknown")) (\(w["id"] ?? "")): \((w["topics"] as? [String] ?? []).joined(separator: ", "))\n" }
+        let extraKeys = ["kinds_created", "peak_open_kinds", "peak_open_by_kind", "mailbox_accepted", "mailbox_delivered", "mail_from", "flag_events", "hang_causes", "hang_durations_ms", "workspace_selection_unknown_hours", "workspace_agent_hours_unattributed", "waiting_entered_unattributed"]
+        var extra: Object = [:]; for key in extraKeys { extra[key] = report[key] ?? null }
+        output += "\n## Workspace dwell, coordination and health summaries\n\n```json\n\((try? json(["workspaces": report["workspaces"] ?? null, "summaries": extra])) ?? "{}")\n```\n"
         output += "\n## Lifetimes, rhythm and hang rates\n\n```json\n\((try? json(["closed_lifetimes_minutes": report["closed_lifetimes_minutes"] ?? null, "hour_of_day_utc_events": report["hour_of_day_utc_events"] ?? null, "hang_rate_by_working_load": report["hang_rate_by_working_load"] ?? null, "hang_rate_by_open_load": report["hang_rate_by_open_load"] ?? null])) ?? "{}")\n```\n\n## Host token usage\n\n\(report["usage_scope"] ?? "")\n\n\(usageMarkdown(object(report["host_usage"])))\n\nCoverage gaps: \((report["coverage_gaps"] as? [String] ?? []).joined(separator: ", "))\n"
         return output
     }

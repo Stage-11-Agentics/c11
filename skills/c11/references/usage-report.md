@@ -56,6 +56,31 @@ UTC midnight, so days without events retain their observed exposure, concurrency
 peaks, agent-hours and foreground lower bounds. Hang rates reproduce open-panel
 load buckets (under40, 40–79, 80+) with exposure hours and precursor counts.
 Working-panel buckets (0–9, 10–24, 25–49, 50+) are also included.
+`kinds_created` counts observed creations by panel kind. `peak_open_kinds` is the
+kind composition at the first overall per-instance peak; `peak_open_by_kind`
+tracks each kind's independent maximum. Gapped replay makes the exact peak maps
+null and retains `observed_peak_open_kinds` / `observed_peak_open_by_kind` as
+supported lower bounds.
+
+Workspace rows include selection counts, `selected_dwell_hours`, waits entered,
+and attributed observed agent-hours. Selection dwell follows the last selected
+workspace in each process until another selection or close; it includes time
+while c11 is in the background and is not foreground attention. An initial
+unknown selection, a disabled history span or a sequence gap adds to
+`workspace_selection_unknown_hours`. Waits and working time without a known
+workspace remain `waiting_entered_unattributed` and
+`workspace_agent_hours_unattributed`. These are derived from edges only.
+
+Coordination summaries count observed `mailbox.accepted` / `mailbox.delivered`
+events, accepted messages by sender (`mail_from`), and raised/lowered/suppressed/
+unsuppressed flag edges (`flag_events`). They count events, not unique people or
+still-pending messages. `hang_causes` counts precursor causes, preserving an
+`unknown` cause. `hang_durations_ms` includes sample count, observed sum and max,
+and unknown precursor count. Missing/invalid samples, reported counts exceeding
+available samples, or event-history gaps make exact duration totals/max null;
+known recorded samples remain visible. Historical event counts are observations
+within retention, with coverage gaps, not complete lifetime totals.
+
 `host_usage` covers transcripts within the observed report span across the host;
 it is explicitly **not exclusive instance usage**. Inspect `usage --by panel`
 for panel-level attribution.

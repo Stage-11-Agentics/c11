@@ -300,6 +300,71 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['panels_created'], 1)
         self.assertEqual(result['open_at_observed_end'], 0)
 
+    def summary_events(self, gap=False, missing_duration=False):
+        rows = []
+        def add(minute, kind, payload=None, panel=None, workspace=None):
+            rows.append({'v': 2, 'instance': 'synthetic', 'seq': len(rows) + 1,
+                'ts': '2026-01-02T%02d:%02d:00Z' % divmod(minute, 60), 'type': kind,
+                'payload': payload or {}, 'panel': panel, 'workspace': workspace})
+        add(0, 'log.opened', {'app_active': True, 'screen_locked': False, 'system_asleep': False})
+        add(0, 'workspace.created', {'title': 'Alpha test'}, workspace='workspace-a')
+        add(0, 'workspace.selected', workspace='workspace-a')
+        add(0, 'panel.created', {'kind': 'terminal'}, panel='panel-a', workspace='workspace-a')
+        add(0, 'liveness.derived', {'state': 'working'}, panel='panel-a')
+        add(15, 'panel.created', {'kind': 'markdown'}, panel='panel-b', workspace='workspace-b')
+        add(15, 'workspace.selected', workspace='workspace-b')
+        add(20, 'waiting.entered', panel='panel-b')
+        add(22, 'waiting.entered')
+        add(25, 'mailbox.accepted', {'from': 'synthetic-sender'})
+        add(25, 'mailbox.delivered')
+        add(30, 'flag.raised')
+        add(30, 'flag.lowered')
+        add(30, 'hang.precursor', {'cause': 'main-thread', 'durations_ms': [10, 20], 'count': 2})
+        add(45, 'panel.closed', panel='panel-b')
+        if missing_duration: add(50, 'hang.precursor')
+        add(60, 'panel.closed', panel='panel-a')
+        if gap:
+            for row in rows[5:]: row['seq'] += 1
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+
+    def test_report_workspace_coordination_hang_and_kind_summaries(self):
+        self.summary_events()
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        workspaces = {w['id']: w for w in result['workspaces']}
+        self.assertEqual(workspaces['workspace-a']['selected_dwell_hours'], .25)
+        self.assertEqual(workspaces['workspace-b']['selected_dwell_hours'], .75)
+        self.assertEqual(workspaces['workspace-a']['selections'], 1)
+        self.assertEqual(workspaces['workspace-b']['waiting_entered'], 1)
+        self.assertAlmostEqual(workspaces['workspace-a']['observed_agent_hours'], 1)
+        self.assertEqual(result['waiting_entered_unattributed'], 1)
+        self.assertEqual(result['workspace_selection_unknown_hours'], 0)
+        self.assertEqual(result['kinds_created'], {'terminal': 1, 'markdown': 1})
+        self.assertEqual(result['peak_open_kinds'], {'terminal': 1, 'markdown': 1})
+        self.assertEqual(result['peak_open_by_kind'], {'terminal': 1, 'markdown': 1})
+        self.assertEqual(result['mailbox_accepted'], 1)
+        self.assertEqual(result['mailbox_delivered'], 1)
+        self.assertEqual(result['mail_from'], {'synthetic-sender': 1})
+        self.assertEqual(result['flag_events'], {'flag.raised': 1, 'flag.lowered': 1})
+        self.assertEqual(result['hang_causes'], {'main-thread': 1})
+        self.assertEqual(result['hang_durations_ms']['samples'], 2)
+        self.assertEqual(result['hang_durations_ms']['total'], 30)
+        self.assertEqual(result['hang_durations_ms']['max'], 20)
+
+    def test_summary_gaps_keep_dwell_peaks_and_hang_duration_uncertain(self):
+        self.summary_events(gap=True, missing_duration=True)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        workspaces = {w['id']: w for w in result['workspaces']}
+        self.assertEqual(workspaces['workspace-a']['selected_dwell_hours'], 0)
+        self.assertEqual(workspaces['workspace-b']['selected_dwell_hours'], .75)
+        self.assertEqual(result['workspace_selection_unknown_hours'], .25)
+        self.assertIsNone(result['peak_open_kinds'])
+        self.assertIsNone(result['peak_open_by_kind'])
+        self.assertIsNone(result['hang_durations_ms']['total'])
+        self.assertEqual(result['hang_durations_ms']['observed_total'], 30)
+        self.assertEqual(result['hang_durations_ms']['unknown_precursors'], 1)
+        self.assertEqual(result['hang_causes']['unknown'], 1)
+        self.assertIn('hang_durations_unknown', result['coverage_gaps'])
+
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)
         self.run_cli('usage', '--since', 'garbage', ok=False)

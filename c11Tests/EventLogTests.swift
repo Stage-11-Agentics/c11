@@ -1275,6 +1275,40 @@ extension EventLogTests {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
+    func testDisabledStartupPrunesAgedExactCurrentFileWithoutLiveWriter() throws {
+        let url = logURL("events-reused-pid-7001.ndjson")
+        try Data("abandoned prior process history".utf8).write(to: url)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-15 * 86_400)], ofItemAtPath: url.path)
+        let log = EventLog(url: url, instance: "reused-pid-7001")
+        log.updatePolicy(ActivityHistoryPolicy(enabled: false))
+        log.flush()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testPendingDropsStaySilentAfterDisableUntilRecordingResumes() {
+        let gate = DispatchSemaphore(value: 0), entered = DispatchSemaphore(value: 0)
+        let log = EventLog(url: logURL(), instance: "off-drops", maxPending: 1)
+        log.onQueueBeforeWrite = { entered.signal(); gate.wait() }
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "off-drops", ts: Date()))
+        XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "off-drops", ts: Date())) // sheds while pinned
+        log.updatePolicy(ActivityHistoryPolicy(enabled: false))
+        gate.signal()
+        log.flush()
+        // The barrier proves the hook is no longer running. A stale emitter
+        // snapshot may enqueue after disable; it must not publish drop counts.
+        log.onQueueBeforeWrite = nil
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "off-drops", ts: Date()))
+        log.flush()
+        XCTAssertEqual(readLines(logURL()).map(parse).compactMap { $0["type"] as? String }, ["panel.created"])
+        log.updatePolicy(ActivityHistoryPolicy())
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "off-drops", ts: Date()))
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["panel.created", "log.dropped", "panel.created"])
+        XCTAssertEqual((events.dropFirst().first?["payload"] as? [String: Any])?["count"] as? Int, 1)
+    }
+
     /// A real second process owns the exact descriptor flock. Pipes publish
     /// acquisition and release; timeout cleanup always terminates the child.
     private func withExternalFileLocks(at urls: [URL], exclusive: Bool, _ body: () throws -> Void) throws {

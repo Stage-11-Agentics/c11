@@ -411,6 +411,7 @@ final class EventLog {
     /// Emits a `log.dropped` marker when the backpressure guard has shed events
     /// since the last report. Runs on `queue` ahead of the next real append.
     private func reportDropsIfNeeded() {
+        guard recordingEnabled else { return }
         counterLock.lock()
         let dropped = droppedSinceReport
         droppedSinceReport = 0
@@ -592,7 +593,7 @@ final class EventLog {
                     isOwnInstanceFile(item.lastPathComponent) ? retentionNamespace : Self.buildLabel(for: item.lastPathComponent))
         }.sorted { $0.date < $1.date }
         func removeIfInactive(_ item: URL) -> Bool {
-            if item.lastPathComponent == url.lastPathComponent { return false }
+            if item.lastPathComponent == url.lastPathComponent, fileHandle != nil { return false }
             // The kernel releases a live writer's SH lock on process death;
             // pid reuse cannot make an abandoned file immortal. Hold EX until
             // unlink completes so another writer cannot acquire SH meanwhile.

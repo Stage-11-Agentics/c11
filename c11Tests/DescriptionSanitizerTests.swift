@@ -216,3 +216,37 @@ final class DescriptionSanitizerTests: XCTestCase {
         ])
     }
 }
+
+
+// SYNTH PROBE: nested list markers must come from the innermost item and its list.
+extension DescriptionSanitizerTests {
+    private func synthMarkers(_ input: String) -> [String] {
+        titleBarDescriptionBlocks(input).compactMap { block in
+            if case .listItem(let marker, let text, let depth) = block { return "\(depth):\(marker) \(String(text.characters))" }
+            return nil
+        }
+    }
+    func testSynthNestedOrderedListNumbersItsOwnItems() {
+        XCTAssertEqual(synthMarkers("1. Plan\n   1. read\n   2. write\n2. Ship"), ["0:1. Plan", "1:1. read", "1:2. write", "0:2. Ship"])
+    }
+    func testSynthOrderedListNestedUnderBulletKeepsNumbers() {
+        XCTAssertEqual(synthMarkers("- a\n  1. x\n  2. y"), ["0:• a", "1:1. x", "1:2. y"])
+    }
+    func testSynthBulletsNestedUnderOrderedItemStayBullets() {
+        XCTAssertEqual(synthMarkers("1. a\n   - x\n   - y\n2. b"), ["0:1. a", "1:• x", "1:• y", "0:2. b"])
+    }
+    func testSynthLooseItemSecondParagraphStaysInItem() {
+        XCTAssertEqual(synthMarkers("- item one\n\n  second para\n- item two").count, 2)
+    }
+    func testSynthLooseItemParagraphsJoinWithOneLineBreak() {
+        XCTAssertEqual(nativeBlocks(titleBarDescriptionBlocks("- item one\n\n  second para\n- item two")), [
+            .listItem(marker: "•", text: "item one\nsecond para", depth: 0),
+            .listItem(marker: "•", text: "item two", depth: 0)
+        ])
+    }
+    func testSynthMultiParagraphQuoteStaysInOneNativeBlock() {
+        XCTAssertEqual(nativeBlocks(titleBarDescriptionBlocks("> first\n>\n> second")), [
+            .quote("first\nsecond")
+        ])
+    }
+}

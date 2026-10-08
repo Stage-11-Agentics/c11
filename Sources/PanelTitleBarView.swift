@@ -295,9 +295,9 @@ private enum TitleBarDescriptionBlockKind: Equatable {
     case rule
 }
 
-/// The first presentation-intent component identifies the enclosing block.
-/// Keep the semantic component identity too: list items share their enclosing
-/// list's first component, but must still become separate native rows.
+/// Uses semantic block identity to group runs from one native row. List items
+/// and block quotes can span multiple paragraph intents, so they key by item or
+/// quote identity instead of paragraph identity.
 private struct TitleBarDescriptionBlockKey: Equatable {
     let enclosingIdentity: Int
     let blockIdentity: Int
@@ -315,6 +315,7 @@ func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
     var blocks: [TitleBarDescriptionBlock] = []
     var currentKey: TitleBarDescriptionBlockKey?
     var currentText = AttributedString()
+    var currentParagraphIdentity: Int?
 
     func flushCurrentBlock() {
         guard let key = currentKey else { return }
@@ -350,6 +351,7 @@ func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
 
         currentKey = nil
         currentText = AttributedString()
+        currentParagraphIdentity = nil
     }
 
     for (runIndex, run) in parsed.runs.enumerated() {
@@ -357,11 +359,18 @@ func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
             for: run.presentationIntent,
             fallbackIdentity: runIndex
         )
+        let paragraphIdentity = titleBarDescriptionParagraphIdentity(for: run.presentationIntent)
 
         if currentKey != key {
             flushCurrentBlock()
             currentKey = key
+        } else if titleBarDescriptionJoinsParagraphs(key.kind),
+                  let previousParagraphIdentity = currentParagraphIdentity,
+                  let paragraphIdentity,
+                  previousParagraphIdentity != paragraphIdentity {
+            currentText.append(AttributedString("\n"))
         }
+        currentParagraphIdentity = paragraphIdentity
 
         var fragment = AttributedString(parsed[run.range])
         if key.kind == .rule {
@@ -380,14 +389,11 @@ private func titleBarDescriptionBlockKey(
     let components = intent?.components ?? []
     let enclosingIdentity = components.first?.identity ?? fallbackIdentity
 
-    if let item = components.last(where: {
+    if let itemIndex = components.firstIndex(where: {
         if case .listItem = $0.kind { return true }
         return false
-    }), case .listItem(let ordinal) = item.kind {
-        let itemIndex = components.lastIndex(where: {
-            if case .listItem = $0.kind { return true }
-            return false
-        }) ?? components.endIndex
+    }), case .listItem(let ordinal) = components[itemIndex].kind {
+        let item = components[itemIndex]
         let parentList = components.dropFirst(itemIndex + 1).first(where: {
             switch $0.kind {
             case .orderedList, .unorderedList: return true
@@ -407,7 +413,7 @@ private func titleBarDescriptionBlockKey(
             }
         } - 1)
         return TitleBarDescriptionBlockKey(
-            enclosingIdentity: enclosingIdentity,
+            enclosingIdentity: item.identity,
             blockIdentity: item.identity,
             kind: .listItem(marker: marker, depth: depth)
         )
@@ -446,12 +452,12 @@ private func titleBarDescriptionBlockKey(
         )
     }
 
-    if let quote = components.last(where: {
+    if let quote = components.first(where: {
         if case .blockQuote = $0.kind { return true }
         return false
     }) {
         return TitleBarDescriptionBlockKey(
-            enclosingIdentity: enclosingIdentity,
+            enclosingIdentity: quote.identity,
             blockIdentity: quote.identity,
             kind: .quote
         )
@@ -473,6 +479,20 @@ private func titleBarDescriptionBlockKey(
         blockIdentity: fallbackIdentity,
         kind: .paragraph
     )
+}
+
+private func titleBarDescriptionParagraphIdentity(for intent: PresentationIntent?) -> Int? {
+    intent?.components.first(where: {
+        if case .paragraph = $0.kind { return true }
+        return false
+    })?.identity
+}
+
+private func titleBarDescriptionJoinsParagraphs(_ kind: TitleBarDescriptionBlockKind) -> Bool {
+    switch kind {
+    case .listItem, .quote: return true
+    default: return false
+    }
 }
 
 private func titleBarDescriptionTrimmed(_ input: AttributedString) -> AttributedString {

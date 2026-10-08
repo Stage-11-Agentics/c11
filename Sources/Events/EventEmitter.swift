@@ -481,6 +481,7 @@ final class EventEmitter {
         )
     }
 
+    @discardableResult
     func emitMailboxAccepted(
         workspace: UUID,
         id: String,
@@ -506,8 +507,8 @@ final class EventEmitter {
             payload["truncated"] = true
         }
         if let textRecorded { payload["text_recorded"] = textRecorded }
-        var actualTextRecorded = false
-        emit(.mailboxAccepted, workspace: workspace, payload: payload, textDecision: { actualTextRecorded = $0 })
+        var actualTextRecorded = keepText && (textRecorded ?? true)
+        emit(.mailboxAccepted, workspace: workspace, payload: payload, textDecision: { actualTextRecorded = $0 && (textRecorded ?? true) })
         return actualTextRecorded
     }
 
@@ -628,13 +629,13 @@ final class EventEmitter {
     ) -> Bool {
         // Capture ts + snapshot the log under the lock; build + append outside.
         lock.lock()
+        let keepText = policy.keepText
         guard enabled, let log, policy.analyticsEnabled || !Self.analyticsTypes.contains(type) else {
             lock.unlock()
-            textDecision?(false)
+            textDecision?(keepText)
             return false
         }
         let instance = instanceId
-        let keepText = policy.keepText
         lock.unlock()
         var recordedPayload = payload()
         let recordText = keepText && (recordedPayload["text_recorded"] as? Bool ?? true)

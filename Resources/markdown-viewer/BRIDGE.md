@@ -93,10 +93,20 @@ outline layout, source toggles, font loading, resize and asynchronous Mermaid.
 Native must not restore a second scroll offset after an ordinary reload/settings
 change. New-document navigation and explicit scroll commands may move the reader.
 
-Raw HTML is disabled. Images from markdown are inert alt-text placeholders,
-including local paths: asset authorization is exclusively native. Mermaid runs
+Raw HTML is disabled. Remote and unauthorized images are inert alt-text placeholders. Mermaid runs
 with strict security, no document-supplied initialization/config directives,
 and sanitized SVG; hyperlinks inside diagrams are inert. CSP disallows network,
 frames, objects, forms and base tags. The host must additionally reject arbitrary
 navigation/new windows and grant the custom scheme only bundled assets. The
 bridge exposes no eval, file read, socket, external-open or arbitrary native call.
+
+## Local images (accepted amendment)
+
+Relative and `file:` image URLs inside the document directory tree render through
+`c11md-asset://doc/<URL-encoded path relative to the document directory>`. Encode
+each path component; keep `/` separators. Reject any decoded `..` component
+(including encoded traversal), remote/data/unknown schemes, and absolute paths
+outside that tree. The native asset handler independently validates decoded paths,
+symlinks and file types before serving bytes. The renderer never loads a raw file
+or remote image URL. The disk harness supplies this private scheme with synthetic
+local image bytes; it grants no general network permission.

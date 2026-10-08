@@ -1045,3 +1045,34 @@ extension EventLogTests {
         XCTAssertEqual(events.last?["type"] as? String, "panel.closed")
     }
 }
+
+
+extension EventLogTests {
+    func testNativeHealthSampleCPUAgreesWithIndependentResourceUsage() {
+        let log = EventLog(url: logURL(), instance: "native-cpu")
+        func resourceUsageCPU() -> Double {
+            var usage = rusage()
+            XCTAssertEqual(getrusage(RUSAGE_SELF, &usage), 0)
+            return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+                + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+        }
+        var lower = 0.0, upper = 0.0
+        log.startSampling {
+            XCTAssertFalse(Thread.isMainThread)
+            lower = resourceUsageCPU()
+            let metrics = ActivityHistoryMetrics.sample()
+            upper = resourceUsageCPU()
+            return EventEnvelope(type: .instanceSample, instance: "native-cpu", ts: Date(), payload: metrics)
+        }
+        log.sampleForTesting()
+        log.stopSampling()
+        let payload = readLines(logURL()).map(parse).last?["payload"] as? [String: Any]
+        let sampled = payload?["cpu_s_total"] as? Double ?? -.infinity
+        // Independent timevals bracket the query; allow only scheduling and
+        // kernel-accounting quantization, with no busy loop or timing sleep.
+        XCTAssertGreaterThanOrEqual(sampled, lower - 0.01)
+        XCTAssertLessThanOrEqual(sampled, upper + 0.01)
+        XCTAssertGreaterThan(payload?["rss_mb"] as? Double ?? 0, 0)
+        XCTAssertGreaterThan(payload?["threads"] as? Int ?? 0, 0)
+    }
+}

@@ -435,7 +435,11 @@ final class EventLog {
     }
 
     private func historyFiles() -> [URL] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(),
+        // Foundation refuses contentsOfDirectory on an explicit symlink with
+        // ENOTDIR, although opening child files through it works. Resolve the
+        // directory itself before discovering retained generations.
+        let directory = url.deletingLastPathComponent().resolvingSymlinksInPath()
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])) ?? []
         return files.filter { item in
             let name = item.lastPathComponent

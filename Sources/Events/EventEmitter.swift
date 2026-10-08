@@ -32,13 +32,22 @@ struct ActivityHistoryPolicy: Equatable {
 /// One kernel query, off-main, for all three health fields. No panel census or
 /// transcript work is performed by the app. CPU is cumulative process seconds.
 enum ActivityHistoryMetrics {
+    // proc_taskinfo CPU counters use Mach absolute-time ticks, whose scale is
+    // architecture-dependent (125/3 ns on Apple Silicon, 1 ns on Intel).
+    // Resolve once, on first off-main health query, rather than per sample.
+    private static let secondsPerTick: Double = {
+        var timebase = mach_timebase_info_data_t()
+        guard mach_timebase_info(&timebase) == KERN_SUCCESS, timebase.denom != 0 else { return .nan }
+        return Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
+    }()
+
     static func sample() -> [String: Any] {
         var info = proc_taskinfo()
         let size = MemoryLayout<proc_taskinfo>.size
         let read = proc_pidinfo(getpid(), PROC_PIDTASKINFO, 0, &info, Int32(size))
         guard read == Int32(size) else { return [:] }
         return ["rss_mb": Double(info.pti_resident_size) / 1_048_576,
-                "cpu_s_total": Double(info.pti_total_user + info.pti_total_system) / 1_000_000_000,
+                "cpu_s_total": (Double(info.pti_total_user) + Double(info.pti_total_system)) * secondsPerTick,
                 "threads": Int(info.pti_threadnum)]
     }
 }
@@ -608,7 +617,7 @@ final class EventEmitter {
     ) -> Bool {
         // Capture ts + snapshot the log under the lock; build + append outside.
         lock.lock()
-        guard enabled, let log, !Self.analyticsTypes.contains(type) || policy.analyticsEnabled else {
+        guard enabled, let log, policy.analyticsEnabled || !Self.analyticsTypes.contains(type) else {
             lock.unlock()
             return false
         }

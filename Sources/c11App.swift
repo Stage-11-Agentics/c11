@@ -4191,7 +4191,7 @@ enum WelcomeSettings {
         }
 
         if let welcomeMdPath {
-            workspace.newMarkdownSplit(
+            _ = workspace.newMarkdownSplit(
                 from: initialPanelId,
                 orientation: .vertical,
                 insertFirst: false,

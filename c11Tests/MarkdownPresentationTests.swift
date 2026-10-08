@@ -214,3 +214,60 @@ final class MarkdownPresentationTests: XCTestCase {
         try body(defaults)
     }
 }
+
+final class MarkdownNavigationHistoryTests: XCTestCase {
+    func testNavigationHistoryCapturesPositionsAndBranchesForwardEntries() throws {
+        let source = MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: "/repo/guide.md"))
+        let first = MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: "/repo/install.md"), fragment: "setup")
+        let alternate = MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: "/repo/api.md"))
+        let sourcePosition = try XCTUnwrap(MarkdownReadingPosition(state: [
+            "lines": ["first": 9 as Any, "offset": 12.5 as Any],
+            "mode": "source",
+            "find": ["query": "needle", "open": true]
+        ]))
+        let firstPosition = try XCTUnwrap(MarkdownReadingPosition(state: [
+            "lines": ["first": 27 as Any, "offset": -4.25 as Any],
+            "mode": "read",
+            "find": ["query": "needle", "open": false]
+        ]))
+
+        var history = MarkdownNavigationHistory()
+        history.reset(to: source, origin: .agentCLI)
+        XCTAssertTrue(history.push(first, origin: .documentLink, scopeRootPath: "/repo", preserving: sourcePosition))
+        XCTAssertEqual(history.entries[0].readingPosition, sourcePosition)
+        XCTAssertTrue(history.canGoBack)
+        XCTAssertFalse(history.canGoForward)
+        XCTAssertEqual(history.current?.target, first)
+
+        let back = try XCTUnwrap(history.target(backward: true))
+        XCTAssertEqual(back.index, 0)
+        XCTAssertEqual(back.entry.target, source)
+        XCTAssertEqual(history.move(to: back.index, preserving: firstPosition)?.target, source)
+        XCTAssertEqual(history.entries[1].readingPosition, firstPosition)
+        XCTAssertTrue(history.canGoForward)
+
+        XCTAssertTrue(history.push(alternate, origin: .backlink, scopeRootPath: "/repo", preserving: sourcePosition))
+        XCTAssertFalse(history.canGoForward, "a new navigation must discard the old forward branch")
+        XCTAssertEqual(history.entries.map(\.target), [source, alternate])
+        XCTAssertEqual(history.entries[0].readingPosition, sourcePosition)
+        let snapshot = history.jsonSnapshot()
+        XCTAssertEqual(snapshot["can_back"] as? Bool, true)
+        XCTAssertEqual(snapshot["can_forward"] as? Bool, false)
+        let entries = try XCTUnwrap(snapshot["entries"] as? [[String: Any]])
+        XCTAssertEqual(entries[0]["origin"] as? String, "agentCLI")
+        XCTAssertEqual((entries[0]["position"] as? [String: Any])?["line"] as? Int, 9)
+    }
+
+    func testNavigationHistoryIsBoundedAtOneHundredEntries() {
+        var history = MarkdownNavigationHistory()
+        history.reset(to: MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: "/repo/0.md")))
+        for index in 1...110 {
+            let target = MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: "/repo/\(index).md"))
+            XCTAssertTrue(history.push(target, origin: .palette, scopeRootPath: "/repo", preserving: nil))
+        }
+        XCTAssertEqual(history.entries.count, 100)
+        XCTAssertEqual(history.entries.first?.target.fileURL.path, "/repo/11.md")
+        XCTAssertEqual(history.current?.target.fileURL.path, "/repo/110.md")
+        XCTAssertEqual(history.currentIndex, 99)
+    }
+}

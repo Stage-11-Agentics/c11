@@ -256,6 +256,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
     private var pendingRestorePosition: MarkdownReadingPosition?
+    private var pendingNavigationFragment: String?
+    private var hasPendingNavigation = false
+    private var pendingNavigationToken = 0
+    private(set) var navigationToken = 0
+    private var activePeekRequestID: Int?
     private var restoreContentBeforeReload: String?
     private var activeQueries = 0
     private let startedAt = ProcessInfo.processInfo.systemUptime
@@ -266,7 +271,12 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
 
     init(panel: MarkdownPanel) {
         self.panel = panel
-        pendingRestorePosition = panel.readingPosition
+        navigationToken = panel.currentNavigationToken
+        let pendingNavigation = panel.takePendingNavigation()
+        pendingRestorePosition = pendingNavigation.position ?? panel.readingPosition
+        pendingNavigationFragment = pendingNavigation.fragment
+        hasPendingNavigation = pendingNavigation.position != nil || pendingNavigation.fragment != nil
+        pendingNavigationToken = navigationToken
         restoreContentBeforeReload = panel.readingContent
         let root = Bundle.main.resourceURL?.appendingPathComponent("markdown-viewer", isDirectory: true)
         let policy = MarkdownAssetPolicy(
@@ -415,6 +425,41 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         }
     }
 
+    func advanceNavigation(to token: Int) {
+        guard token >= navigationToken else { return }
+        navigationToken = token
+        activePeekRequestID = nil
+        guard pendingNavigationToken != token else { return }
+        pendingRestorePosition = nil
+        pendingNavigationFragment = nil
+        hasPendingNavigation = false
+        pendingNavigationToken = token
+    }
+
+    func prepareNavigation(position: MarkdownReadingPosition?, fragment: String?, navigationToken: Int) {
+        guard navigationToken == self.navigationToken else { return }
+        pendingRestorePosition = position
+        pendingNavigationFragment = fragment
+        hasPendingNavigation = true
+        pendingNavigationToken = navigationToken
+        panel?.clearPendingNavigation()
+    }
+
+    func navigateWithinDocument(position: MarkdownReadingPosition?, fragment: String?, navigationToken: Int) {
+        guard navigationToken == self.navigationToken else { return }
+        panel?.clearPendingNavigation()
+        if let position {
+            restoreReadingPosition(position, revision: revision, navigationToken: navigationToken, completion: {})
+        } else if let fragment {
+            call("navigateFragment", arguments: [fragment]) { [weak self] result in
+                guard let self, self.navigationToken == navigationToken else { return }
+                guard case .success(let value) = result,
+                      (value as? [String: Any])?["ok"] as? Bool == false else { return }
+                self.call("showBrokenAnchorSuggestions", arguments: [fragment])
+            }
+        }
+    }
+
     private func finishRender(_ revision: Int) {
         guard !closed, revision == self.revision else { return }
         renderedRevision = revision
@@ -428,29 +473,38 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private func restoreReadingPosition(
         _ position: MarkdownReadingPosition,
         revision: Int,
+        navigationToken: Int,
         completion: (() -> Void)? = nil
     ) {
         call("setSourceMode", arguments: [position.sourceMode]) { [weak self] _ in
-            guard let self, !self.closed else { return }
+            guard let self, !self.closed, self.navigationToken == navigationToken else { return }
             let scroll = {
+                guard self.navigationToken == navigationToken else { return }
                 self.call("scrollToLine", arguments: [position.line, position.offset]) { [weak self] result in
+                    guard let self, !self.closed, self.navigationToken == navigationToken else { return }
 #if DEBUG
                     if case .success(let value) = result, let state = value as? [String: Any],
-                       let actual = MarkdownReadingPosition(state: state), let self {
+                       let actual = MarkdownReadingPosition(state: state) {
                         dlog("markdown.renderer.restored panel=\(self.panel?.id.uuidString ?? "unknown") line=\(actual.line) offset=\(actual.offset) width=\(self.webView.frame.width) height=\(self.webView.frame.height)")
                     }
 #endif
-                    guard let self else { return }
                     if let completion { completion() }
                     else { self.finishRender(revision) }
                 }
             }
             let restoreFindPopover = {
+                guard self.navigationToken == navigationToken else { return }
                 guard position.findOpen else { scroll(); return }
-                self.call("openFind", arguments: [self.webView.allowsPanelFocus]) { _ in scroll() }
+                self.call("openFind", arguments: [self.webView.allowsPanelFocus]) { [weak self] _ in
+                    guard self?.navigationToken == navigationToken else { return }
+                    scroll()
+                }
             }
             if position.findQuery.isEmpty { restoreFindPopover() }
-            else { self.call("find", arguments: [position.findQuery]) { _ in restoreFindPopover() } }
+            else { self.call("find", arguments: [position.findQuery]) { [weak self] _ in
+                guard self?.navigationToken == navigationToken else { return }
+                restoreFindPopover()
+            } }
         }
     }
 
@@ -508,35 +562,82 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         case "rendered":
             recoveringAfterTermination = false
             if let value = body["revision"] as? Int {
-                if let position = pendingRestorePosition {
-                    pendingRestorePosition = nil
-                    restoreReadingPosition(position, revision: value) { [weak self] in
-                        guard let self else { return }
-                        let capturedContent = self.restoreContentBeforeReload
-                        self.restoreContentBeforeReload = nil
-                        if let capturedContent {
-                            self.panel?.clearReadingContent(ifMatching: capturedContent)
-                            guard let panel = self.panel else {
-                                self.finishRender(value)
-                                return
-                            }
-                            guard panel.content != capturedContent else {
-                                self.finishRender(value)
-                                return
-                            }
-                            // Keep the host hidden until the bridge has applied its
-                            // same-document capture/restore to the latest content.
-                            self.renderedRevision = nil
-                            self.synchronize()
-                        } else {
+                let finishNavigation: () -> Void = { [weak self] in
+                    guard let self else { return }
+                    let capturedContent = self.restoreContentBeforeReload
+                    self.restoreContentBeforeReload = nil
+                    if let capturedContent {
+                        self.panel?.clearReadingContent(ifMatching: capturedContent)
+                        guard let panel = self.panel else {
                             self.finishRender(value)
+                            return
                         }
+                        guard panel.content != capturedContent else {
+                            self.finishRender(value)
+                            return
+                        }
+                        // Keep the host hidden until the bridge has applied its
+                        // same-document capture/restore to the latest content.
+                        self.renderedRevision = nil
+                        self.synchronize()
+                    } else {
+                        self.finishRender(value)
                     }
+                }
+                if let position = pendingRestorePosition {
+                    guard pendingNavigationToken == navigationToken else {
+                        pendingRestorePosition = nil
+                        pendingNavigationFragment = nil
+                        hasPendingNavigation = false
+                        finishRender(value)
+                        return
+                    }
+                    pendingRestorePosition = nil
+                    hasPendingNavigation = false
+                    pendingNavigationFragment = nil
+                    restoreReadingPosition(
+                        position,
+                        revision: value,
+                        navigationToken: pendingNavigationToken,
+                        completion: finishNavigation
+                    )
+                } else if hasPendingNavigation {
+                    guard pendingNavigationToken == navigationToken else {
+                        hasPendingNavigation = false
+                        pendingNavigationFragment = nil
+                        finishRender(value)
+                        return
+                    }
+                    hasPendingNavigation = false
+                    let fragment = pendingNavigationFragment
+                    let navigationToken = pendingNavigationToken
+                    pendingNavigationFragment = nil
+                    if let fragment {
+                        call("navigateFragment", arguments: [fragment]) { [weak self] result in
+                            guard let self, self.navigationToken == navigationToken else { return }
+                            if case .success(let value) = result,
+                               (value as? [String: Any])?["ok"] as? Bool == false {
+                                self.call("showBrokenAnchorSuggestions", arguments: [fragment])
+                            }
+                            finishNavigation()
+                        }
+                    } else { finishNavigation() }
                 } else { finishRender(value) }
             }
         case "link":
             if let href = body["href"] as? String, href.utf8.count <= 16 * 1024 {
-                routeLink(href, optionHeld: (body["modifiers"] as? [String: Bool])?["alt"] == true)
+                let modifiers = body["modifiers"] as? [String: Bool] ?? [:]
+                let position = (body["position"] as? [String: Any]).flatMap { MarkdownReadingPosition(state: $0) }
+                guard body["localOnly"] as? Bool != true else { break }
+                _ = routeLink(href, modifiers: modifiers, position: position)
+            }
+        case "peek":
+            guard let requestID = body["id"] as? Int, requestID >= 0 else { return }
+            if body["action"] as? String == "hide" {
+                activePeekRequestID = requestID
+                call("hideLinkPeek", arguments: [requestID])
+            } else if let href = body["href"] as? String, href.utf8.count <= 16 * 1024 {
+                routePeek(href, requestID: requestID, rect: body["rect"] as? [String: Any] ?? [:])
             }
         case "copy":
             guard let text = body["text"] as? String, text.utf8.count <= 1024 * 1024 else { return }
@@ -609,19 +710,135 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         }
     }
 
-    private func routeLink(_ href: String, optionHeld: Bool) {
-        guard let panel, let filePath = panel.filePath else { return }
-        switch MarkdownLinkTarget.resolve(href, documentPath: filePath) {
-        case .anchor, .blocked: return
+    static func shouldOpenTargetInNewPanel(
+        _ target: MarkdownLinkTarget,
+        metaHeld: Bool,
+        defaultIsNewPanel: Bool
+    ) -> Bool {
+        guard case .markdown = target else { return false }
+        return metaHeld != defaultIsNewPanel
+    }
+
+    @discardableResult
+    func routeLink(
+        _ href: String,
+        modifiers: [String: Bool],
+        position: MarkdownReadingPosition?
+    ) -> Task<Void, Never>? {
+        guard let panel, let filePath = panel.filePath else { return nil }
+        let linkTarget = MarkdownLinkTarget.resolve(href, documentPath: filePath)
+        let opensNewPanel = Self.shouldOpenTargetInNewPanel(
+            linkTarget,
+            metaHeld: modifiers["meta"] == true,
+            defaultIsNewPanel: UserDefaults.standard.bool(forKey: "markdown.links.openInNewPanel")
+        )
+        switch linkTarget {
+        case .anchor:
+            guard let encoded = href.hasPrefix("#") ? String(href.dropFirst()) : nil,
+                  let fragment = encoded.removingPercentEncoding,
+                  !fragment.isEmpty else { return nil }
+            let navigationToken = panel.beginNavigationIntent()
+            let targetURL = URL(fileURLWithPath: filePath)
+            return Task { @MainActor [weak panel] in
+                _ = await panel?.navigateFromDocumentLink(
+                    to: targetURL,
+                    fragment: fragment,
+                    position: position,
+                    pageAlreadyHandled: true,
+                    navigationToken: navigationToken
+                )
+            }
+        case .blocked: return nil
         case .markdown(let url):
-            guard let workspace = AppDelegate.shared?.workspaceContainingPanel(panelId: panel.id, preferredWorkspaceId: panel.workspaceId)?.workspace,
-                  let pane = workspace.paneId(forPanelId: panel.id) else { return }
-            _ = workspace.newMarkdownPanel(inPane: pane, filePath: url.path, focus: true)
+            let fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment
+            let navigationToken = panel.beginNavigationIntent()
+            if opensNewPanel {
+                return openMarkdownPanel(url, fragment: fragment, source: panel, navigationToken: navigationToken)
+            } else {
+                return Task { @MainActor [weak panel] in
+                    _ = await panel?.navigateFromDocumentLink(
+                        to: url,
+                        fragment: fragment,
+                        position: position,
+                        pageAlreadyHandled: false,
+                        navigationToken: navigationToken
+                    )
+                }
+            }
         case .web(let url):
-            openC11WebLink(url, sourceWorkspaceId: panel.workspaceId, sourcePanelId: panel.id, optionHeld: optionHeld)
+            openC11WebLink(
+                url,
+                sourceWorkspaceId: panel.workspaceId,
+                sourcePanelId: panel.id,
+                optionHeld: modifiers["alt"] == true
+            )
         case .mailto(let url):
             _ = NSWorkspace.shared.open(url)
         }
+        return nil
+    }
+
+    private func openMarkdownPanel(
+        _ target: URL,
+        fragment: String?,
+        source panel: MarkdownPanel,
+        navigationToken: Int
+    ) -> Task<Void, Never> {
+        Task { @MainActor [weak panel] in
+            guard let panel,
+                  case .ready(let path, _, _, let scopeRootPath) = await panel.prepareDocumentLink(target),
+                  panel.isCurrentNavigation(navigationToken),
+                  let workspace = AppDelegate.shared?.workspaceContainingPanel(
+                    panelId: panel.id,
+                    preferredWorkspaceId: panel.workspaceId
+                  )?.workspace,
+                  let pane = workspace.paneId(forPanelId: panel.id) else { return }
+            _ = workspace.newMarkdownPanel(
+                inPane: pane,
+                filePath: path,
+                fragment: fragment,
+                focus: true,
+                initialNavigationOrigin: .documentLink,
+                initialNavigationScopeRootPath: scopeRootPath
+            )
+        }
+    }
+
+    func routePeek(_ href: String, requestID: Int, rect: [String: Any]) {
+        guard let panel, let filePath = panel.filePath else { return }
+        let navigationToken = panel.currentNavigationToken
+        let targetURL: URL
+        let fragment: String?
+        switch MarkdownLinkTarget.resolve(href, documentPath: filePath) {
+        case .anchor:
+            guard href.hasPrefix("#"), let decoded = String(href.dropFirst()).removingPercentEncoding,
+                  !decoded.isEmpty else { return }
+            targetURL = URL(fileURLWithPath: filePath)
+            fragment = decoded
+        case .markdown(let url):
+            targetURL = url
+            fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment
+        case .web, .mailto, .blocked:
+            return
+        }
+        activePeekRequestID = requestID
+        Task { @MainActor [weak self, weak panel] in
+            guard let self, let panel,
+                  case .ready(let path, let content, _, _) = await panel.prepareDocumentLink(
+                    targetURL,
+                    maximumContentBytes: MarkdownNavigationPolicy.maximumPeekContentBytes
+                  ),
+                  panel.isCurrentNavigation(navigationToken),
+                  self.navigationToken == navigationToken,
+                  self.activePeekRequestID == requestID,
+                  let markdown = content ?? (Self.resolvedPath(path) == panel.filePath.map(Self.resolvedPath) ? panel.content : nil),
+                  markdown.utf8.count <= MarkdownNavigationPolicy.maximumPeekContentBytes else { return }
+            self.call("showLinkPeek", arguments: [requestID, path, fragment as Any? ?? NSNull(), markdown, rect])
+        }
+    }
+
+    private static func resolvedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -653,6 +870,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         }
         recoveringAfterTermination = true
         pendingRestorePosition = MarkdownReadingPosition(state: state)
+        pendingNavigationToken = navigationToken
         ready = false
         renderedRevision = nil
         entryNavigationAdmitted = false
@@ -686,7 +904,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         "findPrevious": String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"),
         "findNext": String(localized: "markdown.reader.find.next", defaultValue: "Next match"),
         "findClose": String(localized: "markdown.reader.find.close", defaultValue: "Close find"),
-        "findCount": String(localized: "markdown.reader.find.count", defaultValue: "%d / %d")
+        "findCount": String(localized: "markdown.reader.find.count", defaultValue: "%d / %d"),
+        "brokenAnchorTitle": String(localized: "markdown.reader.navigation.brokenAnchor", defaultValue: "Heading “%s” not found. Closest headings:"),
+        "linkPeekTitle": String(localized: "markdown.reader.navigation.preview", defaultValue: "Preview")
     ] }
 }
 

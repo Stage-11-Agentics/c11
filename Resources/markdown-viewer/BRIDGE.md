@@ -65,6 +65,19 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   pan/zoom overlay and returns boolean; `closeDiagram()` closes it.
 - `themes()`: returns `[{id,label,scheme,defaultTypeface}]` (including system).
   `typefaces()`: returns `[{id,label,family,measure,leading}]` (including theme).
+- `navigateFragment(fragment)`: performs a page-local heading jump and reports
+  whether an exact heading exists. Missing headings show closest-heading
+  suggestions; choosing one posts a normal `link` event with the pre-jump
+  position so native records the selection in panel history.
+- `linkIndex()`: returns parsed headings and up to 128 links for the current
+  document, with link/heading counts and truncation flags. Individual hrefs,
+  labels, and heading lists are bounded. `inspectMarkdowns(markdowns)` accepts
+  up to 16 Markdown strings and 4 MiB total, returning at most 256 headings per
+  document plus a truncation flag. Native caps each inspected target at 256 KiB
+  and the combined payload at 4 MiB. These queries do not mutate page state.
+- `showLinkPeek(id, filePath, fragment, markdown, rect)` / `hideLinkPeek(id)`:
+  show or dismiss native-approved, sanitized relative-link preview content. A
+  preview is discarded when its request ID is stale.
 
 Effective layout width is the pane's CSS width **divided by scale**. The page
 applies text scale itself; native must keep WKWebView pageZoom at 1. Breakpoints,
@@ -98,11 +111,20 @@ with `type` and the following fields (no JSON string wrapping):
   load settled, including Mermaid and fonts. Superseded loads emit no rendered.
 - `{type:"link", href, resolvedURL:string|null,
   kind:"anchor"|"local"|"external"|"blocked",
-  modifiers:{meta,ctrl,shift,alt:boolean}}`: every document link click is prevented
-  before posting. Anchor clicks additionally scroll locally (and offer a return
-  pill). Local/external links never navigate the page. Native independently
-  validates paths/schemes before opening anything. `javascript:`, `data:`, unknown
-  schemes and malformed URLs are blocked. No link creates a window or loads a URL.
+  modifiers:{meta,ctrl,shift,alt:boolean}, position?:State,
+  localOnly?:boolean}`: every document link click is prevented before posting.
+  `position` is captured before the jump so native can save the source entry in
+  panel history. Normal anchor clicks then scroll locally; native owns history
+  and validation. Footnote/back-reference links set `localOnly` and remain
+  page-local. Local/external links never navigate the page. Native independently
+  validates paths/schemes before opening anything. `javascript:`, `data:`,
+  unknown schemes and malformed URLs are blocked. No link creates a window or
+  loads a URL.
+- `{type:"peek", action:"show"|"hide", id:number, href, rect}`: a delayed hover
+  on a relative Markdown link asks native to validate and read the target within
+  the current repository/document scope. Native may return an approved excerpt
+  through `showLinkPeek(id, filePath, fragment, markdown, rect)`; stale IDs are
+  ignored. Hide cancels that request. The preview is inert and never loads assets.
 - `{type:"copy", text, kind:"code"|"heading"}`: user pressed a copy button;
   native writes text to the pasteboard. The page does not require Clipboard API.
 - `{type:"outlineDismiss"}`: the page handled Escape while the outline was open;

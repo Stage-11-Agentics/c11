@@ -5513,7 +5513,7 @@ struct CMUXCLI {
         args = argsAfterPane
 
         if let first = args.first?.lowercased(),
-           ["scroll", "visible", "theme", "typeface", "font", "open-external"].contains(first) {
+           ["scroll", "visible", "theme", "typeface", "font", "open-external", "history", "links"].contains(first) {
             try runMarkdownAgentCommand(
                 subcommand: first,
                 arguments: Array(args.dropFirst()),
@@ -5539,43 +5539,62 @@ struct CMUXCLI {
             if let first = args.first, first.hasPrefix("-") {
                 throw CLIError(
                     message:
-                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
                 )
             } else if let first = args.first, looksLikePath(first) || first.contains(".") {
                 subArgs = args
             } else if let first = args.first {
-                throw CLIError(message: "Unknown markdown subcommand: \(first). Usage: c11 markdown open <path>")
+                throw CLIError(message: "Unknown markdown subcommand: \(first). Usage: c11 markdown open <path>[#fragment]")
             } else {
                 subArgs = []
             }
         }
 
         guard let rawPath = subArgs.first, !rawPath.isEmpty else {
-            throw CLIError(message: "markdown open requires a file path. Usage: c11 markdown open <path>")
+            throw CLIError(message: "markdown open requires a file path. Usage: c11 markdown open <path>[#fragment]")
         }
         let trailingArgs = Array(subArgs.dropFirst())
         if let unknownFlag = trailingArgs.first(where: { $0.hasPrefix("-") }) {
             throw CLIError(
                 message:
-                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
             )
         }
         if let extraArg = trailingArgs.first {
             throw CLIError(
                 message:
-                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
             )
         }
 
-        let absolutePath = resolvePath(rawPath)
+        let (pathArgument, fragment) = try splitMarkdownTarget(rawPath)
+        let absolutePath = resolvePath(pathArgument)
+
+        if let surfaceRaw = surfaceOpt {
+            guard workspaceOpt == nil, windowOpt == nil, paneOpt == nil else {
+                throw CLIError(message: "markdown open --panel cannot be combined with --workspace, --window, or --area")
+            }
+            guard !surfaceRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  Int(surfaceRaw.trimmingCharacters(in: .whitespacesAndNewlines)) == nil else {
+                throw CLIError(message: "markdown open --panel requires a stable ref such as panel:1")
+            }
+            guard let panelID = try normalizeSurfaceHandle(surfaceRaw, client: client) else {
+                throw CLIError(message: "markdown open: invalid panel handle")
+            }
+            var params: [String: Any] = ["panel_id": panelID, "path": absolutePath]
+            if let fragment { params["fragment"] = fragment }
+            let payload = try client.sendV2(method: "markdown.navigate", params: params)
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                print("OK navigation=\(payload["outcome"] as? String ?? "navigated") panel=\(formatHandle(payload, kind: "panel", idFormat: idFormat) ?? surfaceRaw) path=\(payload["path"] as? String ?? absolutePath)")
+            }
+            return
+        }
 
         // Build params
         var params: [String: Any] = ["path": absolutePath]
-        if let surfaceRaw = surfaceOpt {
-            if let surface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
-                params["panel_id"] = surface
-            }
-        }
+        if let fragment { params["fragment"] = fragment }
         let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         if let workspaceRaw {
             if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
@@ -5604,6 +5623,43 @@ struct CMUXCLI {
             let filePath = (payload["path"] as? String) ?? absolutePath
             print("OK panel=\(surfaceText) area=\(paneText) path=\(filePath)")
         }
+    }
+
+    private func splitMarkdownTarget(_ value: String) throws -> (path: String, fragment: String?) {
+        guard value.contains("#") else { return (value, nil) }
+        if isExistingMarkdownOpenFile(value) { return (value, nil) }
+
+        var separator = value.startIndex
+        var existingPathSeparator: String.Index?
+        while let candidate = value[separator...].firstIndex(of: "#") {
+            let path = String(value[..<candidate])
+            if isExistingMarkdownOpenFile(path) {
+                existingPathSeparator = candidate
+            }
+            guard candidate < value.endIndex else { break }
+            separator = value.index(after: candidate)
+        }
+
+        if let existingPathSeparator {
+            return try markdownPathAndFragment(value, separator: existingPathSeparator)
+        }
+        guard let firstSeparator = value.firstIndex(of: "#") else { return (value, nil) }
+        return try markdownPathAndFragment(value, separator: firstSeparator)
+    }
+
+    private func isExistingMarkdownOpenFile(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: resolvePath(path), isDirectory: &isDirectory)
+            && !isDirectory.boolValue
+    }
+
+    private func markdownPathAndFragment(_ value: String, separator: String.Index) throws -> (path: String, fragment: String?) {
+        let path = String(value[..<separator])
+        let encodedFragment = String(value[value.index(after: separator)...])
+        guard !path.isEmpty, let fragment = encodedFragment.removingPercentEncoding else {
+            throw CLIError(message: "markdown open: invalid file fragment")
+        }
+        return (path, fragment.isEmpty ? nil : fragment)
     }
 
     private func runMarkdownAgentCommand(
@@ -5715,6 +5771,23 @@ struct CMUXCLI {
             } else {
                 print("OK opened externally: \(result["path"] as? String ?? "")")
             }
+
+        case "history":
+            let (jsonFlag, remaining) = removeMarkdownFlag(arguments, name: "--json")
+            guard remaining.isEmpty, jsonOutput || jsonFlag else {
+                throw CLIError(message: "Usage: c11 markdown history --panel <id|ref> --json")
+            }
+            let result = try client.sendV2(method: "markdown.history", params: ["panel_id": panelID])
+            print(jsonString(formatIDs(result, mode: idFormat)))
+
+        case "links":
+            let (broken, afterBroken) = removeMarkdownFlag(arguments, name: "--broken")
+            let (jsonFlag, remaining) = removeMarkdownFlag(afterBroken, name: "--json")
+            guard broken, remaining.isEmpty, jsonOutput || jsonFlag else {
+                throw CLIError(message: "Usage: c11 markdown links --panel <id|ref> --broken --json")
+            }
+            let result = try client.sendV2(method: "markdown.links", params: ["panel_id": panelID, "broken": true])
+            print(jsonString(formatIDs(result, mode: idFormat)))
 
         default:
             throw CLIError(message: "Unknown markdown subcommand: \(subcommand)")
@@ -12212,7 +12285,7 @@ struct CMUXCLI {
             return "Legacy alias for 'c11 browser is-webview-focused'. Run 'c11 browser --help' for details."
         case "markdown":
             return """
-            Usage: c11 markdown open <path> [options]
+            Usage: c11 markdown open <path>[#fragment] [options]
                    c11 markdown <path>       (shorthand for 'open')
 
             Open a markdown file in a formatted viewer panel with live file watching.
@@ -12229,16 +12302,27 @@ struct CMUXCLI {
               c11 markdown ~/project/CHANGELOG.md
               c11 markdown open ./docs/design.md --workspace 0
 
+            Use --panel with open to navigate a markdown reader in place. It does
+            not switch the visible workspace or change c11 focus. The panel
+            validates navigation targets and keeps bounded back/forward history.
+
             Agent commands require an explicit --panel target:
+              c11 markdown open <path>[#fragment] --panel <id|ref>
               c11 markdown scroll --panel <id|ref> --heading <text>
               c11 markdown visible --panel <id|ref> --json [--watch]
               c11 markdown theme --panel <id|ref> (--list | --set <name>)
               c11 markdown typeface --panel <id|ref> (--list | --set <name>)
               c11 markdown font --panel <id|ref> --scale <0.5..3.0>
               c11 markdown open-external --panel <id|ref>
+              c11 markdown history --panel <id|ref> --json
+              c11 markdown links --panel <id|ref> --broken --json
 
             visible --watch emits newline-delimited JSON until the panel closes
             or the client disconnects.
+            history reports the panel's back/forward entries and saved reading positions.
+            links --broken reports relative Markdown targets or heading fragments that fail validation.
+            Same-document anchors stay in the page and participate in history. ⌘[ and ⌘]
+            navigate back and forward; the toolbar arrows do the same.
             """
         case "snapshot":
             return """

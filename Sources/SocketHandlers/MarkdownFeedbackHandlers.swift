@@ -298,6 +298,9 @@ extension TerminalController {
         }
         switch method {
         case "markdown.scroll": return v2MarkdownScroll(params: params)
+        case "markdown.navigate": return v2MarkdownNavigate(params: params)
+        case "markdown.history": return v2MarkdownHistory(params: params)
+        case "markdown.links": return v2MarkdownLinks(params: params)
         case "markdown.visible":
             guard v2Bool(params, "watch") != true else {
                 return .err(code: "invalid_params", message: "markdown.visible watch requires a streaming socket", data: nil)
@@ -451,6 +454,298 @@ extension TerminalController {
                 "heading": response["heading"] ?? NSNull()
             ])
         }
+    }
+
+    private nonisolated func v2MarkdownNavigate(params: [String: Any]) -> V2CallResult {
+        guard let rawPath = v2String(params, "path"), !rawPath.isEmpty else {
+            return .err(code: "invalid_params", message: "Missing 'path' parameter", data: ["field": "path"])
+        }
+        let expanded = NSString(string: rawPath).expandingTildeInPath
+        let path = NSString(string: expanded).standardizingPath
+        guard path.hasPrefix("/"), path.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return .err(code: "invalid_params", message: "Path must be absolute", data: ["path": path])
+        }
+        let fragment = params["fragment"] as? String
+        guard (fragment?.utf8.count ?? 0) <= 4096,
+              params["fragment"] == nil || params["fragment"] is NSNull || fragment != nil else {
+            return .err(code: "invalid_params", message: "Fragment exceeds 4096 UTF-8 bytes", data: ["field": "fragment"])
+        }
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else {
+            return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil)
+        }
+        let url = URL(fileURLWithPath: path)
+        let cancellation = MarkdownNavigationCancellation()
+        let response: V2CallResult? = v2AwaitCallback(timeout: 20) { finish in
+            Task { @MainActor in
+                let outcome = await target.panel.navigate(
+                    to: url,
+                    fragment: fragment,
+                    origin: .agentCLI,
+                    cancellation: cancellation
+                )
+                let data: [String: Any] = [
+                    "panel_id": target.surfaceId.uuidString,
+                    "path": target.panel.filePath ?? path,
+                    "fragment": fragment as Any? ?? NSNull(),
+                    "outcome": outcome.rawValue
+                ]
+                switch outcome {
+                case .navigated, .unchanged:
+                    finish(.ok(data))
+                case .invalidTarget:
+                    finish(.err(code: "invalid_params", message: "Markdown navigation target is invalid", data: data))
+                case .notFound:
+                    finish(.err(code: "not_found", message: "Markdown navigation target was not found", data: data))
+                case .notReadable:
+                    finish(.err(code: "permission_denied", message: "Markdown navigation target is not readable", data: data))
+                case .outsideScope:
+                    finish(.err(code: "permission_denied", message: "Markdown navigation target is outside its allowed scope", data: data))
+                case .superseded:
+                    finish(.err(code: "superseded", message: "A newer markdown navigation replaced this request", data: data))
+                case .panelClosed:
+                    finish(.err(code: "not_found", message: "Markdown panel closed during navigation", data: data))
+                }
+            }
+        }
+        guard let response else {
+            cancellation.cancel()
+            return .err(code: "timeout", message: "Timed out navigating the markdown panel", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        return response
+    }
+
+    private nonisolated func v2MarkdownHistory(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else {
+            return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil)
+        }
+        guard let state = v2BrowserMainHop({
+            (target.panel.filePath, target.panel.navigationHistory.jsonSnapshot())
+        }) else {
+            return v2BrowserMainHopTimeoutResult()
+        }
+        return .ok([
+            "panel_id": target.surfaceId.uuidString,
+            "path": state.0 as Any? ?? NSNull(),
+            "history": state.1
+        ])
+    }
+
+    private nonisolated func v2MarkdownLinks(params: [String: Any]) -> V2CallResult {
+        guard v2Bool(params, "broken") == true else {
+            return .err(code: "invalid_params", message: "markdown.links requires broken=true", data: ["field": "broken"])
+        }
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else {
+            return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil)
+        }
+        guard let boundPath = v2BrowserMainHop({ target.panel.filePath }) else {
+            return v2BrowserMainHopTimeoutResult()
+        }
+        guard let sourcePath = boundPath else {
+            return .err(code: "unavailable", message: "Markdown panel has no bound file", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        guard let response = v2MarkdownWebCall(target: target, method: "linkIndex") else {
+            return .err(code: "not_ready", message: "Markdown renderer is not ready", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        guard case .success(let value) = response,
+              let index = value as? [String: Any] else {
+            if case .failure(let error) = response {
+                return .err(code: "request_failed", message: error.localizedDescription, data: nil)
+            }
+            return .err(code: "internal_error", message: "Markdown renderer returned an invalid link index", data: nil)
+        }
+
+        let indexedLinks = index["links"] as? [[String: Any]] ?? []
+        let links = Array(indexedLinks.prefix(MarkdownNavigationPolicy.maximumIndexedLinks))
+        let sourceHeadings = index["headings"] as? [[String: Any]] ?? []
+        let sourceSlugs = Set(sourceHeadings.compactMap { $0["slug"] as? String })
+        let canonicalSourcePath = URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath().standardizedFileURL.path
+        var brokenReasons: [Int: String] = [:]
+        var inspectionPaths: [String] = []
+        var inspectionContent: [String: String] = [:]
+        var inspectionPayloadBytes = 0
+        var validationCache: [String: MarkdownNavigationPreparation] = [:]
+        var inspectionCache: [String: MarkdownNavigationPreparation] = [:]
+        var fragmentChecks: [Int: (path: String, fragment: String)] = [:]
+        var truncated = (index["linksTruncated"] as? Bool == true)
+            || (index["headingsTruncated"] as? Bool == true)
+            || (index["linkCount"] as? Int ?? indexedLinks.count) > links.count
+        let sourceHeadingsTruncated = index["headingsTruncated"] as? Bool == true
+
+        for (offset, link) in links.enumerated() {
+            guard link["hrefTruncated"] as? Bool != true,
+                  let href = link["href"] as? String,
+                  href.utf8.count <= MarkdownNavigationPolicy.maximumIndexedHrefBytes else {
+                brokenReasons[offset] = "invalid_target"
+                continue
+            }
+            switch MarkdownLinkTarget.resolve(href, documentPath: sourcePath) {
+            case .anchor:
+                guard href.hasPrefix("#"), let fragment = String(href.dropFirst()).removingPercentEncoding,
+                      !fragment.isEmpty else {
+                    brokenReasons[offset] = "invalid_fragment"
+                    continue
+                }
+                if fragment.hasPrefix("fn-") || fragment.hasPrefix("fnref-") { continue }
+                if !sourceSlugs.contains(fragment) {
+                    if sourceHeadingsTruncated { truncated = true }
+                    else { brokenReasons[offset] = "missing_fragment" }
+                }
+            case .markdown(let url):
+                let navigationTarget = MarkdownNavigationTarget(fileURL: url)
+                let candidatePath = url.resolvingSymlinksInPath().standardizedFileURL.path
+                let fragment = navigationTarget.fragment
+                if candidatePath == canonicalSourcePath {
+                    if let fragment, !sourceSlugs.contains(fragment) {
+                        if sourceHeadingsTruncated { truncated = true }
+                        else { brokenReasons[offset] = "missing_fragment" }
+                    }
+                    continue
+                }
+
+                let preparation: MarkdownNavigationPreparation
+                if fragment == nil {
+                    if let cached = validationCache[candidatePath] {
+                        preparation = cached
+                    } else {
+                        let value = MarkdownNavigationPolicy.prepare(
+                            navigationTarget,
+                            currentFilePath: sourcePath,
+                            origin: .documentLink,
+                            readContent: false
+                        )
+                        validationCache[candidatePath] = value
+                        preparation = value
+                    }
+                } else if let cached = inspectionCache[candidatePath] {
+                    preparation = cached
+                } else if inspectionPaths.count >= MarkdownNavigationPolicy.maximumLinkInspectionDocuments {
+                    truncated = true
+                    if let cached = validationCache[candidatePath] {
+                        preparation = cached
+                    } else {
+                        let value = MarkdownNavigationPolicy.prepare(
+                            navigationTarget,
+                            currentFilePath: sourcePath,
+                            origin: .documentLink,
+                            readContent: false
+                        )
+                        validationCache[candidatePath] = value
+                        preparation = value
+                    }
+                } else {
+                    let value = MarkdownNavigationPolicy.prepare(
+                        navigationTarget,
+                        currentFilePath: sourcePath,
+                        origin: .documentLink,
+                        maximumContentBytes: MarkdownNavigationPolicy.maximumLinkTargetBytes
+                    )
+                    inspectionCache[candidatePath] = value
+                    preparation = value
+                }
+
+                switch preparation {
+                case .rejected(let outcome):
+                    if fragment != nil, outcome == .notReadable {
+                        // A read cap is not proof that the link is broken. A
+                        // metadata-only pass distinguishes an uninspectable
+                        // large file from a genuinely unreadable target.
+                        let validation = validationCache[candidatePath] ?? MarkdownNavigationPolicy.prepare(
+                            navigationTarget,
+                            currentFilePath: sourcePath,
+                            origin: .documentLink,
+                            readContent: false
+                        )
+                        validationCache[candidatePath] = validation
+                        if case .ready = validation { truncated = true }
+                        else if case .rejected(let validationOutcome) = validation {
+                            brokenReasons[offset] = validationOutcome.linkReasonCode
+                        }
+                    } else {
+                        brokenReasons[offset] = outcome.linkReasonCode
+                    }
+                case .ready(let path, let content, _, _):
+                    let canonicalPath = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+                    guard let fragment else { continue }
+                    if let content {
+                        if inspectionContent[canonicalPath] == nil {
+                            let contentBytes = content.utf8.count
+                            guard inspectionPayloadBytes + contentBytes <= MarkdownNavigationPolicy.maximumLinkInspectionBytes else {
+                                truncated = true
+                                continue
+                            }
+                            inspectionContent[canonicalPath] = content
+                            inspectionPaths.append(canonicalPath)
+                            inspectionPayloadBytes += contentBytes
+                        }
+                        fragmentChecks[offset] = (canonicalPath, fragment)
+                    } else if let validation = validationCache[canonicalPath], case .ready = validation {
+                        truncated = true
+                    }
+                }
+            case .blocked:
+                brokenReasons[offset] = "blocked_target"
+            case .web, .mailto:
+                continue
+            }
+        }
+
+        if !inspectionPaths.isEmpty {
+            let markdown = inspectionPaths.compactMap { inspectionContent[$0] }
+            if let inspected = v2MarkdownWebCall(
+                target: target,
+                method: "inspectMarkdowns",
+                arguments: [markdown],
+                timeout: 12
+            ), case .success(let value) = inspected,
+               let inspection = value as? [String: Any],
+               let items = inspection["items"] as? [[String: Any]],
+               items.count == inspectionPaths.count {
+                var headingSets: [String: Set<String>] = [:]
+                var truncatedPaths = Set<String>()
+                for (path, item) in zip(inspectionPaths, items) {
+                    let headings = item["headings"] as? [[String: Any]] ?? []
+                    headingSets[path] = Set(headings.compactMap { $0["slug"] as? String })
+                    if item["truncated"] as? Bool == true { truncatedPaths.insert(path) }
+                }
+                if inspection["truncated"] as? Bool == true { truncated = true }
+                for (linkIndex, check) in fragmentChecks where headingSets[check.path]?.contains(check.fragment) != true {
+                    if truncatedPaths.contains(check.path) { truncated = true }
+                    else { brokenReasons[linkIndex] = "missing_fragment" }
+                }
+            } else {
+                truncated = true
+            }
+        }
+
+        let totalLinks = index["linkCount"] as? Int ?? indexedLinks.count
+        let candidates = brokenReasons.keys.sorted().compactMap { linkIndex -> [String: Any]? in
+            guard links.indices.contains(linkIndex) else { return nil }
+            var entry = links[linkIndex]
+            entry["broken"] = true
+            entry["reason"] = brokenReasons[linkIndex]
+            return entry
+        }
+        var broken: [[String: Any]] = []
+        var responseBytes = 0
+        for entry in candidates {
+            guard let bytes = try? JSONSerialization.data(withJSONObject: entry).count,
+                  responseBytes + bytes <= MarkdownNavigationPolicy.maximumLinksResponseBytes else {
+                truncated = true
+                break
+            }
+            broken.append(entry)
+            responseBytes += bytes
+        }
+        return .ok([
+            "panel_id": target.surfaceId.uuidString,
+            "path": sourcePath,
+            "links": broken,
+            "total": totalLinks,
+            "truncated": truncated
+        ])
     }
 
     private nonisolated func v2MarkdownVisible(params: [String: Any]) -> V2CallResult {
@@ -757,6 +1052,11 @@ extension TerminalController {
         guard let rawPath = v2String(params, "path") else {
             return .err(code: "invalid_params", message: "Missing 'path' parameter", data: nil)
         }
+        let fragment = params["fragment"] as? String
+        guard (fragment?.utf8.count ?? 0) <= 4096,
+              params["fragment"] == nil || params["fragment"] is NSNull || fragment != nil else {
+            return .err(code: "invalid_params", message: "Invalid markdown fragment", data: ["field": "fragment"])
+        }
 
         // Resolve the path (expand ~ and standardize)
         let expandedPath = NSString(string: rawPath).expandingTildeInPath
@@ -818,6 +1118,7 @@ extension TerminalController {
                 let createdPanel = ws.newMarkdownPanel(
                     inPane: targetPaneId,
                     filePath: filePath,
+                    fragment: fragment,
                     focus: v2FocusAllowed()
                 )
 
@@ -859,6 +1160,7 @@ extension TerminalController {
                 from: sourceSurfaceId,
                 orientation: .horizontal,
                 filePath: filePath,
+                fragment: fragment,
                 focus: v2FocusAllowed()
             )
 

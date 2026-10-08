@@ -194,3 +194,182 @@ enum MarkdownLinkTarget: Equatable {
         }
     }
 }
+
+enum MarkdownNavigationPreparation: Sendable {
+    case ready(filePath: String, content: String?, modificationDate: Date?, scopeRootPath: String?)
+    case rejected(MarkdownNavigationOutcome)
+}
+
+/// Resolves and reads navigation targets away from the UI thread. Relative
+/// document links and corpus selections remain inside the source document's
+/// repository (or its containing directory when there is no repository).
+enum MarkdownNavigationPolicy {
+    private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown"]
+    static let maximumNavigationContentBytes = 20 * 1024 * 1024
+    static let maximumPeekContentBytes = 256 * 1024
+    static let maximumLinkTargetBytes = 256 * 1024
+    static let maximumLinkInspectionDocuments = 16
+    static let maximumLinkInspectionBytes = maximumLinkInspectionDocuments * maximumLinkTargetBytes
+    static let maximumIndexedLinks = 128
+    static let maximumIndexedHrefBytes = 4 * 1024
+    static let maximumLinksResponseBytes = 512 * 1024
+
+    static func prepare(
+        _ target: MarkdownNavigationTarget,
+        currentFilePath: String?,
+        origin: MarkdownNavigationOrigin,
+        scopeRootPath: String? = nil,
+        allowOutsideScope: Bool = false,
+        readContent: Bool = true,
+        maximumContentBytes: Int = maximumNavigationContentBytes
+    ) -> MarkdownNavigationPreparation {
+        let fileURL = target.fileURL.standardizedFileURL
+        let filePath = fileURL.path
+        guard fileURL.isFileURL, filePath.hasPrefix("/"),
+              filePath.rangeOfCharacter(from: .controlCharacters) == nil,
+              (target.fragment?.utf8.count ?? 0) <= 4096,
+              target.fragment?.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return .rejected(.invalidTarget)
+        }
+
+        let requiresMarkdown = origin != .agentCLI && !allowOutsideScope
+        if requiresMarkdown, !markdownExtensions.contains(fileURL.pathExtension.lowercased()) {
+            return .rejected(.invalidTarget)
+        }
+
+        let manager = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard manager.fileExists(atPath: filePath, isDirectory: &isDirectory) else {
+            return .rejected(.notFound)
+        }
+        guard !isDirectory.boolValue, manager.isReadableFile(atPath: filePath) else {
+            return .rejected(.notReadable)
+        }
+
+        let resolvedTargetURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        guard Self.isRegularFile(at: resolvedTargetURL) else {
+            return .rejected(.notReadable)
+        }
+        if requiresMarkdown, !markdownExtensions.contains(resolvedTargetURL.pathExtension.lowercased()) {
+            return .rejected(.invalidTarget)
+        }
+
+        let scoped = origin != .agentCLI && !allowOutsideScope
+        var rootURL: URL?
+        if scoped {
+            let root: URL
+            if let scopeRootPath {
+                root = URL(fileURLWithPath: scopeRootPath, isDirectory: true).standardizedFileURL
+            } else if let currentFilePath, let discovered = documentRoot(for: currentFilePath) {
+                root = discovered
+            } else { return .rejected(.outsideScope) }
+            rootURL = root
+            let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+            let prefix = resolvedRoot.path.hasSuffix("/") ? resolvedRoot.path : resolvedRoot.path + "/"
+            guard resolvedTargetURL.path.hasPrefix(prefix) else {
+                return .rejected(.outsideScope)
+            }
+        }
+
+        let isSameDocument = currentFilePath.map { current in
+            URL(fileURLWithPath: current).resolvingSymlinksInPath().standardizedFileURL == resolvedTargetURL
+        } ?? false
+        let attributes = try? manager.attributesOfItem(atPath: filePath)
+        let modificationDate = attributes?[.modificationDate] as? Date
+        let scopeRootPath = rootURL?.resolvingSymlinksInPath().standardizedFileURL.path
+        if isSameDocument {
+            return .ready(
+                filePath: resolvedTargetURL.path,
+                content: nil,
+                modificationDate: modificationDate,
+                scopeRootPath: scopeRootPath
+            )
+        }
+        guard readContent else {
+            return .ready(
+                filePath: resolvedTargetURL.path,
+                content: nil,
+                modificationDate: modificationDate,
+                scopeRootPath: scopeRootPath
+            )
+        }
+
+        let data: Data
+        if let rootURL {
+            let resolvedRoot = rootURL.resolvingSymlinksInPath().standardizedFileURL
+            let prefix = resolvedRoot.path.hasSuffix("/") ? resolvedRoot.path : resolvedRoot.path + "/"
+            let relativePath = String(resolvedTargetURL.path.dropFirst(prefix.count))
+            guard let root = MarkdownAssetRoot(directory: resolvedRoot) else {
+                return .rejected(.notReadable)
+            }
+            do {
+                data = try root.read(path: relativePath, maximumBytes: max(0, maximumContentBytes))
+            } catch {
+                return .rejected(.notReadable)
+            }
+        } else {
+            do {
+                data = try Self.readRegularFile(at: resolvedTargetURL, maximumBytes: max(0, maximumContentBytes))
+            } catch {
+                return .rejected(.notReadable)
+            }
+        }
+        guard let content = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1) else {
+            return .rejected(.notReadable)
+        }
+        return .ready(
+            filePath: resolvedTargetURL.path,
+            content: content,
+            modificationDate: modificationDate,
+            scopeRootPath: scopeRootPath
+        )
+    }
+
+    private static func isRegularFile(at url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+    }
+
+    private static func readRegularFile(at url: URL, maximumBytes: Int) throws -> Data {
+        let descriptor = url.path.withCString {
+            Darwin.open($0, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else { throw CocoaError(.fileReadNoPermission) }
+        defer { Darwin.close(descriptor) }
+
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_size >= 0, info.st_size <= maximumBytes else {
+            throw CocoaError(.fileReadTooLarge)
+        }
+
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = Darwin.read(descriptor, &buffer, buffer.count)
+            if count == 0 { return result }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw CocoaError(.fileReadUnknown)
+            }
+            guard result.count + count <= maximumBytes else { throw CocoaError(.fileReadTooLarge) }
+            result.append(contentsOf: buffer.prefix(count))
+        }
+    }
+
+    private static func documentRoot(for filePath: String) -> URL? {
+        let manager = FileManager.default
+        let source = URL(fileURLWithPath: filePath).resolvingSymlinksInPath().standardizedFileURL
+        var directory = source.deletingLastPathComponent()
+        let documentDirectory = directory
+        while true {
+            if manager.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
+                return directory
+            }
+            let parent = directory.deletingLastPathComponent()
+            guard parent.path != directory.path else { break }
+            directory = parent
+        }
+        return documentDirectory
+    }
+}

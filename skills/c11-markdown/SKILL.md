@@ -142,12 +142,18 @@ c11 markdown open plan.md
 # Open in a specific workspace
 c11 markdown open plan.md --workspace workspace:2
 
-# Open splitting from a specific panel
+# Navigate an existing Markdown panel in place
 c11 markdown open plan.md --panel panel:5
 
 # Open in a specific window
 c11 markdown open plan.md --window window:1
 ```
+
+Without `--panel`, an optional `#fragment` selects a heading in the new panel.
+With a stable `--panel` target, `c11 markdown open <path>#<fragment> --panel
+panel:8` navigates that existing Markdown panel in place. This does not change
+the visible workspace or focus. The panel validates the target and records
+back/forward history.
 
 ## Deep-Dive References
 
@@ -188,6 +194,16 @@ System theme follows c11's effective appearance, which follows the OS when c11
 appearance is set to System. Typing in page controls keeps the web view as first
 responder only when C11-359's panel focus policy allows it.
 
+Document links navigate in the same panel by default. The toolbar's default
+link-destination toggle switches ordinary relative links to a new markdown
+panel; Cmd-click uses the opposite destination. Same-document anchors always
+stay in the current panel, including Cmd-click, and participate in panel
+history. Use ⌘[ / ⌘] or the toolbar arrows to move through that panel's history.
+A broken anchor offers the closest headings.
+Hovering a relative link briefly previews the target section after native path
+validation. Automatic document, palette and backlink navigation stays inside
+the source document's repository (or its directory when it has no repository).
+
 ## Agent Reading Controls
 
 These commands target an explicit markdown panel. They do not select its
@@ -206,6 +222,9 @@ c11 markdown typeface --panel panel:8 --list
 c11 markdown typeface --panel panel:8 --set mono
 c11 markdown font --panel panel:8 --scale 1.2
 c11 markdown open-external --panel panel:8
+c11 markdown open /path/to/guide.md#installation --panel panel:8
+c11 markdown history --panel panel:8 --json
+c11 markdown links --panel panel:8 --broken --json
 ```
 
 `visible` reports the current heading path, visible source-line range, reading
@@ -228,6 +247,12 @@ half-closes its request side.
 If only broader matches exist, it chooses a unique prefix before considering a
 unique substring; multiple matches at that tier return `ambiguous` with heading
 examples instead of silently scrolling to the first one.
+`open --panel` uses the panel navigation API with origin `agentCLI`; it accepts
+an absolute or caller-relative file path and optional `#fragment`, and returns
+the navigation outcome without selecting the panel's workspace. `history`
+returns the bounded back/forward stack and captured reading positions. `links
+--broken` reports relative Markdown links whose target file or heading is
+missing, outside the source scope, or unreadable.
 Theme and typeface names come from the panel's registered options. Font scale
 must be between 0.5 and 3.0 and is stored at the panel's 0.1-step precision.
 `open-external` opens the panel's bound file in the macOS default application
@@ -235,8 +260,10 @@ behind c11.
 
 Local raster images are limited to the document directory and its subdirectories;
 symlinks outside that tree and remote images are blocked. Document HTML and
-scripts never execute. Relative markdown links open another markdown panel;
-web links follow c11's browser routing settings. Anchors stay in the document.
+scripts never execute. Relative Markdown links navigate in the same panel by
+default; the toolbar toggle changes that default, and Cmd-click uses the
+opposite destination. Same-document anchors stay in the current panel. Web links
+follow c11's browser routing settings.
 Validated `mailto:` links accept recipients, cc, bcc, subject and body only;
 hosts, ports, fragments and control characters are refused. They open through
 `NSWorkspace` only after an operator clicks.

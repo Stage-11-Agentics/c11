@@ -74,6 +74,278 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
     }
 
+    func testPanelNavigationOwnsHistoryAndLeavesItsIdentityStable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-panel-navigation-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        let documents = repository.appendingPathComponent("docs")
+        let source = documents.appendingPathComponent("reader.md")
+        let target = documents.appendingPathComponent("target.md")
+        let outside = root.appendingPathComponent("outside.md")
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Reader\n\nSource content.\n".write(to: source, atomically: true, encoding: .utf8)
+        let targetMarkdown = "# Target\n\n## Details\n\n" + (1...30).map { "Target content \($0).\n\n" }.joined()
+        try targetMarkdown.write(to: target, atomically: true, encoding: .utf8)
+        try "# Outside\n".write(to: outside, atomically: true, encoding: .utf8)
+
+        let workspaceID = UUID()
+        let panel = MarkdownPanel(workspaceId: workspaceID, filePath: source.path)
+        defer { panel.close() }
+        let panelID = panel.id
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let firstNavigation = await panel.navigate(to: target, fragment: "details", origin: .palette)
+        XCTAssertEqual(firstNavigation, .navigated)
+        await rendered(renderer, revision: 2)
+        XCTAssertEqual(panel.id, panelID)
+        XCTAssertEqual(panel.workspaceId, workspaceID)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.navigationHistory.current?.origin, .palette)
+        XCTAssertTrue(panel.canNavigateBack)
+        let targetStateValue = try await call(renderer, "visible")
+        let targetState = try XCTUnwrap(targetStateValue as? [String: Any])
+        XCTAssertEqual((targetState["heading"] as? [String: Any])?["text"] as? String, "Details")
+
+        let backOutcome = await panel.navigateBack()
+        XCTAssertEqual(backOutcome, .navigated)
+        await rendered(renderer, revision: 3)
+        XCTAssertEqual(panel.filePath, source.path)
+        XCTAssertTrue(panel.canNavigateForward)
+        let forwardOutcome = await panel.navigateForward()
+        XCTAssertEqual(forwardOutcome, .navigated)
+        await rendered(renderer, revision: 4)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.id, panelID)
+        XCTAssertEqual(panel.workspaceId, workspaceID)
+
+        let entriesBeforeRejection = panel.navigationHistory.entries.count
+        let rejectedNavigation = await panel.navigate(to: outside, fragment: nil, origin: .backlink)
+        XCTAssertEqual(rejectedNavigation, .outsideScope)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.navigationHistory.entries.count, entriesBeforeRejection)
+    }
+
+    func testReloadFromPreviousDocumentCannotReplaceNavigatedContent() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-stale-reload-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = repository.appendingPathComponent("source.md")
+        let target = repository.appendingPathComponent("target.md")
+        try "# Source\n".write(to: source, atomically: true, encoding: .utf8)
+        try "# Target\n".write(to: target, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
+        defer { panel.close() }
+        let navigation = await panel.navigate(to: target, fragment: nil, origin: .agentCLI)
+        XCTAssertEqual(navigation, .navigated)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.content, "# Target\n")
+
+        // This is a watcher result already read from source.md before stopFileWatcher
+        // canceled the debounce item. It must not affect target.md or availability.
+        panel.applyExternalContent("# Stale source\n", forPath: source.path)
+        panel.applyExternalContent(nil, forPath: source.path)
+        XCTAssertEqual(panel.content, "# Target\n")
+        XCTAssertFalse(panel.isFileUnavailable)
+    }
+
+    func testSameDocumentPositionRestoreCannotUndoPageAppliedAnchor() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-navigation-token-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        let middle = (1...24).map { "Middle paragraph \($0).\n\n" }.joined()
+        let tail = (1...24).map { "Bottom paragraph \($0).\n\n" }.joined()
+        try ("# Guide\n\n## Middle\n\n" + middle + "## Bottom\n\n" + tail)
+            .write(to: path, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        defer { panel.close() }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let userContentController = renderer.webView.configuration.userContentController
+        let scriptProbe = MarkdownWebScriptMessageProbe()
+        userContentController.add(scriptProbe, name: "c11mdTestProbe")
+        defer { userContentController.removeScriptMessageHandler(forName: "c11mdTestProbe") }
+        let sourceModeStarted = expectation(description: "the older restore reached setSourceMode")
+        let sourceModeReleased = expectation(description: "the older restore continuation resumed")
+        scriptProbe.onMessage = { body in
+            switch body["type"] as? String {
+            case "source-mode-held": sourceModeStarted.fulfill()
+            case "source-mode-released": sourceModeReleased.fulfill()
+            default: break
+            }
+        }
+        let installed = try await evaluateAsync(renderer, #"""
+            const original = window.c11md;
+            window.__markdownRestoreScrolls = 0;
+            window.c11md = Object.freeze({
+              ...original,
+              setSourceMode: async (...args) => {
+                const state = await original.setSourceMode(...args);
+                window.webkit.messageHandlers.c11mdTestProbe.postMessage({type: 'source-mode-held'});
+                await new Promise(resolve => { window.__releaseMarkdownSourceMode = resolve; });
+                window.webkit.messageHandlers.c11mdTestProbe.postMessage({type: 'source-mode-released'});
+                return state;
+              },
+              scrollToLine: async (...args) => {
+                window.__markdownRestoreScrolls += 1;
+                return original.scrollToLine(...args);
+              }
+            });
+            window.__releaseMarkdownSourceMode = () => false;
+            return true;
+            """#)
+        XCTAssertEqual(installed as? Bool, true)
+
+        var oldPosition = MarkdownReadingPosition()
+        oldPosition.sourceMode = true
+        oldPosition.line = 1
+        let oldToken = panel.beginNavigationIntent()
+        renderer.navigateWithinDocument(position: oldPosition, fragment: nil, navigationToken: oldToken)
+        await fulfillment(of: [sourceModeStarted], timeout: 10)
+
+        // The page applies this anchor before reporting the link to native.
+        let appliedValue = try await call(renderer, "navigateFragment", arguments: ["bottom"])
+        let applied = try XCTUnwrap(appliedValue as? [String: Any])
+        XCTAssertEqual(applied["ok"] as? Bool, true)
+        XCTAssertEqual((applied["heading"] as? [String: Any])?["text"] as? String, "Bottom")
+        let bottomTopBeforeValue = try await evaluate(
+            renderer,
+            "document.getElementById('c11md-h-bottom').getBoundingClientRect().top"
+        )
+        let bottomTopBeforeRelease = try XCTUnwrap(bottomTopBeforeValue as? Double)
+        let tokenBeforeAnchorReport = panel.currentNavigationToken
+        let anchorTask = try XCTUnwrap(renderer.routeLink("#bottom", modifiers: [:], position: MarkdownReadingPosition()))
+        XCTAssertGreaterThan(panel.currentNavigationToken, tokenBeforeAnchorReport, "Page-applied anchors reserve their navigation generation synchronously")
+        await anchorTask.value
+        XCTAssertEqual(panel.navigationHistory.current?.target.fragment, "bottom")
+
+        let released = try await evaluate(renderer, "(window.__releaseMarkdownSourceMode(), true)") as? Bool
+        XCTAssertEqual(released, true)
+        await fulfillment(of: [sourceModeReleased], timeout: 10)
+        let scrollCount = try await evaluate(renderer, "window.__markdownRestoreScrolls") as? Int
+        XCTAssertEqual(scrollCount, 0, "A stale restore must not submit scrollToLine after the page applied a newer anchor")
+        let visibleValue = try await call(renderer, "visible")
+        let visible = try XCTUnwrap(visibleValue as? [String: Any])
+        XCTAssertEqual(visible["mode"] as? String, "read")
+        let bottomTopAfterValue = try await evaluate(
+            renderer,
+            "document.getElementById('c11md-h-bottom').getBoundingClientRect().top"
+        )
+        let bottomTopAfterRelease = try XCTUnwrap(bottomTopAfterValue as? Double)
+        XCTAssertEqual(bottomTopAfterRelease, bottomTopBeforeRelease, accuracy: 1,
+                       "The old restore must not move the page away from the applied anchor")
+    }
+
+    func testSameDocumentPeekUsesResolvedPathForSymlinkedPanel() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-symlink-peek-\(UUID().uuidString)")
+        let real = root.appendingPathComponent("real", isDirectory: true)
+        let linked = root.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: linked, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let realFile = real.appendingPathComponent("notes.md")
+        let linkedFile = linked.appendingPathComponent("notes.md")
+        try "# Notes\n\n## Details\n\nSymlink preview content.\n".write(to: realFile, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: realFile)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: linkedFile.path)
+        defer { panel.close() }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let userContentController = renderer.webView.configuration.userContentController
+        let scriptProbe = MarkdownWebScriptMessageProbe()
+        userContentController.add(scriptProbe, name: "c11mdTestProbe")
+        defer { userContentController.removeScriptMessageHandler(forName: "c11mdTestProbe") }
+        let peekShown = expectation(description: "the symlinked same-document preview reached the page")
+        scriptProbe.onMessage = { body in
+            if body["type"] as? String == "peek-visible" { peekShown.fulfill() }
+        }
+        let installed = try await evaluateAsync(renderer, #"""
+            const peek = document.querySelector('#linkPeek');
+            new MutationObserver(() => {
+              if (!window.__peekReported && !peek.hidden && peek.querySelector('.peek-content')) {
+                window.__peekReported = true;
+                window.webkit.messageHandlers.c11mdTestProbe.postMessage({type: 'peek-visible'});
+              }
+            }).observe(peek, {attributes: true, childList: true, subtree: true});
+            return true;
+            """#)
+        XCTAssertEqual(installed as? Bool, true)
+
+        renderer.routePeek("#details", requestID: 0, rect: ["x": 12, "y": 12, "height": 16])
+        await fulfillment(of: [peekShown], timeout: 10)
+        let peekText = try await evaluate(renderer, "document.querySelector('#linkPeek .peek-content').textContent") as? String
+        XCTAssertTrue(peekText?.contains("Symlink preview content.") == true, "The same-document fallback must use resolved path identity")
+    }
+
+    func testNewMarkdownPanelRecordsDocumentLinkRootOrigin() async throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-document-link-origin-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent("docs"), withIntermediateDirectories: true)
+        let outsideDirectory = root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        defer {
+            workspace.teardownAllPanels()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let target = repository.appendingPathComponent("docs/target.md")
+        let outside = outsideDirectory.appendingPathComponent("x.md")
+        try "# Target\n\n## Details\n".write(to: target, atomically: true, encoding: .utf8)
+        try "# Outside\n".write(to: outside, atomically: true, encoding: .utf8)
+        let openedPanel = try XCTUnwrap(
+            workspace.newMarkdownPanel(
+                inPane: pane,
+                filePath: target.path,
+                fragment: "details",
+                focus: false,
+                initialNavigationOrigin: .documentLink,
+                initialNavigationScopeRootPath: repository.resolvingSymlinksInPath().standardizedFileURL.path
+            )
+        )
+        XCTAssertEqual(openedPanel.navigationHistory.current?.origin, .documentLink)
+        XCTAssertEqual(
+            openedPanel.navigationHistory.current?.scopeRootPath,
+            repository.resolvingSymlinksInPath().standardizedFileURL.path
+        )
+
+        let away = await openedPanel.navigate(to: outside, fragment: nil, origin: .agentCLI)
+        XCTAssertEqual(away, .navigated)
+        let back = await openedPanel.navigateBack()
+        XCTAssertEqual(back, .navigated, "Back must replay the document-link root under its captured repository scope")
+        XCTAssertEqual(
+            openedPanel.filePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path },
+            target.resolvingSymlinksInPath().path
+        )
+    }
+
     func testScrollToHeadingPrefersExactAndReportsAmbiguousBroaderMatches() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-heading-match-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -818,6 +1090,9 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertEqual(unsupportedTheme["ok"] as? Bool, false)
         XCTAssertEqual((unsupportedTheme["error"] as? [String: Any])?["code"] as? String, "invalid_params")
         assertNotFound(try await send("markdown.open", params: scoped(stalePanelRef).merging(["path": path.path]) { _, new in new }))
+        assertNotFound(try await send("markdown.navigate", params: scoped(stalePanelRef).merging(["path": path.path]) { _, new in new }))
+        assertNotFound(try await send("markdown.history", params: scoped(stalePanelRef)))
+        assertNotFound(try await send("markdown.links", params: scoped(stalePanelRef).merging(["broken": true]) { _, new in new }))
         assertNotFound(try await send("markdown.get_content", params: scoped(stalePanelRef)))
 
         XCTAssertNil(panel.renderer, "unresolved refs must return before creating a hidden reader")
@@ -1125,5 +1400,393 @@ extension MarkdownWebRendererTests {
         print("POSTMERGE_INSERT evict=\(evict) before=\(headingBefore) after=\(headingAfter ?? "nil") beforeLines=\(String(describing: before["lines"])) afterLines=\(String(describing: after["lines"])) beforeY=\(yBefore) afterY=\(yAfter)")
         XCTAssertEqual(headingAfter, headingBefore, "Inserting earlier sections while evicted must preserve the content being read")
         XCTAssertEqual(yAfter, yBefore, accuracy: 1, "Unchanged Section 40 must stay in the same viewport position")
+    }
+}
+
+// Review 1 (C11-362) probes. Scratch copy only.
+extension MarkdownWebRendererTests {
+    private func reviewSend(_ controller: TerminalController, _ method: String, params: [String: Any]) async throws -> [String: Any] {
+        final class Box: @unchecked Sendable { let value: TerminalController; init(_ v: TerminalController) { value = v } }
+        final class Flag: @unchecked Sendable {
+            private let lock = NSLock(); private var running = true
+            var shouldContinue: Bool { lock.lock(); defer { lock.unlock() }; return running }
+            func stop() { lock.lock(); running = false; lock.unlock() }
+        }
+        let box = Box(controller), flag = Flag()
+        var sockets: [Int32] = [-1, -1]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
+        let client = sockets[0], server = sockets[1]
+        let serverTask = Task.detached {
+            TerminalController.serveCommandLines(
+                socket: server,
+                shouldContinue: { flag.shouldContinue },
+                respond: { command in
+                    guard let data = command.data(using: .utf8),
+                          let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let method = request["method"] as? String,
+                          let params = request["params"] as? [String: Any] else { return "{\"ok\":false}" }
+                    return box.value.v2Result(id: request["id"], box.value.v2DispatchMarkdownWorker(method, params: params))
+                },
+                stream: { _, _, _ in false }
+            )
+        }
+        let bytes = try JSONSerialization.data(withJSONObject: ["id": UUID().uuidString, "method": method, "params": params]) + Data([0x0A])
+        XCTAssertEqual(bytes.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }, bytes.count)
+        _ = shutdown(client, SHUT_WR)
+        let line = await Task.detached { () -> String? in
+            var response: [UInt8] = []; var byte: UInt8 = 0
+            while read(client, &byte, 1) == 1 { if byte == 0x0A { break }; response.append(byte) }
+            return response.isEmpty ? nil : String(decoding: response, as: UTF8.self)
+        }.value
+        flag.stop(); await serverTask.value; close(client); close(server)
+        let lineData = try XCTUnwrap(line?.data(using: .utf8))
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: lineData) as? [String: Any])
+    }
+
+    func testMarkdownSocketNavigationKeepsFocusAndHiddenPanelRestoresFragment() async throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let selectedBefore = manager.selectedWorkspaceId
+        let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-socket-navigation-\(UUID().uuidString)")
+        let docs = root.appendingPathComponent("docs")
+        try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { workspace.teardownAllPanels(); try? FileManager.default.removeItem(at: root) }
+        let source = docs.appendingPathComponent("source.md")
+        let target = docs.appendingPathComponent("target.md")
+        try "# Source\n\n[ok](target.md#details)\n\n[bad](target.md#nope)\n\n[gone](missing.md)\n\n[large](large.md#unknown)\n\n[self](#source)\n\n[selfbad](#zzz)\n".write(to: source, atomically: true, encoding: .utf8)
+        try ("# Target\n\n" + (1...40).map { "Filler \($0).\n\n" }.joined() + "## Details\n\nHere.\n\n" + (1...40).map { "Tail \($0).\n\n" }.joined()).write(to: target, atomically: true, encoding: .utf8)
+        let large = docs.appendingPathComponent("large.md")
+        var largeContent = Data("# Large\n\n".utf8)
+        largeContent.append(Data(repeating: 0x61, count: 300 * 1024))
+        try largeContent.write(to: large)
+        let focused = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: source.path, focus: true))
+        let background = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: source.path, focus: false))
+        workspace.focusPanel(focused.id)
+        let focusedBefore = workspace.focusedPanelId
+        XCTAssertNil(background.renderer)
+        let controller = TerminalController.makeForTesting()
+        let prior = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = prior }
+        let scope: [String: Any] = ["surface_id": background.id.uuidString, "workspace_id": workspace.id.uuidString]
+
+        let relative = try await reviewSend(controller, "markdown.navigate", params: scope.merging(["path": "docs/target.md"]) { $1 })
+        XCTAssertEqual((relative["error"] as? [String: Any])?["code"] as? String, "invalid_params", "relative raw path: \(relative)")
+        let stale = try await reviewSend(controller, "markdown.navigate", params: ["surface_id": "panel:99999", "workspace_id": workspace.id.uuidString, "path": target.path])
+        XCTAssertEqual((stale["error"] as? [String: Any])?["code"] as? String, "not_found", "stale ref: \(stale)")
+        let staleHistory = try await reviewSend(controller, "markdown.history", params: ["surface_id": "panel:99999", "workspace_id": workspace.id.uuidString])
+        XCTAssertEqual((staleHistory["error"] as? [String: Any])?["code"] as? String, "not_found", "stale history ref: \(staleHistory)")
+        let staleLinks = try await reviewSend(controller, "markdown.links", params: ["surface_id": "panel:99999", "workspace_id": workspace.id.uuidString, "broken": true])
+        XCTAssertEqual((staleLinks["error"] as? [String: Any])?["code"] as? String, "not_found", "stale links ref: \(staleLinks)")
+
+        let nav = try await reviewSend(controller, "markdown.navigate", params: scope.merging(["path": target.path, "fragment": "details"]) { $1 })
+        XCTAssertEqual(nav["ok"] as? Bool, true, "\(nav)")
+        XCTAssertEqual((nav["result"] as? [String: Any])?["outcome"] as? String, "navigated", "\(nav)")
+        XCTAssertEqual(background.filePath, target.path)
+        XCTAssertEqual(workspace.focusedPanelId, focusedBefore, "navigate must not move panel focus")
+        XCTAssertEqual(manager.selectedWorkspaceId, selectedBefore, "navigate must not select a workspace")
+        XCTAssertNil(background.renderer, "navigating a never-shown panel stays model-only")
+
+        let again = try await reviewSend(controller, "markdown.navigate", params: scope.merging(["path": target.path, "fragment": "details"]) { $1 })
+        XCTAssertEqual((again["result"] as? [String: Any])?["outcome"] as? String, "navigated", "repeated fragment navigation should reapply: \(again)")
+
+        let history = try await reviewSend(controller, "markdown.history", params: scope)
+        let snapshot = try XCTUnwrap((history["result"] as? [String: Any])?["history"] as? [String: Any], "\(history)")
+        XCTAssertEqual((snapshot["entries"] as? [[String: Any]])?.count, 2)
+        XCTAssertNil(background.renderer, "history answers from the model")
+
+        // Recreate the hidden reader: the pending fragment must land.
+        let renderer = background.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+        let stateValue = try await call(renderer, "visible")
+        let state = try XCTUnwrap(stateValue as? [String: Any])
+        XCTAssertEqual((state["heading"] as? [String: Any])?["text"] as? String, "Details", "pending fragment after recreation: \(state["heading"] ?? "nil")")
+
+        // links --broken from the focused source panel.
+        let links = try await reviewSend(controller, "markdown.links", params: ["surface_id": focused.id.uuidString, "workspace_id": workspace.id.uuidString, "broken": true])
+        let result = try XCTUnwrap(links["result"] as? [String: Any], "\(links)")
+        XCTAssertNil(result["broken"], "links returns one canonical array")
+        let broken = try XCTUnwrap(result["links"] as? [[String: Any]], "\(links)")
+        XCTAssertEqual(Set(broken.compactMap { $0["href"] as? String }), ["target.md#nope", "missing.md", "#zzz"])
+        XCTAssertEqual(Set(broken.compactMap { $0["reason"] as? String }), ["missing_fragment", "not_found"])
+        XCTAssertEqual(result["truncated"] as? Bool, true, "large fragment targets are uninspected, not mislabeled broken")
+        XCTAssertEqual(workspace.focusedPanelId, focusedBefore)
+        XCTAssertEqual(manager.selectedWorkspaceId, selectedBefore)
+    }
+
+    func testMarkdownHistoryBackRestoresPositionLiveAndAfterEviction() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-history-back-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source.md")
+        let target = root.appendingPathComponent("target.md")
+        try ("# Source\n\n" + (1...80).map { "## S\($0)\n\nParagraph \($0).\n\n" }.joined()).write(to: source, atomically: true, encoding: .utf8)
+        try "# Target\n\nShort.\n".write(to: target, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
+        defer { panel.close() }
+        var renderer: MarkdownWebRenderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+        _ = try await call(renderer, "scrollToLine", arguments: [121, 0])
+        let beforeValue = try await call(renderer, "visible")
+        let before = try XCTUnwrap(MarkdownReadingPosition(state: try XCTUnwrap(beforeValue as? [String: Any])))
+        XCTAssertGreaterThan(before.line, 100)
+
+        let o1 = await panel.navigate(to: target, fragment: nil, origin: .palette); XCTAssertEqual(o1, .navigated)
+        await rendered(renderer, revision: 2)
+        let o2 = await panel.navigateBack(); XCTAssertEqual(o2, .navigated)
+        await rendered(renderer, revision: 3)
+        let liveValue = try await call(renderer, "visible")
+        let live = try XCTUnwrap(MarkdownReadingPosition(state: try XCTUnwrap(liveValue as? [String: Any])))
+        XCTAssertEqual(live.line, before.line, "live Back must restore the source position")
+
+        let o3 = await panel.navigateForward(); XCTAssertEqual(o3, .navigated)
+        await rendered(renderer, revision: 4)
+        // Evict, then go back while no renderer exists.
+        panel.evictRenderer(renderer, position: MarkdownReadingPosition())
+        XCTAssertNil(panel.renderer)
+        let o4 = await panel.navigateBack(); XCTAssertEqual(o4, .navigated)
+        XCTAssertEqual(panel.filePath, source.path)
+        renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+        window.contentView = renderer.webView
+        await rendered(renderer, revision: 1)
+        let evictedValue = try await call(renderer, "visible")
+        let evicted = try XCTUnwrap(MarkdownReadingPosition(state: try XCTUnwrap(evictedValue as? [String: Any])))
+        XCTAssertEqual(evicted.line, before.line, "Back while evicted must restore the source position")
+    }
+}
+
+extension MarkdownWebRendererTests {
+    func testMarkdownLinkDestinationModifierInvertsDefaultAndAnchorsStayInPanel() async throws {
+        let document = URL(fileURLWithPath: "/tmp/source.md")
+        let markdownTarget = MarkdownLinkTarget.resolve("target.md", documentPath: document.path)
+        for defaultIsNewPanel in [false, true] {
+            for metaHeld in [false, true] {
+                XCTAssertEqual(
+                    MarkdownWebRenderer.shouldOpenTargetInNewPanel(
+                        markdownTarget,
+                        metaHeld: metaHeld,
+                        defaultIsNewPanel: defaultIsNewPanel
+                    ),
+                    metaHeld != defaultIsNewPanel,
+                    "Cmd-click must invert defaultIsNewPanel=\(defaultIsNewPanel)"
+                )
+                XCTAssertFalse(
+                    MarkdownWebRenderer.shouldOpenTargetInNewPanel(
+                        .anchor,
+                        metaHeld: metaHeld,
+                        defaultIsNewPanel: defaultIsNewPanel
+                    ),
+                    "same-document anchors stay in this panel regardless of modifiers or mode"
+                )
+            }
+        }
+
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let appDelegate = AppDelegate.shared
+        let priorManager = appDelegate?.workspaceManager
+        appDelegate?.workspaceManager = manager
+        let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("md-anchor-routing-\(UUID().uuidString)")
+        let docs = root.appendingPathComponent("docs")
+        try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer {
+            appDelegate?.workspaceManager = priorManager
+            workspace.teardownAllPanels()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let file = docs.appendingPathComponent("reader.md")
+        try "# Reader\n\n## Details\n\nContent.\n".write(to: file, atomically: true, encoding: .utf8)
+        let panel = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: file.path, focus: false))
+        let renderer = panel.ensureRenderer()
+        let panelCount = workspace.panels.count
+        let initialCount = panel.navigationHistory.entries.count
+        let settingKey = "markdown.links.openInNewPanel"
+        let priorSetting = UserDefaults.standard.object(forKey: settingKey)
+        defer {
+            if let priorSetting { UserDefaults.standard.set(priorSetting, forKey: settingKey) }
+            else { UserDefaults.standard.removeObject(forKey: settingKey) }
+        }
+        var position = MarkdownReadingPosition()
+        position.line = 8
+
+        for defaultIsNewPanel in [false, true] {
+            UserDefaults.standard.set(defaultIsNewPanel, forKey: settingKey)
+            for metaHeld in [false, true] {
+                let task = try XCTUnwrap(renderer.routeLink(
+                    "#details",
+                    modifiers: ["meta": metaHeld],
+                    position: position
+                ))
+                await task.value
+                XCTAssertEqual(workspace.panels.count, panelCount, "anchor routing must not create a duplicate panel")
+                XCTAssertEqual(panel.navigationHistory.entries.count, initialCount + 1, "repeating the same anchor must not duplicate history")
+                XCTAssertEqual(panel.navigationHistory.entries[0].readingPosition?.line, 8, "the source position is retained for Back")
+                XCTAssertEqual(panel.navigationHistory.current?.target.fragment, "details")
+            }
+        }
+    }
+
+    func testRepeatedCurrentFragmentNavigationReappliesWithoutGrowingHistory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-repeat-fragment-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("reader.md")
+        let content = "# Reader\n\n" + (1...40).map { "Filler \($0).\n\n" }.joined() + "## Details\n\nTarget section.\n"
+        try content.write(to: file, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: file.path)
+        defer { panel.close() }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let firstOutcome = await panel.navigate(to: file, fragment: "details", origin: .agentCLI)
+        XCTAssertEqual(firstOutcome, .navigated)
+        let firstValue = try await call(renderer, "visible")
+        let firstState = try XCTUnwrap(firstValue as? [String: Any])
+        XCTAssertEqual((firstState["heading"] as? [String: Any])?["text"] as? String, "Details")
+        _ = try await call(renderer, "scrollToLine", arguments: [1, 0])
+        let awayValue = try await call(renderer, "visible")
+        let awayState = try XCTUnwrap(awayValue as? [String: Any])
+        XCTAssertNotEqual((awayState["heading"] as? [String: Any])?["text"] as? String, "Details")
+
+        let repeatOutcome = await panel.navigate(to: file, fragment: "details", origin: .agentCLI)
+        XCTAssertEqual(repeatOutcome, .navigated)
+        let restoredValue = try await call(renderer, "visible")
+        let restored = try XCTUnwrap(restoredValue as? [String: Any])
+        XCTAssertEqual((restored["heading"] as? [String: Any])?["text"] as? String, "Details", "the repeated command must reapply the fragment after scroll-away")
+        XCTAssertEqual(panel.navigationHistory.entries.count, 2, "reapplying a current fragment must not create another history item")
+    }
+
+    func testCancelledSocketNavigationCannotCommitAfterTimeoutCancellation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-cancel-navigation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source.md")
+        let target = root.appendingPathComponent("target.md")
+        try "# Source\n".write(to: source, atomically: true, encoding: .utf8)
+        try "# Target\n".write(to: target, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
+        defer { panel.close() }
+        let originalHistoryCount = panel.navigationHistory.entries.count
+        let cancellation = MarkdownNavigationCancellation()
+
+        // This is the socket timeout action: the caller has received timeout,
+        // so any navigation still preparing must be unable to commit.
+        cancellation.cancel()
+        let outcome = await panel.navigate(
+            to: target,
+            fragment: nil,
+            origin: .agentCLI,
+            cancellation: cancellation
+        )
+        XCTAssertEqual(outcome, .superseded)
+        XCTAssertEqual(panel.filePath, source.path)
+        XCTAssertEqual(panel.navigationHistory.entries.count, originalHistoryCount)
+        var committed = false
+        XCTAssertFalse(cancellation.commitIfActive { committed = true })
+        XCTAssertFalse(committed, "a canceled timeout request cannot run its late panel commit")
+    }
+
+    func testSupersededMarkdownNavigationCannotCommitOverNewerRequest() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-superseded-navigation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source.md")
+        let slow = root.appendingPathComponent("slow.md")
+        let fast = root.appendingPathComponent("fast.md")
+        try "# Source\n".write(to: source, atomically: true, encoding: .utf8)
+        var slowContent = Data("# Slow\n".utf8)
+        slowContent.append(Data(repeating: 0x20, count: 19 * 1024 * 1024))
+        try slowContent.write(to: slow)
+        try "# Fast\n".write(to: fast, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
+        defer { panel.close() }
+        let slowRequestStarted = expectation(description: "slow request entered before the newer navigation")
+        let slowRequest = Task { @MainActor in
+            slowRequestStarted.fulfill()
+            return await panel.navigate(to: slow, fragment: nil, origin: .agentCLI)
+        }
+        await fulfillment(of: [slowRequestStarted], timeout: 2)
+
+        let latest = await panel.navigate(to: fast, fragment: nil, origin: .agentCLI)
+        let stale = await slowRequest.value
+        XCTAssertEqual(latest, .navigated)
+        XCTAssertEqual(stale, .superseded)
+        XCTAssertEqual(panel.filePath, fast.path, "the older request must not commit after a newer target")
+        XCTAssertEqual(panel.navigationHistory.entries.count, 2)
+        XCTAssertEqual(panel.navigationHistory.current?.target.fileURL.path, fast.path)
+    }
+
+    func testBreadcrumbShowsDocumentNameInFullAndCompactWidths() {
+        XCTAssertEqual(
+            MarkdownBreadcrumbText.full(filePath: "/repo/docs/reader.md", displayTitle: "reader.md", headingPath: ["Setup", "Install"]),
+            "docs  ›  reader.md  ›  Setup  ›  Install"
+        )
+        XCTAssertEqual(
+            MarkdownBreadcrumbText.compact(filePath: "/repo/docs/reader.md", displayTitle: "reader.md", headingPath: ["Setup", "Install"], compact: true),
+            "reader.md  ›  Install"
+        )
+        XCTAssertEqual(
+            MarkdownBreadcrumbText.compact(filePath: "/repo/docs/reader.md", displayTitle: "reader.md", headingPath: [], compact: true),
+            "reader.md"
+        )
+    }
+}
+
+extension MarkdownWebRendererTests {
+    func testReviewProbeDocumentLinkRootSurvivesBackAfterAgentLeavesScope() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rv362-n13-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        let outsideDir = root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = repository.appendingPathComponent("a.md")
+        let outside = outsideDir.appendingPathComponent("x.md")
+        try "# A\n".write(to: source, atomically: true, encoding: .utf8)
+        try "# X\n".write(to: outside, atomically: true, encoding: .utf8)
+        let resolvedSource = source.resolvingSymlinksInPath().path
+        let scopeRootPath = repository.resolvingSymlinksInPath().standardizedFileURL.path
+        for origin in [MarkdownNavigationOrigin.agentCLI, .documentLink] {
+            let initialScopeRoot = origin.rawValue == MarkdownNavigationOrigin.documentLink.rawValue ? scopeRootPath : nil
+            let panel = MarkdownPanel(
+                workspaceId: UUID(),
+                filePath: source.path,
+                initialNavigationOrigin: origin,
+                initialNavigationScopeRootPath: initialScopeRoot
+            )
+            defer { panel.close() }
+            let away = await panel.navigate(to: outside, fragment: nil, origin: .agentCLI)
+            XCTAssertEqual(away, .navigated, "root origin \(origin)")
+            let back = await panel.navigateBack()
+            let path = panel.filePath ?? "nil"
+            print("RV362V root=\(origin) back=\(back) path=\(path)")
+            XCTAssertEqual(back, .navigated, "Back to a \(origin)-origin root after an agent left its scope")
+            XCTAssertEqual(panel.filePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }, resolvedSource)
+        }
     }
 }

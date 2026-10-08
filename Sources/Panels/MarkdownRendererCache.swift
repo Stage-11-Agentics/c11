@@ -3,7 +3,7 @@ import Combine
 import Bonsplit
 
 /// Transient reading state survives WebKit eviction; durable preferences stay on the panel.
-struct MarkdownReadingPosition: Equatable {
+struct MarkdownReadingPosition: Equatable, Sendable {
     var line: Int = 1
     var offset: Double = 0
     var sourceMode = false
@@ -21,6 +21,205 @@ struct MarkdownReadingPosition: Equatable {
         let query = find?["query"] as? String ?? ""
         findQuery = String(query.prefix(8192))
         findOpen = find?["open"] as? Bool ?? false
+    }
+}
+
+enum MarkdownBreadcrumbText {
+    static func full(filePath: String?, displayTitle: String, headingPath: [String]) -> String {
+        let file = URL(fileURLWithPath: filePath ?? displayTitle).lastPathComponent
+        let directory = filePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent }
+        return ([directory].compactMap { $0 } + [file] + headingPath)
+            .filter { !$0.isEmpty }
+            .joined(separator: "  ›  ")
+    }
+
+    static func compact(filePath: String?, displayTitle: String, headingPath: [String], compact: Bool) -> String {
+        guard compact else { return full(filePath: filePath, displayTitle: displayTitle, headingPath: headingPath) }
+        let file = URL(fileURLWithPath: filePath ?? displayTitle).lastPathComponent
+        return ([file, headingPath.last].compactMap { $0 }.filter { !$0.isEmpty }).joined(separator: "  ›  ")
+    }
+}
+
+struct MarkdownNavigationTarget: Equatable, Sendable {
+    let fileURL: URL
+    let fragment: String?
+
+    init(fileURL: URL, fragment: String? = nil) {
+        var normalized = fileURL
+        var resolvedFragment = fragment
+        if var components = URLComponents(url: fileURL, resolvingAgainstBaseURL: false) {
+            if resolvedFragment == nil { resolvedFragment = components.fragment }
+            components.fragment = nil
+            normalized = components.url ?? fileURL
+        }
+        self.fileURL = normalized.standardizedFileURL
+        self.fragment = resolvedFragment?.isEmpty == true ? nil : resolvedFragment
+    }
+}
+
+enum MarkdownNavigationOrigin: String, Sendable {
+    case documentLink
+    case agentCLI
+    case palette
+    case backlink
+    case history
+}
+
+/// Shared between the socket worker's timeout and the main-actor navigation
+/// commit so a timed-out request cannot move the panel later.
+final class MarkdownNavigationCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    @MainActor
+    func commitIfActive(_ commit: () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled else { return false }
+        commit()
+        return true
+    }
+}
+
+enum MarkdownNavigationOutcome: String, Equatable, Sendable {
+    case navigated
+    case unchanged
+    case invalidTarget
+    case notFound
+    case notReadable
+    case outsideScope
+    case superseded
+    case panelClosed
+
+    var linkReasonCode: String {
+        switch self {
+        case .navigated: return "navigated"
+        case .unchanged: return "unchanged"
+        case .invalidTarget: return "invalid_target"
+        case .notFound: return "not_found"
+        case .notReadable: return "not_readable"
+        case .outsideScope: return "outside_scope"
+        case .superseded: return "superseded"
+        case .panelClosed: return "panel_closed"
+        }
+    }
+}
+
+struct MarkdownNavigationEntry: Equatable, Sendable {
+    let target: MarkdownNavigationTarget
+    let origin: MarkdownNavigationOrigin
+    let scopeRootPath: String?
+    var readingPosition: MarkdownReadingPosition?
+}
+
+struct MarkdownNavigationHistory: Equatable, Sendable {
+    private(set) var entries: [MarkdownNavigationEntry] = []
+    private(set) var currentIndex = -1
+
+    private static let maximumEntries = 100
+
+    var current: MarkdownNavigationEntry? {
+        entries.indices.contains(currentIndex) ? entries[currentIndex] : nil
+    }
+    var canGoBack: Bool { currentIndex > 0 }
+    var canGoForward: Bool { currentIndex >= 0 && currentIndex < entries.count - 1 }
+
+    mutating func reset(
+        to target: MarkdownNavigationTarget?,
+        origin: MarkdownNavigationOrigin = .agentCLI,
+        scopeRootPath: String? = nil
+    ) {
+        entries = target.map {
+            [MarkdownNavigationEntry(target: $0, origin: origin, scopeRootPath: scopeRootPath, readingPosition: nil)]
+        } ?? []
+        currentIndex = target == nil ? -1 : 0
+    }
+
+    @discardableResult
+    mutating func push(
+        _ target: MarkdownNavigationTarget,
+        origin: MarkdownNavigationOrigin,
+        scopeRootPath: String?,
+        preserving position: MarkdownReadingPosition?
+    ) -> Bool {
+        guard currentIndex >= 0 else {
+            entries = [MarkdownNavigationEntry(
+                target: target, origin: origin, scopeRootPath: scopeRootPath, readingPosition: nil
+            )]
+            currentIndex = 0
+            return true
+        }
+
+        if let position { entries[currentIndex].readingPosition = position }
+        guard entries[currentIndex].target != target else { return false }
+        entries = Array(entries.prefix(currentIndex + 1))
+        entries.append(MarkdownNavigationEntry(
+            target: target, origin: origin, scopeRootPath: scopeRootPath, readingPosition: nil
+        ))
+        if entries.count > Self.maximumEntries {
+            entries.removeFirst(entries.count - Self.maximumEntries)
+        }
+        currentIndex = entries.count - 1
+        return true
+    }
+
+    func target(backward: Bool) -> (index: Int, entry: MarkdownNavigationEntry)? {
+        let destination = currentIndex + (backward ? -1 : 1)
+        guard entries.indices.contains(destination) else { return nil }
+        return (destination, entries[destination])
+    }
+
+    @discardableResult
+    mutating func move(to destination: Int, preserving position: MarkdownReadingPosition?) -> MarkdownNavigationEntry? {
+        guard entries.indices.contains(destination) else { return nil }
+        if currentIndex >= 0, let position { entries[currentIndex].readingPosition = position }
+        currentIndex = destination
+        return entries[currentIndex]
+    }
+
+    func jsonSnapshot() -> [String: Any] {
+        [
+            "index": currentIndex,
+            "can_back": canGoBack,
+            "can_forward": canGoForward,
+            "current": current.map { [
+                "path": $0.target.fileURL.path,
+                "fragment": $0.target.fragment as Any? ?? NSNull(),
+                "origin": $0.origin.rawValue
+            ] as [String: Any] } ?? NSNull(),
+            "entries": entries.enumerated().map { index, entry in
+                var value: [String: Any] = [
+                    "index": index,
+                    "path": entry.target.fileURL.path,
+                    "fragment": entry.target.fragment as Any? ?? NSNull(),
+                    "origin": entry.origin.rawValue
+                ]
+                if let position = entry.readingPosition {
+                    value["position"] = [
+                        "line": position.line,
+                        "offset": position.offset,
+                        "source_mode": position.sourceMode,
+                        "find_query": position.findQuery,
+                        "find_open": position.findOpen
+                    ]
+                } else {
+                    value["position"] = NSNull()
+                }
+                return value
+            }
+        ]
     }
 }
 

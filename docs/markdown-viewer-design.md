@@ -1,6 +1,6 @@
 # Markdown viewer design
 
-The design contract for C11-336: the markdown panel rebuilt on a web renderer. The prototype at `docs/design-prototypes/markdown-viewer/reader/index.html` shows this document in motion; where the two disagree, this document wins. Linked-doc navigation is a separate ticket (C11-357).
+The design contract for C11-336: the markdown panel rebuilt on a web renderer. The prototype at `docs/design-prototypes/markdown-viewer/reader/index.html` shows this document in motion; where the two disagree, this document wins. Panel-owned linked-document navigation is specified below and implemented in C11-362.
 
 ## What it is for
 
@@ -75,8 +75,10 @@ Theme, typeface and text size are per panel and survive a c11 restart with the p
 - **Tables:** below the narrow breakpoint, text tables with three or more columns become stacked label/value records. At wider widths a table may extend beyond the text column. Horizontal scroll with a sticky first column is the last resort.
 - **Mermaid:** themed to match. Rendered at the column's width, at most 85% of the pane's height. An expand control opens pan and zoom inside the pane. A parse error shows a quiet message with the source underneath. Entity references such as `&lt;` inside sequence diagrams must be converted before parsing, because Mermaid splits statements on the `;`. (`docs/c11-messaging-primitive-design.md` trips this today.)
 - **Code:** syntax-highlighted, with a copy button.
-- **Footnotes:** margin notes when the pane is wide, popovers otherwise. In-document links leave a "back to …" pill.
+- **Footnotes:** margin notes when the pane is wide, popovers otherwise. Footnote/back-reference links stay local to the page.
 - **Headings:** anchors with copy-link.
+- **Document navigation:** relative Markdown links open in the same panel by default. A toolbar toggle changes the default to a new panel, and Cmd-click opens a new panel. Same-document anchors stay in the page. Both forms participate in per-panel back/forward history; a broken anchor offers the closest headings.
+- **Link preview:** hovering a relative link briefly shows its target section after native path validation. Preview content is sanitized and inert.
 - **Find (⌘F):** a quiet bar with a match count and next/previous.
 - **Source:** a read-only toggle that keeps the reader's place.
 
@@ -96,6 +98,9 @@ Every control has a CLI counterpart.
 | `c11 markdown typeface --panel <p> --set <name>` / `--list` | Sets or lists faces |
 | `c11 markdown font --panel <p> --scale <n>` | Sets text size |
 | `c11 markdown open-external --panel <p>` | Opens the file in the default markdown app |
+| `c11 markdown open <path>#<fragment> --panel <p>` | Navigates the target reader in place without switching workspace or focus |
+| `c11 markdown history --panel <p> --json` | Returns bounded back/forward entries with captured reading positions |
+| `c11 markdown links --panel <p> --broken --json` | Finds invalid relative Markdown targets and missing heading fragments |
 
 Queries run off-main per the socket threading policy. Every command updates the c11 skill (`skills/c11-markdown/SKILL.md`) in the same change.
 
@@ -103,4 +108,4 @@ Queries run off-main per the socket threading policy. Every command updates the 
 
 - Diffs and change tracking.
 - In-app editing (C11-344, cancelled in favour of open externally).
-- Navigation across linked docs (C11-357).
+- Cross-repository document navigation from page links, palette and backlinks is rejected by the source-scope policy.

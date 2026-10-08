@@ -12,7 +12,7 @@ c11 markdown <path>          # shorthand (implicit "open")
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--workspace <id\|ref\|index>` | Target workspace | `$C11_WORKSPACE_ID` |
-| `--panel <id\|ref\|index>` | Source panel to split from | Focused panel |
+| `--panel <id\|ref\|index>` | Existing Markdown panel to navigate in place | None; opens a new panel |
 | `--window <id\|ref>` | Target window | Current window |
 
 ### Output
@@ -48,11 +48,18 @@ c11 markdown open /Users/me/project/plan.md
 
 ## Panel Behavior
 
-- The panel opens as a **horizontal split** to the right of the source panel.
+- Without `--panel`, the command opens a new Markdown panel in the target workspace.
+- With `--panel`, the command navigates that existing Markdown panel in place and records bounded back/forward history.
 - The panel title shows the filename (e.g., `plan.md`).
 - The panel icon is a document icon.
 - Content is **read-only** with text selection enabled.
 - The file path is displayed as a breadcrumb at the top of the panel.
+
+An optional `#fragment` selects a heading. With a stable panel target,
+`c11 markdown open <path>#<fragment> --panel panel:8` navigates that
+reader in place and leaves workspace selection and c11 focus unchanged. The
+panel validates the target and records the source position in its bounded
+back/forward history.
 
 ## Session Persistence
 
@@ -76,6 +83,9 @@ c11 markdown typeface --panel <id|ref> --list
 c11 markdown typeface --panel <id|ref> --set <theme|serif|sans|mono>
 c11 markdown font --panel <id|ref> --scale <0.5..3.0>
 c11 markdown open-external --panel <id|ref>
+c11 markdown open /path/to/guide.md#installation --panel <id|ref>
+c11 markdown history --panel <id|ref> --json
+c11 markdown links --panel <id|ref> --broken --json
 ```
 
 `visible` returns JSON containing the heading path, visible 1-based source-line
@@ -98,6 +108,33 @@ bytes or half-closes its request side.
 If only broader matches exist, it chooses a unique prefix before considering a
 unique substring; multiple matches at that tier return `ambiguous` with heading
 examples instead of silently scrolling to the first one.
+
+`markdown open <path>#<fragment> --panel` navigates an existing reader in place.
+Successful JSON responses carry `result.outcome` as `navigated` or `unchanged`;
+the plain CLI prints `navigation=navigated|unchanged`. Failures use the v2
+error envelope (`invalid_params`, `not_found`, `permission_denied`,
+`superseded`, or `timeout`); when navigation produced an outcome, it is in
+`error.data.outcome` using the native case name (`invalidTarget`, `notFound`,
+`notReadable`, `outsideScope`, `superseded`, or `panelClosed`). Automatic
+document, palette, and backlink navigation stays inside the source repository,
+or the document's directory when no repository is present. The direct agent CLI
+origin can open an explicit path; back/forward restores the recorded scope and
+reading position.
+The native method is
+`@MainActor @discardableResult func MarkdownPanel.navigate(to fileURL: URL, fragment: String?, origin: MarkdownNavigationOrigin) async -> MarkdownNavigationOutcome`.
+
+`history --json` reports the panel's bounded history and captured reading
+positions. `links --broken --json` returns one `result.links` array, plus
+`total` and `truncated`; broken entries carry `broken: true` and a snake-case
+`reason`: `not_found`, `not_readable`, `outside_scope`, `invalid_target`,
+`invalid_fragment`, `blocked_target`, or `missing_fragment`. Relative-link navigation defaults to the current panel; the
+toolbar toggle changes the default destination, and Cmd-click uses the opposite
+destination. Same-document anchors always stay in the current panel, including
+Cmd-click, and enter its history. ⌘[ / ⌘] and the toolbar arrows move back and
+forward. Hover previews are native-validated inert excerpts with bounded
+content. `links --broken` caps inspection to 128 links and 16 target documents
+of at most 256 KiB each; a `truncated` result means more content was present
+than the bounded inspection could examine.
 
 Theme and typeface `--list` return the names registered by the markdown viewer;
 `--set` rejects any other name. Font scale accepts finite values from 0.5 to

@@ -225,6 +225,44 @@ final class MarkdownReaderInteractionTests: XCTestCase {
         XCTAssertEqual(renderer.synchronizeCount, 1)
     }
 
+    func testObservedAutomaticOutlineCloseAndPageEscapeBecomeNewPanelDefaults() {
+        var panels: [MarkdownPanel] = []
+        defer { panels.forEach { $0.close() } }
+
+        let observedOutline = MarkdownReaderOutlineState()
+        observedOutline.update(from: [
+            "revision": 1,
+            "outline": ["open": true, "docked": true, "choice": "auto"]
+        ])
+        XCTAssertTrue(observedOutline.value.isOpen)
+        XCTAssertTrue(observedOutline.value.isDocked)
+
+        let first = MarkdownPanel(workspaceId: UUID())
+        panels.append(first)
+        let reader = StubMarkdownPanelReaderRenderer()
+        reader.readerOutlineIsOpen = observedOutline.value.isOpen
+        first.readerCommandRendererForTesting = reader
+        first.toggleOutline()
+
+        XCTAssertEqual(first.outlineOpen, false)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: outlineDefaultsKey) as? Bool, false)
+        let afterNativeClose = MarkdownPanel(workspaceId: UUID())
+        panels.append(afterNativeClose)
+        XCTAssertEqual(afterNativeClose.outlineOpen, false)
+
+        afterNativeClose.setOutlineOpen(true)
+        afterNativeClose.recordPageOutlineDismissal()
+        XCTAssertEqual(UserDefaults.standard.object(forKey: outlineDefaultsKey) as? Bool, false)
+        let afterPageEscape = MarkdownPanel(workspaceId: UUID())
+        panels.append(afterPageEscape)
+        XCTAssertEqual(afterPageEscape.outlineOpen, false)
+
+        afterPageEscape.setOutlineOpen(true)
+        let afterExplicitOpen = MarkdownPanel(workspaceId: UUID())
+        panels.append(afterExplicitOpen)
+        XCTAssertEqual(afterExplicitOpen.outlineOpen, true)
+    }
+
     func testFindRequestKeepsWebViewFocusSubjectToPanelPolicy() {
         let panel = MarkdownPanel(workspaceId: UUID())
         defer { panel.close() }

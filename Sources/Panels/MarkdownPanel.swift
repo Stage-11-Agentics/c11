@@ -360,6 +360,10 @@ final class MarkdownPanel: Panel, ObservableObject {
         readerCommandRenderer?.synchronize()
     }
 
+    func recordPageOutlineDismissal() {
+        setOutlineOpen(false)
+    }
+
     func toggleOutline() {
         let bridgeOpen = readerCommandRenderer?.readerOutlineIsOpen
         setOutlineOpen(!(presentation.outlineOpen ?? bridgeOpen ?? false))

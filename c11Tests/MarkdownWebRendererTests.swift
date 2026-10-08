@@ -12,6 +12,78 @@ import WebKit
 /// Real WebKit + the app's bundled offline renderer. No fake page or JS engine.
 @MainActor
 final class MarkdownWebRendererTests: XCTestCase {
+    func testOutlineChoiceSurvivesNativeAndPageDismissalForNewPanels() async throws {
+        let defaults = UserDefaults.standard
+        let key = MarkdownPresentation.Field.outlineOpen.defaultsKey
+        let saved = defaults.object(forKey: key)
+        defaults.removeObject(forKey: key)
+        defer {
+            if let saved { defaults.set(saved, forKey: key) }
+            else { defaults.removeObject(forKey: key) }
+        }
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-outline-default-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Reader\n\n## Section\n\nA page with an outline.\n".write(to: path, atomically: true, encoding: .utf8)
+
+        let workspaceId = UUID()
+        let first = MarkdownPanel(workspaceId: workspaceId, filePath: path.path)
+        defer { if !first.isClosed { first.close() } }
+        let firstRenderer = first.ensureRenderer()
+        firstRenderer.webView.frame = NSRect(x: 0, y: 0, width: 1400, height: 900)
+        let window = NSWindow(contentRect: firstRenderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = firstRenderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(firstRenderer, revision: 1)
+
+        let firstInitial = try await call(firstRenderer, "visible") as? [String: Any]
+        XCTAssertEqual((firstInitial?["outline"] as? [String: Any])?["open"] as? Bool, true)
+        XCTAssertNil(first.outlineOpen, "the first wide panel should still use the automatic choice")
+        first.toggleOutline()
+        XCTAssertEqual(defaults.object(forKey: key) as? Bool, false)
+
+        let second = MarkdownPanel(workspaceId: workspaceId, filePath: path.path)
+        defer { second.close() }
+        XCTAssertEqual(second.outlineOpen, false, "a native toggle close must be the next panel's default")
+        window.contentView = nil
+        first.close()
+        let secondRenderer = second.ensureRenderer()
+        secondRenderer.webView.frame = firstRenderer.webView.frame
+        window.contentView = secondRenderer.webView
+        await rendered(secondRenderer, revision: 1)
+        let secondInitial = try await call(secondRenderer, "visible") as? [String: Any]
+        XCTAssertEqual((secondInitial?["outline"] as? [String: Any])?["open"] as? Bool, false)
+        XCTAssertEqual((secondInitial?["outline"] as? [String: Any])?["choice"] as? Bool, false)
+
+        let reopened = expectation(description: "explicit open reaches the native outline snapshot")
+        let outlineToken = secondRenderer.readerOutline.$value.dropFirst().sink { snapshot in
+            if snapshot.isOpen { reopened.fulfill() }
+        }
+        second.setOutlineOpen(true)
+        await fulfillment(of: [reopened], timeout: 10)
+        withExtendedLifetime(outlineToken) {}
+        let pageClosed = expectation(description: "page Escape reaches the native presentation model")
+        let presentationToken = second.$presentation.dropFirst().sink { presentation in
+            if presentation.outlineOpen == false { pageClosed.fulfill() }
+        }
+        _ = try await evaluate(secondRenderer, "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})); true")
+        await fulfillment(of: [pageClosed], timeout: 10)
+        withExtendedLifetime(presentationToken) {}
+        XCTAssertEqual(defaults.object(forKey: key) as? Bool, false)
+
+        let third = MarkdownPanel(workspaceId: workspaceId, filePath: path.path)
+        defer { third.close() }
+        XCTAssertEqual(third.outlineOpen, false, "a page Escape close must be the next panel's default")
+        third.setOutlineOpen(true)
+        XCTAssertEqual(defaults.object(forKey: key) as? Bool, true)
+        let fourth = MarkdownPanel(workspaceId: workspaceId, filePath: path.path)
+        defer { fourth.close() }
+        XCTAssertEqual(fourth.outlineOpen, true, "an explicit open must be the next panel's default")
+    }
+
     func testBundledRendererMermaidSettingsHostileContentAndReload() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-web-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

@@ -114,7 +114,7 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
     "observed_at": "2026-10-08",
     "out_usd": 50,
-    "source": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+    "source": "https://developers.openai.com/api/docs/pricing"
   },
   "gpt-6-luna": {
     "cache_read_usd": 0.01,
@@ -123,7 +123,7 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
     "observed_at": "2026-10-08",
     "out_usd": 0.5,
-    "source": "https://developers.openai.com/api/docs/models/gpt-6-luna"
+    "source": "https://developers.openai.com/api/docs/pricing"
   },
   "gpt-6-sol": {
     "cache_read_usd": 0.2,
@@ -132,7 +132,7 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
     "observed_at": "2026-10-08",
     "out_usd": 10,
-    "source": "https://developers.openai.com/api/docs/models/gpt-6-sol"
+    "source": "https://developers.openai.com/api/docs/pricing"
   },
   "gpt-6.1-sol": {
     "cache_read_usd": 0.1,
@@ -141,7 +141,7 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
     "observed_at": "2026-10-08",
     "out_usd": 10,
-    "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+    "source": "https://developers.openai.com/api/docs/pricing"
   }
 }
 """#.utf8)

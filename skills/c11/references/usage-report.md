@@ -147,8 +147,9 @@ subscription spend; custom provider, residency, batch and speed pricing require
 an appropriate separately verified catalog. A group with any unknown price has
 an unknown whole-group estimate, rather than a misleading partial total.
 
-Primary sources: [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing),
-[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+Primary price sources: [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing),
+[OpenAI pricing](https://developers.openai.com/api/docs/pricing).
+Model context and feature references: [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
 [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol),
 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
 [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra).

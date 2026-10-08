@@ -134,17 +134,21 @@ struct MessagesPageRecord: Equatable {
     var truncated: Bool
     var status: String
     var lifecycle: [MessagesPageLifecycle]
+    var textRecorded = true
+    var recordedBytes: Int? = nil
 
     var jsonObject: [String: Any] {
         var result: [String: Any] = [
             "id": id,
             "channel": channel,
             "timestamp": timestamp,
-            "body": body,
+            "body": textRecorded ? body : String(localized: "messages.textNotRecorded", defaultValue: "text not recorded"),
+            "text_recorded": textRecorded,
             "truncated": truncated,
             "status": status,
             "lifecycle": lifecycle.map(\.jsonObject),
         ]
+        if let recordedBytes { result["bytes"] = recordedBytes }
         if let sequence { result["sequence"] = sequence }
         if let workspace { result["workspace"] = workspace }
         if let surface { result["surface"] = surface }
@@ -248,6 +252,8 @@ struct MessagesPageMailboxArtifact {
     let truncated: Bool
     let fileState: String?
     let lifecycle: [MessagesPageLifecycle]
+    var textRecorded = true
+    var recordedBytes: Int? = nil
 }
 
 struct MessagesPageSourceData {
@@ -417,7 +423,7 @@ enum MessagesPageBuilder {
             targetTitle: targetTitle,
             kind: kind,
             topic: nil,
-            body: MessagesPageJSON.string(payload["text"]) ?? "",
+            body: MessagesPageJSON.bool(payload["text_recorded"]) == false ? "" : (MessagesPageJSON.string(payload["text"]) ?? ""),
             bodyRef: nil,
             replyTo: nil,
             inReplyTo: nil,
@@ -428,7 +434,9 @@ enum MessagesPageBuilder {
             status: state,
             lifecycle: [
                 MessagesPageLifecycle(state: state, timestamp: event.timestamp, detail: kind)
-            ]
+            ],
+            textRecorded: MessagesPageJSON.bool(payload["text_recorded"]) ?? true,
+            recordedBytes: MessagesPageJSON.int(payload["bytes"])
         )
     }
 
@@ -466,12 +474,20 @@ enum MessagesPageBuilder {
         if record.recipient == nil { record.recipient = artifact.to }
         if record.targetTitle == nil { record.targetTitle = artifact.to }
         if record.topic == nil { record.topic = artifact.topic }
-        if record.body.isEmpty, let body = artifact.body { record.body = body }
-        if record.bodyRef == nil { record.bodyRef = artifact.bodyRef }
+        if !artifact.textRecorded {
+            record.textRecorded = false
+            record.recordedBytes = artifact.recordedBytes
+            record.body = ""
+            record.bodyRef = nil
+            record.truncated = false
+        } else if record.textRecorded {
+            if record.body.isEmpty, let body = artifact.body { record.body = body }
+            if record.bodyRef == nil { record.bodyRef = artifact.bodyRef }
+        }
         if record.replyTo == nil { record.replyTo = artifact.replyTo }
         if record.inReplyTo == nil { record.inReplyTo = artifact.inReplyTo }
         if record.urgent == nil { record.urgent = artifact.urgent }
-        record.truncated = record.truncated || artifact.truncated
+        record.truncated = record.textRecorded && (record.truncated || artifact.truncated)
         if let fileState = artifact.fileState {
             record.status = mergedStatus(record.status, fileState)
         }
@@ -523,13 +539,21 @@ enum MessagesPageBuilder {
             record.sender = record.sender ?? MessagesPageJSON.string(payload["from"])
             record.recipient = record.recipient ?? MessagesPageJSON.string(payload["to"])
             record.targetTitle = record.targetTitle ?? MessagesPageJSON.string(payload["to"])
-            record.body = record.body.isEmpty ? (MessagesPageJSON.string(payload["body"]) ?? "") : record.body
-            record.bodyRef = record.bodyRef ?? MessagesPageJSON.string(payload["body_ref"])
+            if MessagesPageJSON.bool(payload["text_recorded"]) == false {
+                record.textRecorded = false
+                record.recordedBytes = MessagesPageJSON.int(payload["bytes"])
+                record.body = ""
+                record.bodyRef = nil
+                record.truncated = false
+            } else if record.textRecorded {
+                record.body = record.body.isEmpty ? (MessagesPageJSON.string(payload["body"]) ?? "") : record.body
+                record.bodyRef = record.bodyRef ?? MessagesPageJSON.string(payload["body_ref"])
+            }
             record.topic = record.topic ?? MessagesPageJSON.string(payload["topic"])
             record.replyTo = record.replyTo ?? MessagesPageJSON.string(payload["reply_to"])
             record.inReplyTo = record.inReplyTo ?? MessagesPageJSON.string(payload["in_reply_to"])
             record.urgent = record.urgent ?? MessagesPageJSON.bool(payload["urgent"])
-            record.truncated = record.truncated || (MessagesPageJSON.bool(payload["truncated"]) ?? false)
+            record.truncated = record.textRecorded && (record.truncated || (MessagesPageJSON.bool(payload["truncated"]) ?? false))
             record.status = mergedStatus(record.status, "accepted")
             append(
                 lifecycle: [MessagesPageLifecycle(state: "accepted", timestamp: event.timestamp, detail: nil)],
@@ -660,8 +684,11 @@ enum MessagesPageSource {
         let urls = ((try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
             .filter { url in
                 let name = url.lastPathComponent
-                return name.hasPrefix(EventLogLayout.logFilePrefix)
-                    && (name.hasSuffix(".ndjson") || name.hasSuffix(".ndjson.1"))
+                guard name.hasPrefix(EventLogLayout.logFilePrefix) else { return false }
+                if name.hasSuffix(".ndjson") { return true }
+                guard let boundary = name.range(of: ".ndjson.", options: .backwards),
+                      let generation = Int(name[boundary.upperBound...]) else { return false }
+                return generation > 0
             }
             .sorted { $0.path < $1.path }
 
@@ -795,7 +822,10 @@ enum MessagesPageSource {
         dispatch: DispatchHistory?
     ) -> MessagesPageMailboxArtifact {
         let object = object ?? [:]
-        let body = boundedDurableBody(MessagesPageJSON.string(object["body"]))
+        let ext = object["ext"] as? [String: Any] ?? [:]
+        let textRecorded = MessagesPageJSON.bool(ext["c11_activity_text_recorded"]) ?? true
+        let rawBody = MessagesPageJSON.string(object["body"])
+        let body = textRecorded ? boundedDurableBody(rawBody) : (value: nil, truncated: false)
         return MessagesPageMailboxArtifact(
             workspace: workspace,
             id: MessagesPageJSON.string(object["id"]) ?? id,
@@ -803,14 +833,16 @@ enum MessagesPageSource {
             from: MessagesPageJSON.string(object["from"]) ?? dispatch?.from,
             to: MessagesPageJSON.string(object["to"]) ?? dispatch?.to,
             body: body.value,
-            bodyRef: MessagesPageJSON.string(object["body_ref"]),
+            bodyRef: textRecorded ? MessagesPageJSON.string(object["body_ref"]) : nil,
             topic: MessagesPageJSON.string(object["topic"]),
             replyTo: MessagesPageJSON.string(object["reply_to"]),
             inReplyTo: MessagesPageJSON.string(object["in_reply_to"]),
             urgent: MessagesPageJSON.bool(object["urgent"]),
             truncated: body.truncated,
             fileState: state,
-            lifecycle: dispatch?.lifecycle ?? []
+            lifecycle: dispatch?.lifecycle ?? [],
+            textRecorded: textRecorded,
+            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0)
         )
     }
 

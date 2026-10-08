@@ -283,7 +283,7 @@ final class MailboxDispatcher {
         recordRecentlySeen(id)
 
         // Step 2: validate.
-        let envelope: MailboxEnvelope
+        var envelope: MailboxEnvelope
         do {
             let data = try Data(contentsOf: processingURL)
             envelope = try MailboxEnvelope.validate(data: data)
@@ -294,6 +294,19 @@ final class MailboxDispatcher {
                 reason: "\(error)"
             )
             return
+        }
+
+        let textRecorded = EventEmitter.shared.keepText
+        if !textRecorded {
+            envelope = envelope.suppressActivityHistoryText()
+            // Preserve the opt-out on local delivery and quarantine files. No
+            // tenant files are changed; this is c11's own processing envelope.
+            do {
+                try MailboxIO.atomicWrite(data: envelope.encode(), to: processingURL)
+            } catch {
+                // Deliver the marked in-memory envelope; the accepted event
+                // still suppresses the unmarked processing file in Messages.
+            }
         }
 
         log.append(
@@ -315,7 +328,8 @@ final class MailboxDispatcher {
             topic: envelope.topic,
             replyTo: envelope.replyTo,
             inReplyTo: envelope.inReplyTo,
-            urgent: envelope.urgent
+            urgent: envelope.urgent,
+            textRecorded: textRecorded
         )
 
         // Step 3: resolve recipients. Stage 2 = `to` only.

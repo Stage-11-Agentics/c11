@@ -23,6 +23,76 @@ final class MessagesPageTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
     }
 
+    func testRedactedEventOverridesDurableMailboxBodyAndReference() throws {
+        let instance = "privacy-test"
+        let log = EventLog(url: EventLogLayout.logURL(state: tempDir, instance: instance), instance: instance)
+        log.open()
+        log.append(EventEnvelope(type: .panelInputSent, instance: instance, ts: Date(), payload: [
+            "text_recorded": false, "bytes": 11, "kind": "text", "submitted": true,
+        ]))
+        log.append(EventEnvelope(type: .mailboxAccepted, instance: instance, ts: Date(), payload: [
+            "id": "01K3A2B7X8PQRTVWYZ0123456J", "from": "sender", "to": "recipient",
+            "text_recorded": false, "bytes": 15,
+        ]))
+        log.flush()
+        let envelope = try MailboxEnvelope.build(
+            from: "sender", to: "recipient", body: "HIDDEN_MAIL_BODY",
+            id: "01K3A2B7X8PQRTVWYZ0123456J"
+        )
+        let inbox = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try envelope.encode().write(to: inbox.appendingPathComponent("\(envelope.id).msg"))
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        XCTAssertEqual(snapshot.messages.count, 2)
+        for message in snapshot.messages {
+            XCTAssertFalse(message.textRecorded)
+            XCTAssertTrue(message.body.isEmpty)
+            XCTAssertNil(message.bodyRef)
+            XCTAssertNotNil(message.recordedBytes)
+            XCTAssertEqual(message.jsonObject["text_recorded"] as? Bool, false)
+        }
+        let rendered = MessagesPageRenderer.render(snapshot: snapshot)
+        XCTAssertFalse(rendered.contains("HIDDEN_MAIL_BODY"))
+        XCTAssertTrue(rendered.contains("text not recorded"))
+    }
+
+    func testDurableMailboxOptOutSurvivesAcceptedEventRetention() throws {
+        let envelope = try MailboxEnvelope.build(
+            from: "sender", to: "recipient", body: "DELIVERY_BODY_STAYS_LOCAL",
+            id: "01K3A2B7X8PQRTVWYZ0123456K", ext: ["custom": "preserved"]
+        ).suppressActivityHistoryText()
+        let inbox = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let bytes = try envelope.encode()
+        try bytes.write(to: inbox.appendingPathComponent("\(envelope.id).msg"))
+        let delivered = try MailboxEnvelope.validate(data: bytes)
+        XCTAssertEqual(delivered.body, "DELIVERY_BODY_STAYS_LOCAL")
+        XCTAssertEqual(delivered.ext?["custom"] as? String, "preserved")
+        XCTAssertEqual(delivered.ext?["c11_activity_text_recorded"] as? Bool, false)
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertTrue(source.events.isEmpty)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        let message = try XCTUnwrap(snapshot.messages.first)
+        XCTAssertFalse(message.textRecorded)
+        XCTAssertEqual(message.recordedBytes, delivered.body.utf8.count)
+        XCTAssertTrue(message.body.isEmpty)
+        XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(delivered.body))
+    }
+
+    func testReadsOlderNumberedEventGenerations() throws {
+        let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try c1Line.write(to: directory.appendingPathComponent("events-history.ndjson.3"), atomically: true, encoding: .utf8)
+        try c1Line.write(to: directory.appendingPathComponent("events-history.ndjson.backup"), atomically: true, encoding: .utf8)
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.events.count, 1)
+        let snapshot = MessagesPageBuilder.build(events: source.events)
+        XCTAssertEqual(snapshot.messages.first?.body, "C11_257_TEXT_PROOF")
+    }
+
     func testPinnedC1AndC2FixturesShapeBothChannelsAndLifecycle() throws {
         let events = [c1Line, acceptedLine, deliveredLine].compactMap(MessagesPageEvent.init(line:))
         let snapshot = MessagesPageBuilder.build(

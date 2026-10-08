@@ -32,13 +32,10 @@ function callouts(parser) {
       if(T[i].type!=='blockquote_open'||T[i+1].type!=='paragraph_open'||T[i+2].type!=='inline') continue;
       const t=T[i+2], m=t.content.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*/i);
       if(!m) continue;
-      const kind=m[1].toLowerCase(); T[i].attrJoin('class','callout callout-'+kind); T[i].meta={callout:kind};
-      let n=m[0].length;
-      while(n>0 && t.children.length && t.children[0].type==='text') {
-        const c=t.children[0]; if(c.content.length<=n) {n-=c.content.length;t.children.shift();}
-        else {c.content=c.content.slice(n);n=0;}
-      }
-      if(['softbreak','hardbreak'].includes(t.children[0]?.type)) t.children.shift();
+      const kind=m[1].toLowerCase(), remainder=t.content.slice(m[0].length), title=remainder.split('\n',1)[0].trim()||kind;
+      T[i].attrJoin('class','callout callout-'+kind); T[i].meta={callout:kind,title};
+      while(t.children.length&&!['softbreak','hardbreak'].includes(t.children[0].type))t.children.shift();
+      if(['softbreak','hardbreak'].includes(t.children[0]?.type))t.children.shift();
       if(!t.children.length) {T[i+1].hidden=true;T[i+3].hidden=true;}
     }
   });
@@ -81,7 +78,7 @@ const ICONS = {
 };
 const R=md.renderer.rules;
 const isMermaidInfo=info=>String(info||'').trim().split(/\s+/,1)[0].toLowerCase()==='mermaid';
-R.blockquote_open=(T,i,o,e,self) => self.renderToken(T,i,o)+(T[i].meta?.callout ? `<div class="callout-title">${ICONS[T[i].meta.callout]}${esc(T[i].meta.callout)}</div>`:'');
+R.blockquote_open=(T,i,o,e,self) => self.renderToken(T,i,o)+(T[i].meta?.callout ? `<div class="callout-title">${ICONS[T[i].meta.callout]}${esc(T[i].meta.title||T[i].meta.callout)}</div>`:'');
 R.fence=(T,i) => {
   const t=T[i], lang=t.info.trim().split(/\s+/)[0].toLowerCase();
   if(isMermaidInfo(t.info)) return `<figure class="diagram"><div class="diagram-stage"></div><figcaption><span class="cap"></span><button class="expand">${esc(S.strings.expand)}</button></figcaption></figure>`;
@@ -116,6 +113,7 @@ function assetURL(raw) {
   } catch {return null;}
 }
 function linkInfo(href) {
+  if(!href) return {kind:'blocked',resolvedURL:null};
   if(href.startsWith('#')) return {kind:'anchor',resolvedURL:href};
   try {
     if(/[\u0000-\u0020]/.test(href)) return {kind:'blocked',resolvedURL:null};
@@ -129,6 +127,18 @@ function prep(markdown) {
   const first=m?.[1].split('\n').find(line=>line.trim()&&!line.trim().startsWith('#'))?.trim();
   const yamlLike=first&&/^[A-Za-z_][\w.-]*\s*:\s*.*$/.test(first);
   return m&&yamlLike ? {body:'\n'.repeat(m[0].split('\n').length-1)+markdown.slice(m[0].length),fm:m} : {body:markdown,fm:null};
+}
+function renderFrontmatter(content) {
+  const dl=document.createElement('dl');dl.className='frontmatter';let last=null;
+  content.split('\n').forEach((line,index)=>{
+    const trimmed=line.trim();if(!trimmed||trimmed.startsWith('#'))return;
+    const match=/^([A-Za-z_][\w.-]*)\s*:\s*(.*)$/.exec(trimmed);
+    if(!match){if(last)last.textContent+='\n'+trimmed;return;}
+    const dt=document.createElement('dt'),dd=document.createElement('dd'),sourceLine=String(index+2);
+    dt.textContent=match[1];dd.textContent=match[2];dt.dataset.sourceLine=sourceLine;dd.dataset.sourceLine=sourceLine;
+    dl.append(dt,dd);last=dd;
+  });
+  return dl;
 }
 function signature(tokens) {
   return JSON.stringify(tokens, (k,v)=>['map','level','block'].includes(k)?undefined:v);
@@ -147,6 +157,108 @@ function sanitize(html) {
   return DOMPurify.sanitize(html, {ADD_ATTR:['data-fn','data-label'],ADD_URI_SAFE_ATTR:['data-fn'],
     FORBID_TAGS:['script','style','iframe','object','embed','form','video','audio','source'],
     ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11md-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i});
+}
+const lineMapSkip='svg,button,.code-head,figcaption,.katex-mathml,.callout-title,.fn-back';
+function lineTree(root) {
+  return document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:n=>{
+    if(n.nodeType===Node.ELEMENT_NODE) {
+      if(n.matches(lineMapSkip))return NodeFilter.FILTER_REJECT;
+      return n.tagName==='BR'?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP;
+    }
+    return NodeFilter.FILTER_ACCEPT;
+  }});
+}
+function textLinePoints(root,skipLeadingWhitespace=false) {
+  if(!root)return [];
+  const points=[],walker=lineTree(root);let n,offset=0,lineStarted=false,nonWhitespace=false,contentSeen=false;
+  while((n=walker.nextNode())) {
+    if(n.nodeType===Node.ELEMENT_NODE) {
+      if(!lineStarted&&(!skipLeadingWhitespace||contentSeen))points.push(offset);
+      lineStarted=false;nonWhitespace=false;offset++;continue;
+    }
+    for(let i=0;i<n.data.length;i++) {
+      const ch=n.data[i];
+      if(ch==='\n') {if(!lineStarted&&(!skipLeadingWhitespace||contentSeen))points.push(offset);lineStarted=false;nonWhitespace=false;offset++;continue;}
+      if(!lineStarted) {
+        if(skipLeadingWhitespace&&!contentSeen&&/\s/.test(ch)){offset++;continue;}
+        points.push(offset);lineStarted=true;
+      }
+      if(!nonWhitespace&&!/\s/.test(ch)){points[points.length-1]=offset;nonWhitespace=true;contentSeen=true;}
+      offset++;
+    }
+  }
+  return points;
+}
+function textOffsetAt(root,target,localOffset) {
+  if(!root||!target)return null;
+  const walker=lineTree(root);let n,offset=0;
+  while((n=walker.nextNode())) {
+    if(n===target)return offset+localOffset;
+    offset+=n.nodeType===Node.ELEMENT_NODE?1:n.data.length;
+  }
+  return null;
+}
+function lineIndexAt(points,offset) {
+  if(!points?.length||offset===null)return null;
+  let low=0,high=points.length;
+  while(low<high) {const mid=(low+high)>>1;if(points[mid]<=offset)low=mid+1;else high=mid;}
+  return Math.max(0,low-1);
+}
+function pointAtTextOffset(root,targetOffset) {
+  const walker=lineTree(root);let n,offset=0;
+  while((n=walker.nextNode())) {
+    if(n.nodeType===Node.ELEMENT_NODE) {if(targetOffset<=offset)return {node:n.parentNode,offset:[...n.parentNode.childNodes].indexOf(n)};offset++;continue;}
+    if(targetOffset<offset+n.data.length)return {node:n,offset:targetOffset-offset};
+    offset+=n.data.length;
+  }
+  return null;
+}
+function pointTop(root,targetOffset,sc) {
+  const point=pointAtTextOffset(root,targetOffset);if(!point)return null;
+  const range=document.createRange();
+  if(point.node.nodeType===Node.TEXT_NODE) {
+    const end=Math.min(point.offset+1,point.node.data.length);
+    if(end>point.offset)range.setStart(point.node,point.offset),range.setEnd(point.node,end);
+    else range.setStart(point.node,point.offset),range.collapse(true);
+  } else range.setStart(point.node,point.offset),range.collapse(true);
+  const rect=range.getBoundingClientRect();if(!rect.height)return null;
+  const box=sc.getBoundingClientRect();return rect.top-box.top+sc.scrollTop;
+}
+function lineForText(block,text) {
+  if(!text?.node)return null;
+  if(block.matches('.frontmatter')) {
+    const cell=text.node.parentElement?.closest('[data-source-line]');return cell?+cell.dataset.sourceLine:null;
+  }
+  const code=text.node.parentElement?.closest('.code');
+  if(code&&block.contains(code)) {
+    const root=$('pre code',code),offset=textOffsetAt(root,text.node,text.offset),index=lineIndexAt(code._linePoints,offset);
+    return index===null?null:(code._sourceLineStart||+block.dataset.ls+1)+index;
+  }
+  const offset=textOffsetAt(block,text.node,text.offset),index=lineIndexAt(block._linePoints,offset);
+  return index===null?null:(block._lineBase||+block.dataset.ls)+index;
+}
+function lineAtOrBefore(root,points,base,scrollY,sc) {
+  if(!points?.length)return null;
+  let low=0,high=points.length;
+  while(low<high) {
+    const mid=(low+high)>>1,top=pointTop(root,points[mid],sc);
+    if(top!==null&&top<=scrollY+.25)low=mid+1;else high=mid;
+  }
+  return low?base+low-1:null;
+}
+function lineAtY(block,scrollY,sc) {
+  if(block.matches('.frontmatter')) {
+    let found=null;for(const row of block._frontmatterRows||[])if(topIn(row,sc)<=scrollY+.25)found=+row.dataset.sourceLine;else break;
+    return found??+block.dataset.ls;
+  }
+  const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
+  const code=codes.find(x=>topIn(x,sc)<=scrollY+.25&&topIn(x,sc)+(x.offsetHeight||1)>scrollY);
+  if(code) {
+    const line=lineAtOrBefore($('pre code',code),code._linePoints,code._sourceLineStart,scrollY,sc);
+    if(line!==null)return line;
+    return +block.dataset.ls;
+  }
+  return lineAtOrBefore(block,block._linePoints,block._lineBase||+block.dataset.ls,scrollY,sc)??+block.dataset.ls;
 }
 function prepareBlock(node,tokens) {
   const headingTokens=tokens.filter(t=>t.type==='heading_open');
@@ -168,7 +280,12 @@ function prepareBlock(node,tokens) {
   const diagrams=$$('figure.diagram',node);if(node.matches('figure.diagram'))diagrams.unshift(node);
   fences.filter(t=>isMermaidInfo(t.info)).forEach((t,i)=>{if(diagrams[i])diagrams[i]._mermaid=t.content;});
   const codes=$$('.code',node);if(node.matches('.code'))codes.unshift(node);
-  fences.filter(t=>!isMermaidInfo(t.info)).forEach((t,i)=>{if(codes[i])codes[i]._code=t.content;});
+  const blockStart=tokens.find(t=>t.map)?.map[0]??0;
+  fences.filter(t=>!isMermaidInfo(t.info)).forEach((t,i)=>{if(codes[i]) {
+    codes[i]._code=t.content;codes[i]._linePoints=textLinePoints($('pre code',codes[i]));
+    codes[i]._lineOffset=(t.map?.[0]??blockStart)-blockStart+1;
+  }});
+  node._linePoints=textLinePoints(node.matches('.code')?$('pre code',node):node,!node.matches('.code'));
   return node;
 }
 
@@ -178,8 +295,8 @@ function reconcile(tokens, fm) {
   const blocks=[];let changed=0;
   if(fm) {
     const sig='frontmatter:'+fm[0];let b=previous.get(sig)?.shift();
-    if(!b) {b=document.createElement('div');b.className='frontmatter';b.textContent=fm[1];b.style.whiteSpace='pre-wrap';changed++;}
-    b._signature=sig;b.dataset.ls=1;b.dataset.le=fm[0].split('\n').length-1;blocks.push(b);
+    if(!b) {b=renderFrontmatter(fm[1]);changed++;}
+    b._signature=sig;b._lineBase=2;b._frontmatterRows=$$('dt',b);b.dataset.ls=1;b.dataset.le=fm[0].split('\n').length-1;blocks.push(b);
   }
   for(const group of groups(tokens)) {
     const sig=signature(group);let b=previous.get(sig)?.shift();
@@ -190,7 +307,8 @@ function reconcile(tokens, fm) {
       else {b=document.createElement('div');b.append(template.content);}
       b=prepareBlock(b,group);b._signature=sig;changed++;
     }
-    b.dataset.ls=map?map[0]+1:S.lines;b.dataset.le=map?map[1]:S.lines;
+    b.dataset.ls=map?map[0]+1:S.lines;b.dataset.le=map?map[1]:S.lines;b._lineBase=+b.dataset.ls;
+    for(const code of [...(b.matches('.code')?[b]:[]),...$$('.code',b)])if(Number.isFinite(code._lineOffset))code._sourceLineStart=b._lineBase+code._lineOffset;
     blocks.push(b);
   }
   // Insert only displaced/new nodes. Unchanged nodes never detach, preserving selection.
@@ -234,6 +352,27 @@ function lineOrigin(line,block=null,sc=activeScroller()) {
   if(S.mode==='source') {const row=$(`.sl[data-line="${line}"]`,source);return row?topIn(row,sc):sc.scrollTop;}
   if(!block)block=S.blocks.find(x=>+x.dataset.ls<=line&&+x.dataset.le>=line)||S.blocks.find(x=>+x.dataset.ls>=line)||S.blocks.at(-1);
   if(!block)return sc.scrollTop;
+  if(block.matches('.frontmatter')) {
+    if(line<=+block.dataset.ls)return topIn(block,sc);
+    const row=block._frontmatterRows?.find(x=>+x.dataset.sourceLine===line);if(row)return topIn(row,sc);
+    if(line>+block.dataset.le)return topIn(block,sc)+block.offsetHeight;
+  }
+  const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
+  const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
+  if(code) {
+    const index=line-code._sourceLineStart,point=code._linePoints[index],top=pointTop($('pre code',code),point,sc);
+    if(top!==null)return top;
+  } else if(block.matches('.code')) {
+    if(line<block._sourceLineStart)return topIn(block,sc);
+    if(line>=block._sourceLineStart+(block._linePoints?.length||0))return topIn(block,sc)+block.offsetHeight;
+  }
+  const base=block._lineBase||+block.dataset.ls,points=block._linePoints,index=line-base;
+  if(index>=0&&index<points?.length) {
+    const top=pointTop(block,points[index],sc);if(top!==null)return top;
+  }
+  return estimateLineOrigin(line,block,sc);
+}
+function estimateLineOrigin(line,block,sc) {
   const start=+block.dataset.ls,end=Math.max(start,+block.dataset.le),span=end-start+1,index=clamp(line,start,end)-start;
   const top=topIn(block,sc),first=firstTextOrigin(block),origin=first===null?top:first-sc.getBoundingClientRect().top+sc.scrollTop;
   if(span<=1)return origin;
@@ -241,7 +380,7 @@ function lineOrigin(line,block=null,sc=activeScroller()) {
 }
 function firstTextAt(block,y) {
   // A character anchor holds a real rendered text row through metric changes.
-  const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest('svg,button,.code-head,figcaption,.katex-mathml')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
+  const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest(lineMapSkip)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
   let n;
   while((n=walker.nextNode())) {
     const range=document.createRange();range.selectNodeContents(n);const r=range.getBoundingClientRect();
@@ -251,7 +390,7 @@ function firstTextAt(block,y) {
     if(lo>=n.length)continue;
     range.setStart(n,lo);range.setEnd(n,Math.min(lo+1,n.length));
     const path=[];for(let x=n;x!==block;x=x.parentNode)path.unshift([...x.parentNode.childNodes].indexOf(x));
-    return {path,offset:lo,dy:range.getBoundingClientRect().top-y,text:n.textContent.slice(lo,lo+32)};
+    return {node:n,path,offset:lo,dy:range.getBoundingClientRect().top-y,text:n.textContent.slice(lo,lo+32)};
   }
   return null;
 }
@@ -259,25 +398,30 @@ function capture() {
   const sc=activeScroller();if(sc.scrollTop<1)return {atTop:true,line:1};
   if(S.mode==='source') {
     const rows=$$('.sl',source), row=rows.find(x=>topIn(x,sc)+x.offsetHeight>sc.scrollTop)||rows.at(-1);
-    return row?{line:+row.dataset.line,dy:topIn(row,sc)-sc.scrollTop,source:true}:null;
+    return row?{line:+row.dataset.line,dy:topIn(row,sc)-sc.scrollTop,lineOffset:sc.scrollTop-topIn(row,sc),source:true}:null;
   }
   const b=S.blocks.find(x=>topIn(x)+x.offsetHeight>sc.scrollTop)||S.blocks.at(-1);if(!b)return null;
   const text=firstTextAt(b,sc.getBoundingClientRect().top);
-  let line=+b.dataset.ls;
-  if(text?.text) {
-    const slice=S.markdown.split('\n').slice(line-1,+b.dataset.le);
-    const offset=slice.findIndex(l=>l.includes(text.text.trim()));if(offset>=0)line+=offset;
-  }
+  const line=lineAtY(b,sc.scrollTop,sc)??lineForText(b,text)??+b.dataset.ls,origin=lineOrigin(line,b,sc);
   return {block:b,signature:b._signature,occurrence:S.blocks.filter(x=>x._signature===b._signature).indexOf(b),
-    line,dy:topIn(b)-sc.scrollTop,frac:clamp((sc.scrollTop-topIn(b))/(b.offsetHeight||1),0,1),text};
+    line,lineOffset:sc.scrollTop-origin,dy:topIn(b)-sc.scrollTop,frac:clamp((sc.scrollTop-topIn(b))/(b.offsetHeight||1),0,1),text};
 }
 function restore(a) {
   if(!a)return;
   const sc=activeScroller();if(a.atTop){sc.scrollTop=0;return;}
   if(S.mode==='source') {
-    const row=$(`.sl[data-line="${clamp(a.line,1,S.lines)}"]`,source);if(row)sc.scrollTop=topIn(row,sc)-(a.source?a.dy:0);return;
+    const row=$(`.sl[data-line="${clamp(a.line,1,S.lines)}"]`,source);if(row) {
+      const offset=Number.isFinite(a.lineOffset)?a.lineOffset:a.source?-(a.dy||0):0;
+      sc.scrollTop=topIn(row,sc)+offset;
+    }
+    return;
   }
   let b=a.block?.isConnected?a.block:S.blocks.filter(x=>x._signature===a.signature)[a.occurrence||0];
+  if(a.source) {
+    const origin=lineOrigin(clamp(a.line,1,S.lines),null,sc);
+    const offset=Number.isFinite(a.lineOffset)?a.lineOffset:-(a.dy||0);
+    sc.scrollTop=origin+offset;return;
+  }
   const same=!!b;
   b ||= S.blocks.find(x=>+x.dataset.ls<=a.line&&+x.dataset.le>=a.line)||S.blocks.find(x=>+x.dataset.ls>=a.line)||S.blocks.at(-1);
   if(!b)return;
@@ -454,18 +598,23 @@ function visibleLines() {
     const firstRow=visible[0];return {first:+firstRow?.dataset.line||1,last:+visible.at(-1)?.dataset.line||1,total:S.lines,
       offset:firstRow?top-topIn(firstRow,sc):0};
   }
-  let first=null,last=1,firstBlock=null;
+  let first=null,last=1,firstBlock=null,firstOffset=0;
   for(const b of S.blocks) {
     const t=topIn(b),height=b.offsetHeight||1;if(t+height<top)continue;if(t>bottom)break;
     const start=+b.dataset.ls,end=+b.dataset.le,span=Math.max(1,end-start+1);
     if(first===null) {
-      firstBlock=b;const firstOrigin=lineOrigin(start,b,sc),lastOrigin=lineOrigin(end,b,sc);
-      first=start+Math.floor(clamp((top-firstOrigin)/Math.max(1,lastOrigin-firstOrigin),0,1)*(span-1));
+      firstBlock=b;const mapped=lineAtY(b,top,sc);
+      if(mapped!==null) {first=mapped;firstOffset=top-lineOrigin(first,b,sc);}
+      else {
+        const firstOrigin=lineOrigin(start,b,sc),lastOrigin=lineOrigin(end,b,sc);
+        first=start+Math.floor(clamp((top-firstOrigin)/Math.max(1,lastOrigin-firstOrigin),0,1)*(span-1));firstOffset=top-lineOrigin(first,b,sc);
+      }
     }
-    last=Math.min(end,start+Math.ceil(clamp((bottom-t)/height,0,1)*(span-1)));
+    const endText=firstTextAt(b,sc.getBoundingClientRect().bottom-1),endLine=lineForText(b,endText);
+    last=endLine===null?Math.min(end,start+Math.ceil(clamp((bottom-t)/height,0,1)*(span-1))):endLine;
   }
   first ||= 1;
-  return {first,last:Math.max(first,last),total:S.lines,offset:firstBlock?top-lineOrigin(first,firstBlock,sc):0};
+  return {first,last:Math.max(first,last),total:S.lines,offset:firstBlock?firstOffset:0};
 }
 function progress() {
   const sc=activeScroller(),p=clamp(sc.scrollTop/Math.max(1,sc.scrollHeight-sc.clientHeight*1.5),0,1);
@@ -529,9 +678,12 @@ function setSourceMode(enabled) {
   const mode=enabled?'source':'read';if(mode===S.mode)return visible();
   const a=capture(),query=S.find.query;clearMarks();
   // An untouched source toggle round-trip restores the exact original text row.
-  const restoreTo=mode==='read'&&modeAnchor&&a?.line===modeAnchor.sourceLine?modeAnchor.anchor:a;
+  const restoreTo=mode==='read'&&modeAnchor&&a?.line===modeAnchor.sourceLine&&
+    Math.abs((a.lineOffset||0)-modeAnchor.sourceOffset)<=.5?modeAnchor.anchor:a;
   S.mode=mode;applyTheme();layoutAll();restore(restoreTo);
-  if(mode==='source')modeAnchor={anchor:a,sourceLine:visibleLines().first};else modeAnchor=null;
+  if(mode==='source') {
+    const lines=visibleLines();modeAnchor={anchor:a,sourceLine:lines.first,sourceOffset:lines.offset};
+  } else modeAnchor=null;
   if(query)search(query,{keepPlace:true});publish();return visible();
 }
 function scrollToLine(raw,rawOffset=0) {

@@ -67,6 +67,10 @@ try {
   assert.ok(await page.locator('.katex svg path[d]').count()>0,'KaTeX radical path was stripped');
   for(const kind of iconKinds)assert.ok(await page.locator(`.callout-${kind.toLowerCase()} .callout-title svg path[d]`).count()>0,`${kind} icon path was stripped`);
   scenario('relative c11-x link, KaTeX radical path and every callout icon path survive DOMPurify');
+  await load('> [!WARNING] Watch out\n> The body stays separate.\n','/synthetic/callout-title.md');
+  assert.match(await page.locator('.callout-title').innerText(),/Watch out/);
+  assert.equal(await page.locator('blockquote p').innerText(),'The body stays separate.');
+  scenario('custom GitHub callout title is rendered in the title slot');
   await load(specimen);
   const infoCorpus='## Info strings\n\n```Mermaid\nflowchart LR\n  A --> B\n```\n\n```mermaid title=sample\nflowchart LR\n  C --> D\n```\n\n- mixed fences\n  ```mermaid title\n  flowchart LR\n    E --> F\n  ```\n  ```js\n  const mixed = 42;\n  ```\n';
   await load(infoCorpus,'/synthetic/info-strings.md');
@@ -87,6 +91,11 @@ try {
   assert.ok((await page.locator('#article').innerText()).includes('Body after the rules.'));
   await load('---\ntitle: YAML frontmatter\n---\n\nBody after metadata.\n','/synthetic/frontmatter.md');
   assert.equal(await page.locator('.frontmatter').count(),1);assert.ok((await page.locator('#article').innerText()).includes('Body after metadata.'));
+  await load('---\ntitle: <img src=x onerror=alert(1)>\nstatus: ready\n---\n\nBody stays safe.\n','/synthetic/frontmatter-grid.md');
+  const frontmatter=page.locator('.frontmatter');
+  assert.equal(await frontmatter.evaluate(x=>x.tagName),'DL');assert.deepEqual(await frontmatter.locator('dt').allTextContents(),['title','status']);
+  assert.deepEqual(await frontmatter.locator('dd').allTextContents(),['<img src=x onerror=alert(1)>','ready']);
+  assert.equal(await frontmatter.locator('img,script,[onerror]').count(),0);
   scenario('YAML-like opening frontmatter is removed while leading thematic breaks remain content');
   await load(specimen);
   assert.equal(await page.evaluate(()=>c11md.find('keep the reader’s place').matches),1);
@@ -131,6 +140,92 @@ try {
   const restored=await page.evaluate(({line,offset})=>c11md.scrollToLine(line,offset).lines,{line:captured.line,offset:captured.state.lines.offset});
   assert.equal(restored.first,captured.line);assert.ok(Math.abs(restored.offset-captured.state.lines.offset)<=1,`restore offset ${captured.state.lines.offset} -> ${restored.offset}`);
   scenario('eviction restore after fresh page reload preserves first visible source line and signed CSS-pixel offset');
+  const codeLines=Array.from({length:80},(_,i)=>`const line${String(i).padStart(2,'0')} = ${i};`).join('\n');
+  const fenceDocument=language=>`# Fence line mapping\n\n${language?`\`\`\`${language}`:'```'}\n${codeLines}\n\`\`\`\n`;
+  const parkFenceLine=async(needle,offset=8.25)=>page.evaluate(({needle,offset})=>{
+    const sc=document.querySelector('#scroller'),code=[...document.querySelectorAll('.code pre code')].find(x=>x.textContent.includes(needle));
+    if(!code)throw new Error(`missing code line ${needle}`);
+    const walker=document.createTreeWalker(code,NodeFilter.SHOW_TEXT);let node;
+    while((node=walker.nextNode())) {
+      const start=node.textContent.indexOf(needle);if(start<0)continue;
+      const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+needle.length);
+      sc.scrollTop+=range.getBoundingClientRect().top-sc.getBoundingClientRect().top+offset;
+      return {top:range.getBoundingClientRect().top-sc.getBoundingClientRect().top,scrollTop:sc.scrollTop};
+    }
+    throw new Error(`missing text node for ${needle}`);
+  },{needle,offset});
+  const expectedFenceLine=44,sourceToggleResults=[];
+  for(const language of ['javascript','']) {
+    await load(fenceDocument(language),'/synthetic/fence-lines.md');await parkFenceLine('line40');
+    await page.evaluate(()=>c11md.setSourceMode(true));
+    sourceToggleResults.push({language:language||'plain',lines:await page.evaluate(()=>c11md.visible().lines)});
+    await page.evaluate(()=>c11md.setSourceMode(false));
+  }
+  const sourceTogglePass=sourceToggleResults.every(x=>x.lines.first===expectedFenceLine&&Math.abs(x.lines.offset-8.25)<=1);
+  await load(fenceDocument('javascript'),'/synthetic/fence-offset-roundtrip.md');await parkFenceLine('line40');
+  await page.evaluate(()=>c11md.setSourceMode(true));
+  await page.evaluate(()=>{document.querySelector('#srcScroller').scrollTop+=4.5;});
+  const movedSourceOffset=await page.evaluate(()=>c11md.visible().lines);
+  await page.evaluate(()=>c11md.setSourceMode(false));
+  const movedReadOffset=await page.evaluate(()=>{
+    const sc=document.querySelector('#scroller'),code=[...document.querySelectorAll('.code pre code')].find(x=>x.textContent.includes('line40'));
+    const walker=document.createTreeWalker(code,NodeFilter.SHOW_TEXT);let node;
+    while((node=walker.nextNode())) {const start=node.textContent.indexOf('line40');if(start<0)continue;
+      const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+6);
+      return {lines:c11md.visible().lines,textTop:range.getBoundingClientRect().top-sc.getBoundingClientRect().top};}
+    throw new Error('line40 not found after returning to read mode');
+  });
+  const sourceOffsetRoundtripPass=movedSourceOffset.first===expectedFenceLine&&Math.abs(movedSourceOffset.offset-12.75)<=1&&
+    movedReadOffset.lines.first===expectedFenceLine&&Math.abs(movedReadOffset.lines.offset-movedSourceOffset.offset)<=1&&
+    Math.abs(movedReadOffset.textTop+movedSourceOffset.offset)<=1;
+  await load(fenceDocument('javascript'),'/synthetic/scroll-to-fence-line.md');
+  const interiorLine=await page.evaluate(line=>{
+    const result=c11md.scrollToLine(line),sc=document.querySelector('#scroller'),code=[...document.querySelectorAll('.code pre code')].find(x=>x.textContent.includes('line40'));
+    const walker=document.createTreeWalker(code,NodeFilter.SHOW_TEXT);let node;
+    while((node=walker.nextNode())) {const start=node.textContent.indexOf('line40');if(start<0)continue;
+      const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+6);
+      return {line,result:result.lines,textTop:range.getBoundingClientRect().top-sc.getBoundingClientRect().top};}
+    throw new Error('line40 not found');
+  },expectedFenceLine);
+  const scrollToLinePass=interiorLine.result.first===expectedFenceLine&&Math.abs(interiorLine.textTop)<1;
+  await load(fenceDocument('javascript'),'/synthetic/fence-offset.md');await parkFenceLine('line40');
+  const fenceCapture=await page.evaluate(()=>c11md.visible().lines);
+  await page.reload();await page.waitForFunction(()=>window.testMessages.some(m=>m.type==='ready'));
+  await settings({theme:'light',typeface:'serif',scale:1});await load(fenceDocument('javascript'),'/synthetic/fence-offset.md',2);
+  const fenceRestore=await page.evaluate(({line,offset})=>{
+    const result=c11md.scrollToLine(line,offset),sc=document.querySelector('#scroller'),code=[...document.querySelectorAll('.code pre code')].find(x=>x.textContent.includes('line40'));
+    const walker=document.createTreeWalker(code,NodeFilter.SHOW_TEXT);let node;
+    while((node=walker.nextNode())) {const start=node.textContent.indexOf('line40');if(start<0)continue;
+      const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+6);
+      return {result:result.lines,textTop:range.getBoundingClientRect().top-sc.getBoundingClientRect().top};}
+    throw new Error('line40 not found');
+  },{line:fenceCapture.first,offset:fenceCapture.offset});
+  const fenceOffsetPass=fenceCapture.first===expectedFenceLine&&fenceRestore.result.first===expectedFenceLine&&Math.abs(fenceRestore.result.offset-fenceCapture.offset)<=1&&Math.abs(fenceRestore.textTop+fenceCapture.offset)<=1;
+  if(!sourceTogglePass||!sourceOffsetRoundtripPass||!scrollToLinePass||!fenceOffsetPass)console.error('R2_LINE_MAPPING_PROBES',JSON.stringify({sourceToggle:{pass:sourceTogglePass,results:sourceToggleResults},sourceOffsetRoundtrip:{pass:sourceOffsetRoundtripPass,source:movedSourceOffset,read:movedReadOffset},scrollToLine:{pass:scrollToLinePass,result:interiorLine},eviction:{pass:fenceOffsetPass,captured:fenceCapture,restored:fenceRestore}}));
+  assert.ok(sourceTogglePass,'source toggle did not preserve the highlighted and plain fence line/offset');
+  assert.ok(sourceOffsetRoundtripPass,'source-to-read toggle did not preserve the changed offset within the same fence line');
+  assert.ok(scrollToLinePass,'scrollToLine did not put the requested code line at the viewport top');
+  assert.ok(fenceOffsetPass,'fresh reload did not restore the same interior fence line and signed offset within one pixel');
+  scenario('source toggle preserves the interior line and offset in highlighted and plain fences');
+  scenario('source-to-read toggle maps a changed offset within the same fence line');
+  scenario('scrollToLine targets an interior highlighted-fence line in read mode');
+  scenario('fresh reload restores the same interior fence line and signed offset within one pixel');
+  const readLineTop=needle=>page.evaluate(needle=>{
+    const walker=document.createTreeWalker(document.querySelector('#article'),NodeFilter.SHOW_TEXT);let node;
+    while((node=walker.nextNode())) {const start=node.textContent.indexOf(needle);if(start<0)continue;
+      const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+needle.length);
+      return range.getBoundingClientRect().top-document.querySelector('#scroller').getBoundingClientRect().top;}
+    throw new Error(`missing rendered line ${needle}`);
+  },needle);
+  const paragraphLines=Array.from({length:80},(_,i)=>`Paragraph line${String(i).padStart(2,'0')} keeps its source line marker.`).join('\n');
+  await load(`# Paragraph line mapping\n\n${paragraphLines}\n`,'/synthetic/paragraph-lines.md');
+  const paragraphResult=await page.evaluate(()=>c11md.scrollToLine(43).lines),paragraphTop=await readLineTop('Paragraph line40');
+  assert.equal(paragraphResult.first,43);assert.ok(Math.abs(paragraphTop)<1,'paragraph source line was not placed at the viewport top');
+  const listLines=Array.from({length:80},(_,i)=>`- List line${String(i).padStart(2,'0')} keeps its source line marker.`).join('\n');
+  await load(`# List line mapping\n\n${listLines}\n`,'/synthetic/list-lines.md');
+  const listResult=await page.evaluate(()=>c11md.scrollToLine(43).lines),listTop=await readLineTop('List line40');
+  assert.equal(listResult.first,43);assert.ok(Math.abs(listTop)<1,'list source line was not placed at the viewport top');
+  scenario('source line mapping also targets interior paragraph and list lines');
   const diagramAbove='```mermaid\nflowchart TD\n  A[Input] --> B[Output]\n```\n\n'+long;
   await settings({theme:'system',osAppearance:'dark',typeface:'serif',scale:1});await load(diagramAbove,'/synthetic/diagram-theme.md',1);
   await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
@@ -238,6 +333,12 @@ try {
     assert.equal(link.kind,'blocked',`${name} was treated as a local file`);assert.equal(link.resolvedURL,null);
   }
   scenario('file and protocol-relative links with a host are blocked');
+  await load('[empty]()\n','/synthetic/empty-link.md');
+  const emptyLink=page.getByRole('link',{name:'empty',exact:true});
+  if(await emptyLink.count())await emptyLink.click();
+  const emptyMessages=await page.evaluate(()=>testMessages.filter(x=>x.type==='link'));
+  assert.ok(emptyMessages.length===0||emptyMessages.at(-1).kind==='blocked'&&emptyMessages.at(-1).resolvedURL===null,'empty link targeted the current document');
+  scenario('empty Markdown links do not target the current document');
   await load('# Links\n\n[remote](https://example.invalid/) [local](next.md) [jump](#target)\n\n'+('Text\n\n'.repeat(30))+'## Target\n');
   const url=page.url();await page.getByRole('link',{name:'remote',exact:true}).click();assert.equal(page.url(),url);
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').kind),'external');

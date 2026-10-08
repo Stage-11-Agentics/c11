@@ -51,8 +51,49 @@ final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
 /// Read-only content must not claim WebKit's page zoom shortcuts.
 final class MarkdownWKWebView: WKWebView {
     var allowsPanelFocus = false
+    weak var renderer: MarkdownWebRenderer?
+    var onShowPanelDetails: (() -> Void)?
     private var pointerFocus = false
     private var retainedViewport: NSSize?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        renderer?.synchronize()
+    }
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+
+        for item in Array(menu.items.reversed()) where Self.isBlockedContextMenuItem(item) {
+            menu.removeItem(item)
+        }
+
+        guard !menu.items.contains(where: { $0.action == #selector(showPanelDetails(_:)) }) else { return }
+        if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
+        let details = NSMenuItem(
+            title: String(localized: "surfaceManifest.menuItem", defaultValue: "Panel Details"),
+            action: #selector(showPanelDetails(_:)),
+            keyEquivalent: ""
+        )
+        details.target = self
+        menu.addItem(details)
+    }
+
+    private static func isBlockedContextMenuItem(_ item: NSMenuItem) -> Bool {
+        let identifier = item.identifier?.rawValue ?? ""
+        let title = item.title.lowercased()
+        return identifier.hasPrefix("WKMenuItemIdentifier") && (
+            identifier.contains("Open") || identifier.contains("Back") || identifier.contains("Forward") ||
+                identifier.contains("Download") ||
+                identifier.contains("Reload") || identifier.localizedCaseInsensitiveContains("CopyLink")
+        ) || title.hasPrefix("open ") || title == "back" || title == "forward" ||
+            title.contains("download") || title.contains("reload") || title == "copy link"
+    }
+
+    @objc private func showPanelDetails(_ sender: Any?) {
+        _ = sender
+        onShowPanelDetails?()
+    }
 
     /// SwiftUI zeroes a dismantled host. Keep a hidden reader at its last
     /// mounted size so later visible() capture uses the operator's geometry.
@@ -145,6 +186,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
     private var pendingRestorePosition: MarkdownReadingPosition?
+    private var restoreContentBeforeReload: String?
     private var activeQueries = 0
     private let startedAt = ProcessInfo.processInfo.systemUptime
     var hasQueriesInFlight: Bool { activeQueries > 0 }
@@ -154,6 +196,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     init(panel: MarkdownPanel) {
         self.panel = panel
         pendingRestorePosition = panel.readingPosition
+        restoreContentBeforeReload = panel.readingContent
         let root = Bundle.main.resourceURL?.appendingPathComponent("markdown-viewer", isDirectory: true)
         let policy = MarkdownAssetPolicy(
             bundle: root.flatMap(MarkdownAssetRoot.init(directory:)),
@@ -168,6 +211,15 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
         webView = MarkdownWKWebView(frame: .zero, configuration: config)
         super.init()
+        webView.renderer = self
+        webView.onShowPanelDetails = { [weak panel] in
+            guard let panel else { return }
+            PanelManifestViewerWindowController.show(
+                workspaceId: panel.workspaceId,
+                surfaceId: panel.id,
+                kind: .markdown
+            )
+        }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsMagnification = false
@@ -182,6 +234,8 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         guard !closed else { return }
         closed = true
         webView.stopLoading()
+        webView.renderer = nil
+        webView.onShowPanelDetails = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "c11md")
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -230,7 +284,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
 #endif
     }
 
-    private func restoreReadingPosition(_ position: MarkdownReadingPosition, revision: Int) {
+    private func restoreReadingPosition(
+        _ position: MarkdownReadingPosition,
+        revision: Int,
+        completion: (() -> Void)? = nil
+    ) {
         call("setSourceMode", arguments: [position.sourceMode]) { [weak self] _ in
             guard let self, !self.closed else { return }
             let scroll = {
@@ -241,7 +299,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                         dlog("markdown.renderer.restored panel=\(self.panel?.id.uuidString ?? "unknown") line=\(actual.line) offset=\(actual.offset) width=\(self.webView.frame.width) height=\(self.webView.frame.height)")
                     }
 #endif
-                    self?.finishRender(revision)
+                    guard let self else { return }
+                    if let completion { completion() }
+                    else { self.finishRender(revision) }
                 }
             }
             if position.findQuery.isEmpty { scroll() }
@@ -262,10 +322,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                                              "outlineOpen": panel.outlineOpen as Any? ?? "auto", "osAppearance": appearance,
                                              "strings": Self.localizedStrings]])
         }
-        if loadedContent != panel.content {
-            loadedContent = panel.content
+        let content = restoreContentBeforeReload ?? panel.content
+        if loadedContent != content {
+            loadedContent = content
             revision += 1
-            call("load", arguments: [["markdown": panel.content, "documentPath": panel.filePath ?? "",
+            call("load", arguments: [["markdown": content, "documentPath": panel.filePath ?? "",
                                       "baseURL": panel.filePath.map { URL(fileURLWithPath: $0).absoluteString } ?? "",
                                       "revision": revision]])
         }
@@ -292,7 +353,28 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             if let value = body["revision"] as? Int {
                 if let position = pendingRestorePosition {
                     pendingRestorePosition = nil
-                    restoreReadingPosition(position, revision: value)
+                    restoreReadingPosition(position, revision: value) { [weak self] in
+                        guard let self else { return }
+                        let capturedContent = self.restoreContentBeforeReload
+                        self.restoreContentBeforeReload = nil
+                        if let capturedContent {
+                            self.panel?.clearReadingContent(ifMatching: capturedContent)
+                            guard let panel = self.panel else {
+                                self.finishRender(value)
+                                return
+                            }
+                            guard panel.content != capturedContent else {
+                                self.finishRender(value)
+                                return
+                            }
+                            // Keep the host hidden until the bridge has applied its
+                            // same-document capture/restore to the latest content.
+                            self.renderedRevision = nil
+                            self.synchronize()
+                        } else {
+                            self.finishRender(value)
+                        }
+                    }
                 } else { finishRender(value) }
             }
         case "link":

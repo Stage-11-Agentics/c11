@@ -184,8 +184,12 @@ Local raster images are limited to the document directory and its subdirectories
 symlinks outside that tree and remote images are blocked. Document HTML and
 scripts never execute. Relative markdown links open another markdown panel;
 web links follow c11's browser routing settings. Anchors stay in the document.
+Validated `mailto:` links accept recipients, cc, bcc, subject and body only;
+hosts, ports, fragments and control characters are refused. They open through
+`NSWorkspace` only after an operator clicks.
 Live reload preserves the reading position, with no separate change-tracking UI.
 Visible readers stay live. c11 retains four recently hidden readers across the
 app and releases older web views. Reopening a panel restores its source line and
 offset, read/source mode, find query, and native reading preferences. Reading raw
-content remains available while a panel's web view is released.
+content remains available while a panel's web view is released. If the original
+anchored block no longer exists, restoration falls back to the captured line.

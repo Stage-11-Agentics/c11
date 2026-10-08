@@ -100,6 +100,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     private var visibleRendererHosts: Set<UUID> = []
     var isRendererVisible: Bool { !visibleRendererHosts.isEmpty }
     private(set) var readingPosition: MarkdownReadingPosition?
+    private(set) var readingContent: String?
 
     func setRendererVisible(_ visible: Bool, hostID: UUID) {
         let previous = isRendererVisible
@@ -114,8 +115,14 @@ final class MarkdownPanel: Panel, ObservableObject {
     func evictRenderer(_ renderer: MarkdownWebRenderer, position: MarkdownReadingPosition) {
         guard self.renderer === renderer else { return }
         readingPosition = position
+        readingContent = content
         renderer.close()
         self.renderer = nil
+    }
+
+    func clearReadingContent(ifMatching content: String) {
+        guard readingContent == content else { return }
+        readingContent = nil
     }
 
     /// Called by the visible NSView host only; model construction never starts WebKit.

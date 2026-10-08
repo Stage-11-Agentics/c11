@@ -337,9 +337,10 @@ func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
             blocks.append(.heading(level: level, text: titleBarDescriptionInertLinks(content)))
         case .listItem(let marker, let depth):
             guard !content.characters.isEmpty else { break }
+            let task = titleBarDescriptionTaskListItem(content)
             blocks.append(.listItem(
-                marker: marker,
-                text: titleBarDescriptionInertLinks(content),
+                marker: task?.marker ?? marker,
+                text: titleBarDescriptionInertLinks(task?.text ?? content),
                 depth: depth
             ))
         case .quote:
@@ -380,6 +381,19 @@ func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
     }
     flushCurrentBlock()
     return blocks
+}
+
+private func titleBarDescriptionTaskListItem(_ text: AttributedString) -> (marker: String, text: AttributedString)? {
+    let value = String(text.characters)
+    let marker: String
+    if value.hasPrefix("[ ] ") { marker = "☐" }
+    else if value.hasPrefix("[x] ") || value.hasPrefix("[X] ") { marker = "☑" }
+    else { return nil }
+
+    var remaining = text
+    let end = remaining.index(remaining.startIndex, offsetByCharacters: 4)
+    remaining.removeSubrange(remaining.startIndex..<end)
+    return (marker, titleBarDescriptionTrimmed(remaining))
 }
 
 private func titleBarDescriptionBlockKey(

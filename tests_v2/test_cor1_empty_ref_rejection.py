@@ -49,20 +49,20 @@ def main() -> int:
 
     # Control surface with a known baseline write (positive control).
     surface_id = c.new_surface()
-    c._call("surface.set_metadata",
-            {"surface_id": surface_id, "metadata": {"role": "cor1-control"}})
-    before = c._call("surface.get_metadata", {"surface_id": surface_id}) or {}
+    c._call("panel.set_metadata",
+            {"panel_id": surface_id, "metadata": {"role": "cor1-control"}})
+    before = c._call("panel.get_metadata", {"panel_id": surface_id}) or {}
     baseline_role = (before.get("metadata") or {}).get("role")
     _must(baseline_role == "cor1-control", f"baseline write failed: {before}")
 
     # --- v2 write matrix: empty_ref (present-but-empty) + missing_ref (absent) ---
     cases = [
-        ("surface.set_metadata", {"metadata": {"role": "STOMP"}}, "surface_id"),
-        ("surface.clear_metadata", {"keys": ["role"]}, "surface_id"),
-        ("surface.trigger_flash", {}, "surface_id"),
-        ("pane.set_metadata", {"metadata": {"role": "STOMP"}}, "pane_id"),
-        ("pane.clear_metadata", {"keys": ["role"]}, "pane_id"),
-        ("surface.action", {"action": "rename", "title": "STOMP"}, "surface_id"),
+        ("panel.set_metadata", {"metadata": {"role": "STOMP"}}, "panel_id"),
+        ("panel.clear_metadata", {"keys": ["role"]}, "panel_id"),
+        ("panel.trigger_flash", {}, "panel_id"),
+        ("area.set_metadata", {"metadata": {"role": "STOMP"}}, "area_id"),
+        ("area.clear_metadata", {"keys": ["role"]}, "area_id"),
+        ("panel.action", {"action": "rename", "title": "STOMP"}, "panel_id"),
     ]
     for method, base, pin in cases:
         _expect_code(c, method, {**base, pin: ""}, "empty_ref")      # present-but-empty
@@ -73,18 +73,18 @@ def main() -> int:
     ws = c._call("workspace.current") or {}
     ws_id = ws.get("workspace_id")
     if ws_id:
-        _expect_code(c, "surface.set_metadata",
+        _expect_code(c, "panel.set_metadata",
                      {"workspace_id": ws_id, "metadata": {"role": "STOMP"}}, "missing_ref")
 
     # No rejected call may have landed on the control surface.
-    after = c._call("surface.get_metadata", {"surface_id": surface_id}) or {}
+    after = c._call("panel.get_metadata", {"panel_id": surface_id}) or {}
     _must((after.get("metadata") or {}).get("role") == "cor1-control",
           f"a rejected write mutated the control surface: {after}")
 
     # Positive control: a valid explicit write still succeeds.
-    c._call("surface.set_metadata",
-            {"surface_id": surface_id, "metadata": {"role": "cor1-ok"}})
-    final = c._call("surface.get_metadata", {"surface_id": surface_id}) or {}
+    c._call("panel.set_metadata",
+            {"panel_id": surface_id, "metadata": {"role": "cor1-ok"}})
+    final = c._call("panel.get_metadata", {"panel_id": surface_id}) or {}
     _must((final.get("metadata") or {}).get("role") == "cor1-ok",
           f"valid explicit write did not land: {final}")
 

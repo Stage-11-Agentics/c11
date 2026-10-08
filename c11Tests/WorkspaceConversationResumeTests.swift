@@ -28,6 +28,69 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         }
     }
 
+    func testStartupKeepsFirstConversationThroughSeedResumeAndSave() async throws {
+        try await assertStartupDuplicateConversationKeepsFirst(firstHasConversation: true)
+    }
+
+    func testStartupDoesNotAdoptLaterConversationWhenFirstIsEmpty() async throws {
+        try await assertStartupDuplicateConversationKeepsFirst(firstHasConversation: false)
+    }
+
+    private func assertStartupDuplicateConversationKeepsFirst(firstHasConversation: Bool) async throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.panels.keys.first)
+        let firstId = "11111111-1111-4111-8111-111111111111"
+        let laterId = "22222222-2222-4222-8222-222222222222"
+        func conversations(_ id: String) -> PanelConversations {
+            PanelConversations(active: ConversationRef(
+                kind: "codex", id: id, capturedVia: .runtimeEnv, state: .suspended
+            ), history: [])
+        }
+        // No terminal_type: isolate bridge seeding from scraper recovery.
+        var first = makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
+        first.surfaceConversations = firstHasConversation ? conversations(firstId) : nil
+        var later = first
+        later.surfaceConversations = conversations(laterId)
+        let prepared = SessionRestoreNormalization.prepareStartupSnapshot(
+            makeAppSnapshot(workspace: makeSnapshot(panels: [first, later])), reportDrop: { _ in }
+        )
+        let normalized = prepared.windows[0].workspaceManager.workspaces[0]
+        XCTAssertEqual(normalized.panels.count, 1)
+        XCTAssertTrue(ConversationSnapshotCaptureScope(snapshot: prepared).scrapeContexts.isEmpty)
+        let records = WorkspaceSnapshotConversationBridge.records(from: prepared)
+        XCTAssertEqual(records[panelId.uuidString]?.active?.id, firstHasConversation ? firstId : nil)
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(prepared)
+        let active = await ConversationStore.shared.active(for: panelId.uuidString)
+        XCTAssertEqual(active?.id, firstHasConversation ? firstId : nil)
+
+        let plans = workspace.pendingRestartPlans(
+            from: normalized, registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        )
+        XCTAssertEqual(plans.count, firstHasConversation ? 1 : 0)
+        if firstHasConversation {
+            guard case .typeCommand(let command, _) = plans.first?.action else {
+                return XCTFail("first conversation must supply the resume plan")
+            }
+            XCTAssertEqual(command, "codex resume --yolo '\(firstId)'")
+        }
+
+        // Exercise the real capture path that reads the conversation store;
+        // never execute a resume command or schedule an agent in this test.
+        let captured = workspace.sessionSnapshot(includeScrollback: false)
+        let capturedPanel = try XCTUnwrap(captured.panels.first { $0.id == panelId })
+        XCTAssertEqual(capturedPanel.surfaceConversations?.active?.id, firstHasConversation ? firstId : nil)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("c11-startup-duplicate-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("session.json")
+        XCTAssertTrue(SessionPersistenceStore.save(makeAppSnapshot(workspace: captured), fileURL: file))
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: file))
+        let savedRecords = WorkspaceSnapshotConversationBridge.records(from: loaded)
+        XCTAssertEqual(savedRecords[panelId.uuidString]?.active?.id, firstHasConversation ? firstId : nil)
+        XCTAssertFalse(savedRecords.values.contains { $0.active?.id == laterId })
+        await ConversationStore.shared.clear(surfaceId: panelId.uuidString)
+    }
+
     // MARK: - pendingRestartPlans
 
     func testEmitsTypeCommandPlanForClaudeCode() async throws {
@@ -57,6 +120,83 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(submit)
         XCTAssertTrue(text.contains("claude --dangerously-skip-permissions --resume"))
         XCTAssertTrue(text.contains(claudeSessionId))
+    }
+
+    func testDeferredResumeSubmissionSkipsOnlyForLiveAttributedSameConversationWriter() async throws {
+        let workspace = Workspace()
+        let targetSurfaceId = UUID()
+        let liveWriterSurfaceId = UUID()
+        let unrelatedSurfaceId = UUID()
+        let conversationId = "abcd1111-2222-4333-8444-555566667777"
+        await ConversationStore.shared.push(
+            surfaceId: targetSurfaceId.uuidString,
+            kind: "claude-code",
+            id: conversationId,
+            source: .hook,
+            state: .suspended
+        )
+        let plans = workspace.pendingRestartPlans(
+            from: makeSnapshot(panels: [
+                makePanelSnapshot(id: targetSurfaceId, type: .terminal)
+            ]),
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        )
+        let plan = try XCTUnwrap(plans.first)
+        XCTAssertEqual(plans.count, 1)
+
+        // A matching exact agent ref appears after planning, in the delay
+        // before submission. ConversationStore may quarantine the duplicate;
+        // the terminal-owner evidence still identifies the running writer.
+        await ConversationStore.shared.push(
+            surfaceId: liveWriterSurfaceId.uuidString,
+            kind: plan.conversation.kind,
+            id: plan.conversation.id,
+            source: .hook,
+            state: .alive
+        )
+        await ConversationStore.shared.push(
+            surfaceId: unrelatedSurfaceId.uuidString,
+            kind: "codex",
+            id: codexSessionId,
+            source: .hook,
+            state: .alive
+        )
+        let currentConversations = await ConversationStore.shared.snapshot()
+
+        let liveWriterAction = Workspace.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: targetSurfaceId,
+            conversationsBySurface: currentConversations,
+            liveAttributedAgentSurfaceIds: [liveWriterSurfaceId]
+        )
+        guard case .skip(let liveReason) = liveWriterAction else {
+            return XCTFail("a live c11 agent attributed to the same provider and session must block the queued resume")
+        }
+        XCTAssertTrue(liveReason.contains("live conversation writer"))
+
+        let deadWriterAction = Workspace.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: targetSurfaceId,
+            conversationsBySurface: currentConversations,
+            liveAttributedAgentSurfaceIds: []
+        )
+        guard case .typeCommand = deadWriterAction else {
+            return XCTFail("a dead or absent attributed agent must retain today's resume behavior")
+        }
+
+        let unrelatedShellAction = Workspace.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: targetSurfaceId,
+            conversationsBySurface: currentConversations,
+            liveAttributedAgentSurfaceIds: [unrelatedSurfaceId]
+        )
+        guard case .typeCommand = unrelatedShellAction else {
+            return XCTFail("an unrelated live shell must not claim this conversation")
+        }
     }
 
     func testCodexAmbiguousRefSkipsViaPlans() async throws {
@@ -164,7 +304,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         let panelId = UUID()
         let boundary = Date(timeIntervalSince1970: 2_000.75)
         var panel = makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
-        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        panel.surfaceConversations = PanelConversations(active: ConversationRef(
             kind: "codex",
             id: codexSessionId,
             placeholder: false,
@@ -205,9 +345,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         var panel = makePanelSnapshot(
             id: panelId,
             type: .terminal,
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+            metadata: [PanelMetadataKeyName.terminalType: .string("  ")]
         )
-        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        panel.surfaceConversations = PanelConversations(active: ConversationRef(
             kind: "codex",
             id: codexSessionId,
             placeholder: false,
@@ -250,7 +390,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             type: .terminal,
             metadata: nil
         )
-        missingTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        missingTypePanel.surfaceConversations = PanelConversations(active: ConversationRef(
             kind: "codex",
             id: "aaaa1111-2222-3333-4444-555566667777",
             cwd: "/work/shared/../shared",
@@ -260,9 +400,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         var emptyTypePanel = makePanelSnapshot(
             id: emptyTypePanelId,
             type: .terminal,
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+            metadata: [PanelMetadataKeyName.terminalType: .string("  ")]
         )
-        emptyTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        emptyTypePanel.surfaceConversations = PanelConversations(active: ConversationRef(
             kind: "codex",
             id: "bbbb1111-2222-3333-4444-555566667777",
             cwd: "/work/shared",
@@ -313,7 +453,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             state: ConversationState
         ) -> SessionPanelSnapshot {
             var panel = makePanelSnapshot(id: id, type: .terminal, metadata: nil)
-            panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            panel.surfaceConversations = PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: conversationID,
                 cwd: "/work/shared",
@@ -536,7 +676,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             isPinned: false,
             currentDirectory: "/tmp",
             focusedPanelId: nil,
-            layout: .pane(SessionPaneLayoutSnapshot(panelIds: panels.map { $0.id }, selectedPanelId: panels.first?.id)),
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: panels.map { $0.id }, selectedPanelId: panels.first?.id)),
             panels: panels,
             statusEntries: [],
             logEntries: [],
@@ -554,7 +694,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
                 SessionWindowSnapshot(
                     frame: nil,
                     display: nil,
-                    tabManager: SessionTabManagerSnapshot(
+                    workspaceManager: SessionWorkspaceManagerSnapshot(
                         selectedWorkspaceIndex: 0,
                         workspaces: [workspace]
                     ),
@@ -607,7 +747,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         // runtime). With the original `Task { ... }` pattern, this
         // would deadlock against the test's main-actor wait and the
         // returned dict would be empty.
-        let captured: [String: SurfaceConversations] = await MainActor.run {
+        let captured: [String: PanelConversations] = await MainActor.run {
             Workspace.readConversationsByPanelIdSync(timeout: 2.0)
         }
 
@@ -622,7 +762,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     /// Sanity check the empty-store contract.
     func testReadConversationsByPanelIdSyncEmptyStoreReturnsEmpty() async throws {
         // setUp clears the store; nothing else pushed.
-        let captured: [String: SurfaceConversations] = await MainActor.run {
+        let captured: [String: PanelConversations] = await MainActor.run {
             Workspace.readConversationsByPanelIdSync(timeout: 1.0)
         }
         XCTAssertTrue(captured.isEmpty,
@@ -641,7 +781,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     /// instead of blocking main on a semaphore. Pure (no `Workspace`), so
     /// this one runs in the bare local xctest runner too.
     func testAutosaveConversationHashChangeSensitiveAndOrderIndependent() {
-        func hash(_ map: [String: SurfaceConversations]) -> Int {
+        func hash(_ map: [String: PanelConversations]) -> Int {
             var hasher = Hasher()
             AppDelegate.hashConversationState(map, into: &hasher)
             return hasher.finalize()
@@ -651,17 +791,17 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             state: ConversationState = .alive,
             via: CaptureSource = .hook,
             kind: String = "claude-code"
-        ) -> SurfaceConversations {
-            SurfaceConversations(active: ConversationRef(
+        ) -> PanelConversations {
+            PanelConversations(active: ConversationRef(
                 kind: kind, id: id, capturedVia: via, state: state))
         }
 
-        let base: [String: SurfaceConversations] = [
+        let base: [String: PanelConversations] = [
             "surface-a": ref(id: "sess-1"),
             "surface-b": ref(id: "sess-2"),
         ]
         // Same entries, rebuilt dict → identical hash (order-independent).
-        let reordered: [String: SurfaceConversations] = [
+        let reordered: [String: PanelConversations] = [
             "surface-b": ref(id: "sess-2"),
             "surface-a": ref(id: "sess-1"),
         ]
@@ -715,7 +855,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         )
 
         // Inject a DIFFERENT map (ref Y, codex). Injection wins over the store.
-        let injectedY = SurfaceConversations(active: ConversationRef(
+        let injectedY = PanelConversations(active: ConversationRef(
             kind: "codex", id: codexSessionId, capturedVia: .scrape, state: .suspended))
         let injectedSnapshot = workspace.sessionSnapshot(
             includeScrollback: false,

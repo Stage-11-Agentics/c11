@@ -3,7 +3,7 @@ import SwiftUI
 
 struct NotificationsPage: View {
     @EnvironmentObject var notificationStore: TerminalNotificationStore
-    @EnvironmentObject var tabManager: TabManager
+    @EnvironmentObject var workspaceManager: WorkspaceManager
     @Binding var selection: SidebarSelection
     @FocusState private var focusedNotificationId: UUID?
     @AppStorage(KeyboardShortcutSettings.Action.jumpToUnread.defaultsKey) private var jumpToUnreadShortcutData = Data()
@@ -21,13 +21,13 @@ struct NotificationsPage: View {
                         ForEach(notificationStore.notifications) { notification in
                             NotificationRow(
                                 notification: notification,
-                                tabTitle: tabTitle(for: notification.tabId),
+                                tabTitle: tabTitle(for: notification.workspaceId),
                                 onOpen: {
                                     // SwiftUI action closures are not guaranteed to run on the main actor.
                                     // Ensure window focus + tab selection happens on the main thread.
                                     DispatchQueue.main.async {
-                                        _ = AppDelegate.shared?.openNotification(
-                                            tabId: notification.tabId,
+                                        _ = AppDelegate.shared?.operatorOpenNotification(
+                                            workspaceId: notification.workspaceId,
                                             surfaceId: notification.surfaceId,
                                             notificationId: notification.id
                                         )
@@ -94,7 +94,7 @@ struct NotificationsPage: View {
                 .foregroundColor(.secondary)
             Text(String(localized: "notifications.empty.title", defaultValue: "It's quiet."))
                 .font(.headline)
-            Text(String(localized: "notifications.empty.description", defaultValue: "When a pane needs you, it rings here. Tap one to jump to its pane."))
+            Text(String(localized: "notifications.empty.description", defaultValue: "When an area needs you, it rings here. Tap one to jump to its area."))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
@@ -105,7 +105,7 @@ struct NotificationsPage: View {
     private var jumpToUnreadButton: some View {
         if let key = jumpToUnreadShortcut.keyEquivalent {
             Button(action: {
-                AppDelegate.shared?.jumpToLatestUnread()
+                AppDelegate.shared?.operatorJumpToLatestUnread()
             }) {
                 HStack(spacing: 6) {
                     Text(String(localized: "notifications.jumpToLatestUnread", defaultValue: "Jump to Latest Unread"))
@@ -118,7 +118,7 @@ struct NotificationsPage: View {
             .disabled(!hasUnreadNotifications)
         } else {
             Button(action: {
-                AppDelegate.shared?.jumpToLatestUnread()
+                AppDelegate.shared?.operatorJumpToLatestUnread()
             }) {
                 HStack(spacing: 6) {
                     Text(String(localized: "notifications.jumpToLatestUnread", defaultValue: "Jump to Latest Unread"))
@@ -150,8 +150,8 @@ struct NotificationsPage: View {
         return shortcut
     }
 
-    private func tabTitle(for tabId: UUID) -> String? {
-        AppDelegate.shared?.tabTitle(for: tabId) ?? tabManager.tabs.first(where: { $0.id == tabId })?.title
+    private func tabTitle(for workspaceId: UUID) -> String? {
+        AppDelegate.shared?.tabTitle(for: workspaceId) ?? workspaceManager.workspaces.first(where: { $0.id == workspaceId })?.title
     }
 }
 

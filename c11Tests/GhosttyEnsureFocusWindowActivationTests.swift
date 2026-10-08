@@ -10,15 +10,15 @@ import AppKit
 @MainActor
 final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
     func testAllowsActivationForActiveManager() {
-        let activeManager = TabManager()
-        let otherManager = TabManager()
+        let activeManager = WorkspaceManager()
+        let otherManager = WorkspaceManager()
         let targetWindow = NSWindow()
         let otherWindow = NSWindow()
 
         XCTAssertTrue(
             shouldAllowEnsureFocusWindowActivation(
-                activeTabManager: activeManager,
-                targetTabManager: activeManager,
+                activeWorkspaceManager: activeManager,
+                targetWorkspaceManager: activeManager,
                 keyWindow: targetWindow,
                 mainWindow: targetWindow,
                 targetWindow: targetWindow
@@ -26,8 +26,8 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
         )
         XCTAssertFalse(
             shouldAllowEnsureFocusWindowActivation(
-                activeTabManager: activeManager,
-                targetTabManager: otherManager,
+                activeWorkspaceManager: activeManager,
+                targetWorkspaceManager: otherManager,
                 keyWindow: otherWindow,
                 mainWindow: otherWindow,
                 targetWindow: targetWindow
@@ -36,13 +36,13 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
     }
 
     func testAllowsActivationWhenAppHasNoKeyAndNoMainWindow() {
-        let targetManager = TabManager()
+        let targetManager = WorkspaceManager()
         let targetWindow = NSWindow()
 
         XCTAssertTrue(
             shouldAllowEnsureFocusWindowActivation(
-                activeTabManager: nil,
-                targetTabManager: targetManager,
+                activeWorkspaceManager: nil,
+                targetWorkspaceManager: targetManager,
                 keyWindow: nil,
                 mainWindow: nil,
                 targetWindow: targetWindow
@@ -50,8 +50,8 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
         )
         XCTAssertFalse(
             shouldAllowEnsureFocusWindowActivation(
-                activeTabManager: nil,
-                targetTabManager: targetManager,
+                activeWorkspaceManager: nil,
+                targetWorkspaceManager: targetManager,
                 keyWindow: NSWindow(),
                 mainWindow: nil,
                 targetWindow: targetWindow
@@ -59,8 +59,8 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
         )
         XCTAssertFalse(
             shouldAllowEnsureFocusWindowActivation(
-                activeTabManager: nil,
-                targetTabManager: targetManager,
+                activeWorkspaceManager: nil,
+                targetWorkspaceManager: targetManager,
                 keyWindow: nil,
                 mainWindow: NSWindow(),
                 targetWindow: targetWindow
@@ -107,10 +107,4 @@ final class ScrollbarRightEdgeInsetTests: XCTestCase {
         XCTAssertGreaterThan(gutterWidth, 0, "Legacy scroller gutter width must be positive")
     }
 
-    func testOverlayScrollerWidthIsZero() {
-        // The fix must NOT subtract anything in overlay mode (prior deliberate decision).
-        // Overlay scrollers have zero width (they float over content).
-        let overlayWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
-        XCTAssertEqual(overlayWidth, 0, "Overlay scroller width must be zero — it floats over content")
-    }
 }

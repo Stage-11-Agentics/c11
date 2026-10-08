@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 
-public struct SurfaceId: Hashable, Sendable {
+public struct PanelId: Hashable, Sendable {
     public let rawValue: UUID
 
     public init(_ rawValue: UUID) {
@@ -31,8 +31,8 @@ public enum WorkspaceFrameUrgency: String, Sendable, Equatable {
 /// implicit animation so M5 can light up motion without re-plumbing callers.
 public enum WorkspaceFrameState: Sendable, Equatable {
     case idle
-    case dropTarget(source: SurfaceId? = nil)
-    case notifying(WorkspaceFrameUrgency, source: SurfaceId? = nil)
+    case dropTarget(source: PanelId? = nil)
+    case notifying(WorkspaceFrameUrgency, source: PanelId? = nil)
     case mirroring(peer: WindowId? = nil)
 }
 

@@ -50,7 +50,7 @@ def wait_for(predicate, timeout_s: float, interval_s: float = 0.1) -> bool:
 def browser_address_bar_focus_state(client: cmux, surface_id: str | None = None, request_id: str = "browser-focus") -> dict[str, Any]:
     params: dict[str, Any] = {}
     if surface_id:
-        params["surface_id"] = surface_id
+        params["panel_id"] = surface_id
     return v2_call(client, "debug.browser.address_bar_focused", params, request_id=request_id)
 
 

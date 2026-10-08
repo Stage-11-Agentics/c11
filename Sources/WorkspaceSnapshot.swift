@@ -39,7 +39,8 @@ struct WorkspaceSnapshotFile: Codable, Sendable, Equatable {
     var c11Version: String
     /// How this snapshot was produced.
     var origin: Origin
-    /// Count of surfaces in the embedded plan. Populated on write so
+    /// Count of surfaces in the embedded plan, written as `panel_count`
+    /// (legacy `surface_count` is still read). Populated on write so
     /// `snapshot.list` can report the count without decoding the full
     /// plan tree. Optional on read: legacy files written before P1
     /// landed omit the field; the list path falls back to the embedded
@@ -78,8 +79,36 @@ struct WorkspaceSnapshotFile: Codable, Sendable, Equatable {
         case createdAt = "created_at"
         case c11Version = "c11_version"
         case origin
+        case panelCount = "panel_count"
+        // C11-337: legacy spelling, accepted forever (saved `~/.c11-snapshots`).
         case surfaceCount = "surface_count"
         case plan
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        snapshotId = try c.decode(String.self, forKey: .snapshotId)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        c11Version = try c.decode(String.self, forKey: .c11Version)
+        origin = try c.decode(Origin.self, forKey: .origin)
+        if let count = try c.decodeIfPresent(Int.self, forKey: .panelCount) {
+            surfaceCount = count
+        } else {
+            surfaceCount = try c.decodeIfPresent(Int.self, forKey: .surfaceCount)
+        }
+        plan = try c.decode(WorkspaceApplyPlan.self, forKey: .plan)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(snapshotId, forKey: .snapshotId)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(c11Version, forKey: .c11Version)
+        try c.encode(origin, forKey: .origin)
+        try c.encodeIfPresent(surfaceCount, forKey: .panelCount)
+        try c.encode(plan, forKey: .plan)
     }
 }
 
@@ -150,6 +179,9 @@ struct WorkspaceSnapshotIndex: Codable, Sendable, Equatable {
         case path
         case createdAt = "created_at"
         case workspaceTitle = "workspace_title"
+        // C11-337: read-only alias. This index is a socket response, so its
+        // output spelling stays with the wire alias layer (`surface_count`).
+        case panelCount = "panel_count"
         case surfaceCount = "surface_count"
         case origin
         case source
@@ -186,7 +218,11 @@ struct WorkspaceSnapshotIndex: Codable, Sendable, Equatable {
         path = try c.decode(String.self, forKey: .path)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         workspaceTitle = try c.decodeIfPresent(String.self, forKey: .workspaceTitle)
-        surfaceCount = try c.decode(Int.self, forKey: .surfaceCount)
+        if c.contains(.panelCount) {
+            surfaceCount = try c.decode(Int.self, forKey: .panelCount)
+        } else {
+            surfaceCount = try c.decode(Int.self, forKey: .surfaceCount)
+        }
         origin = try c.decode(WorkspaceSnapshotFile.Origin.self, forKey: .origin)
         source = try c.decode(Source.self, forKey: .source)
         if let r = try? c.nestedContainer(keyedBy: ReadabilityKeys.self, forKey: .readability),

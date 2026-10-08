@@ -15,7 +15,7 @@ description: Stage 1 of the Tone workflow (tone-initiation → tone-prototype �
 
 You are initiating a project with a client. **A commission breathes life into a project** — this stage is where that breath happens: a dialogue that solicits everything needed to understand the problem, the people who have it, and the shape of an excellent answer. It is the largest stage in discussion points and the most self-reflective: expect to loop back, revise, and re-ask. Generic by design — the same arc carries a web app, a CLI, a hardware device, a novel, a business process, or a new business.
 
-Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code its commands). Outside c11 every step still runs — surfaces and signals degrade to plain files and inline summaries.
+Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code its commands). Outside c11 every step still runs — panels and signals degrade to plain files and inline summaries.
 
 ## Contract
 
@@ -29,7 +29,7 @@ Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code i
 
 - **Living artifacts.** When a client's answer contradicts an upstream artifact — philosophy most of all — surface the conflict. If the client upholds their answer, the artifact is what's wrong: propose the amendment, update it, propagate forward. An upheld violation recorded as an exception is a fork in the truth; folded into the artifact, it makes the artifact truer.
 - **AC lineage.** Acceptance criteria are minted at the stories with stable IDs (AC-1, AC-2…) and carried unchanged through prototype → evaluation → spec → tickets → validation, so a dropped criterion is mechanically visible.
-- **One run-state.** `sequence/run-state.md` anchors the whole arc: current stage and phase, decisions, touchpoint status, and cheap per-phase stats (agents spawned, human touchpoints, wall-clock — for proportion and learning, not spend). Every stage reads it first on invoke and resumes from what's recorded; inside c11, broadcast the current phase via the surface title and touchpoint state via the description, refreshed at each boundary.
+- **One run-state.** `sequence/run-state.md` anchors the whole arc: current stage and phase, decisions, touchpoint status, and cheap per-phase stats (agents spawned, human touchpoints, wall-clock — for proportion and learning, not spend). Every stage reads it first on invoke and resumes from what's recorded; inside c11, broadcast the current phase via the panel title and touchpoint state via the description, refreshed at each boundary.
 - **Closed loop.** The arc ends when its lessons are captured — after the build ships *and a human has used the result* — with `run-retro` across all four stages, folding validated, generalized lessons into each skill. War stories stay in the run log (`runs-ledger.md` beside this skill); only the principle enters a skill.
 
 ## Principles
@@ -82,4 +82,4 @@ Stop at saturation — when new searches stop changing the picture — not when 
 
 ## Touchpoints
 
-The client is met, not merely consulted. Signal each touchpoint with a persistent surface flash, cleared once they engage; open each artifact in a markdown surface (one per artifact, reused on revision) so they read it rendered. Keep working in parallel; hard-stop only when the next phase truly depends on the answer. A touchpoint answer that contradicts an upstream artifact reopens it — propagate forward, note it in `run-state.md`, never leave two artifacts disagreeing. At each touchpoint, re-ask the values question: *does this still serve the one thing?*
+The client is met, not merely consulted. Signal each touchpoint with a persistent panel flash, cleared once they engage; open each artifact in a markdown panel (one per artifact, reused on revision) so they read it rendered. Keep working in parallel; hard-stop only when the next phase truly depends on the answer. A touchpoint answer that contradicts an upstream artifact reopens it — propagate forward, note it in `run-state.md`, never leave two artifacts disagreeing. At each touchpoint, re-ask the values question: *does this still serve the one thing?*

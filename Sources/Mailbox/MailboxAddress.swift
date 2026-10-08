@@ -6,8 +6,10 @@ import Foundation
 /// addressing rides entirely in how that string is *interpreted* — no schema
 /// change. A `to` value is one of three forms:
 ///
-///   * `surface:<addr>` — match **only** surfaces whose `mailbox.address` equals
+///   * `panel:<addr>` — match **only** panels whose `mailbox.address` equals
 ///     `<addr>`. The stable, rename-proof handle an agent declares once.
+///     `tab:<addr>` and `surface:<addr>` are the same form (persisted envelopes
+///     hold them).
 ///   * `role:<name>` — match **only** surfaces whose `mailbox.role` equals
 ///     `<name>`. Opt-in role addressing.
 ///   * bare `<x>` — precedence resolution: `mailbox.address`, then `mailbox.role`,
@@ -19,20 +21,30 @@ import Foundation
 /// the same `MailboxMatcher.select` over this type, so global routing and local
 /// delivery always agree on who a `to` resolves to.
 enum MailboxAddress: Equatable {
-    /// `surface:<address>` — match `mailbox.address` exactly.
+    /// `panel:<address>` (or the legacy `tab:` / `surface:`) — match
+    /// `mailbox.address` exactly.
     case surface(String)
     /// `role:<name>` — match `mailbox.role` exactly.
     case role(String)
     /// Bare name — precedence: address, then role, then title.
     case name(String)
 
+    static let panelPrefix = "panel:"
+    // C11-337: legacy spellings, accepted forever.
     static let surfacePrefix = "surface:"
+    static let tabPrefix = "tab:"
     static let rolePrefix = "role:"
 
     /// Parse a raw `to` string. An empty value after a recognized prefix (e.g.
-    /// `surface:`) yields that scheme with an empty payload — which matches
+    /// `panel:`) yields that scheme with an empty payload — which matches
     /// nothing, the honest answer, rather than silently degrading to a bare name.
     static func parse(_ raw: String) -> MailboxAddress {
+        if raw.hasPrefix(panelPrefix) {
+            return .surface(String(raw.dropFirst(panelPrefix.count)))
+        }
+        if raw.hasPrefix(tabPrefix) {
+            return .surface(String(raw.dropFirst(tabPrefix.count)))
+        }
         if raw.hasPrefix(surfacePrefix) {
             return .surface(String(raw.dropFirst(surfacePrefix.count)))
         }
@@ -40,6 +52,16 @@ enum MailboxAddress: Equatable {
             return .role(String(raw.dropFirst(rolePrefix.count)))
         }
         return .name(raw)
+    }
+
+    /// The canonical `to` string for this address: `panel:<addr>`,
+    /// `role:<name>`, or the bare name.
+    var canonical: String {
+        switch self {
+        case .surface(let address): return Self.panelPrefix + address
+        case .role(let name): return Self.rolePrefix + name
+        case .name(let name): return name
+        }
     }
 }
 

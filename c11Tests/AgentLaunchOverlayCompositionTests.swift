@@ -291,11 +291,11 @@ final class AgentLaunchOverlayCompositionTests: XCTestCase {
     /// `.launched` is the only outcome that reports a launch, and it is the only
     /// one without a reason to show.
     func testLaunchOutcomeMapsToDidLaunchAndDecline() {
-        let launched = Workspace.AgentSurfaceLaunchOutcome.launched
+        let launched = Workspace.AgentPanelLaunchOutcome.launched
         XCTAssertTrue(launched.didLaunch)
         XCTAssertNil(launched.decline)
 
-        let declined = Workspace.AgentSurfaceLaunchOutcome
+        let declined = Workspace.AgentPanelLaunchOutcome
             .declined(.emptyCommand(harness: "custom"))
         XCTAssertFalse(declined.didLaunch)
         XCTAssertEqual(declined.decline, .emptyCommand(harness: "custom"))
@@ -380,7 +380,7 @@ final class AgentLaunchOverlayCompositionTests: XCTestCase {
         XCTAssertTrue(fullRecipe.contains("--model sonnet"))
         XCTAssertTrue(fullRecipe.contains("--effort high"))
         XCTAssertTrue(fullRecipe.contains("--append-system-prompt 'be terse'"))
-        XCTAssertTrue(fullRecipe.hasSuffix("'go'"), "claude initial prompt rides as a trailing positional")
+        XCTAssertFalse(fullRecipe.hasSuffix("'go'"), "initial bodies are staged by the launch caller")
         // blank-slate emits the empty replace flag.
         XCTAssertTrue(blankSlate.contains("--system-prompt ''"))
         // sanity: the base isn't accidentally mutated by any render.

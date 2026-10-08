@@ -7,6 +7,7 @@ enum MailboxIO {
     enum Error: Swift.Error, Equatable {
         case parentDirectoryMissing(URL)
         case renameFailed(source: URL, destination: URL, underlying: String)
+        case claimFailed(errno: Int32)
     }
 
     /// Writes `data` to a dot-prefixed, `.tmp`-suffixed sibling of `url`, then
@@ -51,5 +52,86 @@ enum MailboxIO {
                 underlying: (error as NSError).localizedDescription
             )
         }
+    }
+
+    /// Outcome of one C3 claim attempt.
+    enum ClaimResult: Equatable {
+        /// Renamed into `_read/`; the caller owns the message now.
+        case claimed(URL)
+        /// Not in the inbox root: another consumer took it first.
+        case gone
+        /// The rename (or creating `_read/`) failed. The envelope is still in
+        /// the inbox root; the caller must not hand it over.
+        case failed(errno: Int32)
+    }
+
+    /// C3 claim: rename `<inbox>/<id>.msg` to `<inbox>/_read/<id>.msg`. The
+    /// rename is the lock between the stdin push and `recv --drain`: whoever
+    /// renames first owns the message.
+    static func claimResult(
+        id: String,
+        inbox: URL,
+        fileManager: FileManager = .default
+    ) -> ClaimResult {
+        let source = inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        let readDir = MailboxLayout.readURL(inbox: inbox)
+        let destination = readDir.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        guard fileManager.fileExists(atPath: source.path) else { return .gone }
+        do {
+            try fileManager.createDirectory(
+                at: readDir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+        } catch {
+            return .failed(errno: posixCode(of: error))
+        }
+        // rename(2) directly, so a peer that won the race between the
+        // existence check and here reads as a plain ENOENT.
+        if Darwin.rename(source.path, destination.path) != 0 {
+            let code = errno
+            return code == ENOENT ? .gone : .failed(errno: code)
+        }
+        return .claimed(destination)
+    }
+
+    /// Throwing form of `claimResult`: the claimed URL, `nil` when another
+    /// consumer took the envelope, or `Error.claimFailed` with the errno.
+    @discardableResult
+    static func claim(
+        id: String,
+        inbox: URL,
+        fileManager: FileManager = .default
+    ) throws -> URL? {
+        switch claimResult(id: id, inbox: inbox, fileManager: fileManager) {
+        case .claimed(let url): return url
+        case .gone: return nil
+        case .failed(let code): throw Error.claimFailed(errno: code)
+        }
+    }
+
+    private static func posixCode(of error: Swift.Error) -> Int32 {
+        let ns = error as NSError
+        if ns.domain == NSPOSIXErrorDomain { return Int32(ns.code) }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain {
+            return Int32(underlying.code)
+        }
+        return EIO
+    }
+
+    /// Undo a claim after the consumer failed to hand the message over, so
+    /// the next consumer finds it in the inbox root again. Best effort;
+    /// returns whether the envelope is back in the inbox root.
+    @discardableResult
+    static func unclaim(
+        id: String,
+        inbox: URL,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        let claimed = MailboxLayout.readURL(inbox: inbox)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        let restored = inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        return Darwin.rename(claimed.path, restored.path) == 0
     }
 }

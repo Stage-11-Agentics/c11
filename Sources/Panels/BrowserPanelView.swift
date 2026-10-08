@@ -277,7 +277,7 @@ struct BrowserPanelView: View {
     @ObservedObject var panel: BrowserPanel
     @ObservedObject private var browserProfileStore = BrowserProfileStore.shared
     @ObservedObject private var themeManager = ThemeManager.shared
-    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
+    @ObservedObject var paneInteractionRuntime: AreaInteractionRuntime
     let paneId: PaneID
     let isFocused: Bool
     let isVisibleInUI: Bool
@@ -302,7 +302,7 @@ struct BrowserPanelView: View {
     private var browserProfilePopoverVerticalPaddingRaw = BrowserProfilePopoverDebugSettings.defaultVerticalPadding
     @AppStorage(BrowserThemeSettings.modeKey) private var browserThemeModeRaw = BrowserThemeSettings.defaultMode.rawValue
     @AppStorage(BrowserImportHintSettings.variantKey) private var browserImportHintVariantRaw = BrowserImportHintSettings.defaultVariant.rawValue
-    @AppStorage(BrowserImportHintSettings.showOnBlankTabsKey) private var showBrowserImportHintOnBlankTabs = BrowserImportHintSettings.defaultShowOnBlankTabs
+    @AppStorage(BrowserImportHintSettings.showOnBlankPanelsKey) private var showBrowserImportHintOnBlankPanels = BrowserImportHintSettings.defaultShowOnBlankPanels
     @AppStorage(BrowserImportHintSettings.dismissedKey) private var isBrowserImportHintDismissed = BrowserImportHintSettings.defaultDismissed
     @AppStorage(KeyboardShortcutSettings.Action.toggleBrowserDeveloperTools.defaultsKey)
     private var toggleBrowserDeveloperToolsShortcutData = Data()
@@ -383,7 +383,7 @@ struct BrowserPanelView: View {
     private var browserImportHintPresentation: BrowserImportHintPresentation {
         BrowserImportHintPresentation(
             variant: browserImportHintVariant,
-            showOnBlankTabs: showBrowserImportHintOnBlankTabs,
+            showOnBlankPanels: showBrowserImportHintOnBlankPanels,
             isDismissed: isBrowserImportHintDismissed
         )
     }
@@ -430,15 +430,15 @@ struct BrowserPanelView: View {
     }
 
     private var shouldShowToolbarImportHintChip: Bool {
-        shouldShowEmptyStateImportOverlay && browserImportHintPresentation.blankTabPlacement == .toolbarChip
+        shouldShowEmptyStateImportOverlay && browserImportHintPresentation.blankPanelPlacement == .toolbarChip
     }
 
     private var owningWorkspace: Workspace? {
         guard let app = AppDelegate.shared,
-              let manager = app.tabManagerFor(tabId: panel.workspaceId) else {
+              let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId) else {
             return nil
         }
-        return manager.tabs.first(where: { $0.id == panel.workspaceId })
+        return manager.workspaces.first(where: { $0.id == panel.workspaceId })
     }
 
     private var useThemeM1bBrowserChrome: Bool {
@@ -524,7 +524,7 @@ struct BrowserPanelView: View {
         // layering reason that BrowserSearchOverlay above does.
         if !panel.shouldRenderWebView,
            let interaction = paneInteractionRuntime.active[panel.id] {
-            PaneInteractionCardView(
+            AreaInteractionCardView(
                 panelId: panel.id,
                 interaction: interaction,
                 runtime: paneInteractionRuntime
@@ -1358,13 +1358,13 @@ struct BrowserPanelView: View {
                     }
                     .overlay(alignment: .topLeading) {
                         if shouldShowEmptyStateImportOverlay,
-                           browserImportHintPresentation.blankTabPlacement == .inlineStrip {
+                           browserImportHintPresentation.blankPanelPlacement == .inlineStrip {
                             emptyBrowserStateInlineStrip
                         }
                     }
                     .overlay {
                         if shouldShowEmptyStateImportOverlay,
-                           browserImportHintPresentation.blankTabPlacement == .floatingCard {
+                           browserImportHintPresentation.blankPanelPlacement == .floatingCard {
                             emptyBrowserStateCardOverlay
                         }
                     }
@@ -1501,9 +1501,9 @@ struct BrowserPanelView: View {
 
     private func isPanelFocusedInModel() -> Bool {
         guard let app = AppDelegate.shared,
-              let manager = app.tabManagerFor(tabId: panel.workspaceId),
-              manager.selectedTabId == panel.workspaceId,
-              let workspace = manager.tabs.first(where: { $0.id == panel.workspaceId }) else {
+              let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId),
+              manager.selectedWorkspaceId == panel.workspaceId,
+              let workspace = manager.workspaces.first(where: { $0.id == panel.workspaceId }) else {
             return false
         }
         return workspace.focusedPanelId == panel.id
@@ -1557,7 +1557,7 @@ struct BrowserPanelView: View {
             return true
         }
 
-        if let manager = app.tabManagerFor(tabId: panel.workspaceId),
+        if let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId),
            let windowId = app.windowId(for: manager),
            let window = app.mainWindow(for: windowId),
            app.isCommandPaletteVisible(for: window) {
@@ -1801,7 +1801,7 @@ struct BrowserPanelView: View {
     }
 
     private func dismissBrowserImportHint() {
-        showBrowserImportHintOnBlankTabs = false
+        showBrowserImportHintOnBlankPanels = false
         isBrowserImportHintDismissed = true
         isBrowserImportHintPopoverPresented = false
     }
@@ -1930,8 +1930,8 @@ struct BrowserPanelView: View {
         omnibarState.buffer = suggestion.completion
         omnibarState.isUserEditing = false
         switch suggestion.kind {
-        case .switchToTab(let tabId, let panelId, _, _):
-            AppDelegate.shared?.tabManager?.focusTab(tabId, surfaceId: panelId)
+        case .switchToPanel(let workspaceId, let panelId, _, _):
+            AppDelegate.shared?.workspaceManager?.focusWorkspace(workspaceId, surfaceId: panelId)
         default:
             panel.navigateSmart(suggestion.completion)
         }
@@ -2092,7 +2092,7 @@ struct BrowserPanelView: View {
             }
             return panel.historyStore.suggestions(for: query, limit: 12)
         }()
-        let openTabMatches = query.isEmpty ? [] : matchingOpenTabSuggestions(for: query, limit: 12)
+        let openPanelMatches = query.isEmpty ? [] : matchingOpenPanelSuggestions(for: query, limit: 12)
         let isSingleCharacterQuery = omnibarSingleCharacterQuery(for: query) != nil
         let staleRemote: [String]
         if query.isEmpty || isSingleCharacterQuery {
@@ -2105,7 +2105,7 @@ struct BrowserPanelView: View {
             query: query,
             engineName: searchEngine.displayName,
             historyEntries: historyEntries,
-            openTabMatches: openTabMatches,
+            openPanelMatches: openPanelMatches,
             remoteQueries: staleRemote,
             resolvedURL: resolvedURL,
             limit: 8
@@ -2123,7 +2123,7 @@ struct BrowserPanelView: View {
                 query: query,
                 engineName: searchEngine.displayName,
                 historyEntries: historyEntries,
-                openTabMatches: openTabMatches,
+                openPanelMatches: openPanelMatches,
                 remoteQueries: forcedRemote,
                 resolvedURL: resolvedURL,
                 limit: 8
@@ -2155,7 +2155,7 @@ struct BrowserPanelView: View {
                     query: query,
                     engineName: searchEngine.displayName,
                     historyEntries: panel.historyStore.suggestions(for: query, limit: 12),
-                    openTabMatches: matchingOpenTabSuggestions(for: query, limit: 12),
+                    openPanelMatches: matchingOpenPanelSuggestions(for: query, limit: 12),
                     remoteQueries: remote,
                     resolvedURL: panel.resolveNavigableURL(from: query),
                     limit: 8
@@ -2176,17 +2176,17 @@ struct BrowserPanelView: View {
         )
     }
 
-    private func matchingOpenTabSuggestions(for query: String, limit: Int) -> [OmnibarOpenTabMatch] {
+    private func matchingOpenPanelSuggestions(for query: String, limit: Int) -> [OmnibarOpenPanelMatch] {
         guard !query.isEmpty, limit > 0 else { return [] }
 
         let loweredQuery = query.lowercased()
         let singleCharacterQuery = omnibarSingleCharacterQuery(for: query)
         let includeCurrentPanelForSingleCharacterQuery = singleCharacterQuery != nil
-        let tabManager = AppDelegate.shared?.tabManager
-        let currentPanelWorkspaceId = tabManager?.tabs.first(where: { tab in
-            tab.panels[panel.id] is BrowserPanel
+        let workspaceManager = AppDelegate.shared?.workspaceManager
+        let currentPanelWorkspaceId = workspaceManager?.workspaces.first(where: { workspace in
+            workspace.panels[panel.id] is BrowserPanel
         })?.id
-        var matches: [OmnibarOpenTabMatch] = []
+        var matches: [OmnibarOpenPanelMatch] = []
         var seenKeys = Set<String>()
 
         func preferredPanelURL(_ browserPanel: BrowserPanel) -> String? {
@@ -2194,24 +2194,24 @@ struct BrowserPanelView: View {
         }
 
         func addMatch(
-            tabId: UUID,
+            workspaceId: UUID,
             panelId: UUID,
             url: String,
             title: String?,
-            isKnownOpenTab: Bool,
-            matches: inout [OmnibarOpenTabMatch],
+            isKnownOpenPanel: Bool,
+            matches: inout [OmnibarOpenPanelMatch],
             seenKeys: inout Set<String>
         ) {
-            let key = "\(tabId.uuidString.lowercased())|\(panelId.uuidString.lowercased())|\(url.lowercased())"
+            let key = "\(workspaceId.uuidString.lowercased())|\(panelId.uuidString.lowercased())|\(url.lowercased())"
             guard !seenKeys.contains(key) else { return }
             seenKeys.insert(key)
             matches.append(
-                OmnibarOpenTabMatch(
-                    tabId: tabId,
+                OmnibarOpenPanelMatch(
+                    workspaceId: workspaceId,
                     panelId: panelId,
                     url: url,
                     title: title,
-                    isKnownOpenTab: isKnownOpenTab
+                    isKnownOpenPanel: isKnownOpenPanel
                 )
             )
         }
@@ -2224,25 +2224,25 @@ struct BrowserPanelView: View {
             let title = rawTitle.isEmpty ? nil : rawTitle
             if omnibarHasSingleCharacterPrefixMatch(query: query, url: currentURL, title: title) {
                 addMatch(
-                    tabId: currentPanelWorkspaceId ?? panel.workspaceId,
+                    workspaceId: currentPanelWorkspaceId ?? panel.workspaceId,
                     panelId: panel.id,
                     url: currentURL,
                     title: title,
-                    isKnownOpenTab: currentPanelWorkspaceId != nil,
+                    isKnownOpenPanel: currentPanelWorkspaceId != nil,
                     matches: &matches,
                     seenKeys: &seenKeys
                 )
             }
         }
 
-        guard let tabManager else { return matches }
+        guard let workspaceManager else { return matches }
 
-        for tab in tabManager.tabs {
-            for (panelId, anyPanel) in tab.panels {
+        for workspace in workspaceManager.workspaces {
+            for (panelId, anyPanel) in workspace.panels {
                 guard let browserPanel = anyPanel as? BrowserPanel else { continue }
                 guard let currentURL = preferredPanelURL(browserPanel),
                       !currentURL.isEmpty else { continue }
-                let isCurrentPanel = tab.id == panel.workspaceId && panelId == panel.id
+                let isCurrentPanel = workspace.id == panel.workspaceId && panelId == panel.id
                 if isCurrentPanel && !includeCurrentPanelForSingleCharacterQuery {
                     continue
                 }
@@ -2266,11 +2266,11 @@ struct BrowserPanelView: View {
                 guard isMatch else { continue }
 
                 addMatch(
-                    tabId: tab.id,
+                    workspaceId: workspace.id,
                     panelId: panelId,
                     url: currentURL,
                     title: title,
-                    isKnownOpenTab: true,
+                    isKnownOpenPanel: true,
                     matches: &matches,
                     seenKeys: &seenKeys
                 )
@@ -2384,19 +2384,19 @@ enum OmnibarInputIntent: Equatable {
     case ambiguous
 }
 
-    struct OmnibarOpenTabMatch: Equatable {
-        let tabId: UUID
+    struct OmnibarOpenPanelMatch: Equatable {
+        let workspaceId: UUID
         let panelId: UUID
         let url: String
         let title: String?
-        let isKnownOpenTab: Bool
+        let isKnownOpenPanel: Bool
 
-        init(tabId: UUID, panelId: UUID, url: String, title: String?, isKnownOpenTab: Bool = true) {
-            self.tabId = tabId
+        init(workspaceId: UUID, panelId: UUID, url: String, title: String?, isKnownOpenPanel: Bool = true) {
+            self.workspaceId = workspaceId
             self.panelId = panelId
             self.url = url
             self.title = title
-            self.isKnownOpenTab = isKnownOpenTab
+            self.isKnownOpenPanel = isKnownOpenPanel
         }
     }
 
@@ -2425,7 +2425,7 @@ func omnibarSuggestionCompletion(for suggestion: OmnibarSuggestion) -> String? {
         return url
     case .history(let url, _):
         return url
-    case .switchToTab(_, _, let url, _):
+    case .switchToPanel(_, _, let url, _):
         return url
     default:
         return nil
@@ -2436,7 +2436,7 @@ func omnibarSuggestionTitle(for suggestion: OmnibarSuggestion) -> String? {
     switch suggestion.kind {
     case .history(_, let title):
         return title
-    case .switchToTab(_, _, _, let title):
+    case .switchToPanel(_, _, _, let title):
         return title
     default:
         return nil
@@ -2549,7 +2549,7 @@ func buildOmnibarSuggestions(
     query: String,
     engineName: String,
     historyEntries: [BrowserHistoryStore.Entry],
-    openTabMatches: [OmnibarOpenTabMatch] = [],
+    openPanelMatches: [OmnibarOpenPanelMatch] = [],
     remoteQueries: [String],
     resolvedURL: URL?,
     limit: Int = 8,
@@ -2565,21 +2565,21 @@ func buildOmnibarSuggestions(
     let isSingleCharacterQuery = singleCharacterQuery != nil
     let shouldIncludeRemoteSuggestions = !isSingleCharacterQuery
     let filteredHistoryEntries: [BrowserHistoryStore.Entry]
-    let filteredOpenTabMatches: [OmnibarOpenTabMatch]
+    let filteredOpenPanelMatches: [OmnibarOpenPanelMatch]
     if let singleCharacterQuery {
         filteredHistoryEntries = historyEntries.filter {
             omnibarHasSingleCharacterPrefixMatch(query: singleCharacterQuery, url: $0.url, title: $0.title)
         }
-        filteredOpenTabMatches = openTabMatches.filter {
+        filteredOpenPanelMatches = openPanelMatches.filter {
             omnibarHasSingleCharacterPrefixMatch(query: singleCharacterQuery, url: $0.url, title: $0.title)
         }
     } else {
         filteredHistoryEntries = historyEntries
-        filteredOpenTabMatches = openTabMatches
+        filteredOpenPanelMatches = openPanelMatches
     }
 
     let shouldSuppressSingleCharacterSearchResult = isSingleCharacterQuery
-        && (!filteredHistoryEntries.isEmpty || !filteredOpenTabMatches.isEmpty)
+        && (!filteredHistoryEntries.isEmpty || !filteredOpenPanelMatches.isEmpty)
 
     struct RankedSuggestion {
         let suggestion: OmnibarSuggestion
@@ -2641,9 +2641,9 @@ func buildOmnibarSuggestions(
                 // For identical completions, keep "go to URL" over "switch to tab" so
                 // pressing Enter performs navigation unless the user explicitly picks a tab row.
                 switch (existing.suggestion.kind, ranked.suggestion.kind) {
-                case (.navigate, .switchToTab):
+                case (.navigate, .switchToPanel):
                     return false
-                case (.switchToTab, .navigate):
+                case (.switchToPanel, .navigate):
                     return true
                 default:
                     return ranked.score > existing.score
@@ -2703,7 +2703,7 @@ func buildOmnibarSuggestions(
         insert(.history(entry), score: total)
     }
 
-    for (index, match) in filteredOpenTabMatches.prefix(limit).enumerated() {
+    for (index, match) in filteredOpenPanelMatches.prefix(limit).enumerated() {
         let intentBaseScore: Double
         switch intent {
         case .urlLike: intentBaseScore = 1_180
@@ -2721,9 +2721,9 @@ func buildOmnibarSuggestions(
             resolvedURLBonus = 0
         }
         let total = intentBaseScore + urlMatch + titleMatch + positionScore + resolvedURLBonus
-        if match.isKnownOpenTab {
+        if match.isKnownOpenPanel {
             insert(
-                .switchToTab(tabId: match.tabId, panelId: match.panelId, url: match.url, title: match.title),
+                .switchToPanel(workspaceId: match.workspaceId, panelId: match.panelId, url: match.url, title: match.title),
                 score: total
             )
         } else {
@@ -3228,7 +3228,7 @@ struct OmnibarSuggestion: Identifiable, Hashable {
         case search(engineName: String, query: String)
         case navigate(url: String)
         case history(url: String, title: String?)
-        case switchToTab(tabId: UUID, panelId: UUID, url: String, title: String?)
+        case switchToPanel(workspaceId: UUID, panelId: UUID, url: String, title: String?)
         case remote(query: String)
     }
 
@@ -3243,8 +3243,8 @@ struct OmnibarSuggestion: Identifiable, Hashable {
             return "navigate|\(url.lowercased())"
         case .history(let url, _):
             return "history|\(url.lowercased())"
-        case .switchToTab(let tabId, let panelId, let url, _):
-            return "switch-tab|\(tabId.uuidString.lowercased())|\(panelId.uuidString.lowercased())|\(url.lowercased())"
+        case .switchToPanel(let workspaceId, let panelId, let url, _):
+            return "switch-tab|\(workspaceId.uuidString.lowercased())|\(panelId.uuidString.lowercased())|\(url.lowercased())"
         case .remote(let query):
             return "remote|\(query.lowercased())"
         }
@@ -3255,7 +3255,7 @@ struct OmnibarSuggestion: Identifiable, Hashable {
         case .search(_, let q): return q
         case .navigate(let url): return url
         case .history(let url, _): return url
-        case .switchToTab(_, _, let url, _): return url
+        case .switchToPanel(_, _, let url, _): return url
         case .remote(let q): return q
         }
     }
@@ -3269,7 +3269,7 @@ struct OmnibarSuggestion: Identifiable, Hashable {
         case .history(let url, let title):
             return (title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
                 ? Self.singleLineText(title) : Self.displayURLText(for: url)
-        case .switchToTab(_, _, let url, let title):
+        case .switchToPanel(_, _, let url, let title):
             return (title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
                 ? Self.singleLineText(title) : Self.displayURLText(for: url)
         case .remote(let q):
@@ -3279,7 +3279,7 @@ struct OmnibarSuggestion: Identifiable, Hashable {
 
     var listText: String {
         switch kind {
-        case .history(let url, let title), .switchToTab(_, _, let url, let title):
+        case .history(let url, let title), .switchToPanel(_, _, let url, let title):
             let titleOneline = Self.singleLineText(title)
             guard !titleOneline.isEmpty else { return Self.displayURLText(for: url) }
             return "\(titleOneline) — \(Self.displayURLText(for: url))"
@@ -3293,7 +3293,7 @@ struct OmnibarSuggestion: Identifiable, Hashable {
         case .history(let url, let title):
             let titleOneline = Self.singleLineText(title)
             return titleOneline.isEmpty ? nil : Self.displayURLText(for: url)
-        case .switchToTab(_, _, let url, let title):
+        case .switchToPanel(_, _, let url, let title):
             let titleOneline = Self.singleLineText(title)
             return titleOneline.isEmpty ? nil : Self.displayURLText(for: url)
         default:
@@ -3303,8 +3303,8 @@ struct OmnibarSuggestion: Identifiable, Hashable {
 
     var trailingBadgeText: String? {
         switch kind {
-        case .switchToTab:
-            return String(localized: "browser.switchToTab", defaultValue: "Switch to tab")
+        case .switchToPanel:
+            return String(localized: "browser.switchToTab", defaultValue: "Switch to panel")
         default:
             return nil
         }
@@ -3331,8 +3331,8 @@ struct OmnibarSuggestion: Identifiable, Hashable {
         OmnibarSuggestion(kind: .navigate(url: url))
     }
 
-    static func switchToTab(tabId: UUID, panelId: UUID, url: String, title: String?) -> OmnibarSuggestion {
-        OmnibarSuggestion(kind: .switchToTab(tabId: tabId, panelId: panelId, url: url, title: title))
+    static func switchToPanel(workspaceId: UUID, panelId: UUID, url: String, title: String?) -> OmnibarSuggestion {
+        OmnibarSuggestion(kind: .switchToPanel(workspaceId: workspaceId, panelId: panelId, url: url, title: title))
     }
 
     private static func singleLineText(_ value: String?) -> String {
@@ -4478,7 +4478,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let workspaceFrameStyle: PortalWorkspaceFrameStyle?
     let paneDropZone: DropZone?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
-    let paneInteractionRuntime: PaneInteractionRuntime
+    let paneInteractionRuntime: AreaInteractionRuntime
     let paneTopChromeHeight: CGFloat
 
     final class Coordinator {
@@ -6168,9 +6168,6 @@ struct WebViewRepresentable: NSViewRepresentable {
             panel.noteDeveloperToolsHostAttached()
             panel.restoreDeveloperToolsAfterAttachIfNeeded()
             webView.needsLayout = true
-            webView.layoutSubtreeIfNeeded()
-            slotView.layoutSubtreeIfNeeded()
-            host.layoutSubtreeIfNeeded()
             host.normalizeHostedInspectorLayoutIfNeeded(reason: "localInline.update.immediate")
             host.scheduleHostedInspectorDividerReapply(reason: "localInline.update.sync")
             DispatchQueue.main.async { [weak host, weak webView] in
@@ -6213,9 +6210,9 @@ struct WebViewRepresentable: NSViewRepresentable {
         let generation = coordinator.attachGeneration
         let activePaneDropContext = coordinator.desiredPortalVisibleInUI ? paneDropContext : nil
         let activeSearchOverlay = coordinator.desiredPortalVisibleInUI ? searchOverlay : nil
-        let activePaneInteraction: BrowserPortalPaneInteractionConfiguration? =
+        let activeAreaInteraction: BrowserPortalAreaInteractionConfiguration? =
             coordinator.desiredPortalVisibleInUI
-                ? BrowserPortalPaneInteractionConfiguration(
+                ? BrowserPortalAreaInteractionConfiguration(
                     panelId: panel.id,
                     runtime: paneInteractionRuntime
                 )
@@ -6290,7 +6287,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             )
             BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
             BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
             coordinator.lastPortalHostId = ObjectIdentifier(host)
             coordinator.lastSynchronizedHostGeometryRevision = host.geometryRevision
@@ -6323,7 +6320,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 )
                 BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
                 BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-                BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+                BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
                 BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
                 coordinator.lastPortalHostId = hostId
             }
@@ -6364,7 +6361,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 height: coordinator.desiredPortalVisibleInUI ? paneTopChromeHeight : 0
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
             BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
             if !shouldBindNow,
                coordinator.lastSynchronizedHostGeometryRevision != geometryRevision {
@@ -6396,7 +6393,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 context: activePaneDropContext
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
             BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
         }
 
@@ -6573,14 +6570,14 @@ struct WebViewRepresentable: NSViewRepresentable {
         coordinator.lastSynchronizedHostGeometryRevision = 0
     }
 
-    private func currentPaneDropContext() -> BrowserPaneDropContext? {
+    private func currentPaneDropContext() -> BrowserAreaDropContext? {
         guard let app = AppDelegate.shared,
-              let manager = app.tabManagerFor(tabId: panel.workspaceId),
-              let workspace = manager.tabs.first(where: { $0.id == panel.workspaceId }),
+              let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId),
+              let workspace = manager.workspaces.first(where: { $0.id == panel.workspaceId }),
               let paneId = workspace.paneId(forPanelId: panel.id) else {
             return nil
         }
-        return BrowserPaneDropContext(
+        return BrowserAreaDropContext(
             workspaceId: panel.workspaceId,
             panelId: panel.id,
             paneId: paneId

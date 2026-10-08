@@ -61,11 +61,11 @@ final class MenuKeyEquivalentRoutingUITests: XCTestCase {
         // Force WebKit to become first responder again (Cmd+L then Escape).
         refocusWebView(app: app)
 
-        let baseline = loadKeyequiv()["closePanelInvocations"].flatMap(Int.init) ?? 0
+        let baseline = loadKeyequiv()["closeTabInvocations"].flatMap(Int.init) ?? 0
         app.typeKey("w", modifierFlags: [.command])
 
         XCTAssertTrue(
-            waitForKeyequivInt(key: "closePanelInvocations", toBeAtLeast: baseline + 1, timeout: 5.0),
+            waitForKeyequivInt(key: "closeTabInvocations", toBeAtLeast: baseline + 1, timeout: 5.0),
             "Expected Cmd+W to reach app menu and close the focused tab even when WKWebView is first responder"
         )
     }
@@ -99,7 +99,7 @@ final class MenuKeyEquivalentRoutingUITests: XCTestCase {
         app.activate()
 
         XCTAssertTrue(
-            waitForGotoSplit(keys: ["browserPanelId", "webViewFocused"], timeout: 10.0),
+            waitForGotoSplit(keys: ["browserTabId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -225,10 +225,10 @@ final class SplitCloseRightBlankRegressionUITests: XCTestCase {
             return
         }
 
-        let finalPaneCount = Int(data["finalPaneCount"] ?? "") ?? -1
+        let finalPaneCount = Int(data["finalAreaCount"] ?? "") ?? -1
         let missingSelected = Int(data["missingSelectedTabCount"] ?? "") ?? -1
-        let missingMapping = Int(data["missingPanelMappingCount"] ?? "") ?? -1
-        let emptyPanels = Int(data["emptyPanelAppearCount"] ?? "") ?? -1
+        let missingMapping = Int(data["missingTabMappingCount"] ?? "") ?? -1
+        let emptyPanels = Int(data["emptyAreaAppearCount"] ?? "") ?? -1
         let selectedTerminalCount = Int(data["selectedTerminalCount"] ?? "") ?? -1
         let selectedTerminalAttached = Int(data["selectedTerminalAttachedCount"] ?? "") ?? -1
         let selectedTerminalZeroSize = Int(data["selectedTerminalZeroSizeCount"] ?? "") ?? -1
@@ -830,10 +830,10 @@ final class SplitCloseRightBlankRegressionUITests: XCTestCase {
                 return true
             }
 
-            let finalPaneCount = Int(data["finalPaneCount"] ?? "") ?? -1
+            let finalPaneCount = Int(data["finalAreaCount"] ?? "") ?? -1
             let missingSelected = Int(data["missingSelectedTabCount"] ?? "") ?? -1
-            let missingMapping = Int(data["missingPanelMappingCount"] ?? "") ?? -1
-            let emptyPanels = Int(data["emptyPanelAppearCount"] ?? "") ?? -1
+            let missingMapping = Int(data["missingTabMappingCount"] ?? "") ?? -1
+            let emptyPanels = Int(data["emptyAreaAppearCount"] ?? "") ?? -1
             let selectedTerminalCount = Int(data["selectedTerminalCount"] ?? "") ?? -1
             let selectedTerminalAttached = Int(data["selectedTerminalAttachedCount"] ?? "") ?? -1
             let selectedTerminalZeroSize = Int(data["selectedTerminalZeroSizeCount"] ?? "") ?? -1

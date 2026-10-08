@@ -34,7 +34,7 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     static func contexts(from snapshot: AppSessionSnapshot) -> [ScrapeCaptureContext] {
         var result: [ScrapeCaptureContext] = []
         for window in snapshot.windows {
-            for ws in window.tabManager.workspaces {
+            for ws in window.workspaceManager.workspaces {
                 for panel in ws.panels {
                     guard panel.type == .terminal else { continue }
                     guard let kind = terminalType(of: panel), !kind.isEmpty else { continue }
@@ -60,7 +60,7 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     /// Read the panel's declared `terminal_type` metadata value (a `.string`).
     private static func terminalType(of panel: SessionPanelSnapshot) -> String? {
         guard let metadata = panel.metadata else { return nil }
-        guard case .string(let raw)? = metadata[SurfaceMetadataKeyName.terminalType] else {
+        guard case .string(let raw)? = metadata[PanelMetadataKeyName.terminalType] else {
             return nil
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,7 +83,7 @@ struct ConversationSnapshotCaptureScope: Sendable, Equatable {
 
         var terminalSurfaceIds = Set<String>()
         for window in snapshot.windows {
-            for workspace in window.tabManager.workspaces {
+            for workspace in window.workspaceManager.workspaces {
                 for panel in workspace.panels where panel.type == .terminal {
                     terminalSurfaceIds.insert(panel.id.uuidString)
                 }
@@ -200,7 +200,7 @@ struct ScrapeCapturePipeline: Sendable {
     /// edges; they never choose between multiple same-cwd Codex surfaces.
     func reconcileBatch(
         _ batch: ScrapeCandidateBatch,
-        existing: [String: SurfaceConversations]
+        existing: [String: PanelConversations]
     ) -> ScrapeReconciliationPlan {
         var refsBySurface: [String: ConversationRef] = [:]
         var quarantineReasons: [String: ConversationQuarantineReason] = [:]
@@ -254,7 +254,7 @@ struct ScrapeCapturePipeline: Sendable {
     private func reconcileCodex(
         contexts: [ScrapeCaptureContext],
         candidates: [ScrapeCandidate],
-        existing: [String: SurfaceConversations],
+        existing: [String: PanelConversations],
         refsBySurface: inout [String: ConversationRef],
         quarantineReasons: inout [String: ConversationQuarantineReason]
     ) {
@@ -388,7 +388,7 @@ struct ScrapeCapturePipeline: Sendable {
     /// path. Pure: never touches the store. Results are in input order.
     func captureRefs(
         contexts: [ScrapeCaptureContext],
-        existing: [String: SurfaceConversations]
+        existing: [String: PanelConversations]
     ) -> [(surfaceId: String, ref: ConversationRef)] {
         guard let batch = try? collectCandidateBatchSynchronously(contexts: contexts) else {
             return []

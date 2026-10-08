@@ -38,7 +38,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Single Terminal"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
                 surfaces: [
-                    SurfaceSpec(id: "s1", kind: .terminal, title: "Main", workingDirectory: "~/work")
+                    PanelSpec(id: "s1", kind: .terminal, title: "Main", workingDirectory: "~/work")
                 ]
             )
         )
@@ -60,8 +60,8 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                     second: .pane(.init(surfaceIds: ["s2"]))
                 )),
                 surfaces: [
-                    SurfaceSpec(id: "s1", kind: .terminal, title: "shell"),
-                    SurfaceSpec(id: "s2", kind: .browser, title: "docs", url: "https://stage11.ai")
+                    PanelSpec(id: "s1", kind: .terminal, title: "shell"),
+                    PanelSpec(id: "s2", kind: .browser, title: "docs", url: "https://stage11.ai")
                 ]
             )
         )
@@ -101,8 +101,79 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 return XCTFail("expected duplicateSurfaceID, got \(error)")
             }
             XCTAssertEqual(id, "agent")
-            XCTAssertTrue(String(describing: error).contains("blueprint_duplicate_surface_id"))
+            XCTAssertTrue(String(describing: error).contains("blueprint_duplicate_panel_id"))
         }
+    }
+
+    // MARK: - C11-337 `panels:` list key (legacy `tabs:` accepted forever)
+
+    private func multiPanelSource(listKey: String) -> String {
+        """
+        ---
+        title: Multi Panel
+        ---
+
+        ## Layout
+
+        ```yaml
+        layout:
+          - direction: horizontal
+            split: 50/50
+            children:
+              - type: terminal
+                id: main
+              - \(listKey):
+                  - id: docs
+                    type: browser
+                    url: https://example.invalid/
+                  - id: notes
+                    type: markdown
+                    file: /tmp/fixture-notes.md
+                selected: 1
+        ```
+        """
+    }
+
+    func testLegacyTabsAndPanelsListKeysParseToTheSamePlan() throws {
+        let legacy = try WorkspaceBlueprintMarkdown.parse(Data(multiPanelSource(listKey: "tabs").utf8))
+        let current = try WorkspaceBlueprintMarkdown.parse(Data(multiPanelSource(listKey: "panels").utf8))
+        XCTAssertEqual(legacy, current)
+        XCTAssertEqual(current.plan.surfaces.map(\.id), ["main", "docs", "notes"])
+        guard case .split(let split) = current.plan.layout,
+              case .pane(let area) = split.second else {
+            return XCTFail("expected a split whose second side is a multi-panel area")
+        }
+        XCTAssertEqual(area.surfaceIds, ["docs", "notes"])
+        XCTAssertEqual(area.selectedIndex, 1)
+    }
+
+    func testSerializerWritesPanelsListKey() throws {
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(multiPanelSource(listKey: "tabs").utf8))
+        let emitted = String(
+            data: try WorkspaceBlueprintMarkdown.serialize(parsed),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(emitted.contains("- panels:"), emitted)
+        XCTAssertFalse(emitted.contains("tabs:"), emitted)
+        XCTAssertEqual(try WorkspaceBlueprintMarkdown.parse(Data(emitted.utf8)), parsed)
+    }
+
+    func testPanelsListKeyWinsWhenBothSpellingsArePresent() throws {
+        let source = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - panels:
+              - id: kept
+                type: terminal
+            tabs:
+              - id: ignored
+                type: terminal
+        ```
+        """
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))
+        XCTAssertEqual(parsed.plan.surfaces.map(\.id), ["kept"])
     }
 
     func testParseRejectsInvalidAgentKindWithStableCode() throws {
@@ -180,12 +251,12 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Portable link"),
                 layout: .pane(.init(surfaceIds: ["browser", "agent"])),
                 surfaces: [
-                    SurfaceSpec(
+                    PanelSpec(
                         id: "browser",
                         kind: .browser,
                         linkedAgentSurfacePlanId: "agent"
                     ),
-                    SurfaceSpec(
+                    PanelSpec(
                         id: "agent",
                         kind: .terminal,
                         declaredAgentKind: "codex"
@@ -225,9 +296,9 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                     ))
                 )),
                 surfaces: [
-                    SurfaceSpec(id: "s1", kind: .terminal, title: "Main terminal", workingDirectory: "~/Projects/Stage11/code/c11"),
-                    SurfaceSpec(id: "s2", kind: .browser, title: "Lattice", url: "http://localhost:8799/"),
-                    SurfaceSpec(id: "s3", kind: .markdown, title: "Notes", filePath: "~/notes/today.md")
+                    PanelSpec(id: "s1", kind: .terminal, title: "Main terminal", workingDirectory: "~/Projects/Stage11/code/c11"),
+                    PanelSpec(id: "s2", kind: .browser, title: "Lattice", url: "http://localhost:8799/"),
+                    PanelSpec(id: "s3", kind: .markdown, title: "Notes", filePath: "~/notes/today.md")
                 ]
             )
         )
@@ -243,7 +314,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: "Colored", customColor: "#C0392B"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
-                surfaces: [SurfaceSpec(id: "s1", kind: .terminal)]
+                surfaces: [PanelSpec(id: "s1", kind: .terminal)]
             )
         )
         let r = try roundTrip(file)
@@ -258,7 +329,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 version: 1,
                 workspace: WorkspaceSpec(title: "Agent Room"),  // human-friendly
                 layout: .pane(.init(surfaceIds: ["s1"])),
-                surfaces: [SurfaceSpec(id: "s1", kind: .terminal)]
+                surfaces: [PanelSpec(id: "s1", kind: .terminal)]
             )
         )
         let r = try roundTrip(file)
@@ -335,7 +406,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
 
     // MARK: - Opt-in submit flag (`submit: true`)
 
-    private func parseSingleTerminal(submitLine: String) throws -> SurfaceSpec {
+    private func parseSingleTerminal(submitLine: String) throws -> PanelSpec {
         let source = """
         ---
         title: Launcher
@@ -383,7 +454,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Launcher"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
                 surfaces: [
-                    SurfaceSpec(
+                    PanelSpec(
                         id: "s1",
                         kind: .terminal,
                         title: "Dashboard",
@@ -411,7 +482,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                 workspace: WorkspaceSpec(title: "Plain"),
                 layout: .pane(.init(surfaceIds: ["s1"])),
                 surfaces: [
-                    SurfaceSpec(id: "s1", kind: .terminal, command: "ls")
+                    PanelSpec(id: "s1", kind: .terminal, command: "ls")
                 ]
             )
         )

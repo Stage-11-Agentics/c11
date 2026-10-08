@@ -1,0 +1,14 @@
+{
+  "id": "claude-restart-while-waiting",
+  "origin": "gap",
+  "events": [],
+  "current": {
+    "mark": "not-observed",
+    "notes": "The production app was not restarted. This case is not the clean session end. No restart sequence was recorded."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "Ending one waiting agent clears only that tab. A sibling's waiting state survives."
+  },
+  "recapture_required": "tagged-build"
+}

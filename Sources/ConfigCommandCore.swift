@@ -80,7 +80,7 @@ enum ConfigCoreError: Error, Equatable, CustomStringConvertible {
         case .indexOutOfRange(let i):
             return "reorder index \(i) out of range"
         case .placementConflict:
-            return "--new-workspace is mutually exclusive with --pane/--workspace"
+            return "--new-workspace is mutually exclusive with --area/--workspace"
         case .promptConflict:
             return "--prompt and --prompt-file are mutually exclusive"
         case .store(_, let message):
@@ -392,7 +392,8 @@ struct ConfigCommandCore {
         } else {
             placement = .defaultPlacement
         }
-        let resolvedPrompt = prompt?.nonEmpty ?? promptFileContents?.nonEmpty
+        let rawPrompt = prompt ?? promptFileContents
+        let resolvedPrompt = rawPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? rawPrompt : nil
         return ConfigLaunchInputs(
             nameOrId: nameOrId,
             placement: placement,

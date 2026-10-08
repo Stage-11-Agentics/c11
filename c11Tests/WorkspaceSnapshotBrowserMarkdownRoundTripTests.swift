@@ -23,34 +23,34 @@ import Bonsplit
 @MainActor
 final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
-    private var tabManager: TabManager!
+    private var workspaceManager: WorkspaceManager!
 
     override func setUp() {
         super.setUp()
-        tabManager = TabManager()
+        workspaceManager = WorkspaceManager()
     }
 
     override func tearDown() {
-        tabManager = nil
+        workspaceManager = nil
         super.tearDown()
     }
 
     // MARK: - Tests
 
     /// Apply a plan with one terminal + one browser, capture, check kinds.
-    func testBrowserSurfaceKindRoundTrips() throws {
+    func testBrowserPanelKindRoundTrips() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.5,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
-                second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"]))
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
+                second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .terminal),
-                SurfaceSpec(id: "s2", kind: .browser, url: "https://example.com")
+                PanelSpec(id: "s1", kind: .terminal),
+                PanelSpec(id: "s2", kind: .browser, url: "https://example.com")
             ]
         )
 
@@ -69,7 +69,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             "workspaceRef resolves to live Workspace"
         )
         let source = LiveWorkspaceSnapshotSource(
-            tabManager: tabManager, c11Version: "test+0"
+            workspaceManager: workspaceManager, c11Version: "test+0"
         )
         let captured = try XCTUnwrap(
             source.capture(workspaceId: workspace.id, origin: .manual),
@@ -97,9 +97,9 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .markdown, filePath: fixturePath)
+                PanelSpec(id: "s1", kind: .markdown, filePath: fixturePath)
             ]
         )
 
@@ -114,7 +114,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         let source = LiveWorkspaceSnapshotSource(
-            tabManager: tabManager, c11Version: "test+0"
+            workspaceManager: workspaceManager, c11Version: "test+0"
         )
         let captured = try XCTUnwrap(source.capture(workspaceId: workspace.id, origin: .manual))
 
@@ -127,25 +127,25 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
     /// Apply a three-surface plan (terminal + browser + markdown), verify all
     /// kinds survive capture and no surface is dropped.
-    func testMixedThreeSurfacePlanRoundTrips() throws {
+    func testMixedThreeTabPlanRoundTrips() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: "mixed"),
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.6,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
                 second: .split(LayoutTreeSpec.SplitSpec(
                     orientation: .vertical,
                     dividerPosition: 0.5,
-                    first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"])),
-                    second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s3"]))
+                    first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"])),
+                    second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s3"]))
                 ))
             )),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .terminal),
-                SurfaceSpec(id: "s2", kind: .browser, url: "https://docs.example.com"),
-                SurfaceSpec(id: "s3", kind: .markdown, filePath: "/tmp/notes.md")
+                PanelSpec(id: "s1", kind: .terminal),
+                PanelSpec(id: "s2", kind: .browser, url: "https://docs.example.com"),
+                PanelSpec(id: "s3", kind: .markdown, filePath: "/tmp/notes.md")
             ]
         )
 
@@ -157,7 +157,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         let source = LiveWorkspaceSnapshotSource(
-            tabManager: tabManager, c11Version: "test+0"
+            workspaceManager: workspaceManager, c11Version: "test+0"
         )
         let captured = try XCTUnwrap(source.capture(workspaceId: workspace.id, origin: .manual))
 
@@ -177,12 +177,12 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.5,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
-                second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"]))
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
+                second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .browser),
-                SurfaceSpec(id: "s2", kind: .markdown)
+                PanelSpec(id: "s1", kind: .browser),
+                PanelSpec(id: "s2", kind: .markdown)
             ]
         )
 
@@ -193,7 +193,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
         XCTAssertTrue(result.failures.isEmpty, "no apply failures: \(result.failures)")
 
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
-        let exporter = WorkspaceBlueprintExporter(tabManager: tabManager)
+        let exporter = WorkspaceBlueprintExporter(workspaceManager: workspaceManager)
         let file = try XCTUnwrap(
             exporter.export(workspaceId: workspace.id, name: "test-bp", description: "desc"),
             "exporter returns a file for the live workspace"
@@ -210,7 +210,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
     private func makeDependencies() -> WorkspaceLayoutExecutorDependencies {
         WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -220,6 +220,6 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
     private func resolveWorkspace(from ref: String) -> Workspace? {
         guard let uuidString = ref.split(separator: ":").last,
               let uuid = UUID(uuidString: String(uuidString)) else { return nil }
-        return tabManager.tabs.first { $0.id == uuid }
+        return workspaceManager.workspaces.first { $0.id == uuid }
     }
 }

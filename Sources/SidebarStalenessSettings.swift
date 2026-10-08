@@ -93,7 +93,9 @@ public enum SidebarStalenessSettings {
 ///
 /// An agent remains `idle` while it is recently available at its prompt, then
 /// projects as `cold` after this much time passes without a submitted task or
-/// agent lifecycle signal. Process presence is deliberately separate: once the
+/// agent lifecycle signal. An agent with prompt cache evidence (Claude Code,
+/// Codex, Grok Build) goes cold when its cache expires instead, and a
+/// journal-backed agent has no dormancy rule (`TabLivenessDeriver`). Process presence is deliberately separate: once the
 /// foreground agent exits, `AgentDetector` projects the surface as a terminal
 /// instead of preserving an agent state.
 enum SidebarAgentColdSettings {

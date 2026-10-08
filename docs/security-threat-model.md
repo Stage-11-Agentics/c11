@@ -27,7 +27,7 @@ this taxonomy:
   c11 does not try to defend against the operator.
 
 - **Agents inside c11 terminals (semi-trusted).** Processes spawned
-  inside a c11 surface — typically Claude Code, Codex, shell sessions.
+  inside a c11 panel — typically Claude Code, Codex, shell sessions.
   Treated as semi-trusted by default: the socket-control mode
   (`cmuxOnly`) limits commands to processes that are descendants of the
   c11 app, but those processes can run arbitrary code in the operator's
@@ -36,7 +36,7 @@ this taxonomy:
   hardened runtime gives it.
 
 - **Web content in WKWebView (untrusted).** Any page loaded into a c11
-  browser surface. Cannot reach the c11 socket (no JS bridge from web
+  browser panel. Cannot reach the c11 socket (no JS bridge from web
   content to socket). Can request camera / microphone / location via
   the standard WKWebView UI delegate prompts the operator approves
   per-origin.
@@ -52,7 +52,7 @@ Evidence:
 
 ```
 Sources/SocketControlSettings.swift                   (mode definitions)
-Sources/TerminalController.swift:1594-1596            (cmuxOnly ancestry check)
+Sources/TerminalController.swift:2220-2222            (c11Only ancestry check)
 ```
 
 ---
@@ -97,6 +97,10 @@ The handler converts incoming URLs to *folders* via
 `externalOpenDirectories(from:)` and opens those folders as new c11
 workspaces. Non-folder URLs are not opened by the application
 delegate; web URLs hit the system handler chain like any other app.
+Only `file://` URLs are considered, and since 1.0 a URL that resolves
+(through symlinks) into c11's own app bundle is dropped, so Launch
+Services handing c11 itself to c11 no longer suppresses session
+restore.
 
 So the URL-handler attack surface is:
 
@@ -111,8 +115,9 @@ Evidence:
 
 ```
 Resources/Info.plist:76-91                             (CFBundleURLTypes)
-Sources/AppDelegate.swift:2301                         (application(_:open:))
-Sources/AppDelegate.swift:5804                         (externalOpenDirectories)
+Sources/AppDelegate.swift:2594                         (application(_:open:))
+Sources/AppDelegate.swift:7237                         (externalOpenDirectories)
+Sources/AppDelegate.swift:~580-615                     (FinderServicePathResolver.orderedUniqueDirectories)
 ```
 
 ---
@@ -120,7 +125,7 @@ Sources/AppDelegate.swift:5804                         (externalOpenDirectories)
 ## 4. WKWebView and web content
 
 c11 hosts web content via WKWebView. The substrate is shared between
-the embedded browser surface and any markdown / preview surface that
+the embedded browser panel and any markdown / preview panel that
 renders HTML. The relevant ATS posture:
 
 - `NSAllowsArbitraryLoadsInWebContent = true` — required by the
@@ -131,10 +136,11 @@ renders HTML. The relevant ATS posture:
   `http://` for the loopback subdomain c11 uses to render local
   developer servers.
 
-There is no explicit JS bridge from web content to the c11 socket. The
-browser surface communicates with c11 via `WKContentController` script
-message handlers configured per-panel; new handlers must be added to
-this doc when introduced (the diff signal in section 9 catches this).
+The browser exposes no page-reachable bridge to the c11 socket. Markdown
+uses a separate, allowlisted `c11md` script-message channel described below;
+its controller is never shared with browser content. New handlers must be
+recorded here when introduced. The ATS relaxation applies to markdown too,
+so its CSP and native navigation policy enforce the offline boundary.
 
 Browser-triggered modals (the `http://` navigation warning, JavaScript
 `alert`/`confirm`/`prompt`) are raised by page content or by
@@ -157,10 +163,35 @@ It never writes the persistent allowlist, and the outcome is reported
 structurally (`proceeded` / `prompted` / `insecure_http_blocked`) rather
 than by a silent no-op. This widens nothing beyond the socket's existing
 trust boundary: anyone who can issue `browser open` could already point
-the surface at any https site, and the loopback hosts agents actually
+the panel at any https site, and the loopback hosts agents actually
 validate against (`localhost`, `127.0.0.1`, `::1`, `*.localtest.me`)
 were allowed by default before this change. Page content cannot set the
 flag; only the socket caller can.
+
+Browser profiles (1.0, C11-289/C11-311): each non-default profile has
+its own `WKWebsiteDataStore(forIdentifier:)`, so cookies and storage do
+not cross profiles. `browser profiles clear|delete` wipe that profile's
+website data and history and require confirmation; an empty, malformed
+or unknown `--profile` fails instead of falling back to the default
+profile. `browser cookies clear` honors host, domain, path and secure
+scope and needs an explicit `all: true` to clear a whole profile.
+`browser state load` writes cookies for the target URL only, and writes
+local and session storage only after navigation settles on the expected
+origin; a wrong-origin redirect returns `navigation_failed`.
+
+Every socket-driven browser wait, eval and script injection runs off the
+main thread (1.0, C11-311 B006). `browser addinitscript|addscript|addstyle`
+still install `WKUserScript`s through the panel's `userContentController`;
+they are socket-caller features, not a page-reachable bridge, and no
+`WKScriptMessageHandler` was added.
+
+The messages page (`c11 messages view`, 1.0) is a local HTML file
+c11 writes (mode `0600`) and opens in a browser panel. It embeds message
+bodies as JSON inside a `<script type="application/json">` block with
+`<`, `>`, `&`, U+2028 and U+2029 escaped, renders them with
+`textContent` only, and carries a CSP of `default-src 'none'` with
+inline script and style only, no images, `base-uri 'none'` and
+`form-action 'none'`. A hostile message body therefore renders as text.
 
 Outbound hand-off: the browser toolbar's "Open in Default Browser"
 button (v0.51.0) passes the panel's current URL to
@@ -172,11 +203,71 @@ which the operator sees in the address bar before clicking.
 Evidence:
 
 ```
-Resources/Info.plist:162-176                           (NSAppTransportSecurity)
-Sources/Panels/BrowserPanel.swift                      (browser substrate)
+Resources/Info.plist:204-218                           (NSAppTransportSecurity)
+Sources/Panels/BrowserPanel.swift                      (browser substrate; websiteDataStore(for:) per profile)
+Sources/SocketHandlers/BrowserHandlers.swift           (cookies, state load, profiles)
+Sources/SocketHandlers/BrowserQueryHandlers.swift      (init scripts and styles, off-main JS)
+Sources/Messages/MessagesPage.swift                    (messages page renderer, CSP, JSON escaping)
 Sources/Panels/BrowserPanelView.swift                  (panel host)
 Sources/BrowserWindowPortal.swift                      (popout / portal layer)
 Sources/BrowserSnapshotStore.swift                     (snapshot capture)
+```
+
+---
+
+## Markdown document renderer (C11-359)
+
+Markdown panels load a bundled, offline WKWebView renderer through
+`c11md://bundle/index.html`. They never receive `file://` read access.
+Each panel gets its own content controller and directory capabilities; the
+process pool and nonpersistent website data store are shared. A panel that
+has never been visible does not allocate a web view. Every visible reader stays
+live; a process-wide LRU retains at most four hidden readers. Eviction captures
+source line/offset, mode and find query, then removes the message handler and
+releases WebKit. Queries pin their renderer until completion. Recreation restores
+transient reading state before revealing the reader; raw content queries remain
+model-only even when no web view exists.
+
+The native scheme handler sends a restrictive CSP response header and injects
+the same policy before the bundled
+page's scripts: remote requests, connections, frames, objects, forms and base
+URLs are denied. Scripts and fonts come only from the bundled renderer.
+Document text enters `c11md.load` as a JSON argument, never interpolated
+JavaScript or a page URL. The web renderer disables raw HTML and sanitizes
+Mermaid output; document directives cannot configure Mermaid.
+
+Local raster images use `c11md-asset://doc/`. The handler percent-decodes
+paths exactly once, treats remaining percent sequences as literal names,
+rejects traversal, checks the resolved real path against the open
+document's directory tree, and opens each component relative to a pinned
+directory descriptor without following symlinks. A symlink resolving within
+that tree is allowed; one escaping it is denied. HTML, SVG and script files
+are not image resources. Reads are bounded to 20 MiB per image and run off
+main; stopped scheme requests receive no late callbacks. This capability
+permits the document to display images in its directory tree, including
+subdirectories, and grants no arbitrary file-read bridge.
+
+Only the initial bundled main-frame navigation is allowed. Document links,
+redirects, frames, downloads and new windows cannot navigate the reader.
+Bridge messages are accepted only from its bundled main frame. Native code
+independently resolves the original link: anchors stay in the document,
+relative markdown links open a markdown panel, and HTTP(S) links follow c11's
+browser routing settings. Other schemes and arbitrary local files are
+refused, except for the validated `mailto:` route. Mail links accept recipients,
+cc, bcc, subject and body only; hosts, ports, fragments and control characters
+are refused. They open through `NSWorkspace` only after an operator clicks. No
+bridge method exposes a socket, shell, evaluator or file read.
+Copy messages write bounded text to the pasteboard. Content-state messages
+remain transient; durable presentation fields use the session snapshot.
+
+Evidence:
+
+```
+Sources/MarkdownAssetPolicy.swift                     (scoped reads and link validation)
+Sources/Panels/MarkdownWebRenderer.swift               (WebKit and native bridge policy)
+Resources/markdown-viewer/BRIDGE.md                    (renderer contract)
+c11Tests/MarkdownAssetPolicyTests.swift               (positive and negative capabilities)
+c11Tests/MarkdownPresentationTests.swift              (field-local restore fallback)
 ```
 
 ---
@@ -207,11 +298,11 @@ require an entry there and must be reflected in this doc.
 Evidence:
 
 ```
-Resources/Info.plist:74-138                            (NSAppleScriptEnabled, OSAScriptingDefinition, NSServices)
-Resources/c11.sdef                                     (scripting dictionary)
-Sources/AppDelegate.swift:5711-5717                    (openWindow service entry)
-Sources/AppDelegate.swift:5719-5725                    (openTab service entry)
-Sources/AppDelegate.swift:5732                         (openFromServicePasteboard)
+Resources/Info.plist:94-138                            (NSAppleScriptEnabled, OSAScriptingDefinition, NSServices)
+Resources/c11.sdef                                     (scripting dictionary; 1.0 changes description text only)
+Sources/AppDelegate.swift:7172                         (openWindow service entry)
+Sources/AppDelegate.swift:7180                         (openTab service entry)
+Sources/AppDelegate.swift:7193                         (openFromServicePasteboard)
 ```
 
 ---
@@ -282,12 +373,12 @@ The c11 socket is a Unix-domain socket at
 
 Default mode on a fresh install: `c11Only`. The ancestry gate walks the
 connecting process's parents (`TerminalController.parentPid(of:)`,
-`TerminalController.swift:745`) and rejects when c11 is not on the
+`TerminalController.swift:1096`) and rejects when c11 is not on the
 chain. As of v0.58.0, command *dispatch* lives in per-domain handlers
 under `Sources/SocketHandlers/`; the connection ACL and ancestry gate
-remain in `TerminalController`. Also as of v0.58.0, surface-scoped
-write commands reject empty or absent surface refs outright — a write
-can no longer be silently routed to the operator-focused surface by a
+remain in `TerminalController`. Also as of v0.58.0, panel-scoped
+write commands reject empty or absent panel refs outright — a write
+can no longer be silently routed to the operator-focused panel by a
 malformed ref.
 
 Password mode reads its secret from (in order):
@@ -305,20 +396,88 @@ ancestor-PID and mode-check paths. New socket modes or changes to the
 gate require updates to those tests as well as this doc.
 
 Local persistent artifacts written by the socket/telemetry layer: the
-surface-metadata snapshots, the mailbox tree, and (new in v0.58.0) the
+panel-metadata snapshots, the mailbox tree, and (new in v0.58.0) the
 events NDJSON log under `~/Library/Application Support/c11/` — an
-append-only record of surface lifecycle, canonical-metadata changes,
+append-only record of panel lifecycle, canonical-metadata changes,
 liveness transitions, and mailbox deliveries. All are plaintext,
 uid-scoped files in the same trust class: readable by any process
 running as the operator. No transcript or scrollback content is
 written to any of them.
 
+Since 1.0 the events log is no longer content-free. Every successful
+`send`, `send-key`, `paste` and mailbox send writes a `panel.input_sent`
+event carrying the caller, the target and the sent text (the first
+256 KiB), mailbox `accepted` events carry the message body, and a flag
+answered through `c11 feed answer` records the answer on `flag.lowered`.
+The log files are created with default permissions (`0644`) inside the
+`0700` `~/Library`, so they stay private to the operator's uid, but each
+launch writes a new per-instance file and old instance files are never
+pruned. Anything an agent types into another panel through c11 (a
+pasted token, say) therefore persists in plaintext until the operator
+deletes it.
+
+Other local artifacts added in 1.0, all owner-only:
+
+- The lifecycle journal (`c11/journal/<bundle id>/`: SQLite database and
+  an offline spool, directory `0700`, files `0600`). It stores lifecycle
+  phases and attribution, never prompt, answer or transcript bodies.
+- Staged launch prompts (`c11/runtime/launch-prompts/`, files `0600`,
+  created `O_EXCL | O_NOFOLLOW`, removed when the panel closes).
+- The messages page (section 4).
+
+Changes to what reaches the socket and agents in 1.0:
+
+- The `c11 ssh` remote command relay is gone: c11 no longer serves
+  socket commands back to a remote host, and `c11` inside an ssh
+  workspace reports itself unavailable. The SSH browser proxy remains.
+- `c11 rpc <method> [json]` is a CLI convenience that sends one raw
+  v2 request. It goes through the same connection gate and reaches no
+  method the socket did not already expose.
+- Mail bodies reach agents' context: a busy agent's hooks
+  (`mailbox recv --drain --hook-format …`) inject queued messages as
+  `additionalContext` or a Stop-hook reason, and an idle agent receives
+  mail as a typed turn. This is an agent-to-agent channel inside the
+  semi-trusted tier (section 1): any socket client allowed by the
+  current mode can put text in front of an agent. Pushes are withheld
+  while the operator has a draft in the target panel.
+- `c11 send` refuses to type into an operator draft or a Claude
+  question or plan chooser unless `--allow-unguarded` is passed;
+  `input-state` reports the prompt state and draft length, never draft
+  text.
+- Socket callers can no longer change the operator's selected workspace
+  (`workspace_switch_blocked`), only explicit window-focus requests
+  raise the app, a caller cannot close a workspace owned by another
+  window, and near-miss routing keys (`surfaceId`) return
+  `invalid_params` instead of falling back to the focused target.
+- The socket listens before session restore and returns `not_ready` for
+  graph requests until every initial window is installed.
+- The bundled `codex` wrapper passes its hook definitions and trust
+  hashes as per-process `-c` flags, and OpenCode skill install no
+  longer writes persistent plugin files; c11 still makes no persistent
+  writes to tenant config.
+- `C11_SESSION_HISTORY_RESTORE_FILE` restores one archived session at
+  startup and rejects any path, including a symlink, that resolves
+  outside that snapshot's own `session-history/` directory.
+
+The connection reader buffers a request until its newline with no size
+cap, as it did before 1.0. A client already past the connection gate
+can grow app memory by never sending a newline; that is a
+denial-of-service by an already-trusted caller, not a privilege
+boundary.
+
 Evidence:
 
 ```
 Sources/SocketControlSettings.swift:9                  (mode enum; .c11Only)
-Sources/TerminalController.swift:172                   (accessMode = .c11Only default)
-Sources/TerminalController.swift:745                   (ancestry walk)
+Sources/SocketControlSettings.swift:297                (C11_SOCKET_PASSWORD)
+Sources/TerminalController.swift:358                   (accessMode = .c11Only default)
+Sources/TerminalController.swift:1096                  (ancestry walk, parentPid(of:))
+Sources/TerminalController.swift:2222                  (c11Only connection check)
+Sources/TerminalController.swift:2300                  (serveCommandLines, newline framing)
+Sources/Events/EventEmitter.swift                      (panel.input_sent payload, 256 KiB text cap)
+Sources/Events/EventLog.swift                          (per-instance log, one rolled generation)
+Sources/Journal/JournalStorageLayout.swift             (journal location and permissions)
+Sources/LaunchPromptStore.swift                        (staged launch prompts)
 Sources/SocketHandlers/                                (per-domain command dispatch, v0.58.0)
 c11Tests/TerminalControllerSocketSecurityTests.swift   (focus-policy negative tests)
 ```
@@ -353,7 +512,7 @@ git diff <last-tag>..HEAD -- \
 ```
 
 Within `AppDelegate.swift`, the area around `application(_:open:)`
-(currently `Sources/AppDelegate.swift:2301`) is the URL-handler
+(currently `Sources/AppDelegate.swift:2594`) is the URL-handler
 choke point and warrants extra scrutiny when touched. Any new
 `WKWebViewConfiguration` or `WKContentController` configuration is a
 trigger because the JS-bridge surface is the chief untrusted-input

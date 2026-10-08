@@ -44,12 +44,12 @@ enum WorkspaceSnapshotConversationBridge {
 
     /// Pure snapshot extraction used by delayed-barrier tests and by the
     /// async seed adapter above.
-    static func records(from snapshot: AppSessionSnapshot) -> [String: SurfaceConversations] {
+    static func records(from snapshot: AppSessionSnapshot) -> [String: PanelConversations] {
         var liftedCount = 0
         var nativeCount = 0
-        var seedMap: [String: SurfaceConversations] = [:]
+        var seedMap: [String: PanelConversations] = [:]
         for window in snapshot.windows {
-            for ws in window.tabManager.workspaces {
+            for ws in window.workspaceManager.workspaces {
                 for panel in ws.panels {
                     guard panel.type == .terminal else { continue }
                     let surfaceId = panel.id.uuidString
@@ -63,7 +63,7 @@ enum WorkspaceSnapshotConversationBridge {
                     // out. Tracked alongside the
                     // CMUX_DISABLE_CONVERSATION_STORE kill switch.
                     if let lifted = liftLegacyClaudeSessionId(panel) {
-                        seedMap[surfaceId] = SurfaceConversations(active: lifted, history: [])
+                        seedMap[surfaceId] = PanelConversations(active: lifted, history: [])
                         liftedCount += 1
                     }
                 }
@@ -80,7 +80,7 @@ enum WorkspaceSnapshotConversationBridge {
         _ panel: SessionPanelSnapshot
     ) -> ConversationRef? {
         guard let metadata = panel.metadata else { return nil }
-        guard case .string(let raw)? = metadata[SurfaceMetadataKeyName.claudeSessionId] else {
+        guard case .string(let raw)? = metadata[PanelMetadataKeyName.claudeSessionId] else {
             return nil
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

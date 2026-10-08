@@ -343,7 +343,7 @@ enum TextBoxAppDetection: CaseIterable {
     /// Regex pattern matched (case-insensitive) against the terminal tab title.
     /// Claude Code detection: matches "Claude Code" anywhere in the title,
     /// or a title starting with "✱ " / "✳ " (idle/active icon) or "⠂ " (thinking indicator).
-    private var tabTitlePattern: String {
+    private var panelTitlePattern: String {
         switch self {
         case .claudeCode: return "Claude Code|^[✱✳⠂] "
         case .codex:      return "Codex"
@@ -357,7 +357,7 @@ enum TextBoxAppDetection: CaseIterable {
             return metadataTerminalTypes.contains(type)
         }
         return terminalTitle.range(
-            of: tabTitlePattern,
+            of: panelTitlePattern,
             options: [.caseInsensitive, .regularExpression]
         ) != nil
     }
@@ -710,21 +710,28 @@ enum TextBoxEscapeBehavior: String, CaseIterable, Identifiable {
 /// silently ignored. 50ms and 100ms were tested and are insufficient.
 /// 200ms is the minimum reliable value.
 enum TextBoxSubmit {
+    /// One input transaction (see `TerminalSurface.performInputTransaction`)
+    /// from the paste to its Return, so no other writer lands in between.
     static func send(_ text: String, via surface: TerminalSurface) {
         let trimmed = text.trimmingCharacters(in: .newlines)
         let delayMs = TextBoxBehavior.returnKeyDelayMs
-        if !trimmed.isEmpty {
-            surface.sendText(trimmed)
-        }
-        let effectiveDelayMs = trimmed.isEmpty
-            ? TextBoxBehavior.emptyReturnKeyDelayMs
-            : delayMs
-        if effectiveDelayMs <= 0 {
-            surface.sendKey(.returnKey)
-        } else {
-            let delay = TimeInterval(effectiveDelayMs) / 1000.0
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak surface] in
-                surface?.sendKey(.returnKey)
+        surface.performInputTransaction { [weak surface] finish in
+            guard let surface else { return finish() }
+            if !trimmed.isEmpty {
+                surface.writeProgrammaticText(trimmed)
+            }
+            let effectiveDelayMs = trimmed.isEmpty
+                ? TextBoxBehavior.emptyReturnKeyDelayMs
+                : delayMs
+            if effectiveDelayMs <= 0 {
+                surface.sendKeyNow(.returnKey)
+                finish()
+            } else {
+                let delay = TimeInterval(effectiveDelayMs) / 1000.0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak surface] in
+                    surface?.sendKeyNow(.returnKey)
+                    finish()
+                }
             }
         }
     }
@@ -777,6 +784,10 @@ struct TextBoxInputContainer: View {
                 enterToSend: enterToSend,
                 textViewHeight: $textViewHeight,
                 onKeyEvent: { event in
+                    // The operator is typing in the text box: stamp the "touched" clock
+                    // (a plain Date store). The keys it forwards to the terminal are
+                    // synthesized and deliberately do not stamp on their own.
+                    surface.lastOperatorInputAt = Date()
                     switch event {
                     case .submit:
                         submit()
@@ -822,6 +833,11 @@ struct TextBoxInputContainer: View {
         // When the VStack resizes the terminal, ghostty sends SIGWINCH which causes
         // TUI apps like Claude Code to re-render and snap to the bottom. We save the
         // scroll offset before the resize and restore it after a short delay.
+        .onChange(of: text) { _ in
+            // Typed characters reach the terminal only on submit; stamp "touched" as
+            // they are typed.
+            surface.lastOperatorInputAt = Date()
+        }
         .onChange(of: clampedHeight) { [clampedHeight] _ in
             guard clampedHeight > 0 else { return }
             guard surface.isScrolledUp,
@@ -833,6 +849,7 @@ struct TextBoxInputContainer: View {
     }
 
     private func submit() {
+        JournalCoordinator.shared.noteTextBoxSubmit(panelID: surface.id)
         let content = text
         TextBoxSubmit.send(content, via: surface)
         text = ""

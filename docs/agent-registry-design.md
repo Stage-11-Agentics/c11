@@ -27,7 +27,7 @@ Every cell below is a place the agent's type string or per-agent behavior is han
 | 4 | `Sources/Conversation/Strategies/*.swift` | per-agent capture/resume/isValidId/transcriptExists | one struct each |
 | 5 | `Sources/Conversation/Scrapers/*.swift` | per-agent on-disk session store (path/format) | one struct each, ad-hoc registration |
 | 6 | `Sources/WorkspaceMetadataKeys.swift` | `<kind>.session_id` / `.session_project_dir` keys + id validators | constants + funcs |
-| 7 | `Sources/SurfaceMetadataStore.swift` | `validateReservedKey()` switch + `canonicalTerminalTypes` | switch + set |
+| 7 | `Sources/PanelMetadataStore.swift` | `validateReservedKey()` switch + `canonicalTerminalTypes` | switch + set |
 | 8 | `Sources/AgentRestartRegistry.swift` | `phase1` resume-command rows | rows (data-ish) |
 | 9 | `Sources/Conversation/SnapshotBridge.swift` | per-agent legacy-metadata lift functions | one func each |
 | 10 | `Sources/AgentChip.swift` | `iconAssetName()` + `sfSymbolFallback()` + `modelAliasTable` | 2 switches + dict |
@@ -150,7 +150,7 @@ Open question for §11: hot-reload on file change, or load-at-launch only (simpl
 | `AgentChip` | icon/symbol/aliases read from manifest; `default` path unchanged. |
 | `StrategyRegistry` | resolve by `kind`: custom struct if registered, else `GenericManifestStrategy(manifest)`. |
 | `AgentRestartRegistry` | rows generated from each manifest's `ResumeSpec`. |
-| `SurfaceMetadataStore` | `validateReservedKey` switches on derived `<kind>.session_id` keys + `idGrammar`; `canonicalTerminalTypes` = `registry.all.map(\.kind)`. |
+| `PanelMetadataStore` | `validateReservedKey` switches on derived `<kind>.session_id` keys + `idGrammar`; `canonicalTerminalTypes` = `registry.all.map(\.kind)`. |
 | `SnapshotBridge` | legacy lift iterates manifests that declare a legacy key. |
 | `SkillInstaller` / `AgentSkillsView` | targets + config roots + opt-ins come from `registry.all.filter(\.skillInstall)`; the per-target `@State` becomes a dictionary keyed by kind. |
 | `DefaultAgentResolver` | prompt delivery read from manifest (kills the `.claudeCode` special case). |

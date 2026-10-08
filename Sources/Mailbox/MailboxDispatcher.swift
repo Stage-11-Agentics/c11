@@ -41,7 +41,7 @@ final class MailboxDispatcher {
 
     let workspaceId: UUID
     let stateURL: URL
-    let resolver: MailboxSurfaceResolver
+    let resolver: MailboxPanelResolver
     let log: MailboxDispatchLog
     let queue: DispatchQueue
 
@@ -60,7 +60,7 @@ final class MailboxDispatcher {
     init(
         workspaceId: UUID,
         stateURL: URL,
-        resolver: MailboxSurfaceResolver,
+        resolver: MailboxPanelResolver,
         queue: DispatchQueue = DispatchQueue(
             label: "com.stage11.c11.mailbox.dispatcher",
             qos: .utility
@@ -127,6 +127,13 @@ final class MailboxDispatcher {
         watcher.triggerImmediateScan()
         self.watcher = watcher
 
+        // C11-257: record the deliveries CLI drains leave in `_receipts/`.
+        MailboxReceiptRecorder.shared.watch(
+            workspaceId: workspaceId,
+            mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId),
+            workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        )
+
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(
             deadline: .now() + Self.gcSweepInterval,
@@ -141,6 +148,9 @@ final class MailboxDispatcher {
     }
 
     func stop() {
+        if watcher != nil {
+            MailboxReceiptRecorder.shared.unwatch(workspaceId: workspaceId)
+        }
         watcher?.stop()
         watcher = nil
         gcTimer?.cancel()
@@ -170,6 +180,11 @@ final class MailboxDispatcher {
                 elapsedMs: nil
             )
         )
+    }
+
+    /// The stdin push could not claim an envelope; it stays in the inbox.
+    func logStdinClaimFailed(id: String, recipient: String, errno code: Int32) {
+        log.append(.claimFailed(id: id, recipient: recipient, errno: code))
     }
 
     // MARK: - Stale-tmp GC
@@ -295,7 +310,12 @@ final class MailboxDispatcher {
             id: envelope.id,
             from: envelope.from,
             to: envelope.to,
-            topic: envelope.topic
+            body: envelope.body,
+            bodyRef: envelope.bodyRef,
+            topic: envelope.topic,
+            replyTo: envelope.replyTo,
+            inReplyTo: envelope.inReplyTo,
+            urgent: envelope.urgent
         )
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
@@ -342,12 +362,12 @@ final class MailboxDispatcher {
 
     private func resolveRecipients(
         envelope: MailboxEnvelope
-    ) -> [MailboxSurfaceResolver.SurfaceMetadata] {
+    ) -> [MailboxPanelResolver.PanelMetadata] {
         guard let to = envelope.to else { return [] }
-        let all = resolver.surfacesWithMailboxMetadata()
+        let all = resolver.panelsWithMailboxMetadata()
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
-        // address > role > title; `surface:`/`role:` qualifiers honored).
+        // address > role > title; `panel:`/`role:` qualifiers honored).
         return MailboxMatcher.select(
             MailboxAddress.parse(to),
             from: all,
@@ -359,14 +379,14 @@ final class MailboxDispatcher {
 
     private func copyToInbox(
         envelope: MailboxEnvelope,
-        recipient: MailboxSurfaceResolver.SurfaceMetadata,
+        recipient: MailboxPanelResolver.PanelMetadata,
         envelopeBytes: Data
     ) {
         do {
-            let inbox = try MailboxLayout.inboxURL(
+            let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
                 workspaceId: workspaceId,
-                surfaceName: recipient.name
+                panelId: recipient.surfaceId
             )
             try FileManager.default.createDirectory(
                 at: inbox,
@@ -383,7 +403,8 @@ final class MailboxDispatcher {
                 workspace: workspaceId,
                 id: envelope.id,
                 recipient: recipient.name,
-                surface: recipient.surfaceId
+                surface: recipient.surfaceId,
+                via: "inbox"
             )
         } catch {
             // The `resolved` event already lists the recipient; failure to
@@ -406,7 +427,7 @@ final class MailboxDispatcher {
 
     private func runHandlers(
         envelope: MailboxEnvelope,
-        recipients: [MailboxSurfaceResolver.SurfaceMetadata]
+        recipients: [MailboxPanelResolver.PanelMetadata]
     ) {
         for recipient in recipients {
             for handlerName in recipient.delivery {
@@ -447,7 +468,7 @@ final class MailboxDispatcher {
         handler: @escaping HandlerFunction,
         name: String,
         envelope: MailboxEnvelope,
-        recipient: MailboxSurfaceResolver.SurfaceMetadata
+        recipient: MailboxPanelResolver.PanelMetadata
     ) {
         let semaphore = DispatchSemaphore(value: 0)
         var result = HandlerInvocationResult(outcome: .timeout)
@@ -485,7 +506,7 @@ final class MailboxDispatcher {
     /// vanishing. Distinct reason string so `c11 mailbox trace` can tell a
     /// malformed envelope from an unknown recipient.
     private func rejectUnresolved(id: String, processingURL: URL, to: String) {
-        let reason = "no live surface named '\(to)' in workspace \(workspaceId.uuidString)"
+        let reason = "no live panel named '\(to)' in workspace \(workspaceId.uuidString)"
         let rejectedDir = MailboxLayout.rejectedURL(state: stateURL, workspaceId: workspaceId)
         let rejectedMsg = rejectedDir.appendingPathComponent(
             MailboxLayout.envelopeFilename(id: id)

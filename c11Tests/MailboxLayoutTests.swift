@@ -60,39 +60,80 @@ final class MailboxLayoutTests: XCTestCase {
         XCTAssertFalse(url.hasDirectoryPath)
     }
 
-    func testInboxURL() throws {
+    func testInboxURLIsKeyedOnLowercasedTabUUID() {
         let ws = stubWorkspace()
-        let url = try MailboxLayout.inboxURL(
-            state: stateURL,
-            workspaceId: ws,
-            surfaceName: "builder"
-        )
+        let panel = UUID(uuidString: "A1B2C3D4-0000-4000-8000-00000000BEEF")!
+        let url = MailboxLayout.inboxURL(state: stateURL, workspaceId: ws, panelId: panel)
         XCTAssertEqual(
             url.path,
-            "/tmp/c11-test-state/workspaces/\(ws.uuidString)/mailboxes/builder"
+            "/tmp/c11-test-state/workspaces/\(ws.uuidString)/mailboxes/a1b2c3d4-0000-4000-8000-00000000beef"
         )
     }
 
-    func testInboxAllowsSpacesInSurfaceNames() throws {
+    func testLegacyInboxURLKeepsSafeTitles() {
         let ws = stubWorkspace()
-        // Alignment doc §3: surface names may contain spaces. Comma is reserved
-        // as a metadata list separator but no layout rule forbids it in names.
-        let url = try MailboxLayout.inboxURL(
-            state: stateURL,
-            workspaceId: ws,
-            surfaceName: "build watcher"
+        XCTAssertEqual(
+            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: "build watcher")?
+                .lastPathComponent,
+            "build watcher"
         )
-        XCTAssertEqual(url.lastPathComponent, "build watcher")
+        XCTAssertEqual(
+            MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: "ビルダー")?
+                .lastPathComponent,
+            "ビルダー"
+        )
     }
 
-    func testInboxAllowsUnicodeSurfaceNames() throws {
+    /// Titles that could never have been a directory, or that name the tree's
+    /// own directories, have no legacy inbox.
+    func testLegacyInboxURLRejectsUnsafeAndReservedTitles() {
         let ws = stubWorkspace()
-        let url = try MailboxLayout.inboxURL(
-            state: stateURL,
-            workspaceId: ws,
-            surfaceName: "ビルダー"
+        let long = "MRQ-214 [review]: " + String(repeating: "x", count: 90)
+        for title in ["a/b: c", long, "../escape", ".hidden", "", "_outbox", "_read", "blobs"] {
+            XCTAssertNil(
+                MailboxLayout.legacyInboxURL(state: stateURL, workspaceId: ws, panelName: title),
+                title
+            )
+        }
+    }
+
+    func testRecvInboxURLsReadsCanonicalThenExistingLegacy() throws {
+        let state = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("c11-layout-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: state) }
+        let ws = stubWorkspace()
+        let panel = UUID()
+
+        // No legacy directory on disk: only the canonical inbox.
+        XCTAssertEqual(
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: panel, panelName: "watcher"),
+            [MailboxLayout.inboxURL(state: state, workspaceId: ws, panelId: panel)]
         )
-        XCTAssertEqual(url.lastPathComponent, "ビルダー")
+
+        let legacy = try XCTUnwrap(
+            MailboxLayout.legacyInboxURL(state: state, workspaceId: ws, panelName: "watcher")
+        )
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        XCTAssertEqual(
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: panel, panelName: "watcher"),
+            [MailboxLayout.inboxURL(state: state, workspaceId: ws, panelId: panel), legacy]
+        )
+        // Tab UUID unknown (a `--surface` name c11 could not resolve): legacy only.
+        XCTAssertEqual(
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: nil, panelName: "watcher"),
+            [legacy]
+        )
+        // A title-unsafe name never yields a legacy path.
+        XCTAssertEqual(
+            MailboxLayout.recvInboxURLs(state: state, workspaceId: ws, panelId: panel, panelName: "a/b: c"),
+            [MailboxLayout.inboxURL(state: state, workspaceId: ws, panelId: panel)]
+        )
+    }
+
+    func testReadURLIsInsideInbox() {
+        let inbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: stubWorkspace(), panelId: UUID())
+        XCTAssertEqual(MailboxLayout.readURL(inbox: inbox).deletingLastPathComponent().path, inbox.path)
+        XCTAssertEqual(MailboxLayout.readURL(inbox: inbox).lastPathComponent, "_read")
     }
 
     // MARK: - Filenames
@@ -186,12 +227,5 @@ final class MailboxLayoutTests: XCTestCase {
     func testAcceptsNameAtByteCap() {
         let exactly64 = String(repeating: "x", count: MailboxLayout.maxSurfaceNameBytes)
         XCTAssertNoThrow(try MailboxLayout.validateSurfaceName(exactly64))
-    }
-
-    func testInboxRejectsInvalidName() {
-        let ws = stubWorkspace()
-        XCTAssertThrowsError(
-            try MailboxLayout.inboxURL(state: stateURL, workspaceId: ws, surfaceName: "../escape")
-        )
     }
 }

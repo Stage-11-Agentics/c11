@@ -16,7 +16,7 @@ import XCTest
 ///  (c) a value change bumps `ts` while an identical rewrite freezes it.
 final class MetadataSourceTimestampTests: XCTestCase {
 
-    private let store = SurfaceMetadataStore.shared
+    private let store = PanelMetadataStore.shared
 
     // MARK: (a) Canonical writes stamp a ts
 

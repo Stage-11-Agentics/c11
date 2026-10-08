@@ -30,18 +30,18 @@ snapshot -> refs (e1/e2/...) -> direct action
 ## The Snapshot Command
 
 ```bash
-c11 browser surface:7 snapshot
-c11 browser surface:7 snapshot --interactive
-c11 browser surface:7 snapshot --interactive --compact --max-depth 3
+c11 browser panel:7 snapshot
+c11 browser panel:7 snapshot --interactive
+c11 browser panel:7 snapshot --interactive --compact --max-depth 3
 ```
 
 ## Using Refs
 
 ```bash
-c11 browser surface:7 click e6
-c11 browser surface:7 fill e10 "user@example.com"
-c11 browser surface:7 fill e11 "password123"
-c11 browser surface:7 click e12
+c11 browser panel:7 click e6
+c11 browser panel:7 fill e10 "user@example.com"
+c11 browser panel:7 fill e11 "password123"
+c11 browser panel:7 click e12
 ```
 
 ## Ref Lifecycle
@@ -49,13 +49,13 @@ c11 browser surface:7 click e12
 Refs are invalidated when page structure changes.
 
 ```bash
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 snapshot --interactive
 # e1 is "Next"
 
-c11 browser surface:7 click e1
+c11 browser panel:7 click e1
 
 # page changed, take a fresh snapshot
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 snapshot --interactive
 ```
 
 ## Best Practices
@@ -70,19 +70,19 @@ c11 browser surface:7 snapshot --interactive
 ### not_found / stale ref
 
 ```bash
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 snapshot --interactive
 ```
 
 ### Element missing due visibility/timing
 
 ```bash
-c11 browser surface:7 wait --selector "#target" --timeout-ms 10000
-c11 browser surface:7 scroll --dy 400
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 wait --selector "#target" --timeout-ms 10000
+c11 browser panel:7 scroll --dy 400
+c11 browser panel:7 snapshot --interactive
 ```
 
 ### Too many elements
 
 ```bash
-c11 browser surface:7 snapshot --selector "form#checkout" --interactive
+c11 browser panel:7 snapshot --selector "form#checkout" --interactive
 ```

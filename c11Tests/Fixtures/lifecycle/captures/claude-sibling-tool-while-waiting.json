@@ -1,0 +1,206 @@
+{
+  "id": "claude-sibling-tool-while-waiting",
+  "provider": "claude-code",
+  "mode": "bypass",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:59:57Z",
+      "source": "oracle",
+      "name": "ask-is-waiting",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled"
+      },
+      "oracle": {
+        "mark": "waiting",
+        "unread": 1,
+        "activity": "idle",
+        "status": ""
+      },
+      "seq": 1,
+      "id": "ev-1",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:59:58.124Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "kind": "terminal",
+        "c11_seq": "4116",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
+      "t_ms": 1124
+    },
+    {
+      "t": "2026-10-02T02:59:58.125Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]",
+        "c11_seq": "4117",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 1125
+    },
+    {
+      "t": "2026-10-02T02:59:58.727Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "state": "idle",
+        "c11_seq": "4118",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 1727
+    },
+    {
+      "t": "2026-10-02T02:59:58.769Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "state": "working",
+        "c11_seq": "4119",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 1769
+    },
+    {
+      "t": "2026-10-02T03:00:00Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "oracle": null,
+      "seq": 6,
+      "id": "ev-6",
+      "t_ms": 3000
+    },
+    {
+      "t": "2026-10-02T03:00:00Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-2",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "oracle": null,
+      "seq": 7,
+      "id": "ev-7",
+      "t_ms": 3000
+    },
+    {
+      "t": "2026-10-02T03:00:02Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-2",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2"
+      },
+      "oracle": null,
+      "seq": 8,
+      "id": "ev-8",
+      "t_ms": 5000
+    },
+    {
+      "t": "2026-10-02T03:00:03Z",
+      "source": "claude-hook",
+      "name": "PostToolUse",
+      "tool_name": "Bash",
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-2",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2",
+        "duration_ms": "268"
+      },
+      "oracle": null,
+      "seq": 9,
+      "id": "ev-9",
+      "t_ms": 6000
+    },
+    {
+      "t": "2026-10-02T03:00:03Z",
+      "source": "oracle",
+      "name": "after-sibling",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled",
+        "sibling_mark": "working",
+        "sibling_unread": "0"
+      },
+      "oracle": {
+        "mark": "waiting",
+        "unread": 1,
+        "activity": "idle",
+        "status": ""
+      },
+      "seq": 10,
+      "id": "ev-10",
+      "t_ms": 6000
+    }
+  ]
+}

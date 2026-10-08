@@ -12,7 +12,7 @@ It does not plan. The contract arrives written — by `tone-architect` or by han
 
 Three seats, context-isolated: the **Orchestrator** (Phases 0–1 — intake, ticketing, dispatch; it delegates, it does not implement), the **Result Validator** (Phase 2 — fresh session, terminal audit), and the supporting cast: **delegators** (one per ticket, driving plan → impl → review → validate → PR), **captains** (one-shot cross-cutting recovery), and the **Master Validator** singleton (optional in-flight global audit).
 
-Assumes c11 (load the c11 skill; the `lattice` skill owns Lattice CLI footguns beyond orchestration). Outside c11 the run still works — delegators need any harness that can spawn parallel sub-sessions; surfaces degrade to what the harness offers.
+Assumes c11 (load the c11 skill; the `lattice` skill owns Lattice CLI footguns beyond orchestration). Outside c11 the run still works — delegators need any harness that can spawn parallel sub-sessions; panels degrade to what the harness offers.
 
 ## Contract
 
@@ -28,9 +28,9 @@ Thirty seconds before anything else: `lattice --version` works; `git rev-parse -
 
 Read the whole contract cold, then:
 
-1. **Contract checks — validate, never author.** Flag gaps to the operator rather than filling them: every SPEC criterion appears in `EVALUATION.md`; the fast/full test split is defined (`test` hermetic + parallel ≤60s — the delegators' inner-loop clock — and `test:full` for slow suites; a slow default suite is a defect, propose a fix-it ticket); persisted fields each have a writer and a reader; every non-negotiable guardrail has an enforcement/audit item; module names are keyword-safe; the ticket sequence de-risks assumptions early (walking skeleton first).
+1. **Contract checks — validate, never author.** Flag gaps to the operator rather than filling them: every SPEC criterion appears in `EVALUATION.md`; the fast/full test split is defined (`test` hermetic + parallel ≤60s — the delegators' inner-loop clock — and `test:full` for slow suites; a slow default suite is a defect, propose a fix-it ticket); persisted fields each have a writer and a reader; every non-negotiable guardrail has an enforcement/audit item; a gate with a time budget has a per-PR growth check that blocks from the first ticket; every shared enumeration or create-or-replace object that more than one ticket writes has one canonical source, a test, and a landing order; module names are keyword-safe; the ticket sequence de-risks assumptions early (walking skeleton first).
 2. **Pin install facts.** Status vocabulary from `.lattice/config.json` — not every install has `pr_open`; record the *terminal pre-merge status* and thread it into every boot prompt (when unsure: `lattice show <ID> --json | jq .valid_transitions`). The actual git remote name via `git remote -v` — many Stage 11 repos use `forgejo`, not `origin`; a wrong remote makes every fetch, review base, and push silently miss. Tickets whose code lands in a different repo, flagged explicitly.
-3. **Config dialogue — short, defaults auto-suggested from plan size** (12 tickets → N=5, validators on; a 3-ticket cleanup → N=2, off): autonomy level, max concurrent delegators N, PR merge policy (auto-merge vs. leave at terminal pre-merge status; default leave), per-ticket workflow modes, Master Validator (default on above 3 tickets), Result Validator (default on), c11 preferences. Before proceeding, tell the operator what Phase 1 will look like — how many panes appear, how escalations surface, what "done" is.
+3. **Config dialogue — short, defaults auto-suggested from plan size** (12 tickets → N=5, validators on; a 3-ticket cleanup → N=2, off): autonomy level, max concurrent delegators N, PR merge policy (auto-merge vs. leave at terminal pre-merge status; default leave), per-ticket workflow modes, Master Validator (default on above 3 tickets), Result Validator (default on), c11 preferences. Before proceeding, tell the operator what Phase 1 will look like — how many areas appear, how escalations surface, what "done" is. Worker routing is part of it: show the operator the defaults (easy tickets to Grok, hard ones to Astra, `gpt-6-astra` at xhigh; Claude for the Orchestrator and for reviews of Astra's work; every reviewer from another family than its owner) with each ticket's class, and have them confirm or change it before anyone launches.
 4. **Mint the board.** One Lattice ticket per build-plan item, dependencies linked conservatively (loose dependencies kill parallelism), checkpoint order preserved, each ticket carrying its acceptance-criteria IDs and harness hook. Every Lattice mutation needs `--actor` (or `--name`); keep ticket IDs out of titles.
 5. **Write the validation plan** — `EVALUATION.md` re-expressed, one row per criterion, each row tagged `pre-merge-static` (PR diff + source), `pre-merge-runtime` (exact PR head through a local runtime/rendered path), or `post-merge-smoke` (assembled tree, production/external state, or human driving). The Result Validator runs both pre-merge classes; the operator runs the smoke class. Tag honestly — reading source is not rendered proof, and one branch is not an assembled flow. The operator reviews the draft.
 6. **Stand up the run:** `run-state.md` and `agents.md` under `.lattice/orchestration/`, workspace geometry, dashboard, and the append-only delivery-receipt stream. External work that deliberately does not mint tickets uses the pilot external-work event stream in `references/intake.md`.
@@ -39,13 +39,15 @@ Mechanics, schemas, and templates: `references/intake.md`.
 
 ## Phase 1 — Dispatch (Orchestrator)
 
-The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → landing-train pass if auto-merge is enabled (parallel build, one finalization slot; fresh exact-head review + gate immediately before merge) → close finished surfaces → spawn next available delegators → schedule the next wake.
+The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → landing-train pass if auto-merge is enabled (parallel build, one finalization slot; fresh exact-head review + gate immediately before merge; serial PR runs when a shared runner's wall budget is tight) → close finished panels → spawn next available delegators → schedule the next wake.
 
 Delegators run one of three modes, chosen per ticket at Phase 0:
 
 - **Fast-track** — single session, inline self-review; small, well-understood tickets.
 - **Inline-full** *(default for medium work)* — single session plus headless plan-review and code-review for fresh eyes without PTY pressure.
-- **Sub-agent-full** — separate planner/impl/fix tabs; escalation for large or high-risk tickets only.
+- **Sub-agent-full** — separate planner/impl/fix panels; escalation for large or high-risk tickets only.
+
+Landing capacity and the account's usage window bind before builder count: more builders past the landing rate add queue, not throughput.
 
 The Orchestrator's inviolable norm: **it dispatches; it does not implement.** All operational depth — the identity block, boot templates, worktree discipline, review fallbacks, verified-state rules, merge machinery, captains, recovery — lives in `references/orchestrator.md`.
 
@@ -65,11 +67,11 @@ Set at Phase 0 (the project `CLAUDE.md` may declare a default; otherwise Moderat
 - **Moderate** *(default)* — decide-and-log routine calls; surface non-trivial architectural choices, scope expansions, and mild irreversibility for approval.
 - **Minimal** — surface at every phase transition; the operator is driving.
 
-Every autonomous decision lands in run-state's append-only decision log, tagged with the autonomy level that authorized it.
+Every autonomous decision lands in run-state's append-only decision log, tagged with the autonomy level that authorized it. An operator ruling that changes a contract criterion is amended into the contract when it is made: the terminal audit judges the text, not the decision log.
 
 ## Layout (inside c11)
 
-One workspace per run: a **Main View Area** (Orchestrator, Master Validator, and Result Validator tabs), a **Control Surface** (Lattice Board browser surface, logs), and **three Delegate View panes**. Three, because the c11 PTY allocator wedges around 20–25 surfaces per pane on long runs and a wedge spreads globally within a minute — soft cap **15 surfaces per pane**, route new delegators to the lightest-loaded pane, close finished surfaces promptly.
+One workspace per run: a **Main View Area** (Orchestrator, Master Validator, and Result Validator panels), a **Control Area** (Lattice Board browser panel, logs), and **three Delegate View areas**. Three, because the c11 PTY allocator wedges around 20–25 panels per area on long runs and a wedge spreads globally within a minute — soft cap **15 panels per area**, route new delegators to the lightest-loaded area, close finished panels promptly.
 
 ## Resume
 

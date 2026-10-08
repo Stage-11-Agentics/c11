@@ -22,17 +22,17 @@ Why: c11 browser automation runs on WKWebView, and the agent-browser style recor
 ### 1. Step Screenshots
 
 ```bash
-c11 browser surface:7 screenshot > /tmp/step1.b64
-c11 browser surface:7 click e3 --snapshot-after --json
-c11 browser surface:7 screenshot > /tmp/step2.b64
+c11 browser panel:7 screenshot --out /tmp/step1.png
+c11 browser panel:7 click e3 --snapshot-after --json
+c11 browser panel:7 screenshot --out /tmp/step2.png
 ```
 
 ### 2. Snapshot Timeline
 
 ```bash
-c11 browser surface:7 snapshot --interactive > /tmp/snap-1.txt
-c11 browser surface:7 click e3 --snapshot-after --json > /tmp/action-1.json
-c11 browser surface:7 snapshot --interactive > /tmp/snap-2.txt
+c11 browser panel:7 snapshot --interactive > /tmp/snap-1.txt
+c11 browser panel:7 click e3 --snapshot-after --json > /tmp/action-1.json
+c11 browser panel:7 snapshot --interactive > /tmp/snap-2.txt
 ```
 
 ### 3. macOS Window Capture (external)

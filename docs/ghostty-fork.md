@@ -201,3 +201,90 @@ These files change frequently upstream; be careful when rebasing the fork:
     already has them.
 
 If you resolve a conflict, update this doc with what changed.
+
+### 11) C11-294 terminal patch set
+
+The engine tip is `5830d1976` on the Stage 11 fork's `main`. The parent
+gitlink refers to that published commit. Product validation and parent PR state
+are tracked on C11-294; this section records the engine integration.
+
+- Surface teardown publishes cancellation before search, renderer, or IO joins.
+  Worker mailbox backpressure retries in 50 ms intervals and can abort for its
+  owning surface. The shared app queue stays open for other surfaces. Main-thread
+  ordered publications use a FIFO spill on saturation; focus and visibility use
+  independent atomic latest-value slots. App and renderer drains process a
+  snapshot of their starting count and retain a wake for any remaining work.
+  The ring deliberately remains 64 slots rather than taking H-A's proposed
+  mailbox enlargement: cancellation breaks the join cycle, and the unchanged
+  capacity keeps the saturation fixture meaningful.
+- Paste fences and payload enter IO as one owned message (`f27772d10963`). Write
+  request and buffer ownership travel together through out-of-order completion
+  (`e0ef934f7360`). Selection replacement no longer compares released pins
+  (`ab82b8ab720c`).
+- Shutdown uses a monotonic grace/escalation budget and separately accounts for
+  the direct child and freshly PTY-attributed foreground group. It never targets
+  the host process group, invalid IDs, or a cached group after child reaping.
+  Detached/disowned processes no longer attributable to the PTY are kept.
+  Defaults: 12 s HUP grace, a verified HUP-ignoring Darwin leader gets 250 ms TERM
+  grace, then at most 3 s KILL/reaping. The TERM signal is actually delivered
+  before its grace interval expires. Cancellation joins the reader before the
+  owned PTY master closes, allowing macOS login to observe hangup. Shutdown is
+  idempotent so IO thread exit and final deinit share one signal/reap budget.
+  Cancelled POSIX teardown transfers copied process IDs and timeout values to
+  a detached reaper, so the IO join does not park main for that budget. No
+  surface, command, or PTY storage escapes. Synchronous helpers remain for
+  startup cleanup and tests; a thread-spawn failure is logged and falls back
+  to bounded synchronous cleanup rather than abandoning a waitable child.
+- Two additive C exports, `ghostty_surface_try_read_text` and
+  `ghostty_surface_try_read_selection`, attempt the renderer mutex once. Statuses
+  are OK=0, BUSY=1, INVALID_SELECTION=2, FAILED=3, NO_SELECTION=4. Non-OK results
+  are zero and transfer no allocation. Successful buffers use the existing
+  two-argument free-text export. Native formatting still runs synchronously on
+  the app thread after acquisition and has no wall-time bound.
+- B034 grapheme edge wrapping (`3ba49a784f43`) and B045 null CoreText display names
+  (`ff362c99c0a2`) cherry-picked cleanly. B021, B015, B020, B036 and B037/B166
+  conflict with this base and are omitted under the ticket's clean-only rule.
+  B021's standalone reader change is not claimed fixed by the required reaper
+  changes. C11-200 display-ID publication stays unchanged.
+
+Bounded-turn/lifecycle adaptation sources: `188d31a97733`, `2258bea96ddc`,
+`ca21db1bb836` (austinpower1258). Shutdown sources: `5b20c62297ac`,
+`88c3325dc969`, `81b4de4f540e`, `47e9bd4c90de`, `bc7e9f7466f4`,
+`01e7c93ca9e4` (austinpower1258/Austin Wang). The paired write-pool source is
+Mitchell Hashimoto's `e0ef934f7360`. Clean cherry-picks preserve author metadata
+and record the source with `-x`; adapted commits retain source/author credit.
+
+The test-only engine library is built with `-Dc11-read-test=true`; production
+builds do not include its fixture controls. `tests/ghostty_patchset/` in the
+parent contains the real-PTY teardown host and pinned-libxev backpressure probe.
+The B072 probe distinguishes ordinary saturation from a synthetic competing
+writer: only the latter has reproduced WouldBlock and a dropped 64-byte request
+on the pinned backend. That result does not claim production c11 byte loss.
+B072 therefore carries only the queued-write retry patch (`2f6ee7b3`, Austin
+Wang) in a reproducible archive of the original libxev revision. The dependency
+URL pins fork artifact commit `b6b0522c9`; `vendor/libxev-c11/VENDORED.md` in
+Ghostty records source, patch, archive checksum, and reproduction commands. Both
+ordinary and synthetic-race probes preserve all bytes with the patched archive.
+
+Rebase conflicts to preserve: cancellation must precede the first join; cancelled
+owned messages must be disposed; final search resets follow already-queued
+results; renderer resources are released before pending font-key ownership;
+IO config handling appends its color report without waiting on its own queue.
+This changes no Swift callback executor and does not close B033. The original
+teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
+
+### 12) C11-267 bounded styled prompt-region capture
+
+- Commit: `e6999ae7adc7c584d6bbda415aa59a6a8c3a2470`
+- Files: `include/ghostty.h`, `src/apprt/embedded.zig`,
+  `src/terminal/prompt_region.zig`
+- Adds `ghostty_surface_try_read_prompt_region`, a one-shot renderer-lock
+  acquisition that copies only the active screen into caller-owned buffers:
+  at most 16 rows, 4096 cells, and 16 KiB of UTF-8 text. Rows preserve hard and
+  soft wraps; cells retain faint style. A clipped copy is marked incomplete.
+  It reads no viewport or scrollback, allocates no text, and introduces no
+  colors. Swift captures on the app thread while the surface is live, then
+  classifies the bounded snapshot off the socket worker.
+- On rebase, preserve the C struct layout and limits with the matching Swift
+  importer, plus the one-shot mutex try-lock. Do not turn incomplete captures
+  into an empty prompt.

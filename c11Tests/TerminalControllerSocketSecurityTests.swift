@@ -27,11 +27,11 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
     }
 
     func testSocketPermissionsFollowAccessMode() throws {
-        let tabManager = TabManager()
+        let workspaceManager = WorkspaceManager()
 
         let allowAllPath = makeSocketPath("allow-all")
         TerminalController.shared.start(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             socketPath: allowAllPath,
             accessMode: .allowAll
         )
@@ -42,37 +42,12 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 
         let restrictedPath = makeSocketPath("c11-only")
         TerminalController.shared.start(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             socketPath: restrictedPath,
             accessMode: .c11Only
         )
         try waitForSocket(at: restrictedPath)
         XCTAssertEqual(try socketMode(at: restrictedPath), 0o600)
-    }
-
-    func testPasswordModeRejectsUnauthenticatedCommands() throws {
-        let socketPath = makeSocketPath("password-mode")
-        let tabManager = TabManager()
-
-        TerminalController.shared.start(
-            tabManager: tabManager,
-            socketPath: socketPath,
-            accessMode: .password
-        )
-        try waitForSocket(at: socketPath)
-
-        let pingOnly = try sendCommands(["ping"], to: socketPath)
-        XCTAssertEqual(pingOnly.count, 1)
-        XCTAssertTrue(pingOnly[0].hasPrefix("ERROR:"))
-        XCTAssertFalse(pingOnly[0].localizedCaseInsensitiveContains("PONG"))
-
-        let wrongAuthThenPing = try sendCommands(
-            ["auth not-the-password", "ping"],
-            to: socketPath
-        )
-        XCTAssertEqual(wrongAuthThenPing.count, 2)
-        XCTAssertTrue(wrongAuthThenPing[0].hasPrefix("ERROR:"))
-        XCTAssertTrue(wrongAuthThenPing[1].hasPrefix("ERROR:"))
     }
 
     func testSocketCommandPolicyDistinguishesFocusIntent() throws {
@@ -90,9 +65,16 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
             commandKey: "focus_window",
             isV2: false
         )
-        XCTAssertTrue(focusV1.insideSuppressed)
+        XCTAssertFalse(focusV1.insideSuppressed)
         XCTAssertTrue(focusV1.insideAllowsFocus)
         XCTAssertFalse(focusV1.outsideSuppressed)
+
+        let focusWindowV2 = TerminalController.debugSocketCommandPolicySnapshot(
+            commandKey: "window.focus",
+            isV2: true
+        )
+        XCTAssertFalse(focusWindowV2.insideSuppressed)
+        XCTAssertTrue(focusWindowV2.insideAllowsFocus)
 
         let focusV2 = TerminalController.debugSocketCommandPolicySnapshot(
             commandKey: "workspace.select",
@@ -101,6 +83,13 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
         XCTAssertTrue(focusV2.insideSuppressed)
         XCTAssertTrue(focusV2.insideAllowsFocus)
         XCTAssertFalse(focusV2.outsideSuppressed)
+
+        let selectWorkspaceV1 = TerminalController.debugSocketCommandPolicySnapshot(
+            commandKey: "select_workspace",
+            isV2: false
+        )
+        XCTAssertTrue(selectWorkspaceV1.insideSuppressed)
+        XCTAssertTrue(selectWorkspaceV1.insideAllowsFocus)
 
         let moveWorkspace = TerminalController.debugSocketCommandPolicySnapshot(
             commandKey: "workspace.move_to_window",
@@ -120,6 +109,39 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 #endif
     }
 
+    func testConcurrentSocketPoliciesStayOnTheirOwnRequest() async {
+        let controller = TerminalController.shared
+        let firstEntered = DispatchSemaphore(value: 0)
+        let secondEntered = DispatchSemaphore(value: 0)
+        let letFirstFinish = DispatchSemaphore(value: 0)
+        let letSecondFinish = DispatchSemaphore(value: 0)
+        let first = Task.detached {
+            controller.withSocketCommandPolicy(commandKey: "workspace.select", isV2: true) {
+                firstEntered.signal()
+                _ = letFirstFinish.wait(timeout: .now() + 5)
+                return TerminalController.socketCommandAllowsInAppFocusMutations()
+            }
+        }
+        _ = firstEntered.wait(timeout: .now() + 5)
+        let second = Task.detached {
+            controller.withSocketCommandPolicy(commandKey: "ping", isV2: false) {
+                secondEntered.signal()
+                _ = letSecondFinish.wait(timeout: .now() + 5)
+                return TerminalController.socketCommandAllowsInAppFocusMutations()
+            }
+        }
+        _ = secondEntered.wait(timeout: .now() + 5)
+        // Neither worker request contaminates the operator's main thread.
+        XCTAssertFalse(TerminalController.shouldSuppressSocketCommandActivation())
+        letFirstFinish.signal()
+        let firstAllowed = await first.value
+        XCTAssertTrue(firstAllowed)
+        letSecondFinish.signal()
+        let secondAllowed = await second.value
+        XCTAssertFalse(secondAllowed)
+        XCTAssertNil(SocketCommandContext.current)
+    }
+
     func testPingHasContextFreeSocketWorkerResponse() async {
         let response = await Task.detached {
             XCTAssertFalse(Thread.isMainThread)
@@ -132,8 +154,8 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
     }
 
     func testRemoteStatusPayloadOmitsSensitiveSSHConfiguration() {
-        let tabManager = TabManager()
-        let workspace = tabManager.addWorkspace(select: false, eagerLoadTerminal: false)
+        let workspaceManager = WorkspaceManager()
+        let workspace = workspaceManager.addWorkspace(select: false, eagerLoadTerminal: false)
 
         workspace.configureRemoteConnection(
             .init(
@@ -178,84 +200,6 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
             throw posixError("lstat(\(path))")
         }
         return UInt16(fileInfo.st_mode & 0o777)
-    }
-
-    private func sendCommands(_ commands: [String], to socketPath: String) throws -> [String] {
-        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else {
-            throw posixError("socket(AF_UNIX)")
-        }
-        defer { Darwin.close(fd) }
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-
-        let bytes = Array(socketPath.utf8)
-        let maxPathLen = MemoryLayout.size(ofValue: addr.sun_path)
-        guard bytes.count < maxPathLen else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENAMETOOLONG))
-        }
-
-        withUnsafeMutablePointer(to: &addr.sun_path) { pathPtr in
-            let cPath = UnsafeMutableRawPointer(pathPtr).assumingMemoryBound(to: CChar.self)
-            cPath.initialize(repeating: 0, count: maxPathLen)
-            for (index, byte) in bytes.enumerated() {
-                cPath[index] = CChar(bitPattern: byte)
-            }
-        }
-
-        let addrLen = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count + 1)
-        let connectResult = withUnsafePointer(to: &addr) { ptr -> Int32 in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                Darwin.connect(fd, sockaddrPtr, addrLen)
-            }
-        }
-        guard connectResult == 0 else {
-            throw posixError("connect(\(socketPath))")
-        }
-
-        var responses: [String] = []
-        for command in commands {
-            try writeLine(command, to: fd)
-            responses.append(try readLine(from: fd))
-        }
-        return responses
-    }
-
-    private func writeLine(_ command: String, to fd: Int32) throws {
-        let payload = Array((command + "\n").utf8)
-        var offset = 0
-        while offset < payload.count {
-            let wrote = payload.withUnsafeBytes { raw in
-                Darwin.write(fd, raw.baseAddress!.advanced(by: offset), payload.count - offset)
-            }
-            guard wrote >= 0 else {
-                throw posixError("write(\(command))")
-            }
-            offset += wrote
-        }
-    }
-
-    private func readLine(from fd: Int32) throws -> String {
-        var buffer = [UInt8](repeating: 0, count: 1)
-        var data = Data()
-
-        while true {
-            let count = Darwin.read(fd, &buffer, 1)
-            guard count >= 0 else {
-                throw posixError("read")
-            }
-            if count == 0 { break }
-            if buffer[0] == 0x0A { break }
-            data.append(buffer[0])
-        }
-
-        guard let line = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: NSCocoaErrorDomain, code: 0, userInfo: [
-                NSLocalizedDescriptionKey: "Invalid UTF-8 response from socket"
-            ])
-        }
-        return line
     }
 
     private func posixError(_ operation: String) -> NSError {

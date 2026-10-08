@@ -9,6 +9,7 @@ DERIVED_DATA=""
 NAME_SET=0
 BUNDLE_SET=0
 DERIVED_SET=0
+NO_LAUNCH=0
 TAG=""
 WMO=0
 UNIVERSAL=0
@@ -44,6 +45,7 @@ Options:
   --wmo                  Use wholemodule Swift compilation (prod parity).
                          Default is incremental for faster local iteration.
                          Recommended before tag push to catch WMO-only bugs.
+  --no-launch            Stage and sign the artifact without launch or CLI/socket side effects.
   -h, --help             Show this help.
 
 The default derived-data path keys on the tag *family* (the prefix up to
@@ -139,6 +141,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --clean)
       CLEAN=1
+      shift
+      ;;
+    --no-launch)
+      NO_LAUNCH=1
       shift
       ;;
     -h|--help)
@@ -300,31 +306,27 @@ if [[ -f "$INFO_PLIST" ]]; then
   APP_SUPPORT_DIR="$HOME/Library/Application Support/c11"
   CMUXD_SOCKET="${APP_SUPPORT_DIR}/c11d-${STAGING_SLUG}.sock"
   CMUX_SOCKET="/tmp/c11-${STAGING_SLUG}.sock"
-  write_last_socket_path "$CMUX_SOCKET"
+  if [[ "$NO_LAUNCH" -eq 0 ]]; then
+    write_last_socket_path "$CMUX_SOCKET"
+  fi
   /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXD_UNIX_PATH \"${CMUXD_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUXD_UNIX_PATH string \"${CMUXD_SOCKET}\"" "$INFO_PLIST"
   /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_SOCKET_PATH \"${CMUX_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_SOCKET_PATH string \"${CMUX_SOCKET}\"" "$INFO_PLIST"
-  if [[ -S "$CMUXD_SOCKET" ]]; then
+  if [[ "$NO_LAUNCH" -eq 0 && -S "$CMUXD_SOCKET" ]]; then
     for PID in $(lsof -t "$CMUXD_SOCKET" 2>/dev/null); do
       kill "$PID" 2>/dev/null || true
     done
     rm -f "$CMUXD_SOCKET"
   fi
-  if [[ -S "$CMUX_SOCKET" ]]; then
+  if [[ "$NO_LAUNCH" -eq 0 && -S "$CMUX_SOCKET" ]]; then
     rm -f "$CMUX_SOCKET"
   fi
   /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$STAGING_APP_PATH" >/dev/null 2>&1 || true
 fi
 APP_PATH="$STAGING_APP_PATH"
 
-# Ensure any running instance is fully terminated, regardless of DerivedData path.
-/usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
-sleep 0.3
-# Kill any running staging instance; allow side-by-side with the main and dev apps.
-pkill -f "${APP_NAME}.app/Contents/MacOS/${BASE_EXECUTABLE_NAME}" || true
-sleep 0.3
 C11D_SRC="$PWD/c11d/zig-out/bin/c11d"
 if [[ -d "$PWD/c11d" ]]; then
   (cd "$PWD/c11d" && zig build -Doptimize=ReleaseFast)
@@ -336,6 +338,18 @@ if [[ -x "$C11D_SRC" ]]; then
   chmod +x "$BIN_DIR/c11d"
   ln -sfh c11d "$BIN_DIR/cmuxd"
 fi
+/usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$APP_PATH"
+/usr/bin/codesign --verify --deep --strict "$APP_PATH"
+if [[ "$NO_LAUNCH" -eq 1 ]]; then
+  echo "APP_PATH=$APP_PATH"
+  exit 0
+fi
+# Ensure any running instance is fully terminated, regardless of DerivedData path.
+/usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
+sleep 0.3
+# Kill any running staging instance; allow side-by-side with the main and dev apps.
+pkill -f "${APP_NAME}.app/Contents/MacOS/${BASE_EXECUTABLE_NAME}" || true
+sleep 0.3
 # Avoid inheriting c11/ghostty environment variables from the terminal that
 # runs this script (often inside another c11 instance), which can cause
 # socket and resource-path conflicts.
@@ -345,6 +359,7 @@ OPEN_CLEAN_ENV=(
   -u C11_SURFACE_ID
   -u C11_WORKSPACE_ID
   -u C11_SURFACE_NUM
+  -u C11_TAB_NUM
   -u C11_TAB_ID
   -u C11_PANEL_ID
   -u C11_TAG

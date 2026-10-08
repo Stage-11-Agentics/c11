@@ -9,6 +9,7 @@ DERIVED_DATA=""
 NAME_SET=0
 BUNDLE_SET=0
 DERIVED_SET=0
+NO_LAUNCH=0
 TAG=""
 CMUX_DEBUG_LOG=""
 CLI_PATH=""
@@ -127,6 +128,7 @@ Options:
   --name <app name>      Override app display/bundle name.
   --bundle-id <id>       Override bundle identifier.
   --derived-data <path>  Override derived data path.
+  --no-launch            Stage and sign the artifact without launch or CLI/socket side effects.
   -h, --help             Show this help.
 EOF
 }
@@ -247,6 +249,10 @@ while [[ $# -gt 0 ]]; do
       DERIVED_SET=1
       shift 2
       ;;
+    --no-launch)
+      NO_LAUNCH=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -299,8 +305,10 @@ XCODEBUILD_ARGS+=(build)
 
 "$(cd "$(dirname "$0")" && pwd)/assert-ghosttykit.sh"
 XCODE_LOG="/tmp/c11-xcodebuild-${TAG_SLUG}.log"
-"$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$XCODE_LOG" | grep -E '(warning:|error:|fatal:|BUILD FAILED|BUILD SUCCEEDED|\*\* BUILD)' || true
+set +e
+"$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$XCODE_LOG" | grep -E '(warning:|error:|fatal:|BUILD FAILED|BUILD SUCCEEDED|\*\* BUILD)'
 XCODE_EXIT="${PIPESTATUS[0]}"
+set -e
 echo "Full build log: $XCODE_LOG"
 if [[ "$XCODE_EXIT" -ne 0 ]]; then
   echo "error: xcodebuild failed with exit code $XCODE_EXIT" >&2
@@ -347,7 +355,7 @@ if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
   exit 1
 fi
 
-if [[ -n "${TAG_SLUG:-}" ]]; then
+if [[ "$NO_LAUNCH" -eq 0 && -n "${TAG_SLUG:-}" ]]; then
   TMP_COMPAT_DERIVED_LINK="/tmp/c11-${TAG_SLUG}"
   if [[ "$DERIVED_DATA" != "$TMP_COMPAT_DERIVED_LINK" ]]; then
     ABS_DERIVED_DATA="$(cd "$DERIVED_DATA" && pwd)"
@@ -368,13 +376,23 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
       || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$INFO_PLIST" 2>/dev/null \
       || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$INFO_PLIST"
+    # xcodebuild may process the source Info.plist after target shell phases,
+    # so stamp the final tagged bundle immediately before signing. The CLI and
+    # socket server use this shared identity to prove they are the same build.
+    C11_COMMIT="$(git -C "$PWD" rev-parse --short=9 HEAD 2>/dev/null || true)"
+    if [[ -n "$C11_COMMIT" ]]; then
+      /usr/libexec/PlistBuddy -c "Set :C11Commit $C11_COMMIT" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :C11Commit string $C11_COMMIT" "$INFO_PLIST"
+    fi
     if [[ -n "${TAG_SLUG:-}" ]]; then
       APP_SUPPORT_DIR="$HOME/Library/Application Support/c11"
       CMUXD_SOCKET="${APP_SUPPORT_DIR}/c11d-dev-${TAG_SLUG}.sock"
       CMUX_SOCKET="/tmp/c11-debug-${TAG_SLUG}.sock"
       CMUX_DEBUG_LOG="/tmp/c11-debug-${TAG_SLUG}.log"
-      write_last_socket_path "$CMUX_SOCKET"
-      echo "$CMUX_DEBUG_LOG" > /tmp/c11-last-debug-log-path || true
+      if [[ "$NO_LAUNCH" -eq 0 ]]; then
+        write_last_socket_path "$CMUX_SOCKET"
+        echo "$CMUX_DEBUG_LOG" > /tmp/c11-last-debug-log-path || true
+      fi
       /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
       /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXD_UNIX_PATH \"${CMUXD_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
         || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUXD_UNIX_PATH string \"${CMUXD_SOCKET}\"" "$INFO_PLIST"
@@ -390,13 +408,13 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
         || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD string 1" "$INFO_PLIST"
       /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_REPO_ROOT \"${PWD}\"" "$INFO_PLIST" 2>/dev/null \
         || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_REPO_ROOT string \"${PWD}\"" "$INFO_PLIST"
-      if [[ -S "$CMUXD_SOCKET" ]]; then
+      if [[ "$NO_LAUNCH" -eq 0 && -S "$CMUXD_SOCKET" ]]; then
         for PID in $(lsof -t "$CMUXD_SOCKET" 2>/dev/null); do
           kill "$PID" 2>/dev/null || true
         done
         rm -f "$CMUXD_SOCKET"
       fi
-      if [[ -S "$CMUX_SOCKET" ]]; then
+      if [[ "$NO_LAUNCH" -eq 0 && -S "$CMUX_SOCKET" ]]; then
         rm -f "$CMUX_SOCKET"
       fi
     fi
@@ -405,6 +423,33 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
   APP_PATH="$TAG_APP_PATH"
 fi
 
+CMUXD_SRC="$PWD/c11d/zig-out/bin/c11d"
+GHOSTTY_HELPER_SRC="$PWD/ghostty/zig-out/bin/ghostty"
+if [[ -d "$PWD/c11d" ]]; then
+  (cd "$PWD/c11d" && zig build -Doptimize=ReleaseFast)
+fi
+if [[ -d "$PWD/ghostty" ]]; then
+  (cd "$PWD/ghostty" && zig build cli-helper -Dapp-runtime=none -Demit-macos-app=false -Demit-xcframework=false -Doptimize=ReleaseFast)
+fi
+if [[ -x "$CMUXD_SRC" ]]; then
+  BIN_DIR="$APP_PATH/Contents/Resources/bin"
+  mkdir -p "$BIN_DIR"
+  cp "$CMUXD_SRC" "$BIN_DIR/c11d"
+  chmod +x "$BIN_DIR/c11d"
+fi
+if [[ -x "$GHOSTTY_HELPER_SRC" ]]; then
+  BIN_DIR="$APP_PATH/Contents/Resources/bin"
+  mkdir -p "$BIN_DIR"
+  cp "$GHOSTTY_HELPER_SRC" "$BIN_DIR/ghostty"
+  chmod +x "$BIN_DIR/ghostty"
+fi
+# All bundle mutations precede the final signature. Build-only mode has no launch side effects.
+/usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$APP_PATH"
+/usr/bin/codesign --verify --deep --strict "$APP_PATH"
+if [[ "$NO_LAUNCH" -eq 1 ]]; then
+  echo "APP_PATH=$APP_PATH"
+  exit 0
+fi
 CLI_PATH="$(dirname "$APP_PATH")/c11"
 if [[ -x "$CLI_PATH" ]]; then
   (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/c11-last-cli-path) || true
@@ -437,26 +482,6 @@ else
   pkill -f "${APP_NAME}.app/Contents/MacOS/${BASE_EXECUTABLE_NAME}" || true
 fi
 sleep 0.3
-CMUXD_SRC="$PWD/c11d/zig-out/bin/c11d"
-GHOSTTY_HELPER_SRC="$PWD/ghostty/zig-out/bin/ghostty"
-if [[ -d "$PWD/c11d" ]]; then
-  (cd "$PWD/c11d" && zig build -Doptimize=ReleaseFast)
-fi
-if [[ -d "$PWD/ghostty" ]]; then
-  (cd "$PWD/ghostty" && zig build cli-helper -Dapp-runtime=none -Demit-macos-app=false -Demit-xcframework=false -Doptimize=ReleaseFast)
-fi
-if [[ -x "$CMUXD_SRC" ]]; then
-  BIN_DIR="$APP_PATH/Contents/Resources/bin"
-  mkdir -p "$BIN_DIR"
-  cp "$CMUXD_SRC" "$BIN_DIR/c11d"
-  chmod +x "$BIN_DIR/c11d"
-fi
-if [[ -x "$GHOSTTY_HELPER_SRC" ]]; then
-  BIN_DIR="$APP_PATH/Contents/Resources/bin"
-  mkdir -p "$BIN_DIR"
-  cp "$GHOSTTY_HELPER_SRC" "$BIN_DIR/ghostty"
-  chmod +x "$BIN_DIR/ghostty"
-fi
 CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
 if [[ -x "$CLI_PATH" ]]; then
   echo "$CLI_PATH" > /tmp/c11-last-cli-path || true
@@ -470,6 +495,7 @@ OPEN_CLEAN_ENV=(
   -u C11_WORKSPACE_ID
   -u C11_SURFACE_ID
   -u C11_SURFACE_NUM
+  -u C11_TAB_NUM
   -u C11_TAB_ID
   -u C11_PANEL_ID
   -u C11_TAG

@@ -1,0 +1,14 @@
+{
+  "id": "codex-child-completion",
+  "origin": "gap",
+  "events": [],
+  "current": {
+    "mark": "not-observed",
+    "notes": "No notify callback arrived. The retry recorded zero notify rows. No child-completion event was recorded."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "A child callback whose thread id is not the captured root must not be treated as the root finishing, and must not create the root's waiting notification."
+  },
+  "recapture_required": "tagged-build"
+}

@@ -42,6 +42,7 @@ node_modules/
 .next/
 
 # Test outputs
+build-remote/
 tests/visual_output/
 tests/visual_report.html
 
@@ -67,3 +68,6 @@ c11-worktrees/
 
 # Lattice daemon runtime logs
 .lattice/.daemon/
+
+# scripts/release-local.sh output (local production release)
+build-release-local/

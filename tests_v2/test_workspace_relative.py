@@ -67,7 +67,7 @@ def test_list_panels_workspace_relative(c: cmux, cli: str) -> None:
 
     # Use CLI with explicit --workspace flag
     payload = _run_cli_json(cli, ["list-panels", "--workspace", ws_a_ref])
-    surfaces = payload.get("surfaces", [])
+    surfaces = payload.get("panels", [])
     _must(isinstance(surfaces, list), f"Expected surfaces array, got: {payload}")
 
     # Also test via env var
@@ -75,7 +75,7 @@ def test_list_panels_workspace_relative(c: cmux, cli: str) -> None:
         cli, ["list-panels"],
         env_overrides={"CMUX_WORKSPACE_ID": ws_a["id"]}
     )
-    surfaces_env = payload_env.get("surfaces", [])
+    surfaces_env = payload_env.get("panels", [])
     _must(isinstance(surfaces_env, list), f"Expected surfaces array from env, got: {payload_env}")
 
     # Both should return surfaces for the same workspace
@@ -88,19 +88,19 @@ def test_list_panels_workspace_relative(c: cmux, cli: str) -> None:
 
 
 def test_list_panes_workspace_relative(c: cmux, cli: str) -> None:
-    """list-panes with --workspace targets the specified workspace."""
+    """list-areas with --workspace targets the specified workspace."""
     ws_result = c._call("workspace.list")
     workspaces = ws_result.get("workspaces", [])
     _must(len(workspaces) >= 1, "Need at least 1 workspace")
 
     ws_ref = workspaces[0].get("ref", workspaces[0]["id"])
 
-    payload = _run_cli_json(cli, ["list-panes", "--workspace", ws_ref])
-    panes = payload.get("panes", [])
+    payload = _run_cli_json(cli, ["list-areas", "--workspace", ws_ref])
+    panes = payload.get("areas", [])
     _must(isinstance(panes, list), f"Expected panes array, got: {payload}")
     _must(len(panes) >= 1, f"Expected at least 1 pane, got: {panes}")
 
-    print("  PASS: list-panes workspace-relative")
+    print("  PASS: list-areas workspace-relative")
 
 
 def test_send_workspace_relative(c: cmux, cli: str) -> None:
@@ -112,16 +112,16 @@ def test_send_workspace_relative(c: cmux, cli: str) -> None:
     ws = workspaces[0]
 
     # Get a surface in this workspace
-    surfaces = c._call("surface.list", {"workspace_id": ws["id"]})
-    surface_list = surfaces.get("surfaces", [])
+    surfaces = c._call("panel.list", {"workspace_id": ws["id"]})
+    surface_list = surfaces.get("panels", [])
     _must(len(surface_list) >= 1, "Need at least 1 surface in workspace")
 
     # Send a harmless empty echo via env var to verify workspace routing
     output = _run_cli(
         cli, ["send", " "],
-        env_overrides={"CMUX_WORKSPACE_ID": ws["id"]}
+        env_overrides={"CMUX_WORKSPACE_ID": ws["id"], "C11_PANEL_ID": str(surface_list[0]["id"])}
     )
-    _must("OK" in output or "surface" in output.lower(),
+    _must(output.startswith("OK") and "panel:" in output,
           f"Expected OK from send, got: {output}")
     print("  PASS: send workspace-relative (env var accepted)")
 
@@ -135,8 +135,10 @@ def test_send_with_explicit_workspace(c: cmux, cli: str) -> None:
     ws_ref = workspaces[0].get("ref", workspaces[0]["id"])
 
     # Send a space character (harmless) with explicit workspace
-    output = _run_cli(cli, ["send", "--workspace", ws_ref, " "])
-    _must(output.startswith("OK") or "surface" in output.lower(),
+    surface_list = c._call("panel.list", {"workspace_id": ws_ref}).get("panels", [])
+    _must(len(surface_list) >= 1, "Need at least 1 surface in workspace")
+    output = _run_cli(cli, ["send", "--workspace", ws_ref, "--panel", str(surface_list[0]["id"]), " "])
+    _must(output.startswith("OK") and "panel:" in output,
           f"Expected OK from send, got: {output}")
 
     print("  PASS: send with explicit --workspace")
@@ -146,7 +148,7 @@ def test_v2_migrated_commands_output_refs(c: cmux, cli: str) -> None:
     """Verify migrated commands output refs in JSON by default."""
     # list-panels should output refs
     payload = _run_cli_json(cli, ["list-panels"])
-    surfaces = payload.get("surfaces", [])
+    surfaces = payload.get("panels", [])
     if surfaces:
         first = surfaces[0]
         _must("ref" in first or "id" in first,
@@ -157,8 +159,8 @@ def test_v2_migrated_commands_output_refs(c: cmux, cli: str) -> None:
                   f"Default format should suppress id when ref exists: {first}")
 
     # list-panes should output refs
-    payload = _run_cli_json(cli, ["list-panes"])
-    panes = payload.get("panes", [])
+    payload = _run_cli_json(cli, ["list-areas"])
+    panes = payload.get("areas", [])
     if panes:
         first = panes[0]
         _must("ref" in first or "id" in first,
@@ -179,31 +181,31 @@ def test_v2_migrated_commands_output_refs(c: cmux, cli: str) -> None:
 
 
 def test_surface_health_workspace_relative(c: cmux, cli: str) -> None:
-    """surface-health with --workspace targets the specified workspace."""
+    """tab-health with --workspace targets the specified workspace."""
     ws_result = c._call("workspace.list")
     workspaces = ws_result.get("workspaces", [])
     _must(len(workspaces) >= 1, "Need at least 1 workspace")
 
     ws_ref = workspaces[0].get("ref", workspaces[0]["id"])
 
-    payload = _run_cli_json(cli, ["surface-health", "--workspace", ws_ref])
-    surfaces = payload.get("surfaces", [])
+    payload = _run_cli_json(cli, ["panel-health", "--workspace", ws_ref])
+    surfaces = payload.get("panels", [])
     _must(isinstance(surfaces, list), f"Expected surfaces array, got: {payload}")
 
-    print("  PASS: surface-health workspace-relative")
+    print("  PASS: tab-health workspace-relative")
 
 
 def test_non_json_output_uses_refs(c: cmux, cli: str) -> None:
     """Non-JSON output from migrated commands uses ref format."""
     # list-panels non-JSON
     output = _run_cli(cli, ["list-panels"])
-    _must("surface:" in output or "No surfaces" in output,
+    _must("panel:" in output or "No panels" in output,
           f"Expected ref format in list-panels output, got: {output}")
 
     # list-panes non-JSON
-    output = _run_cli(cli, ["list-panes"])
-    _must("pane:" in output or "No panes" in output,
-          f"Expected ref format in list-panes output, got: {output}")
+    output = _run_cli(cli, ["list-areas"])
+    _must("area:" in output or "No areas" in output,
+          f"Expected ref format in list-areas output, got: {output}")
 
     # list-workspaces non-JSON
     output = _run_cli(cli, ["list-workspaces"])

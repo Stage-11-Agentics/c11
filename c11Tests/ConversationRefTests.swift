@@ -58,8 +58,8 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertTrue(decoded.placeholder)
     }
 
-    func testSurfaceConversationsCodableEmitsHistoryArrayExplicitly() throws {
-        let surface = SurfaceConversations(active: nil, history: [])
+    func testPanelConversationsCodableEmitsHistoryArrayExplicitly() throws {
+        let surface = PanelConversations(active: nil, history: [])
         let data = try JSONEncoder().encode(surface)
         let json = String(data: data, encoding: .utf8) ?? ""
         XCTAssertTrue(json.contains("\"history\":[]"),
@@ -471,7 +471,7 @@ final class ConversationRefTests: XCTestCase {
 
         let persisted = try JSONEncoder().encode(await store.snapshot())
         let restored = try JSONDecoder().decode(
-            [String: SurfaceConversations].self,
+            [String: PanelConversations].self,
             from: persisted
         )
         let active = try XCTUnwrap(restored["S1"]?.active)
@@ -819,8 +819,8 @@ final class ConversationRefTests: XCTestCase {
         )
         let store = ConversationStore()
         let audit = await store.seed(from: [
-            "S1": SurfaceConversations(active: ref),
-            "S2": SurfaceConversations(active: ref)
+            "S1": PanelConversations(active: ref),
+            "S2": PanelConversations(active: ref)
         ])
         XCTAssertEqual(audit.quarantinedSurfaceIds, ["S1", "S2"])
         let s1 = await store.active(for: "S1")
@@ -832,14 +832,14 @@ final class ConversationRefTests: XCTestCase {
     func testSeedQuarantinesDistinctInferredCodexOwnersInSameNormalizedCwd() async {
         let store = ConversationStore()
         let audit = await store.seed(from: [
-            "S1": SurfaceConversations(active: ConversationRef(
+            "S1": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "aaaa1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared/../shared",
                 capturedVia: .scrape,
                 state: .suspended
             )),
-            "S2": SurfaceConversations(active: ConversationRef(
+            "S2": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "bbbb1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared",
@@ -858,14 +858,14 @@ final class ConversationRefTests: XCTestCase {
     func testSeedPreservesDistinctCausalCodexOwnersInSameCwd() async {
         let store = ConversationStore()
         let audit = await store.seed(from: [
-            "S1": SurfaceConversations(active: ConversationRef(
+            "S1": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "aaaa1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared",
                 capturedVia: .runtimeEnv,
                 state: .suspended
             )),
-            "S2": SurfaceConversations(active: ConversationRef(
+            "S2": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "bbbb1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared",
@@ -884,21 +884,21 @@ final class ConversationRefTests: XCTestCase {
     func testSeedSameCwdAuditExcludesTombstonedAndUnsupportedCodexRefs() async {
         let store = ConversationStore()
         let audit = await store.seed(from: [
-            "S-active": SurfaceConversations(active: ConversationRef(
+            "S-active": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "aaaa1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared",
                 capturedVia: .scrape,
                 state: .suspended
             )),
-            "S-tombstoned": SurfaceConversations(active: ConversationRef(
+            "S-tombstoned": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "bbbb1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared",
                 capturedVia: .scrape,
                 state: .tombstoned
             )),
-            "S-unsupported": SurfaceConversations(active: ConversationRef(
+            "S-unsupported": PanelConversations(active: ConversationRef(
                 kind: "codex",
                 id: "cccc1111-2222-3333-4444-555566667777",
                 cwd: "/work/shared",
@@ -956,7 +956,7 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertEqual(active?.diagnosticReason, "operator ended")
     }
 
-    func testClearWipesSurface() async {
+    func testClearWipesTab() async {
         let store = ConversationStore()
         await store.push(
             surfaceId: "S1",

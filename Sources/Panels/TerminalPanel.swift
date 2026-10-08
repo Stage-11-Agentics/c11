@@ -8,6 +8,8 @@ import Bonsplit
 @MainActor
 final class TerminalPanel: Panel, ObservableObject {
     let id: UUID
+    /// Ownership is tied to this object, independent of a restored/reused tab UUID.
+    let launchPromptOwner = UUID()
     let createdAt: Date?
     let panelType: PanelType = .terminal
 
@@ -62,7 +64,7 @@ final class TerminalPanel: Panel, ObservableObject {
     /// `lifecycle_state` metadata mirror and dispatches occlusion to
     /// libghostty on state transitions. Visibility is driven from
     /// `TerminalPanelView` via `applyVisibility(_:)`.
-    let lifecycle: SurfaceLifecycleController
+    let lifecycle: PanelLifecycleController
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -95,12 +97,83 @@ final class TerminalPanel: Panel, ObservableObject {
         surface.requestedWorkingDirectory
     }
 
+    /// Post-boot prompts wait for a real launcher Return. Reuse the existing
+    /// nonqueued completion primitive without changing send/mailbox behavior.
+    func submitLaunchPlan(_ plan: LaunchPromptDelivery.Plan,
+                          isLive: @escaping @MainActor () -> Bool,
+                          requestBackgroundStart: Bool = true) {
+        guard let prompt = plan.delayedPrompt else {
+            if isLive() { surface.sendSubmitFormText(plan.launchLine) }
+            return
+        }
+        if requestBackgroundStart, surface.surface == nil {
+            surface.requestBackgroundSurfaceStartIfNeeded()
+        }
+        let sequence = LaunchPostBootSequence(
+            launcher: plan.launchLine, prompt: prompt, isLive: isLive,
+            isReady: { [weak self] in
+                guard let self else { return false }
+                return self.surface.surface != nil && !self.surface.isInputTransactionActive
+            },
+            submit: { [weak self] text, completion in
+                guard let self else { completion(false); return }
+                self.surface.sendSubmitFormText(text, shouldSubmit: { [weak self] in
+                    guard let self else { return false }
+                    return isLive() && self.surface.surface != nil
+                }, completion: completion)
+            }
+        )
+        sequence.start()
+    }
+
+    /// The Settings and New Workspace rails share asynchronous staging and
+    /// revalidate their actual target before binding ownership and submitting.
+    func submitConfiguredAgentLaunch(agent: AgentType, launch: ResolvedAgentLaunch,
+                                     isLive: @escaping @MainActor () -> Bool) {
+        guard agent == .claudeCode,
+              !launch.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            if isLive() { surface.sendSubmitFormText(launch.command) }
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let staged: LaunchPromptStore.StagedPrompt
+            do {
+                staged = try LaunchPromptStore.shared.stage(prompt: launch.initialPrompt)
+            } catch {
+                DispatchQueue.main.async {
+                    guard let self, isLive() else { return }
+                    AppDelegate.shared?.notificationStore?.addNotification(
+                        workspaceId: self.workspaceId, surfaceId: self.id, title: agent.displayName,
+                        subtitle: "",
+                        body: String(localized: "agentLaunch.promptStagingFailed", defaultValue: "Couldn't prepare the agent prompt. Check c11's runtime storage permissions and try again.")
+                    )
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                guard let self, isLive() else {
+                    DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) }
+                    return
+                }
+                do {
+                    try LaunchPromptStore.shared.retain(staged, owner: self.launchPromptOwner)
+                    let delivery = LaunchPromptDelivery.compose(
+                        command: launch.command, delivery: .positional, promptFilePath: staged.url.path
+                    )
+                    self.surface.sendSubmitFormText(delivery.launchLine)
+                } catch {
+                    DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) }
+                }
+            }
+        }
+    }
+
     init(workspaceId: UUID, surface: TerminalSurface, createdAt: Date? = Date()) {
         self.id = surface.id
         self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.surface = surface
-        self.lifecycle = SurfaceLifecycleController(
+        self.lifecycle = PanelLifecycleController(
             workspaceId: workspaceId,
             surfaceId: surface.id,
             initial: .active
@@ -122,7 +195,7 @@ final class TerminalPanel: Panel, ObservableObject {
         // every couple of seconds to track the foreground process.
         // Until that report lands, the surface is registered without
         // a pid and the sidebar renders `—`.
-        SurfaceMetricsSampler.shared.register(surfaceId: surface.id)
+        PanelMetricsSampler.shared.register(surfaceId: surface.id)
 
         // Subscribe to surface's search state changes
         surface.$searchState
@@ -148,16 +221,18 @@ final class TerminalPanel: Panel, ObservableObject {
         workingDirectory: String? = nil,
         portOrdinal: Int = 0,
         initialCommand: String? = nil,
+        initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
         let surface = TerminalSurface(
             id: id,
-            tabId: workspaceId,
+            workspaceId: workspaceId,
             context: context,
             configTemplate: configTemplate,
             workingDirectory: workingDirectory,
             initialCommand: initialCommand,
+            initialInput: initialInput,
             initialEnvironmentOverrides: initialEnvironmentOverrides,
             additionalEnvironment: additionalEnvironment
         )
@@ -243,6 +318,7 @@ final class TerminalPanel: Panel, ObservableObject {
     }
 
     func close() {
+        LaunchPromptStore.shared.release(owner: launchPromptOwner)
         // The surface will be cleaned up by its deinit
         // Detach from the window portal on real close so stale hosted views
         // cannot remain above browser panes after split close.
@@ -260,7 +336,7 @@ final class TerminalPanel: Panel, ObservableObject {
         unfocus()
         hostedView.setVisibleInUI(false)
         TerminalWindowPortalRegistry.detach(hostedView: hostedView)
-        SurfaceMetricsSampler.shared.unregister(surfaceId: id)
+        PanelMetricsSampler.shared.unregister(surfaceId: id)
 #if DEBUG
         dlog(
             "surface.panel.close.end panel=\(id.uuidString.prefix(5)) " +
@@ -294,23 +370,23 @@ final class TerminalPanel: Panel, ObservableObject {
     }
 
     func shouldPersistScrollbackForSessionSnapshot() -> Bool {
-        // Session restore only replays terminal output into a fresh shell. If Ghostty
-        // says we are not safely at a prompt, replaying that state later is misleading.
-        !surface.needsConfirmClose()
+        // Autosave asks only whether the child is live. Operator close confirmation
+        // is a separate prompt-state query and may acquire the renderer lock.
+        surface.hasLiveProcess()
     }
 
     func triggerFlash() {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
         hostedView.triggerFlash()
     }
 
     func triggerFlash(appearance: FlashAppearance) {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
         hostedView.triggerFlash(style: .standardFocus, appearance: appearance)
     }
 
     func triggerNotificationDismissFlash() {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
         hostedView.triggerFlash(style: .notificationDismiss)
     }
 

@@ -349,7 +349,7 @@ final class DefaultAgentResolverTests: XCTestCase {
 
     // MARK: - command builder
 
-    func testBuildCommandClaudeAppendsInitialPromptAsPositional() {
+    func testBuildCommandKeepsInitialPromptOutOfShellLine() {
         let cfg = AgentConfig(
             command: "claude --dangerously-skip-permissions",
             initialPrompt: "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.",
@@ -357,7 +357,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'"
+            "claude --dangerously-skip-permissions"
         )
     }
 
@@ -386,7 +386,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
-    func testBuildCommandEscapesSingleQuoteInPrompt() {
+    func testBuildCommandKeepsQuotedBodyOutOfShellLine() {
         let cfg = AgentConfig(
             command: "claude",
             initialPrompt: "don't stop",
@@ -394,7 +394,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            #"claude 'don'\''t stop'"#
+            "claude"
         )
     }
 
@@ -422,7 +422,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions --model opus 'go'"
+            "claude --dangerously-skip-permissions --model opus"
         )
     }
 
@@ -523,7 +523,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions --effort high 'go'"
+            "claude --dangerously-skip-permissions --effort high"
         )
     }
 
@@ -538,7 +538,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         // model first, then effort, then the positional prompt stays last.
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions --model opus --effort xhigh 'go'"
+            "claude --dangerously-skip-permissions --model opus --effort xhigh"
         )
     }
 
@@ -632,7 +632,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions --append-system-prompt 'Prefer terse answers.' 'go'"
+            "claude --dangerously-skip-permissions --append-system-prompt 'Prefer terse answers.'"
         )
     }
 
@@ -716,7 +716,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions --model opus --effort high --append-system-prompt 'hi' 'go'"
+            "claude --dangerously-skip-permissions --model opus --effort high --append-system-prompt 'hi'"
         )
     }
 
@@ -816,7 +816,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         // The baked form still ships on `command` for the A-button path.
         XCTAssertEqual(
             launch.command,
-            "claude --dangerously-skip-permissions --model opus 'orient the agent'"
+            "claude --dangerously-skip-permissions --model opus"
         )
     }
 
@@ -923,7 +923,9 @@ final class AgentLaunchPlannerTests: XCTestCase {
             request: request,
             userDefault: userDefault,
             projectConfig: projectConfig,
-            userTemplate: userTemplate
+            userTemplate: userTemplate,
+            promptFilePath: request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? "/tmp/owned prompt.txt" : nil
         )
     }
 
@@ -936,7 +938,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
         let p = try result.get()
         XCTAssertEqual(
             p.launchLine,
-            "claude --dangerously-skip-permissions --model opus --effort high 'do the thing'"
+            "claude --dangerously-skip-permissions --model opus --effort high 'Read the file at /tmp/owned prompt.txt and follow it exactly.'"
         )
         XCTAssertNil(p.delayedPrompt)
         XCTAssertEqual(p.agentType, .claudeCode)
@@ -967,7 +969,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
     func testKimiPromptGoesPostBoot() throws {
         let p = try plan(AgentLaunchRequest(kind: "kimi", prompt: "hello")).get()
         XCTAssertEqual(p.launchLine, "kimi --auto")
-        XCTAssertEqual(p.delayedPrompt, "hello")
+        XCTAssertEqual(p.delayedPrompt, "Read the file at /tmp/owned prompt.txt and follow it exactly.")
     }
 
     // MARK: precedence
@@ -1064,7 +1066,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
             userTemplate: template
         ).get()
         XCTAssertEqual(p.launchLine, "aider --yes-always --model gpt-5.2")
-        XCTAssertEqual(p.delayedPrompt, "fix it")
+        XCTAssertEqual(p.delayedPrompt, "Read the file at /tmp/owned prompt.txt and follow it exactly.")
         XCTAssertEqual(p.env["AIDER_ANALYTICS"], "false")
         XCTAssertEqual(p.env["C11_AGENT_TYPE"], "aider")
         XCTAssertNil(p.agentType)
@@ -1083,7 +1085,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
             AgentLaunchRequest(kind: "someagent", prompt: "go"),
             userTemplate: template
         ).get()
-        XCTAssertEqual(p.launchLine, "someagent --prompt 'go'")
+        XCTAssertEqual(p.launchLine, "someagent --prompt 'Read the file at /tmp/owned prompt.txt and follow it exactly.'")
         XCTAssertNil(p.delayedPrompt)
     }
 
@@ -1125,7 +1127,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
         )).get()
         XCTAssertEqual(
             p.launchLine,
-            "claude --dangerously-skip-permissions --model opus --effort high --append-system-prompt 'hi' 'do it'"
+            "claude --dangerously-skip-permissions --model opus --effort high --append-system-prompt 'hi' 'Read the file at /tmp/owned prompt.txt and follow it exactly.'"
         )
     }
 

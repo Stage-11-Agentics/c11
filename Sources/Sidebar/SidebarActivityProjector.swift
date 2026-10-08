@@ -37,6 +37,9 @@ struct AgentActivityHelpProjection: Equatable {
     let flagReason: String?
     let flagRaisedAt: Date?
     let suppressed: Bool
+    /// Cold because the agent's prompt cache expired, not because it sat
+    /// past the dormancy threshold. The mark carries it as a color.
+    var promptCacheExpired = false
 
     static func project(
         state: WorkspacePulseState,
@@ -46,9 +49,11 @@ struct AgentActivityHelpProjection: Equatable {
         flagReason: String?,
         flagRaisedAt: Date?,
         suppressed: Bool,
-        now: Date = Date()
+        now: Date = Date(),
+        journal: JournalSnapshot? = nil,
+        promptCache: PromptCacheObservation? = nil
     ) -> AgentActivityHelpProjection {
-        let stateStartedAt: Date?
+        var stateStartedAt: Date?
         switch state {
         case .waiting:
             stateStartedAt = waitingStartedAt
@@ -66,6 +71,11 @@ struct AgentActivityHelpProjection: Equatable {
                 localized: "surface.activity.flagged",
                 defaultValue: "Flagged: \(normalizedReason)"
             ))
+        } else if flagReason != nil {
+            detailLines.append(String(
+                localized: "surface.activity.flaggedNoReason",
+                defaultValue: "Flagged"
+            ))
         }
         if suppressed {
             detailLines.append(String(
@@ -74,8 +84,37 @@ struct AgentActivityHelpProjection: Equatable {
             ))
         }
 
+        var label = localizedStateLabel(state)
+        if let journal {
+            stateStartedAt = journal.isHistorical ? nil : Date(timeIntervalSince1970: Double(journal.sinceMs) / 1000)
+            if journal.isHistorical {
+                detailLines.append(String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed"))
+                detailLines.append(String(localized: "journal.state.disconnected", defaultValue: "Disconnected"))
+            }
+            if journal.health != .ok { detailLines.append(String(localized: "journal.state.degraded", defaultValue: "Degraded")) }
+            if journal.phase == .error { label = String(localized: "journal.state.error", defaultValue: "Error") }
+            if journal.phase == .unknown || (journal.isHistorical && !journal.paintsAttention) {
+                label = String(localized: "journal.state.unknown", defaultValue: "Unknown")
+            }
+            switch journal.reason {
+            case .approval: detailLines.append(String(localized: "journal.reason.approval", defaultValue: "Approval"))
+            case .question: detailLines.append(String(localized: "journal.reason.question", defaultValue: "Question"))
+            case .planReview: detailLines.append(String(localized: "journal.reason.planReview", defaultValue: "Plan review"))
+            default: break
+            }
+        }
+        // Cold from the cache paints the mark blue; a waiting agent keeps its
+        // gold mark and carries the expiry in text only.
+        var promptCacheExpired = false
+        if state == .cold || state == .waiting, let promptCache, promptCache.isCold(at: now) {
+            detailLines.append(contentsOf: promptCacheLines(promptCache))
+            if state == .cold {
+                promptCacheExpired = true
+                stateStartedAt = promptCache.coldAt()
+            }
+        }
         let help = BonsplitTabActivityHelp(
-            stateLabel: localizedStateLabel(state),
+            stateLabel: label,
             startedAt: stateStartedAt,
             durationFormat: String(
                 localized: "surface.activity.durationFormat",
@@ -94,8 +133,51 @@ struct AgentActivityHelpProjection: Equatable {
             lastActivityAt: lastActivityAt,
             flagReason: normalizedReason.flatMap { $0.isEmpty ? nil : $0 },
             flagRaisedAt: flagRaisedAt,
-            suppressed: suppressed
+            suppressed: suppressed,
+            promptCacheExpired: promptCacheExpired
         )
+    }
+
+    /// What expired and what the next message costs. Static text: the
+    /// state label already carries how long ago.
+    static func promptCacheLines(_ cache: PromptCacheObservation, locale: Locale = PanelSheetClockText.appLocale) -> [String] {
+        var lines: [String] = []
+        switch (cache.reset, cache.basis) {
+        case (.modelSwitch?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetModelSwitch",
+                defaultValue: "Prompt cache reset by a model switch"
+            ))
+        case (.effortChange?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetEffortChange",
+                defaultValue: "Prompt cache reset by an effort change"
+            ))
+        case (.compaction?, _):
+            lines.append(String(
+                localized: "surface.activity.promptCache.resetCompaction",
+                defaultValue: "Prompt cache reset by compaction"
+            ))
+        case (nil, .ttl(let seconds)):
+            let ttl = PanelSheetClockText.duration(seconds, locale: locale)
+            lines.append(String(
+                localized: "surface.activity.promptCache.expired",
+                defaultValue: "Prompt cache expired (\(ttl) cache)"
+            ))
+        case (nil, .estimate):
+            lines.append(String(
+                localized: "surface.activity.promptCache.likelyExpired",
+                defaultValue: "Prompt cache likely expired (estimated)"
+            ))
+        }
+        if let tokens = cache.promptTokens, tokens > 0 {
+            let count = PanelSheetClockText.count(tokens, locale: locale)
+            lines.append(String(
+                localized: "surface.activity.promptCache.recache",
+                defaultValue: "Next message re-caches about \(count) tokens"
+            ))
+        }
+        return lines
     }
 
     func text(at now: Date) -> String {
@@ -119,10 +201,15 @@ struct AgentActivityHelpProjection: Equatable {
     }
 }
 
-struct SurfaceActivityDetailsSnapshot: Equatable {
+struct PanelActivityDetailsSnapshot: Equatable {
     let activityHelp: AgentActivityHelpProjection?
     let createdAt: Date?
     let lastActivityAt: Date?
+    /// C11-243: the stored moment the operator last STOPPED looking at this tab
+    /// (nil if never). Not "now" while being seen: when `isBeingSeen` is true the
+    /// Seen clock renders "now"; otherwise it renders this value.
+    var lastSeenAt: Date? = nil
+    var isBeingSeen: Bool = false
 }
 
 struct WorkspacePulseAgent: Equatable, Identifiable {
@@ -138,6 +225,12 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     let activityHelp: AgentActivityHelpProjection?
 
     var id: UUID { surfaceId }
+
+    /// The cold line turns blue when the agent's prompt cache expired; the
+    /// flag's violet wins over it.
+    var showsPromptCacheColor: Bool {
+        !flagged && presentedState == .cold && activityHelp?.promptCacheExpired == true
+    }
 
     init(
         surfaceId: UUID,
@@ -161,7 +254,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     /// modifiers are present. The stored `state` remains the source truth for
     /// C11-184; renderers and summary counts consume this presented value.
     var presentedState: WorkspacePulseState {
-        SurfaceAttentionSnapshot.presentedState(
+        PanelAttentionSnapshot.presentedState(
             state,
             flagged: flagged,
             suppressed: suppressed

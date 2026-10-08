@@ -162,6 +162,8 @@ A per-kind scraper performs bounded filesystem I/O on demand:
 
 Future strategies inherit this rule; new kinds do not get to relax it without an explicit plan-review-level decision.
 
+**Agent signals (`AgentModelDetection.swift`) are the one approved content read.** To show which model a live agent tab is using and when the agent last added something, c11 tails the session file it already located for resume: the first read scans at most the last 4 MiB (a `turn_context` line may be searched for further back, by substring only), later polls read only appended bytes (never the whole transcript again), all off-main. Each line is parsed in memory and dropped. What is retained is exactly: the model id (`message.model`, `turn_context.payload.model`, `model_change.modelId`/`model`; `session.model` in opencode's SQLite; `current_model_id` in grok's `summary.json`), published as `model_detected`; event timestamps (last agent event, current turn start); a tool-call count and a token count for the current turn; and message ids, held only as dedupe keys for that turn's token count. No message text, prompt, tool input or tool output is kept, logged or published. The rule above is otherwise unchanged.
+
 ### Wrapper-claim (lowest priority)
 
 The wrapper, at launch, issues `c11 conversation claim --kind <k> --cwd "$PWD"` so the surface has *something* before the TUI fires its first hook. The store mints a placeholder ref with `placeholder: true`. For TUIs that never fire hooks, this is the only push-side signal the strategy ever sees; the scraper is responsible for replacing the placeholder id with the real one once a candidate session file appears.
@@ -494,6 +496,6 @@ The remaining strategic call (still open):
 - `Sources/Conversation/Strategies/Opencode.swift` — Opencode strategy (fresh-launch only in v1).
 - `Sources/Conversation/Strategies/Kimi.swift` — Kimi strategy (fresh-launch only in v1).
 - `Sources/Conversation/Scrapers/ClaudeCodeScraper.swift`, `CodexScraper.swift` — bounded I/O providers, mockable for tests.
-- `Sources/Conversation/SurfaceActivity.swift` — per-surface `lastActivityTimestamp` primitive (terminal input + output, debounced).
+- `Sources/Conversation/PanelActivity.swift` — per-surface `lastActivityTimestamp` primitive (terminal input + output, debounced).
 - `Tests/ConversationStoreTests/ConversationStoreFailureModeTests.swift` — 1:1 mapping with §Failure modes table.
 - `Tests/ConversationStoreTests/Fixtures/codex/two-panes-same-cwd/` — fixture dir for the staging-QA regression test.

@@ -52,11 +52,18 @@ extension TerminalController {
 
     private func v2Capabilities() -> [String: Any] {
         var methods: [String] = [
+            "agent.event.append",
+            "agents.list",
+            "journal.clear",
+            "journal.status",
             "system.ping",
             "system.capabilities",
             "system.identify",
             "system.brand",
             "system.tree",
+            "history.list",
+            "history.back",
+            "history.forward",
             "auth.login",
             "window.list",
             "window.current",
@@ -70,6 +77,23 @@ extension TerminalController {
             "workspace.close",
             "workspace.move_to_window",
             "workspace.reorder",
+            "workspace.reorder_batch",
+            "workspace.group.list",
+            "workspace.group.create",
+            "workspace.group.rename",
+            "workspace.group.delete",
+            "workspace.group.ungroup",
+            "workspace.group.add",
+            "workspace.group.remove",
+            "workspace.group.move",
+            "workspace.group.collapse",
+            "workspace.group.expand",
+            "workspace.group.pin",
+            "workspace.group.unpin",
+            "workspace.group.set_color",
+            "workspace.group.set_icon",
+            "workspace.group.focus",
+
             "workspace.rename",
             "workspace.set_root",
             "workspace.get_root",
@@ -86,32 +110,45 @@ extension TerminalController {
             "workspace.get_metadata",
             "workspace.clear_metadata",
             "workspace.apply",
+            "workspace.recents.list",
+            "workspace.recents.pin",
+            "workspace.recents.unpin",
+            "workspace.recents.remove",
+            "workspace.recents.resolve",
+            "workspace.create_in_directory",
             "settings.open",
             "feedback.open",
             "feedback.submit",
-            "surface.list",
-            "surface.current",
-            "surface.focus",
-            "surface.split",
-            "surface.create",
-            "surface.close",
-            "surface.drag_to_split",
-            "surface.move",
-            "surface.reorder",
-            "surface.action",
-            "tab.action",
-            "surface.refresh",
-            "surface.health",
+            "panel.list",
+            "panel.current",
+            "panel.focus",
+            "panel.split",
+            "panel.create",
+            "panel.close",
+            "panel.drag_to_split",
+            "panel.move",
+            "panel.reorder",
+            "panel.action",
+            "panel.refresh",
+            "panel.health",
             "debug.terminals",
-            "surface.send_text",
-            "surface.send_key",
-            "surface.read_text",
-            "surface.clear_history",
-            "surface.trigger_flash",
-            "surface.cancel_flash",
-            "surface.set_metadata",
-            "surface.get_metadata",
-            "surface.clear_metadata",
+            "panel.send_text",
+            "panel.send_key",
+            "panel.read_text",
+            "panel.clear_history",
+            "panel.trigger_flash",
+            "panel.cancel_flash",
+            "panel.set_metadata",
+            "panel.get_metadata",
+            "panel.clear_metadata",
+            "panel.set_custom_color",
+            "panel.get_titlebar_state",
+            "panel.set_titlebar_visibility",
+            "panel.set_titlebar_collapsed",
+            // C11-337: the v0.67 CLI decides its vocabulary tier by probing for
+            // `tab.list`; advertising it keeps that CLI on tab spellings, which
+            // `LegacyWireAliases` still accepts. The one non-canonical entry.
+            "tab.list",
             "agent.launch",
             "flag.raise",
             "flag.lower",
@@ -128,20 +165,21 @@ extension TerminalController {
             "config.default",
             "config.launch",
             "mailbox.resolve",
-            "pane.list",
-            "pane.focus",
-            "pane.surfaces",
-            "pane.create",
-            "pane.resize",
-            "pane.swap",
-            "pane.break",
-            "pane.join",
-            "pane.last",
-            "pane.set_metadata",
-            "pane.get_metadata",
-            "pane.clear_metadata",
+            "area.list",
+            "area.focus",
+            "area.panels",
+            "area.create",
+            "area.resize",
+            "area.swap",
+            "area.break",
+            "area.join",
+            "area.last",
+            "area.confirm",
+            "area.set_metadata",
+            "area.get_metadata",
+            "area.clear_metadata",
             "notification.create",
-            "notification.create_for_surface",
+            "notification.create_for_panel",
             "notification.create_for_target",
             "notification.list",
             "notification.clear",
@@ -151,6 +189,11 @@ extension TerminalController {
             "markdown.get_content",
             "sidebar.state",
             "browser.open_split",
+            "browser.profiles.list",
+            "browser.profiles.add",
+            "browser.profiles.rename",
+            "browser.profiles.clear",
+            "browser.profiles.delete",
             "browser.navigate",
             "browser.back",
             "browser.forward",
@@ -208,10 +251,10 @@ extension TerminalController {
             "browser.storage.get",
             "browser.storage.set",
             "browser.storage.clear",
-            "browser.tab.new",
-            "browser.tab.list",
-            "browser.tab.switch",
-            "browser.tab.close",
+            "browser.panel.new",
+            "browser.panel.list",
+            "browser.panel.switch",
+            "browser.panel.close",
             "browser.console.list",
             "browser.console.clear",
             "browser.errors.list",
@@ -235,14 +278,21 @@ extension TerminalController {
             "browser.input_keyboard",
             "browser.input_touch",
         ]
+        if CapabilityFeatures.current.supports(.windowResize) {
+            methods.append("window.resize")
+        }
 #if DEBUG
         methods.append(contentsOf: [
             "debug.shortcut.set",
             "debug.shortcut.simulate",
             "debug.type",
+            "debug.terminal.operator_keys",
+            "debug.terminal.scroll_viewport",
+            "debug.terminal.runtime_start_hold",
+            "debug.feed_answer.hold_after_paste",
             "debug.app.activate",
             "debug.command_palette.toggle",
-            "debug.command_palette.rename_tab.open",
+            "debug.command_palette.rename_panel.open",
             "debug.command_palette.visible",
             "debug.command_palette.selection",
             "debug.command_palette.results",
@@ -252,6 +302,7 @@ extension TerminalController {
             "debug.command_palette.rename_input.select_all",
             "debug.browser.address_bar_focused",
             "debug.browser.favicon",
+            "debug.browser.simulate_web_content_termination",
             "debug.sidebar.visible",
             "debug.terminal.is_focused",
             "debug.terminal.read_text",
@@ -260,30 +311,58 @@ extension TerminalController {
             "debug.portal.stats",
             "debug.bonsplit_underflow.count",
             "debug.bonsplit_underflow.reset",
-            "debug.empty_panel.count",
-            "debug.empty_panel.reset",
+            "debug.empty_area.count",
+            "debug.empty_area.reset",
             "debug.notification.focus",
             "debug.flash.count",
             "debug.flash.reset",
             "debug.panel_snapshot",
             "debug.panel_snapshot.reset",
             "debug.window.screenshot",
+            "debug.panel_sheet.open",
+            "debug.panel_rail.open",
+            "debug.panel_strip.scroll",
+            "debug.panel_sheet.hover",
+            "debug.panel_sheet.motion_scale",
+            "debug.panel_sheet.detail",
             "debug.session.round_trip",
             "debug.session.round_trip_workspaces",
         ])
 #endif
+
+        if CapabilityFeatures.current.supports(.terminalSelection) {
+            methods.append("panel.read_selection")
+        }
+        if CapabilityFeatures.current.supports(.terminalInputState) {
+            methods.append("panel.input_state")
+        }
+        if CapabilityFeatures.current.supports(.feedAsks) {
+            methods.append("feed.list")
+            methods.append("feed.answer")
+            methods.append("feed.open")
+            methods.append("feed.note_display")
+        }
+        if CapabilityFeatures.current.supports(.markdownAgentCLI) {
+            methods.append(contentsOf: [
+                "markdown.scroll", "markdown.visible", "markdown.theme",
+                "markdown.typeface", "markdown.font", "markdown.open_external"
+            ])
+        }
 
         return [
             "protocol": "cmux-socket",
             "version": 2,
             "socket_path": socketPath,
             "access_mode": accessMode.rawValue,
-            "methods": methods.sorted()
+            "methods": methods.sorted(),
+            "features_version": CapabilityFeatures.schemaVersion,
+            "features": CapabilityFeatures.current.payload,
+            "server": C11BuildIdentity(info: Bundle.main.infoDictionary ?? [:]).payload
         ]
     }
 
     private func v2Identify(params: [String: Any]) -> [String: Any] {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return [
                 "socket_path": socketPath,
                 "focused": NSNull(),
@@ -293,9 +372,9 @@ extension TerminalController {
 
         var focused: [String: Any] = [:]
         v2MainSync {
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
-            if let wsId = tabManager.selectedTabId,
-               let ws = tabManager.tabs.first(where: { $0.id == wsId }) {
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            if let wsId = workspaceManager.selectedWorkspaceId,
+               let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
                 let paneUUID = ws.bonsplitController.focusedPaneId?.id
                 let surfaceUUID = ws.focusedPanelId
                 focused = [
@@ -308,8 +387,6 @@ extension TerminalController {
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "surface_id": v2OrNull(surfaceUUID?.uuidString),
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceUUID),
-                    "tab_id": v2OrNull(surfaceUUID?.uuidString),
-                    "tab_ref": v2TabRef(uuid: surfaceUUID),
                     "surface_type": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType.rawValue }),
                     "is_browser_surface": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType == .browser })
                 ]
@@ -325,11 +402,12 @@ extension TerminalController {
         var resolvedCaller: [String: Any]? = nil
         if let callerObj = params["caller"] as? [String: Any],
            let wsId = v2UUIDAny(callerObj["workspace_id"]) {
-            let surfaceId = v2UUIDAny(callerObj["surface_id"]) ?? v2UUIDAny(callerObj["tab_id"])
+            let surfaceId = v2UUIDAny(callerObj["panel_id"]) ?? v2UUIDAny(callerObj["surface_id"])
+                ?? v2UUIDAny(callerObj["tab_id"])
             v2MainSync {
-                let callerTabManager = AppDelegate.shared?.tabManagerFor(tabId: wsId) ?? tabManager
-                if let ws = callerTabManager.tabs.first(where: { $0.id == wsId }) {
-                    let callerWindowId = v2ResolveWindowId(tabManager: callerTabManager)
+                let callerWorkspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) ?? workspaceManager
+                if let ws = callerWorkspaceManager.workspaces.first(where: { $0.id == wsId }) {
+                    let callerWindowId = v2ResolveWindowId(workspaceManager: callerWorkspaceManager)
                     var payload: [String: Any] = [
                         "window_id": v2OrNull(callerWindowId?.uuidString),
                         "window_ref": v2Ref(kind: .window, uuid: callerWindowId),
@@ -342,8 +420,6 @@ extension TerminalController {
                         let paneUUID = ws.paneId(forPanelId: surfaceId)?.id
                         payload["surface_id"] = surfaceId.uuidString
                         payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
-                        payload["tab_id"] = surfaceId.uuidString
-                        payload["tab_ref"] = v2TabRef(uuid: surfaceId)
                         payload["surface_type"] = v2OrNull(ws.panels[surfaceId]?.panelType.rawValue)
                         payload["is_browser_surface"] = v2OrNull(ws.panels[surfaceId]?.panelType == .browser)
                         payload["pane_id"] = v2OrNull(paneUUID?.uuidString)
@@ -351,8 +427,6 @@ extension TerminalController {
                     } else {
                         payload["surface_id"] = NSNull()
                         payload["surface_ref"] = NSNull()
-                        payload["tab_id"] = NSNull()
-                        payload["tab_ref"] = NSNull()
                         payload["surface_type"] = NSNull()
                         payload["is_browser_surface"] = NSNull()
                         payload["pane_id"] = NSNull()
@@ -472,17 +546,17 @@ extension TerminalController {
             let callerScopeWorkspaceId: UUID? = callerWorkspaceId ?? focusedWorkspaceId
 
             for (windowIndex, summary) in summaries.enumerated() {
-                guard let manager = app.tabManagerFor(windowId: summary.windowId) else { continue }
+                guard let manager = app.workspaceManagerFor(windowId: summary.windowId) else { continue }
 
                 if let workspaceFilter {
-                    guard let workspaceIndex = manager.tabs.firstIndex(where: { $0.id == workspaceFilter }) else {
+                    guard let workspaceIndex = manager.workspaces.firstIndex(where: { $0.id == workspaceFilter }) else {
                         continue
                     }
-                    let workspace = manager.tabs[workspaceIndex]
+                    let workspace = manager.workspaces[workspaceIndex]
                     let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
-                        selected: workspace.id == manager.selectedTabId
+                        selected: workspace.id == manager.selectedWorkspaceId
                     )
                     windowNodes = [
                         v2TreeWindowNode(
@@ -497,11 +571,11 @@ extension TerminalController {
 
                 switch scope {
                 case "all":
-                    let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
+                    let workspaceNodesForWindow = manager.workspaces.enumerated().map { workspaceIndex, workspace in
                         v2TreeWorkspaceNode(
                             workspace: workspace,
                             index: workspaceIndex,
-                            selected: workspace.id == manager.selectedTabId
+                            selected: workspace.id == manager.selectedWorkspaceId
                         )
                     }
                     windowNodes.append(
@@ -514,11 +588,11 @@ extension TerminalController {
 
                 case "window":
                     if summary.windowId != defaultWindowId { continue }
-                    let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
+                    let workspaceNodesForWindow = manager.workspaces.enumerated().map { workspaceIndex, workspace in
                         v2TreeWorkspaceNode(
                             workspace: workspace,
                             index: workspaceIndex,
-                            selected: workspace.id == manager.selectedTabId
+                            selected: workspace.id == manager.selectedWorkspaceId
                         )
                     }
                     windowNodes.append(
@@ -531,16 +605,16 @@ extension TerminalController {
 
                 case "workspace":
                     // Find the caller's current workspace; only include the window that owns it.
-                    let target: UUID? = callerScopeWorkspaceId ?? manager.selectedTabId
+                    let target: UUID? = callerScopeWorkspaceId ?? manager.selectedWorkspaceId
                     guard let targetId = target,
-                          let workspaceIndex = manager.tabs.firstIndex(where: { $0.id == targetId }) else {
+                          let workspaceIndex = manager.workspaces.firstIndex(where: { $0.id == targetId }) else {
                         continue
                     }
-                    let workspace = manager.tabs[workspaceIndex]
+                    let workspace = manager.workspaces[workspaceIndex]
                     let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
-                        selected: workspace.id == manager.selectedTabId
+                        selected: workspace.id == manager.selectedWorkspaceId
                     )
                     windowNodes = [
                         v2TreeWindowNode(

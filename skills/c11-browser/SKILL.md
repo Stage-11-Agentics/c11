@@ -1,16 +1,16 @@
 ---
 name: c11-browser
 version: 1
-description: Browser automation for c11 browser surfaces (WKWebView-backed). Use to open sites, interact with pages, wait for state changes, extract data, save/load auth state, and validate UI changes without leaving c11. Prefer this over Chrome MCP whenever c11 is running.
+description: Browser automation for c11 browser panels (formerly tabs) (WKWebView-backed). Use to open sites, interact with pages, wait for state changes, extract data, save/load auth state, and validate UI changes without leaving c11. Prefer this over Chrome MCP whenever c11 is running.
 ---
 
 # c11 Browser Automation
 
-Use this skill for browser tasks inside c11 webviews. Browser surfaces are a native surface type, scriptable alongside terminals and markdown viewers from the same `c11` CLI. Prefer this over Chrome MCP whenever c11 is running: lighter, integrated, no stray Chrome windows.
+Use this skill for browser tasks inside c11 webviews. Browser panels are a native panel type, scriptable alongside terminals and markdown viewers from the same `c11` CLI. Prefer this over Chrome MCP whenever c11 is running: lighter, integrated, no stray Chrome windows.
 
 ## Core Workflow
 
-1. Open or target a browser surface.
+1. Open or target a browser panel.
 2. Verify navigation with `get url` before waiting or snapshotting.
 3. Snapshot (`--interactive`) to get fresh element refs.
 4. Act with refs (`click`, `fill`, `type`, `select`, `press`).
@@ -19,17 +19,17 @@ Use this skill for browser tasks inside c11 webviews. Browser surfaces are a nat
 
 ```bash
 c11 --json browser open https://example.com
-# use returned surface ref, for example: surface:7
+# use returned panel ref, for example: panel:7
 
-c11 browser surface:7 get url
-c11 browser surface:7 wait --load-state complete --timeout-ms 15000
-c11 browser surface:7 snapshot --interactive
-c11 browser surface:7 fill e1 "hello"
-c11 --json browser surface:7 click e2 --snapshot-after
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 get url
+c11 browser panel:7 wait --load-state complete --timeout-ms 15000
+c11 browser panel:7 snapshot --interactive
+c11 browser panel:7 fill e1 "hello"
+c11 --json browser panel:7 click e2 --snapshot-after
+c11 browser panel:7 snapshot --interactive
 ```
 
-## Surface Targeting
+## Panel Targeting
 
 ```bash
 # identify current context
@@ -40,10 +40,31 @@ c11 browser open https://example.com --workspace workspace:2 --window window:1 -
 ```
 
 Notes:
-- CLI output defaults to short refs (`surface:N`, `pane:N`, `workspace:N`, `window:N`).
+- CLI output defaults to short refs (`panel:N`, `area:N`, `workspace:N`, `window:N`).
 - UUIDs are still accepted on input; only request UUID output when needed (`--id-format uuids|both`).
-- Keep using one `surface:N` per task unless you intentionally switch.
-- **Default to a tab in the existing browser pane.** If the workspace already has a browser pane, open new pages as tabs inside it rather than spawning a new browser pane — browsers are tabbed by default, and a fresh pane each time is the awkward interaction to avoid. Find the browser pane in `c11 tree --json` and add the tab with `c11 new-surface --type browser --url <url> --pane <browser-pane-ref>`. Open a new browser pane (`c11 new-pane --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser surface when one is available.
+- Keep using one `panel:N` per task within the current c11 process unless you intentionally switch. Short refs (`panel:N`, `area:N`, `workspace:N`, `window:N`) start over after a restart; store the panel UUID from `c11 --id-format both tree --json` to find that same browser panel afterward.
+- **Default to a panel in the existing browser area.** If the workspace already has a browser area, open new pages as panels inside it rather than spawning a new browser area — an area holds many panels, and a fresh area each time is the awkward interaction to avoid. Find the browser area in `c11 tree --json` and add the panel with `c11 new-panel --type browser --url <url> --area <browser-area-ref>`. Open a new browser area (`c11 new-area --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser panel when one is available.
+
+## Browser Profiles
+
+Profiles isolate WebKit cookies, storage, and history. The built-in `Default`
+profile is always present and cannot be renamed, cleared, or deleted.
+
+```bash
+c11 browser profiles list --json
+c11 browser profiles add smoke-b3 --json
+c11 browser profiles rename smoke-b3 smoke-b3-renamed --json
+c11 browser open https://example.com --profile smoke-b3-renamed --json
+c11 browser profiles clear smoke-b3-renamed --yes --json
+c11 browser profiles delete smoke-b3-renamed --yes --json
+```
+
+`--profile` is one-shot: it selects the profile for the panel being created and
+does not change the profile used by a later unscoped `browser open`, `new-panel`,
+or `new-area`. Profile names resolve case-insensitively when unique; UUIDs are
+accepted as well. `clear` and `delete` never show a dialog: both require
+`--yes`, refuse the built-in profile, and refuse profiles attached to any live
+browser panel. Close those panels before retrying.
 
 ## Plain `http://` Navigation
 
@@ -57,25 +78,25 @@ c11 guards plain-HTTP navigation, and socket-driven navigation is the path most 
 
 ```bash
 c11 --json browser open http://192.168.1.5:8000 --allow-insecure-http
-c11 browser surface:7 goto http://192.168.1.5:8000 --allow-insecure-http
+c11 browser panel:7 goto http://192.168.1.5:8000 --allow-insecure-http
 ```
 
-The consent covers **one navigation to one host, including that navigation's HTTP redirects to the same host** (a 302 from `/` to `/login` works). A page that redirects itself after loading — JS or `<meta http-equiv="refresh">` — starts a new navigation and needs consent again. It is not persisted and is released once the navigation settles. A redirect to plain HTTP on a *different* host prompts or blocks again — if an opted-in page comes up blank after a redirect, check `c11 browser <surface> get url --json`, which reports the outcome in `insecure_http`, and re-issue with the flag against the redirect target. To allow a host permanently, add it in Settings → Browser → insecure HTTP allowlist.
+The consent covers **one navigation to one host, including that navigation's HTTP redirects to the same host** (a 302 from `/` to `/login` works). A page that redirects itself after loading — JS or `<meta http-equiv="refresh">` — starts a new navigation and needs consent again. It is not persisted and is released once the navigation settles. A redirect to plain HTTP on a *different* host prompts or blocks again — if an opted-in page comes up blank after a redirect, check `c11 browser <panel> get url --json`, which reports the outcome in `insecure_http`, and re-issue with the flag against the redirect target. To allow a host permanently, add it in Settings → Browser → insecure HTTP allowlist.
 
-`c11 new-surface --type browser --url <url>` and `c11 new-pane --type browser --url <url>` do **not** take the flag and do not report the outcome, so for a non-loopback plain-HTTP page create the surface without a URL and then `goto <url> --allow-insecure-http`.
+`c11 new-panel --type browser --url <url>` and `c11 new-area --type browser --url <url>` do **not** take the flag and do not report the outcome, so for a non-loopback plain-HTTP page create the panel without a URL and then `goto <url> --allow-insecure-http`.
 
-Both `open` and `goto` report the outcome rather than failing silently. `browser open` always keeps its promise that a surface exists, so it returns success with `insecure_http: {"status": "blocked"|"prompted", ...}` in the payload (and says so on the text line) — you keep the surface ref to retry or close. `browser goto`/`navigate` promises the navigation itself, so an unpromptable one fails with the `insecure_http_blocked` error.
+Both `open` and `goto` report the outcome rather than failing silently. `browser open` always keeps its promise that a panel exists, so it returns success with `insecure_http: {"status": "blocked"|"prompted", ...}` in the payload (and says so on the text line) — you keep the panel ref to retry or close. `browser goto`/`navigate` promises the navigation itself, so an unpromptable one fails with the `insecure_http_blocked` error.
 
 ## Wait Support
 
 c11 supports wait patterns similar to agent-browser:
 
 ```bash
-c11 browser <surface> wait --selector "#ready" --timeout-ms 10000
-c11 browser <surface> wait --text "Success" --timeout-ms 10000
-c11 browser <surface> wait --url-contains "/dashboard" --timeout-ms 10000
-c11 browser <surface> wait --load-state complete --timeout-ms 15000
-c11 browser <surface> wait --function "document.readyState === 'complete'" --timeout-ms 10000
+c11 browser <panel> wait --selector "#ready" --timeout-ms 10000
+c11 browser <panel> wait --text "Success" --timeout-ms 10000
+c11 browser <panel> wait --url-contains "/dashboard" --timeout-ms 10000
+c11 browser <panel> wait --load-state complete --timeout-ms 15000
+c11 browser <panel> wait --function "document.readyState === 'complete'" --timeout-ms 10000
 ```
 
 ## Common Flows
@@ -84,45 +105,45 @@ c11 browser <surface> wait --function "document.readyState === 'complete'" --tim
 
 ```bash
 c11 --json browser open https://example.com/signup
-c11 browser surface:7 get url
-c11 browser surface:7 wait --load-state complete --timeout-ms 15000
-c11 browser surface:7 snapshot --interactive
-c11 browser surface:7 fill e1 "Jane Doe"
-c11 browser surface:7 fill e2 "jane@example.com"
-c11 --json browser surface:7 click e3 --snapshot-after
-c11 browser surface:7 wait --url-contains "/welcome" --timeout-ms 15000
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 get url
+c11 browser panel:7 wait --load-state complete --timeout-ms 15000
+c11 browser panel:7 snapshot --interactive
+c11 browser panel:7 fill e1 "Jane Doe"
+c11 browser panel:7 fill e2 "jane@example.com"
+c11 --json browser panel:7 click e3 --snapshot-after
+c11 browser panel:7 wait --url-contains "/welcome" --timeout-ms 15000
+c11 browser panel:7 snapshot --interactive
 ```
 
 ### Clear an Input
 
 ```bash
-c11 browser surface:7 fill e11 "" --snapshot-after --json
-c11 browser surface:7 get value e11 --json
+c11 browser panel:7 fill e11 --text "" --snapshot-after --json
+c11 browser panel:7 get value e11 --json
 ```
 
 ### Stable Agent Loop (Recommended)
 
 ```bash
 # navigate -> verify -> wait -> snapshot -> action -> snapshot
-c11 browser surface:7 get url
-c11 browser surface:7 wait --load-state complete --timeout-ms 15000
-c11 browser surface:7 snapshot --interactive
-c11 --json browser surface:7 click e5 --snapshot-after
-c11 browser surface:7 snapshot --interactive
+c11 browser panel:7 get url
+c11 browser panel:7 wait --load-state complete --timeout-ms 15000
+c11 browser panel:7 snapshot --interactive
+c11 --json browser panel:7 click e5 --snapshot-after
+c11 browser panel:7 snapshot --interactive
 ```
 
 If `get url` is empty or `about:blank`, navigate first instead of waiting on load state.
 
-A surface that has never been navigated cannot run JavaScript at all — there is no web
+A browser panel that has never been navigated cannot run JavaScript at all — there is no web
 process to run it in — so every JS command against one fails immediately rather than
 waiting out its timeout. `eval`, `wait`, `snapshot`, and the element actions (`click`,
 `fill`, `type`, `press`, …) return code `no_document` with `current_url` and
-`lifecycle_state` in the error data; the remaining JS paths surface the same message under
+`lifecycle_state` in the error data; the remaining JS paths report the same message under
 `js_error`. Either way, treat it as "navigate first", not as a transient failure to retry.
 If the message says navigation was *requested* but no load has been issued, the load is
 being withheld rather than missing: check for a pending insecure-HTTP confirmation, a
-remote-workspace proxy that has not resolved, or a hibernated surface.
+remote-workspace proxy that has not resolved, or a hibernated panel.
 
 `timeout-ms` on `wait` and `download wait` is capped at 120000. A larger value is clamped,
 and the error payload reports both `timeout_ms` and your `requested_timeout_ms`.
@@ -135,7 +156,7 @@ and the error payload reports both `timeout_ms` and your `requested_timeout_ms`.
 | [references/snapshot-refs.md](references/snapshot-refs.md) | Ref lifecycle and stale-ref troubleshooting |
 | [references/authentication.md](references/authentication.md) | Login/OAuth/2FA patterns and state save/load |
 | [references/authentication.md#saving-authentication-state](references/authentication.md#saving-authentication-state) | Save authenticated state right after login |
-| [references/session-management.md](references/session-management.md) | Multi-surface isolation and state persistence patterns |
+| [references/session-management.md](references/session-management.md) | Multi-panel isolation and state persistence patterns |
 | [references/video-recording.md](references/video-recording.md) | Current recording status and practical alternatives |
 | [references/proxy-support.md](references/proxy-support.md) | Proxy behavior in WKWebView and workarounds |
 
@@ -169,9 +190,9 @@ Some complex pages can reject or break the JavaScript used for rich snapshots an
 Recovery steps:
 
 ```bash
-c11 browser surface:7 get url
-c11 browser surface:7 get text body
-c11 browser surface:7 get html body
+c11 browser panel:7 get url
+c11 browser panel:7 get text body
+c11 browser panel:7 get html body
 ```
 
 - Use `get url` first so you know whether the page actually navigated.

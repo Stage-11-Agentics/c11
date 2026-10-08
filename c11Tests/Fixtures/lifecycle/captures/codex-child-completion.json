@@ -1,0 +1,8 @@
+{
+  "id": "codex-child-completion",
+  "provider": "codex",
+  "mode": "bypass",
+  "origin": "gap",
+  "events": [],
+  "recapture_required": "tagged-build"
+}

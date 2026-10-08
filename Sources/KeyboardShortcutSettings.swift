@@ -9,7 +9,7 @@ enum KeyboardShortcutSettings {
     enum Action: String, CaseIterable, Identifiable {
         // Titlebar / primary UI
         case toggleSidebar
-        case newTab
+        case newWorkspace = "newTab"
         case newWindow
         case closeWindow
         case openFolder
@@ -21,9 +21,11 @@ enum KeyboardShortcutSettings {
         // Navigation
         case nextSurface
         case prevSurface
-        case nextSidebarTab
-        case prevSidebarTab
-        case renameTab
+        case nextSidebarWorkspace = "nextSidebarTab"
+        case prevSidebarWorkspace = "prevSidebarTab"
+        case focusHistoryBack
+        case focusHistoryForward
+        case renamePanel = "renameTab"
         case renameWorkspace
         case closeWorkspace
         case newSurface
@@ -44,6 +46,7 @@ enum KeyboardShortcutSettings {
         case openBrowser
         case toggleBrowserDeveloperTools
         case showBrowserJavaScriptConsole
+        case toggleMarkdownOutline
 
         // Input
         case toggleTextBoxInput
@@ -58,35 +61,38 @@ enum KeyboardShortcutSettings {
         var label: String {
             switch self {
             case .toggleSidebar: return String(localized: "shortcut.toggleSidebar.label", defaultValue: "Toggle Sidebar")
-            case .newTab: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Workspace")
+            case .newWorkspace: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Workspace")
             case .newWindow: return String(localized: "shortcut.newWindow.label", defaultValue: "New Window")
             case .closeWindow: return String(localized: "shortcut.closeWindow.label", defaultValue: "Close Window")
             case .openFolder: return String(localized: "shortcut.openFolder.label", defaultValue: "Open Folder")
             case .sendFeedback: return String(localized: "sidebar.help.sendFeedback", defaultValue: "Send Feedback")
             case .showNotifications: return String(localized: "shortcut.showNotifications.label", defaultValue: "Show Notifications")
             case .jumpToUnread: return String(localized: "shortcut.jumpToUnread.label", defaultValue: "Jump to Latest Unread")
-            case .triggerFlash: return String(localized: "shortcut.flashFocusedPanel.label", defaultValue: "Flash Focused Pane")
-            case .nextSurface: return String(localized: "shortcut.nextSurface.label", defaultValue: "Next Surface")
-            case .prevSurface: return String(localized: "shortcut.previousSurface.label", defaultValue: "Previous Surface")
-            case .nextSidebarTab: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
-            case .prevSidebarTab: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
-            case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Tab")
+            case .triggerFlash: return String(localized: "shortcut.flashFocusedPanel.label", defaultValue: "Flash Focused Area")
+            case .nextSurface: return String(localized: "shortcut.nextSurface.label", defaultValue: "Next Panel")
+            case .prevSurface: return String(localized: "shortcut.previousSurface.label", defaultValue: "Previous Panel")
+            case .nextSidebarWorkspace: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
+            case .prevSidebarWorkspace: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
+            case .focusHistoryBack: return String(localized: "shortcut.focusHistoryBack.label", defaultValue: "Focus History Back")
+            case .focusHistoryForward: return String(localized: "shortcut.focusHistoryForward.label", defaultValue: "Focus History Forward")
+            case .renamePanel: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Panel")
             case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
             case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Workspace")
-            case .newSurface: return String(localized: "shortcut.newSurface.label", defaultValue: "New Surface")
+            case .newSurface: return String(localized: "shortcut.newSurface.label", defaultValue: "New Panel")
             case .toggleTerminalCopyMode: return String(localized: "shortcut.toggleTerminalCopyMode.label", defaultValue: "Toggle Terminal Copy Mode")
-            case .focusLeft: return String(localized: "shortcut.focusPaneLeft.label", defaultValue: "Focus Pane Left")
-            case .focusRight: return String(localized: "shortcut.focusPaneRight.label", defaultValue: "Focus Pane Right")
-            case .focusUp: return String(localized: "shortcut.focusPaneUp.label", defaultValue: "Focus Pane Up")
-            case .focusDown: return String(localized: "shortcut.focusPaneDown.label", defaultValue: "Focus Pane Down")
+            case .focusLeft: return String(localized: "shortcut.focusPaneLeft.label", defaultValue: "Focus Area Left")
+            case .focusRight: return String(localized: "shortcut.focusPaneRight.label", defaultValue: "Focus Area Right")
+            case .focusUp: return String(localized: "shortcut.focusPaneUp.label", defaultValue: "Focus Area Up")
+            case .focusDown: return String(localized: "shortcut.focusPaneDown.label", defaultValue: "Focus Area Down")
             case .splitRight: return String(localized: "shortcut.splitRight.label", defaultValue: "Split Right")
             case .splitDown: return String(localized: "shortcut.splitDown.label", defaultValue: "Split Down")
-            case .toggleSplitZoom: return String(localized: "shortcut.togglePaneZoom.label", defaultValue: "Toggle Pane Zoom")
+            case .toggleSplitZoom: return String(localized: "shortcut.togglePaneZoom.label", defaultValue: "Toggle Area Zoom")
             case .splitBrowserRight: return String(localized: "shortcut.splitBrowserRight.label", defaultValue: "Split Browser Right")
             case .splitBrowserDown: return String(localized: "shortcut.splitBrowserDown.label", defaultValue: "Split Browser Down")
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .toggleBrowserDeveloperTools: return String(localized: "shortcut.toggleBrowserDevTools.label", defaultValue: "Toggle Browser Developer Tools")
             case .showBrowserJavaScriptConsole: return String(localized: "shortcut.showBrowserJSConsole.label", defaultValue: "Show Browser JavaScript Console")
+            case .toggleMarkdownOutline: return String(localized: "shortcut.toggleMarkdownOutline.label", defaultValue: "Toggle Markdown Outline")
             case .toggleTextBoxInput: return String(localized: "shortcut.toggleTextBoxInput.label", defaultValue: "Toggle TextBox Input")
             case .globalFontIncrease: return String(localized: "shortcut.globalFontIncrease.label", defaultValue: "Increase Font Size (All Terminals)")
             case .globalFontDecrease: return String(localized: "shortcut.globalFontDecrease.label", defaultValue: "Decrease Font Size (All Terminals)")
@@ -97,7 +103,7 @@ enum KeyboardShortcutSettings {
         var defaultsKey: String {
             switch self {
             case .toggleSidebar: return "shortcut.toggleSidebar"
-            case .newTab: return "shortcut.newTab"
+            case .newWorkspace: return "shortcut.newTab"
             case .newWindow: return "shortcut.newWindow"
             case .closeWindow: return "shortcut.closeWindow"
             case .openFolder: return "shortcut.openFolder"
@@ -105,9 +111,11 @@ enum KeyboardShortcutSettings {
             case .showNotifications: return "shortcut.showNotifications"
             case .jumpToUnread: return "shortcut.jumpToUnread"
             case .triggerFlash: return "shortcut.triggerFlash"
-            case .nextSidebarTab: return "shortcut.nextSidebarTab"
-            case .prevSidebarTab: return "shortcut.prevSidebarTab"
-            case .renameTab: return "shortcut.renameTab"
+            case .nextSidebarWorkspace: return "shortcut.nextSidebarTab"
+            case .prevSidebarWorkspace: return "shortcut.prevSidebarTab"
+            case .focusHistoryBack: return "shortcut.focusHistoryBack"
+            case .focusHistoryForward: return "shortcut.focusHistoryForward"
+            case .renamePanel: return "shortcut.renameTab"
             case .renameWorkspace: return "shortcut.renameWorkspace"
             case .closeWorkspace: return "shortcut.closeWorkspace"
             case .focusLeft: return "shortcut.focusLeft"
@@ -126,6 +134,7 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return "shortcut.openBrowser"
             case .toggleBrowserDeveloperTools: return "shortcut.toggleBrowserDeveloperTools"
             case .showBrowserJavaScriptConsole: return "shortcut.showBrowserJavaScriptConsole"
+            case .toggleMarkdownOutline: return "shortcut.toggleMarkdownOutline"
             case .toggleTextBoxInput: return "shortcut.toggleTextBoxInput"
             case .globalFontIncrease: return "shortcut.globalFontIncrease"
             case .globalFontDecrease: return "shortcut.globalFontDecrease"
@@ -137,7 +146,7 @@ enum KeyboardShortcutSettings {
             switch self {
             case .toggleSidebar:
                 return StoredShortcut(key: "b", command: true, shift: false, option: false, control: false)
-            case .newTab:
+            case .newWorkspace:
                 return StoredShortcut(key: "n", command: true, shift: false, option: false, control: false)
             case .newWindow:
                 return StoredShortcut(key: "n", command: true, shift: true, option: false, control: false)
@@ -153,11 +162,13 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "\r", command: true, shift: false, option: false, control: true)
             case .triggerFlash:
                 return StoredShortcut(key: "h", command: true, shift: true, option: false, control: false)
-            case .nextSidebarTab:
+            case .nextSidebarWorkspace:
                 return StoredShortcut(key: "]", command: true, shift: false, option: false, control: true)
-            case .prevSidebarTab:
+            case .prevSidebarWorkspace:
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
-            case .renameTab:
+            case .focusHistoryBack, .focusHistoryForward:
+                return .unbound
+            case .renamePanel:
                 // C11-41: rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
                 return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)
             case .renameWorkspace:
@@ -198,6 +209,8 @@ enum KeyboardShortcutSettings {
             case .showBrowserJavaScriptConsole:
                 // Safari default: Show JavaScript Console.
                 return StoredShortcut(key: "c", command: true, shift: false, option: true, control: false)
+            case .toggleMarkdownOutline:
+                return StoredShortcut(key: "o", command: true, shift: true, option: false, control: false)
             case .toggleTextBoxInput:
                 // Cmd+Option+T is already bound in AppDelegate to close-other-tabs
                 // (see AppDelegateShortcutRoutingTests); the upstream fork author's
@@ -279,8 +292,8 @@ enum KeyboardShortcutSettings {
     static func jumpToUnreadShortcut() -> StoredShortcut { shortcut(for: .jumpToUnread) }
     static func setJumpToUnreadShortcut(_ shortcut: StoredShortcut) { setShortcut(shortcut, for: .jumpToUnread) }
 
-    static func nextSidebarTabShortcut() -> StoredShortcut { shortcut(for: .nextSidebarTab) }
-    static func prevSidebarTabShortcut() -> StoredShortcut { shortcut(for: .prevSidebarTab) }
+    static func nextSidebarWorkspaceShortcut() -> StoredShortcut { shortcut(for: .nextSidebarWorkspace) }
+    static func prevSidebarWorkspaceShortcut() -> StoredShortcut { shortcut(for: .prevSidebarWorkspace) }
     static func renameWorkspaceShortcut() -> StoredShortcut { shortcut(for: .renameWorkspace) }
     static func closeWorkspaceShortcut() -> StoredShortcut { shortcut(for: .closeWorkspace) }
 
@@ -312,7 +325,12 @@ struct StoredShortcut: Codable, Equatable {
     var option: Bool
     var control: Bool
 
+    static let unbound = StoredShortcut(key: "", command: false, shift: false, option: false, control: false)
+
     var displayString: String {
+        guard !key.isEmpty else {
+            return String(localized: "shortcut.unbound", defaultValue: "None")
+        }
         var parts: [String] = []
         if control { parts.append("⌃") }
         if option { parts.append("⌥") }
@@ -465,6 +483,7 @@ struct StoredShortcut: Codable, Equatable {
 /// View for recording a keyboard shortcut
 struct KeyboardShortcutRecorder: View {
     let label: String
+    let action: KeyboardShortcutSettings.Action
     @Binding var shortcut: StoredShortcut
     @State private var isRecording = false
 
@@ -474,18 +493,20 @@ struct KeyboardShortcutRecorder: View {
 
             Spacer()
 
-            ShortcutRecorderButton(shortcut: $shortcut, isRecording: $isRecording)
+            ShortcutRecorderButton(action: action, shortcut: $shortcut, isRecording: $isRecording)
                 .frame(width: 120)
         }
     }
 }
 
 private struct ShortcutRecorderButton: NSViewRepresentable {
+    let action: KeyboardShortcutSettings.Action
     @Binding var shortcut: StoredShortcut
     @Binding var isRecording: Bool
 
     func makeNSView(context: Context) -> ShortcutRecorderNSButton {
         let button = ShortcutRecorderNSButton()
+        button.shortcutAction = action
         button.shortcut = shortcut
         button.onShortcutRecorded = { newShortcut in
             shortcut = newShortcut
@@ -498,12 +519,14 @@ private struct ShortcutRecorderButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ShortcutRecorderNSButton, context: Context) {
+        nsView.shortcutAction = action
         nsView.shortcut = shortcut
         nsView.updateTitle()
     }
 }
 
 private class ShortcutRecorderNSButton: NSButton {
+    var shortcutAction: KeyboardShortcutSettings.Action?
     var shortcut: StoredShortcut = KeyboardShortcutSettings.showNotificationsDefault
     var onShortcutRecorded: ((StoredShortcut) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
@@ -557,7 +580,21 @@ private class ShortcutRecorderNSButton: NSButton {
                 return nil
             }
 
+            let isHistoryShortcut = self.shortcutAction == .focusHistoryBack || self.shortcutAction == .focusHistoryForward
+            if isHistoryShortcut && (event.keyCode == 51 || event.keyCode == 117) { // Delete, Forward-Delete
+                self.shortcut = .unbound
+                self.onShortcutRecorded?(.unbound)
+                self.stopRecording()
+                return nil
+            }
+
             if let newShortcut = StoredShortcut.from(event: event) {
+                // Browser Back/Forward retain their public chords; only history rejects them.
+                if isHistoryShortcut && (newShortcut.key == "[" || newShortcut.key == "]")
+                    && newShortcut.command && !newShortcut.shift && !newShortcut.option && !newShortcut.control {
+                    self.stopRecording()
+                    return nil
+                }
                 self.shortcut = newShortcut
                 self.onShortcutRecorded?(newShortcut)
                 self.stopRecording()

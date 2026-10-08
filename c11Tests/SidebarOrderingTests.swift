@@ -86,10 +86,10 @@ final class SidebarActiveTabIndicatorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.removeObject(forKey: SidebarActiveTabIndicatorSettings.styleKey)
+        defaults.removeObject(forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
         XCTAssertEqual(
-            SidebarActiveTabIndicatorSettings.current(defaults: defaults),
-            SidebarActiveTabIndicatorSettings.defaultStyle
+            SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults),
+            SidebarActiveWorkspaceIndicatorSettings.defaultStyle
         )
     }
 
@@ -101,16 +101,16 @@ final class SidebarActiveTabIndicatorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.set(SidebarActiveTabIndicatorStyle.leftRail.rawValue, forKey: SidebarActiveTabIndicatorSettings.styleKey)
-        XCTAssertEqual(SidebarActiveTabIndicatorSettings.current(defaults: defaults), .leftRail)
+        defaults.set(SidebarActiveWorkspaceIndicatorStyle.leftRail.rawValue, forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
+        XCTAssertEqual(SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults), .leftRail)
 
-        defaults.set("rail", forKey: SidebarActiveTabIndicatorSettings.styleKey)
-        XCTAssertEqual(SidebarActiveTabIndicatorSettings.current(defaults: defaults), .leftRail)
+        defaults.set("rail", forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
+        XCTAssertEqual(SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults), .leftRail)
 
-        defaults.set("not-a-style", forKey: SidebarActiveTabIndicatorSettings.styleKey)
+        defaults.set("not-a-style", forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
         XCTAssertEqual(
-            SidebarActiveTabIndicatorSettings.current(defaults: defaults),
-            SidebarActiveTabIndicatorSettings.defaultStyle
+            SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults),
+            SidebarActiveWorkspaceIndicatorSettings.defaultStyle
         )
     }
 }
@@ -223,7 +223,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
     // plan-review's three-step safety protocol (grep → compile both
     // schemes → snapshot/persistence audit) to confirm full removal.
 
-    func testOrderedUniquePullRequestsFollowsPanelOrderAcrossSplitsAndTabs() {
+    func testOrderedUniquePullRequestsFollowsPanelOrderAcrossSplitsAndPanels() {
         let first = UUID()
         let second = UUID()
         let third = UUID()
@@ -470,235 +470,6 @@ final class SidebarBranchOrderingTests: XCTestCase {
             checks: checks
         )
     }
-}
-
-
-final class SidebarDropPlannerTests: XCTestCase {
-    func testNoIndicatorForNoOpEdges() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: first,
-                targetTabId: first,
-                tabIds: tabIds,
-                pinnedTabIds: []
-            )
-        )
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: third,
-                targetTabId: nil,
-                tabIds: tabIds,
-                pinnedTabIds: []
-            )
-        )
-    }
-
-    func testNoIndicatorWhenOnlyOneTabExists() {
-        let only = UUID()
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: only,
-                targetTabId: nil,
-                tabIds: [only],
-                pinnedTabIds: []
-            )
-        )
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: only,
-                targetTabId: only,
-                tabIds: [only],
-                pinnedTabIds: []
-            )
-        )
-    }
-
-    func testIndicatorAppearsForRealMoveToEnd() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        let indicator = SidebarDropPlanner.indicator(
-            draggedTabId: second,
-            targetTabId: nil,
-            tabIds: tabIds,
-            pinnedTabIds: []
-        )
-        XCTAssertEqual(indicator?.tabId, nil)
-        XCTAssertEqual(indicator?.edge, .bottom)
-    }
-
-    func testTargetIndexForMoveToEndFromMiddle() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        let index = SidebarDropPlanner.targetIndex(
-            draggedTabId: second,
-            targetTabId: nil,
-            indicator: SidebarDropIndicator(tabId: nil, edge: .bottom),
-            tabIds: tabIds,
-            pinnedTabIds: []
-        )
-        XCTAssertEqual(index, 2)
-    }
-
-    func testNoIndicatorForSelfDropInMiddle() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: second,
-                targetTabId: second,
-                tabIds: tabIds,
-                pinnedTabIds: []
-            )
-        )
-    }
-
-    func testPointerEdgeTopCanSuppressNoOpWhenDraggingFirstOverSecond() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: first,
-                targetTabId: second,
-                tabIds: tabIds,
-                pinnedTabIds: [],
-                pointerY: 2,
-                targetHeight: 40
-            )
-        )
-    }
-
-    func testPointerEdgeBottomAllowsMoveWhenDraggingFirstOverSecond() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        let indicator = SidebarDropPlanner.indicator(
-            draggedTabId: first,
-            targetTabId: second,
-            tabIds: tabIds,
-            pinnedTabIds: [],
-            pointerY: 38,
-            targetHeight: 40
-        )
-        XCTAssertEqual(indicator?.tabId, third)
-        XCTAssertEqual(indicator?.edge, .top)
-        XCTAssertEqual(
-            SidebarDropPlanner.targetIndex(
-                draggedTabId: first,
-                targetTabId: second,
-                indicator: indicator,
-                tabIds: tabIds,
-                pinnedTabIds: []
-            ),
-            1
-        )
-    }
-
-    func testEquivalentBoundaryInputsResolveToSingleCanonicalIndicator() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        let fromBottomOfFirst = SidebarDropPlanner.indicator(
-            draggedTabId: third,
-            targetTabId: first,
-            tabIds: tabIds,
-            pinnedTabIds: [],
-            pointerY: 38,
-            targetHeight: 40
-        )
-        let fromTopOfSecond = SidebarDropPlanner.indicator(
-            draggedTabId: third,
-            targetTabId: second,
-            tabIds: tabIds,
-            pinnedTabIds: [],
-            pointerY: 2,
-            targetHeight: 40
-        )
-
-        XCTAssertEqual(fromBottomOfFirst?.tabId, second)
-        XCTAssertEqual(fromBottomOfFirst?.edge, .top)
-        XCTAssertEqual(fromTopOfSecond?.tabId, second)
-        XCTAssertEqual(fromTopOfSecond?.edge, .top)
-    }
-
-    func testPointerEdgeBottomSuppressesNoOpWhenDraggingLastOverSecond() {
-        let first = UUID()
-        let second = UUID()
-        let third = UUID()
-        let tabIds = [first, second, third]
-
-        XCTAssertNil(
-            SidebarDropPlanner.indicator(
-                draggedTabId: third,
-                targetTabId: second,
-                tabIds: tabIds,
-                pinnedTabIds: [],
-                pointerY: 38,
-                targetHeight: 40
-            )
-        )
-    }
-
-    func testIndicatorSnapsUnpinnedDropToFirstUnpinnedBoundaryWhenHoveringPinnedWorkspace() {
-        let pinnedA = UUID()
-        let pinnedB = UUID()
-        let unpinnedA = UUID()
-        let unpinnedB = UUID()
-        let tabIds = [pinnedA, pinnedB, unpinnedA, unpinnedB]
-        let pinnedIds: Set<UUID> = [pinnedA, pinnedB]
-
-        let indicator = SidebarDropPlanner.indicator(
-            draggedTabId: unpinnedB,
-            targetTabId: pinnedA,
-            tabIds: tabIds,
-            pinnedTabIds: pinnedIds,
-            pointerY: 2,
-            targetHeight: 40
-        )
-
-        XCTAssertEqual(indicator?.tabId, unpinnedA)
-        XCTAssertEqual(indicator?.edge, .top)
-    }
-
-    func testTargetIndexSnapsUnpinnedDropToFirstUnpinnedBoundaryWhenHoveringPinnedWorkspace() {
-        let pinnedA = UUID()
-        let pinnedB = UUID()
-        let unpinnedA = UUID()
-        let unpinnedB = UUID()
-        let tabIds = [pinnedA, pinnedB, unpinnedA, unpinnedB]
-        let pinnedIds: Set<UUID> = [pinnedA, pinnedB]
-
-        let targetIndex = SidebarDropPlanner.targetIndex(
-            draggedTabId: unpinnedB,
-            targetTabId: pinnedA,
-            indicator: SidebarDropIndicator(tabId: pinnedA, edge: .top),
-            tabIds: tabIds,
-            pinnedTabIds: pinnedIds
-        )
-
-        XCTAssertEqual(targetIndex, 2)
-    }
-
 }
 
 

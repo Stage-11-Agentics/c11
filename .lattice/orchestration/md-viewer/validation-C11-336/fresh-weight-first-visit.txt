@@ -1,0 +1,22 @@
+  "selection" : null,
+  "lines" : {
+    "last" : 491,
+    "total" : 741,
+    "first" : 468
+  },
+  "font_scale" : 1,
+  "progress" : 0.67226176994013909,
+  "heading_path" : [
+    "c11 Inter-Agent Messaging — Design",
+    "7. Happy path — agent is idle"
+  ],
+  "find" : null,
+  "theme" : {
+    "resolved" : "dark",
+    "choice" : "system"
+  },
+  "file" : "/Volumes/My Shared Files/out/c11-messaging-primitive-design.md",
+  "minutes_left" : 8,
+  "size" : "medium"
+}
+admin@Manageds-Virtual-Machine ~ % 

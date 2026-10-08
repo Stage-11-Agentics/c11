@@ -56,7 +56,7 @@ def _wait_for_terminal_focus(c: cmux, panel_id: str, timeout_s: float = 8.0) -> 
         try:
             ident = c.identify()
             focused = (ident or {}).get("focused") or {}
-            sid = str(focused.get("surface_id") or "").lower()
+            sid = str(focused.get("panel_id") or "").lower()
             if sid and sid == panel_lower:
                 return
         except Exception:
@@ -78,7 +78,7 @@ def _wait_for_terminal_focus(c: cmux, panel_id: str, timeout_s: float = 8.0) -> 
     except Exception as e:
         dbg["current_workspace_error"] = repr(e)
     try:
-        dbg["panes"] = c.list_panes()
+        dbg["areas"] = c.list_panes()
     except Exception as e:
         dbg["panes_error"] = repr(e)
     try:

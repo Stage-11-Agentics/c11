@@ -193,7 +193,7 @@ final class ConversationCrashRecoveryTests: XCTestCase {
             id: uuidA,
             cwd: cwd
         )
-        let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
+        let outcome: BoundedLifecycleOutcome<[String: PanelConversations]> =
             BoundedLifecycleWait.run(timeout: 1.0) {
                 try await Task.sleep(nanoseconds: 20_000_000)
                 return await store.snapshot()
@@ -212,7 +212,7 @@ final class ConversationCrashRecoveryTests: XCTestCase {
             id: uuidA,
             cwd: cwd
         )
-        let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
+        let outcome: BoundedLifecycleOutcome<[String: PanelConversations]> =
             BoundedLifecycleWait.run(timeout: 0.005) {
                 try await Task.sleep(nanoseconds: 100_000_000)
                 return await store.snapshot()

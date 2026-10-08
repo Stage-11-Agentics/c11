@@ -29,8 +29,8 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             browser: nil,
             markdown: nil,
             metadata: [
-                SurfaceMetadataKeyName.claudeSessionId: .string(claudeSessionId),
-                SurfaceMetadataKeyName.terminalType: .string("claude-code")
+                PanelMetadataKeyName.claudeSessionId: .string(claudeSessionId),
+                PanelMetadataKeyName.terminalType: .string("claude-code")
             ],
             metadataSources: nil,
             surfaceConversations: nil
@@ -84,7 +84,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             browser: nil,
             markdown: nil,
             metadata: [
-                SurfaceMetadataKeyName.claudeSessionId: .string("not-a-uuid")
+                PanelMetadataKeyName.claudeSessionId: .string("not-a-uuid")
             ],
             metadataSources: nil,
             surfaceConversations: nil
@@ -95,7 +95,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
         )
     }
 
-    func testSurfaceConversationsCodableEmitsHistoryAsArrayNotOmitted() throws {
+    func testPanelConversationsCodableEmitsHistoryAsArrayNotOmitted() throws {
         // v1 contract: history is written as `[]`, not omitted, for stable
         // JSON output across v1/v2.
         let panel = SessionPanelSnapshot(
@@ -114,7 +114,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: SurfaceConversations(
+            surfaceConversations: PanelConversations(
                 active: ConversationRef(
                     kind: "claude-code",
                     id: claudeSessionId,
@@ -151,7 +151,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: SurfaceConversations(
+            surfaceConversations: PanelConversations(
                 active: ConversationRef(
                     kind: "codex",
                     id: "ddd11111-2222-3333-4444-555566667777",
@@ -191,7 +191,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: SurfaceConversations(
+            surfaceConversations: PanelConversations(
                 active: ConversationRef(
                     kind: "codex",
                     id: "ddd11111-2222-4333-8444-555566667777",

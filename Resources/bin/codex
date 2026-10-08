@@ -71,17 +71,38 @@ if [[ "${1:-}" == "__c11-notify" ]]; then
     exit 0
 fi
 
+# C11_AGENT_INTERACTIVE_PID is the positive interactive-agent marker (set
+# below only for a launch that reads its terminal). Clear any inherited value
+# before any exec so a parent's marker is never passed on. The `__c11-notify`
+# callback above runs before this on purpose: it is a child of the
+# interactive Codex and must report that Codex's own marker.
+unset C11_AGENT_INTERACTIVE_PID
+
 # Find the real codex binary, skipping our own directory.
 find_real_codex() {
-    local self_dir
+    local self_dir d candidate
     self_dir="$(cd "$(dirname "$0")" && pwd)"
     local IFS=:
     for d in $PATH; do
         [[ "$d" == "$self_dir" ]] && continue
-        [[ -x "$d/codex" ]] && printf '%s' "$d/codex" && return 0
+        candidate="$d/codex"
+        [[ -x "$candidate" ]] || continue
+        if LC_ALL=C head -c 512 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# c11 codex wrapper'; then
+            continue
+        fi
+        printf '%s' "$candidate"
+        return 0
     done
     return 1
 }
+
+# The real CLI inherits this marker. If it starts a child through PATH, bypass
+# c11 hooks and forward directly to a non-wrapper binary instead of nesting.
+if [[ -n "${C11_CODEX_WRAPPER_REENTRY:-}" ]]; then
+    REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
+    unset C11_CODEX_WRAPPER_REENTRY
+    exec "$REAL_CODEX" "$@"
+fi
 
 # Return 0 only when CMUX_SOCKET_PATH points to a live c11 socket.
 c11_socket_available() {
@@ -109,7 +130,7 @@ fi
 
 if [[ "$IN_C11" == "0" || "${CMUX_CODEX_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
     REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
-    exec "$REAL_CODEX" "$@"
+    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"
 fi
 
 REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
@@ -122,10 +143,18 @@ REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; 
 # terminal_type to "codex" (would lie — the surface isn't an interactive
 # codex session).
 case "${1:-}" in
-    exec|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|plugin|help|--help|-h|--version|-V|-VV)
-        exec "$REAL_CODEX" "$@"
+    exec|e|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|plugin|help|--help|-h|--version|-V|-VV)
+        C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"
         ;;
 esac
+
+# Mark this launch as an interactive agent only when it reads and writes
+# its terminal. c11 pushes mailbox messages only to a tab whose
+# lifecycle reports carry this PID (exec keeps it), and only while that PID's
+# process group owns the terminal.
+if [[ -t 0 && -t 1 ]]; then
+    export C11_AGENT_INTERACTIVE_PID=$$
+fi
 
 # Resolve the c11 binary (bundle-relative first, fall back to PATH so a
 # misconfigured bundle still works in dev builds).
@@ -133,12 +162,28 @@ self_dir="$(cd "$(dirname "$0")" && pwd)"
 c11_bin="$self_dir/c11"
 [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
-# Treat strict `codex resume <uuid>` argv as lifecycle intent only. Plain
-# launches and `resume --last` intentionally carry no expected id, so the
-# store invalidates any exact identity left by the previous process.
+# Treat `codex resume [flags] <uuid> [flags]` argv as lifecycle intent only.
+# Flags may precede the id: c11's own resume rail is
+# `codex resume --yolo <uuid>`. Exactly one UUID-shaped argument is the
+# intent; plain launches, `resume --last`, and zero or several UUIDs carry no
+# expected id, so the store invalidates any exact identity left by the
+# previous process.
 EXPECTED_RESUME_ID=""
-if [[ "${1:-}" == "resume" && "${2:-}" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
-    EXPECTED_RESUME_ID="$2"
+if [[ "${1:-}" == "resume" ]]; then
+    resume_uuid_count=0
+    resume_uuid=""
+    resume_last=0
+    for resume_arg in "${@:2}"; do
+        if [[ "$resume_arg" == "--last" ]]; then
+            resume_last=1
+        elif [[ "$resume_arg" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+            resume_uuid_count=$((resume_uuid_count + 1))
+            resume_uuid="$resume_arg"
+        fi
+    done
+    if [[ "$resume_last" -eq 0 && "$resume_uuid_count" -eq 1 ]]; then
+        EXPECTED_RESUME_ID="$resume_uuid"
+    fi
 fi
 
 # (1) Mark the surface as terminal_type=codex (sidebar chip / role hint).
@@ -214,6 +259,10 @@ if [[ -n "$c11_bin" ]]; then
 fi
 
 if [[ -n "$codex_notify_config" ]]; then
-    exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+    # Trust isolation for Codex hooks is verified separately on Atlas. Until
+    # that probe proves that a bypass trusts only c11-owned hooks, keep the
+    # process rail to notify alone: no --enable hooks, hooks.* config, or
+    # --dangerously-bypass-hook-trust.
+    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
 fi
-exec "$REAL_CODEX" "$@"
+C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"

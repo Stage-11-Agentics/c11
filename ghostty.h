@@ -388,6 +388,43 @@ typedef struct {
 } ghostty_text_s;
 
 typedef enum {
+  GHOSTTY_TEXT_READ_OK = 0,
+  GHOSTTY_TEXT_READ_BUSY = 1,
+  GHOSTTY_TEXT_READ_INVALID_SELECTION = 2,
+  GHOSTTY_TEXT_READ_FAILED = 3,
+  GHOSTTY_TEXT_READ_NO_SELECTION = 4,
+} ghostty_text_read_status_e;
+
+// Bounded active-screen prompt-region capture. Callers provide storage for at
+// most these limits; native traversal stops at the same limits and marks a
+// clipped result incomplete. Text is UTF-8, cell entries retain SGR-2 faint,
+// and rows preserve hard/soft-wrap boundaries. No scrollback or colors.
+#define GHOSTTY_PROMPT_REGION_MAX_ROWS 16
+#define GHOSTTY_PROMPT_REGION_MAX_CELLS 4096
+#define GHOSTTY_PROMPT_REGION_MAX_TEXT_BYTES 16384
+typedef struct {
+  uint32_t cursor_x;
+  uint32_t cursor_y;
+  uint32_t row_count;
+  uint32_t cell_count;
+  uint32_t text_len;
+  bool cursor_pending_wrap;
+  bool complete;
+} ghostty_prompt_region_s;
+typedef struct {
+  uint32_t screen_y;
+  uint32_t cell_start;
+  uint32_t cell_count;
+  bool soft_wrap;
+  bool wrap_continuation;
+} ghostty_prompt_region_row_s;
+typedef struct {
+  uint32_t text_offset;
+  uint32_t text_len;
+  bool faint;
+} ghostty_prompt_region_cell_s;
+
+typedef enum {
   GHOSTTY_POINT_ACTIVE,
   GHOSTTY_POINT_VIEWPORT,
   GHOSTTY_POINT_SCREEN,
@@ -437,6 +474,13 @@ typedef enum {
   GHOSTTY_SURFACE_CONTEXT_SPLIT = 2,
 } ghostty_surface_context_e;
 
+typedef enum {
+  GHOSTTY_SURFACE_IO_EXEC = 0,
+  GHOSTTY_SURFACE_IO_MANUAL = 1,
+} ghostty_surface_io_mode_e;
+
+typedef void (*ghostty_io_write_cb)(void*, const char*, uintptr_t);
+
 typedef struct {
   ghostty_platform_e platform_tag;
   ghostty_platform_u platform;
@@ -450,6 +494,9 @@ typedef struct {
   const char* initial_input;
   bool wait_after_command;
   ghostty_surface_context_e context;
+  ghostty_surface_io_mode_e io_mode;
+  ghostty_io_write_cb io_write_cb;
+  void* io_write_userdata;
 } ghostty_surface_config_s;
 
 typedef struct {
@@ -1120,6 +1167,30 @@ bool ghostty_surface_read_selection(ghostty_surface_t, ghostty_text_s*);
 bool ghostty_surface_read_text(ghostty_surface_t,
                                ghostty_selection_s,
                                ghostty_text_s*);
+// Call on the app thread with a live surface and a non-null result. These
+// attempt the renderer lock once; BUSY returns immediately. Formatting after
+// acquisition is synchronous and has no wall-time bound. Result is zeroed on
+// entry. Only OK transfers text ownership; free it once with free_text below.
+ghostty_text_read_status_e ghostty_surface_try_read_text(ghostty_surface_t,
+                                                       ghostty_selection_s,
+                                                       ghostty_text_s*);
+// NO_SELECTION means the active screen has no selection after acquiring the
+// lock; BUSY does not inspect the active selection.
+ghostty_text_read_status_e ghostty_surface_try_read_selection(ghostty_surface_t,
+                                                            ghostty_text_s*);
+// Call on the app thread with a live surface and buffers holding the advertised
+// maximums above. The active-screen lock is attempted once; BUSY returns without
+// reading. The function traverses at most 16 rows, 4096 cells and 16 KiB of
+// UTF-8 text while locked. Result/counters are zeroed on entry. OK returns a
+// snapshot; `complete == false` means the bounded copy clipped data and must not
+// be interpreted as an empty prompt. Result contains only data copied into the
+// caller-owned buffers; it allocates no text and has no matching free function.
+ghostty_text_read_status_e ghostty_surface_try_read_prompt_region(
+    ghostty_surface_t,
+    ghostty_prompt_region_s*,
+    ghostty_prompt_region_row_s*, uintptr_t,
+    ghostty_prompt_region_cell_s*, uintptr_t,
+    char*, uintptr_t);
 void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
 #ifdef __APPLE__

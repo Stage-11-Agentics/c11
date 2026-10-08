@@ -55,7 +55,7 @@ final class CmuxWebView: WKWebView {
     var onContextMenuDownloadStateChanged: ((Bool) -> Void)?
     /// Called when "Open Link in New Tab" context menu is selected.
     /// Bypasses createWebViewWith so the link opens as a tab, not a popup.
-    var onContextMenuOpenLinkInNewTab: ((URL) -> Void)?
+    var onContextMenuOpenLinkInNewPanel: ((URL) -> Void)?
     var onShowSurfaceManifest: (() -> Void)?
     var contextMenuLinkURLProvider: ((CmuxWebView, NSPoint, @escaping (URL?) -> Void) -> Void)?
     var contextMenuDefaultBrowserOpener: ((URL) -> Bool)?
@@ -115,7 +115,10 @@ final class CmuxWebView: WKWebView {
 
     override func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? {
         markLoadIssued()
-        return super.loadHTMLString(string, baseURL: baseURL)
+        // WebKit routes this through load(_:mimeType:characterEncodingName:baseURL:).
+        // That Swift override has a nonoptional URL, so a nil HTML base traps
+        // while bridging WebKit's Objective-C call. Use its blank-document base.
+        return super.loadHTMLString(string, baseURL: baseURL ?? URL(string: "about:blank")!)
     }
 
     override func loadFileURL(_ URL: URL, allowingReadAccessTo readAccessURL: URL) -> WKNavigation? {
@@ -259,7 +262,12 @@ final class CmuxWebView: WKWebView {
         return result
     }
 
+    /// Set by the owning `BrowserPanel`: stamps the tab sheet's "touched" clock.
+    /// A plain closure call that stores a `Date`; nothing is published.
+    var onOperatorInput: (() -> Void)?
+
     override func keyDown(with event: NSEvent) {
+        onOperatorInput?()
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         var route = "super"
@@ -292,6 +300,7 @@ final class CmuxWebView: WKWebView {
     // NSView (WKWebView), not to sibling SwiftUI overlays. Notify the panel system so
     // bonsplit focus tracks which pane the user clicked in.
     override func mouseDown(with event: NSEvent) {
+        onOperatorInput?()
 #if DEBUG
         let windowNumber = window?.windowNumber ?? -1
         let firstResponderType = window?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
@@ -575,7 +584,10 @@ final class CmuxWebView: WKWebView {
         guard let host = url.host?.lowercased(), host.contains("google.") else { return nil }
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let queryItems = comps.queryItems else { return nil }
-        let map = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name.lowercased(), $0.value ?? "") })
+        let map = Dictionary(
+            queryItems.map { ($0.name.lowercased(), $0.value ?? "") },
+            uniquingKeysWith: { first, _ in first }
+        )
         let candidates = ["imgurl", "mediaurl", "url", "q"]
         for key in candidates {
             guard let raw = map[key], !raw.isEmpty,
@@ -597,7 +609,7 @@ final class CmuxWebView: WKWebView {
         return nil
     }
 
-    private func normalizedLinkedDownloadURL(_ url: URL) -> URL {
+    func normalizedLinkedDownloadURL(_ url: URL) -> URL {
         resolveGoogleRedirectURL(url) ?? url
     }
 
@@ -1238,21 +1250,13 @@ final class CmuxWebView: WKWebView {
     //
     // Fix: filter out text-based types that conflict with bonsplit tab drags, but keep
     // file URL types so Finder file drops and HTML drag-and-drop work.
-    private static let blockedDragTypes: Set<NSPasteboard.PasteboardType> = [
-        .string, // public.utf8-plain-text — matches bonsplit's NSString tab drags
-        NSPasteboard.PasteboardType("public.text"),
-        NSPasteboard.PasteboardType("public.plain-text"),
-        NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer"),
-        NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder"),
-    ]
-
     static func shouldRejectInternalPaneDrag(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
         DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
-            || DragOverlayRoutingPolicy.hasSidebarTabReorder(pasteboardTypes)
+            || DragOverlayRoutingPolicy.hasSidebarWorkspaceReorder(pasteboardTypes)
     }
 
     override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {
-        let filtered = newTypes.filter { !Self.blockedDragTypes.contains($0) }
+        let filtered = DragOverlayRoutingPolicy.webViewDragTypes(newTypes)
         if !filtered.isEmpty {
             super.registerForDraggedTypes(filtered)
         }
@@ -1302,9 +1306,9 @@ final class CmuxWebView: WKWebView {
             // popup request.
             if item.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow"
                 || item.title.contains("Open Link in New Window") {
-                item.title = String(localized: "browser.contextMenu.openLinkInNewTab", defaultValue: "Open Link in New Tab")
+                item.title = String(localized: "browser.contextMenu.openLinkInNewTab", defaultValue: "Open Link in New Panel")
                 item.target = self
-                item.action = #selector(contextMenuOpenLinkInNewTab(_:))
+                item.action = #selector(contextMenuOpenLinkInNewPanel(_:))
             }
 
             if isDownloadImageMenuItem(item) {
@@ -1357,7 +1361,7 @@ final class CmuxWebView: WKWebView {
             let manifestItem = NSMenuItem(
                 title: String(
                     localized: "surfaceManifest.menuItem",
-                    defaultValue: "Show surface manifest…"
+                    defaultValue: "Panel Details"
                 ),
                 action: #selector(contextMenuShowSurfaceManifest(_:)),
                 keyEquivalent: ""
@@ -1381,11 +1385,11 @@ final class CmuxWebView: WKWebView {
         }
     }
 
-    @objc private func contextMenuOpenLinkInNewTab(_ sender: Any?) {
+    @objc private func contextMenuOpenLinkInNewPanel(_ sender: Any?) {
         let point = lastContextMenuPoint
         resolveContextMenuLinkURL(at: point) { [weak self] url in
             guard let self, let url else { return }
-            self.onContextMenuOpenLinkInNewTab?(url)
+            self.onContextMenuOpenLinkInNewPanel?(url)
         }
     }
 

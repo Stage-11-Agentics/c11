@@ -13,7 +13,7 @@ struct WorkspaceBlueprintExportResult: Sendable {
 
 @MainActor
 struct WorkspaceBlueprintExporter {
-    let tabManager: TabManager
+    let workspaceManager: WorkspaceManager
 
     /// Capture the live workspace identified by `workspaceId` and wrap it in a
     /// `WorkspaceBlueprintFile` with the given name and optional description.
@@ -36,7 +36,7 @@ struct WorkspaceBlueprintExporter {
         description: String? = nil,
         companionBridge: WorkspacePlanCompanionCaptureBridge? = nil
     ) -> WorkspaceBlueprintExportResult? {
-        guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+        guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
             return nil
         }
         let capture = WorkspacePlanCapture.capture(

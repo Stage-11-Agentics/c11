@@ -250,7 +250,7 @@ Verification:
 xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
   -destination "platform=macOS" test \
   -only-testing:c11LogicTests/BrowserCompanionPolicyTests \
-  -only-testing:c11LogicTests/PaneSizePolicyTests \
+  -only-testing:c11LogicTests/AreaSizePolicyTests \
   -only-testing:c11LogicTests/AgentManifestTests \
   -only-testing:c11LogicTests/TabOrdinalDisplayTests
 ```
@@ -285,7 +285,7 @@ Verification:
 ```bash
 xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
   -destination "platform=macOS" test \
-  -only-testing:c11LogicTests/SurfaceMetadataStoreValidationTests
+  -only-testing:c11LogicTests/TabMetadataStoreValidationTests
 
 C11_AGENT_COMPANION_BROWSER_ENABLED=1 \
   scripts/test-unit-local.sh -only-testing:c11Tests/BrowserCompanionWorkspaceTests

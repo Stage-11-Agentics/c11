@@ -15,17 +15,24 @@ import WebKit
 /// (`bundleProxyForCurrentProcess is nil`) and a crash here restarts the runner,
 /// which takes ~15 other host-sensitive suites down with it.
 ///
-/// `loadHTMLString` is deliberately **not** covered. It traps with
-/// `Signal 5: System trap` inside `super` in *both* the bare runner and the
-/// app-hosted one — WebKit cannot bring up a web process under XCTest here — so
-/// any test of it is a guaranteed crash rather than an assertion. Its override is
-/// three lines, identical in shape to the four exercised below; the live path is
-/// covered by the error-page flow in `BrowserPanel.loadErrorPage` and by phase-4
-/// validation, not by a test that cannot run.
+/// C11-287 covers the nil HTML base that previously trapped in Swift's URL
+/// bridge when WebKit called the nonoptional data-load override. HTML loads
+/// normalize that base to about:blank before entering WebKit.
 ///
 /// The predicate's non-loading cases, the timeout clamp, and the run-loop pump are
 /// covered in `BrowserAwaitPolicyTests` in the logic target.
 final class CmuxWebViewLoadTrackingTests: XCTestCase {
+
+    @MainActor
+    func testHTMLLoadWithNilBaseMarksLoadIssuedWithoutTrapping() {
+        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        XCTAssertFalse(webView.hasIssuedLoad)
+        let navigation = webView.loadHTMLString("<html><body>blank-base fixture</body></html>", baseURL: nil)
+        XCTAssertNotNil(navigation)
+        XCTAssertTrue(webView.hasIssuedLoad)
+        XCTAssertTrue(TerminalController.v2BrowserWebViewHasIssuedLoad(webView))
+        webView.stopLoading()
+    }
 
     @MainActor
     func testLoadRequestMarksLoadIssued() {

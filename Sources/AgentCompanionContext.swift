@@ -4,14 +4,21 @@ import Foundation
 
 /// Durable browser-to-agent association. The stable surface UUID is the
 /// authority; the last known name exists only to explain an orphaned link.
-struct AgentSurfaceLink: Codable, Equatable, Sendable {
+struct AgentPanelLink: Codable, Equatable, Sendable {
     var surfaceID: UUID
     var lastKnownName: String?
+
+    // Pinned on-disk keys: session decode is all-or-nothing, so these raw
+    // strings never change even when the Swift names do.
+    private enum CodingKeys: String, CodingKey {
+        case surfaceID = "surfaceID"
+        case lastKnownName = "lastKnownName"
+    }
 }
 
 /// A live surface identity. Refs and ordinals are live presentation hints and
 /// must never be copied into durable companion state.
-struct CompanionSurfaceIdentity: Equatable, Sendable {
+struct CompanionPanelIdentity: Equatable, Sendable {
     var surfaceID: UUID
     var surfaceRef: String?
     var surfaceOrdinal: Int?
@@ -19,7 +26,7 @@ struct CompanionSurfaceIdentity: Equatable, Sendable {
 }
 
 struct AgentDescriptor: Equatable, Sendable {
-    var identity: CompanionSurfaceIdentity
+    var identity: CompanionPanelIdentity
     var terminalKind: String
 }
 
@@ -42,8 +49,8 @@ enum BrowserCompanionPresentation: Equatable, Sendable {
     case aligned(linked: AgentDescriptor)
     case veiled(linked: AgentDescriptor, active: AgentDescriptor)
     case revealed(linked: AgentDescriptor, active: AgentDescriptor)
-    case orphaned(link: AgentSurfaceLink)
-    case orphanedRevealed(link: AgentSurfaceLink)
+    case orphaned(link: AgentPanelLink)
+    case orphanedRevealed(link: AgentPanelLink)
 
     var state: BrowserCompanionPresentationState {
         switch self {
@@ -72,7 +79,7 @@ enum BrowserCompanionPresentation: Equatable, Sendable {
 enum BrowserCompanionPolicy {
     static func presentation(
         browserSurfaceID: UUID,
-        link: AgentSurfaceLink?,
+        link: AgentPanelLink?,
         context: AgentContextState,
         liveAgents: [AgentDescriptor],
         revealGrant: CompanionRevealGrant?
@@ -167,7 +174,7 @@ enum AgentIdentityPolicy {
             ?? fallbackDisplayName(for: normalizedKind)
             ?? normalizedKind
         return AgentDescriptor(
-            identity: CompanionSurfaceIdentity(
+            identity: CompanionPanelIdentity(
                 surfaceID: surfaceID,
                 surfaceRef: surfaceRef,
                 surfaceOrdinal: surfaceOrdinal,
@@ -182,7 +189,7 @@ enum AgentIdentityPolicy {
 
 enum CompanionIdentityFormatting {
     static func live(
-        _ identity: CompanionSurfaceIdentity,
+        _ identity: CompanionPanelIdentity,
         showSurfaceIDs: Bool
     ) -> String {
         TitleFormatting.ordinalPrefixed(
@@ -193,8 +200,8 @@ enum CompanionIdentityFormatting {
     }
 
     static func orphan(
-        _ link: AgentSurfaceLink,
-        visibleLinks: [AgentSurfaceLink],
+        _ link: AgentPanelLink,
+        visibleLinks: [AgentPanelLink],
         showSurfaceIDs: Bool
     ) -> String {
         let trimmedName = link.lastKnownName?
@@ -254,8 +261,25 @@ enum CompanionPlanDiagnosticCode: String, Codable, Equatable, Sendable {
     case targetNotTerminal = "companion_link_target_not_terminal"
     case targetNotAgent = "companion_link_target_not_agent"
     case applyFailed = "companion_link_apply_failed"
-    case duplicateSurfaceID = "blueprint_duplicate_surface_id"
+    case duplicateSurfaceID = "blueprint_duplicate_panel_id"
     case invalidAgentKind = "blueprint_invalid_agent_kind"
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        // C11-337: legacy spelling, accepted forever.
+        if raw == "blueprint_duplicate_surface_id" {
+            self = .duplicateSurfaceID
+            return
+        }
+        guard let code = CompanionPlanDiagnosticCode(rawValue: raw) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown companion diagnostic code '\(raw)'"
+            )
+        }
+        self = code
+    }
 }
 
 enum CompanionPlanDiagnosticSeverity: String, Codable, Equatable, Sendable {

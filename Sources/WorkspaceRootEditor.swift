@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// C11-238: the operator-facing edits of a workspace's root directory, shared
@@ -109,6 +110,64 @@ enum WorkspaceRootActions {
     }
 }
 
+/// Follows one workspace's root directory through a narrow `$rootDirectory`
+/// subscription, so the title bar label re-renders only when the root changes
+/// (not on every `Workspace` publish).
+@MainActor
+final class WorkspaceRootLabelModel: ObservableObject {
+    @Published private(set) var root: String?
+    private var cancellable: AnyCancellable?
+
+    init(workspace: Workspace) {
+        root = workspace.rootDirectory
+        cancellable = workspace.$rootDirectory
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.root = $0 }
+    }
+}
+
+/// C11-238: the selected workspace's root directory, shown dimmed in the empty
+/// title bar space left of the info button. Renders nothing when there is no
+/// root; the title bar's Spacer absorbs the width, and the label has the lowest
+/// layout priority so it truncates (middle) before anything else moves.
+struct WorkspaceRootTitlebarLabel: View {
+    let workspace: Workspace?
+    let foregroundColor: Color
+
+    var body: some View {
+        if let workspace {
+            // Identity per workspace: selection change swaps the model.
+            Content(workspace: workspace, foregroundColor: foregroundColor)
+                .id(workspace.id)
+        }
+    }
+
+    private struct Content: View {
+        let foregroundColor: Color
+        @StateObject private var model: WorkspaceRootLabelModel
+
+        init(workspace: Workspace, foregroundColor: Color) {
+            self.foregroundColor = foregroundColor
+            _model = StateObject(wrappedValue: WorkspaceRootLabelModel(workspace: workspace))
+        }
+
+        var body: some View {
+            if let root = model.root {
+                Text(WorkspaceRootActions.displayPath(root))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(foregroundColor.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+                    .safeHelp(root)
+                    .accessibilityIdentifier("WorkspaceRootTitlebarLabel")
+            }
+        }
+    }
+}
+
 /// Fixed-size info button in the custom title bar. It does not observe the
 /// workspace (only the popover content does), so the title bar gains no
 /// invalidation on the typing path.
@@ -163,24 +222,24 @@ struct WorkspaceRootPopover: View {
         if rootMissing {
             return String(
                 localized: "workspaceRoot.caption.missing",
-                defaultValue: "This folder no longer exists. New terminals start in the focused surface's directory."
+                defaultValue: "This folder no longer exists. New terminals start in the focused panel's directory."
             )
         }
         if root == nil {
             return String(
                 localized: "workspaceRoot.caption.none",
-                defaultValue: "New terminals start in the focused surface's directory until a root is set."
+                defaultValue: "New terminals start in the focused panel's directory until a root is set."
             )
         }
         return String(
             localized: "workspaceRoot.caption",
-            defaultValue: "New tabs, splits, and agents start here."
+            defaultValue: "New panels, splits, and agents start here."
         )
     }
 
     private var driftText: String {
         let path = drifted.map(WorkspaceRootActions.displayPath) ?? ""
-        return String(localized: "workspaceRoot.focusedSurface", defaultValue: "Focused surface: \(path)")
+        return String(localized: "workspaceRoot.focusedSurface", defaultValue: "Focused panel: \(path)")
     }
 
     var body: some View {

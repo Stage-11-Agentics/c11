@@ -1,12 +1,12 @@
 # Result Validator — Phase 2 Reference
 
-Phase 2 fires when the Orchestrator declares the run complete (every ticket at the terminal pre-merge status or `done`). A **fresh** agent spawns in its own tab — fresh because Orchestrator bias toward "my work is good" is the failure mode this phase exists to prevent.
+Phase 2 fires when the Orchestrator declares the run complete (every ticket at the terminal pre-merge status or `done`). A **fresh** agent spawns in its own panel — fresh because Orchestrator bias toward "my work is good" is the failure mode this phase exists to prevent.
 
 The Result Validator's whole job: walk `validation-plan.md` row by row, record pass/fail/partial against the actual run output, write the Validation Report.
 
 ## Identity declaration
 
-The Identity Block from `references/orchestrator.md` (resolve own surface ref; never trust `$C11_SURFACE_ID` in a fresh surface), then title `Result Validator` with a description noting "terminal audit; one-shot — exits after surfacing the report."
+The Identity Block from `references/orchestrator.md` (resolve own panel ref; never trust `$C11_PANEL_ID` in a fresh panel), then title `Result Validator` with a description noting "terminal audit; one-shot — exits after surfacing the report."
 
 ## Boot prompt (spawned by Orchestrator at run-complete)
 
@@ -42,8 +42,8 @@ After the report is written, surface it to the operator with a clear summary hea
 Load the Lattice Orchestrator Workflow skill (`lattice-orchestrator`) and read `references/result-validator.md` before starting.
 EOF
 
-c11 send --workspace $WS --surface $RV_SURF "cd <project-root> && claude --dangerously-skip-permissions --model opus \"Read /tmp/result-validator-boot.md and follow the instructions.\""
-c11 send-key --workspace $WS --surface $RV_SURF enter
+c11 send --workspace $WS --panel $RV_PANEL "cd <project-root> && claude --dangerously-skip-permissions --model opus \"Read /tmp/result-validator-boot.md and follow the instructions.\"" \
+  && c11 send-key --workspace $WS --panel $RV_PANEL enter
 ```
 
 ## Audit protocol
@@ -62,7 +62,7 @@ c11 send-key --workspace $WS --surface $RV_SURF enter
 
 ### Parallelize per-row verification with the `Agent` tool when the plan is non-trivial
 
-Per-row verification is independent — each row reads its named artifact and runs its named method. **When the plan has more than ~6 rows and the rows cluster naturally (web-UI rows, runtime rows, provider rows, etc.), parallelize via Claude Code's `Agent` tool** — NOT via new c11 surfaces. Agent sub-spawns are sub-second; new c11 surfaces are seconds-to-minutes and add operational complexity (cwd inheritance bugs, allocator wedges, title-stomping). The right primitive for parallel-fanout-then-merge within a single role is in-process sub-agents.
+Per-row verification is independent — each row reads its named artifact and runs its named method. **When the plan has more than ~6 rows and the rows cluster naturally (web-UI rows, runtime rows, provider rows, etc.), parallelize via Claude Code's `Agent` tool** — NOT via new c11 panels. Agent sub-spawns are sub-second; new c11 panels are seconds-to-minutes and add operational complexity (cwd inheritance bugs, allocator wedges, title-stomping). The right primitive for parallel-fanout-then-merge within a single role is in-process sub-agents.
 
 Concrete pattern:
 
@@ -82,7 +82,7 @@ Concrete pattern:
 
 The Validator stays the singleton report-writer. The sub-agents are temporary fan-out workers. Don't stress the parallelization if the bucketing is awkward; sequential is fine for small plans.
 
-**Do NOT use `c11 new-surface` for this.** That's the wrong primitive at this scope — its cost model is built for long-lived delegator surfaces, not transient per-row verification.
+**Do NOT use `c11 new-panel` for this.** That's the wrong primitive at this scope — its cost model is built for long-lived delegator panels, not transient per-row verification.
 
 **`runnable_at: post-merge-smoke` rows are NOT walked here.** Collect them verbatim into the report's § "Operator smoke-pass checklist" (template below). They're the operator's post-merge pass — your job is to stage them, not run them. If you find yourself wanting to attempt one anyway because it "should be easy," resist: cross-applying multiple open PRs to a single tree pre-merge is exactly the `PARTIAL-INSPECTION` shape the two-track plan exists to prevent.
 
@@ -174,7 +174,7 @@ Top items needing decision:
 Full report: .lattice/orchestration/validation-report.md
 ```
 
-Then stop. The Result Validator is one-shot. The Orchestrator (still alive in its pane) is the operator's channel for routing fix-backs or opening follow-up tickets.
+Then stop. The Result Validator is one-shot. The Orchestrator (still alive in its panel) is the operator's channel for routing fix-backs or opening follow-up tickets.
 
 ## When to skip the terminal audit
 

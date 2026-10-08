@@ -298,7 +298,7 @@ final class PiConversationTests: XCTestCase {
             capturedVia: .wrapperClaim,
             state: .alive
         )
-        let existing = [surfaceId: SurfaceConversations(active: claim)]
+        let existing = [surfaceId: PanelConversations(active: claim)]
 
         let captured = pipeline.captureRefs(contexts: contexts, existing: existing)
         XCTAssertEqual(captured.count, 1)

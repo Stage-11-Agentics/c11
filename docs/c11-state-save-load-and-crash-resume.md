@@ -138,6 +138,23 @@ The laggy-c11 command. Runs the full clean-shutdown choreography (suspendAllAliv
 - This is deliberately the primitive instead of "load state into the running instance": tearing down and rebuilding live PTYs, Ghostty surfaces, and browser processes inside a running app is a much bigger blast radius than a scripted clean bounce, and the end state is identical.
 - `--no-resume` restores layout but skips conversation resume (types nothing into panes).
 
+#### One-shot restore from session history
+
+To start from a specific archived full-app snapshot, launch a new c11 process
+with `C11_SESSION_HISTORY_RESTORE_FILE` set to that archive's path. c11 accepts
+only a matching archive directly inside the canonical snapshot's own
+`session-history/` directory, then sends it through the normal startup restore
+path. The choice is process-scoped and is not persisted:
+
+```bash
+C11_SESSION_HISTORY_RESTORE_FILE="$HOME/Library/Application Support/c11/session-history/session-com.stage11.c11-<timestamp>.json" \
+  "/Applications/c11.app/Contents/MacOS/c11"
+```
+
+Use the actual canonical snapshot path for the installed bundle. An invalid or
+out-of-directory archive is ignored and the current canonical snapshot is
+loaded instead.
+
 #### `c11 state load <path>` (phase 2, deliberately deferred)
 
 Applying an arbitrary saved snapshot into a running instance raises replace-vs-merge semantics, id collisions with live surfaces, and double-resume hazards. Workspace-scoped restore already exists (`c11 snapshot` / `c11 restore`), and the full-app case is covered by `app restart`. Defer until a concrete need shows up.

@@ -48,8 +48,12 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None, check: bool = Tru
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", *args], env=env)
     try:
@@ -202,8 +206,8 @@ def _wait_for_pane_count(client: cmux, minimum_count: int, timeout: float = 8.0)
 
 def _surface_text_scrollback(client: cmux, workspace_id: str, surface_id: str) -> str:
     payload = client._call(
-        "surface.read_text",
-        {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+        "panel.read_text",
+        {"workspace_id": workspace_id, "panel_id": surface_id, "scrollback": True},
     ) or {}
     return str(payload.get("text") or "")
 
@@ -265,7 +269,7 @@ def _layout_panes(client: cmux) -> list[dict]:
 def _pane_extent(client: cmux, pane_id: str, axis: str) -> float:
     panes = _layout_panes(client)
     for pane in panes:
-        pid = str(pane.get("paneId") or pane.get("pane_id") or "")
+        pid = str(pane.get("paneId") or pane.get("area_id") or "")
         if pid != pane_id:
             continue
         frame = pane.get("frame") or {}
@@ -288,7 +292,7 @@ def _pane_for_surface(client: cmux, surface_id: str) -> str:
 
 
 def _pick_resize_direction_for_pane(client: cmux, pane_ids: list[str], target_pane: str) -> tuple[str, str]:
-    panes = [p for p in _layout_panes(client) if str(p.get("paneId") or p.get("pane_id") or "") in pane_ids]
+    panes = [p for p in _layout_panes(client) if str(p.get("paneId") or p.get("area_id") or "") in pane_ids]
     if len(panes) < 2:
         raise cmuxError(f"Need >=2 panes for resize test, got {panes}")
 
@@ -303,11 +307,11 @@ def _pick_resize_direction_for_pane(client: cmux, pane_ids: list[str], target_pa
 
     if x_span >= y_span:
         left_pane = min(panes, key=x_of)
-        left_id = str(left_pane.get("paneId") or left_pane.get("pane_id") or "")
+        left_id = str(left_pane.get("paneId") or left_pane.get("area_id") or "")
         return ("right" if target_pane == left_id else "left"), "width"
 
     top_pane = min(panes, key=y_of)
-    top_id = str(top_pane.get("paneId") or top_pane.get("pane_id") or "")
+    top_id = str(top_pane.get("paneId") or top_pane.get("area_id") or "")
     return ("down" if target_pane == top_id else "up"), "height"
 
 
@@ -493,17 +497,17 @@ def main() -> int:
             current_extent = _pane_extent(client, pane_id, resize_axis)
             for index, direction in enumerate(resize_sequence, start=1):
                 resize_result = client._call(
-                    "pane.resize",
+                    "area.resize",
                     {
                         "workspace_id": workspace_id,
-                        "pane_id": pane_id,
+                        "area_id": pane_id,
                         "direction": direction,
                         "amount": 80,
                     },
                 ) or {}
                 _must(
-                    str(resize_result.get("pane_id") or "") == pane_id,
-                    f"pane.resize response missing expected pane_id: {resize_result}",
+                    str(resize_result.get("area_id") or "") == pane_id,
+                    f"area.resize response missing expected area_id: {resize_result}",
                 )
                 if expected_sign_by_direction[direction] > 0:
                     _wait_for(lambda: _pane_extent(client, pane_id, resize_axis) > current_extent + 1.0, timeout_s=5.0)

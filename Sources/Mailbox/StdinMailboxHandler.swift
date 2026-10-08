@@ -35,9 +35,10 @@ final class StdinMailboxHandler: MailboxHandler {
     /// Closure the dispatcher injects so the handler can resolve a
     /// TerminalPanel (or whatever write sink) on the main actor.
     ///
-    /// The outcome set is deliberately narrow: Stage 2's production writer
-    /// (`Sources/Workspace.swift`) returns `.ok` / `.surfaceNotFound` /
-    /// `.surfaceNotTerminal` and never surfaces PTY write errors. EIO /
+    /// The outcome set is deliberately narrow: the production writer
+    /// (`Sources/Workspace.swift`) returns `.ok` / `.buffered` / `.skipped` /
+    /// `.surfaceNotFound` / `.surfaceNotTerminal` and never surfaces PTY
+    /// write errors. EIO /
     /// EPIPE propagation from `GhosttyTerminalView.sendText()` is
     /// follow-up work — tracked with the genuine async-cancellable
     /// writer (see plan risks, Stage 2 P0 #5/#6). Until that lands,
@@ -55,10 +56,14 @@ final class StdinMailboxHandler: MailboxHandler {
 
     enum WriteOutcome: Equatable {
         case ok(bytes: Int)
-        /// C11-144: recipient shell was busy, so the block was queued to flush
-        /// at the next prompt instead of injected now. Still a delivery, logged
+        /// The recipient was not ready (an agent mid-turn, an operator
+        /// draft, or no interactive agent reading the terminal), so the block
+        /// was queued for the agent's next prompt edge. Still a delivery, logged
         /// as `buffered` rather than dropped.
         case buffered(bytes: Int)
+        /// The envelope was already claimed from the inbox by a drain, so
+        /// nothing was typed.
+        case skipped
         case surfaceNotFound
         case surfaceNotTerminal
     }
@@ -77,7 +82,7 @@ final class StdinMailboxHandler: MailboxHandler {
     func deliver(
         envelope: MailboxEnvelope,
         to surfaceId: UUID,
-        surfaceName: String
+        panelName: String
     ) async -> MailboxDispatcher.HandlerInvocationResult {
         let block = Self.formatFramedBlock(envelope: envelope)
         let start = Date()
@@ -102,7 +107,7 @@ final class StdinMailboxHandler: MailboxHandler {
             let envelopeId = envelope.id
             Task {
                 let outcome: WriteOutcome = await MainActor.run {
-                    writer(surfaceId, envelopeId, surfaceName, block)
+                    writer(surfaceId, envelopeId, panelName, block)
                 }
                 let result: MailboxDispatcher.HandlerInvocationResult
                 switch outcome {
@@ -110,6 +115,8 @@ final class StdinMailboxHandler: MailboxHandler {
                     result = .init(outcome: .ok, bytes: bytes, elapsedMs: elapsedMs())
                 case .buffered(let bytes):
                     result = .init(outcome: .buffered, bytes: bytes, elapsedMs: elapsedMs())
+                case .skipped:
+                    result = .init(outcome: .skipped, bytes: 0, elapsedMs: elapsedMs())
                 case .surfaceNotFound, .surfaceNotTerminal:
                     result = .init(outcome: .closed, bytes: 0, elapsedMs: elapsedMs())
                 }

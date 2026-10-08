@@ -47,9 +47,9 @@ final class WorkspaceSnapshotStoreSecurityTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: workspace,
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
             surfaces: [
-                SurfaceSpec(
+                PanelSpec(
                     id: "s1",
                     kind: .terminal,
                     title: "t",

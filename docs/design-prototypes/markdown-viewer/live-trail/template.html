@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>c11 markdown · live-trail (prototype)</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it-footnote@4.0.0/dist/markdown-it-footnote.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<style>
+/* ════ tokens ═══════════════════════════════════════════════════════
+   chrome = c11 void language (docs/design-prototypes/c11-reskin).
+   prose  = IBM Plex Sans; chrome + code = JetBrains Mono.
+   gold is the change signal: an unseen write. nothing else is gold
+   inside the surface except the focused-pane ring and agent notes.  */
+:root, :root[data-theme="dark"] {
+  --void:#050505; --chrome:#0a0a0a; --chrome2:#1f1f22; --chrome3:#2d2d32;
+  --rule:#333333; --rule-soft:rgba(232,232,232,.075); --tab-active:#232327;
+  --ink:#e8e8e8; --ink-2:rgba(232,232,232,.78); --ink-3:rgba(232,232,232,.6); --ink-4:rgba(232,232,232,.4);
+  --paper:#0e0f11; --prose:#d9d9d5; --prose-2:rgba(217,217,213,.68); --head:#f3f3f0;
+  --code-bg:#131518; --code-rule:#25272c; --icode:#1a1c20;
+  --gold:#c9a84c; --gold-ink:#d9bb63; --gold-faint:rgba(201,168,76,.24); --gold-ghost:rgba(201,168,76,.09);
+  --add-bg:rgba(111,174,138,.10); --add-rule:#6fae8a; --del-bg:rgba(214,120,110,.10); --del-ink:#e0948b; --ins-bg:rgba(111,174,138,.24);
+  --run:#79AEE8; --idle:#78B59E; --seen:#7a7e88;
+  --thead:#15171a; --shadow:0 10px 30px rgba(0,0,0,.55);
+  --k-key:#b9a7e6; --k-str:#a3cc9c; --k-num:#e3b67c; --k-com:rgba(232,232,232,.38); --k-fn:#8fbbea; --k-attr:#d8bb7e; --k-bi:#82c6c4; --k-meta:#8a93a3;
+  color-scheme:dark;
+}
+:root[data-theme="light"] {
+  --void:#e4e2dc; --chrome:#f3f2ed; --chrome2:#e7e5de; --chrome3:#d9d6cd;
+  --rule:#cfccc2; --rule-soft:rgba(20,20,20,.08); --tab-active:#fbfaf6;
+  --ink:#16171a; --ink-2:rgba(22,23,26,.8); --ink-3:rgba(22,23,26,.62); --ink-4:rgba(22,23,26,.42);
+  --paper:#fbfaf6; --prose:#24262b; --prose-2:rgba(36,38,43,.66); --head:#0f1013;
+  --code-bg:#f2f0e9; --code-rule:#e0ddd3; --icode:#eeebe3;
+  --gold:#9b7920; --gold-ink:#84661a; --gold-faint:rgba(155,121,32,.26); --gold-ghost:rgba(155,121,32,.085);
+  --add-bg:rgba(46,125,82,.085); --add-rule:#3d8a5f; --del-bg:rgba(176,64,52,.075); --del-ink:#a4443a; --ins-bg:rgba(46,125,82,.17);
+  --run:#2f6fb5; --idle:#3f8a6c; --seen:#a19f95;
+  --thead:#f0eee7; --shadow:0 10px 26px rgba(50,42,20,.16);
+  --k-key:#6a4cb3; --k-str:#3b7638; --k-num:#9a5a10; --k-com:rgba(22,23,26,.45); --k-fn:#2a5ca6; --k-attr:#86621a; --k-bi:#1d7473; --k-meta:#6b7280;
+  color-scheme:light;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { height:100%; }
+body { background:var(--void); color:var(--ink); font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;
+  font-size:12px; font-weight:400; display:flex; flex-direction:column; overflow:hidden; -webkit-font-smoothing:antialiased; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+.tnum { font-variant-numeric:tabular-nums; }
+
+/* ════ prototype chrome (outside the c11 frame) ═════════════════════ */
+#proto { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:9px 16px;
+  border-bottom:1px dashed var(--gold-faint); background:var(--void); font-size:11px; color:var(--ink-3); }
+.badge { color:var(--gold); border:1px solid var(--gold-faint); border-radius:4px; padding:3px 9px;
+  letter-spacing:.14em; font-size:10px; font-weight:500; }
+.ptitle { color:var(--ink-2); letter-spacing:.02em; }
+.pgroup { display:flex; align-items:center; gap:6px; }
+.pgroup > label { color:var(--ink-4); }
+.seg { display:inline-flex; border:1px solid var(--rule); border-radius:5px; overflow:hidden; }
+.seg button { height:22px; padding:0 8px; white-space:nowrap; color:var(--ink-3); text-align:center; }
+.seg button + button { border-left:1px solid var(--rule); }
+.seg button:hover { color:var(--ink); background:var(--chrome2); }
+.seg button.on { color:var(--ink); background:var(--chrome3); }
+.pbtn { height:24px; padding:0 9px; white-space:nowrap; border:1px solid var(--rule); border-radius:5px; color:var(--ink-2); }
+.pbtn:hover { background:var(--chrome2); color:var(--ink); }
+.pbtn:active { background:var(--chrome3); }
+select.psel { font:inherit; color:var(--ink-2); background:var(--chrome); border:1px solid var(--rule); border-radius:5px; height:24px; padding:0 6px; }
+#simclock { color:var(--ink-4); width:21ch; }
+
+#stage { flex:1; min-height:0; display:flex; justify-content:center; gap:16px; padding:16px; position:relative; }
+
+/* ════ c11 frame ═══════════════════════════════════════════════════ */
+.frame { --w:820px; width:var(--w); flex:none; height:100%; display:flex; flex-direction:column; background:var(--chrome);
+  border:1px solid var(--rule); border-radius:8px; overflow:hidden; position:relative; transition:box-shadow .15s; }
+.frame.focused { box-shadow:0 0 0 1.5px var(--gold); }
+.tabbar { height:40px; flex:none; display:flex; align-items:stretch; border-bottom:1px solid var(--rule); user-select:none; }
+.tab { display:flex; align-items:center; gap:8px; padding:0 6px 0 12px; border-right:1px solid rgba(51,51,51,.55);
+  font-size:12.5px; color:var(--ink-3); flex:0 1 220px; min-width:0; white-space:nowrap; position:relative; cursor:default; }
+.tab.active { flex:0 0 auto; max-width:62%; background:var(--tab-active); color:var(--ink); font-weight:600; }
+.tab.active::before { content:""; position:absolute; left:0; right:0; top:0; height:3px; background:var(--gold); }
+.tab .ttl { overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+.tab .tx { width:20px; height:20px; display:flex; align-items:center; justify-content:center; color:var(--ink-4); font-size:13px; flex:none; font-weight:400; }
+.tab .glyph { color:var(--ink-4); font-weight:400; flex:none; width:12px; text-align:center; }
+.tchip { flex:none; min-width:22px; height:17px; padding:0 5px; border-radius:9px; background:var(--gold-faint); color:var(--gold-ink);
+  font-size:10.5px; font-weight:500; display:inline-flex; align-items:center; justify-content:center; }
+.tchip.zero { visibility:hidden; }
+.pmark { flex:none; display:inline-block; }
+.pmark.run { width:11px; height:11px; border-radius:50%; border:1.5px solid rgba(121,174,232,.35); border-top-color:var(--run); animation:spin 2.4s linear infinite; }
+.pmark.idle { width:9px; height:9px; border-radius:2px; background:var(--idle); opacity:.85; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.tabbar .spacer { flex:1 1 0; min-width:8px; }
+.countcell { flex:none; display:flex; align-items:center; gap:6px; padding:0 12px; color:var(--ink-3); font-size:12px; border-left:1px solid var(--rule); }
+.descbar { height:26px; flex:none; display:flex; align-items:center; gap:10px; padding:0 12px; border-bottom:1px solid var(--rule);
+  font-size:11.5px; color:var(--ink-3); }
+.descbar .desc { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.descbar .desc b { color:var(--ink-2); font-weight:500; }
+.descbar .looked { flex:none; width:17ch; text-align:right; color:var(--ink-4); }
+
+.surface { flex:1; min-height:0; display:flex; flex-direction:column; background:var(--paper); container-type:inline-size; }
+.strip { height:32px; flex:none; display:flex; align-items:center; gap:10px; padding:0 8px 0 12px; border-bottom:1px solid var(--rule);
+  background:var(--chrome); font-size:11px; }
+.writer { flex:1; min-width:0; display:flex; align-items:center; gap:8px; color:var(--ink-3); white-space:nowrap; }
+.writer .wtext { overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.writer .wtext b { color:var(--ink-2); font-weight:500; }
+.wdot { flex:none; width:6px; height:6px; border-radius:50%; background:var(--seen); opacity:.6; }
+.wdot.writing { background:var(--run); opacity:1; animation:breathe 1.6s ease-in-out infinite; }
+.wdot.settled { background:transparent; box-shadow:inset 0 0 0 1px var(--ink-4); }
+@keyframes breathe { 50% { opacity:.3; } }
+.tools { flex:none; display:flex; align-items:center; gap:6px; }
+.tbtn { height:22px; border:1px solid var(--rule); border-radius:5px; color:var(--ink-3); text-align:center; }
+.tbtn:hover { color:var(--ink); background:var(--chrome2); }
+.tbtn.on { color:var(--ink); background:var(--chrome3); border-color:var(--ink-4); }
+#diffBtn { width:44px; } #srcBtn { width:58px; } #findBtn { width:44px; }
+#modeSeg button { width:50px; padding:0; }
+
+.viewport { flex:1; min-height:0; position:relative; }
+.scroller { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; overflow-anchor:none; scrollbar-width:none; }
+.scroller::-webkit-scrollbar { display:none; }
+.content { position:relative; padding:0 34px 0 46px; min-height:100%; }
+.marks { position:absolute; inset:0; pointer-events:none; z-index:2; }
+
+/* ════ prose ═══════════════════════════════════════════════════════ */
+.doc { max-width:74ch; margin:0 auto; padding:26px 0 140px; font-family:"IBM Plex Sans",-apple-system,system-ui,sans-serif;
+  font-size:15.5px; line-height:1.62; color:var(--prose); }
+.doc > * + * { margin-top:.85em; }
+.doc h1,.doc h2,.doc h3,.doc h4,.doc h5,.doc h6 { color:var(--head); font-weight:600; display:flex; align-items:baseline; gap:10px; line-height:1.3; scroll-margin-top:16px; }
+.doc h1 { font-size:25px; letter-spacing:-.012em; margin-bottom:.4em; }
+.doc h2 { font-size:19.5px; letter-spacing:-.006em; margin-top:2.1em; padding-top:.9em; border-top:1px solid var(--rule-soft); }
+.doc h3 { font-size:16.5px; margin-top:1.7em; }
+.doc h4 { font-size:15px; margin-top:1.4em; }
+.doc h5,.doc h6 { font-size:13px; text-transform:lowercase; letter-spacing:.04em; color:var(--prose-2); }
+.htext { flex:1; min-width:0; }
+.hanchor { flex:none; font-family:"JetBrains Mono",monospace; font-size:12px; font-weight:400; color:var(--ink-4); text-decoration:none; opacity:0; width:1ch; }
+.doc :is(h1,h2,h3,h4,h5,h6):hover .hanchor { opacity:1; }
+.fresh { flex:none; width:9ch; text-align:right; font-family:"JetBrains Mono",monospace; font-size:10.5px; font-weight:400;
+  color:var(--ink-4); letter-spacing:0; font-variant-numeric:tabular-nums; opacity:.55; transition:opacity .4s, color .4s; }
+.fresh.recent { opacity:.95; }
+.fresh.hot { color:var(--gold-ink); opacity:1; }
+.fresh.calm { opacity:0; }
+.doc :is(h2,h3):hover .fresh.calm { opacity:.6; }
+.doc p { overflow-wrap:break-word; }
+.doc a { color:var(--head); text-decoration:underline; text-decoration-color:var(--ink-4); text-underline-offset:2px; }
+.doc a:hover { text-decoration-color:var(--head); }
+.doc strong { color:var(--head); font-weight:600; }
+.doc code { font-family:"JetBrains Mono",monospace; font-size:.84em; background:var(--icode); border:1px solid var(--rule-soft);
+  padding:.08em .38em; border-radius:4px; overflow-wrap:anywhere; }
+.doc ul,.doc ol { padding-left:1.45em; }
+.doc li + li { margin-top:.3em; }
+.doc li > ul,.doc li > ol { margin-top:.3em; }
+.doc li::marker { color:var(--ink-4); }
+.doc li.task { list-style:none; position:relative; }
+.doc li.task > .cb { position:absolute; left:-1.45em; top:.36em; }
+.cb { width:13px; height:13px; border-radius:3px; border:1.5px solid var(--ink-4); display:inline-block; transition:background .3s, border-color .3s; }
+.cb.done { background:var(--ink-3); border-color:var(--ink-3); background-image:linear-gradient(transparent,transparent);
+  -webkit-mask:none; position:relative; }
+.cb.done::after { content:""; position:absolute; left:3.2px; top:.6px; width:3.5px; height:7px; border:solid var(--paper); border-width:0 1.8px 1.8px 0; transform:rotate(45deg); }
+.doc li.task.done { color:var(--prose-2); }
+.doc blockquote { border-left:2px solid var(--rule); padding:.1em 0 .1em 14px; color:var(--prose-2); }
+.doc blockquote.callout { border-left-color:var(--ink-3); background:var(--rule-soft); padding:10px 14px; border-radius:0 6px 6px 0; }
+.callout-title { display:block; font-family:"JetBrains Mono",monospace; font-size:11px; letter-spacing:.06em; color:var(--ink-2); margin-bottom:4px; }
+.doc hr { border:0; border-top:1px solid var(--rule); margin:2em 0; }
+.tbl { overflow-x:auto; border:1px solid var(--rule); border-radius:6px; scrollbar-width:thin; }
+.tbl table { border-collapse:collapse; font-size:13px; line-height:1.45; min-width:100%; }
+.tbl th { background:var(--thead); text-align:left; font-weight:600; color:var(--head); font-size:12.5px; }
+.tbl th,.tbl td { padding:7px 11px; vertical-align:top; min-width:10ch; max-width:44ch; border-top:1px solid var(--rule-soft); }
+.tbl tr:first-child th { border-top:0; }
+.tbl td + td,.tbl th + th { border-left:1px solid var(--rule-soft); }
+.code,.mmd,.fm { border:1px solid var(--code-rule); border-radius:6px; background:var(--code-bg); overflow:hidden; }
+.blk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; height:26px; padding:0 6px 0 11px;
+  border-bottom:1px solid var(--code-rule); font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--ink-4); letter-spacing:.04em; }
+.blk-tools { display:flex; gap:4px; }
+.mini { width:56px; height:19px; border-radius:4px; color:var(--ink-3); font-size:10.5px; border:1px solid transparent; }
+.mini:hover { border-color:var(--rule); color:var(--ink); background:var(--chrome2); }
+.code pre { margin:0; padding:11px 14px 12px; overflow-x:auto; font-family:"JetBrains Mono",monospace; font-size:12.5px; line-height:1.58; color:var(--prose); scrollbar-width:thin; }
+.code pre code { background:none; border:0; padding:0; font-size:inherit; overflow-wrap:normal; }
+.mmd-body { padding:16px 12px; overflow-x:auto; text-align:center; min-height:64px; scrollbar-width:thin; }
+.mmd-body svg { max-width:100%; height:auto; }
+.mmd.natural .mmd-body svg { max-width:none; }
+.mmd.stale .mmd-body { opacity:.42; }
+.mmd-wait { font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--ink-4); padding:18px 0; }
+.mmd-src { text-align:left; margin-top:8px; font-family:"JetBrains Mono",monospace; font-size:12px; line-height:1.55; color:var(--prose-2); white-space:pre; overflow-x:auto; }
+.mmd-err { font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--del-ink); text-align:left; }
+.fm dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; padding:10px 14px; font-family:"JetBrains Mono",monospace; font-size:12px; }
+.fm dt { color:var(--ink-4); } .fm dd { color:var(--prose-2); overflow-wrap:anywhere; }
+.footnotes { font-size:13.5px; color:var(--prose-2); }
+
+/* highlight.js → theme tokens */
+.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-doctag { color:var(--k-key); }
+.hljs-string,.hljs-regexp,.hljs-addition { color:var(--k-str); }
+.hljs-number,.hljs-symbol,.hljs-bullet { color:var(--k-num); }
+.hljs-comment,.hljs-quote { color:var(--k-com); font-style:italic; }
+.hljs-title,.hljs-section,.hljs-function .hljs-title,.hljs-title.function_ { color:var(--k-fn); }
+.hljs-attr,.hljs-attribute,.hljs-variable,.hljs-template-variable,.hljs-property { color:var(--k-attr); }
+.hljs-built_in,.hljs-type,.hljs-title.class_ { color:var(--k-bi); }
+.hljs-meta,.hljs-params,.hljs-subst { color:var(--k-meta); }
+.hljs-deletion { color:var(--del-ink); }
+
+/* ════ change marks ════════════════════════════════════════════════ */
+.mk { position:absolute; width:3px; border-radius:1.5px; pointer-events:auto; cursor:pointer; transition:opacity .6s, background-color .6s, width .3s; }
+.mk::after { content:""; position:absolute; inset:-3px -7px; }
+.mk.unseen { background:var(--gold); }
+.mk.unseen.mod { background:repeating-linear-gradient(to bottom, var(--gold) 0 6px, transparent 6px 8px); }
+.mk.seen { background:var(--seen); width:2px; }
+.mk.tomb { width:0; height:0 !important; border-radius:0; background:none !important; border-left:7px solid var(--gold); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+.mk.tomb.seen { border-left-color:var(--seen); border-left-width:5px; }
+.mk.point { width:9px; height:9px !important; transform:rotate(45deg); border-radius:1px; background:var(--gold); margin-left:-3px; }
+.mk:hover { filter:brightness(1.25); }
+.mk.flash { animation:mkflash 1.2s ease-out; }
+@keyframes mkflash { 0%,40% { box-shadow:0 0 0 3px var(--gold-faint); } 100% { box-shadow:0 0 0 0 transparent; } }
+.jumpflash { animation:jf 1.6s ease-out; }
+@keyframes jf { 0% { background-color:var(--gold-ghost); } 100% { background-color:transparent; } }
+/* inline diff */
+.d-add,.d-mod,.d-check { background:var(--add-bg); border-radius:3px; box-shadow:-8px 0 0 var(--add-bg), 8px 0 0 var(--add-bg); }
+tr.d-add,tr.d-mod { box-shadow:none; }
+.doc ins { background:var(--ins-bg); text-decoration:none; border-radius:2px; padding:0 1px; }
+.doc del + ins, .doc ins + del { margin-left:3px; }
+.doc del { background:var(--del-bg); color:var(--del-ink); text-decoration:line-through; text-decoration-color:var(--del-ink); border-radius:2px; padding:0 1px; }
+.diffx { font-family:"JetBrains Mono",monospace; font-size:12px; line-height:1.55; color:var(--del-ink); background:var(--del-bg);
+  border-radius:4px; padding:7px 11px 8px; list-style:none; white-space:pre-wrap; overflow-wrap:anywhere; }
+.diffx .wh { display:block; color:var(--ink-4); font-size:10.5px; letter-spacing:.05em; margin-bottom:3px; }
+.diffx .dl { display:block; text-decoration:line-through; text-decoration-color:rgba(214,120,110,.55); }
+li.diffx { margin-left:-1.45em; }
+tr.diffx td { background:var(--del-bg); border-radius:0; }
+/* agent note (c11 markdown point) */
+.pnote { border-left:2px solid var(--gold); background:var(--gold-ghost); border-radius:0 6px 6px 0; padding:9px 12px 10px; }
+.pn-h { display:flex; align-items:center; gap:10px; font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--gold-ink); letter-spacing:.04em; }
+.pn-h .pn-who { color:var(--ink-4); flex:1; }
+.pn-b { margin-top:4px; font-size:14.5px; color:var(--head); }
+.pn-ack { height:21px; width:62px; border:1px solid var(--gold-faint); border-radius:5px; color:var(--gold-ink); font-family:"JetBrains Mono",monospace; font-size:10.5px; }
+.pn-ack:hover { background:var(--gold-faint); }
+.pnote.seen { border-left-color:var(--seen); background:var(--rule-soft); }
+.pnote.seen .pn-h { color:var(--ink-3); }
+
+/* ════ source view ═════════════════════════════════════════════════ */
+.src { font-family:"JetBrains Mono",monospace; font-size:12.5px; line-height:1.62; padding:16px 0 140px; color:var(--prose); }
+.sl { display:flex; min-height:1.62em; }
+.sl .ln { flex:none; width:4.5ch; text-align:right; padding-right:14px; color:var(--ink-4); user-select:none; font-variant-numeric:tabular-nums; }
+.sl .tx { flex:1; min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.sl.d-add,.sl.d-mod,.sl.d-check { box-shadow:none; border-radius:0; }
+.sl.del { background:var(--del-bg); color:var(--del-ink); }
+.sl.del .tx { text-decoration:line-through; text-decoration-color:rgba(214,120,110,.5); }
+.sx-h { color:var(--head); font-weight:600; } .sx-m { color:var(--ink-4); } .sx-c { color:var(--k-str); } .sx-f { color:var(--k-meta); } .sx-b { color:var(--head); font-weight:500; }
+
+/* ════ overlays: rail, pill, find, point chip ═══════════════════════ */
+.rail { position:absolute; top:6px; bottom:6px; right:3px; width:9px; z-index:4; cursor:pointer; }
+.rail .rv { position:absolute; left:0; right:0; border:1px solid var(--ink-4); border-radius:2px; background:var(--rule-soft); min-height:8px; }
+.rail .rt { position:absolute; left:1.5px; right:1.5px; height:3px; border-radius:1px; }
+.rt.unseen { background:var(--gold); } .rt.seen { background:var(--seen); opacity:.55; } .rt.find { background:var(--ink-2); height:2px; left:3px; right:3px; opacity:.7; }
+.rt.point { width:7px; height:7px; left:1px; transform:rotate(45deg); background:var(--gold); }
+.pill { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); z-index:6; display:flex; align-items:center; height:32px;
+  background:var(--chrome); border:1px solid var(--rule); border-radius:8px; box-shadow:var(--shadow); font-size:11.5px; white-space:nowrap;
+  transition:opacity .25s, transform .25s; }
+.pill.hide { opacity:0; pointer-events:none; transform:translate(-50%, 6px); }
+.pill .pmain { display:flex; align-items:center; gap:7px; padding:0 12px; height:100%; color:var(--ink-2); }
+.pill .pdia { width:7px; height:7px; background:var(--gold); transform:rotate(45deg); border-radius:1px; flex:none; }
+.pill .pcount { color:var(--gold-ink); font-weight:600; min-width:2ch; text-align:right; }
+.pill .plabel { width:24ch; }
+.pill .pdir { color:var(--ink-4); width:9ch; }
+.pill button { height:100%; width:32px; border-left:1px solid var(--rule); color:var(--ink-3); }
+.pill button:hover { background:var(--chrome2); color:var(--ink); }
+.pill button.pseen { width:auto; padding:0 12px; }
+.pill.pulse { animation:pillpulse .9s ease-out; }
+@keyframes pillpulse { 0% { box-shadow:0 0 0 0 var(--gold-faint), var(--shadow); } 30% { box-shadow:0 0 0 5px var(--gold-faint), var(--shadow); } 100% { box-shadow:0 0 0 0 transparent, var(--shadow); } }
+.findbar { position:absolute; top:8px; right:18px; z-index:7; width:330px; max-width:calc(100% - 36px); height:32px; display:flex; align-items:center;
+  background:var(--chrome); border:1px solid var(--rule); border-radius:7px; box-shadow:var(--shadow); }
+.findbar input { flex:1; min-width:0; height:100%; background:none; border:0; outline:0; color:var(--ink); font:inherit; font-size:12px; padding:0 10px; }
+.findbar .fcount { flex:none; width:9ch; text-align:right; color:var(--ink-4); padding-right:8px; }
+.findbar button { flex:none; width:30px; height:100%; border-left:1px solid var(--rule); color:var(--ink-3); }
+.findbar button:hover { color:var(--ink); background:var(--chrome2); }
+.findbar:focus-within { border-color:var(--gold-faint); }
+::highlight(find) { background-color:rgba(201,168,76,.28); }
+::highlight(findcur) { background-color:#c9a84c; color:#0a0a0a; }
+.pointchip { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:6; max-width:calc(100% - 60px); height:28px; display:flex; align-items:center; gap:8px;
+  padding:0 4px 0 11px; background:var(--chrome); border:1px solid var(--gold-faint); border-radius:7px; box-shadow:var(--shadow); font-size:11px; color:var(--ink-2); white-space:nowrap; }
+.pointchip .pdia { width:7px; height:7px; background:var(--gold); transform:rotate(45deg); flex:none; }
+.pointchip .ptx { overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.pointchip button { height:20px; padding:0 9px; border:1px solid var(--rule); border-radius:5px; color:var(--ink-2); flex:none; }
+.pointchip button:hover { background:var(--chrome2); }
+[hidden] { display:none !important; }
+
+/* narrow pane */
+@container (max-width: 640px) {
+  .content { padding:0 22px 0 32px; }
+  .doc { font-size:15px; padding-top:20px; }
+  .doc h1 { font-size:22px; } .doc h2 { font-size:18px; } .doc h3 { font-size:15.5px; }
+  .pill .plabel { width:auto; } .pill .plabel .long { display:none; }
+  .fresh { width:8ch; }
+}
+
+/* ════ agent cli drawer (prototype chrome) ══════════════════════════ */
+#drawer { flex:none; width:390px; height:100%; display:flex; flex-direction:column; background:var(--chrome); border:1px dashed var(--gold-faint); border-radius:8px; overflow:hidden; }
+#drawer.overlay { position:absolute; right:16px; top:16px; bottom:16px; height:auto; z-index:20; box-shadow:var(--shadow); }
+.dh { flex:none; display:flex; align-items:center; gap:8px; height:34px; padding:0 8px 0 12px; border-bottom:1px solid var(--rule); color:var(--ink-2); font-size:11.5px; }
+.dh .sp { flex:1; }
+.dh small { color:var(--ink-4); font-size:10.5px; }
+.dlist { flex:1 1 55%; overflow-y:auto; padding:8px 0; scrollbar-width:thin; }
+.cmd { padding:8px 12px; border-bottom:1px solid var(--rule-soft); }
+.cmd code { display:block; color:var(--ink); font-size:11.5px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cmd code .fl { color:var(--k-attr); } .cmd code .st { color:var(--k-str); }
+.cmd p { color:var(--ink-4); font-size:10.5px; line-height:1.5; margin-top:3px; }
+.cmd .row { display:flex; align-items:flex-start; gap:8px; }
+.cmd .row code { flex:1; min-width:0; }
+.run { flex:none; width:46px; height:22px; border:1px solid var(--gold-faint); border-radius:5px; color:var(--gold-ink); font-size:10.5px; }
+.run:hover { background:var(--gold-faint); }
+.dout { flex:1 1 45%; min-height:120px; overflow-y:auto; border-top:1px solid var(--rule); background:var(--void); padding:10px 12px; font-size:11px; line-height:1.5; color:var(--ink-3); white-space:pre-wrap; overflow-wrap:anywhere; scrollbar-width:thin; }
+.dout .pr { color:var(--ink); } .dout .ok { color:var(--add-rule); } .dout .er { color:var(--del-ink); }
+.keys { flex:none; border-top:1px solid var(--rule); padding:7px 12px; color:var(--ink-4); font-size:10.5px; line-height:1.6; }
+.keys kbd { font:inherit; color:var(--ink-2); border:1px solid var(--rule); border-radius:3px; padding:0 4px; }
+</style>
+</head>
+<body>
+
+<div id="proto">
+  <span class="badge">PROTOTYPE</span>
+  <span class="ptitle">markdown viewer · live-trail</span>
+  <div class="pgroup"><label>doc</label>
+    <select class="psel" id="docSel"></select></div>
+  <div class="pgroup"><label>pane</label>
+    <div class="seg" id="widthSeg"><button data-v="560" style="width:42px">560</button><button data-v="820" style="width:42px">820</button><button data-v="1200" style="width:46px">1200</button></div></div>
+  <div class="pgroup"><label>theme</label>
+    <div class="seg" id="themeSeg"><button data-v="dark" style="width:44px">dark</button><button data-v="light" style="width:46px">light</button></div></div>
+  <div class="pgroup"><label>agent</label>
+    <button class="pbtn" id="playBtn" style="width:62px">pause</button>
+    <button class="pbtn" id="stepBtn" style="width:84px">step <span class="tnum" id="stepN">0/14</span></button>
+    <button class="pbtn" id="resetBtn">reset</button>
+    <div class="seg" id="speedSeg"><button data-v="10" style="width:36px">10×</button><button data-v="30" style="width:36px">30×</button></div></div>
+  <div class="pgroup"><label>operator</label>
+    <div class="seg" id="focusSeg"><button data-v="here" style="width:46px">here</button><button data-v="away" style="width:46px">away</button></div></div>
+  <div class="pgroup"><label>auto-seen</label>
+    <div class="seg" id="dwellSeg"><button data-v="on" style="width:86px">dwell 2.5s</button><button data-v="off" style="width:36px">off</button></div></div>
+  <button class="pbtn" id="drawerBtn" style="width:84px">agent cli</button>
+  <span id="simclock" class="tnum"></span>
+</div>
+
+<div id="stage">
+  <div class="frame focused" id="frame">
+    <div class="tabbar">
+      <div class="tab"><span class="pmark idle" id="agentMark"></span><span class="ttl">11: c11-184 delegator</span><span class="tx">×</span></div>
+      <div class="tab active"><span class="glyph">≣</span><span class="ttl" id="tabTitle">12: c11-184 plan</span><span class="tchip tnum zero" id="tabChip">0</span><span class="tx">×</span></div>
+      <div class="tab"><span class="pmark idle"></span><span class="ttl">13: lattice watch</span><span class="tx">×</span></div>
+      <div class="spacer"></div>
+      <div class="countcell"><span>●</span><span>⌄</span><span class="tnum">3</span></div>
+    </div>
+    <div class="descbar"><span class="desc" id="desc"></span><span class="looked tnum" id="looked"></span></div>
+    <div class="surface">
+      <div class="strip">
+        <div class="writer"><span class="wdot" id="wdot"></span><span class="wtext tnum" id="wtext"></span></div>
+        <div class="tools">
+          <div class="seg" id="modeSeg" title="hold keeps your place across reloads; follow tracks the agent's latest write"><button data-v="hold">hold</button><button data-v="follow">follow</button></div>
+          <button class="tbtn" id="diffBtn" title="inline diff of unseen changes (d)">diff</button>
+          <button class="tbtn" id="srcBtn" title="read-only source (s)">source</button>
+          <button class="tbtn" id="findBtn" title="find (⌘F)">find</button>
+        </div>
+      </div>
+      <div class="viewport">
+        <div class="scroller" id="scroller">
+          <div class="content" id="content">
+            <div class="marks" id="marks"></div>
+            <article class="doc" id="doc"></article>
+            <div class="src" id="src" hidden></div>
+          </div>
+        </div>
+        <div class="rail" id="rail" title="change map"></div>
+        <div class="pointchip" id="pointchip" hidden><span class="pdia"></span><span class="ptx" id="pointTx"></span><button id="pointGo">go</button></div>
+        <div class="findbar" id="findbar" hidden>
+          <input id="findIn" placeholder="find in document" spellcheck="false" autocomplete="off">
+          <span class="fcount tnum" id="findCount">0/0</span>
+          <button id="findPrev" title="previous (⇧↩)">‹</button><button id="findNext" title="next (↩)">›</button><button id="findClose" title="close (esc)">×</button>
+        </div>
+        <div class="pill hide" id="pill">
+          <div class="pmain"><span class="pdia"></span><span class="pcount tnum" id="pCount">0</span><span class="plabel" id="pLabel">changes<span class="long"> since you looked</span></span><span class="pdir tnum" id="pDir"></span></div>
+          <button id="pPrev" title="previous change ([)">‹</button><button id="pNext" title="next change (])">›</button><button class="pseen" id="pSeen" title="mark all seen (⇧M)">mark seen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside id="drawer">
+    <div class="dh"><span>agent cli</span><small>c11 markdown · tab:12</small><span class="sp"></span><button class="pbtn" id="drawerClose" style="width:28px;height:22px;padding:0">×</button></div>
+    <div class="dlist" id="dlist"></div>
+    <div class="dout tnum" id="dout"></div>
+    <div class="keys"><kbd>⌘F</kbd> find · <kbd>]</kbd> <kbd>[</kbd> next/prev change · <kbd>m</kbd> mark visible seen · <kbd>⇧M</kbd> all · <kbd>d</kbd> diff · <kbd>s</kbd> source · <kbd>f</kbd> follow · click a gutter mark to mark it seen</div>
+  </aside>
+</div>
+
+<script id="data" type="application/json">/*__DATA__*/</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const $ = s => document.querySelector(s);
+const SEC = 1000, MIN = 60 * SEC;
+const FADE = 15 * MIN;            // seen marks fade out over this sim span
+const DWELL = 2500;               // real ms on screen in a focused pane = seen
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nb = s => s.trim() !== '';
+const splitLines = s => s.replace(/\n$/, '').split('\n');
+
+const docEl = $('#doc'), srcEl = $('#src'), scroller = $('#scroller'), content = $('#content'), marksEl = $('#marks'), railEl = $('#rail');
+
+/* ═════════ state ═════════ */
+const S = {
+  doc:null, src:'', lines:[], meta:[], hunks:new Map(), tombs:[], seq:0,
+  now:Date.now(), lastLook:0, lastWrite:0, lastWriteLine:0, focus:'here', mode:'hold', diff:false, source:false,
+  playing:true, speed:10, step:0, nextAt:Infinity, dwell:true, pointer:null, waiters:[], theme:'dark', width:820, seenLog:[],
+};
+
+/* ═════════ markdown-it: the renderer the real build would bundle ═════════ */
+function slugify(s) { return s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-'); }
+function makeMd(html) {
+  const md = window.markdownit({ html, linkify:true, typographer:false });
+  md.linkify.set({ fuzzyLink:false });
+  if (window.markdownitFootnote) md.use(window.markdownitFootnote);
+  // YAML front matter → small key/value block (keeps line numbers intact)
+  md.block.ruler.before('table', 'front_matter', (state, start, end, silent) => {
+    if (start !== 0) return false;
+    const lt = l => state.src.slice(state.bMarks[l] + state.tShift[l], state.eMarks[l]);
+    if (lt(0) !== '---') return false;
+    let l = 1; while (l < end && lt(l) !== '---') l++;
+    if (l >= end) return false;
+    if (silent) return true;
+    const t = state.push('front_matter', '', 0); t.map = [0, l + 1]; t.block = true; t.content = state.getLines(1, l, 0, false);
+    state.line = l + 1; return true;
+  });
+  md.renderer.rules.front_matter = (tk, i) => {
+    const t = tk[i]; const rows = t.content.split('\n').filter(nb).map(r => { const k = r.indexOf(':'); return k < 0 ? `<dt></dt><dd>${esc(r)}</dd>` : `<dt>${esc(r.slice(0, k))}</dt><dd>${esc(r.slice(k + 1).trim())}</dd>`; }).join('');
+    return `<div class="fm" data-ls="${t.map[0]}" data-le="${t.map[1]}"><div class="blk-head"><span>front matter</span></div><dl>${rows}</dl></div>`;
+  };
+  md.core.ruler.after('inline', 'live_trail', state => {
+    const toks = state.tokens; const seen = new Map();
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t.map && (t.nesting === 1 || t.type === 'hr' || t.type === 'code_block')) { t.attrSet('data-ls', t.map[0]); t.attrSet('data-le', t.map[1]); }
+      if (t.type === 'heading_open') {
+        let s = slugify(toks[i + 1].content); const n = seen.get(s) || 0; seen.set(s, n + 1); if (n) s += '-' + n; t.attrSet('id', s);
+      }
+      // task lists
+      if (t.type === 'inline' && i > 1 && toks[i - 1].type === 'paragraph_open' && toks[i - 2].type === 'list_item_open') {
+        const m = /^\[([ xX])\]\s+/.exec(t.content); const first = t.children[0];
+        if (m && first && first.type === 'text') {
+          const done = m[1] !== ' ';
+          first.content = first.content.replace(/^\[([ xX])\]\s+/, '');
+          const h = new state.Token('html_inline', '', 0); h.content = `<span class="cb${done ? ' done' : ''}"></span>`; t.children.unshift(h);
+          toks[i - 2].attrJoin('class', 'task' + (done ? ' done' : ''));
+        }
+      }
+      // GitHub callouts  > [!NOTE]
+      if (t.type === 'blockquote_open' && toks[i + 2] && toks[i + 2].type === 'inline') {
+        const m = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i.exec(toks[i + 2].content); const first = toks[i + 2].children[0];
+        if (m && first && first.type === 'text') {
+          first.content = first.content.replace(m[0], ''); t.attrJoin('class', 'callout callout-' + m[1].toLowerCase());
+          const h = new state.Token('html_inline', '', 0); h.content = `<span class="callout-title">${m[1].toLowerCase()}</span>`; toks[i + 2].children.unshift(h);
+        }
+      }
+    }
+  });
+  md.renderer.rules.heading_open = (tk, i, o, e, slf) => slf.renderToken(tk, i, o) + '<span class="htext">';
+  md.renderer.rules.heading_close = (tk, i) => { const id = tk[i - 2].attrGet('id'); return `</span><a class="hanchor" href="#${esc(id)}" aria-label="link to section">#</a><span class="fresh"></span></${tk[i].tag}>`; };
+  md.renderer.rules.table_open = (tk, i, o, e, slf) => `<div class="tbl"${slf.renderAttrs(tk[i])}><table>`;
+  md.renderer.rules.table_close = () => '</table></div>';
+  md.renderer.rules.fence = (tk, i) => {
+    const t = tk[i]; const lang = (t.info || '').trim().split(/\s+/)[0].toLowerCase(); const a = `data-ls="${t.map[0]}" data-le="${t.map[1]}"`;
+    if (lang === 'mermaid') return `<div class="mmd" ${a} data-code="${esc(t.content)}"><div class="blk-head"><span>mermaid</span><span class="blk-tools"><button class="mini" data-act="fit">1:1</button><button class="mini" data-act="copy">copy</button></span></div><div class="mmd-body"><div class="mmd-wait">rendering diagram</div></div></div>`;
+    let body; try { body = lang && hljs.getLanguage(lang) ? hljs.highlight(t.content, { language:lang, ignoreIllegals:true }).value : esc(t.content); } catch (_) { body = esc(t.content); }
+    return `<div class="code" ${a}><div class="blk-head"><span>${esc(lang || 'text')}</span><button class="mini" data-act="copy">copy</button></div><pre><code class="hljs">${body}</code></pre></div>`;
+  };
+  return md;
+}
+const md = makeMd(false);
+const mdInline = makeMd(true);   // only for word-diff markup (<ins>/<del>)
+
+/* ═════════ diff primitives ═════════ */
+function lcsOps(A, B) {   // A, B arrays; returns [{op,i,j}]
+  const n = A.length, m = B.length; const ops = [];
+  let s = 0; while (s < n && s < m && A[s] === B[s]) { ops.push({ op:'eq', i:s, j:s }); s++; }
+  let e = 0; while (e < n - s && e < m - s && A[n - 1 - e] === B[m - 1 - e]) e++;
+  const a = A.slice(s, n - e), b = B.slice(s, m - e); const N = a.length, M = b.length;
+  const dp = []; for (let i = 0; i <= N; i++) dp.push(new Int32Array(M + 1));
+  for (let i = N - 1; i >= 0; i--) for (let j = M - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  let i = 0, j = 0;
+  while (i < N || j < M) {
+    if (i < N && j < M && a[i] === b[j]) { ops.push({ op:'eq', i:s + i, j:s + j }); i++; j++; }
+    else if (j >= M || (i < N && dp[i + 1][j] >= dp[i][j + 1])) { ops.push({ op:'del', i:s + i }); i++; }
+    else { ops.push({ op:'ins', j:s + j }); j++; }
+  }
+  for (let k = 0; k < e; k++) ops.push({ op:'eq', i:n - e + k, j:m - e + k });
+  return ops;
+}
+const normCheck = s => s.replace(/\[[ xX]\]/, '[ ]');
+
+/* ═════════ document versions ═════════ */
+function loadDoc(id) {
+  const d = DATA.docs.find(x => x.id === id); S.doc = d;
+  S.src = d.src; S.lines = splitLines(d.src); S.hunks = new Map(); S.tombs = []; S.pointer = null; S.seenLog = []; S.step = 0; S.seq = 0;
+  S.now = Date.now(); S.waiters = [];
+  S.lastLook = S.now - (d.live ? 8 : 60) * MIN; S.lastWrite = S.now - (d.live ? 3 : 180) * MIN;
+  S.meta = S.lines.map(() => ({ h:null }));
+  if (d.live) {
+    // the agent wrote the doc section by section over the last ~50 minutes; you last looked 8m ago
+    const heads = []; let fence = false;
+    S.lines.forEach((l, i) => { if (/^\s*```/.test(l)) fence = !fence; if (!fence && /^## /.test(l)) heads.push(i); });
+    heads[0] = 0; const K = heads.length;
+    heads.forEach((start, k) => {
+      const end = k + 1 < K ? heads[k + 1] : S.lines.length;
+      const age = k === K - 1 ? 3 : k === K - 2 ? 5 : 52 - (38 * k) / Math.max(1, K - 3);
+      const t = S.now - age * MIN;
+      const h = { id:'c' + (++S.seq), kind:'add', t, seen:t <= S.lastLook, seenAt:t <= S.lastLook ? S.lastLook : null, how:'earlier', prev:[], dwell:0 };
+      S.hunks.set(h.id, h);
+      for (let i = start; i < end; i++) if (nb(S.lines[i])) S.meta[i] = { h:h.id };
+    });
+    S.lastWriteLine = heads[K - 1];
+    S.nextAt = S.now + DATA.steps[0].delay * SEC; S.playing = true;
+  } else {
+    const h = { id:'c' + (++S.seq), kind:'add', t:S.lastWrite, seen:true, seenAt:S.lastLook, how:'earlier', prev:[], dwell:0 };
+    S.hunks.set(h.id, h); S.lines.forEach((l, i) => { if (nb(l)) S.meta[i] = { h:h.id }; });
+    S.nextAt = Infinity; S.playing = false;
+  }
+  docEl.innerHTML = ''; srcEl.innerHTML = '';
+  renderCurrent(); scroller.scrollTop = 0; anchor = captureAnchor();
+  afterRender(); syncChrome(); tickUI(); log(`<span class="pr">$ c11 markdown open ${esc(d.path)}</span>\n<span class="ok">opened tab:12 · live reload · writer ${esc(d.writer || 'none')}</span>`, true);
+}
+
+function applyStep() {
+  if (!S.doc.live || S.step >= DATA.steps.length) return;
+  const st = DATA.steps[S.step++];
+  S.now = Math.max(S.now, S.nextAt === Infinity ? S.now : S.nextAt);
+  let src = S.src;
+  for (const op of st.ops) {
+    if (op[0] === 'append') src += op[1];
+    else { const k = src.indexOf(op[1]); if (k < 0) { console.warn('op miss'); continue; } src = src.slice(0, k) + op[2] + src.slice(k + op[1].length); }
+  }
+  commitVersion(src, S.now);
+  S.nextAt = S.step < DATA.steps.length ? S.now + DATA.steps[S.step].delay * SEC : Infinity;
+  syncChrome();
+}
+
+function commitVersion(newSrc, t) {
+  const a = S.lines, b = splitLines(newSrc); const ops = lcsOps(a, b);
+  const map = new Int32Array(a.length + 1); const meta = new Array(b.length); const fresh = [];
+  let k = 0;
+  while (k < ops.length) {
+    const o = ops[k];
+    if (o.op === 'eq') { map[o.i] = o.j; meta[o.j] = S.meta[o.i] || { h:null }; k++; continue; }
+    const dels = [], ins = [];
+    while (k < ops.length && ops[k].op !== 'eq') { const r = ops[k]; (r.op === 'del' ? dels.push(r.i) : ins.push(r.j)); k++; }
+    const jNext = k < ops.length ? ops[k].j : b.length;
+    for (const i of dels) map[i] = jNext;
+    for (const j of ins) meta[j] = { h:null };
+    const D = dels.map(i => a[i]).filter(nb), I = ins.filter(j => nb(b[j]));
+    if (!D.length && !I.length) continue;
+    const kind = !I.length ? 'del' : !D.length ? 'add' : (D.length === I.length && D.every((x, n) => normCheck(x) === normCheck(b[I[n]]))) ? 'check' : 'mod';
+    const h = { id:'c' + (++S.seq), kind, t, seen:false, seenAt:null, how:null, prev:dels.map(i => a[i]), dwell:0 };
+    S.hunks.set(h.id, h); fresh.push(h);
+    if (kind === 'del') S.tombs.push({ h:h.id, line:jNext, isNew:true }); else for (const j of I) meta[j] = { h:h.id };
+    S.lastWriteLine = kind === 'del' ? jNext : I[0];
+  }
+  map[a.length] = b.length;
+  S.tombs = S.tombs.filter(tb => { const h = S.hunks.get(tb.h); if (tb.isNew) { tb.isNew = false; return true; } tb.line = map[Math.min(tb.line, a.length)]; return !(h.seen && S.now - h.t > FADE); });
+  if (!fresh.length) return;
+  const anc = captureAnchor();
+  S.src = newSrc; S.lines = b; S.meta = meta; S.lastWrite = t;
+  renderCurrent();
+  restoreAnchor(anc, map); anchor = captureAnchor();
+  afterRender();
+  if (S.mode === 'follow') followLatest(fresh);
+  const pill = $('#pill'); pill.classList.remove('pulse'); void pill.offsetWidth; pill.classList.add('pulse');
+  checkWaiters();
+}
+
+/* ═════════ rendering: keyed patch so unchanged blocks keep their DOM ═════════ */
+const mmdCache = new Map(); let mmdSeq = 0; let mmdChain = Promise.resolve();
+function blockKey(el) {
+  const ls = el.getAttribute('data-ls');
+  if (ls == null) return 'h:' + el.outerHTML;
+  let k = S.lines.slice(+ls, +el.getAttribute('data-le')).join('\n');
+  if (el.classList.contains('mmd')) k += '\u0000' + S.theme;
+  return k;
+}
+function shiftLines(el, d) {
+  for (const n of [el, ...el.querySelectorAll('[data-ls]')]) { if (!n.hasAttribute('data-ls')) continue; n.setAttribute('data-ls', +n.getAttribute('data-ls') + d); n.setAttribute('data-le', +n.getAttribute('data-le') + d); }
+}
+function patchDoc() {
+  const tpl = document.createElement('template'); tpl.innerHTML = md.render(S.src);
+  const incoming = [...tpl.content.children]; const pool = new Map();
+  for (const n of [...docEl.children]) { const q = pool.get(n._key); q ? q.push(n) : pool.set(n._key, [n]); }
+  const out = [], created = [];
+  for (const n of incoming) {
+    const key = blockKey(n); const q = pool.get(key);
+    if (q && q.length) { const o = q.shift(); if (n.hasAttribute('data-ls')) { const d = +n.getAttribute('data-ls') - +o.getAttribute('data-ls'); if (d) shiftLines(o, d); } out.push(o); }
+    else { n._key = key; out.push(n); created.push(n); }
+  }
+  const removed = [...pool.values()].flat(); const removedMmd = removed.filter(n => n.classList.contains('mmd'));
+  removed.forEach(n => n.remove());
+  out.forEach((n, i) => { if (docEl.children[i] !== n) docEl.insertBefore(n, docEl.children[i] || null); });
+  while (docEl.children.length > out.length) docEl.lastElementChild.remove();
+  for (const n of created) {
+    n.querySelectorAll('table').forEach(tb => { const base = +(tb.parentElement.getAttribute('data-ls') || 0); [...tb.rows].forEach((r, ri) => { if (!r.hasAttribute('data-ls')) { const L = base + (ri === 0 ? 0 : ri + 1); r.setAttribute('data-ls', L); r.setAttribute('data-le', L + 1); } }); });
+    const mm = n.classList.contains('mmd') ? [n] : [...n.querySelectorAll('.mmd')];
+    for (const m of mm) {
+      const ck = S.theme + '\n' + m.dataset.code; const body = m.querySelector('.mmd-body');
+      if (mmdCache.has(ck)) body.innerHTML = mmdCache.get(ck);
+      else { const prev = removedMmd.shift(); if (prev) { body.innerHTML = prev.querySelector('.mmd-body').innerHTML; m.classList.add('stale'); } queueMermaid(m); }
+    }
+    n.querySelectorAll('a[href^="http"]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+  }
+}
+function themeVars() {
+  const dark = S.theme === 'dark';
+  return dark
+    ? { background:'transparent', primaryColor:'#17191d', primaryBorderColor:'#4a4e57', primaryTextColor:'#e4e4e0', secondaryColor:'#1d2025', tertiaryColor:'#121417', lineColor:'#7f848e', textColor:'#d9d9d5', mainBkg:'#17191d', clusterBkg:'#111316', clusterBorder:'#33363c', edgeLabelBackground:'#0e0f11', noteBkgColor:'#1f1d16', noteBorderColor:'#5c5030', noteTextColor:'#e4e4e0', actorBkg:'#17191d', actorBorder:'#4a4e57', actorTextColor:'#e4e4e0', signalColor:'#9da2ac', signalTextColor:'#d9d9d5', labelBoxBkgColor:'#17191d', fontFamily:'JetBrains Mono, SF Mono, monospace', fontSize:'12px' }
+    : { background:'transparent', primaryColor:'#ffffff', primaryBorderColor:'#b8b4a8', primaryTextColor:'#1b1c20', secondaryColor:'#f3f1ea', tertiaryColor:'#f7f6f1', lineColor:'#6d7079', textColor:'#24262b', mainBkg:'#ffffff', clusterBkg:'#f4f2ec', clusterBorder:'#d4d0c5', edgeLabelBackground:'#fbfaf6', noteBkgColor:'#f7f0dc', noteBorderColor:'#c9b37a', noteTextColor:'#1b1c20', actorBkg:'#ffffff', actorBorder:'#b8b4a8', actorTextColor:'#1b1c20', signalColor:'#55585f', signalTextColor:'#24262b', labelBoxBkgColor:'#ffffff', fontFamily:'JetBrains Mono, SF Mono, monospace', fontSize:'12px' };
+}
+function initMermaid() { mermaid.initialize({ startOnLoad:false, theme:'base', themeVariables:themeVars(), securityLevel:'strict', flowchart:{ htmlLabels:true, curve:'basis' } }); }
+function queueMermaid(node) { mmdChain = mmdChain.then(() => renderMermaid(node)).catch(() => {}); }
+async function renderMermaid(node) {
+  if (!node.isConnected) return;
+  const code = node.dataset.code, ck = S.theme + '\n' + code; const body = node.querySelector('.mmd-body');
+  let svg = mmdCache.get(ck);
+  if (!svg) {
+    try { svg = (await mermaid.render('mmd' + (++mmdSeq), code)).svg; mmdCache.set(ck, svg); }
+    catch (e) { document.getElementById('dmmd' + mmdSeq)?.remove(); body.innerHTML = `<div class="mmd-err">diagram did not parse · ${esc((e && e.message || String(e)).split('\n')[0].toLowerCase())} · showing source</div><pre class="mmd-src">${esc(code)}</pre>`; node.classList.remove('stale'); return; }
+  }
+  if (!node.isConnected || S.theme + '\n' + code !== ck) return;
+  body.innerHTML = svg; node.classList.remove('stale');
+}
+
+function renderSource() {
+  const rows = []; const units = S.diff ? unseenUnits() : [];
+  const delBefore = new Map();  // line → removed lines to show above it
+  for (const u of units) {
+    if (u.tomb != null) push(u.tomb, u.h.prev);
+    else if (u.h.kind === 'mod' || u.h.kind === 'check') push(u.lines[0], u.h.prev);
+  }
+  function push(L, ls) { const arr = delBefore.get(L) || []; arr.push(...ls.filter(nb)); delBefore.set(L, arr); }
+  let fence = false;
+  const hl = l => {
+    const e = esc(l);
+    if (/^\s*```/.test(l)) { fence = !fence; return `<span class="sx-f">${e}</span>`; }
+    if (fence) return `<span class="sx-c">${e}</span>`;
+    if (/^#{1,6}\s/.test(l)) return `<span class="sx-h">${e}</span>`;
+    return e.replace(/^(\s*)([-*+]|\d+\.)(\s+)(\[[ xX]\])?/, (m, a, b, c, d) => `${a}<span class="sx-m">${b}</span>${c}${d ? `<span class="sx-m">${d}</span>` : ''}`)
+            .replace(/(`[^`]+`)/g, '<span class="sx-c">$1</span>').replace(/(\*\*[^*]+\*\*)/g, '<span class="sx-b">$1</span>').replace(/^(\|.*)$/, '<span class="sx-f">$1</span>');
+  };
+  const unseenLine = new Set(); for (const u of units) u.lines.forEach(L => unseenLine.add(L));
+  for (let i = 0; i <= S.lines.length; i++) {
+    for (const r of delBefore.get(i) || []) rows.push(`<div class="sl del"><span class="ln">−</span><span class="tx">${esc(r)}</span></div>`);
+    if (i === S.lines.length) break;
+    rows.push(`<div class="sl${unseenLine.has(i) ? ' d-add' : ''}" data-ls="${i}" data-le="${i + 1}"><span class="ln">${i + 1}</span><span class="tx">${hl(S.lines[i]) || ' '}</span></div>`);
+  }
+  srcEl.innerHTML = rows.join('');
+}
+
+function renderCurrent() {
+  undecorate(); removePointNote();
+  if (S.source) { docEl.hidden = true; srcEl.hidden = false; renderSource(); }
+  else { srcEl.hidden = true; docEl.hidden = false; patchDoc(); decorate(); }
+  placePointNote();
+}
+
+/* ═════════ inline diff decoration (rendered view) ═════════ */
+function undecorate() {
+  docEl.querySelectorAll('.diffx').forEach(n => n.remove());
+  docEl.querySelectorAll('.wd').forEach(n => { const tg = n.querySelector(':scope > .htext') || n; if (n._orig != null) tg.innerHTML = n._orig; n._orig = null; });
+  docEl.querySelectorAll('.d-add,.d-mod,.d-check,.wd').forEach(n => n.classList.remove('d-add', 'd-mod', 'd-check', 'wd'));
+}
+function wordDiff(oldT, newT) {
+  const tok = s => s.match(/`[^`]*`|\s+|[\p{L}\p{N}_'.-]+|[^\s`]/gu) || [];
+  const A = tok(oldT), B = tok(newT); const ops = lcsOps(A, B); let out = '', mode = null, buf = '';
+  const flush = () => { if (!buf) return; out += mode === 'del' ? `<del>${buf}</del>` : mode === 'ins' ? `<ins>${buf}</ins>` : buf; buf = ''; };
+  const e2 = t => t[0] === '`' ? t : t.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  for (const o of ops) { const m = o.op; const txt = m === 'del' ? A[o.i] : B[o.j]; if (m !== mode) { flush(); mode = m; } buf += e2(txt); }
+  flush();
+  const words = x => x.filter(t => nb(t)).length; const same = ops.filter(o => o.op === 'eq' && nb(A[o.i])).length;
+  return same / Math.max(1, words(A), words(B)) < .45 ? null : out;   // heavy rewrite: a word diff is noise, show was/now instead
+}
+const stripMd = s => s.replace(/^\s*#{1,6}\s+/, '').replace(/^\s*([-*+]|\d+\.)\s+(\[[ xX]\]\s+)?/, '');
+function decorate() {
+  if (!S.diff || S.source) return;
+  const lineEl = lineIndex(docEl);
+  for (const u of unseenUnits()) {
+    const els = u.tomb != null ? [] : uniq(u.lines.map(L => lineEl[L]).filter(Boolean));
+    const k = u.h.kind;
+    if (k === 'add' || k === 'check') { els.forEach(e => e.classList.add(k === 'add' ? 'd-add' : 'd-check')); continue; }
+    if (k === 'mod' && els.length === 1 && /^(P|H[1-6]|LI)$/.test(els[0].tagName) && !els[0].querySelector('ul,ol')) {
+      const el = els[0]; const tg = el.querySelector(':scope > .htext') || el;
+      const keep = el.querySelector(':scope > .cb') ? el.querySelector(':scope > .cb').outerHTML : '';
+      const wd = wordDiff(u.h.prev.filter(nb).map(stripMd).join(' '), u.lines.map(L => stripMd(S.lines[L])).join(' '));
+      if (wd != null) { el._orig = tg.innerHTML; tg.innerHTML = keep + mdInline.renderInline(wd); el.classList.add('wd'); continue; }
+    }
+    const removed = u.h.prev.filter(nb); if (!removed.length) continue;
+    const anchorEl = k === 'del' ? (lineEl[u.tomb] || nextLineEl(lineEl, u.tomb)) : els[els.length - 1];
+    if (k === 'mod') els.forEach(e => e.classList.add('d-mod'));
+    const inner = `<span class="wh">${k === 'del' ? 'removed' : 'was'} · ${rel(S.now - u.h.t)}</span>` + removed.map(r => `<span class="dl">${esc(r)}</span>`).join('');
+    let box;
+    if (anchorEl && anchorEl.tagName === 'TR') { box = document.createElement('tr'); box.innerHTML = `<td colspan="99">${inner}</td>`; box.className = 'diffx'; }
+    else { box = document.createElement(anchorEl && anchorEl.tagName === 'LI' ? 'li' : 'div'); box.className = 'diffx'; box.innerHTML = inner; }
+    if (!anchorEl) docEl.appendChild(box);
+    else if (k === 'del') anchorEl.parentNode.insertBefore(box, anchorEl);
+    else anchorEl.parentNode.insertBefore(box, anchorEl.nextSibling);
+  }
+}
+const uniq = a => [...new Set(a)];
+
+/* ═════════ geometry: line → element, units, marks, rail ═════════ */
+function lineIndex(host) {
+  const arr = new Array(S.lines.length);
+  for (const el of host.querySelectorAll('[data-ls]')) { const a = +el.getAttribute('data-ls'), b = +el.getAttribute('data-le'); for (let L = a; L < b && L < arr.length; L++) arr[L] = el; }
+  return arr;
+}
+function nextLineEl(arr, L) { for (let i = L; i < arr.length; i++) if (arr[i]) return arr[i]; return null; }
+function allUnits() {
+  const by = new Map();
+  S.meta.forEach((m, i) => { if (m && m.h && nb(S.lines[i])) { const q = by.get(m.h); q ? q.push(i) : by.set(m.h, [i]); } });
+  const out = [];
+  for (const [id, lines] of by) out.push({ h:S.hunks.get(id), lines, tomb:null });
+  for (const tb of S.tombs) out.push({ h:S.hunks.get(tb.h), lines:[], tomb:tb.line });
+  return out;
+}
+const unseenUnits = () => allUnits().filter(u => !u.h.seen);
+let GEOM = [];     // [{u, top, bottom, bars:[{top,h}], els}]
+function computeGeom() {
+  const host = S.source ? srcEl : docEl; const lineEl = lineIndex(host); const base = content.getBoundingClientRect().top;
+  const rectOf = el => { const r = el.getBoundingClientRect(); return { top:r.top - base, bottom:r.bottom - base }; };
+  GEOM = [];
+  for (const u of allUnits()) {
+    const age = S.now - u.h.t;
+    if (u.h.seen && age > FADE) continue;
+    if (u.tomb != null) {
+      const el = lineEl[u.tomb] || nextLineEl(lineEl, u.tomb); const r = el ? rectOf(el) : { top:host.getBoundingClientRect().bottom - base - 140 };
+      const y = r.top - 6; GEOM.push({ u, top:y, bottom:y + 10, bars:[{ top:y, h:10 }], els:el ? [el] : [] }); continue;
+    }
+    const els = uniq(u.lines.map(L => lineEl[L]).filter(Boolean)); if (!els.length) continue;
+    const bars = [];
+    for (const el of els) { const r = rectOf(el); if (r.bottom - r.top < 1) continue; const last = bars[bars.length - 1]; if (last && r.top - (last.top + last.h) < 14) last.h = Math.max(last.h, r.bottom - last.top); else bars.push({ top:r.top, h:r.bottom - r.top }); }
+    if (!bars.length) continue;
+    GEOM.push({ u, top:bars[0].top, bottom:bars[bars.length - 1].top + bars[bars.length - 1].h, bars, els });
+  }
+  const pn = docEl.querySelector('.pnote') || srcEl.querySelector('.pnote');
+  if (S.pointer && pn) { const r = rectOf(pn); GEOM.push({ u:{ h:S.pointer, lines:[], point:true }, top:r.top, bottom:r.bottom, bars:[{ top:r.top + 8, h:9 }], els:[pn] }); }
+  GEOM.sort((a, b) => a.top - b.top);
+}
+function drawMarks() {
+  const host = S.source ? srcEl : docEl; const x = host.getBoundingClientRect().left - content.getBoundingClientRect().left - (S.source ? 12 : 20);
+  const html = [];
+  for (const g of GEOM) {
+    const h = g.u.h; const age = S.now - h.t;
+    let cls = 'mk ' + (g.u.point ? 'point' : g.u.tomb != null ? 'tomb' : h.kind) + (h.seen ? ' seen' : ' unseen');
+    const op = h.seen ? Math.max(0, .75 * (1 - (S.now - (h.seenAt || h.t)) / FADE)) * Math.max(0.2, 1 - age / FADE) : Math.max(.55, 1 - (age / (20 * MIN)) * .45);
+    if (g.u.point && h.seen) continue;
+    const tip = g.u.point ? `agent note · ${rel(age)}` : `${kindWord(h.kind, g.u.tomb != null)} ${rel(age)} · ${h.seen ? 'seen' : 'unseen, click to mark seen'}`;
+    for (const b of g.bars) html.push(`<div class="${cls}" data-h="${h.id}" style="left:${x}px;top:${b.top}px;height:${b.h}px;opacity:${op.toFixed(3)}" title="${esc(tip)}"></div>`);
+  }
+  marksEl.innerHTML = html.join('');
+}
+const kindWord = (k, tomb) => tomb ? 'removed' : k === 'add' ? 'written' : k === 'check' ? 'checked off' : 'rewritten';
+function drawRail() {
+  const H = content.scrollHeight || 1, rh = railEl.clientHeight; const r = rh / H; const html = [];
+  html.push(`<div class="rv" style="top:${scroller.scrollTop * r}px;height:${scroller.clientHeight * r}px"></div>`);
+  for (const g of GEOM) { const h = g.u.h; if (g.u.point) { if (!h.seen) html.push(`<div class="rt point" style="top:${g.top * r - 3}px"></div>`); continue; } if (h.seen && S.now - h.t > FADE * .6) continue; html.push(`<div class="rt ${h.seen ? 'seen' : 'unseen'}" style="top:${g.top * r}px;height:${Math.max(3, (g.bottom - g.top) * r)}px"></div>`); }
+  if (FIND.open) for (const y of FIND.ys) html.push(`<div class="rt find" style="top:${y * r}px"></div>`);
+  railEl.innerHTML = html.join('');
+}
+function afterRender() { computeGeom(); drawMarks(); drawRail(); updateFresh(); updatePill(); updateChip(); if (FIND.open && FIND.q) runFind(true); }
+
+/* ═════════ scroll anchoring: a reload never moves what you are reading ═════════ */
+let anchor = null, progTop = -1;   // progTop: the scrollTop we set ourselves, so its scroll event does not re-anchor
+function topBlocks() { const host = S.source ? srcEl : docEl; return [...host.children].filter(n => n.hasAttribute('data-ls') || (!S.source && !n.classList.contains('diffx') && !n.classList.contains('pnote'))); }
+function captureAnchor() {
+  const top = scroller.getBoundingClientRect().top;
+  for (const n of topBlocks()) { const r = n.getBoundingClientRect(); if (r.bottom > top + 4) return { node:n, off:r.top - top, line:+(n.getAttribute('data-ls') ?? -1) }; }
+  return null;
+}
+function restoreAnchor(a, map) {
+  if (!a) return; let n = a.node;
+  if (!n.isConnected) {
+    const L = map && a.line >= 0 ? map[Math.min(a.line, map.length - 1)] : a.line;
+    n = topBlocks().find(x => +x.getAttribute('data-le') > L) || null; if (!n) return;
+  }
+  const top = scroller.getBoundingClientRect().top; const delta = (n.getBoundingClientRect().top - top) - a.off;
+  if (Math.abs(delta) > .5) { scroller.scrollTop += delta; progTop = scroller.scrollTop; }
+}
+function holdAnchor(fn) { const a = captureAnchor(); fn(); restoreAnchor(a); anchor = captureAnchor(); }
+scroller.addEventListener('scroll', () => { if (Math.abs(scroller.scrollTop - progTop) >= 1) anchor = captureAnchor(); progTop = -1; drawRail(); updatePill(); updatePointChip(); }, { passive:true });
+const ro = new ResizeObserver(() => { restoreAnchor(anchor); computeGeom(); drawMarks(); drawRail(); updatePill(); });
+ro.observe(docEl); ro.observe(srcEl); ro.observe(scroller);
+
+/* ═════════ seen / jump / follow ═════════ */
+function markSeen(hs, how) {
+  hs = hs.filter(h => h && !h.seen); if (!hs.length) return;
+  const apply = () => { for (const h of hs) { h.seen = true; h.seenAt = S.now; h.how = how; S.seenLog.push({ id:h.id, how, at:S.now }); } };
+  if (S.diff && !S.source) holdAnchor(() => { undecorate(); apply(); decorate(); }); else if (S.diff && S.source) holdAnchor(() => { apply(); renderSource(); placePointNote(); }); else apply();
+  if (hs.includes(S.pointer)) { const pn = document.querySelector('.pnote'); pn && pn.classList.add('seen'); pn && (pn.querySelector('.pn-ack').textContent = 'seen'); }
+  computeGeom(); drawMarks(); drawRail(); updatePill(); updateChip(); updateFresh(); checkWaiters();
+}
+function unseenGeom() { return GEOM.filter(g => !g.u.h.seen); }
+function jump(dir) {
+  const list = unseenGeom(); if (!list.length) return;
+  const ref = scroller.scrollTop + scroller.clientHeight * .25;
+  let g = dir > 0 ? list.find(x => x.top > ref + 4) || list[0] : [...list].reverse().find(x => x.top < ref - 4) || list[list.length - 1];
+  scrollToY(g.top - scroller.clientHeight * .25, true); flash(g);
+  if (!S.dwell) setTimeout(() => markSeen([g.u.h], 'jump'), 700);
+}
+function flash(g) {
+  g.els.forEach(e => { e.classList.remove('jumpflash'); void e.offsetWidth; e.classList.add('jumpflash'); });
+  marksEl.querySelectorAll(`[data-h="${g.u.h.id}"]`).forEach(m => m.classList.add('flash'));
+}
+function scrollToY(y, smooth) { scroller.scrollTo({ top:Math.max(0, y), behavior:smooth ? 'smooth' : 'auto' }); }
+function followLatest(fresh) {
+  const ids = new Set(fresh.map(h => h.id)); const gs = GEOM.filter(g => ids.has(g.u.h.id)); if (!gs.length) return;
+  const g = gs[gs.length - 1]; scrollToY(g.top - scroller.clientHeight * .3, true);
+}
+function dwellCheck(dt) {
+  if (S.focus !== 'here' || !S.dwell || document.hidden) return;
+  const vt = scroller.scrollTop, vb = vt + scroller.clientHeight, vh = scroller.clientHeight; const done = [];
+  for (const g of GEOM) {
+    const h = g.u.h; if (h.seen) continue;
+    const inter = Math.min(g.bottom, vb) - Math.max(g.top, vt);
+    const visible = (g.top >= vt - 2 && g.bottom <= vb + 2) || inter > vh * .6;
+    if (visible) { h.dwell += dt; if (h.dwell >= DWELL) done.push(h); } else h.dwell = 0;
+  }
+  if (done.length) markSeen(done, 'dwell');
+}
+
+/* ═════════ section freshness ═════════ */
+function updateFresh() {
+  if (S.source) return;
+  const heads = [...docEl.querySelectorAll('h2[data-ls],h3[data-ls]')].map(el => ({ el, lv:+el.tagName[1], ls:+el.getAttribute('data-ls') }));
+  heads.forEach((h, i) => {
+    let end = S.lines.length; for (let j = i + 1; j < heads.length; j++) if (heads[j].lv <= h.lv) { end = heads[j].ls; break; }
+    let t = 0, unseen = 0;
+    for (let L = h.ls; L < end; L++) { const m = S.meta[L]; if (!m || !m.h) continue; const hk = S.hunks.get(m.h); if (hk.t > t) t = hk.t; if (!hk.seen) unseen++; }
+    const f = h.el.querySelector(':scope > .fresh'); if (!f || !t) return;
+    const age = S.now - t; const txt = rel(age);
+    if (f.textContent !== txt) f.textContent = txt;
+    f.title = `written ${txt} · ${new Date(t).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' })}${unseen ? ' · has unseen changes' : ''}`;
+    f.className = 'fresh' + (unseen ? ' hot' : age < 10 * MIN ? ' recent' : (!S.doc.live || age > 30 * MIN) ? ' calm' : '');
+  });
+}
+function rel(ms) { const s = Math.max(0, Math.round(ms / 1000)); if (s < 45) return 'just now'; const m = Math.round(s / 60); if (m < 60) return m + 'm ago'; const h = Math.round(m / 60); if (h < 24) return h + 'h ago'; return Math.round(h / 24) + 'd ago'; }
+
+/* ═════════ pill, tab chip, writer strip ═════════ */
+function updatePill() {
+  const list = unseenGeom(); const n = list.length; const pill = $('#pill');
+  pill.classList.toggle('hide', n === 0);
+  if (!n) return;
+  const vt = scroller.scrollTop, vb = vt + scroller.clientHeight;
+  const up = list.filter(g => g.bottom < vt + 4).length, down = list.filter(g => g.top > vb - 4).length;
+  $('#pCount').textContent = n; $('#pLabel').innerHTML = (n === 1 ? 'change' : 'changes') + '<span class="long"> since you looked</span>';
+  $('#pDir').textContent = `↑${up} ↓${down}`;
+}
+function updateChip() {
+  const n = unseenUnits().length + (S.pointer && !S.pointer.seen ? 1 : 0); const c = $('#tabChip');
+  c.textContent = n; c.classList.toggle('zero', n === 0);
+}
+function sectionOf(L) { let fence = false, best = null; for (let i = 0; i <= Math.min(L, S.lines.length - 1); i++) { const l = S.lines[i]; if (/^\s*```/.test(l)) fence = !fence; if (!fence) { const m = /^#{1,3}\s+(.*)/.exec(l); if (m) best = m[1]; } } return best || S.doc.tab; }
+function tickUI() {
+  const d = S.doc; const since = S.now - S.lastWrite; const done = !d.live || S.step >= DATA.steps.length;
+  const wdot = $('#wdot'), wt = $('#wtext'); const unseen = unseenUnits().length;
+  if (d.live && !done && since < 75 * SEC) { wdot.className = 'wdot writing'; wt.innerHTML = `codex writing · <b>§ ${esc(sectionOf(S.lastWriteLine))}</b>`; $('#agentMark').className = 'pmark run'; }
+  else if (d.live && !done) { wdot.className = 'wdot'; wt.innerHTML = `codex idle · last write ${rel(since)}`; $('#agentMark').className = 'pmark idle'; }
+  else if (unseen) { wdot.className = 'wdot'; wt.innerHTML = `${d.live ? 'codex done' : 'file'} · last write ${rel(since)}`; $('#agentMark').className = 'pmark idle'; }
+  else { wdot.className = 'wdot settled'; wt.innerHTML = `settled · last write ${rel(since)}`; $('#agentMark').className = 'pmark idle'; }
+  $('#looked').textContent = S.focus === 'here' ? 'looking now' : `looked ${rel(S.now - S.lastLook)}`;
+  $('#simclock').textContent = `sim ${new Date(S.now).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false })} · ${S.speed}×`;
+  updateFresh(); drawMarks();
+  if (S.pointer) { const w = document.querySelector('.pnote .pn-who'); if (w) w.textContent = `codex · ${rel(S.now - S.pointer.t)}`; }
+}
+function syncChrome() {
+  const d = S.doc; if (!d) return;
+  $('#tabTitle').textContent = `${12}: ${d.tab}`;
+  $('#desc').innerHTML = `<b>${esc(d.desc)}</b> · ${esc(d.path)}`;
+  $('#stepN').textContent = `${S.step}/${d.live ? DATA.steps.length : 0}`;
+  $('#playBtn').textContent = S.playing && d.live && S.step < DATA.steps.length ? 'pause' : 'resume';
+  $('#playBtn').disabled = !d.live; $('#stepBtn').disabled = !d.live || S.step >= DATA.steps.length;
+  setSeg('#modeSeg', S.mode); setSeg('#widthSeg', String(S.width)); setSeg('#themeSeg', S.theme); setSeg('#speedSeg', String(S.speed)); setSeg('#focusSeg', S.focus); setSeg('#dwellSeg', S.dwell ? 'on' : 'off');
+  $('#diffBtn').classList.toggle('on', S.diff); $('#srcBtn').classList.toggle('on', S.source); $('#findBtn').classList.toggle('on', FIND.open);
+  $('#frame').classList.toggle('focused', S.focus === 'here');
+}
+function setSeg(sel, v) { document.querySelectorAll(sel + ' button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+
+/* ═════════ agent pointer (c11 markdown point) ═════════ */
+function headingLine(text) { let fence = false; for (let i = 0; i < S.lines.length; i++) { const l = S.lines[i]; if (/^\s*```/.test(l)) fence = !fence; if (!fence) { const m = /^#{1,6}\s+(.*)/.exec(l); if (m && m[1].trim() === text) return i; } } return -1; }
+function removePointNote() { document.querySelectorAll('.pnote').forEach(n => n.remove()); }
+function placePointNote() {
+  const p = S.pointer; if (!p) return; const L = headingLine(p.heading); if (L < 0) return;
+  const host = S.source ? srcEl : docEl; const el = [...host.children].find(n => +n.getAttribute('data-ls') === L); if (!el) return;
+  const box = document.createElement('div'); box.className = 'pnote' + (p.seen ? ' seen' : '');
+  box.innerHTML = `<div class="pn-h"><span>◆ agent note</span><span class="pn-who">codex · ${rel(S.now - p.t)}</span><button class="pn-ack">${p.seen ? 'seen' : 'got it'}</button></div><div class="pn-b">${esc(p.note)}</div>`;
+  if (S.source) box.style.margin = '6px 0 6px 4.5ch';
+  box.querySelector('.pn-ack').onclick = () => markSeen([p], 'ack');
+  el.after(box);
+}
+function updatePointChip() {
+  const chip = $('#pointchip'); const p = S.pointer; if (!p || p.seen) { chip.hidden = true; return; }
+  const g = GEOM.find(x => x.u.point); if (!g) { chip.hidden = true; return; }
+  const vt = scroller.scrollTop, vb = vt + scroller.clientHeight; const off = g.bottom < vt || g.top > vb;
+  chip.hidden = !off || FIND.open; $('#pointTx').textContent = `agent points to § ${p.heading}${g.top > vb ? ' ↓' : ' ↑'}`;
+}
+$('#pointGo').onclick = () => { const g = GEOM.find(x => x.u.point); if (g) { scrollToY(g.top - scroller.clientHeight * .25, true); flash(g); } };
+
+/* ═════════ find (⌘F) via CSS custom highlights: no DOM mutation ═════════ */
+const FIND = { open:false, q:'', ranges:[], cur:-1, ys:[] };
+function openFind() { FIND.open = true; $('#findbar').hidden = false; $('#findIn').focus(); $('#findIn').select(); syncChrome(); updatePointChip(); if (FIND.q) runFind(false); }
+function closeFind() { FIND.open = false; $('#findbar').hidden = true; CSS.highlights?.clear(); FIND.ys = []; drawRail(); syncChrome(); updatePointChip(); }
+function runFind(keep) {
+  const q = FIND.q.toLowerCase(); const host = S.source ? srcEl : docEl; const ranges = [];
+  if (CSS.highlights) { CSS.highlights.delete('find'); CSS.highlights.delete('findcur'); }
+  if (q) {
+    const w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, { acceptNode:n => n.parentElement.closest('svg,.mini,.fresh,.hanchor,.ln,.blk-head,.pn-h') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    let n; while ((n = w.nextNode())) { const t = n.data.toLowerCase(); let k = t.indexOf(q); while (k >= 0) { const r = new Range(); r.setStart(n, k); r.setEnd(n, k + q.length); ranges.push(r); k = t.indexOf(q, k + q.length); } }
+  }
+  FIND.ranges = ranges; const base = content.getBoundingClientRect().top; FIND.ys = ranges.map(r => r.getBoundingClientRect().top - base);
+  if (ranges.length && CSS.highlights) CSS.highlights.set('find', new Highlight(...ranges));
+  if (!ranges.length) { FIND.cur = -1; $('#findCount').textContent = q ? '0/0' : ''; drawRail(); return; }
+  if (keep) FIND.cur = Math.min(Math.max(FIND.cur, 0), ranges.length - 1);
+  else { const vt = scroller.scrollTop; FIND.cur = Math.max(0, FIND.ys.findIndex(y => y >= vt)); }
+  setFindCur(FIND.cur, !keep); drawRail();
+}
+function setFindCur(i, scroll) {
+  const n = FIND.ranges.length; if (!n) return; FIND.cur = (i + n) % n;
+  if (CSS.highlights) CSS.highlights.set('findcur', new Highlight(FIND.ranges[FIND.cur]));
+  $('#findCount').textContent = `${FIND.cur + 1}/${n}`;
+  if (scroll) { const y = FIND.ys[FIND.cur]; const vt = scroller.scrollTop, vh = scroller.clientHeight; if (y < vt + 40 || y > vt + vh - 80) scrollToY(y - vh * .4, false); }
+}
+$('#findIn').addEventListener('input', e => { FIND.q = e.target.value; runFind(false); });
+$('#findIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setFindCur(FIND.cur + (e.shiftKey ? -1 : 1), true); } if (e.key === 'Escape') { e.preventDefault(); closeFind(); } });
+$('#findNext').onclick = () => setFindCur(FIND.cur + 1, true); $('#findPrev').onclick = () => setFindCur(FIND.cur - 1, true); $('#findClose').onclick = closeFind;
+
+/* ═════════ view toggles ═════════ */
+function setSource(on) {
+  if (S.source === on) return; const a = captureAnchor(); const L = a ? a.line : 0; const off = a ? a.off : 0;
+  S.source = on; renderCurrent();
+  const n = topBlocks().find(x => +x.getAttribute('data-le') > L);
+  if (n) scroller.scrollTop += (n.getBoundingClientRect().top - scroller.getBoundingClientRect().top) - off;
+  anchor = captureAnchor(); afterRender(); syncChrome();
+}
+function setDiff(on) { S.diff = on; holdAnchor(() => { if (S.source) { renderSource(); removePointNote(); placePointNote(); } else { undecorate(); decorate(); } }); afterRender(); syncChrome(); }
+function setTheme(t) {
+  S.theme = t; document.documentElement.dataset.theme = t; initMermaid();
+  docEl.querySelectorAll('.mmd').forEach(m => { const ck = t + '\n' + m.dataset.code; if (mmdCache.has(ck)) m.querySelector('.mmd-body').innerHTML = mmdCache.get(ck); else { m.classList.add('stale'); queueMermaid(m); } });
+  for (const n of docEl.children) if (n.classList.contains('mmd')) n._key = blockKey(n);
+  syncChrome();
+}
+function setWidth(w) { S.width = w; $('#frame').style.setProperty('--w', w + 'px'); layoutStage(); syncChrome(); }
+function setFocus(f) { if (S.focus === 'here' && f === 'away') S.lastLook = S.now; S.focus = f; syncChrome(); tickUI(); }
+function layoutStage() { const dr = $('#drawer'); dr.classList.toggle('overlay', innerWidth < S.width + 390 + 56); }
+addEventListener('resize', layoutStage);
+
+/* ═════════ events ═════════ */
+$('#modeSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; S.mode = v; syncChrome(); if (v === 'follow') { const latest = [...S.hunks.values()].filter(h => !h.seen).sort((a, b) => b.t - a.t)[0]; if (latest) followLatest([latest]); } };
+$('#diffBtn').onclick = () => setDiff(!S.diff); $('#srcBtn').onclick = () => setSource(!S.source); $('#findBtn').onclick = () => FIND.open ? closeFind() : openFind();
+$('#pNext').onclick = () => jump(1); $('#pPrev').onclick = () => jump(-1);
+$('#pSeen').onclick = () => markSeen([...unseenUnits().map(u => u.h), S.pointer].filter(Boolean), 'all');
+$('#widthSeg').onclick = e => e.target.dataset.v && setWidth(+e.target.dataset.v);
+$('#themeSeg').onclick = e => e.target.dataset.v && setTheme(e.target.dataset.v);
+$('#speedSeg').onclick = e => { if (e.target.dataset.v) { S.speed = +e.target.dataset.v; syncChrome(); tickUI(); } };
+$('#focusSeg').onclick = e => e.target.dataset.v && setFocus(e.target.dataset.v);
+$('#dwellSeg').onclick = e => { if (e.target.dataset.v) { S.dwell = e.target.dataset.v === 'on'; syncChrome(); } };
+$('#playBtn').onclick = () => { S.playing = !S.playing; syncChrome(); };
+$('#stepBtn').onclick = () => applyStep();
+$('#resetBtn').onclick = () => loadDoc(S.doc.id);
+$('#docSel').onchange = e => loadDoc(e.target.value);
+$('#drawerBtn').onclick = () => { $('#drawer').hidden = !$('#drawer').hidden; };
+$('#drawerClose').onclick = () => { $('#drawer').hidden = true; };
+$('#frame').addEventListener('mousedown', () => { if (S.focus !== 'here') setFocus('here'); });
+marksEl.addEventListener('click', e => { const id = e.target.dataset.h; if (!id) return; const h = S.hunks.get(id) || (S.pointer && S.pointer.id === id ? S.pointer : null); if (h) markSeen([h], 'mark'); });
+railEl.addEventListener('click', e => { const r = railEl.getBoundingClientRect(); const y = (e.clientY - r.top) / r.height * content.scrollHeight; scrollToY(y - scroller.clientHeight / 2, true); });
+docEl.addEventListener('click', e => {
+  const b = e.target.closest('.mini');
+  if (b) {
+    if (b.dataset.act === 'copy') { const blk = b.closest('.code,.mmd'); const txt = blk.classList.contains('mmd') ? blk.dataset.code : blk.querySelector('code').textContent; copyText(txt); b.textContent = 'copied'; setTimeout(() => b.textContent = 'copy', 1200); }
+    if (b.dataset.act === 'fit') { const m = b.closest('.mmd'); holdAnchor(() => m.classList.toggle('natural')); b.textContent = m.classList.contains('natural') ? 'fit' : '1:1'; }
+    return;
+  }
+  const a = e.target.closest('a[href^="#"]');
+  if (a) { e.preventDefault(); const id = decodeURIComponent(a.getAttribute('href').slice(1)); const t = docEl.querySelector('#' + CSS.escape(id)); if (t) scrollToY(t.getBoundingClientRect().top - content.getBoundingClientRect().top - 14, true); }
+});
+function copyText(t) { if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).catch(() => {}); else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (_) {} ta.remove(); } }
+addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); return; }
+  if (e.target.closest?.('input,select,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === ']') jump(1); else if (e.key === '[') jump(-1);
+  else if (e.key === 'M') markSeen([...unseenUnits().map(u => u.h), S.pointer].filter(Boolean), 'all');
+  else if (e.key === 'm') { const vt = scroller.scrollTop, vb = vt + scroller.clientHeight; markSeen(unseenGeom().filter(g => g.bottom > vt && g.top < vb).map(g => g.u.h), 'mark'); }
+  else if (e.key === 'd') setDiff(!S.diff); else if (e.key === 's') setSource(!S.source);
+  else if (e.key === 'f') { S.mode = S.mode === 'follow' ? 'hold' : 'follow'; syncChrome(); }
+  else if (e.key === 'Escape' && FIND.open) closeFind();
+});
+
+/* ═════════ agent CLI drawer ═════════ */
+const CMDS = [
+  { id:'open', cmd:'c11 markdown open plan.md --tab-title "c11-184 plan"', note:'opens a live surface; c11 records the opener as the writer, so the strip can say who is writing.' },
+  { id:'point', run:true, cmd:() => `c11 markdown point --tab tab:12 \\\n  --heading "${pointTarget().heading}" \\\n  --note "${pointTarget().note}"`, note:'draws the operator\'s eye to a passage with a note. never scrolls the reader; it joins the change queue as the first stop.' },
+  { id:'seen', run:true, cmd:'c11 markdown seen --tab tab:12 --json', note:'what the operator has and has not seen, per change, plus where they are reading.' },
+  { id:'wait', run:true, cmd:'c11 markdown wait-seen --tab tab:12 --pointer --timeout 10m', note:'blocks until the operator has seen the pointed passage (dwell, got it, or mark seen). exit 0 on seen, 124 on timeout.' },
+  { id:'scroll', run:true, cmd:'c11 markdown scroll --tab tab:12 --heading "Acceptance checklist"', note:'honored only while the operator is away from the pane. while they are here, it becomes a pointer instead of a yank.' },
+  { id:'follow', run:true, cmd:() => `c11 markdown follow --tab tab:12 ${S.mode === 'follow' ? 'off' : 'on'}`, note:'switch hold / follow for the operator. same as the strip toggle.' },
+  { id:'changes', cmd:'c11 markdown changes --tab tab:12 --since look --json', note:'the change ledger: id, kind, section, lines, written_at, seen_at.' },
+  { id:'markseen', run:true, cmd:'c11 markdown mark-seen --tab tab:12 --all', note:'for when the operator says "got it" in chat instead of in the pane.' },
+];
+function pointTarget() {
+  if (headingLine('Operator Phase 3 decision — resolved') >= 0) return { heading:'Operator Phase 3 decision — resolved', note:'this flips the suppression rule for flag raises. confirm before I amend the binding spec.' };
+  if (headingLine('Tagged runtime, visual, and latency validation') >= 0) return { heading:'Tagged runtime, visual, and latency validation', note:'the visual gate is the riskiest part of this plan. is deferring it acceptable?' };
+  const L = [...S.lines.keys()].reverse().find(i => /^## /.test(S.lines[i])); const hd = L != null ? S.lines[L].replace(/^##\s+/, '') : 'Goal';
+  return { heading:hd, note:'start here: this section changed the most since you looked.' };
+}
+let drawerHTML = '';
+function renderDrawer() {
+  const fmt = s => esc(s).replace(/(--[a-z-]+)/g, '<span class="fl">$1</span>').replace(/(&quot;[^&]*?&quot;)/g, '<span class="st">$1</span>');
+  const h = CMDS.map(c => `<div class="cmd"><div class="row"><code>${fmt(typeof c.cmd === 'function' ? c.cmd() : c.cmd)}</code>${c.run ? `<button class="run" data-run="${c.id}">run</button>` : ''}</div><p>${esc(c.note)}</p></div>`).join('');
+  if (h !== drawerHTML) { drawerHTML = h; $('#dlist').innerHTML = h; }
+}
+$('#dlist').addEventListener('click', e => { const id = e.target.dataset.run; if (id) runCmd(id); });
+function log(html, reset) { const o = $('#dout'); if (reset) o.innerHTML = ''; o.innerHTML += (o.innerHTML ? '\n\n' : '') + html; o.scrollTop = o.scrollHeight; }
+const iso = t => new Date(t).toISOString().replace(/\.\d+Z$/, 'Z');
+function visibleLines() { const tb = topBlocks(); const top = scroller.getBoundingClientRect().top, bot = top + scroller.clientHeight; const vis = tb.filter(n => { const r = n.getBoundingClientRect(); return r.bottom > top && r.top < bot; }); const f = vis[0], l = vis[vis.length - 1]; return f ? [+f.getAttribute('data-ls') + 1, +l.getAttribute('data-le')] : [0, 0]; }
+function unitJSON(u) { const h = u.h; const L = u.tomb != null ? u.tomb : u.lines[0]; const o = { id:h.id, kind:u.tomb != null ? 'removed' : ({ add:'added', mod:'rewritten', check:'checked' })[h.kind], section:sectionOf(L), lines:u.tomb != null ? [L + 1, L + 1] : [u.lines[0] + 1, u.lines[u.lines.length - 1] + 1], written_at:iso(h.t), age_s:Math.round((S.now - h.t) / 1000) }; if (h.seen) { o.seen_at = iso(h.seenAt); o.how = h.how; } return o; }
+function runCmd(id) {
+  const c = CMDS.find(x => x.id === id); const line = typeof c.cmd === 'function' ? c.cmd() : c.cmd; const pr = `<span class="pr">$ ${esc(line)}</span>`;
+  if (id === 'point') {
+    const t = pointTarget(); const L = headingLine(t.heading);
+    if (L < 0) { log(pr + `\n<span class="er">error: heading not found: "${esc(t.heading)}"</span>`); return; }
+    holdAnchor(() => { removePointNote(); S.pointer = { id:'p' + (++S.seq), heading:t.heading, note:t.note, t:S.now, seen:false, seenAt:null, how:null, dwell:0, kind:'point' }; S.hunks.set(S.pointer.id, S.pointer); placePointNote(); });
+    afterRender(); updatePointChip();
+    log(pr + '\n' + esc(JSON.stringify({ ok:true, pointer:S.pointer.id, heading:t.heading, line:L + 1, scrolled:false, queued:'first' }, null, 2)));
+  } else if (id === 'seen') {
+    const [a, b] = visibleLines(); const us = allUnits().filter(u => u.h !== S.pointer);
+    const out = { tab:'tab:12', path:S.doc.path, operator:{ focused:S.focus === 'here', last_looked_at:S.focus === 'here' ? iso(S.now) : iso(S.lastLook), viewport:{ lines:[a, b], section:sectionOf(Math.max(0, a - 1)) }, mode:S.mode },
+      unseen:us.filter(u => !u.h.seen).map(unitJSON), seen_recent:us.filter(u => u.h.seen && u.h.how !== 'earlier').map(unitJSON).slice(-6),
+      pointer:S.pointer ? { id:S.pointer.id, heading:S.pointer.heading, seen:S.pointer.seen, ...(S.pointer.seen ? { seen_at:iso(S.pointer.seenAt), how:S.pointer.how } : {}) } : null };
+    log(pr + '\n' + esc(JSON.stringify(out, null, 2)));
+  } else if (id === 'wait') {
+    if (!S.pointer) { log(pr + `\n<span class="er">error: no pointer on tab:12 (run point first)</span>\nexit 2`); return; }
+    if (S.pointer.seen) { log(pr + '\n' + esc(JSON.stringify({ seen:true, pointer:S.pointer.id, how:S.pointer.how, at:iso(S.pointer.seenAt) })) + '\n<span class="ok">exit 0</span>'); return; }
+    log(pr + `\nwaiting for operator to see ${S.pointer.id} (§ ${esc(S.pointer.heading)})…`);
+    S.waiters.push({ p:S.pointer, start:S.now, line });
+  } else if (id === 'scroll') {
+    const hd = 'Acceptance checklist'; const L = headingLine(hd);
+    if (S.focus === 'here') {
+      holdAnchor(() => { removePointNote(); S.pointer = { id:'p' + (++S.seq), heading:hd, note:'agent asked to scroll you here; it waited for you instead.', t:S.now, seen:false, seenAt:null, how:null, dwell:0, kind:'point' }; S.hunks.set(S.pointer.id, S.pointer); placePointNote(); });
+      afterRender(); updatePointChip();
+      log(pr + '\n' + esc(JSON.stringify({ scrolled:false, reason:'operator focused on pane', queued_as:S.pointer.id }, null, 2)));
+    } else {
+      const el = docEl.querySelector(`[data-ls="${L}"]`); if (el) { scrollToY(el.getBoundingClientRect().top - content.getBoundingClientRect().top - 14, false); }
+      log(pr + '\n' + esc(JSON.stringify({ scrolled:true, line:L + 1 }, null, 2)));
+    }
+  } else if (id === 'follow') {
+    S.mode = S.mode === 'follow' ? 'hold' : 'follow'; syncChrome(); log(pr + `\nfollow: ${S.mode === 'follow' ? 'on' : 'off'}. done.`);
+  } else if (id === 'markseen') {
+    const n = unseenUnits().length + (S.pointer && !S.pointer.seen ? 1 : 0); markSeen([...unseenUnits().map(u => u.h), S.pointer].filter(Boolean), 'agent'); log(pr + `\nmarked ${n} seen. done.`);
+  }
+  renderDrawer();
+}
+function checkWaiters() {
+  S.waiters = S.waiters.filter(w => {
+    if (w.p.seen) { log(esc(JSON.stringify({ seen:true, pointer:w.p.id, how:w.p.how, after_s:Math.round((w.p.seenAt - w.start) / 1000), at:iso(w.p.seenAt) })) + '\n<span class="ok">exit 0</span>'); return false; }
+    if (S.now - w.start > 10 * MIN) { log(`<span class="er">timeout: ${w.p.id} not seen after 10m</span>\nexit 124`); return false; }
+    return true;
+  });
+}
+
+/* ═════════ clock ═════════ */
+let lastTick = performance.now(), acc = 0;
+setInterval(() => {
+  const t = performance.now(), dt = t - lastTick; lastTick = t;
+  S.now += dt * S.speed;
+  if (S.playing && S.doc.live && S.now >= S.nextAt) applyStep();
+  dwellCheck(dt);
+  acc += dt; if (acc >= 1000) { acc = 0; tickUI(); checkWaiters(); renderDrawer(); }
+}, 250);
+
+/* ═════════ boot ═════════ */
+$('#docSel').innerHTML = DATA.docs.map(d => `<option value="${d.id}">${esc(d.tab)}${d.live ? ' (live)' : ''}</option>`).join('');
+initMermaid(); setWidth(820); renderDrawer(); loadDoc('plan');
+document.fonts && document.fonts.ready.then(() => { restoreAnchor(anchor); afterRender(); });
+window.__lt = { S, applyStep, jump, markSeen, runCmd, setSource, setDiff, setTheme, setWidth, setFocus, openFind, GEOM:() => GEOM, scroller };
+</script>
+</body>
+</html>

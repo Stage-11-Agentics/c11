@@ -1,8 +1,9 @@
 # c11 Agent-State Mark Vocabulary
 
-The four lifecycle marks drawn beside every surface. Every state is distinguishable from
+The four lifecycle marks drawn beside every panel. Every state is distinguishable from
 every other **by shape alone** — no reliance on color or opacity. Color is thereby free for
-the flagged modifier (flat violet recolor), per `docs/c11-flagged-agent-plan.md`.
+two modifiers: the flag (flat violet recolor, per `docs/c11-flagged-agent-plan.md`) and the
+expired prompt cache (a dark blue cold line, below).
 Suppression consumes no visual channel at all — it is a lifecycle projection, not a
 treatment (see below).
 
@@ -16,7 +17,25 @@ what is inside the cell — full of output, holding a payload, empty, or collaps
 | `working` | 3×3 grid of dots over a faint base square | a cell full of typed output; identically the end state of the animated fill |
 | `waiting` (needs attention) | heavy hollow frame holding a solid core | a stopped frame — same family as idle — with a payload inside for the operator; waiting is literally derived from an unread notification, and the core is the unread thing |
 | `idle` | thin hollow frame | a stopped, empty cell: process present, nothing inside |
-| `cold` | flat line | the collapsed cell: no process |
+| `cold` | flat line | the collapsed cell: the agent is still at its prompt, but has gone cold (its prompt cache expired, or it sat dormant) |
+
+**What makes an agent cold.** Cold is a live agent at rest whose next message starts from
+cold. A process that exits leaves no mark at all: the panel becomes a plain terminal.
+
+- **Prompt cache: Claude Code, Codex and Grok Build.** These agents' lifecycle comes from
+  their journal (hooks or transcript), and they go cold only when their prompt cache
+  expires, so the next message re-caches its whole context; without cache data they never
+  go cold. The cache comes from the harness's own transcript: Claude Code names its tier on
+  every request (5 minutes, or 1 hour on a subscription within plan), counted from when the
+  last request or prompt went out, and a `/model` switch, an `/effort` change or a
+  compaction resets it at once;
+  slash commands and `!` shell lines send no request and leave it alone. Codex and Grok
+  Build publish no lifetime, so c11 estimates one (Codex 2 hours, Grok 1 hour) from measured
+  reuse. A warm 1-hour agent stays an idle frame for the whole hour.
+- **Dormancy: every other agent.** An agent outside the journal (other harnesses) goes cold
+  after the dormancy threshold: idle and untouched for `sidebarAgentColdThresholdSeconds`
+  (default 10 minutes, 1-60, env `C11_AGENT_COLD_SECONDS`). Where such an agent does have
+  cache evidence, the cache decides instead.
 
 Priority order for any UI that ranks states: **needs attention · working · idle · cold.**
 
@@ -39,10 +58,19 @@ Every state occupies the same uniform slot so titles never shift horizontally on
 
 ### Colors
 
-Unchanged — dark theme values from `Sources/Workspace.swift` (`workspacePulseColors`):
+Dark theme values from `Sources/Workspace.swift` (`resolvedSurfaceTabActivityColors`):
 working `#E8E8E8`, waiting `#D0AA45` gold, idle `#9AA0A9`, cold `#62676F`.
 Color remains the fast day-to-day read — redundant reinforcement rather than the
 load-bearing channel.
+
+**Expired prompt cache: dark blue**, `#5287D6` on a dark theme and `#2C5597` on a light one
+(`Workspace.promptCacheColdHex`), on the cold line only; each keeps a 2pt line above 3:1
+against its chrome (dark chrome up to `#3A3A3A`). It marks a cold that is a cost: the next message re-caches the context.
+A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two differ
+in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent keeps its
+gold mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its
+panel sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
+many tokens the next message re-caches.
 
 ## Behavior under the modifiers
 
@@ -71,7 +99,7 @@ is exactly what that intensity is reserved for. For the other flagged combinatio
 (flagged-and-working, -idle, -cold) the mark breathes as the flagged-agent plan specifies;
 the waiting combination alone flashes instead of breathing.
 
-**Suppressed: a lifecycle projection, not a treatment.** A suppressed surface **never enters
+**Suppressed: a lifecycle projection, not a treatment.** A suppressed panel **never enters
 the waiting state**; the record survives even though the state does not. Its mark renders in
 normal lifecycle colors and only ever shows **working, idle, or cold** — on stop it reads
 idle, while the notification record still lands in the store. There is **no visual indicator
@@ -141,7 +169,7 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
 
 1. Each animated mark is **leaf-isolated** — its own small view owning its animation phase
    (driven by the shared clock of item 5, never a per-mark timer), so repaints cannot
-   invalidate the tab row or workspace card (`TabItemView` relies on `Equatable` +
+   invalidate the workspace row or workspace card (`TabItemView` relies on `Equatable` +
    `.equatable()` to skip body re-evaluation during typing).
 2. The dot fill repaints **once per beat** (~2.5 fps), not per frame. The dip is a continuous
    opacity tween but is the same class as the already-approved flagged breathe. The alarm
@@ -156,15 +184,15 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
    motion fails the gate, the flagged mark ships **static violet** — the color carries the
    state, motion is an amplifier, not the signal.
 4. **Measure at fleet scale.** Every working agent animates in two renderers simultaneously
-   (bonsplit tab chip + sidebar card mark row), so a 20-agent fleet is 40+ independently
+   (bonsplit panel chip + sidebar card mark row), so a 20-agent fleet is 40+ independently
    animating leaf views repainting while the operator types. A single-mark latency test
    passes trivially and proves nothing; the gate runs against a realistic fleet.
 5. **One shared clock, per-mark phase offset.** N marks owning N timers is both more
    expensive and visually worse than one app-level tick every mark reads. Offset each mark's
-   phase by a stable hash of its surface id so the fleet staggers instead of pulsing in
+   phase by a stable hash of its panel id so the fleet staggers instead of pulsing in
    unison: one timer, coalesced repaints, scattered appearance.
-6. **Pause off-screen and in background.** Unselected workspaces, collapsed panes, tabs
-   scrolled out of the tab bar, and app-not-active all stop animating. SwiftUI does not do
+6. **Pause off-screen and in background.** Unselected workspaces, collapsed areas, panels
+   scrolled out of the panel bar, and app-not-active all stop animating. SwiftUI does not do
    this for you; animating what nobody can see is pure battery burn at fleet scale.
 7. **Validate the ladder order empirically.** The dip-before-fill degradation order is
    probably right for a reason worth stating: the dip is a pure opacity change on a static
@@ -179,7 +207,7 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
 Two renderers must change in agreement, plus the sidebar sizing rule:
 
 1. **`vendor/bonsplit/Sources/Bonsplit/Internal/Views/TabItemView.swift`** —
-   `TabActivityMark` (the surface-tab chips) and `TabActivityMarkMetrics`. This vocabulary
+   `TabActivityMark` (the panel chips) and `TabActivityMarkMetrics`. This vocabulary
    is what makes the file's doc comment — "survives greyscale and a color-blind reader" —
    accurate; keep the comment and the code in agreement. Keep the bonsplit
    change pure shape vocabulary with no c11-specific concepts — it is a clean accessibility
@@ -188,5 +216,8 @@ Two renderers must change in agreement, plus the sidebar sizing rule:
    plus the sidebar sizing at the `min(9, slot)` call site (~line 11324): marks pin to 9pt
    and the slot floors at 9pt instead of compressing to 8pt.
 
-Colors (`Sources/Workspace.swift`) are untouched. The "Static marks" setting is a user
-default (animation on unless set) consumed only by the two renderers' leaf views.
+The lifecycle colors live in `Sources/Workspace.swift`. The two recolors reach bonsplit as a
+plain `colorOverrideHex` on `BonsplitTabActivityPresentation`, so bonsplit never learns
+"flagged" or "prompt cache"; the sidebar mark reads `AgentActivityHelpProjection.promptCacheExpired`.
+The "Static marks" setting is a user default (animation on unless set) consumed only by the
+two renderers' leaf views.

@@ -340,12 +340,12 @@ def read_conversations(cli_path) -> dict:
 
 def oracle_table(conversations: list) -> list:
     """Classify every surface. Returns a list of dicts:
-    {surface_id, kind, cwd, id, state, placeholder, classification, detail}."""
+    {panel_id, kind, cwd, id, state, placeholder, classification, detail}."""
     rows = []
     for c in conversations:
         cls, detail = classify_conversation(c)
         rows.append({
-            "surface_id": c.get("surface_id"),
+            "panel_id": c.get("panel_id"),
             "kind": c.get("kind"),
             "cwd": c.get("cwd"),
             "id": c.get("id"),
@@ -441,7 +441,7 @@ class MultiKindHarness:
              resolved from the on-disk session file),
           5. writes a `READY` sentinel line, then blocks like a TUI.
 
-        Surface resolution uses the pane's own CMUX_SURFACE_ID (set by c11 per
+        Surface resolution uses the pane's own C11_TAB_ID (set by c11 per
         pane); we pin --socket explicitly so the calls always land on the
         tagged instance regardless of PATH/env propagation."""
         common_head = (

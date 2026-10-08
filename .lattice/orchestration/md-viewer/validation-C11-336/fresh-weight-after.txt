@@ -1,15 +1,39 @@
-time=Thu Oct  8 22:00:57 UTC 2026
-22:00  up 7 mins, 4 users, load averages: 2.91 7.92 6.19
+time=Thu Oct  8 22:02:04 UTC 2026
+22:02  up 8 mins, 4 users, load averages: 2.58 6.75 5.88
+window window:1 [current] ◀ active
+└── workspace workspace:3 "C11-336 Weight"
+    └── area area:6 size=100%×100% px=920×757 split=none [focused]
+        ├── panel panel:6 [terminal] "~" [selected]
+        ├── panel panel:26 [markdown] "MD Weight 20"
+        ├── panel panel:25 [markdown] "MD Weight 19"
+        ├── panel panel:24 [markdown] "MD Weight 18"
+        ├── panel panel:23 [markdown] "MD Weight 17"
+        ├── panel panel:22 [markdown] "MD Weight 16"
+        ├── panel panel:21 [markdown] "MD Weight 15"
+        ├── panel panel:20 [markdown] "MD Weight 14"
+        ├── panel panel:19 [markdown] "MD Weight 13"
+        ├── panel panel:18 [markdown] "MD Weight 12"
+        ├── panel panel:17 [markdown] "MD Weight 11"
+        ├── panel panel:16 [markdown] "MD Weight 10"
+        ├── panel panel:15 [markdown] "MD Weight 09"
+        ├── panel panel:14 [markdown] "MD Weight 08"
+        ├── panel panel:13 [markdown] "MD Weight 07"
+        ├── panel panel:12 [markdown] "MD Weight 06"
+        ├── panel panel:11 [markdown] "MD Weight 05"
+        ├── panel panel:10 [markdown] "MD Weight 04"
+        ├── panel panel:9 [markdown] "MD Weight 03"
+        ├── panel panel:8 [markdown] "MD Weight 02"
+        └── panel panel:7 [markdown] "MD Weight 01"
 app_pid=662
-webcontent_pids=695
-740
-6223
-6250
-6277
-6303
 webcontent_count=6
+webcontent_processes=  695 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent
+  740 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent
+ 6250 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent
+ 6277 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent
+ 6303 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent
+ 7536 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent
     0 B        0 B          0 B          2    __CTF
-    0 B        0 B          0 B         70    guard
+    0 B        0 B          0 B         71    guard
     0 B        0 B          0 B       1730    __AUTH_CONST
     ---        ---          ---        ---    ---
- 215 MB      68 MB        22 MB      14895    TOTAL
+ 215 MB      67 MB        22 MB      14893    TOTAL

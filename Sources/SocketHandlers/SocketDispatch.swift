@@ -7,7 +7,7 @@ import WebKit
 
 private enum AgentLaunchContextSnapshot {
     case success(
-        tabManager: TabManager,
+        workspaceManager: WorkspaceManager,
         paneId: UUID?,
         workspaceRoot: String?,
         launchingSurfaceCwd: String?
@@ -22,7 +22,34 @@ private enum AgentLaunchContextSnapshot {
 // tiers are preserved exactly: nonisolated members stay nonisolated (off-main);
 // processCommand/processV2Command stay main-actor. Mechanical relocation only.
 extension TerminalController {
-    private nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
+    nonisolated static func isStartupIndependentV2Method(_ method: String) -> Bool {
+        ["system.ping", "system.capabilities", "system.brand", "auth.login"].contains(method)
+    }
+
+    /// Gate before worker routing or async acknowledgement. The bundled shells
+    /// do not retry their TTY/state reports, so retain those until the graph is
+    /// complete; all other graph-dependent callers must retry.
+    nonisolated func startupNotReadyResponse(for command: String) -> String? {
+        guard !isInitialSessionRestoreReady else { return nil }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let request = parseV2SocketRequest(trimmed) {
+            guard !Self.isStartupIndependentV2Method(request.method) else { return nil }
+            return v2Error(id: request.id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
+        guard !trimmed.hasPrefix("{") else { return nil }
+        let parts = trimmed.split(separator: " ", maxSplits: 1)
+        let head = parts.first.map(String.init)?.lowercased() ?? ""
+        guard !["ping", "auth", "help"].contains(head) else { return nil }
+        if ["report_tty", "report_shell_state"].contains(head) {
+            let args = parts.count > 1 ? String(parts[1]) : ""
+            if deferStartupShellReport(command: head, args: args) { return "OK" }
+            // Readiness may have completed between the first check and enqueue.
+            if isInitialSessionRestoreReady { return nil }
+        }
+        return "ERROR: not_ready: \(Self.sessionNotReadyMessage)"
+    }
+
+    nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
         guard command.hasPrefix("{"),
               let data = command.data(using: .utf8),
               let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
@@ -34,10 +61,14 @@ extension TerminalController {
             return nil
         }
 
+        // C11-248: resolve old method/param spellings once, here.
         return V2SocketRequest(
             id: dict["id"],
-            method: method,
-            params: dict["params"] as? [String: Any] ?? [:]
+            method: LegacyWireAliases.canonicalMethod(method),
+            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:]),
+            legacyRefPrefix: LegacyWireAliases.legacyRefPrefix(
+                forRawMethod: method, params: dict["params"] as? [String: Any] ?? [:]
+            )
         )
     }
 
@@ -45,6 +76,11 @@ extension TerminalController {
         guard let request = parseV2SocketRequest(command),
               Self.executionPolicy(forV2Method: request.method) == .socketWorker else {
             return nil
+        }
+
+        if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+           let rejection = LegacyWireAliases.unsupportedRoutingKey(request.params) {
+            return v2Error(id: request.id, code: rejection.code, message: rejection.message)
         }
 
         return withSocketCommandPolicy(commandKey: request.method, isV2: true) {
@@ -59,15 +95,41 @@ extension TerminalController {
         dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
         #endif
 
+        if request.method.hasPrefix("workspace.group.") || request.method == "workspace.reorder_batch" {
+            return v2Result(id: request.id, v2WorkspaceGroupCommand(request.method, params: request.params))
+        }
+
         switch request.method {
-        case "surface.send_text":
-            return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
-        case "surface.send_key":
-            return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
-        case "surface.read_text":
-            return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
-        case "surface.clear_history":
-            return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
+        case "history.list":
+            return v2Result(id: request.id, v2HistoryList(params: request.params))
+        case "window.resize":
+            return v2WindowResizeWorker(id: request.id, params: request.params)
+        case "panel.send_text":
+            return v2Result(id: request.id, v2PanelSendText(params: request.params))
+        case "panel.send_key":
+            return v2Result(id: request.id, v2PanelSendKey(params: request.params))
+        case "agent.event.append":
+            return v2Result(id: request.id, v2JournalAppend(params: request.params))
+        case "agents.list":
+            return v2Result(id: request.id, v2AgentsList(params: request.params))
+        case "journal.clear":
+            return v2Result(id: request.id, v2JournalClear(params: request.params))
+        case "journal.status":
+            return v2Result(id: request.id, v2JournalStatus(params: request.params))
+        case "feed.list":
+            return v2Result(id: request.id, v2FeedList(params: request.params))
+        case "feed.note_display":
+            return v2Result(id: request.id, v2FeedNoteDisplay(params: request.params))
+        case "feed.answer":
+            return v2Result(id: request.id, v2FeedAnswer(params: request.params))
+        case "panel.read_selection":
+            return v2Result(id: request.id, v2PanelReadSelection(params: request.params))
+        case "panel.input_state":
+            return v2Result(id: request.id, v2PanelInputState(params: request.params))
+        case "panel.read_text":
+            return v2Result(id: request.id, v2PanelReadText(params: request.params))
+        case "panel.clear_history":
+            return v2Result(id: request.id, v2PanelClearHistory(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
         case "config.launch":
@@ -75,7 +137,7 @@ extension TerminalController {
         // C11-165 COR-3: off-main handlers that block on a user click / async
         // submission. Each must have a matching entry in socketWorkerV2Methods;
         // a mismatch here would return method_not_found instead of executing.
-        case "pane.confirm":
+        case "area.confirm":
             return v2Result(id: request.id, v2PaneConfirm(params: request.params))
         case "feedback.submit":
             return v2Result(id: request.id, v2FeedbackSubmit(params: request.params))
@@ -97,15 +159,75 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case let method where method.hasPrefix("markdown."):
+            return v2Result(id: request.id, v2DispatchMarkdownWorker(method, params: request.params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            return v2Result(
+                id: request.id,
+                v2BrowserProfileCommand(method: request.method, params: request.params)
+            )
+        case "browser.cookies.clear":
+            return v2Result(id: request.id, v2BrowserCookiesClearOffMain(params: request.params))
+        case "browser.cookies.get":
+            return v2Result(id: request.id, v2BrowserCookiesGet(params: request.params))
+        case "browser.cookies.set":
+            return v2Result(id: request.id, v2BrowserCookiesSet(params: request.params))
+        case "browser.state.save":
+            return v2Result(id: request.id, v2BrowserStateSave(params: request.params))
+        case "browser.state.load":
+            return v2Result(id: request.id, v2BrowserStateLoadOffMain(params: request.params))
+        case let method where method.hasPrefix("browser."):
+            return v2DispatchBrowserAwaitWorker(method, id: request.id, params: request.params)
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        let request = parseV2SocketRequest(command)
+        let method = request?.method ?? command.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
+        let context = SocketCommandContext(
+            method: method,
+            allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: method, isV2: request != nil),
+            callerPanelId: SocketCommandContext.current?.callerPanelId
+                ?? (request?.params["caller_panel_id"] as? String
+                    ?? request?.params["caller_tab_id"] as? String
+                    ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
+            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+        )
+        return SocketCommandContext.withContext(context) {
+            var response = executeSocketCommand(command)
+            if let prefix = request?.legacyRefPrefix {
+                response = LegacyWireAliases.echoLegacyRefs(response, prefix: prefix)
+            }
+            guard let target = context.blockedTarget else { return response }
+            if let request {
+                return v2Error(id: request.id, code: "workspace_switch_blocked", message: SocketCommandContext.blockedMessage,
+                               data: ["target": target.uuidString])
+            }
+            return "ERROR: workspace_switch_blocked: \(SocketCommandContext.blockedMessage)"
+        }
+    }
+
+    private nonisolated func executeSocketCommand(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         if let response = Self.socketWorkerImmediateV1Response(command) {
             return withSocketCommandPolicy(commandKey: "ping", isV2: false) {
                 response
+            }
+        }
+
+        // The legacy launch parser reads caller files and stages runtime copies.
+        // Keep it on the worker; only its target/send snapshots enter main.
+        let legacyParts = command.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ", maxSplits: 1).map(String.init)
+        if legacyParts.first?.lowercased() == "default_agent", legacyParts.count == 2 {
+            let tokens = Self.tokenizeArgsStatic(legacyParts[1])
+            if tokens.first == "launch" {
+                return withSocketCommandPolicy(commandKey: "default_agent", isV2: false) {
+                    defaultAgentLaunch(tokens: Array(tokens.dropFirst()))
+                }
             }
         }
 
@@ -124,8 +246,11 @@ extension TerminalController {
         if Thread.isMainThread {
             return MainActor.assumeIsolated { self.processCommand(command) }
         }
+        let context = SocketCommandContext.current
         return DispatchQueue.main.sync {
-            MainActor.assumeIsolated { self.processCommand(command) }
+            SocketCommandContext.withContext(context) {
+                MainActor.assumeIsolated { self.processCommand(command) }
+            }
         }
     }
 
@@ -157,8 +282,11 @@ extension TerminalController {
         let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
         guard Self.asyncAckV1Commands.contains(head) else { return nil }
 
+        let context = SocketCommandContext.current
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { _ = self.processCommand(command) }
+            SocketCommandContext.withContext(context) {
+                MainActor.assumeIsolated { _ = self.processCommand(command) }
+            }
         }
         return "OK"
     }
@@ -185,6 +313,8 @@ extension TerminalController {
     /// Dispatch a v1 command to its nonisolated worker variant.
     private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
         switch head {
+        case "clear_notifications":
+            return clearNotificationsWorker(args)
         case "report_pwd":
             return reportPwdWorker(args)
         case "report_shell_state":
@@ -337,6 +467,31 @@ extension TerminalController {
         return (positional, options)
     }
 
+    private nonisolated func clearNotificationsWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let rawPanel = parsed.options["panel"] ?? parsed.options["surface"] else {
+            // Interactive all/workspace clears retain their synchronous result.
+            return nil
+        }
+        guard let panelId = UUID(uuidString: rawPanel),
+              let rawWorkspace = parsed.options["tab"],
+              let workspaceId = UUID(uuidString: rawWorkspace),
+              parsed.positional.isEmpty else {
+            return "ERROR: Scoped clear requires workspace and originating tab UUIDs"
+        }
+        // Hook-frequency parsing is worker-owned. A missing/stale association
+        // is a queued no-op, never a workspace-wide clear or focus fallback.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let workspace = self.workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else { return }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            }
+        }
+        return "OK"
+    }
+
     private nonisolated func reportPwdWorker(_ args: String) -> String? {
         let parsed = Self.parseOptionsStatic(args)
         guard !parsed.positional.isEmpty else {
@@ -360,15 +515,15 @@ extension TerminalController {
         let directory = parsed.positional.joined(separator: " ")
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.updateSurfaceDirectory(
-                    tabId: scope.workspaceId,
+                workspaceManager.updateSurfaceDirectory(
+                    workspaceId: scope.workspaceId,
                     surfaceId: scope.panelId,
                     directory: directory
                 )
@@ -411,9 +566,9 @@ extension TerminalController {
                             preferredWorkspaceId: scope.workspaceId
                         )?.workspace.id
                     }
-                ), let tabManager = app.tabManagerFor(tabId: target.workspaceId) else { return }
-                tabManager.updateSurfaceShellActivity(
-                    tabId: target.workspaceId,
+                ), let workspaceManager = app.workspaceManagerFor(workspaceId: target.workspaceId) else { return }
+                workspaceManager.updateSurfaceShellActivity(
+                    workspaceId: target.workspaceId,
                     surfaceId: target.panelId,
                     state: state
                 )
@@ -445,10 +600,12 @@ extension TerminalController {
                         )?.workspace.id
                     }
                 ) else { return }
-                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
-                    activity: activity
+                    activity: activity,
+                    source: Self.reportedAgentLifecycleSource(parsed.options),
+                    agentPid: Self.reportedAgentPID(parsed.options)
                 )
             }
         }
@@ -468,15 +625,15 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.updateSurfaceGitBranch(
-                    tabId: scope.workspaceId,
+                workspaceManager.updateSurfaceGitBranch(
+                    workspaceId: scope.workspaceId,
                     surfaceId: scope.panelId,
                     branch: branch,
                     isDirty: isDirty
@@ -494,15 +651,15 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.clearSurfaceGitBranch(
-                    tabId: scope.workspaceId,
+                workspaceManager.clearSurfaceGitBranch(
+                    workspaceId: scope.workspaceId,
                     surfaceId: scope.panelId
                 )
             }
@@ -518,12 +675,12 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 PortScanner.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
             }
@@ -539,11 +696,11 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
+                let validSurfaceIds = Set(workspace.panels.keys)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
             }
@@ -552,6 +709,7 @@ extension TerminalController {
     }
 
     func processCommand(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Empty command" }
 
@@ -612,6 +770,16 @@ extension TerminalController {
 
         case "select_workspace":
             return selectWorkspace(args)
+
+        case "next_workspace", "next_window":
+            workspaceManager?.selectNextWorkspace()
+            return "OK"
+        case "previous_workspace", "previous_window":
+            workspaceManager?.selectPreviousWorkspace()
+            return "OK"
+        case "last_workspace", "last_window":
+            workspaceManager?.navigateBack()
+            return "OK"
 
         case "current_workspace":
             return currentWorkspace()
@@ -766,7 +934,7 @@ extension TerminalController {
             return seedDragPasteboardFileURL()
 
         case "seed_drag_pasteboard_tabtransfer":
-            return seedDragPasteboardTabTransfer()
+            return seedDragPasteboardPanelTransfer()
 
         case "seed_drag_pasteboard_sidebar_reorder":
             return seedDragPasteboardSidebarReorder()
@@ -908,7 +1076,7 @@ extension TerminalController {
             return reloadConfig(args)
 
         case "refresh_surfaces":
-            return refreshSurfaces()
+            return refreshSurfaces(args)
 
             case "surface_health":
                 return surfaceHealth(args)
@@ -939,11 +1107,18 @@ extension TerminalController {
         }
 
         let id: Any? = dict["id"]
-        let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let params = dict["params"] as? [String: Any] ?? [:]
+        let rawMethod = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        guard !method.isEmpty else {
+        guard !rawMethod.isEmpty else {
             return v2Error(id: id, code: "invalid_request", message: "Missing method")
+        }
+        // C11-248: resolve old method/param spellings once, here.
+        let method = LegacyWireAliases.canonicalMethod(rawMethod)
+        let params = LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
+
+        if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+           let rejection = LegacyWireAliases.unsupportedRoutingKey(params) {
+            return v2Error(id: id, code: rejection.code, message: rejection.message)
         }
 
         // C11-26: Methods on the socket-worker policy must be dispatched via
@@ -966,7 +1141,9 @@ extension TerminalController {
             )
         }
 
-        v2MainSync { self.v2RefreshKnownRefs() }
+        if !isInitialSessionRestoreReady && !Self.isStartupIndependentV2Method(method) {
+            return v2Error(id: id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
 
 
         return withSocketCommandPolicy(commandKey: method, isV2: true) {
@@ -989,12 +1166,15 @@ extension TerminalController {
     /// seam DX-1 asks for; the router (parse/auth-gate/policy/main-sync) is
     /// unchanged. Runs on the main actor exactly like the switch it replaces.
     func v2DispatchExtracted(_ method: String, id: Any?, params: [String: Any]) -> String? {
+        if method.hasPrefix("history.") { return v2DispatchHistory(method, id: id, params: params) }
         if method.hasPrefix("agent.") { return v2DispatchAgent(method, id: id, params: params) }
         if method.hasPrefix("config.") { return v2DispatchConfig(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
-        if method.hasPrefix("pane.") { return v2DispatchPane(method, id: id, params: params) }
-        if method.hasPrefix("surface.") { return v2DispatchSurface(method, id: id, params: params) }
+        if method.hasPrefix("area.") { return v2DispatchPane(method, id: id, params: params) }
+        // `panel.action` is the panel context-menu verb set (Misc); every other `panel.*` is the panel domain.
+        if method == "panel.action" { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("panel.") { return v2DispatchSurface(method, id: id, params: params) }
         if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }
         if method.hasPrefix("browser.") { return v2DispatchBrowser(method, id: id, params: params) }
         if method.hasPrefix("theme.") { return v2DispatchTheme(method, id: id, params: params) }
@@ -1002,9 +1182,11 @@ extension TerminalController {
         if method.hasPrefix("snapshot.") { return v2DispatchSnapshot(method, id: id, params: params) }
         if method.hasPrefix("conversation.") { return v2DispatchConversation(method, id: id, params: params) }
         if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
+        if method == "feed.open" { return v2Result(id: id, v2FeedOpen(params: params)) }
+        if method.hasPrefix("feed.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("flag.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
-        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("tab.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("mailbox.") || method == "messages.view" { return v2DispatchMisc(method, id: id, params: params) }
         return nil
     }
 
@@ -1030,6 +1212,7 @@ extension TerminalController {
     /// Parsing/planning runs off-main; only surface creation + stamping is
     /// main-synced (socket threading policy).
     nonisolated func v2AgentLaunch(params: [String: Any]) -> V2CallResult {
+        let responseDeadline = Date().addingTimeInterval(8)
         guard !Thread.isMainThread else {
             return .err(
                 code: "internal_error",
@@ -1044,7 +1227,7 @@ extension TerminalController {
 
         let launchFlagReason: String?
         if params["flag"] != nil {
-            switch SurfaceAttentionReason.validate(params["flag"]) {
+            switch PanelAttentionReason.validate(params["flag"]) {
             case .success(let reason):
                 launchFlagReason = reason
             case .failure(let error):
@@ -1053,9 +1236,9 @@ extension TerminalController {
         } else {
             launchFlagReason = nil
         }
-        let launchFlagActor: SurfaceAttentionActor
+        let launchFlagActor: PanelAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = SurfaceAttentionActor(rawValue: rawActor) else {
+            guard let parsed = PanelAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -1072,7 +1255,7 @@ extension TerminalController {
             guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
                 return .err(
                     code: "invalid_params",
-                    message: "caller_surface_id must be a UUID",
+                    message: "caller_panel_id must be a UUID",
                     data: nil
                 )
             }
@@ -1080,7 +1263,7 @@ extension TerminalController {
         } else if params["caller_surface_id"] != nil {
             return .err(
                 code: "invalid_params",
-                message: "caller_surface_id must be a UUID",
+                message: "caller_panel_id must be a UUID",
                 data: nil
             )
         } else {
@@ -1091,7 +1274,7 @@ extension TerminalController {
            launchCallerSurfaceId == nil {
             return .err(
                 code: "missing_caller_surface",
-                message: "agent-raised flags require caller_surface_id",
+                message: "agent-raised flags require caller_panel_id",
                 data: nil
             )
         }
@@ -1119,9 +1302,9 @@ extension TerminalController {
         // Resolve inherited cwd from the surface that invoked the CLI, not the
         // app process. This snapshot is the only main-thread work before launch
         // planning; git/config I/O remains off-main.
-        let contextGate = FailClosedCommitGate<AgentLaunchContextSnapshot> {
+        let contextGate = AgentLaunchDeadlineGate<AgentLaunchContextSnapshot>(deadline: responseDeadline) {
             MainActor.assumeIsolated {
-                guard let tabManager = self.v2ResolveTabManager(params: params) else {
+                guard let workspaceManager = self.v2ResolveWorkspaceManager(params: params) else {
                     return .failure(.err(
                         code: "unavailable",
                         message: "TabManager not available",
@@ -1132,7 +1315,7 @@ extension TerminalController {
                 if newWorkspace && (paneParam != nil || params["workspace_id"] != nil) {
                     return .failure(.err(
                         code: "invalid_params",
-                        message: "new_workspace is mutually exclusive with pane_id/workspace_id",
+                        message: "new_workspace is mutually exclusive with area_id/workspace_id",
                         data: nil
                     ))
                 }
@@ -1149,20 +1332,20 @@ extension TerminalController {
                         // launch context; selected is only the no-caller
                         // compatibility fallback.
                         if let callerWorkspace { return callerWorkspace }
-                        guard let selectedId = tabManager.selectedTabId else { return nil }
-                        return tabManager.tabs.first(where: { $0.id == selectedId })
+                        guard let selectedId = workspaceManager.selectedWorkspaceId else { return nil }
+                        return workspaceManager.workspaces.first(where: { $0.id == selectedId })
                     }
-                    return self.v2ResolveWorkspace(params: params, tabManager: tabManager)
+                    return self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager)
                 }()
                 // The target workspace owns the stable root. The actual calling
                 // surface owns the compatibility fallback when one is available.
                 let workspaceRoot = fallbackWorkspace?.rootDirectory
                 let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
                 let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
-                    callerSurfaceId: callerWorkspace == nil ? nil : launchCallerSurfaceId
+                    callerPanelId: callerWorkspace == nil ? nil : launchCallerSurfaceId
                 )
                 return .success(
-                    tabManager: tabManager,
+                    workspaceManager: workspaceManager,
                     paneId: paneParam,
                     workspaceRoot: workspaceRoot,
                     launchingSurfaceCwd: launchingSurfaceCwd
@@ -1170,16 +1353,16 @@ extension TerminalController {
             }
         }
         contextGate.enqueueOnMain()
-        guard let contextSnapshot = contextGate.wait(timeout: 8) else {
+        guard let contextSnapshot = contextGate.wait() else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
-        let tabManager: TabManager
+        let workspaceManager: WorkspaceManager
         let paneParam: UUID?
         let workspaceRoot: String?
         let launchingSurfaceCwd: String?
         switch contextSnapshot {
         case .success(let manager, let paneId, let root, let surfaceCwd):
-            tabManager = manager
+            workspaceManager = manager
             paneParam = paneId
             workspaceRoot = root
             launchingSurfaceCwd = surfaceCwd
@@ -1238,14 +1421,26 @@ extension TerminalController {
             // recipe field through here so this stays the one launch composer.
             commandOverride: v2RawString(params, "command_override")
         )
+        let stagedPrompt: LaunchPromptStore.StagedPrompt?
+        do {
+            if let prompt = request.prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                stagedPrompt = try LaunchPromptStore.shared.stage(prompt: prompt)
+            } else {
+                stagedPrompt = nil
+            }
+        } catch {
+            return .err(code: "prompt_staging_failed", message: "Could not stage the launch prompt", data: nil)
+        }
         let plan: AgentLaunchPlan
         switch AgentLaunchPlanner.plan(
             request: request,
             userDefault: userDefault,
             projectConfig: projectConfig,
-            userTemplate: userTemplate
+            userTemplate: userTemplate,
+            promptFilePath: stagedPrompt?.url.path
         ) {
         case .failure(let error):
+            if let stagedPrompt { LaunchPromptStore.shared.discard(stagedPrompt) }
             return .err(code: error.code, message: error.message, data: nil)
         case .success(let composed):
             plan = composed
@@ -1270,7 +1465,7 @@ extension TerminalController {
                ) == nil {
                 result = .err(
                     code: "caller_surface_not_found",
-                    message: "Calling surface not found",
+                    message: "Calling panel not found",
                     data: nil
                 )
                 return result
@@ -1290,7 +1485,7 @@ extension TerminalController {
                 // skips shell rc, which changes PATH-wrapper resolution.
                 // autoWelcome is suppressed: this workspace hosts an agent,
                 // not the onboarding grid.
-                let created = tabManager.addWorkspace(
+                let created = workspaceManager.addWorkspace(
                     workingDirectory: cwdResolution.path,
                     establishRootFromWorkingDirectory: cwdResolution.source != .launchingSurface,
                     initialTerminalEnvironment: plan.env,
@@ -1299,20 +1494,20 @@ extension TerminalController {
                     autoWelcomeIfNeeded: false
                 )
                 guard let initialPanel = created.focusedTerminalPanel else {
-                    result = .err(code: "internal_error", message: "New workspace has no terminal surface", data: nil)
+                    result = .err(code: "internal_error", message: "New workspace has no terminal panel", data: nil)
                     return result
                 }
                 ws = created
                 panel = initialPanel
                 paneUUID = created.bonsplitController.focusedPaneId?.id
             } else {
-                guard let target = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+                guard let target = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return result
                 }
                 if focus {
-                    self.v2MaybeFocusWindow(for: tabManager)
-                    self.v2MaybeSelectWorkspace(tabManager, workspace: target)
+                    self.v2MaybeFocusWindow(for: workspaceManager)
+                    self.v2MaybeSelectWorkspace(workspaceManager, workspace: target)
                 }
                 let paneId: PaneID? = {
                     if let paneParam {
@@ -1321,7 +1516,7 @@ extension TerminalController {
                     return target.bonsplitController.focusedPaneId
                 }()
                 guard let paneId else {
-                    result = .err(code: "not_found", message: "Pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area not found", data: nil)
                     return result
                 }
                 guard let created = target.newTerminalSurface(
@@ -1330,7 +1525,7 @@ extension TerminalController {
                     workingDirectory: cwdResolution.path,
                     startupEnvironment: plan.env
                 ) else {
-                    result = .err(code: "internal_error", message: "Failed to create surface", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return result
                 }
                 ws = target
@@ -1359,7 +1554,7 @@ extension TerminalController {
                     },
                     stampSuppression: {
                         if launchSuppressed {
-                            _ = try SurfaceAttentionService.shared.suppress(
+                            _ = try PanelAttentionService.shared.suppress(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 by: .operator
@@ -1368,24 +1563,33 @@ extension TerminalController {
                     },
                     stampFlag: {
                         if let launchFlagReason {
-                            _ = try SurfaceAttentionService.shared.raise(
+                            _ = try PanelAttentionService.shared.raise(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 reason: launchFlagReason,
-                                callerSurfaceId: launchCallerSurfaceId,
+                                callerPanelId: launchCallerSurfaceId,
                                 by: launchFlagActor,
                                 title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
                             )
+                        }
+                        if let stagedPrompt {
+                            try LaunchPromptStore.shared.retain(stagedPrompt, owner: panel.launchPromptOwner)
                         }
                     },
                     sendCommand: {
                         // Attention is committed before the launch line can
                         // run, so even a fast completion cannot escape
                         // dispatch-time suppression.
-                        panel.sendText(plan.launchLine + "\n")
+                        panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
+                            launchLine: plan.launchLine, delayedPrompt: plan.delayedPrompt
+                        )) { [weak workspaceManager, weak panel] in
+                            guard let workspaceManager, let panel,
+                                  let live = workspaceManager.workspaces.first(where: { $0.id == ws.id }) else { return false }
+                            return live.terminalPanel(for: panel.id) === panel
+                        }
                     }
                 )
-            } catch let error as SurfaceMetadataStore.WriteError {
+            } catch let error as PanelMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
                 return result
             } catch {
@@ -1393,24 +1597,10 @@ extension TerminalController {
                 return result
             }
 
-            if let delayedPrompt = plan.delayedPrompt {
-                // Post-boot delivery for TUIs with no argv prompt. Same fixed
-                // delay rail as `default-agent launch` (readiness detection is
-                // a follow-up there too).
-                let panelId = panel.id
-                let wsId = ws.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(2500)) { [weak tabManager] in
-                    guard let tabManager,
-                          let liveWs = tabManager.tabs.first(where: { $0.id == wsId }),
-                          let livePanel = liveWs.terminalPanel(for: panelId) else { return }
-                    livePanel.surface.sendSubmitFormText(delayedPrompt)
-                }
-            }
-
             // Make the just-minted refs resolvable by the caller's next command.
             self.v2RefreshKnownRefs()
 
-            let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+            let windowId = self.v2ResolveWindowId(workspaceManager: workspaceManager)
             var agent: [String: Any] = ["type": plan.kind]
             agent["model"] = plan.model.isEmpty ? NSNull() : plan.model
             agent["effort"] = plan.effort.isEmpty ? NSNull() : plan.effort
@@ -1420,6 +1610,9 @@ extension TerminalController {
             result = .ok([
                 "agent": agent,
                 "command": plan.launchLine,
+                "prompt_file": self.v2OrNull(stagedPrompt?.url.path),
+                "startup": "pending",
+                "startup_process": NSNull(),
                 "window_id": self.v2OrNull(windowId?.uuidString),
                 "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -1474,17 +1667,42 @@ extension TerminalController {
             }
             return result
         }
-        let commitGate = FailClosedCommitGate<V2CallResult> {
+        let commitGate = AgentLaunchDeadlineGate<V2CallResult>(deadline: responseDeadline) {
             MainActor.assumeIsolated {
-                commit()
+                let outcome = commit()
+                if case .err = outcome, let stagedPrompt {
+                    DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(stagedPrompt) }
+                }
+                return outcome
             }
         }
         commitGate.enqueueOnMain()
-        return commitGate.wait(timeout: 8) ?? .err(
-            code: "main_thread_timeout",
-            message: "main thread did not begin the agent launch before the deadline",
-            data: nil
-        )
+        guard let outcome = commitGate.wait() else {
+            if commitGate.cancelledBeforeStart, let stagedPrompt {
+                LaunchPromptStore.shared.discard(stagedPrompt)
+            }
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within the launch deadline", data: nil)
+        }
+        guard case .ok(let rawPayload) = outcome, var payload = rawPayload as? [String: Any],
+              let wsRaw = payload["workspace_id"] as? String, let wsId = UUID(uuidString: wsRaw),
+              let panelRaw = payload["surface_id"] as? String, let panelId = UUID(uuidString: panelRaw) else { return outcome }
+        let probeDeadline = min(responseDeadline, Date().addingTimeInterval(5))
+        let startup = AgentStartupProbe.observe(ttyName: {
+            let snapshot = AgentLaunchDeadlineGate<String?>(deadline: probeDeadline) {
+                MainActor.assumeIsolated {
+                    guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
+                          ws.terminalPanel(for: panelId) != nil else { return nil }
+                    return ws.panelTTYNames[panelId]
+                }
+            }
+            snapshot.enqueueOnMain()
+            return snapshot.wait() ?? nil
+        }, expectedKind: plan.kind, deadline: probeDeadline)
+        payload["startup"] = startup.status.rawValue
+        if let process = startup.process {
+            payload["startup_process"] = ["pid": process.pid, "executable": process.executable]
+        }
+        return .ok(payload)
     }
 
     /// Best-effort binary availability check for the launch line's argv[0].
@@ -1517,6 +1735,6 @@ extension TerminalController {
         for dir in dirs where fm.isExecutableFile(atPath: "\(dir)/\(binary)") {
             return nil
         }
-        return "binary '\(binary)' not found on the app PATH or common install dirs; the pane's login shell may still resolve it"
+        return "binary '\(binary)' not found on the app PATH or common install dirs; the panel's login shell may still resolve it"
     }
 }

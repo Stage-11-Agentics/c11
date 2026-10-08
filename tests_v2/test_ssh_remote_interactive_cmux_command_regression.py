@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: interactive `cmux ssh` shells must resolve `cmux` to the relay wrapper."""
+"""Interactive SSH shells stay usable and explain unavailable c11 commands."""
 
 from __future__ import annotations
 
@@ -34,8 +34,12 @@ def _find_cli_binary() -> str:
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
 
     import subprocess
 
@@ -179,42 +183,13 @@ def main() -> int:
             shell_ready_text = client.read_terminal_text(surface_id)
             _assert_no_login_profile_noise(shell_ready_text)
 
-            which_status, which_output, which_text = _run_remote_shell_command(client, surface_id, "command -v cmux")
-            _must(which_status == 0, f"`command -v cmux` failed: output={which_output!r} tail={which_text[-1200:]!r}")
-            _must(
-                "/.cmux/bin/cmux" in which_output,
-                f"interactive ssh shell should resolve cmux to relay wrapper, got {which_output!r}",
-            )
-
-            ping_status, ping_output, ping_text = _run_remote_shell_command(client, surface_id, "cmux ping")
-            _must(ping_status == 0, f"`cmux ping` failed in interactive shell: output={ping_output!r} tail={ping_text[-1200:]!r}")
-            _must("pong" in ping_output.lower(), f"`cmux ping` should return pong, got {ping_output!r}")
-            _must(
-                "Socket not found at 127.0.0.1:" not in ping_text,
-                f"interactive ssh shell still routed cmux to a unix-socket-only binary: {ping_text[-1200:]!r}",
-            )
-            _must(
-                "waiting for relay on 127.0.0.1:" not in ping_text and "failed to connect to 127.0.0.1:" not in ping_text,
-                f"`cmux ping` hit a dead ssh relay instead of the local app socket: {ping_text[-1200:]!r}",
-            )
-
-            notify_status, notify_output, notify_text = _run_remote_shell_command(
-                client,
-                surface_id,
-                "cmux notify --body interactive-ssh-regression",
-            )
-            _must(
-                notify_status == 0,
-                f"`cmux notify` failed in interactive shell: output={notify_output!r} tail={notify_text[-1200:]!r}",
-            )
-            _must(
-                "Socket not found at 127.0.0.1:" not in notify_text,
-                f"`cmux notify` still failed via wrong cmux binary: {notify_text[-1200:]!r}",
-            )
-            _must(
-                "waiting for relay on 127.0.0.1:" not in notify_text and "failed to connect to 127.0.0.1:" not in notify_text,
-                f"`cmux notify` still failed because the ssh relay listener was not running: {notify_text[-1200:]!r}",
-            )
+            for command_name in ("c11", "cmux"):
+                status, output, text = _run_remote_shell_command(client, surface_id, f"{command_name} ping")
+                _must(status != 0, f"{command_name} should be unavailable: {output!r}")
+                _must(
+                    "c11 commands are not available over c11 ssh in this version" in output,
+                    f"{command_name} should explain the limitation: {output!r} tail={text[-1200:]!r}",
+                )
 
             shell_status, shell_output, shell_text = _run_remote_shell_command(
                 client,
@@ -244,7 +219,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    print("PASS: interactive ssh shell resolves cmux to relay wrapper and remote cmux commands succeed")
+    print("PASS: interactive SSH shell stays usable and c11 commands explain their unavailability")
     return 0
 
 

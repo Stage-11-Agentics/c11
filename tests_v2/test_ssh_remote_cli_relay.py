@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Docker integration: verify cmux CLI commands work over SSH via reverse socket forwarding."""
+"""Docker integration: SSH remains usable while remote c11 commands are unavailable."""
 
 from __future__ import annotations
 
@@ -45,11 +45,15 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None, check: bool = Tru
 
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
-    # Ensure --socket is what drives the relay path during tests.
+    # Explicitly address the test app socket.
     env.pop("CMUX_SOCKET_PATH", None)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", "--id-format", "both", *args], env=env)
     try:
@@ -118,15 +122,27 @@ def _wait_for_remote_ready(client, workspace_id: str, timeout: float = 45.0) -> 
     raise cmuxError(f"Remote daemon did not become ready: {last_status}")
 
 
-def _assert_remote_ping(host: str, host_port: int, key_path: Path, remote_socket_addr: str, *, label: str) -> None:
-    ping_result = _ssh_run(
-        host, host_port, key_path,
-        f"CMUX_SOCKET_PATH={remote_socket_addr} $HOME/.cmux/bin/cmux ping",
-        check=False,
-    )
+def _assert_remote_commands_unavailable(host: str, host_port: int, key_path: Path, session_id: int) -> None:
+    wrapper_dir = f"$HOME/.cmux/ssh/{session_id}.shell/bin"
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        probe = _ssh_run(host, host_port, key_path, f'test -x "{wrapper_dir}/c11" && test -x "{wrapper_dir}/cmux"', check=False)
+        if probe.returncode == 0:
+            break
+        time.sleep(0.2)
+    for command_name in ("c11", "cmux"):
+        result = _ssh_run(host, host_port, key_path, f'"{wrapper_dir}/{command_name}" ping', check=False)
+        _must(result.returncode != 0, f"{command_name} unexpectedly succeeded: {result.stdout!r}")
+        _must(
+            "c11 commands are not available over c11 ssh in this version" in result.stderr,
+            f"{command_name} should explain unavailable commands: {result.stderr!r}",
+        )
+
+    result = _ssh_run(host, host_port, key_path, f'"{wrapper_dir}/c11" rpc system.ping', check=False)
+    _must(result.returncode != 0, "remote rpc unexpectedly succeeded")
     _must(
-        ping_result.returncode == 0 and "pong" in ping_result.stdout.lower(),
-        f"{label} cmux ping failed: rc={ping_result.returncode} stdout={ping_result.stdout!r} stderr={ping_result.stderr!r}",
+        "c11 commands are not available over c11 ssh in this version" in result.stderr,
+        "remote rpc should explain unavailable commands",
     )
 
 
@@ -170,7 +186,7 @@ def main() -> int:
         _wait_for_ssh(host, host_ssh_port, key_path)
 
         with cmux(SOCKET_PATH) as client:
-            # Create SSH workspace (this sets up the reverse socket forward)
+            # Create an SSH workspace and wait for its remote daemon.
             payload = _run_cli_json(
                 cli,
                 [
@@ -192,20 +208,9 @@ def main() -> int:
                         workspace_id = str(row.get("id") or "")
                         break
             _must(bool(workspace_id), f"cmux ssh output missing workspace_id: {payload}")
-            remote_relay_port = payload.get("remote_relay_port")
-            _must(remote_relay_port is not None, f"cmux ssh output missing remote_relay_port: {payload}")
-            remote_relay_port = int(remote_relay_port)
-            _must(1 <= remote_relay_port <= 65535, f"remote_relay_port should be a valid TCP port: {remote_relay_port}")
-            remote_socket_addr = f"127.0.0.1:{remote_relay_port}"
-            startup_cmd = str(payload.get("ssh_startup_command") or "")
-            _must(
-                'PATH="$HOME/.cmux/bin:$PATH"' in startup_cmd,
-                f"ssh startup command should prepend ~/.cmux/bin for remote cmux CLI: {startup_cmd!r}",
-            )
-            _must(
-                f"CMUX_SOCKET_PATH={remote_socket_addr}" in startup_cmd,
-                f"ssh startup command should pin CMUX_SOCKET_PATH to workspace relay: {startup_cmd!r}",
-            )
+            _must("remote_relay_port" not in payload, f"SSH should not advertise a command relay: {payload}")
+            session_id = payload.get("ssh_session_id")
+            _must(isinstance(session_id, int), f"SSH session identity missing: {payload}")
             workspace_window_id = payload.get("window_id")
             current_params = {"window_id": workspace_window_id} if isinstance(workspace_window_id, str) and workspace_window_id else {}
             current = client._call("workspace.current", current_params) or {}
@@ -229,28 +234,9 @@ def main() -> int:
                 f"expected no forwarded ports when none are eligible: {first_status}",
             )
 
-            # Verify remote cmux wrapper + relay-specific daemon mapping were installed.
-            wrapper_check = None
-            wrapper_deadline = time.time() + 10.0
-            while time.time() < wrapper_deadline:
-                wrapper_check = _ssh_run(
-                    host, host_ssh_port, key_path,
-                    f"test -x \"$HOME/.cmux/bin/cmux\" && test -f \"$HOME/.cmux/bin/cmux\" && "
-                    f"map=\"$HOME/.cmux/relay/{remote_relay_port}.daemon_path\" && "
-                    "daemon=\"$(cat \"$map\" 2>/dev/null || true)\" && "
-                    "test -n \"$daemon\" && test -x \"$daemon\" && echo wrapper-ok",
-                    check=False,
-                )
-                if "wrapper-ok" in (wrapper_check.stdout or ""):
-                    break
-                time.sleep(0.4)
-            _must(
-                wrapper_check is not None and "wrapper-ok" in (wrapper_check.stdout or ""),
-                f"Expected remote cmux wrapper+relay mapping to exist: {wrapper_check.stdout if wrapper_check else ''} {wrapper_check.stderr if wrapper_check else ''}",
-            )
+            _assert_remote_commands_unavailable(host, host_ssh_port, key_path, session_id)
 
-            # Start a second SSH workspace to the same destination and verify both
-            # relays remain healthy (regression: same-host workspaces killed each other).
+            # A second workspace to the same destination still has its own lifecycle.
             payload_2 = _run_cli_json(
                 cli,
                 [
@@ -273,73 +259,12 @@ def main() -> int:
                         break
             _must(bool(workspace_id_2), f"second cmux ssh output missing workspace_id: {payload_2}")
 
-            remote_relay_port_2 = payload_2.get("remote_relay_port")
-            _must(remote_relay_port_2 is not None, f"second cmux ssh output missing remote_relay_port: {payload_2}")
-            remote_relay_port_2 = int(remote_relay_port_2)
-            _must(1 <= remote_relay_port_2 <= 65535, f"second remote_relay_port should be a valid TCP port: {remote_relay_port_2}")
-            _must(
-                remote_relay_port_2 != remote_relay_port,
-                f"relay ports should differ per workspace: {remote_relay_port_2} vs {remote_relay_port}",
-            )
-            remote_socket_addr_2 = f"127.0.0.1:{remote_relay_port_2}"
-            startup_cmd_2 = str(payload_2.get("ssh_startup_command") or "")
-            _must(
-                f"CMUX_SOCKET_PATH={remote_socket_addr_2}" in startup_cmd_2,
-                f"second ssh startup command should pin CMUX_SOCKET_PATH to second relay: {startup_cmd_2!r}",
-            )
-            _ = _wait_for_remote_ready(client, workspace_id_2)
-
-            stability_deadline = time.time() + 8.0
-            while time.time() < stability_deadline:
-                _assert_remote_ping(host, host_ssh_port, key_path, remote_socket_addr, label="first relay")
-                _assert_remote_ping(host, host_ssh_port, key_path, remote_socket_addr_2, label="second relay")
-                time.sleep(0.5)
-
-            # Test 1: cmux ping (v1)
-            _assert_remote_ping(host, host_ssh_port, key_path, remote_socket_addr, label="cmux")
-
-            # Test 2: cmux list-workspaces --json (v2)
-            list_ws_result = _ssh_run(
-                host, host_ssh_port, key_path,
-                f"CMUX_SOCKET_PATH={remote_socket_addr} $HOME/.cmux/bin/cmux --json list-workspaces",
-                check=False,
-            )
-            _must(
-                list_ws_result.returncode == 0,
-                f"cmux list-workspaces failed: rc={list_ws_result.returncode} stderr={list_ws_result.stderr!r}",
-            )
-            try:
-                ws_data = json.loads(list_ws_result.stdout.strip())
-                _must(isinstance(ws_data, dict), f"list-workspaces should return JSON object: {list_ws_result.stdout!r}")
-            except json.JSONDecodeError:
-                raise cmuxError(f"list-workspaces returned invalid JSON: {list_ws_result.stdout!r}")
-
-            # Test 3: cmux new-window (v1)
-            new_win_result = _ssh_run(
-                host, host_ssh_port, key_path,
-                f"CMUX_SOCKET_PATH={remote_socket_addr} $HOME/.cmux/bin/cmux new-window",
-                check=False,
-            )
-            _must(
-                new_win_result.returncode == 0,
-                f"cmux new-window failed: rc={new_win_result.returncode} stderr={new_win_result.stderr!r}",
-            )
-
-            # Test 4: cmux rpc system.capabilities (v2 passthrough)
-            rpc_result = _ssh_run(
-                host, host_ssh_port, key_path,
-                f"CMUX_SOCKET_PATH={remote_socket_addr} $HOME/.cmux/bin/cmux rpc system.capabilities",
-                check=False,
-            )
-            _must(
-                rpc_result.returncode == 0,
-                f"cmux rpc system.capabilities failed: rc={rpc_result.returncode} stderr={rpc_result.stderr!r}",
-            )
-            try:
-                caps_data = json.loads(rpc_result.stdout.strip())
-                _must(isinstance(caps_data, dict), f"rpc capabilities should return JSON: {rpc_result.stdout!r}")
-            except json.JSONDecodeError:
-                raise cmuxError(f"rpc system.capabilities returned invalid JSON: {rpc_result.stdout!r}")
+            _must("remote_relay_port" not in payload_2, f"SSH should not advertise a command relay: {payload_2}")
+            _must(payload_2.get("ssh_session_id") != session_id, "SSH sessions should have distinct identities")
+            _wait_for_remote_ready(client, workspace_id_2)
+            _assert_remote_commands_unavailable(host, host_ssh_port, key_path, int(payload_2["ssh_session_id"]))
+            shell_probe = _ssh_run(host, host_ssh_port, key_path, "printf shell-ready")
+            _must(shell_probe.stdout == "shell-ready", f"Remote shell failed: {shell_probe.stdout!r}")
 
             # Cleanup
             try:
@@ -354,7 +279,7 @@ def main() -> int:
                     pass
                 workspace_id_2 = ""
 
-        print("PASS: cmux CLI commands relay correctly over SSH reverse socket forwarding")
+        print("PASS: SSH sessions remain available and remote c11 commands explain their unavailability")
         return 0
 
     finally:

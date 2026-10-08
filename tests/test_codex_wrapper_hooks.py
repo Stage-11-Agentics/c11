@@ -43,7 +43,7 @@ def run_wrapper(
     socket_state: str,
     argv: list[str],
     callback: bool = False,
-) -> tuple[int, list[str], list[str], str, str]:
+) -> tuple[int, list[str], list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="c11-codex-wrapper-test-") as td:
         tmp = Path(td)
         wrapper_dir = tmp / "wrapper bin"
@@ -92,6 +92,9 @@ fi
         env["CMUX_SOCKET_PATH"] = socket_path
         env["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         env["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
+        isolated_home = tmp / "home"
+        isolated_home.mkdir()
+        env["HOME"] = str(isolated_home)
         env["FAKE_REAL_ARGS_LOG"] = str(real_args_log)
         env["FAKE_C11_LOG"] = str(c11_log)
         env["FAKE_C11_PING_OK"] = "1" if socket_state == "live" else "0"
@@ -120,10 +123,16 @@ fi
             if test_socket is not None:
                 test_socket.close()
 
+        tenant_files = sorted(
+            str(path.relative_to(isolated_home))
+            for path in isolated_home.rglob("*")
+            if path.is_file()
+        )
         return (
             proc.returncode,
             read_lines(real_args_log),
             c11_lines,
+            tenant_files,
             proc.stdout.strip(),
             proc.stderr.strip(),
         )
@@ -135,7 +144,7 @@ def expect(condition: bool, message: str, failures: list[str]) -> None:
 
 
 def test_live_socket_injects_completion_callback(failures: list[str]) -> None:
-    code, real_argv, c11_log, _, stderr = run_wrapper(
+    code, real_argv, c11_log, tenant_files, _, stderr = run_wrapper(
         socket_state="live",
         argv=["hello"],
     )
@@ -149,17 +158,29 @@ def test_live_socket_injects_completion_callback(failures: list[str]) -> None:
         failures,
     )
     expect(real_argv[-1] == "hello", f"live socket: original argv was not preserved: {real_argv}", failures)
+    expect(
+        not any(
+            argument == "--enable"
+            or argument == "--dangerously-bypass-hook-trust"
+            or argument.startswith("hooks.")
+            for argument in real_argv
+        ),
+        f"live socket: unproven Codex hook arguments were injected: {real_argv}",
+        failures,
+    )
+    expect(tenant_files == [], f"live socket: wrapper wrote tenant Codex files: {tenant_files}", failures)
     expect(any(" agent-hook idle" in line for line in c11_log), f"missing initial idle seed: {c11_log}", failures)
 
 
 def test_completion_callback_creates_surface_notification(failures: list[str]) -> None:
-    code, real_argv, c11_log, _, stderr = run_wrapper(
+    code, real_argv, c11_log, tenant_files, _, stderr = run_wrapper(
         socket_state="live",
         argv=[],
         callback=True,
     )
     expect(code == 0, f"callback: wrapper exited {code}: {stderr}", failures)
     expect(real_argv == [], f"callback: real Codex must not launch: {real_argv}", failures)
+    expect(tenant_files == [], f"callback: wrapper wrote tenant Codex files: {tenant_files}", failures)
     notify_lines = [line for line in c11_log if " notify " in line]
     expect(len(notify_lines) == 1, f"callback: expected one c11 notification: {c11_log}", failures)
     if notify_lines:
@@ -188,23 +209,25 @@ def test_completion_callback_creates_surface_notification(failures: list[str]) -
 
 
 def test_missing_socket_is_unchanged_passthrough(failures: list[str]) -> None:
-    code, real_argv, c11_log, _, stderr = run_wrapper(
+    code, real_argv, c11_log, tenant_files, _, stderr = run_wrapper(
         socket_state="missing",
         argv=["hello"],
     )
     expect(code == 0, f"missing socket: wrapper exited {code}: {stderr}", failures)
     expect(real_argv == ["hello"], f"missing socket: expected passthrough argv: {real_argv}", failures)
     expect(c11_log == [], f"missing socket: c11 should not be called: {c11_log}", failures)
+    expect(tenant_files == [], f"missing socket: wrapper wrote tenant Codex files: {tenant_files}", failures)
 
 
 def test_explicit_notify_override_remains_later_in_argv(failures: list[str]) -> None:
     custom = 'notify=["/custom/notifier"]'
-    code, real_argv, _, _, stderr = run_wrapper(
+    code, real_argv, _, tenant_files, _, stderr = run_wrapper(
         socket_state="live",
         argv=["-c", custom],
     )
     expect(code == 0, f"explicit override: wrapper exited {code}: {stderr}", failures)
     expect(real_argv[-2:] == ["-c", custom], f"explicit override lost precedence: {real_argv}", failures)
+    expect(tenant_files == [], f"explicit override: wrapper wrote tenant Codex files: {tenant_files}", failures)
 
 
 def main() -> int:

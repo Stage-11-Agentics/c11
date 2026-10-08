@@ -44,7 +44,7 @@ def _pane_count(layout_payload: dict) -> int:
 
 
 def _largest_split_frame(layout_payload: dict) -> dict:
-    selected = layout_payload.get("selectedPanels") or []
+    selected = layout_payload.get("selectedTabs") or []
     best = None
     best_area = -1.0
     for row in selected:
@@ -94,7 +94,7 @@ def _pane_frames_sorted_x(layout_payload: dict) -> list[dict]:
         try:
             frames.append(
                 {
-                    "pane_id": str(pane.get("paneId") or ""),
+                    "area_id": str(pane.get("paneId") or ""),
                     "x": float(frame.get("x", 0.0)),
                     "y": float(frame.get("y", 0.0)),
                     "width": float(frame.get("width", 0.0)),
@@ -154,9 +154,9 @@ def _assert_two_panes_left_right(layout_payload: dict, *, workspace_index: int, 
 
 def _selected_panel_by_pane(layout_payload: dict) -> dict[str, str]:
     out: dict[str, str] = {}
-    for row in layout_payload.get("selectedPanels") or []:
-        pane_id = str(row.get("paneId") or "")
-        panel_id = str(row.get("panelId") or "")
+    for row in layout_payload.get("selectedTabs") or []:
+        pane_id = str(row.get("areaId") or "")
+        panel_id = str(row.get("tabId") or "")
         if pane_id and panel_id:
             out[pane_id] = panel_id
     return out
@@ -166,9 +166,9 @@ def _rightmost_pane_id(layout_payload: dict) -> str:
     panes = _pane_frames_sorted_x(layout_payload)
     if len(panes) < 2:
         raise cmuxError(f"Expected at least 2 panes to resolve rightmost pane: {panes}")
-    pane_id = str(panes[-1].get("pane_id") or "")
+    pane_id = str(panes[-1].get("area_id") or "")
     if not pane_id:
-        raise cmuxError(f"Rightmost pane is missing pane_id: {panes[-1]}")
+        raise cmuxError(f"Rightmost pane is missing area_id: {panes[-1]}")
     return pane_id
 
 
@@ -177,7 +177,7 @@ def _rightmost_panel_id(layout_payload: dict) -> str:
     selected = _selected_panel_by_pane(layout_payload)
     panel_id = str(selected.get(pane_id) or "")
     if not panel_id:
-        raise cmuxError(f"Missing selected panel for rightmost pane: pane_id={pane_id}, selected={selected}")
+        raise cmuxError(f"Missing selected panel for rightmost pane: area_id={pane_id}, selected={selected}")
     return panel_id
 
 

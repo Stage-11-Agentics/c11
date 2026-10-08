@@ -83,8 +83,12 @@ def _cli_env() -> dict[str, str]:
     env = dict(os.environ)
     env["C11_DEFAULT_SOCKET_DEADLINE_MS"] = DEADLINE_ENV_MS
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
     return env
 
 
@@ -111,7 +115,7 @@ def test_no_cli_hangs_under_rapid_surface_creation() -> int:
         return 0
     env = _cli_env()
 
-    # Seed workspace and surface IDs to use for surface.create and set-metadata.
+    # Seed workspace and surface IDs to use for panel.create and set-metadata.
     # We need at least one workspace+surface already live; create one via the
     # Python client so it's available before the stress loop starts.
     seed_ws_id: Optional[str] = None
@@ -137,22 +141,22 @@ def test_no_cli_hangs_under_rapid_surface_creation() -> int:
                 # workspace.create via new-workspace
                 results[idx] = _run(cli, ["new-workspace"], env)
             elif call_type == 1:
-                # surface.create via new-surface (terminal type in existing workspace)
-                args = ["new-surface", "--type", "terminal"]
+                # panel.create via new-panel (terminal type in existing workspace)
+                args = ["new-panel", "--type", "terminal"]
                 if seed_ws_id:
                     args += ["--workspace", seed_ws_id]
                 results[idx] = _run(cli, args, env)
             elif call_type == 2:
-                # pane.create via new-pane (split right in existing workspace)
-                args = ["new-pane", "--direction", "right"]
+                # area.create via new-area (split right in existing workspace)
+                args = ["new-area", "--direction", "right"]
                 if seed_ws_id:
                     args += ["--workspace", seed_ws_id]
                 results[idx] = _run(cli, args, env)
             else:
-                # surface.set_metadata via set-metadata
+                # panel.set_metadata via set-metadata
                 args = ["set-metadata", "--key", "stress_test", "--value", f"v{idx}"]
                 if seed_surface_id:
-                    args += ["--surface", seed_surface_id]
+                    args += ["--panel", seed_surface_id]
                 elif seed_ws_id:
                     args += ["--workspace", seed_ws_id]
                 results[idx] = _run(cli, args, env)

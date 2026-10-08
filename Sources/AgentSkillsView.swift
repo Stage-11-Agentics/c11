@@ -749,12 +749,12 @@ struct AgentSkillsOnboardingSheet: View {
         if detectedRows.isEmpty {
             return String(
                 localized: "agentSkills.onboarding.body.detecting",
-                defaultValue: "The skill is how it learns. One file. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
+                defaultValue: "The skill is how it learns. One file. After that, your agent splits areas, drives the browser, opens markdown panels, and reports progress to the sidebar — without you in the loop for routine moves."
             )
         }
         let format = String(
             localized: "agentSkills.onboarding.body.detected",
-            defaultValue: "The skill is how it learns. One file in %@. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
+            defaultValue: "The skill is how it learns. One file in %@. After that, your agent splits areas, drives the browser, opens markdown panels, and reports progress to the sidebar — without you in the loop for routine moves."
         )
         return String(format: format, detectedTargetList)
     }

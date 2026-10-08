@@ -12,7 +12,7 @@ explicit `CodingKeys` or custom encode/decode are defined (see LayoutTreeSpec).
   "version": 1,
   "workspace": { ... },
   "layout": { ... },
-  "surfaces": [ ... ]
+  "panels": [ ... ]
 }
 ```
 
@@ -20,8 +20,8 @@ explicit `CodingKeys` or custom encode/decode are defined (see LayoutTreeSpec).
 |-------|------|----------|-------|
 | `version` | int | yes | Must be `1` |
 | `workspace` | WorkspaceSpec | yes | Workspace-level settings |
-| `layout` | LayoutTreeSpec | yes | Pane/split tree |
-| `surfaces` | SurfaceSpec[] | yes | Keyed by plan-local id |
+| `layout` | LayoutTreeSpec | yes | Area/split tree |
+| `panels` | object[] | yes | Keyed by plan-local id; each entry is described under [`panels` entries](#panels-entries) |
 
 ## WorkspaceSpec
 
@@ -40,12 +40,12 @@ All fields optional. `customColor` accepts a hex string (`#RRGGBB`) or a named p
 
 ## LayoutTreeSpec
 
-A recursive union: either a `pane` leaf or a `split` node.
+A recursive union: either an area leaf (`"type": "pane"`) or a `split` node.
 
-### Pane leaf
+### Area leaf
 
 ```json
-{ "type": "pane", "pane": { "surfaceIds": ["s1", "s2"], "selectedIndex": 0 } }
+{ "type": "pane", "pane": { "panelIds": ["s1", "s2"], "selectedIndex": 0 } }
 ```
 
 `selectedIndex` is optional; omit to preserve focus as-is.
@@ -67,7 +67,7 @@ A recursive union: either a `pane` leaf or a `split` node.
 `orientation`: `"horizontal"` (side by side) or `"vertical"` (top/bottom).
 `dividerPosition`: float in `(0, 1)`.
 
-## SurfaceSpec
+## `panels` entries
 
 ```json
 {
@@ -86,27 +86,27 @@ A recursive union: either a `pane` leaf or a `split` node.
 
 | Field | Kind | Notes |
 |-------|------|-------|
-| `id` | all | Plan-local stable id. Appears in `ApplyResult.surfaceRefs` |
+| `id` | all | Plan-local stable id. Appears in `ApplyResult.panelRefs` |
 | `kind` | all | `"terminal"`, `"browser"`, or `"markdown"` |
 | `title` | all | Written via `setPanelCustomTitle` |
-| `description` | all | Written to surface metadata under `description` key |
+| `description` | all | Written to panel metadata under `description` key |
 | `workingDirectory` | terminal | Shell launch directory; ignored (warning) on browser/markdown |
-| `command` | terminal | Sent as text once the surface is ready |
+| `command` | terminal | Sent as text once the panel is ready |
 | `url` | browser | Initial navigation URL |
 | `filePath` | markdown | Absolute path to the markdown file |
-| `metadata` | all | Surface-scoped key/value pairs (`SurfaceMetadataStore`) |
-| `paneMetadata` | all | Pane-scoped key/value pairs; only the first surface per pane writes |
+| `metadata` | all | Panel-scoped key/value pairs (`SurfaceMetadataStore`) |
+| `paneMetadata` | all | Area-scoped key/value pairs; only the first panel per area writes |
 
 `metadata` and `pane_metadata` values must be JSON-serialisable. Non-string
-values on the reserved `mailbox.*` pane namespace are dropped with a warning.
+values on the reserved `mailbox.*` area namespace are dropped with a warning.
 
 ## ApplyResult
 
 ```json
 {
   "workspaceRef": "workspace:<uuid>",
-  "surfaceRefs": { "s1": "surface:<uuid>", "s2": "surface:<uuid>" },
-  "paneRefs": { "s1": "pane:<uuid>" },
+  "panelRefs": { "s1": "panel:<uuid>", "s2": "panel:<uuid>" },
+  "areaRefs": { "s1": "area:<uuid>" },
   "warnings": [],
   "failures": []
 }

@@ -45,8 +45,12 @@ def _find_cli_binary() -> str:
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", *args], env=env)
     try:
@@ -98,8 +102,8 @@ def _wait_remote_ready(client: cmux, workspace_id: str, timeout_s: float = 65.0)
 
 def _surface_scrollback_text(client: cmux, workspace_id: str, surface_id: str) -> str:
     payload = client._call(
-        "surface.read_text",
-        {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+        "panel.read_text",
+        {"workspace_id": workspace_id, "panel_id": surface_id, "scrollback": True},
     ) or {}
     return str(payload.get("text") or "")
 
@@ -117,7 +121,7 @@ def _browser_body_text(client: cmux, surface_id: str) -> str:
     payload = client._call(
         "browser.eval",
         {
-            "surface_id": surface_id,
+            "panel_id": surface_id,
             "script": "document.body ? (document.body.innerText || '') : ''",
         },
     ) or {}
@@ -140,7 +144,7 @@ def _wait_browser_contains(client: cmux, surface_id: str, token: str, timeout_s:
 
 
 def _browser_favicon_state(client: cmux, surface_id: str) -> dict:
-    return dict(client._call("debug.browser.favicon", {"surface_id": surface_id}) or {})
+    return dict(client._call("debug.browser.favicon", {"panel_id": surface_id}) or {})
 
 
 def _wait_browser_favicon(client: cmux, surface_id: str, timeout_s: float = 20.0) -> dict:
@@ -255,12 +259,12 @@ for _ in $(seq 1 30); do
   sleep 0.2
 done"""
             client._call(
-                "surface.send_text",
-                {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "text": server_script},
+                "panel.send_text",
+                {"workspace_id": remote_workspace_id, "panel_id": remote_surface_id, "text": server_script},
             )
             client._call(
-                "surface.send_key",
-                {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "key": "enter"},
+                "panel.send_key",
+                {"workspace_id": remote_workspace_id, "panel_id": remote_surface_id, "key": "enter"},
             )
             _wait_surface_contains(client, remote_workspace_id, remote_surface_id, server_ready_token, timeout_s=12.0)
 
@@ -268,8 +272,8 @@ done"""
                 "browser.open_split",
                 {"workspace_id": remote_workspace_id, "url": url},
             ) or {}
-            browser_surface_id = str(browser_payload.get("surface_id") or "")
-            _must(browser_surface_id, f"browser.open_split returned no surface_id: {browser_payload}")
+            browser_surface_id = str(browser_payload.get("panel_id") or "")
+            _must(browser_surface_id, f"browser.open_split returned no panel_id: {browser_payload}")
 
             _wait_browser_contains(client, browser_surface_id, page_token, timeout_s=20.0)
 
@@ -288,12 +292,12 @@ done"""
                 )
                 with cmux(SOCKET_PATH) as cleanup_client:
                     cleanup_client._call(
-                        "surface.send_text",
-                        {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "text": cleanup},
+                        "panel.send_text",
+                        {"workspace_id": remote_workspace_id, "panel_id": remote_surface_id, "text": cleanup},
                     )
                     cleanup_client._call(
-                        "surface.send_key",
-                        {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "key": "enter"},
+                        "panel.send_key",
+                        {"workspace_id": remote_workspace_id, "panel_id": remote_surface_id, "key": "enter"},
                     )
             except Exception:  # noqa: BLE001
                 pass

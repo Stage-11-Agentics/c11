@@ -29,13 +29,13 @@ private final class AttentionTestBox<Value>: @unchecked Sendable {
 
 @MainActor
 final class AttentionModelTests: XCTestCase {
-    private let store = SurfaceMetadataStore.shared
+    private let store = PanelMetadataStore.shared
 
     func testFlagReasonValidationAcceptsExactBoundAndRejectsMalformedReasons() {
         XCTAssertNil(
-            SurfaceMetadataStore.validateReservedKey(
+            PanelMetadataStore.validateReservedKey(
                 MetadataKey.flag,
-                String(repeating: "x", count: SurfaceAttentionReason.maxLength)
+                String(repeating: "x", count: PanelAttentionReason.maxLength)
             )
         )
         for invalid: Any in [
@@ -45,11 +45,11 @@ final class AttentionModelTests: XCTestCase {
             "trailing ",
             "two\nlines",
             "two\rlines",
-            String(repeating: "x", count: SurfaceAttentionReason.maxLength + 1),
+            String(repeating: "x", count: PanelAttentionReason.maxLength + 1),
             true,
         ] {
             XCTAssertNotNil(
-                SurfaceMetadataStore.validateReservedKey(MetadataKey.flag, invalid),
+                PanelMetadataStore.validateReservedKey(MetadataKey.flag, invalid),
                 "must reject \(invalid)"
             )
         }
@@ -68,12 +68,12 @@ final class AttentionModelTests: XCTestCase {
             surfaceId: surface,
             flag: .raise("Needs review"),
             suppression: .suppress,
-            callerSurfaceId: originalCaller,
+            callerPanelId: originalCaller,
             now: raisedAt
         )
         XCTAssertEqual(raised.after.flagReason, "Needs review")
         XCTAssertEqual(raised.after.flagRaisedAt, raisedAt)
-        XCTAssertEqual(raised.after.flagCallerSurfaceId, originalCaller)
+        XCTAssertEqual(raised.after.flagCallerPanelId, originalCaller)
         XCTAssertTrue(raised.after.suppressed)
         XCTAssertEqual(raised.result.applied[MetadataKey.flag], true)
         XCTAssertEqual(raised.result.applied[MetadataKey.suppressed], true)
@@ -82,13 +82,13 @@ final class AttentionModelTests: XCTestCase {
             workspaceId: workspace,
             surfaceId: surface,
             flag: .raise("Needs operator decision"),
-            callerSurfaceId: revisingCaller,
+            callerPanelId: revisingCaller,
             now: Date(timeIntervalSince1970: 2_000)
         )
         XCTAssertEqual(revised.after.flagReason, "Needs operator decision")
         XCTAssertEqual(revised.after.flagRaisedAt, raisedAt)
         XCTAssertEqual(
-            revised.after.flagCallerSurfaceId,
+            revised.after.flagCallerPanelId,
             originalCaller,
             "Reason revisions must retain the caller that opened the active flag epoch"
         )
@@ -110,16 +110,16 @@ final class AttentionModelTests: XCTestCase {
             now: Date(timeIntervalSince1970: 3_000)
         )
         XCTAssertNil(lowered.after.flagRaisedAt)
-        XCTAssertNil(lowered.after.flagCallerSurfaceId)
+        XCTAssertNil(lowered.after.flagCallerPanelId)
         let reraised = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
             flag: .raise("New epoch"),
-            callerSurfaceId: revisingCaller,
+            callerPanelId: revisingCaller,
             now: Date(timeIntervalSince1970: 4_000)
         )
         XCTAssertEqual(reraised.after.flagRaisedAt, Date(timeIntervalSince1970: 4_000))
-        XCTAssertEqual(reraised.after.flagCallerSurfaceId, revisingCaller)
+        XCTAssertEqual(reraised.after.flagCallerPanelId, revisingCaller)
         XCTAssertNotEqual(
             TerminalNotificationStore.flagNotificationIdentifier(
                 workspaceId: workspace,
@@ -140,7 +140,7 @@ final class AttentionModelTests: XCTestCase {
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
         let reason = "Needs review"
 
-        var paddingCount = SurfaceMetadataStore.payloadCapBytes
+        var paddingCount = PanelMetadataStore.payloadCapBytes
         var base: [String: Any] = [:]
         while paddingCount > 0 {
             let candidate: [String: Any] = [
@@ -149,8 +149,8 @@ final class AttentionModelTests: XCTestCase {
             let withFlag = candidate.merging([MetadataKey.flag: reason]) { _, new in new }
             let baseSize = try JSONSerialization.data(withJSONObject: candidate).count
             let flaggedSize = try JSONSerialization.data(withJSONObject: withFlag).count
-            if baseSize <= SurfaceMetadataStore.payloadCapBytes,
-               flaggedSize > SurfaceMetadataStore.payloadCapBytes {
+            if baseSize <= PanelMetadataStore.payloadCapBytes,
+               flaggedSize > PanelMetadataStore.payloadCapBytes {
                 base = candidate
                 break
             }
@@ -182,7 +182,7 @@ final class AttentionModelTests: XCTestCase {
                 flag: .raise(reason)
             )
         ) {
-            XCTAssertEqual(($0 as? SurfaceMetadataStore.WriteError)?.code, "payload_too_large")
+            XCTAssertEqual(($0 as? PanelMetadataStore.WriteError)?.code, "payload_too_large")
         }
 
         let after = store.getMetadata(workspaceId: workspace, surfaceId: surface)
@@ -211,12 +211,12 @@ final class AttentionModelTests: XCTestCase {
             surfaceId: surface,
             values: [
                 MetadataKey.flag: "Need a deployment decision",
-                MetadataKey.flagCallerSurfaceId: caller.uuidString,
+                MetadataKey.legacyFlagCallerSurfaceId: caller.uuidString,
                 MetadataKey.suppressed: true,
             ],
             sources: [
                 MetadataKey.flag: .init(source: .explicit, ts: raisedAt),
-                MetadataKey.flagCallerSurfaceId: .init(
+                MetadataKey.legacyFlagCallerSurfaceId: .init(
                     source: .heuristic,
                     ts: raisedAt + 99
                 ),
@@ -225,7 +225,7 @@ final class AttentionModelTests: XCTestCase {
         )
         let snapshot = store.attentionSnapshot(workspaceId: workspace, surfaceId: surface)
         XCTAssertEqual(snapshot.flagReason, "Need a deployment decision")
-        XCTAssertEqual(snapshot.flagCallerSurfaceId, caller)
+        XCTAssertEqual(snapshot.flagCallerPanelId, caller)
         XCTAssertTrue(snapshot.suppressed)
         XCTAssertEqual(snapshot.flagRaisedAt?.timeIntervalSince1970, raisedAt)
         XCTAssertEqual(
@@ -236,7 +236,7 @@ final class AttentionModelTests: XCTestCase {
             store.getSource(
                 workspaceId: workspace,
                 surfaceId: surface,
-                key: MetadataKey.flagCallerSurfaceId
+                key: MetadataKey.legacyFlagCallerSurfaceId
             ),
             .explicit
         )
@@ -318,15 +318,15 @@ final class AttentionModelTests: XCTestCase {
 
     func testFlagOverridesSuppressionWithoutChangingRawLifecycle() {
         XCTAssertEqual(
-            SurfaceAttentionSnapshot.presentedState(.waiting, flagged: false, suppressed: true),
+            PanelAttentionSnapshot.presentedState(.waiting, flagged: false, suppressed: true),
             .idle
         )
         XCTAssertEqual(
-            SurfaceAttentionSnapshot.presentedState(.waiting, flagged: true, suppressed: true),
+            PanelAttentionSnapshot.presentedState(.waiting, flagged: true, suppressed: true),
             .waiting
         )
         XCTAssertEqual(
-            SurfaceAttentionSnapshot.presentedState(.working, flagged: false, suppressed: true),
+            PanelAttentionSnapshot.presentedState(.working, flagged: false, suppressed: true),
             .working
         )
     }
@@ -338,7 +338,7 @@ final class AttentionModelTests: XCTestCase {
                     let expected: WorkspacePulseState =
                         state == .waiting && suppressed && !flagged ? .idle : state
                     XCTAssertEqual(
-                        SurfaceAttentionSnapshot.presentedState(
+                        PanelAttentionSnapshot.presentedState(
                             state,
                             flagged: flagged,
                             suppressed: suppressed
@@ -351,9 +351,9 @@ final class AttentionModelTests: XCTestCase {
         }
     }
 
-    func testSurfaceTabResolverUsesSuppressionOnlyForExactUnreadDemand() {
+    func testPanelResolverUsesSuppressionOnlyForExactUnreadDemand() {
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            PanelActivityResolver.resolve(
                 hasExactSurfaceNotification: true,
                 derivedActivity: .working,
                 terminalType: "codex",
@@ -363,7 +363,7 @@ final class AttentionModelTests: XCTestCase {
             .idle
         )
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            PanelActivityResolver.resolve(
                 hasExactSurfaceNotification: true,
                 derivedActivity: .idle,
                 terminalType: "codex",
@@ -373,7 +373,7 @@ final class AttentionModelTests: XCTestCase {
             .waiting
         )
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            PanelActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: .working,
                 terminalType: "codex",
@@ -389,21 +389,21 @@ final class AttentionModelTests: XCTestCase {
         let workspaceB = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let surfaceA = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
         let surfaceB = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
-        let older = SurfaceAttentionSnapshot(
+        let older = PanelAttentionSnapshot(
             workspaceId: workspaceB,
             surfaceId: surfaceB,
             flagReason: "older",
             flagRaisedAt: Date(timeIntervalSince1970: 10),
             suppressed: true
         )
-        let tiedA = SurfaceAttentionSnapshot(
+        let tiedA = PanelAttentionSnapshot(
             workspaceId: workspaceA,
             surfaceId: surfaceA,
             flagReason: "tie A",
             flagRaisedAt: Date(timeIntervalSince1970: 20),
             suppressed: false
         )
-        let tiedB = SurfaceAttentionSnapshot(
+        let tiedB = PanelAttentionSnapshot(
             workspaceId: workspaceB,
             surfaceId: surfaceA,
             flagReason: "tie B",
@@ -462,8 +462,8 @@ final class AttentionModelTests: XCTestCase {
         let newerSurface = UUID()
         let olderCaller = UUID()
         let controller = TerminalController.shared
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        PanelAttentionIndex.shared.publish(
+            PanelAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: newerSurface,
                 flagReason: "newer",
@@ -471,19 +471,19 @@ final class AttentionModelTests: XCTestCase {
                 suppressed: false
             )
         )
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        PanelAttentionIndex.shared.publish(
+            PanelAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: olderSurface,
                 flagReason: "older",
                 flagRaisedAt: Date(timeIntervalSince1970: 10),
-                flagCallerSurfaceId: olderCaller,
+                flagCallerPanelId: olderCaller,
                 suppressed: true
             )
         )
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: olderSurface)
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: newerSurface)
+            PanelAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: olderSurface)
+            PanelAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: newerSurface)
         }
 
         let response = AttentionTestBox<String?>(nil)
@@ -509,9 +509,11 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(flags.compactMap { $0["reason"] as? String }, ["older", "newer"])
         XCTAssertEqual(flags.first?["suppressed"] as? Bool, true)
         XCTAssertEqual(flags.first?["workspace_id"] as? String, workspace.uuidString)
-        XCTAssertEqual(flags.first?["surface_id"] as? String, olderSurface.uuidString)
+        XCTAssertEqual(flags.first?["panel_id"] as? String, olderSurface.uuidString)
+        XCTAssertNil(flags.first?["tab_id"], "C11-345: tab_* keys are no longer emitted")
+        XCTAssertNil(flags.first?["surface_id"], "C11-337: surface_* keys are no longer emitted")
         XCTAssertEqual(
-            flags.first?["caller_surface_id"] as? String,
+            flags.first?["caller_panel_id"] as? String,
             olderCaller.uuidString
         )
     }
@@ -572,13 +574,13 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(indexes.rawUnreadCount, 2)
         XCTAssertEqual(indexes.unreadCount, 1)
         XCTAssertTrue(
-            indexes.rawUnreadByTabSurface.contains(
-                .init(tabId: workspace, surfaceId: suppressedSurface)
+            indexes.rawUnreadByWorkspaceSurface.contains(
+                .init(workspaceId: workspace, surfaceId: suppressedSurface)
             )
         )
         XCTAssertFalse(
-            indexes.unreadByTabSurface.contains(
-                .init(tabId: workspace, surfaceId: suppressedSurface)
+            indexes.unreadByWorkspaceSurface.contains(
+                .init(workspaceId: workspace, surfaceId: suppressedSurface)
             )
         )
     }
@@ -593,11 +595,11 @@ final class AttentionModelTests: XCTestCase {
         notificationStore.configureDirectFlagAddHandlerForTesting { _, _ in }
         defer {
             notificationStore.resetDirectFlagDeliveryHandlersForTesting()
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
         XCTAssertNil(
-            try SurfaceAttentionService.shared.lowerIfFlagged(
+            try PanelAttentionService.shared.lowerIfFlagged(
                 workspaceId: workspace,
                 surfaceId: surface,
                 by: .operator
@@ -605,25 +607,25 @@ final class AttentionModelTests: XCTestCase {
             "lowerIfFlagged must be a no-op when nothing is raised (typing hot path)"
         )
 
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "Need operator input",
             title: nil
         )
         XCTAssertTrue(
-            SurfaceAttentionIndex.shared.snapshot(workspaceId: workspace, surfaceId: surface).isFlagged
+            PanelAttentionIndex.shared.snapshot(workspaceId: workspace, surfaceId: surface).isFlagged
         )
 
         XCTAssertNotNil(
-            try SurfaceAttentionService.shared.lowerIfFlagged(
+            try PanelAttentionService.shared.lowerIfFlagged(
                 workspaceId: workspace,
                 surfaceId: surface,
                 by: .operator
             )
         )
         XCTAssertFalse(
-            SurfaceAttentionIndex.shared.snapshot(workspaceId: workspace, surfaceId: surface).isFlagged
+            PanelAttentionIndex.shared.snapshot(workspaceId: workspace, surfaceId: surface).isFlagged
         )
     }
 
@@ -634,26 +636,26 @@ final class AttentionModelTests: XCTestCase {
         let originalNotifications = notificationStore.notifications
         var edges: [Bool] = []
         notificationStore.replaceNotificationsForTesting([])
-        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
-            if tabId == workspace { edges.append(entered) }
+        notificationStore.configureWaitingEdgeHandlerForTesting { entered, workspaceId in
+            if workspaceId == workspace { edges.append(entered) }
         }
         defer {
             notificationStore.resetWaitingEdgeHandlerForTesting()
             notificationStore.replaceNotificationsForTesting(originalNotifications)
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
         notificationStore.replaceNotificationsForTesting([
             notification(workspace: workspace, surface: surface)
         ])
-        _ = try SurfaceAttentionService.shared.suppress(
+        _ = try PanelAttentionService.shared.suppress(
             workspaceId: workspace,
             surfaceId: surface,
             by: .operator
         )
         XCTAssertEqual(notificationStore.rawUnreadCount, 1)
         XCTAssertEqual(notificationStore.unreadCount, 0)
-        _ = try SurfaceAttentionService.shared.unsuppress(
+        _ = try PanelAttentionService.shared.unsuppress(
             workspaceId: workspace,
             surfaceId: surface,
             by: .operator
@@ -671,18 +673,18 @@ final class AttentionModelTests: XCTestCase {
         let originalNotifications = notificationStore.notifications
         var edges: [Bool] = []
         notificationStore.replaceNotificationsForTesting([])
-        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
-            if tabId == workspace { edges.append(entered) }
+        notificationStore.configureWaitingEdgeHandlerForTesting { entered, workspaceId in
+            if workspaceId == workspace { edges.append(entered) }
         }
         defer {
             notificationStore.resetWaitingEdgeHandlerForTesting()
             notificationStore.replaceNotificationsForTesting(originalNotifications)
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: prunedSurface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: prunedSurface)
         }
 
-        SurfaceAttentionService.shared.restore(
-            SurfaceAttentionSnapshot(
+        PanelAttentionService.shared.restore(
+            PanelAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: removedSurface,
                 flagReason: nil,
@@ -697,19 +699,19 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(notificationStore.unreadCount, 0)
         edges.removeAll()
 
-        SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
+        PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
         XCTAssertEqual(notificationStore.rawUnreadCount, 0)
         XCTAssertEqual(notificationStore.unreadCount, 0)
         XCTAssertTrue(edges.isEmpty, "Close must not manufacture waiting.entered/left edges")
         XCTAssertFalse(
-            SurfaceAttentionIndex.shared.snapshot(
+            PanelAttentionIndex.shared.snapshot(
                 workspaceId: workspace,
                 surfaceId: removedSurface
             ).suppressed
         )
 
-        SurfaceAttentionService.shared.restore(
-            SurfaceAttentionSnapshot(
+        PanelAttentionService.shared.restore(
+            PanelAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: prunedSurface,
                 flagReason: nil,
@@ -721,11 +723,11 @@ final class AttentionModelTests: XCTestCase {
             notification(workspace: workspace, surface: prunedSurface)
         ])
         edges.removeAll()
-        SurfaceAttentionService.shared.prune(workspaceId: workspace, validSurfaceIds: [])
+        PanelAttentionService.shared.prune(workspaceId: workspace, validSurfaceIds: [])
         XCTAssertEqual(notificationStore.rawUnreadCount, 0)
         XCTAssertTrue(edges.isEmpty, "Prune must not expose invalid-surface demand transiently")
         XCTAssertFalse(
-            SurfaceAttentionIndex.shared.snapshot(
+            PanelAttentionIndex.shared.snapshot(
                 workspaceId: workspace,
                 surfaceId: prunedSurface
             ).suppressed
@@ -743,13 +745,13 @@ final class AttentionModelTests: XCTestCase {
                 surfaceId: surface,
                 partial: [
                     MetadataKey.flag: "Bypass",
-                    MetadataKey.flagCallerSurfaceId: UUID().uuidString,
+                    MetadataKey.legacyFlagCallerSurfaceId: UUID().uuidString,
                 ],
                 mode: .merge,
                 source: .explicit
             )
         ) {
-            XCTAssertEqual(($0 as? SurfaceMetadataStore.WriteError)?.code, "attention_requires_service")
+            XCTAssertEqual(($0 as? PanelMetadataStore.WriteError)?.code, "attention_requires_service")
         }
         XCTAssertFalse(
             store.setInternal(
@@ -764,7 +766,7 @@ final class AttentionModelTests: XCTestCase {
             store.setInternal(
                 workspaceId: workspace,
                 surfaceId: surface,
-                key: MetadataKey.flagCallerSurfaceId,
+                key: MetadataKey.legacyFlagCallerSurfaceId,
                 value: UUID().uuidString,
                 source: .explicit
             )
@@ -782,7 +784,7 @@ final class AttentionModelTests: XCTestCase {
                 source: .explicit
             )
         ) {
-            XCTAssertEqual(($0 as? SurfaceMetadataStore.WriteError)?.code, "attention_requires_service")
+            XCTAssertEqual(($0 as? PanelMetadataStore.WriteError)?.code, "attention_requires_service")
         }
     }
 
@@ -809,21 +811,21 @@ final class AttentionModelTests: XCTestCase {
         defer {
             notificationStore.resetFlagNotificationReplacementHandlerForTesting()
             notificationStore.resetDirectFlagDeliveryHandlersForTesting()
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
-        _ = try SurfaceAttentionService.shared.suppress(
+        _ = try PanelAttentionService.shared.suppress(
             workspaceId: workspace,
             surfaceId: surface,
             by: .operator
         )
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "Blocked on operator decision",
             title: "Build agent"
         )
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "Blocked on revised operator decision",
@@ -843,12 +845,12 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(notificationStore.notifications.count, originalHistoryCount)
 
-        _ = try SurfaceAttentionService.shared.lower(
+        _ = try PanelAttentionService.shared.lower(
             workspaceId: workspace,
             surfaceId: surface,
             by: .operator
         )
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "New active epoch",
@@ -878,17 +880,17 @@ final class AttentionModelTests: XCTestCase {
         defer {
             notificationStore.resetFlagNotificationReplacementHandlerForTesting()
             notificationStore.resetDirectFlagDeliveryHandlersForTesting()
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "Waiting for operator",
             title: "Build agent"
         )
         XCTAssertEqual(authorizationCompletions.count, 1)
-        _ = try SurfaceAttentionService.shared.lower(
+        _ = try PanelAttentionService.shared.lower(
             workspaceId: workspace,
             surfaceId: surface,
             by: .operator
@@ -923,16 +925,16 @@ final class AttentionModelTests: XCTestCase {
         defer {
             notificationStore.resetFlagNotificationReplacementHandlerForTesting()
             notificationStore.resetDirectFlagDeliveryHandlersForTesting()
-            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+            PanelAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "First reason",
             title: "Build agent"
         )
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "Second reason",
@@ -946,7 +948,7 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(added.map(\.body), ["Second reason"])
         XCTAssertEqual(addCompletions.count, 1)
 
-        _ = try SurfaceAttentionService.shared.raise(
+        _ = try PanelAttentionService.shared.raise(
             workspaceId: workspace,
             surfaceId: surface,
             reason: "Latest reason",
@@ -968,7 +970,7 @@ final class AttentionModelTests: XCTestCase {
     private func notification(workspace: UUID, surface: UUID) -> TerminalNotification {
         TerminalNotification(
             id: UUID(),
-            tabId: workspace,
+            workspaceId: workspace,
             surfaceId: surface,
             title: "Waiting",
             subtitle: "",

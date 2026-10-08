@@ -2,21 +2,19 @@ import AppKit
 import Foundation
 import Combine
 
-/// A segment of markdown content — either regular markdown or a rendered fenced code block.
-enum MarkdownSegment: Identifiable {
-    case markdown(id: String, content: String)
-    /// `errorHint` is set when the most recent render attempt failed and the
-    /// renderer surfaced operator-actionable diagnostic text (e.g. missing
-    /// runtime dependency with a copy-pasteable install command). nil when the
-    /// segment has not yet been rendered, is rendering, or rendered cleanly.
-    case fencedCode(id: String, language: String, code: String, renderedImage: NSImage?, errorHint: String?)
+@MainActor
+protocol MarkdownPanelReaderCommanding: AnyObject {
+    var readerOutlineIsOpen: Bool { get }
+    func synchronize()
+    func call(_ method: String)
+    func openFind(focusAllowed: Bool)
+}
 
-    var id: String {
-        switch self {
-        case .markdown(let id, _): return id
-        case .fencedCode(let id, _, _, _, _): return id
-        }
-    }
+enum MarkdownPanelReaderEvent {
+    case rendererAvailable(MarkdownWebRenderer)
+    case rendererEvicted(MarkdownWebRenderer)
+    case state([String: Any])
+    case closed
 }
 
 /// A panel that renders a markdown file with live file-watching.
@@ -50,60 +48,278 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Token incremented to trigger focus flash animation.
     @Published private(set) var focusFlashToken: Int = 0
 
-    /// Parsed segments of the content (markdown + mermaid blocks).
-    @Published private(set) var segments: [MarkdownSegment] = []
+    // MARK: - Durable presentation and lazy renderer
 
-    /// Tracks the appearance used for the last mermaid render pass.
-    private var lastRenderedDark: Bool?
+    @Published private(set) var presentation: MarkdownPresentation
+    private(set) var renderer: MarkdownWebRenderer?
+    private var readerCommandRendererOverride: (any MarkdownPanelReaderCommanding)?
+    var readerCommandRendererForTesting: (any MarkdownPanelReaderCommanding)? {
+        get { readerCommandRendererOverride }
+        set { readerCommandRendererOverride = newValue }
+    }
+    private var readerCommandRenderer: (any MarkdownPanelReaderCommanding)? {
+        readerCommandRendererOverride ?? renderer
+    }
+    private var cachedExternalAppPath: String?
+    private var cachedExternalAppName: String?
+    private var latestRendererState: [String: Any] = [:]
+    var fontScale: Double { presentation.fontScale }
+    var theme: String { presentation.theme }
+    var typeface: String { presentation.typeface }
+    var outlineOpen: Bool? { presentation.outlineOpen }
 
-    // MARK: - Font scale (zoom)
+    static let fontScaleRange = MarkdownPresentation.fontScaleRange
+    static let fontScaleStep = MarkdownPresentation.fontScaleStep
 
-    /// Multiplier applied to all theme font sizes. 1.0 = default.
-    @Published private(set) var fontScale: Double
-
-    static let fontScaleRange: ClosedRange<Double> = 0.5...3.0
-    static let fontScaleStep: Double = 0.1
-    private static let fontScaleDefaultsKey = "markdown.fontScale.lastUsed"
-
-    /// Clamp to the supported range and round to one step's precision so
-    /// repeated +/- cycles don't accumulate floating-point drift.
+    /// Interactive controls clamp; persisted malformed values use defaults.
     static func normalizedFontScale(_ value: Double) -> Double {
-        let clamped = min(max(value, fontScaleRange.lowerBound), fontScaleRange.upperBound)
-        return (clamped * 10).rounded() / 10
+        guard value.isFinite else { return 1.0 }
+        return (min(max(value, fontScaleRange.lowerBound), fontScaleRange.upperBound) * 10).rounded() / 10
     }
 
-    private static func lastUsedFontScale() -> Double {
-        let stored = UserDefaults.standard.double(forKey: fontScaleDefaultsKey)
-        guard stored > 0 else { return 1.0 }
-        return normalizedFontScale(stored)
-    }
+    @discardableResult func zoomIn() -> Bool { setFontScale(fontScale + Self.fontScaleStep) }
+    @discardableResult func zoomOut() -> Bool { setFontScale(fontScale - Self.fontScaleStep) }
+    @discardableResult func resetZoom() -> Bool { setFontScale(1.0) }
 
     @discardableResult
-    func zoomIn() -> Bool {
-        setFontScale(fontScale + Self.fontScaleStep)
-    }
-
-    @discardableResult
-    func zoomOut() -> Bool {
-        setFontScale(fontScale - Self.fontScaleStep)
-    }
-
-    @discardableResult
-    func resetZoom() -> Bool {
-        setFontScale(1.0)
-    }
-
-    /// Restore a persisted scale without updating the last-used default.
-    func applyRestoredFontScale(_ value: Double) {
-        fontScale = Self.normalizedFontScale(value)
-    }
-
-    private func setFontScale(_ value: Double) -> Bool {
-        let normalized = Self.normalizedFontScale(value)
-        guard normalized != fontScale else { return true }
-        fontScale = normalized
-        UserDefaults.standard.set(normalized, forKey: Self.fontScaleDefaultsKey)
+    func setFontScale(_ value: Double) -> Bool {
+        presentation.fontScale = Self.normalizedFontScale(value)
+        presentation.saveLastUsed(fields: [.fontScale])
+        publishModelPresentationState()
+        renderer?.synchronize()
         return true
+    }
+
+    @discardableResult
+    func setTheme(_ value: String) -> Bool {
+        guard MarkdownPresentation.themeNames.contains(value) else { return false }
+        presentation.theme = value
+        presentation.saveLastUsed(fields: [.theme])
+        publishModelPresentationState()
+        renderer?.synchronize()
+        return true
+    }
+
+    @discardableResult
+    func setTypeface(_ value: String) -> Bool {
+        guard MarkdownPresentation.typefaceNames.contains(value) else { return false }
+        presentation.typeface = value
+        presentation.saveLastUsed(fields: [.typeface])
+        publishModelPresentationState()
+        renderer?.synchronize()
+        return true
+    }
+
+    func setOutlineOpen(_ value: Bool?) {
+        presentation.outlineOpen = value
+        presentation.saveLastUsed(fields: [.outlineOpen])
+        publishModelPresentationState()
+        readerCommandRenderer?.synchronize()
+    }
+
+    func toggleOutline() {
+        let bridgeOpen = readerCommandRenderer?.readerOutlineIsOpen
+        setOutlineOpen(!(presentation.outlineOpen ?? bridgeOpen ?? false))
+    }
+
+    func requestFind() {
+        let focusAllowed = renderer?.webView.allowsPanelFocus == true
+        readerCommandRenderer?.openFind(focusAllowed: focusAllowed)
+        if focusAllowed, let renderer {
+            renderer.webView.requestPanelFocusIfAllowed()
+        }
+    }
+
+    func findNext() {
+        readerCommandRenderer?.call("findNext")
+    }
+
+    func findPrevious() {
+        readerCommandRenderer?.call("findPrevious")
+    }
+
+    func closeFind() {
+        readerCommandRenderer?.call("findClose")
+    }
+
+    var isFindVisible: Bool {
+        renderer?.readerFind.value?.isOpen == true
+    }
+
+    @discardableResult
+    func dismissReaderOverlay(pageConsumedEscape: Bool) -> Bool {
+        guard !pageConsumedEscape else { return false }
+        let bridgeOpen = readerCommandRenderer?.readerOutlineIsOpen
+        guard presentation.outlineOpen ?? bridgeOpen ?? false else { return false }
+        setOutlineOpen(false)
+        return true
+    }
+
+    var defaultExternalAppName: String {
+        guard let filePath else { return String(localized: "markdown.reader.defaultApp", defaultValue: "default app") }
+        if cachedExternalAppPath == filePath, let cachedExternalAppName { return cachedExternalAppName }
+        let fileURL = URL(fileURLWithPath: filePath)
+        let appURL = NSWorkspace.shared.urlForApplication(toOpen: fileURL)
+        let appBundle = appURL.flatMap { Bundle(url: $0) }
+        let name = (appBundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (appBundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? appURL?.deletingPathExtension().lastPathComponent
+            ?? String(localized: "markdown.reader.defaultApp", defaultValue: "default app")
+        cachedExternalAppPath = filePath
+        cachedExternalAppName = name
+        return name
+    }
+
+    @discardableResult
+    func openExternally() -> Bool {
+        guard let filePath else { return false }
+        let fileURL = URL(fileURLWithPath: filePath)
+        return NSWorkspace.shared.open(fileURL)
+    }
+
+    func applyRestoredFontScale(_ value: Double) {
+        presentation.fontScale = MarkdownPresentation.normalizedFontScale(value)
+        publishModelPresentationState()
+        renderer?.synchronize()
+    }
+
+    func applyRestoredPresentation(_ snapshot: SessionMarkdownPanelSnapshot) {
+        presentation = snapshot.presentation
+        publishModelPresentationState()
+        renderer?.synchronize()
+    }
+
+    private var visibleRendererHosts: Set<UUID> = []
+    var isRendererVisible: Bool { !visibleRendererHosts.isEmpty }
+    private(set) var readingPosition: MarkdownReadingPosition?
+    private(set) var readingContent: String?
+    private(set) var lastKnownViewportSize = NSSize(width: 800, height: 600)
+    private var readerObservers: [UUID: (MarkdownPanelReaderEvent) -> Void] = [:]
+
+    func rememberViewportSize(_ size: NSSize) {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width >= 100, size.height >= 100,
+              size.width <= 20_000, size.height <= 20_000 else { return }
+        lastKnownViewportSize = size
+    }
+
+    @discardableResult
+    func observeReaderEvents(_ observer: @escaping (MarkdownPanelReaderEvent) -> Void) -> UUID {
+        let id = UUID()
+        guard !isClosed else {
+            observer(.closed)
+            return id
+        }
+        readerObservers[id] = observer
+        if let renderer { observer(.rendererAvailable(renderer)) }
+        return id
+    }
+
+    func removeReaderObserver(_ id: UUID) {
+        readerObservers.removeValue(forKey: id)
+    }
+
+    func publishRendererState(_ state: [String: Any]) {
+        let compact = Self.compactReaderState(state)
+        latestRendererState = compact
+        notifyReaderObservers(.state(compact))
+    }
+
+    private static func compactReaderState(_ state: [String: Any]) -> [String: Any] {
+        let pane = state["pane"] as? [String: Any] ?? [:]
+        let lines = state["lines"] as? [String: Any] ?? [:]
+        let headings = (state["heading_path"] as? [String] ?? []).prefix(32).map { String($0.prefix(512)) }
+        let find = state["find"] as? [String: Any]
+        let boundedFind: Any
+        if let find {
+            boundedFind = [
+                "query": String((find["query"] as? String ?? "").prefix(8192)),
+                "matches": find["matches"] ?? 0,
+                "current": find["current"] ?? 0
+            ]
+        }
+        else { boundedFind = NSNull() }
+        let selection = state["selection"] as? String
+        let boundedSelection: Any = selection.map { String($0.prefix(120)) as Any } ?? NSNull()
+        return [
+            "file": String((state["file"] as? String ?? "").prefix(4096)),
+            "heading_path": headings,
+            "lines": ["first": lines["first"] ?? NSNull(), "last": lines["last"] ?? NSNull(), "total": lines["total"] ?? NSNull()],
+            "progress": state["progress"] ?? 0,
+            "minutes_left": state["minutes_left"] ?? 0,
+            "pane": ["width": pane["width"] ?? NSNull(), "effectiveWidth": pane["effectiveWidth"] ?? NSNull(), "size": pane["size"] ?? NSNull()],
+            "theme": state["theme"] ?? NSNull(),
+            "typeface": state["typeface"] ?? NSNull(),
+            "font_scale": state["font_scale"] ?? NSNull(),
+            "find": boundedFind,
+            "selection": boundedSelection
+        ]
+    }
+
+    private func publishModelPresentationState() {
+        guard !latestRendererState.isEmpty else { return }
+        var state = latestRendererState
+        var themeState = state["theme"] as? [String: Any] ?? [:]
+        themeState["choice"] = theme
+        if theme == "light" || theme == "dark" { themeState["resolved"] = theme }
+        state["theme"] = themeState
+        var typefaceState = state["typeface"] as? [String: Any] ?? [:]
+        typefaceState["choice"] = typeface
+        state["typeface"] = typefaceState
+        state["font_scale"] = fontScale
+        var outlineState = state["outline"] as? [String: Any] ?? [:]
+        if let outlineOpen { outlineState["open"] = outlineOpen }
+        state["outline"] = outlineState
+        state["file"] = filePath ?? ""
+        var paneState = state["pane"] as? [String: Any] ?? [:]
+        paneState["width"] = Int(lastKnownViewportSize.width)
+        paneState["effectiveWidth"] = Double(lastKnownViewportSize.width) / fontScale
+        state["pane"] = paneState
+        latestRendererState = state
+        notifyReaderObservers(.state(state))
+    }
+
+    private func notifyReaderObservers(_ event: MarkdownPanelReaderEvent) {
+        for observer in Array(readerObservers.values) { observer(event) }
+    }
+
+    func setRendererVisible(_ visible: Bool, hostID: UUID) {
+        let previous = isRendererVisible
+        if visible { visibleRendererHosts.insert(hostID) }
+        else { visibleRendererHosts.remove(hostID) }
+        if isRendererVisible != previous {
+            renderer?.webView.setViewportVisible(isRendererVisible)
+            if !isRendererVisible, let size = renderer?.webView.frame.size {
+                rememberViewportSize(size)
+            }
+            MarkdownRendererCache.shared.visibilityChanged(self)
+        }
+    }
+
+    func evictRenderer(_ renderer: MarkdownWebRenderer, position: MarkdownReadingPosition) {
+        guard self.renderer === renderer else { return }
+        readingPosition = position
+        readingContent = content
+        rememberViewportSize(renderer.webView.frame.size)
+        notifyReaderObservers(.rendererEvicted(renderer))
+        renderer.close()
+        self.renderer = nil
+    }
+
+    func clearReadingContent(ifMatching content: String) {
+        guard readingContent == content else { return }
+        readingContent = nil
+    }
+
+    /// The visible host or an explicit agent read may create WebKit; model
+    /// construction alone remains renderer-free.
+    func ensureRenderer() -> MarkdownWebRenderer {
+        if let renderer { return renderer }
+        let created = MarkdownWebRenderer(panel: self)
+        renderer = created
+        MarkdownRendererCache.shared.register(self)
+        notifyReaderObservers(.rendererAvailable(created))
+        return created
     }
 
     /// Observer for system appearance changes.
@@ -115,7 +331,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     // main actor, but DispatchSource.cancel() is thread-safe.
     private nonisolated(unsafe) var fileWatchSource: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
-    private var isClosed: Bool = false
+    private(set) var isClosed: Bool = false
     private nonisolated let watchQueue = DispatchQueue(label: "com.stage11.c11.markdown-file-watch", qos: .utility)
 
     /// Pending debounced reload. Accessed only on `watchQueue`.
@@ -149,7 +365,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = Self.titleForFilePath(filePath)
-        self.fontScale = Self.lastUsedFontScale()
+        self.presentation = MarkdownPresentation.lastUsed()
 
         if filePath != nil {
             loadFileContent()
@@ -187,17 +403,26 @@ final class MarkdownPanel: Panel, ObservableObject {
     // MARK: - Panel protocol
 
     func focus() {
-        // Markdown panel is read-only; no first responder to manage.
+        // Only focus a mounted renderer. Background socket focus never raises a window.
+        if let view = renderer?.webView {
+            view.allowsPanelFocus = true
+            view.requestPanelFocusIfAllowed()
+        }
     }
 
     func unfocus() {
-        // No-op for read-only panel.
+        renderer?.webView.allowsPanelFocus = false
     }
 
     func close() {
         isClosed = true
+        notifyReaderObservers(.closed)
+        readerObservers.removeAll()
+        MarkdownRendererCache.shared.remove(self)
         stopFileWatcher()
         stopAppearanceObserver()
+        renderer?.close()
+        renderer = nil
         watchQueue.async { [weak self] in
             self?.pendingReload?.cancel()
             self?.pendingReload = nil
@@ -205,7 +430,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     }
 
     func triggerFlash() {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
         focusFlashToken += 1
     }
 
@@ -215,11 +440,17 @@ final class MarkdownPanel: Panel, ObservableObject {
         guard let filePath else {
             content = ""
             isFileUnavailable = false
-            parseSegments()
+            renderer?.synchronize()
             return
         }
-        applyExternalContent(Self.readContent(path: filePath))
+        applyExternalContent(Self.readContent(path: filePath), isLiveChange: false)
+        // Tab sheet `active`: a load is not a change; seed from the file's mtime.
+        lastContentChangeAt = (try? FileManager.default.attributesOfItem(atPath: filePath))?[.modificationDate] as? Date
     }
+
+    /// When the watched file's content last changed (mtime at load, then each
+    /// live reload that actually changed the text). Plain store, not published.
+    private(set) var lastContentChangeAt: Date?
 
     /// Read file content with the UTF-8 → ISO Latin-1 fallback chain.
     /// Safe to call from any queue.
@@ -239,7 +470,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Apply content produced by a read (sync or debounced). Skips the
     /// reparse + republish entirely when the content is unchanged, which is
     /// the common case for spurious watcher events.
-    private func applyExternalContent(_ newContent: String?) {
+    private func applyExternalContent(_ newContent: String?, isLiveChange: Bool = true) {
         guard !isClosed else { return }
         guard let newContent else {
             isFileUnavailable = true
@@ -249,7 +480,8 @@ final class MarkdownPanel: Panel, ObservableObject {
         isFileUnavailable = false
         guard newContent != content || wasUnavailable else { return }
         content = newContent
-        parseSegments()
+        if isLiveChange { lastContentChangeAt = Date() }
+        renderer?.synchronize()
     }
 
     /// Schedule a debounced reload on the watch queue. Coalesces bursts of
@@ -267,142 +499,6 @@ final class MarkdownPanel: Panel, ObservableObject {
             }
             self.pendingReload = item
             self.watchQueue.asyncAfter(deadline: .now() + Self.reloadDebounce, execute: item)
-        }
-    }
-
-    // MARK: - Fenced code segment parsing
-
-    /// Stable ID from segment index and full content. Hashing the whole
-    /// content (not a prefix) guarantees the ID changes whenever the segment
-    /// changes — a prefix hash let edits past the prefix keep a stale ID,
-    /// which preserved outdated rendered diagrams indefinitely.
-    static func segmentId(index: Int, content: String) -> String {
-        "\(index):\(content.count):\(content.hashValue)"
-    }
-
-    /// Compiled fenced-code pattern cached per tag set. Renderers register at
-    /// app startup, so in practice this compiles once.
-    private static var cachedFencedCodePattern: (tags: Set<String>, regex: NSRegularExpression?)?
-
-    /// Build a regex that matches fenced code blocks for all registered renderer tags.
-    /// Pattern captures: group 1 = language tag, group 2 = code content.
-    private static func buildFencedCodePattern() -> NSRegularExpression? {
-        let tags = FencedCodeRendererRegistry.shared.supportedTags
-        guard !tags.isEmpty else { return nil }
-        if let cached = cachedFencedCodePattern, cached.tags == tags {
-            return cached.regex
-        }
-        let escaped = tags.map { NSRegularExpression.escapedPattern(for: $0) }
-        let alternation = escaped.joined(separator: "|")
-        let pattern = "```(\(alternation))\\s*\\n([\\s\\S]*?)```"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-        cachedFencedCodePattern = (tags, regex)
-        return regex
-    }
-
-    /// Parse content into segments, splitting on fenced code blocks with registered renderers.
-    private func parseSegments() {
-        let text = content
-        guard !text.isEmpty else {
-            segments = []
-            return
-        }
-
-        guard let pattern = Self.buildFencedCodePattern() else {
-            // No renderers registered — plain markdown
-            segments = [.markdown(id: Self.segmentId(index: 0, content: text), content: text)]
-            return
-        }
-
-        let nsText = text as NSString
-        let fullRange = NSRange(location: 0, length: nsText.length)
-        let matches = pattern.matches(in: text, range: fullRange)
-
-        guard !matches.isEmpty else {
-            segments = [.markdown(id: Self.segmentId(index: 0, content: text), content: text)]
-            return
-        }
-
-        var result: [MarkdownSegment] = []
-        var lastEnd = 0
-        var segIndex = 0
-
-        for match in matches {
-            let matchRange = match.range
-            // Add preceding markdown text
-            if matchRange.location > lastEnd {
-                let mdRange = NSRange(location: lastEnd, length: matchRange.location - lastEnd)
-                let mdText = nsText.substring(with: mdRange)
-                if !mdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    result.append(.markdown(id: Self.segmentId(index: segIndex, content: mdText), content: mdText))
-                    segIndex += 1
-                }
-            }
-            // Extract language tag (capture group 1) and code (capture group 2)
-            let langRange = match.range(at: 1)
-            let language = nsText.substring(with: langRange).lowercased()
-            let codeRange = match.range(at: 2)
-            let code = nsText.substring(with: codeRange).trimmingCharacters(in: .whitespacesAndNewlines)
-            result.append(.fencedCode(id: Self.segmentId(index: segIndex, content: code), language: language, code: code, renderedImage: nil, errorHint: nil))
-            segIndex += 1
-            lastEnd = matchRange.location + matchRange.length
-        }
-
-        // Add trailing markdown text
-        if lastEnd < nsText.length {
-            let mdText = nsText.substring(from: lastEnd)
-            if !mdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result.append(.markdown(id: Self.segmentId(index: segIndex, content: mdText), content: mdText))
-            }
-        }
-
-        // Preserve rendered images for segments whose content hasn't changed.
-        // Drop any prior errorHint — a fresh parse should re-render and recompute.
-        let oldSegments = segments
-        for (i, seg) in result.enumerated() {
-            if case .fencedCode(let id, let lang, let code, _, _) = seg,
-               let old = oldSegments.first(where: { $0.id == id }),
-               case .fencedCode(_, _, _, let oldImage, _) = old,
-               oldImage != nil {
-                result[i] = .fencedCode(id: id, language: lang, code: code, renderedImage: oldImage, errorHint: nil)
-            }
-        }
-
-        segments = result
-        renderFencedCodeSegments()
-    }
-
-    /// Render fenced code segments asynchronously via their registered renderers.
-    private func renderFencedCodeSegments() {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        lastRenderedDark = isDark
-
-        let registry = FencedCodeRendererRegistry.shared
-
-        // Build active keys per renderer for cancellation
-        var activeKeysByRenderer: [String: Set<String>] = [:]
-        for segment in segments {
-            guard case .fencedCode(_, let language, let code, let existingImage, _) = segment else { continue }
-            if existingImage != nil { continue }
-            guard let renderer = registry.renderer(for: language) else { continue }
-            let key = renderer.renderCacheKey(code: code, isDark: isDark)
-            activeKeysByRenderer[language, default: []].insert(key)
-        }
-        for (language, keys) in activeKeysByRenderer {
-            registry.renderer(for: language)?.cancelRendersExcept(activeKeys: keys)
-        }
-
-        for (index, segment) in segments.enumerated() {
-            guard case .fencedCode(let id, let language, let code, let existingImage, _) = segment else { continue }
-            if existingImage != nil { continue }
-            guard let renderer = registry.renderer(for: language) else { continue }
-            renderer.render(code: code, isDark: isDark) { [weak self] image, hint in
-                guard let self else { return }
-                guard index < self.segments.count,
-                      case .fencedCode(let currentId, _, _, _, _) = self.segments[index],
-                      currentId == id else { return }
-                self.segments[index] = .fencedCode(id: id, language: language, code: code, renderedImage: image, errorHint: hint)
-            }
         }
     }
 
@@ -441,15 +537,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     }
 
     private func handleAppearanceChangeIfNeeded() {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        guard isDark != lastRenderedDark else { return }
-        // Clear rendered images so they re-render with the new theme
-        for (i, segment) in segments.enumerated() {
-            if case .fencedCode(let id, let lang, let code, let image, _) = segment, image != nil {
-                segments[i] = .fencedCode(id: id, language: lang, code: code, renderedImage: nil, errorHint: nil)
-            }
-        }
-        renderFencedCodeSegments()
+        renderer?.synchronize()
     }
 
     // MARK: - File watcher via DispatchSource
@@ -537,5 +625,26 @@ final class MarkdownPanel: Panel, ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         DistributedNotificationCenter.default().removeObserver(self)
+    }
+}
+
+@MainActor
+enum MarkdownReaderShortcutRouter {
+    static func routeOutlineToggle(
+        event: NSEvent,
+        panel: MarkdownPanel?,
+        matches: (NSEvent, StoredShortcut) -> Bool
+    ) -> Bool {
+        guard let panel,
+              matches(event, KeyboardShortcutSettings.shortcut(for: .toggleMarkdownOutline)) else { return false }
+        panel.toggleOutline()
+        return true
+    }
+}
+
+extension MarkdownPanelReaderCommanding {
+    func openFind(focusAllowed: Bool) {
+        _ = focusAllowed
+        call("openFind")
     }
 }

@@ -1,3 +1,4 @@
+import SQLite3
 import XCTest
 
 #if canImport(c11_DEV)
@@ -152,41 +153,93 @@ final class BrowserImportMappingTests: XCTestCase {
 
         let presentation = BrowserImportHintSettings.presentation(defaults: defaults)
 
-        XCTAssertEqual(presentation.blankTabPlacement, .toolbarChip)
+        XCTAssertEqual(presentation.blankPanelPlacement, .toolbarChip)
         XCTAssertEqual(presentation.settingsStatus, .visible)
     }
 
-    func testBrowserImportHintPresentationHidesBlankTabHintWhenDismissed() {
+    func testBrowserImportHintPresentationHidesBlankPanelHintWhenDismissed() {
         let presentation = BrowserImportHintPresentation(
             variant: .floatingCard,
-            showOnBlankTabs: true,
+            showOnBlankPanels: true,
             isDismissed: true
         )
 
-        XCTAssertEqual(presentation.blankTabPlacement, .hidden)
+        XCTAssertEqual(presentation.blankPanelPlacement, .hidden)
         XCTAssertEqual(presentation.settingsStatus, .hidden)
     }
 
     func testBrowserImportHintPresentationUsesToolbarChipWhenEnabled() {
         let presentation = BrowserImportHintPresentation(
             variant: .toolbarChip,
-            showOnBlankTabs: true,
+            showOnBlankPanels: true,
             isDismissed: false
         )
 
-        XCTAssertEqual(presentation.blankTabPlacement, .toolbarChip)
+        XCTAssertEqual(presentation.blankPanelPlacement, .toolbarChip)
         XCTAssertEqual(presentation.settingsStatus, .visible)
     }
 
     func testBrowserImportHintPresentationSettingsOnlyVariantStaysInSettings() {
         let presentation = BrowserImportHintPresentation(
             variant: .settingsOnly,
-            showOnBlankTabs: true,
+            showOnBlankPanels: true,
             isDismissed: false
         )
 
-        XCTAssertEqual(presentation.blankTabPlacement, .hidden)
+        XCTAssertEqual(presentation.blankPanelPlacement, .hidden)
         XCTAssertEqual(presentation.settingsStatus, .settingsOnly)
+    }
+
+    /// C11-288: native Safari 26.6.2 keeps `title` on `history_visits`; `history_items` has no such column.
+    func testSafariHistoryReadsLatestVisitTitleFromRealSchemaAndLeavesSourceUntouched() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-288-safari-history-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("History.db")
+
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &database), SQLITE_OK)
+        let statements = [
+            """
+            CREATE TABLE history_items (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL UNIQUE,
+              domain_expansion TEXT, visit_count INTEGER NOT NULL, daily_visit_counts BLOB NOT NULL,
+              weekly_visit_counts BLOB, autocomplete_triggers BLOB,
+              should_recompute_derived_visit_counts INTEGER NOT NULL, visit_count_score INTEGER NOT NULL,
+              status_code INTEGER NOT NULL DEFAULT 0)
+            """,
+            """
+            CREATE TABLE history_visits (id INTEGER PRIMARY KEY AUTOINCREMENT,
+              history_item INTEGER NOT NULL REFERENCES history_items(id), visit_time REAL NOT NULL,
+              title TEXT, load_successful BOOLEAN NOT NULL DEFAULT 1, http_non_get BOOLEAN NOT NULL DEFAULT 0,
+              synthesized BOOLEAN NOT NULL DEFAULT 0, redirect_source INTEGER, redirect_destination INTEGER,
+              origin INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0,
+              attributes INTEGER NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0)
+            """,
+            "INSERT INTO history_items (id, url, visit_count, daily_visit_counts, should_recompute_derived_visit_counts, visit_count_score) VALUES (1, 'http://127.0.0.1:19288/c11-288', 2, x'', 0, 0)",
+            "INSERT INTO history_items (id, url, visit_count, daily_visit_counts, should_recompute_derived_visit_counts, visit_count_score) VALUES (2, 'https://other.example.test/page', 1, x'', 0, 0)",
+            "INSERT INTO history_visits (history_item, visit_time, title) VALUES (1, 100.0, 'Older title')",
+            "INSERT INTO history_visits (history_item, visit_time, title) VALUES (1, 200.0, 'Latest title')",
+            "INSERT INTO history_visits (history_item, visit_time, title) VALUES (2, 300.0, 'Filtered out')",
+        ]
+        for statement in statements {
+            XCTAssertEqual(sqlite3_exec(database, statement, nil, nil, nil), SQLITE_OK, statement)
+        }
+        sqlite3_close(database)
+        let sourceBefore = try Data(contentsOf: databaseURL)
+
+        let rows = try BrowserDataImporter.readWebKitHistoryRows(
+            databaseURL: databaseURL,
+            domainFilters: ["127.0.0.1"]
+        )
+
+        XCTAssertEqual(rows.count, 1)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.url, "http://127.0.0.1:19288/c11-288")
+        XCTAssertEqual(row.title, "Latest title")
+        XCTAssertEqual(row.visitCount, 2)
+        XCTAssertEqual(row.lastVisited, Date(timeIntervalSinceReferenceDate: 200))
+        XCTAssertEqual(try Data(contentsOf: databaseURL), sourceBefore)
     }
 
     @MainActor

@@ -54,11 +54,14 @@ Full detail and the gotchas live in [`skills/c11-hotload/SKILL.md`](skills/c11-h
 c11 has three test suites. In order of escalation:
 
 1. **Swift unit tests** (`c11Tests/`) — `xcodebuild -scheme c11-unit`, or run from Xcode. No app launch, fast.
-2. **Python socket tests** (`tests_v2/`) — attach to a running c11 over its socket. Launch a tagged Debug build first (`./scripts/reload.sh --tag testing`), then point the runner at that build's socket:
+2. **Python socket tests** (`tests_v2/`) — live runs go through the sandbox, never against the operator's c11. `sandbox-up` launches a tagged `.app` in a guest; `sandbox-tests-v2` copies the suite in and runs it against that guest's socket:
    ```bash
-   C11_SOCKET=/tmp/c11-debug-testing.sock ./scripts/run-tests-v2.sh
+   scripts/sandbox-up.sh <run-id> "/path/to/c11 DEV <tag>.app"
+   scripts/sandbox-tests-v2.sh <run-id>
+   scripts/sandbox-tests-v2.sh <run-id> tests_v2/test_cli_id_format_defaults.py
+   scripts/sandbox-down.sh <run-id>
    ```
-   Never run these against an untagged build while another c11 is also running — you'll collide on `/tmp/c11.sock`.
+   The suite is plain `python3` scripts, not pytest. `scripts/run-tests-v2.sh` is the older runner that builds with xcodebuild inside a VM; it is not the entry point on the operator's machine.
 3. **E2E / UI tests** (`c11UITests/`) — heavyweight; prefer CI via `gh workflow run test-e2e.yml`. You can run them locally, but they're slow and occasionally flaky on low-RAM machines.
 
 > **Note for agent contributors working inside a live c11 session:** `CLAUDE.md` says "never run tests locally." That rule exists because an agent launching an untagged debug build will hijack the operator's running socket. It does *not* apply to a human running their own tests on their own machine. When in doubt, use `--tag`.
@@ -88,7 +91,7 @@ We don't merge UI changes without a video. Prose can't catch typing-latency regr
 c11 ships in English plus six translations (ja, uk, ko, zh-Hans, zh-Hant, ru). All strings live in `Resources/Localizable.xcstrings`.
 
 - **Write English only.** Use `String(localized: "key.name", defaultValue: "English text")` at every user-facing call site. Don't hand-author the non-English values in product code.
-- **Translations come after.** If your PR adds new English strings, have your agent run the translation pass — delegate it to a sub-agent in a fresh c11 surface to sync `Localizable.xcstrings` across the six locales before merge.
+- **Translations come after.** If your PR adds new English strings, have your agent run the translation pass — delegate it to a sub-agent in a fresh c11 panel to sync `Localizable.xcstrings` across the six locales before merge.
 
 ### Code quality guardrails
 
@@ -96,7 +99,7 @@ A few areas carry strict rules. If you're editing near any of these, read the fu
 
 - **Typing-latency-sensitive paths** (`WindowTerminalHostView.hitTest()`, `TabItemView`, `TerminalSurface.forceRefresh()`). Extra allocations or main-thread work here is visible as typing lag.
 - **Socket command threading.** Telemetry hot paths (`report_*`, status / progress updates) must not hop `DispatchQueue.main.sync`. Default new socket commands to off-main unless you have a concrete reason otherwise.
-- **Socket focus policy.** Socket commands don't steal app focus — only explicit focus-intent commands (`window.focus`, `surface.focus`, etc.) may change selection.
+- **Socket focus policy.** Socket commands don't steal app focus — only explicit focus-intent commands (`window.focus`, `panel.focus`, etc.) may change selection.
 - **Test quality.** Tests verify observable runtime behavior. Tests that grep source text, read `Info.plist`, or assert on AST shape get rejected. If a behavior isn't exercisable yet, add a seam first and test through it.
 
 ## Working on the ghostty submodule
@@ -145,5 +148,5 @@ By contributing, you agree that your changes are licensed under the project's GN
 - [`PHILOSOPHY.md`](PHILOSOPHY.md) — why c11 is shaped the way it is
 - [`CLAUDE.md`](CLAUDE.md) — operational notes, latency-sensitive paths, testing policy
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — architecture tour, where things live in `Sources/`
-- [`docs/socket-api-reference.md`](docs/socket-api-reference.md) — the socket API every c11 surface speaks
+- [`docs/socket-api-reference.md`](docs/socket-api-reference.md) — the socket API every c11 panel speaks
 - [`skills/c11/SKILL.md`](skills/c11/SKILL.md) — the agent-facing guide to driving c11 (useful for humans too)

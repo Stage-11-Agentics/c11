@@ -14,6 +14,29 @@ import CommonCrypto
 import Security
 #endif
 
+/// Operator-click web links from terminal and markdown use the same settings,
+/// placement and source-workspace lookup. Never changes the selected workspace.
+@MainActor
+@discardableResult
+func openC11WebLink(_ url: URL, sourceWorkspaceId: UUID?, sourcePanelId: UUID?, optionHeld: Bool) -> Bool {
+    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host else { return false }
+    let normalizedHost = BrowserInsecureHTTPSettings.normalizeHost(host)
+    if optionHeld || !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser()
+        || BrowserLinkOpenSettings.shouldOpenExternally(url)
+        || normalizedHost == nil
+        || !BrowserLinkOpenSettings.hostMatchesWhitelist(normalizedHost ?? host) {
+        return NSWorkspace.shared.open(url)
+    }
+    guard let sourcePanelId, let sourceWorkspaceId,
+          let workspace = AppDelegate.shared?.workspaceContainingPanel(
+            panelId: sourcePanelId, preferredWorkspaceId: sourceWorkspaceId
+          )?.workspace else { return false }
+    if let pane = workspace.preferredBrowserTargetPane(fromPanelId: sourcePanelId) {
+        return workspace.newBrowserSurface(inPane: pane, url: url, focus: true) != nil
+    }
+    return workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
+}
+
 fileprivate func dedupedCanonicalURLs(_ urls: [URL]) -> [URL] {
     var seen = Set<String>()
     var result: [URL] = []
@@ -221,7 +244,7 @@ enum BrowserImportHintVariant: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum BrowserImportHintBlankTabPlacement: Equatable {
+enum BrowserImportHintBlankPanelPlacement: Equatable {
     case hidden
     case inlineStrip
     case floatingCard
@@ -235,35 +258,35 @@ enum BrowserImportHintSettingsStatus: Equatable {
 }
 
 struct BrowserImportHintPresentation: Equatable {
-    let blankTabPlacement: BrowserImportHintBlankTabPlacement
+    let blankPanelPlacement: BrowserImportHintBlankPanelPlacement
     let settingsStatus: BrowserImportHintSettingsStatus
 
     init(
         variant: BrowserImportHintVariant,
-        showOnBlankTabs: Bool,
+        showOnBlankPanels: Bool,
         isDismissed: Bool
     ) {
         if variant == .settingsOnly {
-            blankTabPlacement = .hidden
+            blankPanelPlacement = .hidden
             settingsStatus = .settingsOnly
             return
         }
 
-        if !showOnBlankTabs || isDismissed {
-            blankTabPlacement = .hidden
+        if !showOnBlankPanels || isDismissed {
+            blankPanelPlacement = .hidden
             settingsStatus = .hidden
             return
         }
 
         switch variant {
         case .inlineStrip:
-            blankTabPlacement = .inlineStrip
+            blankPanelPlacement = .inlineStrip
         case .floatingCard:
-            blankTabPlacement = .floatingCard
+            blankPanelPlacement = .floatingCard
         case .toolbarChip:
-            blankTabPlacement = .toolbarChip
+            blankPanelPlacement = .toolbarChip
         case .settingsOnly:
-            blankTabPlacement = .hidden
+            blankPanelPlacement = .hidden
         }
         settingsStatus = .visible
     }
@@ -271,10 +294,10 @@ struct BrowserImportHintPresentation: Equatable {
 
 enum BrowserImportHintSettings {
     static let variantKey = "browserImportHintVariant"
-    static let showOnBlankTabsKey = "browserImportHintShowOnBlankTabs"
+    static let showOnBlankPanelsKey = "browserImportHintShowOnBlankTabs"
     static let dismissedKey = "browserImportHintDismissed"
     static let defaultVariant: BrowserImportHintVariant = .toolbarChip
-    static let defaultShowOnBlankTabs = true
+    static let defaultShowOnBlankPanels = true
     static let defaultDismissed = false
 
     static func variant(for rawValue: String?) -> BrowserImportHintVariant {
@@ -288,11 +311,11 @@ enum BrowserImportHintSettings {
         variant(for: defaults.string(forKey: variantKey))
     }
 
-    static func showOnBlankTabs(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: showOnBlankTabsKey) == nil {
-            return defaultShowOnBlankTabs
+    static func showOnBlankPanels(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: showOnBlankPanelsKey) == nil {
+            return defaultShowOnBlankPanels
         }
-        return defaults.bool(forKey: showOnBlankTabsKey)
+        return defaults.bool(forKey: showOnBlankPanelsKey)
     }
 
     static func isDismissed(defaults: UserDefaults = .standard) -> Bool {
@@ -305,14 +328,14 @@ enum BrowserImportHintSettings {
     static func presentation(defaults: UserDefaults = .standard) -> BrowserImportHintPresentation {
         BrowserImportHintPresentation(
             variant: variant(defaults: defaults),
-            showOnBlankTabs: showOnBlankTabs(defaults: defaults),
+            showOnBlankPanels: showOnBlankPanels(defaults: defaults),
             isDismissed: isDismissed(defaults: defaults)
         )
     }
 
     static func reset(defaults: UserDefaults = .standard) {
         defaults.set(defaultVariant.rawValue, forKey: variantKey)
-        defaults.set(defaultShowOnBlankTabs, forKey: showOnBlankTabsKey)
+        defaults.set(defaultShowOnBlankPanels, forKey: showOnBlankPanelsKey)
         defaults.set(defaultDismissed, forKey: dismissedKey)
     }
 }
@@ -337,6 +360,28 @@ struct BrowserProfileDefinition: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+enum BrowserProfileLookup {
+    case found(BrowserProfileDefinition)
+    case notFound
+    case ambiguous
+}
+
+enum BrowserProfileOperationError: Error {
+    case notFound
+    case ambiguous
+    case invalidName
+    case alreadyExists
+    case builtIn
+    case inUse
+    case busy
+    case operationFailed
+}
+
+enum BrowserProfileOperationStart {
+    case started
+    case failed(BrowserProfileOperationError)
+}
+
 @MainActor
 final class BrowserProfileStore: ObservableObject {
     static let shared = BrowserProfileStore()
@@ -351,6 +396,12 @@ final class BrowserProfileStore: ObservableObject {
     private let defaults: UserDefaults
     private var dataStores: [UUID: WKWebsiteDataStore] = [:]
     private var historyStores: [UUID: BrowserHistoryStore] = [:]
+    private var reservedProfileIDs: Set<UUID> = []
+
+    /// Runtime seam for deterministic lifecycle tests. Production uses the
+    /// WebKit removal API directly; tests can hold and release the completion
+    /// to exercise reservation, timeout, and late-completion behavior.
+    var websiteDataRemovalHandler: ((WKWebsiteDataStore, Set<String>, @escaping (Error?) -> Void) -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -374,7 +425,7 @@ final class BrowserProfileStore: ObservableObject {
         ?? String(localized: "browser.profile.default", defaultValue: "Default")
     }
 
-    func createProfile(named rawName: String) -> BrowserProfileDefinition? {
+    func createProfile(named rawName: String, recordsLastUsed: Bool = true) -> BrowserProfileDefinition? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         let profile = BrowserProfileDefinition(
@@ -391,7 +442,9 @@ final class BrowserProfileStore: ObservableObject {
             return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
         persist()
-        noteUsed(profile.id)
+        if recordsLastUsed {
+            noteUsed(profile.id)
+        }
         return profile
     }
 
@@ -399,7 +452,10 @@ final class BrowserProfileStore: ObservableObject {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty,
               let index = profiles.firstIndex(where: { $0.id == id }),
-              !profiles[index].isBuiltInDefault else {
+              !profiles[index].isBuiltInDefault,
+              !profiles.contains(where: {
+                  $0.id != id && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
+              }) else {
             return false
         }
         profiles[index].displayName = name
@@ -416,6 +472,102 @@ final class BrowserProfileStore: ObservableObject {
     func canRenameProfile(id: UUID) -> Bool {
         guard let profile = profileDefinition(id: id) else { return false }
         return !profile.isBuiltInDefault
+    }
+
+    func resolveProfile(_ rawValue: String) -> BrowserProfileLookup {
+        let raw = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return .notFound }
+
+        if let id = UUID(uuidString: raw) {
+            if let profile = profileDefinition(id: id) {
+                return .found(profile)
+            }
+            return .notFound
+        }
+
+        let matches = profiles.filter {
+            $0.displayName.caseInsensitiveCompare(raw) == .orderedSame
+        }
+        switch matches.count {
+        case 0: return .notFound
+        case 1: return .found(matches[0])
+        default: return .ambiguous
+        }
+    }
+
+    func isReserved(_ id: UUID) -> Bool {
+        reservedProfileIDs.contains(id)
+    }
+
+    @discardableResult
+    func reserve(_ id: UUID) -> Bool {
+        guard !reservedProfileIDs.contains(id) else { return false }
+        reservedProfileIDs.insert(id)
+        return true
+    }
+
+    func release(_ id: UUID) {
+        reservedProfileIDs.remove(id)
+    }
+
+    func removeProfileDefinition(id: UUID) -> Bool {
+        guard let profile = profileDefinition(id: id), !profile.isBuiltInDefault else {
+            return false
+        }
+
+        profiles.removeAll { $0.id == id }
+        dataStores.removeValue(forKey: id)
+        historyStores.removeValue(forKey: id)
+        if lastUsedProfileID == id {
+            lastUsedProfileID = Self.builtInDefaultProfileID
+            defaults.set(lastUsedProfileID.uuidString, forKey: Self.lastUsedProfileDefaultsKey)
+        }
+        persist()
+        return true
+    }
+
+    func beginClear(
+        id: UUID,
+        inUse: Bool,
+        completion: @escaping (Result<Void, BrowserProfileOperationError>) -> Void
+    ) -> BrowserProfileOperationStart {
+        guard let profile = profileDefinition(id: id) else {
+            return .failed(.notFound)
+        }
+        guard !profile.isBuiltInDefault else {
+            return .failed(.builtIn)
+        }
+        guard !inUse else {
+            return .failed(.inUse)
+        }
+        guard reserve(id) else {
+            return .failed(.busy)
+        }
+
+        beginWebsiteDataRemoval(for: id, deleteProfile: false, completion: completion)
+        return .started
+    }
+
+    func beginDelete(
+        id: UUID,
+        inUse: Bool,
+        completion: @escaping (Result<Void, BrowserProfileOperationError>) -> Void
+    ) -> BrowserProfileOperationStart {
+        guard let profile = profileDefinition(id: id) else {
+            return .failed(.notFound)
+        }
+        guard !profile.isBuiltInDefault else {
+            return .failed(.builtIn)
+        }
+        guard !inUse else {
+            return .failed(.inUse)
+        }
+        guard reserve(id) else {
+            return .failed(.busy)
+        }
+
+        beginWebsiteDataRemoval(for: id, deleteProfile: true, completion: completion)
+        return .started
     }
 
     func noteUsed(_ id: UUID) {
@@ -472,6 +624,55 @@ final class BrowserProfileStore: ObservableObject {
         BrowserHistoryStore.shared.flushPendingSaves()
         for store in historyStores.values {
             store.flushPendingSaves()
+        }
+    }
+
+    private func beginWebsiteDataRemoval(
+        for id: UUID,
+        deleteProfile: Bool,
+        completion: @escaping (Result<Void, BrowserProfileOperationError>) -> Void
+    ) {
+        let dataStore = websiteDataStore(for: id)
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        var didComplete = false
+
+        let finish: (Result<Void, BrowserProfileOperationError>) -> Void = { [weak self] result in
+            guard let self, !didComplete else { return }
+            didComplete = true
+            if case .success = result {
+                self.historyStores[id]?.clearHistory()
+                if let historyURL = self.historyFileURL(for: id) {
+                    try? FileManager.default.removeItem(at: historyURL)
+                }
+                if deleteProfile {
+                    _ = self.removeProfileDefinition(id: id)
+                }
+            }
+            self.release(id)
+            completion(result)
+        }
+
+        let remove: (@escaping (Error?) -> Void) -> Void = { [weak self] done in
+            guard let self else {
+                done(nil)
+                return
+            }
+            if let handler = self.websiteDataRemovalHandler {
+                handler(dataStore, dataTypes, done)
+            } else {
+                dataStore.removeData(ofTypes: dataTypes, modifiedSince: .distantPast) { @MainActor in
+                    done(nil)
+                }
+            }
+        }
+        remove { error in
+            Task { @MainActor in
+                if error == nil {
+                    finish(.success(()))
+                } else {
+                    finish(.failure(.operationFailed))
+                }
+            }
         }
     }
 
@@ -891,6 +1092,39 @@ enum BrowserNavigationDisposition: Equatable {
     case prompting(host: String)
     /// The navigation was refused without prompting.
     case blocked(host: String, reason: BrowserInsecureHTTPBlockReason)
+}
+
+/// The origin used by browser state restore to decide whether a navigation
+/// settled on the document that the saved storage belongs to. Paths may
+/// redirect within an origin; scheme, host and effective port may not.
+func browserNavigationOrigin(_ url: URL) -> String? {
+    guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return nil }
+
+    let host = url.host?.lowercased() ?? ""
+    if (scheme == "http" || scheme == "https") && host.isEmpty { return nil }
+    let effectivePort: Int?
+    if let port = url.port {
+        effectivePort = port
+    } else {
+        switch scheme {
+        case "http":
+            effectivePort = 80
+        case "https":
+            effectivePort = 443
+        default:
+            effectivePort = nil
+        }
+    }
+
+    if let effectivePort {
+        return "\(scheme)://\(host):\(effectivePort)"
+    }
+    return "\(scheme)://\(host)"
+}
+
+enum BrowserStateLoadNavigationResult {
+    case success(URL)
+    case failure(String)
 }
 
 /// The advice appended to every blocked/pending insecure-HTTP report. Socket
@@ -1930,8 +2164,8 @@ actor BrowserSearchSuggestionService {
 /// BrowserPanel provides a WKWebView-based browser panel.
 /// All browser panels share a WKProcessPool for cookie sharing.
 private enum BrowserInsecureHTTPNavigationIntent {
-    case currentTab
-    case newTab
+    case currentPanel
+    case newPanel
 }
 
 /// Observable state for browser find-in-page. Mirrors `TerminalSurface.SearchState`.
@@ -2122,15 +2356,20 @@ final class BrowserPanel: Panel, ObservableObject {
     ///
     /// IUO because it's set at the end of `init` once all other stored
     /// properties are assigned, so the handler can capture `[weak self]`.
-    private(set) var lifecycle: SurfaceLifecycleController!
+    private(set) var lifecycle: PanelLifecycleController!
 
     /// Published mirror of `lifecycle.state` so SwiftUI can re-render
     /// (e.g. swap the live WKWebView for a placeholder NSImage when
     /// hibernated). Updated by the lifecycle controller's handler.
-    @Published private(set) var lifecycleState: SurfaceLifecycleState = .active
+    @Published private(set) var lifecycleState: PanelLifecycleState = .active
 
     @Published private(set) var profileID: UUID
     @Published private(set) var historyStore: BrowserHistoryStore
+
+    /// Explicit profile selection is one-shot. When false, this tab must not
+    /// rewrite workspace or global browser-profile preference for a later
+    /// unscoped browser creation.
+    let sticksAsPreferred: Bool
 
     /// The underlying web view
     private(set) var webView: WKWebView
@@ -2376,12 +2615,17 @@ final class BrowserPanel: Panel, ObservableObject {
     /// Published URL being displayed
     @Published private(set) var currentURL: URL?
 
+    /// Non-persistent marker for the c11 messages page. A file-write
+    /// notification reloads only this local page and never touches ordinary
+    /// browser tabs.
+    private var messagesPageURL: URL?
+
     /// Whether the browser panel should render its WKWebView in the content area.
     /// New browser tabs stay in an empty "new tab" state until first navigation.
     @Published private(set) var shouldRenderWebView: Bool = false
 
     /// True when the browser is showing the internal empty new-tab page (no WKWebView attached yet).
-    var isShowingNewTabPage: Bool {
+    var isShowingNewPanelPage: Bool {
         !shouldRenderWebView
     }
 
@@ -2486,6 +2730,15 @@ final class BrowserPanel: Panel, ObservableObject {
     private var webViewObservers: [NSKeyValueObservation] = []
     private var activeDownloadCount: Int = 0
 
+    private struct PendingStateLoadNavigation {
+        let token: UUID
+        let webView: WKWebView
+        let webViewInstanceID: UUID
+        let expectedOrigin: String
+        let completion: (BrowserStateLoadNavigationResult) -> Void
+    }
+    private var pendingStateLoadNavigation: PendingStateLoadNavigation?
+
     // Avoid flickering the loading indicator for very fast navigations.
     private let minLoadingIndicatorDuration: TimeInterval = 0.35
     private var loadingStartedAt: Date?
@@ -2511,6 +2764,7 @@ final class BrowserPanel: Panel, ObservableObject {
     @Published private(set) var preferredDeveloperToolsVisible: Bool = false
     private var preferredDeveloperToolsPresentation: DeveloperToolsPresentation = .unknown
     private var forceDeveloperToolsRefreshOnNextAttach: Bool = false
+    private var developerToolsReplacementRestorePending = false
     private var developerToolsRestoreRetryWorkItem: DispatchWorkItem?
     private var developerToolsRestoreRetryAttempt: Int = 0
     private let developerToolsRestoreRetryDelay: TimeInterval = 0.05
@@ -2535,6 +2789,7 @@ final class BrowserPanel: Panel, ObservableObject {
     private var developerToolsLastAttachedHostAt: Date?
     private var developerToolsLastKnownVisibleAt: Date?
     private var detachedDeveloperToolsWindowCloseObserver: NSObjectProtocol?
+    private var messagesPageReloadObserver: NSObjectProtocol?
     private var preferredAttachedDeveloperToolsWidth: CGFloat?
     private var preferredAttachedDeveloperToolsWidthFraction: CGFloat?
     private var browserThemeMode: BrowserThemeMode
@@ -2763,6 +3018,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     private func bindWebView(_ webView: CmuxWebView) {
+        webView.onOperatorInput = { [weak self] in MainActor.assumeIsolated { self?.lastOperatorInputAt = Date() } }
         webView.onContextMenuDownloadStateChanged = { [weak self] downloading in
             if downloading {
                 self?.beginDownloadActivity()
@@ -2770,12 +3026,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 self?.endDownloadActivity()
             }
         }
-        webView.onContextMenuOpenLinkInNewTab = { [weak self] url in
-            self?.openLinkInNewTab(url: url)
+        webView.onContextMenuOpenLinkInNewPanel = { [weak self] url in
+            self?.openLinkInNewPanel(url: url)
         }
         webView.onShowSurfaceManifest = { [weak self] in
             guard let self else { return }
-            SurfaceManifestViewerWindowController.show(
+            PanelManifestViewerWindowController.show(
                 workspaceId: self.workspaceId,
                 surfaceId: self.id,
                 kind: .browser
@@ -2802,7 +3058,24 @@ final class BrowserPanel: Panel, ObservableObject {
     @MainActor
     func refreshCachedWebContentPid() {
         let pid = webView.c11_webProcessIdentifier
-        SurfaceMetricsSampler.shared.setPid(surfaceId: self.id, pid: pid)
+        PanelMetricsSampler.shared.setPid(surfaceId: self.id, pid: pid)
+    }
+
+    /// Tab sheet `active`: when a page last finished loading. Plain store, not
+    /// published. The first load after a session restore or a hibernate resume is
+    /// the browser rebuilding old state, not new content, so it is skipped.
+    private(set) var lastLoadedAt: Date?
+    /// When the operator last pressed a key or clicked in the page (tab sheet
+    /// "touched"). Plain store, not published.
+    private(set) var lastOperatorInputAt: Date?
+    private var skipNextLoadStamp = false
+
+    private func noteLoadFinished() {
+        if skipNextLoadStamp {
+            skipNextLoadStamp = false
+            return
+        }
+        lastLoadedAt = Date()
     }
 
     private func configureNavigationDelegateCallbacks() {
@@ -2813,6 +3086,7 @@ final class BrowserPanel: Panel, ObservableObject {
         navigationDelegate.didFinish = { [weak self] webView in
             Task { @MainActor [weak self] in
                 guard let self, self.isCurrentWebView(webView, instanceID: boundWebViewInstanceID) else { return }
+                self.noteLoadFinished()
                 boundHistoryStore.recordVisit(url: webView.url, title: webView.title)
                 self.refreshFavicon(from: webView)
                 self.applyBrowserThemeModeIfNeeded()
@@ -2822,6 +3096,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 // sampler. didFinish lands after the WebContent process is
                 // alive, and process-per-origin reloads can change the pid.
                 self.refreshCachedWebContentPid()
+                self.finishPendingStateLoadNavigation(
+                    webView: webView,
+                    webViewInstanceID: boundWebViewInstanceID,
+                    settledURL: webView.url,
+                    failure: nil
+                )
             }
         }
         navigationDelegate.didFailNavigation = { [weak self] failedWebView, failedURL in
@@ -2834,6 +3114,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 self.lastFaviconURLString = nil
                 // Keep find-in-page open and clear stale counters on failed loads.
                 self.restoreFindStateAfterNavigation(replaySearch: false)
+                self.finishPendingStateLoadNavigation(
+                    webView: failedWebView,
+                    webViewInstanceID: boundWebViewInstanceID,
+                    settledURL: nil,
+                    failure: failedURL.isEmpty ? "Navigation failed" : "Navigation failed: \(failedURL)"
+                )
             }
         }
     }
@@ -2860,6 +3146,7 @@ final class BrowserPanel: Panel, ObservableObject {
         createdAt: Date? = Date(),
         workspaceId: UUID,
         profileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         initialURL: URL? = nil,
         bypassInsecureHTTPHostOnce: String? = nil,
         proxyEndpoint: BrowserProxyEndpoint? = nil,
@@ -2869,9 +3156,18 @@ final class BrowserPanel: Panel, ObservableObject {
     ) {
         self.id = id ?? UUID()
         self.createdAt = createdAt
+        // A panel rebuilt from a snapshot (older creation time, or born hibernated)
+        // reloads its page on mount; that first load is not new content.
+        self.skipNextLoadStamp = pendingHibernate
+            || (createdAt.map { Date().timeIntervalSince($0) > 5 } ?? true)
         self.workspaceId = workspaceId
+        self.sticksAsPreferred = sticksAsPreferred
+        self.messagesPageURL = initialURL.flatMap {
+            MessagesPageLayout.isMessagesPageURL($0) ? $0.standardizedFileURL : nil
+        }
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
+            && !BrowserProfileStore.shared.isReserved(requestedProfileID)
             ? requestedProfileID
             : BrowserProfileStore.shared.builtInDefaultProfileID
         self.profileID = resolvedProfileID
@@ -2891,12 +3187,14 @@ final class BrowserPanel: Panel, ObservableObject {
         self.webView = webView
         self.insecureHTTPAlertFactory = { NSAlert() }
         applyRemoteProxyConfigurationIfAvailable()
-        BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        if sticksAsPreferred {
+            BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        }
 
         // Set up navigation delegate
         let navDelegate = BrowserNavigationDelegate()
-        navDelegate.openInNewTab = { [weak self] url in
-            self?.openLinkInNewTab(url: url)
+        navDelegate.openInNewPanel = { [weak self] url in
+            self?.openLinkInNewPanel(url: url)
         }
         navDelegate.shouldBlockInsecureHTTPNavigation = { [weak self] url in
             self?.shouldBlockInsecureHTTPNavigation(to: url) ?? false
@@ -2910,7 +3208,7 @@ final class BrowserPanel: Panel, ObservableObject {
             }
         }
         navDelegate.didTerminateWebContentProcess = { [weak self] webView in
-            self?.replaceWebViewAfterContentProcessTermination(for: webView)
+            self?.scheduleWebViewReplacementAfterContentProcessTermination(for: webView)
         }
         // Set up download delegate for navigation-based downloads.
         // Downloads save to a temp file synchronously (no NSSavePanel during WebKit
@@ -2969,9 +3267,9 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Set up UI delegate (handles cmd+click, target=_blank, and context menu)
         let browserUIDelegate = BrowserUIDelegate()
-        browserUIDelegate.openInNewTab = { [weak self] url in
+        browserUIDelegate.openInNewPanel = { [weak self] url in
             guard let self else { return }
-            self.openLinkInNewTab(url: url)
+            self.openLinkInNewPanel(url: url)
         }
         browserUIDelegate.requestNavigation = { [weak self] request, intent in
             self?.requestNavigation(request, intent: intent)
@@ -3002,8 +3300,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // attached. `lifecycleState` is set explicitly because the
         // controller's initial-state assignment does not fire the
         // transition handler (handler runs on real transitions only).
-        let initialLifecycle: SurfaceLifecycleState = pendingHibernate ? .hibernated : .active
-        self.lifecycle = SurfaceLifecycleController(
+        let initialLifecycle: PanelLifecycleState = pendingHibernate ? .hibernated : .active
+        self.lifecycle = PanelLifecycleController(
             workspaceId: workspaceId,
             surfaceId: self.id,
             initial: initialLifecycle
@@ -3022,7 +3320,9 @@ final class BrowserPanel: Panel, ObservableObject {
         // scalar by the sampler's `tick()`. The sampler never touches
         // `WKWebView` itself off-main — that would be a `@MainActor`
         // isolation violation against an AppKit/WebKit object.
-        SurfaceMetricsSampler.shared.register(surfaceId: self.id)
+        PanelMetricsSampler.shared.register(surfaceId: self.id)
+
+        installMessagesPageReloadObserverIfNeeded()
 
         // Navigate to initial URL if provided.
         //
@@ -3165,13 +3465,15 @@ final class BrowserPanel: Panel, ObservableObject {
     ///   no extra dispatch needed here.
     /// - `* → .suspended`: not entered in C11-25.
     private func dispatchLifecycleTransition(
-        from: SurfaceLifecycleState,
-        to target: SurfaceLifecycleState
+        from: PanelLifecycleState,
+        to target: PanelLifecycleState
     ) {
         switch (from, target) {
         case (let prior, .hibernated) where prior != .hibernated:
             performHibernate()
         case (.hibernated, .active):
+            // The reload that follows is a restore, not new content.
+            skipNextLoadStamp = true
             performResumeFromHibernate()
         default:
             break
@@ -3290,11 +3592,16 @@ final class BrowserPanel: Panel, ObservableObject {
 
     @discardableResult
     func switchToProfile(_ requestedProfileID: UUID) -> Bool {
+        guard !BrowserProfileStore.shared.isReserved(requestedProfileID) else {
+            return false
+        }
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
             ? requestedProfileID
             : BrowserProfileStore.shared.builtInDefaultProfileID
         guard resolvedProfileID != profileID else {
-            BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+            if sticksAsPreferred {
+                BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+            }
             return false
         }
 
@@ -3329,7 +3636,9 @@ final class BrowserPanel: Panel, ObservableObject {
 
         profileID = resolvedProfileID
         historyStore = BrowserProfileStore.shared.historyStore(for: resolvedProfileID)
-        BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        if sticksAsPreferred {
+            BrowserProfileStore.shared.noteUsed(resolvedProfileID)
+        }
 
         if !usesRemoteWorkspaceProxy {
             websiteDataStore = BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID)
@@ -3374,7 +3683,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     func triggerFlash() {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
         focusFlashToken &+= 1
     }
 
@@ -3485,31 +3794,93 @@ final class BrowserPanel: Panel, ObservableObject {
                 self.webView.underPageBackgroundColor = GhosttyBackgroundTheme.color(from: notification)
             }
             .store(in: &webViewCancellables)
+
+        // App quit does not call TabContent.close(), and the main window can
+        // lose its host before ARC releases the tab. Close the inspector while
+        // its view is attached, preserving visibility intent for the snapshot.
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .merge(with: NotificationCenter.default.publisher(for: NSWindow.willCloseNotification))
+            .sink { [weak self, weak webView] notification in
+                MainActor.assumeIsolated {
+                    guard let self, let webView,
+                          self.isCurrentWebView(webView, instanceID: observedWebViewInstanceID) else { return }
+                    if notification.name == NSWindow.willCloseNotification {
+                        guard let closingWindow = notification.object as? NSWindow,
+                              webView.window === closingWindow else { return }
+                    }
+                    self.prepareForHostTeardown()
+                }
+            }
+            .store(in: &webViewCancellables)
     }
 
-    private func replaceWebViewAfterContentProcessTermination(for terminatedWebView: WKWebView) {
+    private var webContentReplacementGate = WebContentReplacementGate()
+    private var isClosed = false
+#if DEBUG
+    private(set) var debugWebContentReplacementCount = 0
+#endif
+
+    @discardableResult
+    private func scheduleWebViewReplacementAfterContentProcessTermination(for terminatedWebView: WKWebView) -> Bool {
+        guard !isClosed, isCurrentWebView(terminatedWebView),
+              webContentReplacementGate.enqueue(instanceID: webViewInstanceID) else { return false }
+        let terminatedInstanceID = webViewInstanceID
+        // WebKit must unwind its termination callback before we create or detach a view.
+        DispatchQueue.main.async { [weak self, weak terminatedWebView] in
+            guard let self else { return }
+            guard self.webContentReplacementGate.beginTurn(currentInstanceID: self.webViewInstanceID),
+                  !self.isClosed, let terminatedWebView,
+                  self.isCurrentWebView(terminatedWebView, instanceID: terminatedInstanceID) else { return }
+            let restoreURL = Self.remoteProxyDisplayURL(for: terminatedWebView.url) ?? self.currentURL
+            let outcome = self.webContentReplacementGate.outcome(
+                url: restoreURL, now: ProcessInfo.processInfo.systemUptime
+            )
+            guard outcome != .drop else { return }
+            self.replaceWebViewAfterContentProcessTermination(
+                for: terminatedWebView, restoreNavigation: outcome == .restoreURL
+            )
+            if outcome == .errorPage {
+                self.shouldRenderWebView = true
+                self.navigationDelegate?.loadContentProcessErrorPage(in: self.webView, failedURL: restoreURL)
+            }
+        }
+        return true
+    }
+
+    private func replaceWebViewAfterContentProcessTermination(for terminatedWebView: WKWebView, restoreNavigation: Bool) {
         replaceWebViewPreservingState(
             from: terminatedWebView,
             websiteDataStore: websiteDataStore,
-            reason: "webcontent_process_terminated"
+            reason: "webcontent_process_terminated",
+            restoreNavigation: restoreNavigation
         )
     }
 
     private func replaceWebViewPreservingState(
         from oldWebView: WKWebView,
         websiteDataStore: WKWebsiteDataStore,
-        reason: String
+        reason: String,
+        restoreNavigation: Bool = true
     ) {
-        guard oldWebView === webView else { return }
+        guard !isClosed, oldWebView === webView else { return }
 
         let wasRenderable = shouldRenderWebView
         let restoreURL = Self.remoteProxyDisplayURL(for: oldWebView.url) ?? currentURL
         let restoreURLString = restoreURL?.absoluteString
-        let shouldRestoreURL = wasRenderable && restoreURLString != nil && restoreURLString != blankURLString
+        let shouldRestoreURL = restoreNavigation && wasRenderable && restoreURLString != nil && restoreURLString != blankURLString
         let history = sessionNavigationHistorySnapshot()
         let historyCurrentURL = preferredURLStringForOmnibar()
         let desiredZoom = max(minPageZoom, min(maxPageZoom, oldWebView.pageZoom))
         let restoreDevTools = preferredDeveloperToolsVisible
+
+        shutdownDeveloperTools(in: oldWebView, restoreAfterReplacement: restoreDevTools)
+        if reason == "webcontent_process_terminated" {
+            unfocus()
+            closeOwnedPopups()
+#if DEBUG
+            debugWebContentReplacementCount += 1
+#endif
+        }
 
 #if DEBUG
         dlog(
@@ -3542,6 +3913,10 @@ final class BrowserPanel: Panel, ObservableObject {
         webViewInstanceID = UUID()
         webView = replacement
         shouldRenderWebView = wasRenderable
+        isLoading = false
+        estimatedProgress = 0
+        nativeCanGoBack = false
+        nativeCanGoForward = false
 
         bindWebView(replacement)
         applyBrowserThemeModeIfNeeded()
@@ -3579,8 +3954,9 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
 #if DEBUG
-    func debugSimulateWebContentProcessTermination() {
-        replaceWebViewAfterContentProcessTermination(for: webView)
+    @discardableResult
+    func debugSimulateWebContentProcessTermination() -> Bool {
+        scheduleWebViewReplacementAfterContentProcessTermination(for: webView)
     }
 #endif
 
@@ -3619,19 +3995,11 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     func close() {
+        prepareForHostTeardown()
+        preferredDeveloperToolsVisible = false
         // Ensure we don't keep a hidden WKWebView (or its content view) as first responder while
         // bonsplit/SwiftUI reshuffles views during close.
         unfocus()
-
-        // Snapshot first: popup close unregisters itself from popupControllers.
-        let popupsToClose = popupControllers
-        popupControllers.removeAll()
-
-        // Close all owned popup windows before tearing down delegates
-        for popup in popupsToClose {
-            popup.closeAllChildPopups()
-            popup.closePopup()
-        }
 
         webView.stopLoading()
         webView.navigationDelegate = nil
@@ -3642,7 +4010,7 @@ final class BrowserPanel: Panel, ObservableObject {
         webViewCancellables.removeAll()
         faviconTask?.cancel()
         faviconTask = nil
-        SurfaceMetricsSampler.shared.unregister(surfaceId: self.id)
+        PanelMetricsSampler.shared.unregister(surfaceId: self.id)
         // C11-25 review fix I2: drop any cached hibernate snapshot. Without
         // this, an operator who closes a hibernated panel without resuming
         // first leaks the captured NSImage indefinitely (snapshots are 2-8
@@ -3651,6 +4019,40 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     // MARK: - Popup window management
+
+    private func prepareForHostTeardown() {
+        guard !isClosed else { return }
+        isClosed = true
+        webContentReplacementGate.invalidate()
+        shutdownDeveloperTools(in: webView)
+        closeOwnedPopups()
+    }
+
+    private func closeOwnedPopups() {
+        // Closing a popup unregisters itself, so iterate a snapshot.
+        let popupsToClose = popupControllers
+        popupControllers.removeAll()
+        for popup in popupsToClose {
+            popup.closeAllChildPopups()
+            popup.closePopup()
+        }
+    }
+
+    private func shutdownDeveloperTools(in oldWebView: WKWebView, restoreAfterReplacement: Bool = false) {
+        // Set this before closing: detached inspectors post a window-close event.
+        // Real host teardown uses the default and cancels replacement restoration.
+        developerToolsReplacementRestorePending = restoreAfterReplacement
+        cancelDeveloperToolsRestoreRetry()
+        developerToolsTransitionSettleWorkItem?.cancel()
+        developerToolsTransitionSettleWorkItem = nil
+        developerToolsVisibilityLossCheckWorkItem?.cancel()
+        developerToolsVisibilityLossCheckWorkItem = nil
+        pendingDeveloperToolsTransitionTargetVisible = nil
+        developerToolsTransitionTargetVisible = nil
+        forceDeveloperToolsRefreshOnNextAttach = false
+        developerToolsDetachedOpenGraceDeadline = nil
+        oldWebView.cmuxCloseInspectorBeforeHostTeardown()
+    }
 
     func createFloatingPopup(
         configuration: WKWebViewConfiguration,
@@ -3981,20 +4383,134 @@ final class BrowserPanel: Panel, ObservableObject {
 
     // MARK: - Navigation
 
+    private func installMessagesPageReloadObserverIfNeeded() {
+        guard messagesPageURL != nil, messagesPageReloadObserver == nil else { return }
+        messagesPageReloadObserver = NotificationCenter.default.addObserver(
+            forName: MessagesPageWriter.pageDidWriteNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            guard let writtenURL = notification.object as? URL else {
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let messagesPageURL = self.messagesPageURL,
+                      let currentURL = self.currentURL,
+                      MessagesPageLayout.isMessagesPageURL(currentURL),
+                      writtenURL.standardizedFileURL.path == messagesPageURL.standardizedFileURL.path,
+                      currentURL.standardizedFileURL.path == messagesPageURL.standardizedFileURL.path else {
+                    // A browser back/forward navigation may leave the
+                    // observer installed while the current document is no
+                    // longer the messages page. Never reload that document.
+                    return
+                }
+                self.reload()
+            }
+        }
+    }
+
+    private func updateMessagesPageReloadObserver(for url: URL) {
+        let nextURL = MessagesPageLayout.isMessagesPageURL(url) ? url.standardizedFileURL : nil
+        guard nextURL != messagesPageURL else {
+            installMessagesPageReloadObserverIfNeeded()
+            return
+        }
+        if let messagesPageReloadObserver {
+            NotificationCenter.default.removeObserver(messagesPageReloadObserver)
+            self.messagesPageReloadObserver = nil
+        }
+        messagesPageURL = nextURL
+        installMessagesPageReloadObserverIfNeeded()
+    }
+
     /// Navigate to a URL
     @discardableResult
     func navigate(to url: URL, recordTypedNavigation: Bool = false) -> BrowserNavigationDisposition {
+        updateMessagesPageReloadObserver(for: url)
         supersedeInsecureHTTPConsentIfNeeded(for: url)
         let request = URLRequest(url: url)
         if shouldBlockInsecureHTTPNavigation(to: url) {
             return presentInsecureHTTPAlert(
                 for: request,
-                intent: .currentTab,
+                intent: .currentPanel,
                 recordTypedNavigation: recordTypedNavigation
             )
         }
         navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: recordTypedNavigation)
         return record(disposition: .proceeded)
+    }
+
+    /// Start a navigation for browser state restore and notify the caller only
+    /// after WebKit finishes a same-origin document or reports a real failure.
+    /// The callback is always delivered from the main actor. A caller waiting
+    /// on a socket worker must own the timeout; this method never blocks main.
+    @discardableResult
+    func navigateForStateLoad(
+        to url: URL,
+        completion: @escaping (BrowserStateLoadNavigationResult) -> Void
+    ) -> UUID {
+        let token = UUID()
+        let pending = PendingStateLoadNavigation(
+            token: token,
+            webView: webView,
+            webViewInstanceID: webViewInstanceID,
+            expectedOrigin: browserNavigationOrigin(url) ?? "",
+            completion: completion
+        )
+
+        pendingStateLoadNavigation?.completion(.failure("Navigation superseded"))
+        pendingStateLoadNavigation = pending
+
+        let disposition = navigate(to: url)
+        guard disposition == .proceeded else {
+            pendingStateLoadNavigation = nil
+            let message: String
+            switch disposition {
+            case .prompting:
+                message = "Navigation requires operator approval"
+            case .blocked:
+                message = "Navigation was blocked"
+            case .proceeded:
+                message = "Navigation did not start"
+            }
+            completion(.failure(message))
+            return token
+        }
+        return token
+    }
+
+    func cancelStateLoadNavigation(token: UUID) {
+        guard pendingStateLoadNavigation?.token == token else { return }
+        pendingStateLoadNavigation = nil
+    }
+
+    private func finishPendingStateLoadNavigation(
+        webView: WKWebView,
+        webViewInstanceID: UUID,
+        settledURL: URL?,
+        failure: String?
+    ) {
+        guard let pending = pendingStateLoadNavigation,
+              pending.webView === webView,
+              pending.webViewInstanceID == webViewInstanceID else {
+            return
+        }
+
+        pendingStateLoadNavigation = nil
+        if let failure {
+            pending.completion(.failure(failure))
+            return
+        }
+
+        guard let settledURL,
+              let settledOrigin = browserNavigationOrigin(settledURL),
+              settledOrigin == pending.expectedOrigin else {
+            let settled = settledURL?.absoluteString ?? "(missing URL)"
+            pending.completion(.failure("Navigation settled on unexpected origin: \(settled)"))
+            return
+        }
+        pending.completion(.success(settledURL))
     }
 
     private func navigateWithoutInsecureHTTPPrompt(
@@ -4207,10 +4723,10 @@ final class BrowserPanel: Panel, ObservableObject {
             return presentInsecureHTTPAlert(for: request, intent: intent, recordTypedNavigation: false)
         }
         switch intent {
-        case .currentTab:
+        case .currentPanel:
             navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: false)
-        case .newTab:
-            openLinkInNewTab(url: url)
+        case .newPanel:
+            openLinkInNewPanel(url: url)
         }
         return record(disposition: .proceeded)
     }
@@ -4312,11 +4828,11 @@ final class BrowserPanel: Panel, ObservableObject {
         case .alertSecondButtonReturn:
             record(disposition: .proceeded)
             switch intent {
-            case .currentTab:
+            case .currentPanel:
                 insecureHTTPBypassHostOnce = host
                 navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: recordTypedNavigation)
-            case .newTab:
-                openLinkInNewTab(url: url, bypassInsecureHTTPHostOnce: host)
+            case .newPanel:
+                openLinkInNewPanel(url: url, bypassInsecureHTTPHostOnce: host)
             }
         default:
             record(disposition: .blocked(host: host, reason: .declinedByOperator))
@@ -4333,6 +4849,9 @@ final class BrowserPanel: Panel, ObservableObject {
         developerToolsVisibilityLossCheckWorkItem = nil
         if let detachedDeveloperToolsWindowCloseObserver {
             NotificationCenter.default.removeObserver(detachedDeveloperToolsWindowCloseObserver)
+        }
+        if let messagesPageReloadObserver {
+            NotificationCenter.default.removeObserver(messagesPageReloadObserver)
         }
         webViewObservers.removeAll()
         webViewCancellables.removeAll()
@@ -4539,7 +5058,7 @@ extension BrowserPanel {
     }
 
     /// Open a link in a new browser surface in the same pane
-    func openLinkInNewTab(url: URL, bypassInsecureHTTPHostOnce: String? = nil) {
+    func openLinkInNewPanel(url: URL, bypassInsecureHTTPHostOnce: String? = nil) {
 #if DEBUG
         dlog(
             "browser.newTab.open.begin panel=\(id.uuidString.prefix(5)) " +
@@ -4656,8 +5175,13 @@ extension BrowserPanel {
                 Self.isDetachedInspectorWindow(window)
             }
             guard isDetachedInspectorWindow else { return }
+            guard !self.isClosed, !self.developerToolsReplacementRestorePending else { return }
+            let closingWebViewInstanceID = self.webViewInstanceID
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                // A close queued for the old view must not dismiss its replacement.
+                guard !self.isClosed, !self.developerToolsReplacementRestorePending,
+                      self.webViewInstanceID == closingWebViewInstanceID else { return }
                 guard self.preferredDeveloperToolsPresentation == .detached else { return }
                 guard self.preferredDeveloperToolsVisible else { return }
                 guard !self.isDeveloperToolsVisible() else { return }
@@ -4796,6 +5320,8 @@ extension BrowserPanel {
         to targetVisible: Bool,
         source: String
     ) -> Bool {
+        guard !isClosed else { return false }
+        if !targetVisible { developerToolsReplacementRestorePending = false }
         if isDeveloperToolsTransitionInFlight {
             pendingDeveloperToolsTransitionTargetVisible = targetVisible
             preferredDeveloperToolsVisible = targetVisible
@@ -4947,7 +5473,7 @@ extension BrowserPanel {
             cancelDeveloperToolsRestoreRetry()
             return
         }
-        if preserveVisibleIntent && preferredDeveloperToolsVisible {
+        if (preserveVisibleIntent || developerToolsReplacementRestorePending) && preferredDeveloperToolsVisible {
             return
         }
         preferredDeveloperToolsVisible = false
@@ -4989,6 +5515,7 @@ extension BrowserPanel {
 
     @discardableResult
     func consumeAttachedDeveloperToolsManualCloseIfNeeded(inspector: NSObject? = nil) -> Bool {
+        guard !developerToolsReplacementRestorePending else { return false }
         guard preferredDeveloperToolsVisible else { return false }
         guard preferredDeveloperToolsPresentation != .detached else { return false }
         guard !isDeveloperToolsTransitionInFlight else { return false }
@@ -5021,7 +5548,9 @@ extension BrowserPanel {
 
     /// Called after WKWebView reattaches to keep inspector stable across split/layout churn.
     func restoreDeveloperToolsAfterAttachIfNeeded() {
+        guard !isClosed else { return }
         guard preferredDeveloperToolsVisible else {
+            developerToolsReplacementRestorePending = false
             cancelDeveloperToolsRestoreRetry()
             forceDeveloperToolsRefreshOnNextAttach = false
             return
@@ -5037,6 +5566,7 @@ extension BrowserPanel {
 
         let visible = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
         if visible {
+            developerToolsReplacementRestorePending = false
             developerToolsDetachedOpenGraceDeadline = nil
             syncDeveloperToolsPresentationPreferenceFromUI()
             developerToolsLastKnownVisibleAt = Date()
@@ -5050,7 +5580,7 @@ extension BrowserPanel {
         }
 
         let detachedOpenStillSettling = developerToolsDetachedOpenGraceDeadline.map { $0 > Date() } ?? false
-        if preferredDeveloperToolsPresentation == .detached && !detachedOpenStillSettling {
+        if preferredDeveloperToolsPresentation == .detached && !detachedOpenStillSettling && !developerToolsReplacementRestorePending {
             preferredDeveloperToolsVisible = false
             developerToolsDetachedOpenGraceDeadline = nil
             cancelDeveloperToolsRestoreRetry()
@@ -5081,6 +5611,7 @@ extension BrowserPanel {
         preferredDeveloperToolsVisible = true
         let visibleAfterShow = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
         if visibleAfterShow {
+            developerToolsReplacementRestorePending = false
             syncDeveloperToolsPresentationPreferenceFromUI()
             developerToolsLastKnownVisibleAt = Date()
             cancelDeveloperToolsRestoreRetry()
@@ -5889,6 +6420,7 @@ private extension BrowserPanel {
     }
 
     func scheduleDeveloperToolsRestoreRetry() {
+        guard !isClosed else { return }
         guard preferredDeveloperToolsVisible else { return }
         guard developerToolsRestoreRetryWorkItem == nil else { return }
         guard developerToolsRestoreRetryAttempt < developerToolsRestoreRetryMaxAttempts else { return }
@@ -5940,7 +6472,7 @@ extension BrowserPanel {
     ) {
         presentInsecureHTTPAlert(
             for: URLRequest(url: url),
-            intent: .currentTab,
+            intent: .currentPanel,
             recordTypedNavigation: recordTypedNavigation
         )
     }
@@ -6099,6 +6631,17 @@ extension BrowserPanel {
 }
 
 extension WKWebView {
+    func cmuxCloseInspectorBeforeHostTeardown() {
+        guard let inspector = cmuxInspectorObject() else { return }
+        // Close (rather than merely hide) while the inspector's host is still attached.
+        let close = NSSelectorFromString("close")
+        if inspector.responds(to: close) {
+            inspector.cmuxCallVoid(selector: close)
+        } else {
+            inspector.cmuxCallVoid(selector: NSSelectorFromString("hide"))
+        }
+    }
+
     func cmuxInspectorObject() -> NSObject? {
         let selector = NSSelectorFromString("_inspector")
         guard responds(to: selector),
@@ -6132,6 +6675,46 @@ private extension NSObject {
         typealias Fn = @convention(c) (AnyObject, Selector) -> Void
         let fn = unsafeBitCast(method(for: selector), to: Fn.self)
         fn(self, selector)
+    }
+}
+
+/// Coalesces one queued replacement and bounds automatic recovery for a repeatedly failing URL.
+struct WebContentReplacementGate {
+    enum Outcome { case restoreURL, errorPage, drop }
+    private var pendingInstanceID: UUID?
+    private var windowURL: String?
+    private var windowStartedAt: TimeInterval = 0
+    private var terminationsInWindow = 0
+
+    mutating func enqueue(instanceID: UUID) -> Bool {
+        guard pendingInstanceID == nil else { return false }
+        pendingInstanceID = instanceID
+        return true
+    }
+
+    mutating func beginTurn(currentInstanceID: UUID) -> Bool {
+        let pending = pendingInstanceID
+        pendingInstanceID = nil
+        return pending == currentInstanceID
+    }
+
+    mutating func invalidate() {
+        pendingInstanceID = nil
+    }
+
+    mutating func outcome(url: URL?, now: TimeInterval) -> Outcome {
+        let key = url?.absoluteString ?? "about:blank"
+        if windowURL != key || now - windowStartedAt >= 10 {
+            windowURL = key
+            windowStartedAt = now
+            terminationsInWindow = 0
+        }
+        terminationsInWindow += 1
+        switch terminationsInWindow {
+        case 1: return .restoreURL
+        case 2: return .errorPage
+        default: return .drop
+        }
     }
 }
 
@@ -6277,7 +6860,7 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
 
 // MARK: - Navigation Delegate
 
-func browserNavigationShouldOpenInNewTab(
+func browserNavigationShouldOpenInNewPanel(
     navigationType: WKNavigationType,
     modifierFlags: NSEvent.ModifierFlags,
     buttonNumber: Int,
@@ -6318,7 +6901,7 @@ func browserNavigationShouldCreatePopup(
     currentEventType: NSEvent.EventType? = NSApp.currentEvent?.type,
     currentEventButtonNumber: Int? = NSApp.currentEvent?.buttonNumber
 ) -> Bool {
-    let isUserNewTab = browserNavigationShouldOpenInNewTab(
+    let isUserNewPanel = browserNavigationShouldOpenInNewPanel(
         navigationType: navigationType,
         modifierFlags: modifierFlags,
         buttonNumber: buttonNumber,
@@ -6326,10 +6909,10 @@ func browserNavigationShouldCreatePopup(
         currentEventType: currentEventType,
         currentEventButtonNumber: currentEventButtonNumber
     )
-    return navigationType == .other && !isUserNewTab
+    return navigationType == .other && !isUserNewPanel
 }
 
-func browserNavigationShouldFallbackNilTargetToNewTab(
+func browserNavigationShouldFallbackNilTargetToNewPanel(
     navigationType: WKNavigationType
 ) -> Bool {
     // Scripted popups rely on WKUIDelegate.createWebViewWith returning a live
@@ -6341,7 +6924,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     var didFinish: ((WKWebView) -> Void)?
     var didFailNavigation: ((WKWebView, String) -> Void)?
     var didTerminateWebContentProcess: ((WKWebView) -> Void)?
-    var openInNewTab: ((URL) -> Void)?
+    var openInNewPanel: ((URL) -> Void)?
     var shouldBlockInsecureHTTPNavigation: ((URL) -> Bool)?
     var handleBlockedInsecureHTTPNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
     /// Fired synchronously when a main-frame navigation settles (finished or
@@ -6430,6 +7013,13 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         didTerminateWebContentProcess?(webView)
     }
 
+    func loadContentProcessErrorPage(in webView: WKWebView, failedURL: URL?) {
+        loadErrorPage(
+            in: webView, failedURL: failedURL?.absoluteString ?? "",
+            error: NSError(domain: NSURLErrorDomain, code: NSURLErrorUnknown)
+        )
+    }
+
     private func loadErrorPage(in webView: WKWebView, failedURL: String, error: NSError) {
         let title: String
         let message: String
@@ -6515,7 +7105,10 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         </body>
         </html>
         """
-        webView.loadHTMLString(html, baseURL: URL(string: failedURL))
+        // An empty URL creates a relative URL, not nil. A crashed new-tab view
+        // has no failed navigation URL; let WebKit use its blank-document base.
+        let baseURL = failedURL.isEmpty ? nil : URL(string: failedURL)
+        webView.loadHTMLString(html, baseURL: baseURL)
     }
 
     func webView(
@@ -6524,7 +7117,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         let hasRecentMiddleClickIntent = CmuxWebView.hasRecentMiddleClickIntent(for: webView)
-        let shouldOpenInNewTab = browserNavigationShouldOpenInNewTab(
+        let shouldOpenInNewPanel = browserNavigationShouldOpenInNewPanel(
             navigationType: navigationAction.navigationType,
             modifierFlags: navigationAction.modifierFlags,
             buttonNumber: navigationAction.buttonNumber,
@@ -6539,7 +7132,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
             "mods=\(navigationAction.modifierFlags.rawValue) targetNil=\(navigationAction.targetFrame == nil ? 1 : 0) " +
             "eventType=\(currentEventType) eventButton=\(currentEventButton) " +
             "recentMiddleIntent=\(hasRecentMiddleClickIntent ? 1 : 0) " +
-            "openInNewTab=\(shouldOpenInNewTab ? 1 : 0)"
+            "openInNewTab=\(shouldOpenInNewPanel ? 1 : 0)"
         )
 #endif
 
@@ -6547,14 +7140,14 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
            navigationAction.targetFrame?.isMainFrame != false,
            shouldBlockInsecureHTTPNavigation?(url) == true {
             let intent: BrowserInsecureHTTPNavigationIntent
-            if shouldOpenInNewTab || navigationAction.targetFrame == nil {
-                intent = .newTab
+            if shouldOpenInNewPanel || navigationAction.targetFrame == nil {
+                intent = .newPanel
             } else {
-                intent = .currentTab
+                intent = .currentPanel
             }
 #if DEBUG
             dlog(
-                "browser.nav.decidePolicy.action kind=blockedInsecure intent=\(intent == .newTab ? "newTab" : "currentTab") " +
+                "browser.nav.decidePolicy.action kind=blockedInsecure intent=\(intent == .newPanel ? "newTab" : "currentTab") " +
                 "url=\(url.absoluteString)"
             )
 #endif
@@ -6580,12 +7173,12 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         }
 
         // Cmd+click and middle-click on regular links should always open in a new tab.
-        if shouldOpenInNewTab,
+        if shouldOpenInNewPanel,
            let url = navigationAction.request.url {
 #if DEBUG
             dlog("browser.nav.decidePolicy.action kind=openInNewTab url=\(url.absoluteString)")
 #endif
-            openInNewTab?(url)
+            openInNewPanel?(url)
             decisionHandler(.cancel)
             return
         }
@@ -6594,14 +7187,14 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         // Scripted popups (navigationType == .other) are handled in
         // WKUIDelegate.createWebViewWith so OAuth opener linkage survives.
         if navigationAction.targetFrame == nil,
-           browserNavigationShouldFallbackNilTargetToNewTab(
+           browserNavigationShouldFallbackNilTargetToNewPanel(
                navigationType: navigationAction.navigationType
            ),
            let url = navigationAction.request.url {
 #if DEBUG
             dlog("browser.nav.decidePolicy.action kind=openInNewTabFromNilTarget url=\(url.absoluteString)")
 #endif
-            openInNewTab?(url)
+            openInNewPanel?(url)
             decisionHandler(.cancel)
             return
         }
@@ -6685,7 +7278,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
 // MARK: - UI Delegate
 
 private class BrowserUIDelegate: NSObject, WKUIDelegate {
-    var openInNewTab: ((URL) -> Void)?
+    var openInNewPanel: ((URL) -> Void)?
     var requestNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
     var openPopup: ((WKWebViewConfiguration, WKWindowFeatures) -> WKWebView?)?
 
@@ -6772,7 +7365,7 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
         // Fallback: open in new tab (no opener linkage)
         if let url = navigationAction.request.url {
             if let requestNavigation {
-                let intent: BrowserInsecureHTTPNavigationIntent = .newTab
+                let intent: BrowserInsecureHTTPNavigationIntent = .newPanel
 #if DEBUG
                 dlog(
                     "browser.nav.createWebView.action kind=requestNavigation intent=newTab " +
@@ -6784,7 +7377,7 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
 #if DEBUG
                 dlog("browser.nav.createWebView.action kind=openInNewTab url=\(url.absoluteString)")
 #endif
-                openInNewTab?(url)
+                openInNewPanel?(url)
             }
         }
         return nil
@@ -8599,7 +9192,7 @@ enum BrowserDataImporter {
         var warnings: [String] = []
     }
 
-    private struct HistoryRow {
+    struct HistoryRow {
         let url: String
         let title: String?
         let visitCount: Int
@@ -9059,6 +9652,41 @@ enum BrowserDataImporter {
         return HistoryImportResult(importedCount: importedCount, warnings: warnings)
     }
 
+    /// Safari keeps `title` on `history_visits`, not `history_items`. In a query with a single
+    /// `MAX()` aggregate, SQLite takes bare columns from the row holding the maximum, so
+    /// `history_visits.title` is the title of the most recent visit.
+    static func readWebKitHistoryRows(databaseURL: URL, domainFilters: [String]) throws -> [HistoryRow] {
+        var rows: [HistoryRow] = []
+        try querySQLiteRows(
+            sourceDatabaseURL: databaseURL,
+            sql: """
+            SELECT history_items.url,
+                   history_visits.title,
+                   COUNT(history_visits.id) AS visit_count,
+                   MAX(history_visits.visit_time) AS last_visit_time
+            FROM history_items
+            JOIN history_visits
+              ON history_items.id = history_visits.history_item
+            GROUP BY history_items.url
+            ORDER BY last_visit_time DESC
+            LIMIT 5000
+            """
+        ) { statement in
+            let url = sqliteColumnText(statement, index: 0) ?? ""
+            let title = sqliteColumnText(statement, index: 1)
+            let visitCount = max(1, Int(sqliteColumnInt64(statement, index: 2)))
+            let lastVisitReferenceSeconds = sqliteColumnDouble(statement, index: 3)
+            guard let parsedURL = URL(string: url),
+                  let host = parsedURL.host,
+                  domainMatches(host: host, filters: domainFilters) else {
+                return
+            }
+            let lastVisited = Date(timeIntervalSinceReferenceDate: lastVisitReferenceSeconds)
+            rows.append(HistoryRow(url: url, title: title, visitCount: visitCount, lastVisited: lastVisited))
+        }
+        return rows
+    }
+
     private static func importWebKitHistory(
         from browser: InstalledBrowserCandidate,
         sourceProfiles: [InstalledBrowserProfile],
@@ -9099,33 +9727,7 @@ enum BrowserDataImporter {
 
         for databaseURL in uniqueURLs {
             do {
-                try querySQLiteRows(
-                    sourceDatabaseURL: databaseURL,
-                    sql: """
-                    SELECT history_items.url,
-                           history_items.title,
-                           COUNT(history_visits.id) AS visit_count,
-                           MAX(history_visits.visit_time) AS last_visit_time
-                    FROM history_items
-                    JOIN history_visits
-                      ON history_items.id = history_visits.history_item
-                    GROUP BY history_items.url
-                    ORDER BY last_visit_time DESC
-                    LIMIT 5000
-                    """
-                ) { statement in
-                    let url = sqliteColumnText(statement, index: 0) ?? ""
-                    let title = sqliteColumnText(statement, index: 1)
-                    let visitCount = max(1, Int(sqliteColumnInt64(statement, index: 2)))
-                    let lastVisitReferenceSeconds = sqliteColumnDouble(statement, index: 3)
-                    guard let parsedURL = URL(string: url),
-                          let host = parsedURL.host,
-                          domainMatches(host: host, filters: domainFilters) else {
-                        return
-                    }
-                    let lastVisited = Date(timeIntervalSinceReferenceDate: lastVisitReferenceSeconds)
-                    rows.append(HistoryRow(url: url, title: title, visitCount: visitCount, lastVisited: lastVisited))
-                }
+                rows.append(contentsOf: try readWebKitHistoryRows(databaseURL: databaseURL, domainFilters: domainFilters))
             } catch {
                 warnings.append(
                     String(

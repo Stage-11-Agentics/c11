@@ -17,7 +17,7 @@ c11 browser uses WKWebView networking. Proxy behavior follows macOS/system netwo
 
 ## What Is Not Exposed via CLI
 
-There is currently no first-class `c11 browser proxy ...` command for per-surface proxy routing.
+There is currently no first-class `c11 browser proxy ...` command for per-panel proxy routing.
 
 Why: WKWebView does not provide CDP-style per-context proxy controls equivalent to Chrome automation stacks.
 
@@ -31,7 +31,7 @@ Why: WKWebView does not provide CDP-style per-context proxy controls equivalent 
 
 ```bash
 c11 browser open https://httpbin.org/ip --json
-c11 browser surface:7 get text body
+c11 browser panel:7 get text body
 ```
 
 Compare returned IP against expected proxy egress.

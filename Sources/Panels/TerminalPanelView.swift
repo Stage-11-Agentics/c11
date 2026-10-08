@@ -5,10 +5,10 @@ import AppKit
 /// View for rendering a terminal panel
 struct TerminalPanelView: View {
     @ObservedObject var panel: TerminalPanel
-    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
+    @ObservedObject var paneInteractionRuntime: AreaInteractionRuntime
     @ObservedObject private var themeManager = ThemeManager.shared
-    @AppStorage(NotificationPaneRingSettings.enabledKey)
-    private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
+    @AppStorage(NotificationAreaRingSettings.enabledKey)
+    private var notificationPaneRingEnabled = NotificationAreaRingSettings.defaultEnabled
     @AppStorage(ThemeAppStorage.Keys.workspaceFrameEnabled, store: ThemeAppStorage.defaults)
     private var workspaceFrameEnabled = true
     @Environment(\.colorScheme) private var colorScheme
@@ -17,6 +17,7 @@ struct TerminalPanelView: View {
     private var textBoxEnterToSend = TextBoxInputSettings.defaultEnterToSend
     @AppStorage(TextBoxInputSettings.shortcutBehaviorKey)
     private var textBoxShortcutBehavior = TextBoxInputSettings.defaultShortcutBehavior.rawValue
+    let areaId: UUID
     let drawsPortalTopFrameEdge: Bool
     let isFocused: Bool
     let isVisibleInUI: Bool
@@ -35,10 +36,10 @@ struct TerminalPanelView: View {
 
     private var owningWorkspace: Workspace? {
         guard let app = AppDelegate.shared,
-              let manager = app.tabManagerFor(tabId: panel.workspaceId) else {
+              let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId) else {
             return nil
         }
-        return manager.tabs.first(where: { $0.id == panel.workspaceId })
+        return manager.workspaces.first(where: { $0.id == panel.workspaceId })
     }
 
     private var portalWorkspaceFrameStyle: PortalWorkspaceFrameStyle? {
@@ -80,7 +81,7 @@ struct TerminalPanelView: View {
     /// the surface; `TextBoxAppDetection` falls back to title regex in
     /// that case.
     private var terminalTypeFromMetadata: String? {
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(
+        let snapshot = PanelMetadataStore.shared.getMetadata(
             workspaceId: panel.workspaceId, surfaceId: panel.id
         )
         return snapshot.metadata[MetadataKey.terminalType] as? String
@@ -105,6 +106,7 @@ struct TerminalPanelView: View {
         VStack(spacing: 0) {
             GhosttyTerminalView(
                 terminalSurface: panel.surface,
+                areaId: areaId,
                 isActive: isFocused,
                 isVisibleInUI: isVisibleInUI,
                 portalZPriority: portalPriority,

@@ -78,6 +78,13 @@ final class SendKeyVocabularyTests: XCTestCase {
         XCTAssertEqual(keycode("esc"), UInt32(kVK_Escape))
     }
 
+    func testOnlyEnterAndReturnAreSubmittedKeys() {
+        XCTAssertTrue(TerminalController.namedKeySubmits("enter"))
+        XCTAssertTrue(TerminalController.namedKeySubmits("RETURN"))
+        XCTAssertFalse(TerminalController.namedKeySubmits("ctrl-c"))
+        XCTAssertFalse(TerminalController.namedKeySubmits("tab"))
+    }
+
     func testControlCombinationsResolveToLetterKeycodes() {
         XCTAssertEqual(keycode("ctrl-c"), UInt32(kVK_ANSI_C))
         XCTAssertEqual(keycode("ctrl-d"), UInt32(kVK_ANSI_D))
@@ -115,16 +122,124 @@ final class SendKeyVocabularyTests: XCTestCase {
         XCTAssertEqual(TerminalController.namedKeyEvent(for: "space")?.text, " ")
     }
 
-    /// Control keys encode from the keycode alone. Handing them text would make
-    /// Ghostty's encoder treat them as committed IME text instead.
+    /// Editing/navigation keys carry no text: UTF-8 would be an IME commit.
     func testControlKeysCarryNoText() {
-        for name in ["enter", "return", "tab", "escape", "backspace", "up", "down", "ctrl-c"] {
+        for name in ["enter", "return", "tab", "escape", "backspace", "up", "down", "delete", "home", "end", "pageup", "pagedown", "f1", "f12"] {
             XCTAssertNil(
                 TerminalController.namedKeyEvent(for: name)?.text,
                 "\(name) must not carry text"
             )
+            XCTAssertEqual(TerminalController.namedKeyEvent(for: name)?.unshiftedCodepoint, 0)
         }
     }
+
+    /// C11-308 / cmux #15928: Kitty dropped Ctrl+letter without its codepoint.
+    func testControlLettersCarryCanonicalTextAndCodepoint() throws {
+        for (names, letter) in [(["ctrl-c", "ctrl+c", "sigint", "CTRL-C"], "c"),
+                                (["ctrl-d", "ctrl+d", "eof"], "d"),
+                                (["ctrl-z", "ctrl+z", "sigtstp"], "z"),
+                                (["ctrl-k", "ctrl+k", "Ctrl+K"], "k"),
+                                (["ctrl-\\", "ctrl+\\", "sigquit"], "\\")] {
+            for name in names {
+                let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: name))
+                XCTAssertEqual(event.text, letter, name)
+                XCTAssertEqual(event.unshiftedCodepoint, letter.unicodeScalars.first!.value, name)
+            }
+        }
+        XCTAssertEqual(TerminalController.namedKeyEvent(for: "space")?.unshiftedCodepoint, 32)
+    }
+
+    func testControlMetadataDoesNotRecordAComposerDraft() throws {
+        for name in ["ctrl-c", "ctrl-d", "ctrl-z", "ctrl-k", "sigquit"] {
+            let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: name))
+            XCTAssertFalse(TerminalController.socketKeyTextIsDraft(mods: event.mods, text: event.text), name)
+        }
+        let space = try XCTUnwrap(TerminalController.namedKeyEvent(for: "space"))
+        XCTAssertTrue(TerminalController.socketKeyTextIsDraft(mods: space.mods, text: space.text))
+        XCTAssertTrue(TerminalController.socketKeyTextIsDraft(mods: space.mods, text: "synthetic prose"))
+        XCTAssertFalse(TerminalController.socketKeyTextIsDraft(mods: space.mods, text: "\r"))
+    }
+
+    func testCodepointParticipatesInEventEquality() throws {
+        let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: "ctrl-c"))
+        let withoutCodepoint = TerminalController.NamedKeyEvent(keycode: event.keycode, mods: event.mods, text: event.text)
+        XCTAssertNotEqual(event, withoutCodepoint)
+    }
+
+    /// cmux #15980: a second key used to disappear after the first was sent.
+    func testSingleKeyArgumentsRejectMissingAndExtraKeys() throws {
+        XCTAssertEqual(try SendKeyArgs.single(["ctrl-c"]), "ctrl-c")
+        XCTAssertThrowsError(try SendKeyArgs.single([]))
+        XCTAssertThrowsError(try SendKeyArgs.single(["ctrl-c", "enter"])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("enter"))
+        }
+    }
+
+    func testReleaseTargetRejectsMissingAndReplacementSurface() {
+        XCTAssertEqual(SendKeyRelease.target(pressed: 1, current: 1), 1)
+        XCTAssertNil(SendKeyRelease.target(pressed: 1, current: nil))
+        XCTAssertNil(SendKeyRelease.target(pressed: 1, current: 2))
+    }
+
+    #if DEBUG
+    /// Execute the production C-event writer; copy text while its C pointer is
+    /// valid and invalidate/replace the surface from the native press callback.
+    func testNativeControlPressReleasePreservesAllFields() throws {
+        let surface = try XCTUnwrap(UnsafeMutableRawPointer(bitPattern: 1))
+        let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: "ctrl-c"))
+        var actions: [UInt32] = []
+        TerminalController.socketKeyEventSinkForTesting = { target, emitted in
+            XCTAssertEqual(target, surface)
+            actions.append(emitted.action.rawValue)
+            XCTAssertEqual(emitted.keycode, event.keycode)
+            XCTAssertEqual(emitted.mods.rawValue, event.mods.rawValue)
+            XCTAssertEqual(emitted.consumed_mods.rawValue, 0)
+            XCTAssertEqual(emitted.unshifted_codepoint, 99)
+            XCTAssertFalse(emitted.composing)
+            XCTAssertEqual(emitted.text.map { String(cString: $0) }, "c")
+        }
+        defer { TerminalController.socketKeyEventSinkForTesting = nil }
+        TerminalController.writeKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods,
+                                         text: event.text, unshiftedCodepoint: event.unshiftedCodepoint,
+                                         releaseAfterPress: true, stillLive: { surface })
+        XCTAssertEqual(actions, [1, 0], "exactly press then release")
+    }
+
+    func testNativeReleaseSkippedAfterPressTearsDownOrReplacesSurface() throws {
+        let surface = try XCTUnwrap(UnsafeMutableRawPointer(bitPattern: 1))
+        let replacement = try XCTUnwrap(UnsafeMutableRawPointer(bitPattern: 2))
+        let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: "ctrl-c"))
+        defer { TerminalController.socketKeyEventSinkForTesting = nil }
+        for next in [nil, replacement] {
+            var current: UnsafeMutableRawPointer? = surface
+            var actions: [UInt32] = []
+            TerminalController.socketKeyEventSinkForTesting = { target, emitted in
+                XCTAssertEqual(target, surface)
+                actions.append(emitted.action.rawValue)
+                current = next
+            }
+            TerminalController.writeKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods,
+                                             text: event.text, unshiftedCodepoint: event.unshiftedCodepoint,
+                                             releaseAfterPress: true, stillLive: { current })
+            XCTAssertEqual(actions, [1], "no release into stale or replacement surface")
+        }
+    }
+
+    func testNativeTextWriterDefaultsToPressOnly() throws {
+        let surface = try XCTUnwrap(UnsafeMutableRawPointer(bitPattern: 1))
+        let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: "up"))
+        var actions: [UInt32] = []
+        TerminalController.socketKeyEventSinkForTesting = { _, emitted in
+            actions.append(emitted.action.rawValue)
+            XCTAssertEqual(emitted.text.map { String(cString: $0) }, "synthetic prose")
+            XCTAssertEqual(emitted.unshifted_codepoint, 0)
+        }
+        defer { TerminalController.socketKeyEventSinkForTesting = nil }
+        TerminalController.writeKeyEvent(surface: surface, keycode: 0, mods: event.mods,
+                                         text: "synthetic prose", stillLive: { surface })
+        XCTAssertEqual(actions, [1], "text-only socket sends must not duplicate prose")
+    }
+    #endif
 }
 
 /// C11-173: how a socket `send` payload is delivered. Prose (including

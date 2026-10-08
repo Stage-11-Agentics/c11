@@ -53,7 +53,7 @@ final class MailboxDispatcherTests: XCTestCase {
         if let delivery {
             partial["mailbox.delivery"] = delivery
         }
-        _ = try? SurfaceMetadataStore.shared.setMetadata(
+        _ = try? PanelMetadataStore.shared.setMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             partial: partial,
@@ -64,9 +64,9 @@ final class MailboxDispatcherTests: XCTestCase {
     }
 
     private func makeDispatcher(surfaces: [UUID]) -> MailboxDispatcher {
-        let resolver = MailboxSurfaceResolver(
+        let resolver = MailboxPanelResolver(
             workspaceId: workspaceId,
-            liveSurfaces: { surfaces }
+            livePanels: { surfaces }
         )
         let dispatcher = MailboxDispatcher(
             workspaceId: workspaceId,
@@ -91,11 +91,11 @@ final class MailboxDispatcherTests: XCTestCase {
         try MailboxIO.atomicWrite(data: data, to: target)
     }
 
-    private func readInboxFile(surface: String, id: String) throws -> Data {
-        let inbox = try MailboxLayout.inboxURL(
+    private func readInboxFile(panel: UUID, id: String) throws -> Data {
+        let inbox = MailboxLayout.inboxURL(
             state: tempState,
             workspaceId: workspaceId,
-            surfaceName: surface
+            panelId: panel
         )
         return try Data(
             contentsOf: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
@@ -147,7 +147,7 @@ final class MailboxDispatcherTests: XCTestCase {
         dispatcher.log.flush()
 
         // Inbox contains a byte-identical envelope copy.
-        let inboxBytes = try readInboxFile(surface: "watcher", id: envelope.id)
+        let inboxBytes = try readInboxFile(panel: watcher, id: envelope.id)
         XCTAssertEqual(inboxBytes, try envelope.encode())
 
         // Outbox and processing are both empty.
@@ -167,6 +167,37 @@ final class MailboxDispatcherTests: XCTestCase {
         // Dispatch log has the full sequence.
         let events = try readLog().compactMap { $0["event"] as? String }
         XCTAssertEqual(events, ["received", "resolved", "copied", "handler", "cleaned"])
+    }
+
+    /// Titles with `/` or past 64 bytes used to be inbox directory names, so
+    /// every copy to them failed (`_copy eio`) and the message was lost. The
+    /// inbox is keyed on the tab UUID, so such a title receives normally.
+    func testRecipientWithSlashedLongTitleGetsInboxCopy() throws {
+        let title = "a/b: c " + String(repeating: "x", count: 93)
+        XCTAssertEqual(title.utf8.count, 100)
+        let recipient = seedSurface(name: title, delivery: "silent")
+        let dispatcher = makeDispatcher(surfaces: [recipient])
+        dispatcher.registerHandler(name: "silent") { _, _, _ in .init(outcome: .ok) }
+
+        let envelope = try MailboxEnvelope.build(
+            from: "builder",
+            to: title,
+            body: "hello",
+            id: "01K3A2B7X8PQRTVWYZ0123456Q",
+            ts: "2026-04-23T10:15:42Z"
+        )
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(
+            url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+                .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id))
+        )
+        dispatcher.log.flush()
+
+        XCTAssertEqual(try readInboxFile(panel: recipient, id: envelope.id), try envelope.encode())
+        let log = try readLog()
+        XCTAssertEqual(log.compactMap { $0["event"] as? String },
+                       ["received", "resolved", "copied", "handler", "cleaned"])
+        XCTAssertFalse(log.contains { ($0["handler"] as? String) == "_copy" })
     }
 
     // MARK: - Validation failures

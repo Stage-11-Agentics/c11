@@ -1,0 +1,75 @@
+import Foundation
+
+/// Executable feature policy shared by the socket server and bundled CLI.
+/// Enable a pending entry only in the commit that implements its behavior.
+struct CapabilityFeatures {
+    enum ID: String, CaseIterable {
+        case workspaceAreaPanel = "vocabulary.workspace_area_panel"
+        case explicitPanel = "send.explicit_panel"
+        case offlineEvents = "events.offline"
+        case canonicalRoutingKeys = "routing.canonical_keys"
+        case initialInput = "create.initial_input"
+        case rawSend = "send.raw"
+        case terminalSelection = "read_selection.terminal"
+        case terminalInputState = "input_state.terminal"
+        case windowRouteWithoutFocus = "window.route_without_focus"
+        case windowResize = "window.resize"
+        case rpc = "cli.rpc"
+        case journalAnalytics = "journal.analytics"
+        case browserProfiles = "browser.profiles"
+        case feedAsks = "feed.asks"
+        case markdownAgentCLI = "markdown.agent_cli"
+    }
+
+    struct Entry {
+        let id: ID
+        let version: Int
+        let enabled: Bool
+    }
+
+    struct Unsupported: Error {
+        let id: ID
+    }
+
+    // Adding an id does not change this version. Changing an id's meaning does.
+    static let schemaVersion = 1
+    static let current = CapabilityFeatures(entries: [
+        Entry(id: .workspaceAreaPanel, version: 1, enabled: true),
+        Entry(id: .explicitPanel, version: 1, enabled: true),
+        Entry(id: .offlineEvents, version: 1, enabled: true),
+        Entry(id: .canonicalRoutingKeys, version: 1, enabled: true),
+        Entry(id: .initialInput, version: 1, enabled: true),
+        Entry(id: .rawSend, version: 1, enabled: true),
+        Entry(id: .terminalSelection, version: 1, enabled: true),
+        Entry(id: .terminalInputState, version: 1, enabled: true),
+        Entry(id: .windowRouteWithoutFocus, version: 1, enabled: true),
+        Entry(id: .windowResize, version: 1, enabled: true),
+        Entry(id: .rpc, version: 1, enabled: true),
+        Entry(id: .journalAnalytics, version: 1, enabled: true),
+        Entry(id: .browserProfiles, version: 1, enabled: true),
+        Entry(id: .feedAsks, version: 1, enabled: true),
+        Entry(id: .markdownAgentCLI, version: 1, enabled: true),
+    ])
+
+    private let entries: [ID: Entry]
+
+    init(entries: [Entry]) {
+        self.entries = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+    }
+
+    func supports(_ id: ID) -> Bool {
+        entries[id]?.enabled == true
+    }
+
+    /// Use this at the implementing dispatch seam so admission and discovery
+    /// consume the same policy. A disabled or absent entry never runs the body.
+    func dispatch<T>(_ id: ID, perform: () throws -> T) throws -> T {
+        guard supports(id) else { throw Unsupported(id: id) }
+        return try perform()
+    }
+
+    var payload: [[String: Any]] {
+        entries.values.filter(\.enabled).sorted { $0.id.rawValue < $1.id.rawValue }
+            .map { ["id": $0.id.rawValue, "version": $0.version] }
+    }
+}

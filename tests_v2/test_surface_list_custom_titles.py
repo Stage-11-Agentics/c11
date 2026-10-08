@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: surface.list and list-panels should return custom tab titles."""
+"""Regression: panel.list and list-panels should return custom tab titles."""
 
 from __future__ import annotations
 
@@ -55,24 +55,24 @@ def main() -> int:
             client.select_workspace(workspace_id)
             time.sleep(0.2)
 
-            current_payload = client._call("surface.current", {"workspace_id": workspace_id}) or {}
-            surface_id = str(current_payload.get("surface_id") or "")
-            _must(bool(surface_id), f"surface.current returned no surface_id: {current_payload}")
+            current_payload = client._call("panel.current", {"workspace_id": workspace_id}) or {}
+            surface_id = str(current_payload.get("panel_id") or "")
+            _must(bool(surface_id), f"panel.current returned no panel_id: {current_payload}")
 
             title = f"renamed-surface-{int(time.time() * 1000)}"
             renamed = client._call(
-                "surface.action",
-                {"surface_id": surface_id, "action": "rename", "title": title},
+                "panel.action",
+                {"panel_id": surface_id, "action": "rename", "title": title},
             ) or {}
-            _must(str(renamed.get("title") or "") == title, f"surface.action rename failed: {renamed}")
+            _must(str(renamed.get("title") or "") == title, f"panel.action rename failed: {renamed}")
 
-            listed = client._call("surface.list", {"workspace_id": workspace_id}) or {}
-            row = next((item for item in listed.get("surfaces") or [] if str(item.get("id") or "") == surface_id), None)
-            _must(row is not None, f"surface.list missing renamed surface: {listed}")
-            _must(str(row.get("title") or "") == title, f"surface.list should return custom title {title!r}: {row}")
+            listed = client._call("panel.list", {"workspace_id": workspace_id}) or {}
+            row = next((item for item in listed.get("panels") or [] if str(item.get("id") or "") == surface_id), None)
+            _must(row is not None, f"panel.list missing renamed surface: {listed}")
+            _must(str(row.get("title") or "") == title, f"panel.list should return custom title {title!r}: {row}")
 
             cli_listed = _run_cli_json(cli, ["list-panels", "--workspace", workspace_id])
-            cli_row = next((item for item in cli_listed.get("surfaces") or [] if str(item.get("title") or "") == title), None)
+            cli_row = next((item for item in cli_listed.get("panels") or [] if str(item.get("title") or "") == title), None)
             _must(cli_row is not None, f"list-panels missing renamed surface: {cli_listed}")
             _must(str(cli_row.get("title") or "") == title, f"list-panels should return custom title {title!r}: {cli_row}")
     finally:
@@ -83,7 +83,7 @@ def main() -> int:
                 except Exception:
                     pass
 
-    print("PASS: surface.list and list-panels return custom surface titles")
+    print("PASS: panel.list and list-panels return custom surface titles")
     return 0
 
 

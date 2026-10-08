@@ -152,7 +152,17 @@
 			<key>UTTypeIdentifier</key>
 			<string>com.stage11.c11.sidebar-tab-reorder</string>
 			<key>UTTypeDescription</key>
-			<string>c11 Sidebar Tab Reorder</string>
+			<string>c11 Workspace Reorder</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.stage11.c11.sidebar-group-reorder</string>
+			<key>UTTypeDescription</key>
+			<string>c11 Group Reorder</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>

@@ -14,7 +14,7 @@ c11/
 ├── skills/             Agent-facing skill files (c11, c11-browser, c11-markdown, c11-hotload, release)
 ├── ghostty/            Submodule — fork of Ghostty rendering the terminals
 ├── vendor/
-│   └── bonsplit/       Submodule — tab bar and split chrome
+│   └── bonsplit/       Submodule — panel bar and split chrome
 ├── homebrew-c11/       Submodule — Homebrew tap for the `c11` cask
 ├── web/                Next.js marketing site
 ├── daemon/             Remote daemon prototype (see docs/remote-daemon-spec.md)
@@ -44,24 +44,24 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | File | Role |
 |---|---|
 | `c11App.swift` | SwiftUI `App` entry point |
-| `AppDelegate.swift` | NSApplicationDelegate — 13k LOC — lifecycle, menu bar, tab/workspace routing, IPC |
-| `ContentView.swift` | Root SwiftUI view — 14k LOC — sidebar + workspace split + tab bar |
+| `AppDelegate.swift` | NSApplicationDelegate — 13k LOC — lifecycle, menu bar, workspace routing, IPC |
+| `ContentView.swift` | Root SwiftUI view — 14k LOC — sidebar + workspace split + panel bar |
 | `WindowAccessor.swift`, `WindowDecorationsController.swift`, `WindowToolbarController.swift`, `WindowDragHandleView.swift` | Window chrome and AppKit-SwiftUI bridge |
 
-### Terminals, browsers, markdown (the surface types)
+### Terminals, browsers, markdown (the panel types)
 
 | Area | Files |
 |---|---|
 | Terminal | `TerminalView.swift`, `GhosttyTerminalView.swift`, `GhosttyConfig.swift`, `TerminalController.swift`, `TerminalWindowPortal.swift` |
 | Browser | `BrowserWindowPortal.swift`, `Panels/BrowserPanel.swift`, `Panels/BrowserPanelView.swift`, `Panels/CmuxWebView.swift` |
 | Markdown | `Panels/MarkdownPanel.swift`, `Panels/MarkdownPanelView.swift`, `Panels/FencedCodeRenderer.swift`, `Panels/MermaidRenderer.swift` |
-| Panel base | `Panels/Panel.swift`, `Panels/PanelContentView.swift`, `Panels/PaneInteraction.swift` |
+| Panel base | `Panels/Panel.swift`, `Panels/PanelContentView.swift`, `Panels/AreaInteraction.swift` |
 
-### Panes, tabs, workspaces
+### Areas, panels, workspaces
 
 | File | Role |
 |---|---|
-| `TabManager.swift` | Tab lifecycle |
+| `WorkspaceManager.swift` | Workspace lifecycle |
 | `Workspace.swift`, `WorkspaceContentView.swift`, `WorkspaceMetadataKeys.swift` | Workspace model & view |
 | `SessionPersistence.swift`, `PersistedMetadata.swift` | Restore across launches |
 
@@ -69,10 +69,10 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 | File | Role |
 |---|---|
-| `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a pane |
+| `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a panel |
 | `AgentChip.swift`, `AgentChipBadge.swift` | Sidebar chip UI |
 | `AgentSkillsView.swift`, `SkillInstaller.swift` | Skills onboarding sheet |
-| `PaneMetadataStore.swift`, `SurfaceMetadataStore.swift`, `SurfaceTitleBarView.swift` | The surface manifest — the open JSON blob agents read/write over the socket |
+| `AreaMetadataStore.swift`, `PanelMetadataStore.swift`, `PanelTitleBarView.swift` | The panel manifest — the open JSON blob agents read/write over the socket |
 
 ### Theming
 
@@ -84,7 +84,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 ### Find / search overlay
 
-`Sources/Find/SurfaceSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
+`Sources/Find/PanelSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
 
 ## The CLI and socket
 
@@ -101,7 +101,7 @@ The socket protocol it speaks is documented in [`socket-api-reference.md`](socke
 A small number of code paths are called on every keystroke. Work added here shows up as visible typing lag. Full detail in [`../CLAUDE.md`](../CLAUDE.md); the short version:
 
 - **`WindowTerminalHostView.hitTest()`** in `TerminalWindowPortal.swift` — all divider/sidebar/drag routing is gated to pointer events only. Don't add work outside the `isPointerEvent` guard.
-- **`TabItemView` in `ContentView.swift`** — uses `Equatable` + `.equatable()` to skip body re-evaluation during typing. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `tab`), or `@Binding` without updating `==`. Don't remove `.equatable()` from the `ForEach`.
+- **`WorkspaceRowView` in `ContentView.swift`** — uses `Equatable` + `.equatable()` to skip body re-evaluation during typing. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `workspace`), or `@Binding` without updating `==`. Don't remove `.equatable()` from the `ForEach`.
 - **`TerminalSurface.forceRefresh()`** in `GhosttyTerminalView.swift` — no allocations, file I/O, or formatting here.
 
 ## Socket threading — read before adding a socket command
@@ -115,11 +115,11 @@ c11 has four test surfaces, roughly in order of how often you'll touch them:
 | Suite | Where | How to run | When to use |
 |---|---|---|---|
 | Swift unit | `c11Tests/` (~60 files) | `xcodebuild -scheme c11-unit` or from Xcode | Pure logic, metadata store, theme evaluator, CLI arg parsing |
-| Python socket v2 | `tests_v2/` (~140 files) | `C11_SOCKET=/tmp/c11-debug-<tag>.sock ./scripts/run-tests-v2.sh` against a tagged Debug build | New socket commands, CLI flows, browser automation, pane/workspace lifecycle |
+| Python socket v2 | `tests_v2/` (~140 files) | `C11_SOCKET=/tmp/c11-debug-<tag>.sock ./scripts/run-tests-v2.sh` against a tagged Debug build | New socket commands, CLI flows, browser automation, area/workspace lifecycle |
 | Python socket v1 | `tests/` (~90 files, shell + python) | `./scripts/run-tests-v1.sh` | Older coverage; generally don't add new tests here, prefer v2 |
 | Swift UI | `c11UITests/` (~16 files) | `gh workflow run test-e2e.yml`, or Xcode (slow, flaky on low-RAM) | Full app flows — menu routing, dialogs, drag/drop, keybind regressions |
 
-**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#test-quality-policy)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
+**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#testing)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
 
 ## Build & reload
 
@@ -148,5 +148,5 @@ c11 is a fork of [`manaflow-ai/cmux`](https://github.com/manaflow-ai/cmux). Lots
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — human contributor workflow
 - [`contributing-with-your-agent.md`](contributing-with-your-agent.md) — agent-operator supplement
 - [`socket-api-reference.md`](socket-api-reference.md) — socket protocol reference
-- [`browser-automation-reference.md`](browser-automation-reference.md) — browser surface automation
+- [`browser-automation-reference.md`](browser-automation-reference.md) — browser panel automation
 - [`../skills/c11/SKILL.md`](../skills/c11/SKILL.md) — the agent-facing how-to-use-c11

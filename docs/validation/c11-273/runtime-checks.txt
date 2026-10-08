@@ -1,0 +1,19 @@
+PASS seen/sibling/legacy/late tool/Stop preserve blocked request
+PASS delayed PreToolUse cannot reopen terminal barrier
+PASS recorded ExitPlanMode hook shape reaches plan-review journal projection
+PASS lost acknowledgement dedupes and changed draft conflicts
+PASS child and stale session cannot change current owner
+PASS offline spool preserves event identity and structural privacy (13.6 ms)
+PASS force-kill/resume restores asks unconfirmed; old running is not live
+PASS startup spool drains once, dedupes committed retry, rejects stale owner and truncated tail
+PASS repeated restart adds no events; fresh native submission reconciles prior ask
+PASS: prompt-submit preserves sibling waiting
+PASS: pre-tool-use preserves sibling waiting
+PASS: session-end preserves sibling waiting
+PASS: AskUserQuestion in bypassPermissions enters waiting without a Notification hook
+PASS: ExitPlanMode in bypassPermissions enters waiting without a Notification hook
+PASS: ExitPlanMode in plan enters waiting without a Notification hook
+PASS: normal-mode follow-up retains one attention item
+PASS: absent, empty, invalid and stale tab attribution preserve notices
+PASS: stale PID with attribution=True
+PASS: stale PID with attribution=False

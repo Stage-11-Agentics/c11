@@ -196,7 +196,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected skip on ambiguous ref")
             return
         }
-        XCTAssertEqual(reason, "ambiguous")
+        XCTAssertEqual(reason, "quarantined:ambiguous_global_assignment")
     }
 
     func testCodexResumeUsesSpecificIdNotLast() {
@@ -216,6 +216,98 @@ final class ConversationStrategyTests: XCTestCase {
         XCTAssertFalse(text.contains("--last"),
                        "codex must resume the specific id, not --last (the bug this primitive fixes)")
         XCTAssertTrue(text.contains(validUUID))
+    }
+
+    func testClaudeAndCodexResumeCommandsUseRecordedDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-b248-\(UUID().uuidString)", isDirectory: true)
+        let fakeBin = root.appendingPathComponent("bin", isDirectory: true)
+        let startingDirectory = root.appendingPathComponent("drifted", isDirectory: true)
+        let sessionDirectory = root.appendingPathComponent("project space 'quoted", isDirectory: true)
+        try FileManager.default.createDirectory(at: fakeBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: startingDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sessionDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fakeExecutable = """
+        #!/bin/sh
+        printf '%s\\n' "$PWD" > "$C11_B248_CAPTURE"
+        printf '%s\\n' "$@" >> "$C11_B248_CAPTURE"
+        """
+        for executable in ["claude", "codex"] {
+            let url = fakeBin.appendingPathComponent(executable)
+            try fakeExecutable.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: url.path
+            )
+        }
+
+        let strategies: [(any ConversationStrategy, String)] = [
+            (ClaudeCodeStrategy(), "claude"),
+            (CodexStrategy(), "codex"),
+        ]
+        for (strategy, executable) in strategies {
+            let ref = ConversationRef(
+                kind: strategy.kind,
+                id: validUUID,
+                cwd: sessionDirectory.path,
+                capturedVia: .hook,
+                state: .suspended
+            )
+            let command: String
+            guard case .typeCommand(let text, let submit) = strategy.resume(ref: ref) else {
+                XCTFail("\(executable) should produce a resume command")
+                return
+            }
+            command = text
+            XCTAssertTrue(submit)
+
+            let noCwdRef = ConversationRef(
+                kind: strategy.kind,
+                id: validUUID,
+                capturedVia: .hook,
+                state: .suspended
+            )
+            guard case .typeCommand(let noCwdCommand, _) = strategy.resume(ref: noCwdRef) else {
+                XCTFail("\(executable) should preserve its no-cwd resume command")
+                return
+            }
+            XCTAssertEqual(command, "cd \(conversationShellQuote(sessionDirectory.path)) && \(noCwdCommand)")
+
+            let capture = root.appendingPathComponent("\(executable).capture")
+            let result = try runResumeCommand(
+                command,
+                from: startingDirectory,
+                fakeBin: fakeBin,
+                capture: capture
+            )
+            XCTAssertEqual(result.status, 0, "\(executable) resume should start")
+            XCTAssertEqual(result.output.first, sessionDirectory.path)
+            XCTAssertTrue(result.output.contains(validUUID), "the fake \(executable) should receive the session id")
+        }
+
+        let missingDirectory = root.appendingPathComponent("missing project", isDirectory: true)
+        let missingRef = ConversationRef(
+            kind: "claude-code",
+            id: validUUID,
+            cwd: missingDirectory.path,
+            capturedVia: .hook,
+            state: .suspended
+        )
+        guard case .typeCommand(let missingCommand, _) = ClaudeCodeStrategy().resume(ref: missingRef) else {
+            XCTFail("missing-directory resume should retain a guarded command")
+            return
+        }
+        let missingCapture = root.appendingPathComponent("missing.capture")
+        let missingResult = try runResumeCommand(
+            missingCommand,
+            from: startingDirectory,
+            fakeBin: fakeBin,
+            capture: missingCapture
+        )
+        XCTAssertNotEqual(missingResult.status, 0, "failed cd must stop the resume command")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingCapture.path), "the fake agent must not start from the drifted directory")
     }
 
     func testCodexCwdMismatchFiltersCandidate() {
@@ -252,7 +344,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected skip")
             return
         }
-        XCTAssertEqual(reason, "fresh-launch-only")
+        XCTAssertEqual(reason, "placeholder; no opencode session resolved yet")
     }
 
     func testKimiAliveTypesAutoApprovingLaunch() {
@@ -269,7 +361,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected typeCommand")
             return
         }
-        XCTAssertEqual(text, "kimi --yolo")
+        XCTAssertEqual(text, "kimi --auto")
         XCTAssertTrue(submit)
     }
 
@@ -359,5 +451,29 @@ final class ConversationStrategyTests: XCTestCase {
 
     func testConversationShellQuoteWrapsBareValue() {
         XCTAssertEqual(conversationShellQuote("abc"), "'abc'")
+    }
+
+    private func runResumeCommand(
+        _ command: String,
+        from directory: URL,
+        fakeBin: URL,
+        capture: URL
+    ) throws -> (status: Int32, output: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = directory
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = "\(fakeBin.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
+        environment["C11_B248_CAPTURE"] = capture.path
+        process.environment = environment
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+
+        let contents = (try? String(contentsOf: capture, encoding: .utf8)) ?? ""
+        let output = contents.split(whereSeparator: \.isNewline).map(String.init)
+        return (process.terminationStatus, output)
     }
 }

@@ -40,9 +40,9 @@ final class MailboxDispatcherGCTests: XCTestCase {
     }
 
     private func makeDispatcher() -> MailboxDispatcher {
-        let resolver = MailboxSurfaceResolver(
+        let resolver = MailboxPanelResolver(
             workspaceId: workspaceId,
-            liveSurfaces: { [] }
+            livePanels: { [] }
         )
         let dispatcher = MailboxDispatcher(
             workspaceId: workspaceId,

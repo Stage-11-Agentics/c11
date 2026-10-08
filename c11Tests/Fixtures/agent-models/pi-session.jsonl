@@ -1,0 +1,8 @@
+{"type":"session","version":"3","id":"019b0000-0000-7000-8000-000000000002","timestamp":"2026-01-01T08:00:00.000Z","cwd":"/work/demo"}
+{"type":"model_change","id":"a1","parentId":null,"timestamp":"2026-01-01T08:00:00.000Z","provider":"kimi","modelId":"k3-256k"}
+{"type":"message","id":"i08:00:10","parentId":null,"timestamp":"2026-01-01T08:00:10.000Z","message":{"role":"user","timestamp":"1","content":[{"type":"text","text":"hi"}]}}
+{"type":"message","id":"i08:00:14","parentId":null,"timestamp":"2026-01-01T08:00:14.000Z","message":{"role":"assistant","timestamp":"1","content":[{"type":"thinking","thinking":""},{"type":"toolCall","id":"x"},{"type":"toolCall","id":"y"}],"usage":{"input":100,"output":20,"cacheRead":50,"cacheWrite":0}}}
+{"type":"message","id":"i08:00:15","parentId":null,"timestamp":"2026-01-01T08:00:15.000Z","message":{"role":"toolResult","timestamp":"1","toolName":"read","content":[{"type":"text","text":"ok"}]}}
+{"type":"model_change","id":"a4","parentId":null,"timestamp":"2026-01-01T08:10:00.000Z","provider":"anthropic","modelId":"claude-opus-5-5"}
+{"type":"message","id":"i08:10:05","parentId":null,"timestamp":"2026-01-01T08:10:05.000Z","message":{"role":"user","timestamp":"1","content":[{"type":"text","text":"again"}]}}
+{"type":"message","id":"i08:10:09","parentId":null,"timestamp":"2026-01-01T08:10:09.000Z","message":{"role":"assistant","timestamp":"1","content":[{"type":"toolCall","id":"z"}],"usage":{"input":300,"output":30,"cacheRead":0,"cacheWrite":5}}}

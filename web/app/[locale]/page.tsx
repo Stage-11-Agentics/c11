@@ -77,10 +77,10 @@ function HomeContent() {
           >
             {(
               [
-                ["verticalTabs", "verticalTabsDesc"],
+                ["workspaceSidebar", "workspaceSidebarDesc"],
                 ["notificationRings", "notificationRingsDesc"],
                 ["inAppBrowser", "inAppBrowserDesc"],
-                ["splitPanes", "splitPanesDesc"],
+                ["splitAreas", "splitAreasDesc"],
                 ["scriptable", "scriptableDesc"],
                 ["gpuAccelerated", "gpuAcceleratedDesc"],
                 ["lightweight", "lightweightDesc"],

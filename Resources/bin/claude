@@ -44,17 +44,47 @@
 # writeup.
 # ============================================================================
 
+# C11_AGENT_INTERACTIVE_PID is the positive interactive-agent marker (set
+# below only for a launch that reads its terminal). Clear any inherited value
+# first so no early exec passes a parent's marker on.
+unset C11_AGENT_INTERACTIVE_PID
+
+# Keep c11 membership available to both the early reentry and normal paths.
+IN_C11=0
+if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+    IN_C11=1
+fi
+
 # Find the real claude binary, skipping our own directory.
 find_real_claude() {
-    local self_dir
+    local self_dir d candidate
     self_dir="$(cd "$(dirname "$0")" && pwd)"
     local IFS=:
     for d in $PATH; do
         [[ "$d" == "$self_dir" ]] && continue
-        [[ -x "$d/claude" ]] && printf '%s' "$d/claude" && return 0
+        candidate="$d/claude"
+        [[ -x "$candidate" ]] || continue
+        if LC_ALL=C head -c 512 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# c11 claude wrapper'; then
+            continue
+        fi
+        printf '%s' "$candidate"
+        return 0
     done
     return 1
 }
+
+# The real CLI inherits this marker. If it starts a child through PATH, bypass
+# c11 hooks and forward directly to a non-wrapper binary instead of nesting.
+if [[ -n "${C11_CLAUDE_WRAPPER_REENTRY:-}" ]]; then
+    # Match the normal in-c11 passthrough behavior before forwarding a
+    # descendant launch to the real binary.
+    if [[ "$IN_C11" == "1" ]]; then
+        unset CLAUDECODE
+    fi
+    REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+    unset C11_CLAUDE_WRAPPER_REENTRY
+    exec "$REAL_CLAUDE" "$@"
+fi
 
 # Resolve the c11 binary the wrapper will use to talk to the running app.
 # Bundle-relative `c11` first (so dev-tagged builds always hit the binary
@@ -93,19 +123,13 @@ c11_socket_available() {
 
 # Pass through if not in a c11 terminal, hooks are disabled, or the c11
 # socket is unavailable (stale env / app not running).
-IN_C11=0
-if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
-    IN_C11=1
-fi
-
 if [[ "$IN_C11" == "0" || "${CMUX_CLAUDE_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
-    # In c11-launched shells, preserve old behavior and always clear nested
-    # Claude session markers, even when we must pass through due to stale socket.
+    # Preserve old behavior when passing through due to a stale socket.
     if [[ "$IN_C11" == "1" ]]; then
         unset CLAUDECODE
     fi
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
-    exec "$REAL_CLAUDE" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" "$@"
 fi
 
 # Find real claude.
@@ -131,7 +155,7 @@ unset CLAUDECODE
 # Docs: https://code.claude.com/docs/en/agent-view
 case "${1:-}" in
     mcp|config|api-key|rc|remote-control|agents|attach|logs|stop|kill|respawn|rm)
-        exec "$REAL_CLAUDE" "$@"
+        C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" "$@"
         ;;
 esac
 
@@ -140,9 +164,17 @@ esac
 SKIP_SESSION_ID=false
 for arg in "$@"; do
     case "$arg" in
-        --resume|--resume=*|--session-id|--session-id=*|--continue|-c)
+        --) break ;;
+        --resume|--resume=*|--session-id|--session-id=*|--continue|-c|-r)
             SKIP_SESSION_ID=true
             break
+            ;;
+        # Combined short flags carrying -c or -r (`-cp`, `-pc`, `-rp`).
+        -[!-]?*)
+            if [[ "$arg" == *[cr]* ]]; then
+                SKIP_SESSION_ID=true
+                break
+            fi
             ;;
     esac
 done
@@ -151,19 +183,40 @@ done
 # the actual claude process PID, which hooks use for stale-session detection.
 export CMUX_CLAUDE_PID=$$
 
+# Mark this launch as an interactive agent only when it reads and writes its
+# terminal: not print mode (`-p`, `--print`) and not a background session
+# (`--bg`, `--background`). c11 pushes mailbox messages only to a tab whose
+# lifecycle reports carry this PID (exec keeps it, and hooks inherit it), and
+# only while that PID's process group owns the terminal.
+claude_interactive=1
+[[ -t 0 && -t 1 ]] || claude_interactive=0
+for arg in "$@"; do
+    case "$arg" in
+        --) break ;;
+        -p|--print|--print=*|--bg|--background) claude_interactive=0; break ;;
+        # Combined short flags (`-cp`, `-pc`): any cluster carrying `p`.
+        -[!-]*p*|-p?*) claude_interactive=0; break ;;
+    esac
+done
+if [[ "$claude_interactive" == "1" ]]; then
+    export C11_AGENT_INTERACTIVE_PID=$$
+fi
+
 # Declare agent identity via `c11 set-agent` (source=declare). Runs in the
 # background so startup latency is unaffected. Precedence at the store level
 # ensures a prior explicit value is not overwritten.
 #
 # Default --type to "claude-code" since this is the claude wrapper; callers may
-# override by exporting CMUX_AGENT_TYPE. Optional --model / --task / --role
-# forward from matching CMUX_AGENT_* vars if present.
+# override by exporting CMUX_AGENT_TYPE. Optional --task / --role forward from
+# matching CMUX_AGENT_* vars if present. --model is deliberately NOT forwarded:
+# CMUX_AGENT_MODEL is what the launch asked for, which c11 already recorded as a
+# launch stamp (heuristic tier). Declaring it here would outrank the model c11
+# detects from the session file, so a later `/model` would never show.
 c11_set_agent_bg() {
     local c11_bin="$1"
     local agent_type="${CMUX_AGENT_TYPE:-claude-code}"
     [[ -n "$agent_type" ]] || return 0
     local args=(--type "$agent_type")
-    [[ -n "${CMUX_AGENT_MODEL:-}" ]] && args+=(--model "$CMUX_AGENT_MODEL")
     [[ -n "${CMUX_AGENT_TASK:-}" ]] && args+=(--task "$CMUX_AGENT_TASK")
     [[ -n "${CMUX_AGENT_ROLE:-}" ]] && args+=(--role "$CMUX_AGENT_ROLE")
     (CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
@@ -201,8 +254,12 @@ c11_conversation_claim_bg() {
 # - SessionStart/Stop/Notification: existing lifecycle hooks
 # - SessionEnd: cleanup when Claude exits (covers Ctrl+C where Stop doesn't fire)
 # - UserPromptSubmit: clears "Needs input" and sets "Running" on new prompt
-# - PreToolUse: clears "Needs input" when Claude resumes after permission grant (async to avoid latency)
-HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-start","timeout":10}]}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop","timeout":10}]}],"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-end","timeout":1}]}],"Notification":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook notification","timeout":10}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook prompt-submit","timeout":10}]}],"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-tool-use","timeout":5,"async":true}]}]}}'
+# - PreToolUse: tool observations, delivered asynchronously.
+# - PostToolUse: ordinary tool observations are asynchronous; AskUserQuestion and
+#   ExitPlanMode stay synchronous so their answer edge cannot pass Stop first.
+# - StopFailure, SubagentStart, SubagentStop, PreCompact: lifecycle observations
+# - PermissionRequest: synchronous, timeout 1, stdout {} from the hook. It must not answer Claude.
+HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-start","timeout":10}]}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop","timeout":10}]}],"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-end","timeout":1}]}],"Notification":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook notification","timeout":10}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook prompt-submit","timeout":10}]}],"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-tool-use","timeout":5,"async":true}]}],"PostToolUse":[{"matcher":"AskUserQuestion|ExitPlanMode","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5}]},{"matcher":"^(?!(AskUserQuestion|ExitPlanMode)$).*","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5,"async":true}]}],"StopFailure":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop-failure","timeout":10}]}],"PermissionRequest":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook permission-request","timeout":1}]}],"SubagentStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-start","timeout":5,"async":true}]}],"SubagentStop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-stop","timeout":5,"async":true}]}],"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-compact","timeout":5,"async":true}]}]}}'
 
 # Claude Code 2.1.119 silently drops hooks loaded from inline
 # `--settings <json>` but honours them when loaded from
@@ -230,8 +287,8 @@ else
 fi
 
 if [[ "$SKIP_SESSION_ID" == true ]]; then
-    exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" "$@"
 else
     SESSION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-    exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" "$@"
 fi

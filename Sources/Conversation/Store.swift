@@ -262,7 +262,18 @@ struct ScrapeCaptureCommitResult: Sendable, Equatable {
 /// reach it via `Task { await … }` adapters (see CLI/c11.swift).
 actor ConversationStore {
     /// Per-surface mapping. v1 uses one active ref + empty history.
-    private var bySurface: [String: SurfaceConversations] = [:]
+    private var bySurface: [String: PanelConversations] = [:] {
+        didSet {
+            guard self === Self.shared, !ConversationStorePolicy.isDisabled else { return }
+            for key in Set(oldValue.keys).union(bySurface.keys) {
+                guard oldValue[key]?.active != bySurface[key]?.active, let panelID = UUID(uuidString: key) else { continue }
+                let ref = bySurface[key]?.active
+                let owner = ref.flatMap { $0.isEligibleCausalOwner
+                    ? JournalOwner(panelID: panelID, agentKind: $0.kind, sessionID: $0.id) : nil }
+                JournalCoordinator.shared.setOwner(panelID: panelID, owner: owner)
+            }
+        }
+    }
 
     init() {}
 
@@ -299,7 +310,7 @@ enum ConversationStorePolicy {
 extension ConversationStore {
     // MARK: - Read
 
-    func conversations(for surfaceId: String) -> SurfaceConversations {
+    func conversations(for surfaceId: String) -> PanelConversations {
         bySurface[surfaceId] ?? .empty
     }
 
@@ -307,7 +318,7 @@ extension ConversationStore {
         bySurface[surfaceId]?.active
     }
 
-    func snapshot() -> [String: SurfaceConversations] {
+    func snapshot() -> [String: PanelConversations] {
         bySurface
     }
 
@@ -373,7 +384,7 @@ extension ConversationStore {
     /// Replace the entire store contents in one shot. Called once on
     /// snapshot restore to seed from `SessionPanelSnapshot.surfaceConversations`.
     @discardableResult
-    func seed(from records: [String: SurfaceConversations]) -> OwnershipAuditResult {
+    func seed(from records: [String: PanelConversations]) -> OwnershipAuditResult {
         bySurface = records
         return auditGlobalOwnership()
     }
@@ -809,7 +820,7 @@ extension ConversationStore {
     }
 
     private static func auditGlobalOwnership(
-        records: inout [String: SurfaceConversations]
+        records: inout [String: PanelConversations]
     ) -> OwnershipAuditResult {
         var grouped: [ConversationIdentity: [(surfaceId: String, ref: ConversationRef)]] = [:]
         for (surfaceId, conversations) in records {
@@ -895,7 +906,7 @@ extension ConversationStore {
     private static func quarantine(
         surfaceId: String,
         reason: ConversationQuarantineReason,
-        records: inout [String: SurfaceConversations]
+        records: inout [String: PanelConversations]
     ) {
         var conversations = records[surfaceId] ?? .empty
         var ref = conversations.active ?? ConversationRef(

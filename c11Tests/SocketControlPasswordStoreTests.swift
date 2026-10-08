@@ -17,6 +17,13 @@ final class SocketControlPasswordStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    /// `fileURL: nil` reads the machine socket-password file. A build host that
+    /// already has one returns that password and never calls the injected loader.
+    private func missingPasswordFileURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-socket-password-absent-\(UUID().uuidString)", isDirectory: false)
+    }
+
     func testSaveLoadAndClearRoundTripUsesFileStorage() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-socket-password-tests-\(UUID().uuidString)", isDirectory: true)
@@ -58,7 +65,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
 
         let withoutFallback = SocketControlPasswordStore.configuredPassword(
             environment: [:],
-            fileURL: nil,
+            fileURL: missingPasswordFileURL(),
             allowLazyKeychainFallback: false,
             loadKeychainPassword: {
                 readCount += 1
@@ -70,7 +77,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
 
         let firstWithFallback = SocketControlPasswordStore.configuredPassword(
             environment: [:],
-            fileURL: nil,
+            fileURL: missingPasswordFileURL(),
             allowLazyKeychainFallback: true,
             loadKeychainPassword: {
                 readCount += 1
@@ -82,7 +89,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
 
         let secondWithFallback = SocketControlPasswordStore.configuredPassword(
             environment: [:],
-            fileURL: nil,
+            fileURL: missingPasswordFileURL(),
             allowLazyKeychainFallback: true,
             loadKeychainPassword: {
                 readCount += 1
@@ -98,7 +105,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
 
         let first = SocketControlPasswordStore.configuredPassword(
             environment: [:],
-            fileURL: nil,
+            fileURL: missingPasswordFileURL(),
             allowLazyKeychainFallback: true,
             loadKeychainPassword: {
                 readCount += 1
@@ -110,7 +117,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
 
         let second = SocketControlPasswordStore.configuredPassword(
             environment: [:],
-            fileURL: nil,
+            fileURL: missingPasswordFileURL(),
             allowLazyKeychainFallback: true,
             loadKeychainPassword: {
                 readCount += 1
@@ -155,7 +162,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
         XCTAssertTrue(
             SocketControlPasswordStore.hasConfiguredPassword(
                 environment: [:],
-                fileURL: nil,
+                fileURL: missingPasswordFileURL(),
                 allowLazyKeychainFallback: true,
                 loadKeychainPassword: loader
             )
@@ -166,7 +173,7 @@ final class SocketControlPasswordStoreTests: XCTestCase {
             SocketControlPasswordStore.verify(
                 password: "legacy-secret",
                 environment: [:],
-                fileURL: nil,
+                fileURL: missingPasswordFileURL(),
                 allowLazyKeychainFallback: true,
                 loadKeychainPassword: loader
             )

@@ -19,7 +19,7 @@
       <responds-to command="new window">
         <cocoa method="handleNewWindowScriptCommand:"/>
       </responds-to>
-      <responds-to command="new tab">
+      <responds-to command="new workspace">
         <cocoa method="handleNewTabScriptCommand:"/>
       </responds-to>
       <responds-to command="quit">
@@ -41,8 +41,9 @@
       <property name="name" code="pnam" type="text" access="r" description="The title of the window.">
         <cocoa key="title"/>
       </property>
-      <property name="selected tab" code="CMsT" type="tab" access="r" description="The selected workspace in this window.">
+      <property name="selected workspace" code="CMsT" type="workspace" access="r" description="The selected workspace in this window.">
         <cocoa key="selectedTab"/>
+        <synonym name="selected tab" hidden="yes"/>
       </property>
       <responds-to command="activate window">
         <cocoa method="handleActivateWindowCommand:"/>
@@ -50,7 +51,7 @@
       <responds-to command="close window">
         <cocoa method="handleCloseWindowCommand:"/>
       </responds-to>
-      <element type="tab" access="r">
+      <element type="workspace" access="r">
         <cocoa key="tabs"/>
       </element>
       <element type="terminal" access="r">
@@ -58,21 +59,22 @@
       </element>
     </class>
 
-    <class name="tab" code="CMtb" plural="tabs" description="A cmux workspace.">
+    <class name="workspace" code="CMtb" plural="workspaces" description="A c11 workspace.">
       <cocoa class="CmuxScriptTab"/>
+      <synonym name="tab" plural="tabs" hidden="yes"/>
       <property name="id" code="ID  " type="text" access="r" description="Stable ID for this workspace."/>
       <property name="name" code="pnam" type="text" access="r" description="The title of the workspace.">
         <cocoa key="title"/>
       </property>
       <property name="index" code="pidx" type="integer" access="r" description="1-based index of this workspace in its window."/>
       <property name="selected" code="CMsl" type="boolean" access="r" description="Whether this workspace is selected in its window."/>
-      <property name="focused terminal" code="CMfT" type="terminal" access="r" description="The currently focused terminal panel in this workspace.">
+      <property name="focused terminal" code="CMfT" type="terminal" access="r" description="The currently focused terminal in this workspace.">
         <cocoa key="focusedTerminal"/>
       </property>
-      <responds-to command="select tab">
+      <responds-to command="select workspace">
         <cocoa method="handleSelectTabCommand:"/>
       </responds-to>
-      <responds-to command="close tab">
+      <responds-to command="close workspace">
         <cocoa method="handleCloseTabCommand:"/>
       </responds-to>
       <element type="terminal" access="r">
@@ -119,11 +121,12 @@
       <result type="window" description="The newly created window."/>
     </command>
 
-    <command name="new tab" code="CmuxNTab" description="Create a new workspace.">
+    <command name="new workspace" code="CmuxNTab" description="Create a new workspace.">
+      <synonym name="new tab" hidden="yes"/>
       <parameter name="in" code="CMtW" type="window" optional="yes" description="Target window for the new workspace.">
         <cocoa key="window"/>
       </parameter>
-      <result type="tab" description="The newly created workspace."/>
+      <result type="workspace" description="The newly created workspace."/>
     </command>
 
     <command name="split" code="CmuxSplt" description="Split a terminal in the given direction.">
@@ -146,11 +149,13 @@
       <direct-parameter type="specifier" description="The window to activate."/>
     </command>
 
-    <command name="select tab" code="CmuxSlTb" description="Select a workspace in its window.">
+    <command name="select workspace" code="CmuxSlTb" description="Select a workspace in its window.">
+      <synonym name="select tab" hidden="yes"/>
       <direct-parameter type="specifier" description="The workspace to select."/>
     </command>
 
-    <command name="close tab" code="CmuxClTb" description="Close a workspace.">
+    <command name="close workspace" code="CmuxClTb" description="Close a workspace.">
+      <synonym name="close tab" hidden="yes"/>
       <direct-parameter type="specifier" description="The workspace to close."/>
     </command>
 

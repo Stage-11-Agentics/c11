@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pick #1418: surface.create with focus:false / c11 new-surface --no-focus preserves selected workspace."""
+"""Pick #1418: panel.create with focus:false / c11 new-panel --no-focus preserves selected workspace."""
 
 from __future__ import annotations
 
@@ -41,9 +41,13 @@ def _find_cli() -> str:
 
 def _run_cli(cli: str, args: List[str]) -> subprocess.CompletedProcess:
     env = dict(os.environ)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
+    env.pop("CMUX_TAB_ID", None)
     env.pop("CMUX_SURFACE_ID", None)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_TAB_ID", None)
     env["CMUX_SOCKET"] = SOCKET_PATH
     cmd = [cli, "--socket", SOCKET_PATH] + args
     return subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
@@ -57,7 +61,7 @@ def _current_workspace(c: cmux) -> str:
 
 
 def test_socket_no_focus(c: cmux) -> None:
-    """surface.create with focus:false must not change the selected workspace."""
+    """panel.create with focus:false must not change the selected workspace."""
     baseline_ws = _current_workspace(c)
     other_ws = c._call("workspace.create") or {}
     bg_ws = str(other_ws.get("workspace_id") or "")
@@ -67,13 +71,13 @@ def test_socket_no_focus(c: cmux) -> None:
             _current_workspace(c) == baseline_ws,
             "workspace.create already changed selected workspace (pre-condition failed)",
         )
-        res = c._call("surface.create", {"workspace_id": bg_ws, "type": "terminal", "focus": False}) or {}
-        sid = str(res.get("surface_id") or "")
-        _must(bool(sid), f"surface.create returned no surface_id: {res}")
+        res = c._call("panel.create", {"workspace_id": bg_ws, "type": "terminal", "focus": False}) or {}
+        sid = str(res.get("panel_id") or "")
+        _must(bool(sid), f"panel.create returned no panel_id: {res}")
         time.sleep(0.2)
         _must(
             _current_workspace(c) == baseline_ws,
-            f"surface.create focus:false changed selected workspace to {_current_workspace(c)!r} (expected {baseline_ws!r})",
+            f"panel.create focus:false changed selected workspace to {_current_workspace(c)!r} (expected {baseline_ws!r})",
         )
     finally:
         try:
@@ -84,18 +88,18 @@ def test_socket_no_focus(c: cmux) -> None:
 
 
 def test_cli_no_focus_flag(c: cmux, cli: str) -> None:
-    """c11 new-surface --no-focus must not change the selected workspace."""
+    """c11 new-panel --no-focus must not change the selected workspace."""
     baseline_ws = _current_workspace(c)
     other_ws = c._call("workspace.create") or {}
     bg_ws = str(other_ws.get("workspace_id") or "")
     _must(bool(bg_ws), f"workspace.create returned no workspace_id: {other_ws}")
     try:
-        proc = _run_cli(cli, ["new-surface", "--workspace", bg_ws, "--no-focus"])
-        _must(proc.returncode == 0, f"c11 new-surface --no-focus failed: {proc.stderr!r}")
+        proc = _run_cli(cli, ["new-panel", "--workspace", bg_ws, "--no-focus"])
+        _must(proc.returncode == 0, f"c11 new-panel --no-focus failed: {proc.stderr!r}")
         time.sleep(0.2)
         _must(
             _current_workspace(c) == baseline_ws,
-            f"c11 new-surface --no-focus changed selected workspace to {_current_workspace(c)!r} (expected {baseline_ws!r})",
+            f"c11 new-panel --no-focus changed selected workspace to {_current_workspace(c)!r} (expected {baseline_ws!r})",
         )
     finally:
         try:

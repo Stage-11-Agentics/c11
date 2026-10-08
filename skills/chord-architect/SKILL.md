@@ -31,7 +31,7 @@ Champions author their candidate's spec, evaluation, and build plan in dialogue 
 
 ## Conduct (the ×K build)
 
-Each champion hands its contract to a **fresh lattice-orchestrator session in its own c11 workspace** — a run is workspace-sized, and the orchestrator seat reads the contract cold; the champion's long creation context never sits in it. The champion stays alive in the champions pane as its candidate's advocate: answering the fleet's questions, reviewing drift against the loved prototype. Terminal validation per candidate as lattice-orchestrator specifies, plus that candidate's resolution-book criteria in its validation plan.
+Each champion hands its contract to a **fresh lattice-orchestrator session in its own c11 workspace** — a run is workspace-sized, and the orchestrator seat reads the contract cold; the champion's long creation context never sits in it. The champion stays alive in the champions area as its candidate's advocate: answering the fleet's questions, reviewing drift against the loved prototype. Terminal validation per candidate as lattice-orchestrator specifies, plus that candidate's resolution-book criteria in its validation plan.
 
 The conductor's standing duties while runs execute:
 

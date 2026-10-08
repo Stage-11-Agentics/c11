@@ -105,7 +105,7 @@ def main() -> int:
 
     # list-panels
     panels_default = _run_cli_json(cli, ["list-panels"])
-    surfaces = panels_default.get("surfaces", [])
+    surfaces = panels_default.get("panels", [])
     if surfaces:
         _must(
             _has_any_key(panels_default, lambda k: k.endswith("_ref") or k == "ref"),
@@ -117,16 +117,16 @@ def main() -> int:
         )
 
     panels_both = _run_cli_json(cli, ["list-panels"], extra_flags=["--id-format", "both"])
-    if panels_both.get("surfaces"):
+    if panels_both.get("panels"):
         _must(len(_id_ref_pairs(panels_both)) > 0, f"list-panels --id-format both should include pairs: {panels_both}")
 
     # list-panes
-    panes_default = _run_cli_json(cli, ["list-panes"])
-    panes = panes_default.get("panes", [])
+    panes_default = _run_cli_json(cli, ["list-areas"])
+    panes = panes_default.get("areas", [])
     if panes:
         _must(
             _has_any_key(panes_default, lambda k: k.endswith("_ref") or k == "ref"),
-            f"list-panes default should include refs: {panes_default}",
+            f"list-areas default should include refs: {panes_default}",
         )
 
     # list-workspaces
@@ -143,12 +143,12 @@ def main() -> int:
         )
 
     # surface-health
-    health_default = _run_cli_json(cli, ["surface-health"])
-    health_surfaces = health_default.get("surfaces", [])
+    health_default = _run_cli_json(cli, ["panel-health"])
+    health_surfaces = health_default.get("panels", [])
     if health_surfaces:
         _must(
             _has_any_key(health_default, lambda k: k.endswith("_ref") or k == "ref"),
-            f"surface-health default should include refs: {health_default}",
+            f"tab-health default should include refs: {health_default}",
         )
 
     print("PASS: Migrated list commands also respect id-format defaults")

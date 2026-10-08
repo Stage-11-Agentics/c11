@@ -8,7 +8,7 @@ The binary ships pre-built for `darwin/{arm64,amd64}` and `linux/{arm64,amd64}` 
 
 1. `c11d-remote version`
 2. `c11d-remote serve --stdio`
-3. `c11d-remote cli <command> [args...]` — relay c11 commands to the local app over the reverse SSH forward
+3. `c11d-remote cli <command> [args...]` — returns an unavailable message; remote commands are disabled in this version
 
 When invoked as `c11` (via wrapper/symlink installed during bootstrap), the binary auto-dispatches to the `cli` subcommand. This is busybox-style argv[0] detection.
 
@@ -61,28 +61,16 @@ To inspect what a given app build trusts, run:
 
 The command prints the exact release asset URL, expected SHA-256, local cache status, and a copy-pasteable `gh attestation verify` command for the selected platform.
 
-## CLI relay
+## Remote commands
 
-The `cli` subcommand (or `c11` wrapper/symlink) connects to the local c11 app through an SSH reverse forward and relays commands. It supports both v1 text protocol and v2 JSON-RPC commands.
+As a hardening change, remote-to-local c11 commands are disabled in this version.
+`c11 ssh` still opens a remote shell in a workspace, and the stdio daemon continues
+to provide browser proxy and terminal session RPCs. No command relay listener,
+reverse command tunnel, relay credentials, or socket address is provisioned.
 
-Socket discovery order:
-1. `--socket <path>` flag
-2. `C11_SOCKET_PATH` (or legacy `CMUX_SOCKET_PATH`) environment variable
-3. `~/.cmux/socket_addr` file (written by the app after the reverse relay establishes)
-
-For TCP addresses, the CLI dials once and only refreshes `~/.cmux/socket_addr` a single time if the first address was stale. Relay metadata is published only after the reverse forward is ready, so steady-state use does not rely on polling.
-
-Authenticated relay details:
-1. Each SSH workspace gets its own relay ID and relay token.
-2. The app runs a local loopback relay server that requires an HMAC-SHA256 challenge-response before forwarding a command to the real local Unix socket.
-3. The remote shell never gets direct access to the local app socket. It only gets the reverse-forwarded relay port plus `~/.cmux/relay/<port>.auth`, which is written with `0600` permissions and removed when the relay stops.
-
-Integration additions for the relay path:
-
-1. Bootstrap installs `~/.cmux/bin/c11` wrapper (with `~/.cmux/bin/cmux` compat symlink) and keeps a default daemon target (`~/.cmux/bin/c11d-remote-current`).
-2. A background `ssh -N -R` process reverse-forwards a TCP port to the authenticated local relay server. The relay address is written to `~/.cmux/socket_addr` on the remote.
-3. Relay startup writes `~/.cmux/relay/<port>.daemon_path` so the wrapper can route each shell to the correct daemon binary when multiple local c11 instances or versions coexist.
-4. Relay startup writes `~/.cmux/relay/<port>.auth` with the relay ID and token needed for HMAC authentication.
+The remote shell bootstrap supplies a refusing `c11` command and `cmux` alias.
+The daemon's legacy `cli` entry point also refuses commands, including requests
+with an explicit socket or old relay environment variables.
 
 ### Path compat
 

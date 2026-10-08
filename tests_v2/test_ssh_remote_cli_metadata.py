@@ -33,8 +33,12 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: list[str], *, json_output: bool, extra_env: dict[str, str] | None = None) -> str:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_PANEL_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_SURFACE_ID", None)
+    env.pop("CMUX_PANEL_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("CMUX_SURFACE_ID", None)
     if extra_env:
         env.update(extra_env)
 
@@ -141,9 +145,8 @@ def main() -> int:
                 selected_workspace_id == workspace_id,
                 f"cmux ssh should select the newly created workspace: expected {workspace_id}, got {selected_workspace_id}",
             )
-            remote_relay_port = payload.get("remote_relay_port")
-            _must(remote_relay_port is not None, f"cmux ssh output missing remote_relay_port: {payload}")
-            remote_socket_addr = f"127.0.0.1:{int(remote_relay_port)}"
+            _must("remote_relay_port" not in payload, f"SSH should not advertise a command relay: {payload}")
+            _must(isinstance(payload.get("ssh_session_id"), int), f"SSH session identity missing: {payload}")
             ssh_command = str(payload.get("ssh_command") or "")
             _must(bool(ssh_command), f"cmux ssh output missing ssh_command: {payload}")
             _must(
@@ -151,10 +154,7 @@ def main() -> int:
                 f"cmux ssh should emit plain ssh command text (env is passed via workspace.create initial_env): {ssh_command!r}",
             )
             ssh_startup_command = str(payload.get("ssh_startup_command") or "")
-            _must(
-                ssh_startup_command.startswith("/bin/zsh -ilc "),
-                f"cmux ssh should launch startup command via interactive zsh for shell integration: {ssh_startup_command!r}",
-            )
+            _must(bool(ssh_startup_command), f"SSH startup command missing: {payload}")
             ssh_env_overrides = payload.get("ssh_env_overrides") or {}
             _must(
                 str(ssh_env_overrides.get("GHOSTTY_SHELL_FEATURES") or "").endswith("ssh-env,ssh-terminfo"),
@@ -165,38 +165,8 @@ def main() -> int:
             _must("-o ControlMaster=auto" in ssh_command, f"ssh command should opt into connection reuse: {ssh_command!r}")
             _must("-o ControlPersist=600" in ssh_command, f"ssh command should keep master alive for reuse: {ssh_command!r}")
             _must("ControlPath=/tmp/cmux-ssh-" in ssh_command, f"ssh command should use shared control path template: {ssh_command!r}")
-            _must(
-                "RemoteCommand=/bin/sh -lc " in ssh_command,
-                f"cmux ssh should route RemoteCommand through /bin/sh for non-POSIX login shells: {ssh_command!r}",
-            )
-            _must(
-                f"export PATH=\"$HOME/.cmux/bin:$PATH\"" in ssh_command,
-                f"cmux ssh should still prepend the remote cmux wrapper path: {ssh_command!r}",
-            )
-            _must(
-                f"export CMUX_SOCKET_PATH=127.0.0.1:{int(remote_relay_port)}" in ssh_command,
-                f"cmux ssh should still pin the relay socket path in RemoteCommand: {ssh_command!r}",
-            )
-            _must(
-                "case \"${CMUX_LOGIN_SHELL##*/}\" in" in ssh_command,
-                f"cmux ssh should still branch on the user's login shell when possible: {ssh_command!r}",
-            )
-            _must(
-                "cat > \"$cmux_shell_dir/.zshrc\"" in ssh_command,
-                f"cmux ssh should install a post-rc zsh wrapper so the remote cmux wrapper stays first on PATH: {ssh_command!r}",
-            )
-            _must(
-                "cmux_wait_attempt=0" in ssh_command,
-                f"cmux ssh should wait briefly for the authenticated relay before showing the remote shell: {ssh_command!r}",
-            )
-            _must(
-                "exec \"$CMUX_LOGIN_SHELL\" --rcfile \"$cmux_shell_dir/.bashrc\" -i" in ssh_command,
-                f"cmux ssh should still support bash login shells with a post-rc wrapper file: {ssh_command!r}",
-            )
-            _must(
-                "exec \"$CMUX_LOGIN_SHELL\" -i" in ssh_command,
-                f"cmux ssh should still hand off to the user's interactive login shell when possible: {ssh_command!r}",
-            )
+            _must("RemoteCommand=" in ssh_command, f"SSH should bootstrap the interactive shell: {ssh_command!r}")
+            _must("-R " not in ssh_command, f"SSH should not create a reverse command forward: {ssh_command!r}")
 
             listed_row = None
             deadline = time.time() + 8.0

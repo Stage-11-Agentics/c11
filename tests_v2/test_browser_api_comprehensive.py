@@ -67,7 +67,7 @@ def _value(res: dict, key: str = "value"):
 
 def _wait_with_fallback(c: cmux, surface_id: str, params: dict, pred, timeout_s: float, label: str) -> None:
     call_params = dict(params)
-    call_params["surface_id"] = surface_id
+    call_params["panel_id"] = surface_id
     try:
         c._call("browser.wait", call_params)
         return
@@ -147,30 +147,30 @@ def main() -> int:
 
     with cmux(SOCKET_PATH) as c:
         opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
-        sid = str(opened.get("surface_id") or "")
-        sref = str(opened.get("surface_ref") or "")
-        _must(bool(sid), f"browser.open_split returned no surface_id: {opened}")
+        sid = str(opened.get("panel_id") or "")
+        sref = str(opened.get("panel_ref") or "")
+        _must(bool(sid), f"browser.open_split returned no panel_id: {opened}")
         target = sid
         if sref:
-            _ = c._call("browser.url.get", {"surface_id": sref})
+            _ = c._call("browser.url.get", {"panel_id": sref})
 
         probe_url = _data_url("<!doctype html><html><body><button id='probe'>P</button></body></html>")
-        c._call("browser.navigate", {"surface_id": target, "url": probe_url})
+        c._call("browser.navigate", {"panel_id": target, "url": probe_url})
         _wait_with_fallback(
             c,
             target,
             {"selector": "#probe", "timeout_ms": 3000},
-            lambda: bool((c._call("browser.eval", {"surface_id": target, "script": "document.querySelector('#probe') !== null"}) or {}).get("value")),
+            lambda: bool((c._call("browser.eval", {"panel_id": target, "script": "document.querySelector('#probe') !== null"}) or {}).get("value")),
             timeout_s=4.0,
             label="browser.wait selector #probe",
         )
 
-        c._call("browser.navigate", {"surface_id": target, "url": page1_url})
+        c._call("browser.navigate", {"panel_id": target, "url": page1_url})
         _wait_with_fallback(
             c,
             target,
             {"text_contains": "ready", "timeout_ms": 3000},
-            lambda: "ready" in str((c._call("browser.eval", {"surface_id": target, "script": "document.body ? (document.body.innerText || '') : ''"}) or {}).get("value") or ""),
+            lambda: "ready" in str((c._call("browser.eval", {"panel_id": target, "script": "document.body ? (document.body.innerText || '') : ''"}) or {}).get("value") or ""),
             timeout_s=4.0,
             label="browser.wait text_contains ready",
         )
@@ -178,7 +178,7 @@ def main() -> int:
             c,
             target,
             {"function": "document.querySelector('#hdr') !== null", "timeout_ms": 3000},
-            lambda: bool((c._call("browser.eval", {"surface_id": target, "script": "document.querySelector('#hdr') !== null"}) or {}).get("value")),
+            lambda: bool((c._call("browser.eval", {"panel_id": target, "script": "document.querySelector('#hdr') !== null"}) or {}).get("value")),
             timeout_s=4.0,
             label="browser.wait function hdr",
         )
@@ -186,7 +186,7 @@ def main() -> int:
             c,
             target,
             {"load_state": "complete", "timeout_ms": 5000},
-            lambda: str((c._call("browser.eval", {"surface_id": target, "script": "document.readyState"}) or {}).get("value") or "").lower() == "complete",
+            lambda: str((c._call("browser.eval", {"panel_id": target, "script": "document.readyState"}) or {}).get("value") or "").lower() == "complete",
             timeout_s=6.0,
             label="browser.wait load_state complete",
         )
@@ -194,53 +194,53 @@ def main() -> int:
             c,
             target,
             {"url_contains": "data:text/html", "timeout_ms": 3000},
-            lambda: "data:text/html" in str((c._call("browser.url.get", {"surface_id": target}) or {}).get("url") or ""),
+            lambda: "data:text/html" in str((c._call("browser.url.get", {"panel_id": target}) or {}).get("url") or ""),
             timeout_s=4.0,
             label="browser.wait url_contains data:text/html",
         )
 
         _wait_until(
             lambda: "cmux-browser-comprehensive-1"
-            in str((c._call("browser.get.title", {"surface_id": target}) or {}).get("title") or ""),
+            in str((c._call("browser.get.title", {"panel_id": target}) or {}).get("title") or ""),
             timeout_s=3.0,
             label="browser.get.title page1",
         )
-        url_payload = c._call("browser.url.get", {"surface_id": target}) or {}
+        url_payload = c._call("browser.url.get", {"panel_id": target}) or {}
         _must("data:text/html" in str(url_payload.get("url") or ""), f"Expected data URL from browser.url.get: {url_payload}")
 
-        c._call("browser.fill", {"surface_id": target, "selector": "#name", "text": "cmux"})
-        c._call("browser.click", {"surface_id": target, "selector": "#btn"})
-        out_text = c._call("browser.get.text", {"surface_id": target, "selector": "#status"}) or {}
+        c._call("browser.fill", {"panel_id": target, "selector": "#name", "text": "cmux"})
+        c._call("browser.click", {"panel_id": target, "selector": "#btn"})
+        out_text = c._call("browser.get.text", {"panel_id": target, "selector": "#status"}) or {}
         _must(str(_value(out_text)) == "cmux", f"Expected status text to be cmux: {out_text}")
 
-        cleared = c._call("browser.fill", {"surface_id": target, "selector": "#name", "text": "", "snapshot_after": True}) or {}
+        cleared = c._call("browser.fill", {"panel_id": target, "selector": "#name", "text": "", "snapshot_after": True}) or {}
         _must(bool(cleared.get("post_action_snapshot")), f"Expected post_action_snapshot from fill(snapshot_after): {cleared}")
-        cleared_value = c._call("browser.get.value", {"surface_id": target, "selector": "#name"}) or {}
+        cleared_value = c._call("browser.get.value", {"panel_id": target, "selector": "#name"}) or {}
         _must(str(_value(cleared_value)) == "", f"Expected fill with empty text to clear input: {cleared_value}")
 
-        c._call("browser.fill", {"surface_id": target, "selector": "#name", "text": "cmux"})
-        c._call("browser.type", {"surface_id": target, "selector": "#name", "text": "-v2"})
-        name_val = c._call("browser.get.value", {"surface_id": target, "selector": "#name"}) or {}
+        c._call("browser.fill", {"panel_id": target, "selector": "#name", "text": "cmux"})
+        c._call("browser.type", {"panel_id": target, "selector": "#name", "text": "-v2"})
+        name_val = c._call("browser.get.value", {"panel_id": target, "selector": "#name"}) or {}
         _must(str(_value(name_val)) == "cmux-v2", f"Expected typed suffix in input value: {name_val}")
 
-        c._call("browser.focus", {"surface_id": target, "selector": "#keys"})
+        c._call("browser.focus", {"panel_id": target, "selector": "#keys"})
         active = c._call(
             "browser.eval",
-            {"surface_id": target, "script": "document.activeElement ? document.activeElement.id : ''"},
+            {"panel_id": target, "script": "document.activeElement ? document.activeElement.id : ''"},
         ) or {}
         _must(str(_value(active)) == "keys", f"Expected focus on #keys: {active}")
 
-        c._call("browser.hover", {"surface_id": target, "selector": "#hover"})
-        c._call("browser.dblclick", {"surface_id": target, "selector": "#dbl"})
+        c._call("browser.hover", {"panel_id": target, "selector": "#hover"})
+        c._call("browser.dblclick", {"panel_id": target, "selector": "#dbl"})
 
-        c._call("browser.press", {"surface_id": target, "key": "A"})
-        c._call("browser.keydown", {"surface_id": target, "key": "B"})
-        c._call("browser.keyup", {"surface_id": target, "key": "C"})
+        c._call("browser.press", {"panel_id": target, "key": "A"})
+        c._call("browser.keydown", {"panel_id": target, "key": "B"})
+        c._call("browser.keyup", {"panel_id": target, "key": "C"})
 
         key_stats = c._call(
             "browser.eval",
             {
-                "surface_id": target,
+                "panel_id": target,
                 "script": "({hover: window.__hover, dbl: window.__dbl, down: window.__keys.down, up: window.__keys.up, press: window.__keys.press})",
             },
         ) or {}
@@ -252,126 +252,126 @@ def main() -> int:
         _must(int(key_value.get("up", 0)) >= 2, f"Expected keyup counter >= 2: {key_stats}")
         _must(int(key_value.get("press", 0)) >= 1, f"Expected keypress counter >= 1: {key_stats}")
 
-        c._call("browser.check", {"surface_id": target, "selector": "#chk"})
-        is_checked = c._call("browser.is.checked", {"surface_id": target, "selector": "#chk"}) or {}
+        c._call("browser.check", {"panel_id": target, "selector": "#chk"})
+        is_checked = c._call("browser.is.checked", {"panel_id": target, "selector": "#chk"}) or {}
         _must(bool(_value(is_checked)) is True, f"Expected checked=true: {is_checked}")
-        c._call("browser.uncheck", {"surface_id": target, "selector": "#chk"})
-        is_unchecked = c._call("browser.is.checked", {"surface_id": target, "selector": "#chk"}) or {}
+        c._call("browser.uncheck", {"panel_id": target, "selector": "#chk"})
+        is_unchecked = c._call("browser.is.checked", {"panel_id": target, "selector": "#chk"}) or {}
         _must(bool(_value(is_unchecked)) is False, f"Expected checked=false: {is_unchecked}")
 
-        c._call("browser.select", {"surface_id": target, "selector": "#sel", "value": "b"})
-        sel_val = c._call("browser.get.value", {"surface_id": target, "selector": "#sel"}) or {}
+        c._call("browser.select", {"panel_id": target, "selector": "#sel", "value": "b"})
+        sel_val = c._call("browser.get.value", {"panel_id": target, "selector": "#sel"}) or {}
         _must(str(_value(sel_val)) == "b", f"Expected selected value b: {sel_val}")
 
-        html_val = c._call("browser.get.html", {"surface_id": target, "selector": "#status"}) or {}
+        html_val = c._call("browser.get.html", {"panel_id": target, "selector": "#status"}) or {}
         _must("id=\"status\"" in str(_value(html_val) or ""), f"Expected status HTML: {html_val}")
 
-        attr_val = c._call("browser.get.attr", {"surface_id": target, "selector": "#status", "attr": "data-role"}) or {}
+        attr_val = c._call("browser.get.attr", {"panel_id": target, "selector": "#status", "attr": "data-role"}) or {}
         _must(str(_value(attr_val)) == "status", f"Expected data-role=status: {attr_val}")
 
-        cnt_val = c._call("browser.get.count", {"surface_id": target, "selector": "option"}) or {}
+        cnt_val = c._call("browser.get.count", {"panel_id": target, "selector": "option"}) or {}
         _must(int((cnt_val or {}).get("count") or 0) == 2, f"Expected option count=2: {cnt_val}")
 
-        box_val = c._call("browser.get.box", {"surface_id": target, "selector": "#status"}) or {}
+        box_val = c._call("browser.get.box", {"panel_id": target, "selector": "#status"}) or {}
         box = _value(box_val)
         _must(isinstance(box, dict), f"Expected box dict: {box_val}")
         _must(float(box.get("width") or 0.0) > 0.0, f"Expected positive box width: {box_val}")
 
         style_prop = c._call(
             "browser.get.styles",
-            {"surface_id": target, "selector": "#style-target", "property": "color"},
+            {"panel_id": target, "selector": "#style-target", "property": "color"},
         ) or {}
         _must("rgb" in str(_value(style_prop) or ""), f"Expected rgb color in style property: {style_prop}")
 
-        style_all = c._call("browser.get.styles", {"surface_id": target, "selector": "#style-target"}) or {}
+        style_all = c._call("browser.get.styles", {"panel_id": target, "selector": "#style-target"}) or {}
         _must(isinstance(_value(style_all), dict), f"Expected style dictionary: {style_all}")
         _must("display" in (_value(style_all) or {}), f"Expected display in style dictionary: {style_all}")
 
-        visible_status = c._call("browser.is.visible", {"surface_id": target, "selector": "#status"}) or {}
-        visible_hidden = c._call("browser.is.visible", {"surface_id": target, "selector": "#hidden"}) or {}
+        visible_status = c._call("browser.is.visible", {"panel_id": target, "selector": "#status"}) or {}
+        visible_hidden = c._call("browser.is.visible", {"panel_id": target, "selector": "#hidden"}) or {}
         _must(bool(_value(visible_status)) is True, f"Expected #status visible: {visible_status}")
         _must(bool(_value(visible_hidden)) is False, f"Expected #hidden not visible: {visible_hidden}")
 
-        enabled_btn = c._call("browser.is.enabled", {"surface_id": target, "selector": "#btn"}) or {}
-        enabled_disabled = c._call("browser.is.enabled", {"surface_id": target, "selector": "#disabled"}) or {}
+        enabled_btn = c._call("browser.is.enabled", {"panel_id": target, "selector": "#btn"}) or {}
+        enabled_disabled = c._call("browser.is.enabled", {"panel_id": target, "selector": "#disabled"}) or {}
         _must(bool(_value(enabled_btn)) is True, f"Expected #btn enabled: {enabled_btn}")
         _must(bool(_value(enabled_disabled)) is False, f"Expected #disabled not enabled: {enabled_disabled}")
 
-        c._call("browser.scroll", {"surface_id": target, "selector": "#scroller", "dx": 0, "dy": 160})
+        c._call("browser.scroll", {"panel_id": target, "selector": "#scroller", "dx": 0, "dy": 160})
         scrolled = c._call(
             "browser.eval",
-            {"surface_id": target, "script": "document.querySelector('#scroller').scrollTop"},
+            {"panel_id": target, "script": "document.querySelector('#scroller').scrollTop"},
         ) or {}
         _must(float(_value(scrolled) or 0) >= 100, f"Expected scroller scrollTop >= 100: {scrolled}")
 
-        c._call("browser.scroll", {"surface_id": target, "dy": 240})
-        c._call("browser.scroll_into_view", {"surface_id": target, "selector": "#bottom"})
+        c._call("browser.scroll", {"panel_id": target, "dy": 240})
+        c._call("browser.scroll_into_view", {"panel_id": target, "selector": "#bottom"})
         in_view = c._call(
             "browser.eval",
             {
-                "surface_id": target,
+                "panel_id": target,
                 "script": "(() => { const r = document.querySelector('#bottom').getBoundingClientRect(); return r.top < window.innerHeight; })()",
             },
         ) or {}
         _must(bool(_value(in_view)) is True, f"Expected #bottom in viewport: {in_view}")
 
-        shot = c._call("browser.screenshot", {"surface_id": target}) or {}
+        shot = c._call("browser.screenshot", {"panel_id": target}) or {}
         _must(len(str((shot or {}).get("png_base64") or "")) > 100, f"Expected screenshot payload: {shot}")
 
-        snap = c._call("browser.snapshot", {"surface_id": target}) or {}
+        snap = c._call("browser.snapshot", {"panel_id": target}) or {}
         snapshot_text = str((snap or {}).get("snapshot") or "")
         _must("cmux-browser-comprehensive-1" in snapshot_text, f"Expected snapshot text for page1: {snap}")
         refs = (snap or {}).get("refs") or {}
         _must(isinstance(refs, dict), f"Expected snapshot refs dict: {snap}")
         _must(any(str(key).startswith("e") for key in refs.keys()), f"Expected eN refs from snapshot: {snap}")
 
-        c._call("browser.navigate", {"surface_id": target, "url": page2_url})
+        c._call("browser.navigate", {"panel_id": target, "url": page2_url})
         _wait_with_fallback(
             c,
             target,
             {"text_contains": "page-two", "timeout_ms": 4000},
-            lambda: "page-two" in str((c._call("browser.eval", {"surface_id": target, "script": "document.body ? (document.body.innerText || '') : ''"}) or {}).get("value") or ""),
+            lambda: "page-two" in str((c._call("browser.eval", {"panel_id": target, "script": "document.body ? (document.body.innerText || '') : ''"}) or {}).get("value") or ""),
             timeout_s=5.0,
             label="browser.wait text_contains page-two",
         )
         _wait_until(
             lambda: "cmux-browser-comprehensive-2"
-            in str((c._call("browser.get.title", {"surface_id": target}) or {}).get("title") or ""),
+            in str((c._call("browser.get.title", {"panel_id": target}) or {}).get("title") or ""),
             timeout_s=3.0,
             label="browser.get.title page2",
         )
 
-        c._call("browser.back", {"surface_id": target})
+        c._call("browser.back", {"panel_id": target})
         _wait_with_fallback(
             c,
             target,
             {"url_contains": "cmux-browser-comprehensive-1", "timeout_ms": 4000},
-            lambda: "cmux-browser-comprehensive-1" in str((c._call("browser.url.get", {"surface_id": target}) or {}).get("url") or ""),
+            lambda: "cmux-browser-comprehensive-1" in str((c._call("browser.url.get", {"panel_id": target}) or {}).get("url") or ""),
             timeout_s=5.0,
             label="browser.wait url_contains page1 (history)",
         )
-        c._call("browser.forward", {"surface_id": target})
+        c._call("browser.forward", {"panel_id": target})
         _wait_with_fallback(
             c,
             target,
             {"url_contains": "cmux-browser-comprehensive-2", "timeout_ms": 4000},
-            lambda: "cmux-browser-comprehensive-2" in str((c._call("browser.url.get", {"surface_id": target}) or {}).get("url") or ""),
+            lambda: "cmux-browser-comprehensive-2" in str((c._call("browser.url.get", {"panel_id": target}) or {}).get("url") or ""),
             timeout_s=5.0,
             label="browser.wait url_contains page2 (history)",
         )
-        c._call("browser.reload", {"surface_id": target})
+        c._call("browser.reload", {"panel_id": target})
         _wait_with_fallback(
             c,
             target,
             {"url_contains": "cmux-browser-comprehensive-2", "timeout_ms": 4000},
-            lambda: "cmux-browser-comprehensive-2" in str((c._call("browser.url.get", {"surface_id": target}) or {}).get("url") or ""),
+            lambda: "cmux-browser-comprehensive-2" in str((c._call("browser.url.get", {"panel_id": target}) or {}).get("url") or ""),
             timeout_s=5.0,
             label="browser.wait url_contains page2 (reload)",
         )
 
-        c._call("browser.focus_webview", {"surface_id": target})
+        c._call("browser.focus_webview", {"panel_id": target})
         _wait_until(
-            lambda: bool((c._call("browser.is_webview_focused", {"surface_id": target}) or {}).get("focused")),
+            lambda: bool((c._call("browser.is_webview_focused", {"panel_id": target}) or {}).get("focused")),
             timeout_s=2.5,
             label="browser.is_webview_focused",
         )
@@ -379,36 +379,36 @@ def main() -> int:
         # Negative cases adapted from agent-browser protocol/actions tests.
         _expect_error(
             "click missing selector",
-            lambda: c._call("browser.click", {"surface_id": target}),
+            lambda: c._call("browser.click", {"panel_id": target}),
             "invalid_params",
         )
         _expect_error_contains(
             "click missing element",
-            lambda: c._call("browser.click", {"surface_id": target, "selector": "#does-not-exist"}),
+            lambda: c._call("browser.click", {"panel_id": target, "selector": "#does-not-exist"}),
             "not_found",
             "snapshot",
             "hint",
         )
         _expect_error(
             "get.attr missing attr",
-            lambda: c._call("browser.get.attr", {"surface_id": target, "selector": "#status"}),
+            lambda: c._call("browser.get.attr", {"panel_id": target, "selector": "#status"}),
             "invalid_params",
         )
         _expect_error(
             "wait timeout",
-            lambda: c._call("browser.wait", {"surface_id": target, "selector": "#never", "timeout_ms": 100}),
+            lambda: c._call("browser.wait", {"panel_id": target, "selector": "#never", "timeout_ms": 100}),
             "timeout",
         )
         _expect_error(
             "navigate missing url",
-            lambda: c._call("browser.navigate", {"surface_id": target}),
+            lambda: c._call("browser.navigate", {"panel_id": target}),
             "invalid_params",
         )
 
         terminal_surface = c.new_surface(panel_type="terminal")
         _expect_error(
             "browser method on terminal surface",
-            lambda: c._call("browser.url.get", {"surface_id": terminal_surface}),
+            lambda: c._call("browser.url.get", {"panel_id": terminal_surface}),
             "not_found",
         )
 

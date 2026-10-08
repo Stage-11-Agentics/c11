@@ -1,6 +1,6 @@
 # Remote SSH Living Spec
 
-Last updated: March 12, 2026
+Last updated: October 1, 2026
 Tracking issue: https://github.com/manaflow-ai/cmux/issues/151
 Primary PR: https://github.com/manaflow-ai/cmux/pull/1296
 CLI relay PR: https://github.com/manaflow-ai/cmux/pull/374
@@ -39,21 +39,19 @@ This is a **living implementation spec** (also called an **execution spec**): a 
 - `DONE` SOCKS handshake parsing now preserves pipelined post-connect payload bytes instead of dropping request-prefix bytes.
 - `DONE` `workspace.remote.configure.local_proxy_port` exists as an internal deterministic test hook for bind-conflict regression coverage.
 - `DONE` bootstrap/probe failures surface actionable details.
-- `DONE` bootstrap installs `~/.cmux/bin/cmux` wrapper (also tries `/usr/local/bin/cmux`) so `cmux` is available in PATH on the remote.
+- `DONE` interactive bootstrap installs session-scoped `c11` and `cmux` stubs that report remote commands unavailable.
 
-### 3.5 CLI Relay (Running cmux Commands From Remote)
-- `DONE` `c11d-remote` includes a table-driven CLI relay (`cli` subcommand) that maps CLI args to v1 text or v2 JSON-RPC messages.
-- `DONE` busybox-style argv[0] detection: when invoked as `cmux` via wrapper/symlink, auto-dispatches to CLI relay.
-- `DONE` background `ssh -N -R 127.0.0.1:PORT:127.0.0.1:LOCAL_RELAY_PORT` process reverse-forwards a TCP port to a dedicated authenticated local relay server. Uses TCP instead of Unix socket forwarding because many servers have `AllowStreamLocalForwarding` disabled.
-- `DONE` relay process uses `-S none` / standalone SSH transport (avoids ControlMaster multiplexing and inherited `RemoteForward` directives) and `ExitOnForwardFailure=yes` so dead reverse binds fail fast instead of publishing bad relay metadata.
-- `DONE` relay address written to `~/.cmux/socket_addr` on the remote only after the reverse forward survives startup validation.
-- `DONE` Go CLI no longer polls for relay readiness. It dials the published relay once and only refreshes `~/.cmux/socket_addr` a single time to recover from a stale shared address rewrite.
-- `DONE` `cmux ssh` startup exports session-local `CMUX_SOCKET_PATH=127.0.0.1:<relay_port>` so parallel sessions pin to their own relay instead of racing on shared socket_addr.
-- `DONE` relay startup writes `~/.cmux/relay/<relay_port>.daemon_path`; remote `cmux` wrapper uses this to select the right daemon binary per session, including mixed local cmux versions.
-- `DONE` relay startup writes `~/.cmux/relay/<relay_port>.auth` with a relay ID and token; the local relay requires HMAC-SHA256 challenge-response before forwarding any command to the real local socket.
-- `DONE` ephemeral port range (49152-65535) filtered from probe results to exclude relay ports from other workspaces.
-- `DONE` multi-workspace port conflict detection uses TCP connect check (`isLoopbackPortReachable`) so ports already forwarded by another workspace are silently skipped instead of flagged as conflicts.
-- `DONE` orphaned relay SSH processes from previous app sessions are cleaned up before starting a new relay.
+### 3.5 Remote Commands (Disabled)
+
+As a hardening change, this version disables remote-to-local c11 commands.
+`c11 ssh` continues to open remote workspace shells and provide browser proxying.
+
+- `DONE` no command relay listener or reverse command tunnel is started.
+- `DONE` no relay credentials or command socket address are provisioned remotely.
+- `DONE` the legacy daemon `cli` entry point refuses commands.
+- `DONE` initial and additional SSH shells report "c11 commands are not available over c11 ssh in this version" for `c11` and `cmux` commands.
+- `DONE` the retained command handler refuses commands after authentication.
+- `DONE` the legacy `relay_port` configure field is used only as a local terminal-session identity. CLI JSON calls this `ssh_session_id`; it is not a listener port.
 
 ### 3.6 Artifact Trust
 - `DONE` release and nightly workflows publish `c11d-remote` assets for `darwin/linux × arm64/amd64`.
@@ -128,7 +126,7 @@ Recompute effective size on:
 | M-002 | Remote bootstrap/upload/start + hello handshake | DONE | Includes daemon capability handshake + status surfacing |
 | M-003 | Reconnect/disconnect UX + API + improved error surfacing | DONE | Includes retry count in surfaced errors |
 | M-004 | Docker e2e for bootstrap/reconnect shell niceties | DONE | Docker suites validate proxy-path bootstrap and reconnect behavior |
-| M-004b | CLI relay: run cmux commands from within SSH sessions | DONE | Reverse TCP forward + Go CLI relay + bootstrap wrapper |
+| M-004b | Remote-to-local CLI commands | DISABLED | Shell and daemon entry points return an unavailable message |
 | M-005 | Remove automatic remote port mirroring path | DONE | `WorkspaceRemoteSessionController` now uses one shared daemon-backed proxy endpoint |
 | M-006 | Transport-scoped local proxy broker (SOCKS5 + CONNECT) | DONE | Identical SSH transports now reuse one local proxy endpoint |
 | M-007 | Remote proxy stream RPC in `c11d-remote` | DONE | `proxy.open/close/write/proxy.stream.subscribe` plus pushed stream events implemented |
@@ -148,17 +146,15 @@ Recompute effective size on:
 | T-004 | reconnect API success/error paths | DONE |
 | T-005 | retry count visible in daemon error detail | DONE |
 
-### 7.2 CLI Relay
+### 7.2 Remote Command Refusal
 
 | ID | Scenario | Status |
 |---|---|---|
-| C-001 | `cmux ping` from remote session | DONE |
-| C-002 | `cmux list-workspaces --json` from remote | DONE |
-| C-003 | `cmux new-workspace` from remote | DONE |
-| C-004 | `cmux rpc system.capabilities` passthrough | DONE |
-| C-005 | TCP retry handles relay not yet established | DONE |
-| C-006 | multi-workspace port conflict silent skip | DONE |
-| C-007 | ephemeral port filtering excludes relay ports | DONE |
+| C-001 | Initial SSH shell works and refuses remote commands | DONE |
+| C-002 | Additional SSH panel works and refuses remote commands | DONE |
+| C-003 | Daemon CLI refuses commands without connecting to a socket | DONE |
+| C-004 | Authenticated command handler refuses commands | DONE |
+| C-005 | Command relay listener startup fails closed | DONE |
 
 ### 7.3 Browser Proxy (Target)
 

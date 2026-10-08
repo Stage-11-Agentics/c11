@@ -20,7 +20,7 @@ Surface these four facts in one batch before touching anything else:
 3. **In-flight PRs.** `gh pr list --state open --json number,title,headRefName`.
    Each open PR is an explicit include-or-defer decision.
 4. **In-flight sub-agents (c11 only).** `c11 tree --no-layout`; read each
-   surface's `role` / `task` / `status` metadata. If another agent has
+   panel's `role` / `task` / `status` metadata. If another agent has
    unfinished work that belongs in the release, surface it now — not
    after the release branch is cut.
 
@@ -97,6 +97,9 @@ This is a checklist trigger, not a CI gate.
 - `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
   (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
   the operator's prod c11.
+- Before handing off, screenshot the staging window and inspect every surface
+  the changelog touches (sheets, titlebar, sidebar, new or redesigned modals).
+  Release-only layout regressions have shipped past Debug builds before.
 - Hand off to the operator for a smoke pass against the changelog's
   user-facing bullets. The smoke list should mirror what goes in the PR's
   test plan.
@@ -141,6 +144,10 @@ This is a checklist trigger, not a CI gate.
 - `gh run watch --repo Stage-11-Agentics/c11`
 - Confirm release exists in GitHub Releases and includes `c11-macos.dmg`.
 
+12. Lift a skill-sync hold:
+- If `CLAUDE.md` carries a "Hold until c11 1.0 is installed" line under the skill-sync hard rule, wait until the maintainer has installed this release, then run `scripts/sync-installed-skills.sh` and check one live copy (`~/.claude/skills/c11/SKILL.md` matches `skills/c11/SKILL.md`).
+- Delete the hold line from `CLAUDE.md` and the matching "(until 1.0 is installed, follow the sync hold in the repo's CLAUDE.md)" clause from `skills/c11/SKILL.md` (Editing this skill) in one PR; after it merges, sync `c11` again.
+
 ## Changelog Rules
 
 - Include only user-visible changes.
@@ -181,6 +188,15 @@ gh run watch --repo Stage-11-Agentics/c11
 ```
 
 Use the annotated form (`-a -m`). A lightweight `git tag vX.Y.Z` is rejected with "no tag message?" because of local git config (likely `tag.gpgSign` or equivalent forcing all tags to be annotated).
+
+## Local release (Actions unavailable)
+
+When `release.yml` cannot run (runner billing, outage), `scripts/release-local.sh vX.Y.Z` performs the same job: the Release build runs on Atlas through `scripts/remote-build.sh`, and the rest (daemon assets, Sparkle keys, codesign, notarize, staple, DMG, appcast, `gh release`) runs on this Mac. Walkthrough: `.claude/commands/release-local.md`.
+
+- Tag first (step 10). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
+- Run `--dry-run` first. It stops before notarization, rehearses the DMG and appcast with a throwaway Sparkle key, and publishes nothing.
+- A real run needs the `c11-notary` notarytool keychain profile. It also needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
+- The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`). The release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
 
 ## Reference
 

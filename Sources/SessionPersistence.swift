@@ -6,6 +6,46 @@ enum SessionSnapshotSchema {
     static let currentVersion = 1
 }
 
+enum WindowGeometryPersistenceStore {
+    struct Geometry: Codable, Sendable {
+        let frame: SessionRectSnapshot
+        let display: SessionDisplaySnapshot?
+    }
+
+    static let defaultsKey = "cmux.session.lastWindowGeometry.v1"
+
+    static func load(defaults: UserDefaults = .standard) -> Geometry? {
+        guard let data = defaults.data(forKey: defaultsKey) else { return nil }
+        return try? JSONDecoder().decode(Geometry.self, from: data)
+    }
+
+    static func encodedData(frame: SessionRectSnapshot?, display: SessionDisplaySnapshot?) -> Data? {
+        guard let frame else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(Geometry(frame: frame, display: display))
+    }
+
+    /// Compare with persisted bytes rather than a process-local cache so both
+    /// window-close saves and background autosaves skip unchanged mutations.
+    /// Older JSON key ordering can normalize once, without changing the schema.
+    static func persist(_ data: Data?, defaults: UserDefaults = .standard) {
+        if let data {
+            guard defaults.data(forKey: defaultsKey) != data else { return }
+            defaults.set(data, forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.write bytes=\(data.count)")
+#endif
+        } else {
+            guard defaults.object(forKey: defaultsKey) != nil else { return }
+            defaults.removeObject(forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.remove")
+#endif
+        }
+    }
+}
+
 enum SessionPersistencePolicy {
     static let defaultSidebarWidth: Double = 200
     static let minimumSidebarWidth: Double = 180
@@ -306,7 +346,7 @@ struct SessionBrowserPanelSnapshot: Codable, Sendable {
     var forwardHistoryURLStrings: [String]?
     /// Durable browser-to-agent association. Optional so pre-companion
     /// session-v1 snapshots continue to decode unchanged.
-    var linkedAgent: AgentSurfaceLink? = nil
+    var linkedAgent: AgentPanelLink? = nil
 }
 
 struct SessionMarkdownPanelSnapshot: Codable, Sendable {
@@ -317,6 +357,52 @@ struct SessionMarkdownPanelSnapshot: Codable, Sendable {
     /// Font scale multiplier (1.0 = default). Optional for backwards
     /// compatibility; old snapshots decode with nil.
     var fontScale: Double? = nil
+    var theme: String? = nil
+    var typeface: String? = nil
+    /// Nil preserves the renderer's width-dependent default for legacy panels.
+    var outlineOpen: Bool? = nil
+
+    init(
+        filePath: String? = nil,
+        fontScale: Double? = nil,
+        theme: String? = nil,
+        typeface: String? = nil,
+        outlineOpen: Bool? = nil
+    ) {
+        self.filePath = filePath
+        self.fontScale = fontScale
+        self.theme = theme
+        self.typeface = typeface
+        self.outlineOpen = outlineOpen
+    }
+
+    var presentation: MarkdownPresentation {
+        MarkdownPresentation(
+            fontScale: fontScale ?? 1.0,
+            theme: theme ?? "system",
+            typeface: typeface ?? "theme",
+            outlineOpen: outlineOpen
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case filePath, fontScale, theme, typeface, outlineOpen
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // A malformed preference must not discard this panel or its workspace.
+        // Keep absent fields optional for legacy snapshots; presentation applies
+        // built-in defaults without consulting the new-panel UserDefaults.
+        filePath = try? values.decode(String.self, forKey: .filePath)
+        fontScale = (try? values.decode(Double.self, forKey: .fontScale))
+            .map(MarkdownPresentation.normalizedFontScale)
+        theme = (try? values.decode(String.self, forKey: .theme))
+            .map(MarkdownPresentation.normalizedTheme)
+        typeface = (try? values.decode(String.self, forKey: .typeface))
+            .map(MarkdownPresentation.normalizedTypeface)
+        outlineOpen = try? values.decode(Bool.self, forKey: .outlineOpen)
+    }
 }
 
 struct SessionPanelSnapshot: Codable, Sendable {
@@ -360,7 +446,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
     ///
     /// `history: []` is written explicitly as an empty array (not omitted)
     /// for stable JSON output across v1/v2.
-    var surfaceConversations: SurfaceConversations? = nil
+    var surfaceConversations: PanelConversations? = nil
 
     /// C11-164 (RES-2): persisted `SurfaceActivityTracker.lastActivity` floor
     /// for this surface. The Codex/pi/omp scrape filters use "candidate mtime
@@ -374,6 +460,11 @@ struct SessionPanelSnapshot: Codable, Sendable {
     /// `ScrapeCaptureContext` key on across a restart.
     var lastActivityAt: Date? = nil
 
+    /// C11-243: when the operator last looked at this tab (`SurfaceSeenTracker`).
+    /// A tab being seen at capture time is stamped with the capture time. Optional
+    /// for backcompat: older snapshots decode with `lastSeenAt == nil`.
+    var lastSeenAt: Date? = nil
+
     private enum CodingKeys: String, CodingKey {
         case id, type, title, customTitle, customColor, directory, isPinned,
              isManuallyUnread, gitBranch, listeningPorts, ttyName,
@@ -381,6 +472,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
         case createdAt = "created_at"
         case surfaceConversations = "surface_conversations"
         case lastActivityAt = "last_activity_at"
+        case lastSeenAt = "last_seen_at"
     }
 }
 
@@ -407,7 +499,7 @@ enum SessionSplitOrientation: String, Codable, Sendable {
     }
 }
 
-struct SessionPaneLayoutSnapshot: Codable, Sendable {
+struct SessionAreaLayoutSnapshot: Codable, Sendable {
     var panelIds: [UUID]
     var selectedPanelId: UUID?
 
@@ -432,6 +524,10 @@ struct SessionPaneLayoutSnapshot: Codable, Sendable {
     /// `explicit > declare > osc > heuristic` precedence chain survives a
     /// restart. See `PersistedMetadataSource`.
     var metadataSources: [String: PersistedMetadataSource]? = nil
+
+    /// Round five: whether this area's tab rail was open (Rail layout).
+    /// Optional for backcompat; absent means closed.
+    var railOpen: Bool? = nil
 }
 
 struct SessionSplitLayoutSnapshot: Codable, Sendable {
@@ -442,7 +538,7 @@ struct SessionSplitLayoutSnapshot: Codable, Sendable {
 }
 
 indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
-    case pane(SessionPaneLayoutSnapshot)
+    case pane(SessionAreaLayoutSnapshot)
     case split(SessionSplitLayoutSnapshot)
 
     private enum CodingKeys: String, CodingKey {
@@ -456,7 +552,7 @@ indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "pane":
-            self = .pane(try container.decode(SessionPaneLayoutSnapshot.self, forKey: .pane))
+            self = .pane(try container.decode(SessionAreaLayoutSnapshot.self, forKey: .pane))
         case "split":
             self = .split(try container.decode(SessionSplitLayoutSnapshot.self, forKey: .split))
         default:
@@ -484,6 +580,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var stableDefaultTitle: String? = nil
     var customColor: String?
     var isPinned: Bool
+    var groupId: UUID? = nil
     var currentDirectory: String
     /// Stable workspace project root. Optional so pre-C11-194 snapshots decode.
     var rootDirectory: String? = nil
@@ -504,39 +601,217 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// Session-only active companion context. Blueprints and snapshots do not
     /// carry this transient focus-derived value.
     var activeAgentSurfaceId: UUID? = nil
+
+    // Pinned on-disk keys: session decode is all-or-nothing, so these raw
+    // strings never change even when the Swift names do.
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case processTitle = "processTitle"
+        case customTitle = "customTitle"
+        case stableDefaultTitle = "stableDefaultTitle"
+        case customColor = "customColor"
+        case isPinned = "isPinned"
+        case groupId = "groupId"
+        case currentDirectory = "currentDirectory"
+        case rootDirectory = "rootDirectory"
+        case rootAdoptionArmed = "rootAdoptionArmed"
+        case focusedPanelId = "focusedPanelId"
+        case layout = "layout"
+        case panels = "panels"
+        case statusEntries = "statusEntries"
+        case logEntries = "logEntries"
+        case progress = "progress"
+        case gitBranch = "gitBranch"
+        case metadata = "metadata"
+        case activeAgentSurfaceId = "activeAgentSurfaceId"
+    }
 }
 
-struct SessionTabManagerSnapshot: Codable, Sendable {
+/// Repair the duplicate identities seen in B024 before any restore consumer
+/// creates tabs, rehydrates metadata, or schedules agent resumes.
+enum SessionRestoreNormalization {
+    /// Startup recovery reads activity, scrape contexts, and conversation seeds
+    /// before it installs workspaces. All of those consumers must see the same
+    /// first records as the later workspace restore.
+    static func prepareStartupSnapshot(
+        _ input: AppSessionSnapshot,
+        reportDrop: (String) -> Void = { NSLog("%@", $0) }
+    ) -> AppSessionSnapshot {
+        var snapshot = input
+        for windowIndex in snapshot.windows.indices {
+            for workspaceIndex in snapshot.windows[windowIndex].workspaceManager.workspaces.indices {
+                let workspace = snapshot.windows[windowIndex].workspaceManager.workspaces[workspaceIndex]
+                let normalized = normalize(workspace)
+                snapshot.windows[windowIndex].workspaceManager.workspaces[workspaceIndex] = normalized.snapshot
+                for drop in normalized.drops {
+                    reportDrop(drop.diagnostic(workspaceId: workspace.id))
+                }
+            }
+        }
+        return snapshot
+    }
+
+    struct Drop: Equatable {
+        enum Reason: String {
+            case duplicateRecord = "duplicate_record"
+            case duplicateLayoutReference = "duplicate_layout_reference"
+        }
+
+        let panelId: UUID
+        let reason: Reason
+
+        func diagnostic(workspaceId: UUID) -> String {
+            "session.restore.drop workspace=\(workspaceId) tab=\(panelId) reason=\(reason.rawValue)"
+        }
+    }
+
+    static func normalize(_ input: SessionWorkspaceSnapshot) -> (snapshot: SessionWorkspaceSnapshot, drops: [Drop]) {
+        var snapshot = input
+        var drops: [Drop] = []
+        var knownIds = Set<UUID>()
+        snapshot.panels = input.panels.filter { panel in
+            guard knownIds.insert(panel.id).inserted else {
+                drops.append(Drop(panelId: panel.id, reason: .duplicateRecord))
+                return false
+            }
+            return true
+        }
+
+        var placedIds = Set<UUID>()
+        func normalizeLayout(_ node: SessionWorkspaceLayoutSnapshot) -> SessionWorkspaceLayoutSnapshot {
+            switch node {
+            case .pane(var pane):
+                pane.panelIds = pane.panelIds.filter { id in
+                    // restorePane already ignores unknown records. Leave those
+                    // references alone rather than broadening this repair.
+                    guard knownIds.contains(id) else { return true }
+                    guard placedIds.insert(id).inserted else {
+                        drops.append(Drop(panelId: id, reason: .duplicateLayoutReference))
+                        return false
+                    }
+                    return true
+                }
+                if let selected = pane.selectedPanelId,
+                   knownIds.contains(selected), !pane.panelIds.contains(selected) {
+                    pane.selectedPanelId = pane.panelIds.first { knownIds.contains($0) }
+                }
+                return .pane(pane)
+            case .split(var split):
+                split.first = normalizeLayout(split.first)
+                split.second = normalizeLayout(split.second)
+                return .split(split)
+            }
+        }
+        snapshot.layout = normalizeLayout(input.layout)
+        return (snapshot, drops)
+    }
+}
+
+struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
+    var workspaceGroups: [WorkspaceGroup]? = nil
 }
 
 struct SessionWindowSnapshot: Codable, Sendable {
     var frame: SessionRectSnapshot?
     var display: SessionDisplaySnapshot?
-    var tabManager: SessionTabManagerSnapshot
+    var workspaceManager: SessionWorkspaceManagerSnapshot
     var sidebar: SessionSidebarSnapshot
+
+    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.
+    enum CodingKeys: String, CodingKey {
+        case frame
+        case display
+        case workspaceManager = "tabManager"
+        case sidebar
+    }
 }
 
 struct AppSessionSnapshot: Codable, Sendable {
     var version: Int
     var createdAt: TimeInterval
     var windows: [SessionWindowSnapshot]
+    var focusHistory: FocusHistorySnapshot? = nil
 }
 
 enum SessionPersistenceStore {
-    static func load(fileURL: URL? = nil) -> AppSessionSnapshot? {
+    enum SavePurpose: Equatable, Sendable {
+        case autosave
+        case operatorRequested
+        case cleanShutdown
+    }
+
+    static let poorerSnapshotHoldbackInterval: TimeInterval = 5 * 60
+    static let historyRestoreEnvironmentKey = "C11_SESSION_HISTORY_RESTORE_FILE"
+
+    static func load(
+        fileURL: URL? = nil,
+        historyFileURL: URL? = nil
+    ) -> AppSessionSnapshot? {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return nil }
+        if let historyFileURL,
+           let snapshot = loadHistorySnapshot(from: historyFileURL, forSnapshot: fileURL) {
+            return snapshot
+        }
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
-        let decoder = JSONDecoder()
-        guard let snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
-        guard snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
+        guard var snapshot = decodeSnapshot(data) else { return nil }
+        // A window without workspaces is not a restorable window. In particular,
+        // do not turn stale empty-window records into extra fallback workspaces.
+        snapshot.windows.removeAll { $0.workspaceManager.workspaces.isEmpty }
+        guard !snapshot.windows.isEmpty else { return nil }
+        return snapshot
+    }
+
+    /// Resolves the operator's one-shot startup recovery choice. The selected
+    /// file is still validated against the canonical snapshot's own history
+    /// directory by `loadHistorySnapshot` before it can be used.
+    static func startupHistoryRestoreURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL? {
+        guard let rawPath = environment[historyRestoreEnvironmentKey]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawPath.isEmpty else { return nil }
+        return URL(
+            fileURLWithPath: (rawPath as NSString).expandingTildeInPath,
+            isDirectory: false
+        ).standardizedFileURL
+    }
+
+    /// Loads one archived snapshot only when it is a named archive for this
+    /// live snapshot and resolves to a regular file directly inside that
+    /// snapshot's history directory. Symlinked escapes are rejected too.
+    static func loadHistorySnapshot(
+        from historyFileURL: URL,
+        forSnapshot snapshotFileURL: URL
+    ) -> AppSessionSnapshot? {
+        let historyDirectory = historyDirectoryURL(for: snapshotFileURL).standardizedFileURL
+        let candidate = historyFileURL.standardizedFileURL
+        guard candidate.deletingLastPathComponent().path == historyDirectory.path else { return nil }
+        guard historyFileURLs(for: snapshotFileURL).contains(where: {
+            $0.standardizedFileURL.path == candidate.path
+        }) else { return nil }
+
+        let resolvedSnapshotDirectory = snapshotFileURL.deletingLastPathComponent()
+            .resolvingSymlinksInPath().standardizedFileURL
+        let resolvedHistoryDirectory = historyDirectory.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedCandidate = candidate.resolvingSymlinksInPath().standardizedFileURL
+        guard resolvedHistoryDirectory.deletingLastPathComponent().path == resolvedSnapshotDirectory.path else { return nil }
+        guard resolvedCandidate.deletingLastPathComponent().path == resolvedHistoryDirectory.path else { return nil }
+        guard let data = try? Data(contentsOf: resolvedCandidate),
+              var snapshot = decodeSnapshot(data) else { return nil }
+        snapshot.windows.removeAll { $0.workspaceManager.workspaces.isEmpty }
         guard !snapshot.windows.isEmpty else { return nil }
         return snapshot
     }
 
     @discardableResult
-    static func save(_ snapshot: AppSessionSnapshot, fileURL: URL? = nil) -> Bool {
+    static func save(
+        _ snapshot: AppSessionSnapshot,
+        fileURL: URL? = nil,
+        purpose: SavePurpose = .autosave,
+        now: Date = Date()
+    ) -> Bool {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return false }
         let directory = fileURL.deletingLastPathComponent()
         do {
@@ -545,11 +820,61 @@ enum SessionPersistenceStore {
             if let existingData = try? Data(contentsOf: fileURL), existingData == data {
                 return true
             }
+            if purpose == .autosave,
+               shouldHoldBackPoorerSnapshot(snapshot, replacing: fileURL, now: now) {
+                return true
+            }
+            guard archiveBeforeFirstOverwrite(fileURL: fileURL, now: now) else { return false }
             try data.write(to: fileURL, options: .atomic)
             return true
         } catch {
             return false
         }
+    }
+
+    private static func decodeSnapshot(_ data: Data) -> AppSessionSnapshot? {
+        guard let snapshot = try? JSONDecoder().decode(AppSessionSnapshot.self, from: data),
+              snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
+        return snapshot
+    }
+
+    private static func shouldHoldBackPoorerSnapshot(
+        _ snapshot: AppSessionSnapshot,
+        replacing fileURL: URL,
+        now: Date
+    ) -> Bool {
+        guard let existingData = try? Data(contentsOf: fileURL),
+              let existingSnapshot = decodeSnapshot(existingData),
+              let modifiedAt = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+            return false
+        }
+
+        let age = now.timeIntervalSince(modifiedAt)
+        guard age < poorerSnapshotHoldbackInterval else { return false }
+        let existingIdentities = normalizedIdentityCounts(in: existingSnapshot)
+        let incomingIdentities = normalizedIdentityCounts(in: snapshot)
+        return incomingIdentities.workspaces.count < existingIdentities.workspaces.count
+            || incomingIdentities.panels.count < existingIdentities.panels.count
+    }
+
+    /// Holdback compares restorable identities, not raw record counts. Use the
+    /// same per-workspace normalization as startup restore so repairing
+    /// duplicate records cannot make an autosave appear poorer.
+    private static func normalizedIdentityCounts(
+        in snapshot: AppSessionSnapshot
+    ) -> (workspaces: Set<UUID>, panels: Set<UUID>) {
+        var workspaceIDs = Set<UUID>()
+        var panelIDs = Set<UUID>()
+        for window in snapshot.windows {
+            for workspace in window.workspaceManager.workspaces {
+                workspaceIDs.insert(workspace.id)
+                let normalized = SessionRestoreNormalization.normalize(workspace).snapshot
+                for panel in normalized.panels {
+                    panelIDs.insert(panel.id)
+                }
+            }
+        }
+        return (workspaceIDs, panelIDs)
     }
 
     private static func encodedSnapshotData(_ snapshot: AppSessionSnapshot) throws -> Data {
@@ -560,7 +885,85 @@ enum SessionPersistenceStore {
 
     static func removeSnapshot(fileURL: URL? = nil) {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return }
+        guard archiveBeforeFirstOverwrite(fileURL: fileURL) else { return }
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    static let historyDirectoryName = "session-history"
+    static let historyRetentionCount = 10
+    private static let archiveLock = NSLock()
+    private nonisolated(unsafe) static var archivedFilePaths = Set<String>()
+
+    /// The session file is the only copy of the previous session. The first
+    /// time this process is about to overwrite or remove it, copy it to
+    /// `session-history/<name>-<UTC timestamp>.json` beside it, so a launch
+    /// that skips, filters or never attempts the restore cannot destroy the
+    /// prior session. Keeps the newest `historyRetentionCount` copies per file.
+    /// Returns false when the copy failed; the caller must not overwrite, and
+    /// the next attempt retries the copy.
+    @discardableResult
+    static func archiveBeforeFirstOverwrite(fileURL: URL, now: Date = Date()) -> Bool {
+        archiveLock.lock()
+        defer { archiveLock.unlock() }
+        let key = fileURL.standardizedFileURL.path
+        guard !archivedFilePaths.contains(key) else { return true }
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            archivedFilePaths.insert(key)
+            return true
+        }
+
+        let historyDirectory = historyDirectoryURL(for: fileURL)
+        let stem = fileURL.deletingPathExtension().lastPathComponent
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss.SSS'Z'"
+        let archiveURL = historyDirectory.appendingPathComponent(
+            "\(stem)-\(formatter.string(from: now)).json",
+            isDirectory: false
+        )
+        do {
+            try fileManager.createDirectory(at: historyDirectory, withIntermediateDirectories: true, attributes: nil)
+            try fileManager.copyItem(at: fileURL, to: archiveURL)
+        } catch {
+            return false
+        }
+        archivedFilePaths.insert(key)
+
+        let archives = historyFileURLs(for: fileURL)
+        for stale in archives.dropFirst(historyRetentionCount) {
+            try? fileManager.removeItem(at: stale)
+        }
+        return true
+    }
+
+    static func historyDirectoryURL(for fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent(historyDirectoryName, isDirectory: true)
+    }
+
+    /// Archived copies of `fileURL`, newest first.
+    static func historyFileURLs(for fileURL: URL) -> [URL] {
+        // Exact match on the timestamp suffix: dev-build stems can prefix one
+        // another (`…debug.foo` and `…debug.foo-bar`).
+        let prefix = fileURL.deletingPathExtension().lastPathComponent + "-"
+        let timestamp = try? NSRegularExpression(pattern: #"^\d{8}T\d{6}\.\d{3}Z\.json$"#)
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: historyDirectoryURL(for: fileURL),
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return contents
+            .filter { url in
+                let name = url.lastPathComponent
+                guard name.hasPrefix(prefix), let timestamp else { return false }
+                let suffix = String(name.dropFirst(prefix.count))
+                return timestamp.firstMatch(
+                    in: suffix,
+                    range: NSRange(suffix.startIndex..., in: suffix)
+                ) != nil
+            }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 
     static func defaultSnapshotFileURL(

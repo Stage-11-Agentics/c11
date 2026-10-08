@@ -41,7 +41,7 @@ def layout_panes(client: cmux) -> list[dict]:
 def pane_extent(client: cmux, pane_id: str, axis: str) -> float:
     panes = layout_panes(client)
     for pane in panes:
-        pid = str(pane.get("paneId") or pane.get("pane_id") or "")
+        pid = str(pane.get("paneId") or pane.get("area_id") or "")
         if pid != pane_id:
             continue
         frame = pane.get("frame") or {}
@@ -50,13 +50,13 @@ def pane_extent(client: cmux, pane_id: str, axis: str) -> float:
 
 
 def workspace_panes(client: cmux, workspace_id: str) -> list[tuple[str, bool, int]]:
-    payload = client._call("pane.list", {"workspace_id": workspace_id}) or {}
+    payload = client._call("area.list", {"workspace_id": workspace_id}) or {}
     out: list[tuple[str, bool, int]] = []
-    for row in payload.get("panes") or []:
+    for row in payload.get("areas") or []:
         out.append((
             str(row.get("id") or ""),
             bool(row.get("focused")),
-            int(row.get("surface_count") or 0),
+            int(row.get("panel_count") or 0),
         ))
     return out
 
@@ -70,8 +70,8 @@ def focused_pane_id(client: cmux, workspace_id: str) -> str:
 
 def surface_scrollback_text(client: cmux, workspace_id: str, surface_id: str) -> str:
     payload = client._call(
-        "surface.read_text",
-        {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+        "panel.read_text",
+        {"workspace_id": workspace_id, "panel_id": surface_id, "scrollback": True},
     ) or {}
     return str(payload.get("text") or "")
 
@@ -101,7 +101,7 @@ def wait_for_surface_command_roundtrip(client: cmux, workspace_id: str, surface_
 
 
 def pick_resize_direction_for_pane(client: cmux, pane_ids: list[str], target_pane: str) -> tuple[str, str]:
-    panes = [p for p in layout_panes(client) if str(p.get("paneId") or p.get("pane_id") or "") in pane_ids]
+    panes = [p for p in layout_panes(client) if str(p.get("paneId") or p.get("area_id") or "") in pane_ids]
     if len(panes) < 2:
         raise cmuxError(f"Need >=2 panes for resize test, got {panes}")
 
@@ -116,9 +116,9 @@ def pick_resize_direction_for_pane(client: cmux, pane_ids: list[str], target_pan
 
     if x_span >= y_span:
         left_pane = min(panes, key=x_of)
-        left_id = str(left_pane.get("paneId") or left_pane.get("pane_id") or "")
+        left_id = str(left_pane.get("paneId") or left_pane.get("area_id") or "")
         return ("right" if target_pane == left_id else "left"), "width"
 
     top_pane = min(panes, key=y_of)
-    top_id = str(top_pane.get("paneId") or top_pane.get("pane_id") or "")
+    top_id = str(top_pane.get("paneId") or top_pane.get("area_id") or "")
     return ("down" if target_pane == top_id else "up"), "height"

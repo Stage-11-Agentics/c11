@@ -14,12 +14,14 @@ extension TerminalController {
         switch method {
         case "settings.open":
             return v2Result(id: id, self.v2SettingsOpen(params: params))
-        case "tab.action":
-            return v2Result(id: id, self.v2TabAction(params: params))
+        case "panel.action":
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2PanelAction(params: params))
         case "session.save":
             return v2Result(id: id, self.v2SessionSave(params: params))
         case "mailbox.resolve":
             return v2Result(id: id, self.v2MailboxResolve(params: params))
+        case "messages.view":
+            return v2Result(id: id, self.v2MessagesView(params: params))
         case "sidebar.state":
             return v2Result(id: id, self.v2SidebarState(params: params))
         default:
@@ -27,8 +29,114 @@ extension TerminalController {
         }
     }
 
-    func v2TabAction(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+    /// Open or refresh the app-owned messages page. The page writer is always
+    /// asynchronous here: a missing page schedules an off-main rebuild and
+    /// returns immediately, so a socket request cannot wedge the app behind a
+    /// writer-queue sync. This method is deliberately not a focus intent;
+    /// opening a monitoring view must preserve the operator's workspace/tab.
+    private func v2MessagesView(params: [String: Any]) -> V2CallResult {
+        MessagesPageWriter.shared.start()
+        guard let pageURL = try? MessagesPageLayout.defaultPageURL() else {
+            return .err(code: "unavailable", message: "Messages page path is unavailable", data: nil)
+        }
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        let hasExplicitWorkspace = params.keys.contains("workspace_id")
+        let targetWorkspaceID: UUID? = v2MainSync {
+            if hasExplicitWorkspace {
+                guard let requestedWorkspaceID = v2UUID(params, "workspace_id"),
+                      workspaceManager.workspaces.contains(where: { $0.id == requestedWorkspaceID }) else {
+                    return nil
+                }
+                return requestedWorkspaceID
+            }
+            return (workspaceManager.selectedWorkspace ?? workspaceManager.workspaces.first)?.id
+        }
+        guard let targetWorkspaceID else {
+            let missingWorkspaceData: [String: Any]? = hasExplicitWorkspace
+                ? ["workspace_id": v2String(params, "workspace_id") ?? ""]
+                : nil
+            return .err(
+                code: hasExplicitWorkspace ? "not_found" : "unavailable",
+                message: hasExplicitWorkspace ? "Workspace not found" : "No workspace available",
+                data: missingWorkspaceData
+            )
+        }
+
+        if !FileManager.default.fileExists(atPath: pageURL.path) {
+            MessagesPageWriter.shared.ensurePage { [weak self, weak workspaceManager] result in
+                guard case let .success(readyURL) = result,
+                      let self,
+                      let workspaceManager else { return }
+                DispatchQueue.main.async {
+                    _ = self.v2OpenMessagesPage(
+                        pageURL: readyURL,
+                        workspaceManager: workspaceManager,
+                        targetWorkspaceID: targetWorkspaceID
+                    )
+                }
+            }
+            return .ok([
+                "url": pageURL.absoluteString,
+                "workspace_id": targetWorkspaceID.uuidString,
+                "pending": true,
+            ])
+        }
+
+        return v2MainSync {
+            v2OpenMessagesPage(
+                pageURL: pageURL,
+                workspaceManager: workspaceManager,
+                targetWorkspaceID: targetWorkspaceID
+            )
+        }
+    }
+
+    @MainActor
+    private func v2OpenMessagesPage(
+        pageURL: URL,
+        workspaceManager: WorkspaceManager,
+        targetWorkspaceID: UUID
+    ) -> V2CallResult {
+        guard let targetWorkspace = workspaceManager.workspaces.first(where: { $0.id == targetWorkspaceID }) else {
+            return .err(code: "not_found", message: "Workspace not found", data: [
+                "workspace_id": targetWorkspaceID.uuidString
+            ])
+        }
+
+        if let existingPanel = targetWorkspace.panels.values
+            .compactMap({ $0 as? BrowserPanel })
+            .first(where: { panel in
+                guard let currentURL = panel.currentURL else { return false }
+                return currentURL.standardizedFileURL.path == pageURL.standardizedFileURL.path
+            }) {
+            // Reload the page in place, but do not select its workspace or tab.
+            existingPanel.reload()
+            return .ok([
+                "url": pageURL.absoluteString,
+                "workspace_id": targetWorkspace.id.uuidString,
+                "panel_id": existingPanel.id.uuidString,
+                "reused": true,
+            ])
+        }
+
+        guard let pane = targetWorkspace.bonsplitController.focusedPaneId
+                    ?? targetWorkspace.bonsplitController.allPaneIds.first,
+              let panel = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: false) else {
+            return .err(code: "unavailable", message: "No area available for messages page", data: nil)
+        }
+        return .ok([
+            "url": pageURL.absoluteString,
+            "workspace_id": targetWorkspace.id.uuidString,
+            "panel_id": panel.id.uuidString,
+            "reused": false,
+        ])
+    }
+
+    func v2PanelAction(params: [String: Any]) -> V2CallResult {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let action = v2ActionKey(params) else {
@@ -57,33 +165,31 @@ extension TerminalController {
             "pin", "unpin", "mark_read", "mark_unread"
         ]
 
-        var result: V2CallResult = .err(code: "invalid_params", message: "Unknown tab action", data: [
+        var result: V2CallResult = .err(code: "invalid_params", message: "Unknown panel action", data: [
             "action": action,
             "supported_actions": supportedActions
         ])
 
         v2MainSync {
-            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
 
             let surfaceId = v2UUID(params, "surface_id") ?? v2UUID(params, "tab_id") ?? workspace.focusedPanelId
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused tab", data: nil)
+                result = .err(code: "not_found", message: "No focused panel", data: nil)
                 return
             }
             guard workspace.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Tab not found", data: [
+                result = .err(code: "not_found", message: "Panel not found", data: [
                     "surface_id": surfaceId.uuidString,
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "tab_id": surfaceId.uuidString,
-                    "tab_ref": v2TabRef(uuid: surfaceId)
                 ])
                 return
             }
 
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
 
             @MainActor
             func finish(_ extras: [String: Any] = [:]) {
@@ -95,8 +201,6 @@ extension TerminalController {
                     "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
                     "surface_id": surfaceId.uuidString,
                     "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "tab_id": surfaceId.uuidString,
-                    "tab_ref": v2TabRef(uuid: surfaceId)
                 ]
                 if let paneId = workspace.paneId(forPanelId: surfaceId)?.id {
                     payload["pane_id"] = paneId.uuidString
@@ -112,25 +216,25 @@ extension TerminalController {
             }
 
             @MainActor
-            func insertionIndexToRight(anchorTabId: TabID, inPane paneId: PaneID) -> Int {
-                let tabs = workspace.bonsplitController.tabs(inPane: paneId)
-                guard let anchorIndex = tabs.firstIndex(where: { $0.id == anchorTabId }) else { return tabs.count }
-                let pinnedCount = tabs.reduce(into: 0) { count, tab in
-                    if let panelId = workspace.panelIdFromSurfaceId(tab.id),
+            func insertionIndexToRight(anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> Int {
+                let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
+                guard let anchorIndex = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else { return bonsplitTabs.count }
+                let pinnedCount = bonsplitTabs.reduce(into: 0) { count, bonsplitTab in
+                    if let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id),
                        workspace.isPanelPinned(panelId) {
                         count += 1
                     }
                 }
-                let rawTarget = min(anchorIndex + 1, tabs.count)
+                let rawTarget = min(anchorIndex + 1, bonsplitTabs.count)
                 return max(rawTarget, pinnedCount)
             }
 
             @MainActor
-            func closeTabs(_ tabIds: [TabID]) -> (closed: Int, skippedPinned: Int) {
+            func closePanels(_ bonsplitTabIds: [TabID]) -> (closed: Int, skippedPinned: Int) {
                 var closed = 0
                 var skippedPinned = 0
-                for tabId in tabIds {
-                    guard let panelId = workspace.panelIdFromSurfaceId(tabId) else { continue }
+                for bonsplitTabId in bonsplitTabIds {
+                    guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId) else { continue }
                     if workspace.isPanelPinned(panelId) {
                         skippedPinned += 1
                         continue
@@ -176,63 +280,59 @@ extension TerminalController {
                 workspace.markPanelUnread(surfaceId)
                 finish()
 
-            case "reload", "reload_tab":
+            case "reload", "reload_panel", "reload_tab":
                 guard let browserPanel = workspace.browserPanel(for: surfaceId) else {
-                    result = .err(code: "invalid_state", message: "Reload is only available for browser tabs", data: nil)
+                    result = .err(code: "invalid_state", message: "Reload is only available for browser panels", data: nil)
                     return
                 }
                 browserPanel.reload()
                 finish()
 
-            case "duplicate", "duplicate_tab":
-                guard let anchorTabId = workspace.surfaceIdFromPanelId(surfaceId),
+            case "duplicate", "duplicate_panel", "duplicate_tab":
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId),
                       let browserPanel = workspace.browserPanel(for: surfaceId) else {
-                    result = .err(code: "invalid_state", message: "Duplicate is only available for browser tabs", data: nil)
+                    result = .err(code: "invalid_state", message: "Duplicate is only available for browser panels", data: nil)
                     return
                 }
 
-                let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
+                let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
                 guard let newPanel = workspace.newBrowserSurface(
                     inPane: paneId,
                     url: browserPanel.currentURL,
                     focus: true
                 ) else {
-                    result = .err(code: "internal_error", message: "Failed to duplicate tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to duplicate panel", data: nil)
                     return
                 }
                 _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
                 finish([
                     "created_surface_id": newPanel.id.uuidString,
                     "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
                 ])
 
-            case "new_terminal_right", "new_terminal_to_right", "new_terminal_tab_to_right":
-                guard let anchorTabId = workspace.surfaceIdFromPanelId(surfaceId),
+            case "new_terminal_right", "new_terminal_to_right", "new_terminal_panel_to_right", "new_terminal_tab_to_right":
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Tab pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
 
-                let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
+                let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
                 guard let newPanel = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
-                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
                 _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
                 finish([
                     "created_surface_id": newPanel.id.uuidString,
                     "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
                 ])
 
-            case "new_browser_right", "new_browser_to_right", "new_browser_tab_to_right":
-                guard let anchorTabId = workspace.surfaceIdFromPanelId(surfaceId),
+            case "new_browser_right", "new_browser_to_right", "new_browser_panel_to_right", "new_browser_tab_to_right":
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Tab pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
 
@@ -243,63 +343,61 @@ extension TerminalController {
                     return
                 }
 
-                let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
+                let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
                 guard let newPanel = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
-                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
                 _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
                 finish([
                     "created_surface_id": newPanel.id.uuidString,
                     "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
                 ])
 
             case "close_left", "close_to_left":
-                guard let anchorTabId = workspace.surfaceIdFromPanelId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Tab pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
-                let tabs = workspace.bonsplitController.tabs(inPane: paneId)
-                guard let index = tabs.firstIndex(where: { $0.id == anchorTabId }) else {
-                    result = .err(code: "not_found", message: "Tab not found in pane", data: nil)
+                let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
+                guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else {
+                    result = .err(code: "not_found", message: "Panel not found in area", data: nil)
                     return
                 }
-                let targetIds = Array(tabs.prefix(index).map(\.id))
-                let closeResult = closeTabs(targetIds)
+                let targetIds = Array(bonsplitTabs.prefix(index).map(\.id))
+                let closeResult = closePanels(targetIds)
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
             case "close_right", "close_to_right":
-                guard let anchorTabId = workspace.surfaceIdFromPanelId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Tab pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
-                let tabs = workspace.bonsplitController.tabs(inPane: paneId)
-                guard let index = tabs.firstIndex(where: { $0.id == anchorTabId }) else {
-                    result = .err(code: "not_found", message: "Tab not found in pane", data: nil)
+                let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
+                guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else {
+                    result = .err(code: "not_found", message: "Panel not found in area", data: nil)
                     return
                 }
-                let targetIds = (index + 1 < tabs.count) ? Array(tabs.suffix(from: index + 1).map(\.id)) : []
-                let closeResult = closeTabs(targetIds)
+                let targetIds = (index + 1 < bonsplitTabs.count) ? Array(bonsplitTabs.suffix(from: index + 1).map(\.id)) : []
+                let closeResult = closePanels(targetIds)
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
-            case "close_others", "close_other_tabs":
-                guard let anchorTabId = workspace.surfaceIdFromPanelId(surfaceId),
+            case "close_others", "close_other_panels", "close_other_tabs":
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
-                    result = .err(code: "not_found", message: "Tab pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area for panel not found", data: nil)
                     return
                 }
                 let targetIds = workspace.bonsplitController.tabs(inPane: paneId)
                     .map(\.id)
-                    .filter { $0 != anchorTabId }
-                let closeResult = closeTabs(targetIds)
+                    .filter { $0 != anchorBonsplitTabId }
+                let closeResult = closePanels(targetIds)
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
             default:
-                result = .err(code: "invalid_params", message: "Unknown tab action", data: [
+                result = .err(code: "invalid_params", message: "Unknown panel action", data: [
                     "action": action,
                     "supported_actions": supportedActions
                 ])
@@ -469,12 +567,21 @@ extension TerminalController {
 
     /// Structured `sidebar_state` — JSON variant that includes the M3 `agent_chip` block.
     private func v2SidebarState(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard v2UUID(params, "workspace_id") != nil
+                || v2UUID(params, "surface_id") != nil
+                || v2UUID(params, "tab_id") != nil else {
+            return .err(
+                code: "missing_ref",
+                message: String(localized: "socket.sidebar.state.targetRequired", defaultValue: "sidebar.state requires a workspace or panel target; selected-workspace fallback is disabled"),
+                data: nil
+            )
+        }
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         var payload: [String: Any]?
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
             let statusEntries = ws.sidebarStatusEntriesInDisplayOrder()
             let metadataBlocks = ws.sidebarMetadataBlocksInDisplayOrder()
 

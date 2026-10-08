@@ -20,9 +20,9 @@ struct PanelContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            let titleBarState = workspace.surfaceTitleBarState(panelId: panel.id)
-            if titleBarState.visible {
-                SurfaceTitleBarView(
+            let titleBarState = workspace.panelTitleBarState(panelId: panel.id)
+            if titleBarState.rendersBar {
+                PanelTitleBarView(
                     state: titleBarState,
                     onToggleCollapsed: { workspace.toggleSurfaceTitleBarCollapsed(panelId: panel.id) }
                 )
@@ -39,7 +39,8 @@ struct PanelContentView: View {
                 TerminalPanelView(
                     panel: terminalPanel,
                     paneInteractionRuntime: workspace.paneInteractionRuntime,
-                    drawsPortalTopFrameEdge: !workspace.surfaceTitleBarState(panelId: terminalPanel.id).visible,
+                    areaId: paneId.id,
+                    drawsPortalTopFrameEdge: !workspace.panelTitleBarState(panelId: terminalPanel.id).rendersBar,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,

@@ -2,7 +2,7 @@
 
 you are in the room now.
 
-four surfaces around you. a terminal. a browser. this page. a waiting agent. one binary. one socket. one addressable space. the layout *is* the collaboration.
+four panels around you. a terminal. a browser. this page. a waiting agent. one binary. one socket. one addressable space. the layout *is* the collaboration.
 
 ---
 
@@ -21,9 +21,9 @@ stage 11 is an outpost in a very large dark. we built this because we needed it.
 ## the grammar
 
 - **window** — a macOS window
-- **workspace** — a screen of panes you switch between in a keystroke; commonly one project, but organize it however fits
-- **pane** — a region of a workspace (splits, bonsplit under the hood)
-- **surface** — a terminal, browser, or markdown view inside a pane. panes carry surfaces as tabs
+- **workspace** — a screen of areas you switch between in a keystroke; commonly one project, but organize it however fits
+- **area** — a region of a workspace (splits, bonsplit under the hood)
+- **panel** — a terminal, browser, or markdown view inside an area. areas carry panels
 
 this is all the vocabulary you need to start moving. the rest rhymes.
 
@@ -34,7 +34,7 @@ this is all the vocabulary you need to start moving. the rest rhymes.
 | keys | does |
 | ---- | ---- |
 | `⌘N` | new workspace |
-| `⌘T` | new tab |
+| `⌘T` | new panel |
 | `⌘D` | split right |
 | `⌘⇧D` | split down |
 | `⌘P` | jump to workspace |
@@ -46,12 +46,12 @@ the palette is where everything else lives. find a command once, your fingers wi
 
 ## the CLI
 
-every surface talks to `c11` over a socket. install the binary from the command palette — **Shell Command: Install 'c11' in PATH** — and it lands at `/usr/local/bin/c11`. try this in the terminal to your upper-left:
+every panel talks to `c11` over a socket. install the binary from the command palette — **Shell Command: Install 'c11' in PATH** — and it lands at `/usr/local/bin/c11`. try this in the terminal to your upper-left:
 
 ```
 c11 identify          # who am i, where am i
 c11 tree              # what does the room look like
-c11 new-split right   # split a pane
+c11 new-split right   # split an area
 c11 set-title "..."   # name the work you are doing
 ```
 
@@ -71,7 +71,7 @@ c11 is how the spike gets a room. keyboards and agents both touch the same space
 
 ## one small ritual
 
-name your surfaces. `c11 set-title` costs nothing and saves future-you from a wall of untitled tabs. an unnamed surface is an unidentifiable agent. an unnamed agent is coordination debt.
+name your panels. `c11 set-title` costs nothing and saves future-you from a wall of untitled panels. an unnamed panel is an unidentifiable agent. an unnamed agent is coordination debt.
 
 you are not the last mind that will touch this work. leave a trail.
 

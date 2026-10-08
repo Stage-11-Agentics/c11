@@ -4,19 +4,21 @@ Principles that shape what c11 is and, more importantly, what it refuses to be. 
 
 ## c11 is host and primitive, not an intelligence layer
 
-c11 is the room the compound actor works in: terminal, browser, and markdown surfaces; workspaces, panes, tabs; notifications; one CLI and socket API. The opinion about what agents *do* lives upstairs: Lattice, Mycelium, the rest of the Stage 11 stack. c11's job is to be the best possible substrate for that opinion to land on, not to have one of its own.
+c11 is the room the compound actor works in: terminal, browser, and markdown panels; workspaces, areas; notifications; one CLI and socket API. The opinion about what agents *do* lives upstairs: Lattice, Mycelium, the rest of the Stage 11 stack. c11's job is to be the best possible substrate for that opinion to land on, not to have one of its own.
 
-The test: if a proposed feature requires c11 to know what the agent is working on, it's the wrong shape. c11 should care about *where* the agent is (surface, pane, workspace) and *what kind* of agent it is (terminal type, model, declared role), never what the agent is thinking.
+The test: if a proposed feature requires c11 to know what the agent is working on, it's the wrong shape. c11 should care about *where* the agent is (workspace, area, panel) and *what kind* of agent it is (terminal type, model, declared role), never what the agent is thinking.
 
 ## Observe from outside, never hook into agents
 
-c11 features must not require agent-side cooperation. When a feature needs information about what's happening in a pane (auto-titles, session recaps, activity summaries, stall detection, metadata inference), c11 reads the pane externally (`c11 tree`, pane scrollback, screen content) and processes it, typically via a cheap local model, rather than asking the agent to write to a file, call a CLI, or otherwise play along.
+c11 features must not require agent-side cooperation. When a feature needs information about what's happening in a panel (auto-titles, session recaps, activity summaries, stall detection, metadata inference), c11 reads the panel externally (`c11 tree`, panel scrollback, screen content) and processes it, typically via a cheap local model, rather than asking the agent to write to a file, call a CLI, or otherwise play along.
 
-**Why this matters:** c11 has to work identically for Claude Code, Codex, Gemini, Kimi, bash sessions, REPLs, log tails, and anything else in a pane. Requiring agent cooperation couples c11 to specific agents and breaks the neutrality of the substrate. The moment an agent has to be modified to work well in c11, c11 has already lost.
+**Why this matters:** c11 has to work identically for Claude Code, Codex, Gemini, Kimi, bash sessions, REPLs, log tails, and anything else in a panel. Requiring agent cooperation couples c11 to specific agents and breaks the neutrality of the substrate. The moment an agent has to be modified to work well in c11, c11 has already lost.
 
-**Concrete example.** When Claude Code shipped the `/recap` feature with no programmatic access, the tempting fix was a SessionStart hook that prompts Claude to emit a recap file. Wrong shape: it would have made c11's recap feature Claude-specific and fragile to Claude's internal changes. The right shape is c11 reading the pane itself and producing its own interpretation. Agent-agnostic by construction.
+**Concrete example.** When Claude Code shipped the `/recap` feature with no programmatic access, the tempting fix was a SessionStart hook that prompts Claude to emit a recap file. Wrong shape: it would have made c11's recap feature Claude-specific and fragile to Claude's internal changes. The right shape is c11 reading the panel itself and producing its own interpretation. Agent-agnostic by construction.
 
-**How to apply.** When designing any c11 feature that surfaces "what's going on" in a pane, default to external observation plus a small model for interpretation. Only consider agent-side integration when external observation is genuinely insufficient, and when you reach for it, flag it as a philosophical exception worth discussing before building. Exceptions here are load-bearing; they shouldn't accumulate casually.
+**How to apply.** When designing any c11 feature that surfaces "what's going on" in a panel, default to external observation plus a small model for interpretation. Only consider agent-side integration when external observation is genuinely insufficient, and when you reach for it, flag it as a philosophical exception worth discussing before building. Exceptions here are load-bearing; they shouldn't accumulate casually.
+
+**Bounded exception.** A c11 terminal may attach optional, non-blocking observations to the process it launches, and only to that process. An observation may carry a lifecycle or attention fact the journal already allows. It may not carry a tool body, a prompt, an answer, or a permission decision, and it may not trust hooks the operator configured. A panel with no observation is still a normal terminal. Missing evidence is a visible gap.
 
 ## Built for the hyperengineer and their agents
 
@@ -30,12 +32,12 @@ Terrestrial, orbital, or elsewhere: the interface is the same. This is why c11 i
 
 ## Primitives before policy
 
-If a feature can be built by users composing existing primitives (splits, surfaces, metadata, sockets), that's the preferred path. New primitives land when composition gets painful, not because a specific workflow would be nicer with dedicated syntax. The CLI and socket API are the same surface, deliberately: automation is first-class, not an afterthought.
+If a feature can be built by users composing existing primitives (splits, panels, metadata, sockets), that's the preferred path. New primitives land when composition gets painful, not because a specific workflow would be nicer with dedicated syntax. The CLI and socket API are the same surface, deliberately: automation is first-class, not an afterthought.
 
 ## Lineage matters
 
 c11 is a macOS-native reinterpretation of tmux rebuilt on Ghostty, forked from the upstream cmux project. That lineage is load-bearing:
-- **tmux**: for the ergonomics of panes, splits, persistent sessions, programmatic control.
+- **tmux**: for the ergonomics of splits, persistent sessions, programmatic control.
 - **cmux**: for the macOS-native tmux reinterpretation this fork builds on.
 - **Ghostty**: for a GPU-accelerated renderer that keeps typing latency honest.
 - **macOS-native**: for first-class AppKit surfaces, not a font-pushing TTY widget.

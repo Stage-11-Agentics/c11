@@ -833,10 +833,74 @@ func terminalKeyboardCopyModeResolve(
     return .perform(action, count: count)
 }
 
-private final class GhosttySurfaceCallbackContext {
+/// One queued main turn, retaining only the newest scalar callback payload.
+/// Clear admission before applying: a native bounded drain can wake us again
+/// while the current turn is still executing. Never call native/UI code locked.
+final class GhosttyCallbackCoalescer<Value> {
+    private let lock = NSLock()
+    private var pending: Value?
+    private var queued = false
+    private let schedule: (@escaping () -> Void) -> Void
+#if DEBUG
+    struct Stats: Codable {
+        var requests = 0
+        var enqueued = 0
+        var drained = 0
+        var pending = 0
+        var maxPending = 0
+    }
+    private var stats = Stats()
+
+    func debugStats() -> Stats {
+        lock.lock()
+        defer { lock.unlock() }
+        return stats
+    }
+#endif
+
+    init(schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.schedule = schedule
+    }
+
+    func submit(_ value: Value, apply: @escaping (Value) -> Void) {
+        lock.lock()
+        pending = value
+#if DEBUG
+        stats.requests += 1
+#endif
+        guard !queued else {
+            lock.unlock()
+            return
+        }
+        queued = true
+#if DEBUG
+        stats.enqueued += 1
+        stats.pending += 1
+        stats.maxPending = max(stats.maxPending, stats.pending)
+#endif
+        lock.unlock()
+
+        schedule { [self] in
+            lock.lock()
+            let value = pending
+            pending = nil
+            queued = false
+#if DEBUG
+            stats.pending -= 1
+            stats.drained += 1
+#endif
+            lock.unlock()
+            if let value { apply(value) }
+        }
+    }
+}
+
+final class GhosttySurfaceCallbackContext {
     weak var surfaceView: GhosttyNSView?
     weak var terminalSurface: TerminalSurface?
     let surfaceId: UUID
+    let scrollbarUpdates = GhosttyCallbackCoalescer<GhosttyScrollbar>()
+    private let cellSizeUpdates = GhosttyCallbackCoalescer<CGSize>()
 
     init(surfaceView: GhosttyNSView, terminalSurface: TerminalSurface) {
         self.surfaceView = surfaceView
@@ -844,12 +908,56 @@ private final class GhosttySurfaceCallbackContext {
         self.surfaceId = terminalSurface.id
     }
 
-    var tabId: UUID? {
-        terminalSurface?.tabId ?? surfaceView?.tabId
+    var workspaceId: UUID? {
+        terminalSurface?.workspaceId ?? surfaceView?.workspaceId
     }
 
     var runtimeSurface: ghostty_surface_t? {
         terminalSurface?.surface ?? surfaceView?.terminalSurface?.surface
+    }
+
+    /// Each native runtime gets a new context, even when its Swift view survives.
+    /// Resolve weak targets only on main, after the native callback has returned.
+    private var currentSurfaceView: GhosttyNSView? {
+        precondition(Thread.isMainThread)
+        guard let terminalSurface,
+              terminalSurface.surfaceCallbackContext?.takeUnretainedValue() === self,
+              let surfaceView,
+              surfaceView.terminalSurface === terminalSurface else { return nil }
+        return surfaceView
+    }
+
+    func enqueueScrollbarUpdate(_ scrollbar: GhosttyScrollbar) {
+        scrollbarUpdates.submit(scrollbar) { [weak self] scrollbar in
+            guard let surfaceView = self?.currentSurfaceView else { return }
+            surfaceView.scrollbar = scrollbar
+            surfaceView.terminalSurface?.noteScrollbar(total: scrollbar.total, len: scrollbar.len)
+            NotificationCenter.default.post(
+                name: .ghosttyDidUpdateScrollbar,
+                object: surfaceView,
+                userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
+            )
+        }
+    }
+
+    func updateCellSize(_ cellSize: CGSize) {
+        // Surface.init reports this synchronously, before Swift receives the
+        // native surface pointer. Preserve that main-thread initialization order.
+        if Thread.isMainThread {
+            applyCellSize(cellSize)
+        } else {
+            cellSizeUpdates.submit(cellSize) { [weak self] in self?.applyCellSize($0) }
+        }
+    }
+
+    private func applyCellSize(_ cellSize: CGSize) {
+        guard let surfaceView = currentSurfaceView else { return }
+        surfaceView.cellSize = cellSize
+        NotificationCenter.default.post(
+            name: .ghosttyDidUpdateCellSize,
+            object: surfaceView,
+            userInfo: [GhosttyNotificationKey.cellSize: cellSize]
+        )
     }
 }
 
@@ -868,6 +976,7 @@ class GhosttyApp {
     }()
 
     private(set) var app: ghostty_app_t?
+    private let tickRequests = GhosttyCallbackCoalescer<Void>()
     private(set) var config: ghostty_config_t?
     private(set) var defaultBackgroundColor: NSColor = .windowBackgroundColor
     private(set) var defaultBackgroundOpacity: Double = 1.0
@@ -1067,9 +1176,8 @@ class GhosttyApp {
         runtimeConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
         runtimeConfig.supports_selection_clipboard = true
         runtimeConfig.wakeup_cb = { userdata in
-            DispatchQueue.main.async {
-                GhosttyApp.shared.tick()
-            }
+            guard let userdata else { return }
+            Unmanaged<GhosttyApp>.fromOpaque(userdata).takeUnretainedValue().scheduleTick()
         }
         runtimeConfig.action_cb = { app, target, action in
             return GhosttyApp.shared.handleAction(target: target, action: action)
@@ -1133,13 +1241,13 @@ class GhosttyApp {
         runtimeConfig.close_surface_cb = { userdata, needsConfirmClose in
             guard let callbackContext = GhosttyApp.callbackContext(from: userdata) else { return }
             let callbackSurfaceId = callbackContext.surfaceId
-            let callbackTabId = callbackContext.tabId
+            let callbackWorkspaceId = callbackContext.workspaceId
 
 #if DEBUG
             cmuxWriteChildExitProbe(
                 [
                     "probeCloseSurfaceNeedsConfirm": needsConfirmClose ? "1" : "0",
-                    "probeCloseSurfaceTabId": callbackTabId?.uuidString ?? "",
+                    "probeCloseSurfaceTabId": callbackWorkspaceId?.uuidString ?? "",
                     "probeCloseSurfaceSurfaceId": callbackSurfaceId.uuidString,
                 ],
                 increments: ["probeCloseSurfaceCbCount": 1]
@@ -1150,18 +1258,18 @@ class GhosttyApp {
                 guard let app = AppDelegate.shared else { return }
                 // Close requests must be resolved by the callback's workspace/surface IDs only.
                 // If the mapping is already gone (duplicate/stale callback), ignore it.
-                if let callbackTabId,
-                   let manager = app.tabManagerFor(tabId: callbackTabId) ?? app.tabManager,
-                   let workspace = manager.tabs.first(where: { $0.id == callbackTabId }),
+                if let callbackWorkspaceId,
+                   let manager = app.workspaceManagerFor(workspaceId: callbackWorkspaceId) ?? app.workspaceManager,
+                   let workspace = manager.workspaces.first(where: { $0.id == callbackWorkspaceId }),
                    workspace.panels[callbackSurfaceId] != nil {
                     if needsConfirmClose {
                         manager.closeRuntimeSurfaceWithConfirmation(
-                            tabId: callbackTabId,
+                            workspaceId: callbackWorkspaceId,
                             surfaceId: callbackSurfaceId
                         )
                     } else {
                         manager.closeRuntimeSurface(
-                            tabId: callbackTabId,
+                            workspaceId: callbackWorkspaceId,
                             surfaceId: callbackSurfaceId
                         )
                     }
@@ -1572,6 +1680,16 @@ class GhosttyApp {
         #endif
     }
 
+    private func scheduleTick() {
+        tickRequests.submit(()) { [weak self] in self?.tick() }
+    }
+
+#if DEBUG
+    func debugTickSchedulingStats() -> GhosttyCallbackCoalescer<Void>.Stats {
+        tickRequests.debugStats()
+    }
+#endif
+
     func tick() {
         guard let app = app else { return }
 
@@ -1753,6 +1871,14 @@ class GhosttyApp {
         return enabled
     }
 
+    fileprivate func configuredFontSizePoints() -> Float? {
+        guard let config else { return nil }
+        var points: Float = 0
+        let key = "font-size"
+        guard ghostty_config_get(config, &points, key, UInt(key.utf8.count)), points > 0 else { return nil }
+        return points
+    }
+
     fileprivate func shellIntegrationMode() -> String {
         guard let config else { return "detect" }
         var value: UnsafePointer<Int8>?
@@ -1891,11 +2017,11 @@ class GhosttyApp {
         }
     }
 
-    private func logAction(_ action: ghostty_action_s, target: ghostty_target_s, tabId: UUID?, surfaceId: UUID?) {
+    private func logAction(_ action: ghostty_action_s, target: ghostty_target_s, workspaceId: UUID?, surfaceId: UUID?) {
         guard backgroundLogEnabled else { return }
         let targetLabel = target.tag == GHOSTTY_TARGET_SURFACE ? "surface" : "app"
         logBackground(
-            "action event target=\(targetLabel) action=\(actionLabel(for: action)) tab=\(tabId?.uuidString ?? "nil") surface=\(surfaceId?.uuidString ?? "nil")"
+            "action event target=\(targetLabel) action=\(actionLabel(for: action)) tab=\(workspaceId?.uuidString ?? "nil") surface=\(surfaceId?.uuidString ?? "nil")"
         )
     }
 
@@ -1952,7 +2078,7 @@ class GhosttyApp {
             if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG ||
                 action.tag == GHOSTTY_ACTION_CONFIG_CHANGE ||
                 action.tag == GHOSTTY_ACTION_COLOR_CHANGE {
-                logAction(action, target: target, tabId: nil, surfaceId: nil)
+                logAction(action, target: target, workspaceId: nil, surfaceId: nil)
             }
 
             if action.tag == GHOSTTY_ACTION_DESKTOP_NOTIFICATION {
@@ -1961,16 +2087,16 @@ class GhosttyApp {
                 let actionBody = action.action.desktop_notification.body
                     .flatMap { String(cString: $0) } ?? ""
                 return performOnMain {
-                    guard let tabManager = AppDelegate.shared?.tabManager,
-                          let tabId = tabManager.selectedTabId else {
+                    guard let workspaceManager = AppDelegate.shared?.workspaceManager,
+                          let workspaceId = workspaceManager.selectedWorkspaceId else {
                         return false
                     }
                     // Suppress OSC notifications for workspaces with active Claude hook sessions.
                     // The hook system manages notifications with proper lifecycle tracking;
                     // raw OSC notifications would duplicate or outlive the structured hooks.
-                    let owningManager = AppDelegate.shared?.tabManagerFor(tabId: tabId) ?? tabManager
-                    let surfaceId = owningManager.focusedSurfaceId(for: tabId)
-                    if let workspace = owningManager.tabs.first(where: { $0.id == tabId }),
+                    let owningManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId) ?? workspaceManager
+                    let surfaceId = owningManager.focusedSurfaceId(for: workspaceId)
+                    if let workspace = owningManager.workspaces.first(where: { $0.id == workspaceId }),
                        GhosttyOSCNotificationPolicy.shouldSuppress(
                            hasActiveClaudeHookSession: workspace.agentPIDs["claude_code"] != nil,
                            sourceTerminalKind: surfaceId.flatMap {
@@ -1979,11 +2105,11 @@ class GhosttyApp {
                        ) {
                         return true
                     }
-                    let tabTitle = owningManager.titleForTab(tabId) ?? "Terminal"
+                    let tabTitle = owningManager.titleForTab(workspaceId) ?? "Terminal"
                     let command = actionTitle.isEmpty ? tabTitle : actionTitle
                     let body = actionBody
                     TerminalNotificationStore.shared.addNotification(
-                        tabId: tabId,
+                        workspaceId: workspaceId,
                         surfaceId: surfaceId,
                         title: command,
                         subtitle: "",
@@ -2045,7 +2171,23 @@ class GhosttyApp {
             return false
         }
         let callbackContext = Self.callbackContext(from: ghostty_surface_userdata(target.target.surface))
-        let callbackTabId = callbackContext?.tabId
+        // The current native scrollbar path uses the main mailbox; coalesce its
+        // bursts. Copy scalars here and keep any future off-main delivery from
+        // reading view/model state before reaching the context's main flush.
+        if action.tag == GHOSTTY_ACTION_SCROLLBAR {
+            guard let callbackContext else { return false }
+            callbackContext.enqueueScrollbarUpdate(GhosttyScrollbar(c: action.action.scrollbar))
+            return true
+        }
+        if action.tag == GHOSTTY_ACTION_CELL_SIZE {
+            guard let callbackContext else { return false }
+            callbackContext.updateCellSize(CGSize(
+                width: CGFloat(action.action.cell_size.width),
+                height: CGFloat(action.action.cell_size.height)
+            ))
+            return true
+        }
+        let callbackWorkspaceId = callbackContext?.workspaceId
         let callbackSurfaceId = callbackContext?.surfaceId
 
         if action.tag == GHOSTTY_ACTION_SHOW_CHILD_EXITED {
@@ -2055,15 +2197,15 @@ class GhosttyApp {
             // the panel immediately (no prompt).
 #if DEBUG
             dlog(
-                "surface.action.showChildExited tab=\(callbackTabId?.uuidString.prefix(5) ?? "nil") " +
+                "surface.action.showChildExited tab=\(callbackWorkspaceId?.uuidString.prefix(5) ?? "nil") " +
                 "surface=\(callbackSurfaceId?.uuidString.prefix(5) ?? "nil")"
             )
 #endif
 #if DEBUG
             cmuxWriteChildExitProbe(
                 [
-                    "probeShowChildExitedTabId": callbackTabId?.uuidString ?? "",
-                    "probeShowChildExitedSurfaceId": callbackSurfaceId?.uuidString ?? "",
+                    "probeShowChildExitedWorkspaceId": callbackWorkspaceId?.uuidString ?? "",
+                    "probeShowChildExitedTabId": callbackSurfaceId?.uuidString ?? "",
                 ],
                 increments: ["probeShowChildExitedCount": 1]
             )
@@ -2072,12 +2214,12 @@ class GhosttyApp {
             // dispatching this action callback.
             DispatchQueue.main.async {
                 guard let app = AppDelegate.shared else { return }
-                if let callbackTabId,
+                if let callbackWorkspaceId,
                    let callbackSurfaceId,
-                   let manager = app.tabManagerFor(tabId: callbackTabId) ?? app.tabManager,
-                   let workspace = manager.tabs.first(where: { $0.id == callbackTabId }),
+                   let manager = app.workspaceManagerFor(workspaceId: callbackWorkspaceId) ?? app.workspaceManager,
+                   let workspace = manager.workspaces.first(where: { $0.id == callbackWorkspaceId }),
                    workspace.panels[callbackSurfaceId] != nil {
-                    manager.closePanelAfterChildExited(tabId: callbackTabId, surfaceId: callbackSurfaceId)
+                    manager.closePanelAfterChildExited(workspaceId: callbackWorkspaceId, surfaceId: callbackSurfaceId)
                 }
             }
             // Always report handled so Ghostty doesn't print the fallback prompt.
@@ -2091,24 +2233,24 @@ class GhosttyApp {
             logAction(
                 action,
                 target: target,
-                tabId: callbackTabId ?? surfaceView.tabId,
+                workspaceId: callbackWorkspaceId ?? surfaceView.workspaceId,
                 surfaceId: callbackSurfaceId ?? surfaceView.terminalSurface?.id
             )
         }
 
         switch action.tag {
         case GHOSTTY_ACTION_NEW_SPLIT:
-            guard let tabId = surfaceView.tabId,
+            guard let workspaceId = surfaceView.workspaceId,
                   let surfaceId = surfaceView.terminalSurface?.id,
                   let direction = splitDirection(from: action.action.new_split) else {
                 return false
             }
             return performOnMain {
                 guard let app = AppDelegate.shared,
-                      let tabManager = app.tabManagerFor(tabId: tabId) ?? app.tabManager else {
+                      let workspaceManager = app.workspaceManagerFor(workspaceId: workspaceId) ?? app.workspaceManager else {
                     return false
                 }
-                return tabManager.createSplit(tabId: tabId, surfaceId: surfaceId, direction: direction) != nil
+                return workspaceManager.createSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction) != nil
             }
         case GHOSTTY_ACTION_RING_BELL:
             performOnMain {
@@ -2116,69 +2258,48 @@ class GhosttyApp {
             }
             return true
         case GHOSTTY_ACTION_GOTO_SPLIT:
-            guard let tabId = surfaceView.tabId,
+            guard let workspaceId = surfaceView.workspaceId,
                   let surfaceId = surfaceView.terminalSurface?.id,
                   let direction = focusDirection(from: action.action.goto_split) else {
                 return false
             }
             return performOnMain {
-                guard let tabManager = AppDelegate.shared?.tabManager else { return false }
-                return tabManager.moveSplitFocus(tabId: tabId, surfaceId: surfaceId, direction: direction)
+                guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
+                return workspaceManager.moveSplitFocus(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction)
             }
         case GHOSTTY_ACTION_RESIZE_SPLIT:
-            guard let tabId = surfaceView.tabId,
+            guard let workspaceId = surfaceView.workspaceId,
                   let surfaceId = surfaceView.terminalSurface?.id,
                   let direction = resizeDirection(from: action.action.resize_split.direction) else {
                 return false
             }
             let amount = action.action.resize_split.amount
             return performOnMain {
-                guard let tabManager = AppDelegate.shared?.tabManager else { return false }
-                return tabManager.resizeSplit(
-                    tabId: tabId,
+                guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
+                return workspaceManager.resizeSplit(
+                    workspaceId: workspaceId,
                     surfaceId: surfaceId,
                     direction: direction,
                     amount: amount
                 )
             }
         case GHOSTTY_ACTION_EQUALIZE_SPLITS:
-            guard let tabId = surfaceView.tabId else {
+            guard let workspaceId = surfaceView.workspaceId else {
                 return false
             }
             return performOnMain {
-                guard let tabManager = AppDelegate.shared?.tabManager else { return false }
-                return tabManager.equalizeSplits(tabId: tabId)
+                guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
+                return workspaceManager.equalizeSplits(workspaceId: workspaceId)
             }
         case GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM:
-            guard let tabId = surfaceView.tabId,
+            guard let workspaceId = surfaceView.workspaceId,
                   let surfaceId = surfaceView.terminalSurface?.id else {
                 return false
             }
             return performOnMain {
-                guard let tabManager = AppDelegate.shared?.tabManager else { return false }
-                return tabManager.toggleSplitZoom(tabId: tabId, surfaceId: surfaceId)
+                guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
+                return workspaceManager.toggleSplitZoom(workspaceId: workspaceId, surfaceId: surfaceId)
             }
-        case GHOSTTY_ACTION_SCROLLBAR:
-            let scrollbar = GhosttyScrollbar(c: action.action.scrollbar)
-            surfaceView.scrollbar = scrollbar
-            NotificationCenter.default.post(
-                name: .ghosttyDidUpdateScrollbar,
-                object: surfaceView,
-                userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
-            )
-            return true
-        case GHOSTTY_ACTION_CELL_SIZE:
-            let cellSize = CGSize(
-                width: CGFloat(action.action.cell_size.width),
-                height: CGFloat(action.action.cell_size.height)
-            )
-            surfaceView.cellSize = cellSize
-            NotificationCenter.default.post(
-                name: .ghosttyDidUpdateCellSize,
-                object: surfaceView,
-                userInfo: [GhosttyNotificationKey.cellSize: cellSize]
-            )
-            return true
         case GHOSTTY_ACTION_START_SEARCH:
             guard let terminalSurface = surfaceView.terminalSurface else { return true }
             let needle = action.action.start_search.needle.flatMap { String(cString: $0) }
@@ -2218,14 +2339,18 @@ class GhosttyApp {
         case GHOSTTY_ACTION_SET_TITLE:
             let title = action.action.set_title.title
                 .flatMap { String(cString: $0) } ?? ""
-            if let tabId = surfaceView.tabId,
-               let surfaceId = surfaceView.terminalSurface?.id {
-                DispatchQueue.main.async {
+            if let workspaceId = surfaceView.workspaceId,
+               let terminalSurface = surfaceView.terminalSurface {
+                let surfaceId = terminalSurface.id
+                DispatchQueue.main.async { [weak terminalSurface] in
+                    guard let terminalSurface,
+                          surfaceView.terminalSurface === terminalSurface,
+                          terminalSurface.titleChurnFilter.admit(title) else { return }
                     NotificationCenter.default.post(
                         name: .ghosttyDidSetTitle,
                         object: surfaceView,
                         userInfo: [
-                            GhosttyNotificationKey.tabId: tabId,
+                            GhosttyNotificationKey.workspaceId: workspaceId,
                             GhosttyNotificationKey.surfaceId: surfaceId,
                             GhosttyNotificationKey.title: title,
                         ]
@@ -2234,19 +2359,19 @@ class GhosttyApp {
             }
             return true
         case GHOSTTY_ACTION_PWD:
-            guard let tabId = surfaceView.tabId,
+            guard let workspaceId = surfaceView.workspaceId,
                   let surfaceId = surfaceView.terminalSurface?.id else { return true }
             let pwd = action.action.pwd.pwd.flatMap { String(cString: $0) } ?? ""
             DispatchQueue.main.async {
-                AppDelegate.shared?.tabManager?.updateSurfaceDirectory(
-                    tabId: tabId,
+                AppDelegate.shared?.updateSurfaceDirectoryFromGhosttyAction(
+                    workspaceId: workspaceId,
                     surfaceId: surfaceId,
                     directory: pwd
                 )
             }
             return true
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
-            guard let tabId = surfaceView.tabId else { return true }
+            guard let workspaceId = surfaceView.workspaceId else { return true }
             let surfaceId = surfaceView.terminalSurface?.id
             let actionTitle = action.action.desktop_notification.title
                 .flatMap { String(cString: $0) } ?? ""
@@ -2256,8 +2381,8 @@ class GhosttyApp {
                 // Suppress only the Claude surface whose structured hooks would
                 // duplicate this OSC notification. Other agents in the same
                 // workspace still own their native terminal notifications.
-                let owningManager = AppDelegate.shared?.tabManagerFor(tabId: tabId) ?? AppDelegate.shared?.tabManager
-                if let workspace = owningManager?.tabs.first(where: { $0.id == tabId }),
+                let owningManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId) ?? AppDelegate.shared?.workspaceManager
+                if let workspace = owningManager?.workspaces.first(where: { $0.id == workspaceId }),
                    GhosttyOSCNotificationPolicy.shouldSuppress(
                        hasActiveClaudeHookSession: workspace.agentPIDs["claude_code"] != nil,
                        sourceTerminalKind: surfaceId.flatMap {
@@ -2266,11 +2391,11 @@ class GhosttyApp {
                    ) {
                     return
                 }
-                let tabTitle = owningManager?.titleForTab(tabId) ?? "Terminal"
+                let tabTitle = owningManager?.titleForTab(workspaceId) ?? "Terminal"
                 let command = actionTitle.isEmpty ? tabTitle : actionTitle
                 let body = actionBody
                 TerminalNotificationStore.shared.addNotification(
-                    tabId: tabId,
+                    workspaceId: workspaceId,
                     surfaceId: surfaceId,
                     title: command,
                     subtitle: "",
@@ -2289,12 +2414,12 @@ class GhosttyApp {
                 )
                 if backgroundLogEnabled {
                     logBackground(
-                        "surface override set tab=\(surfaceView.tabId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") override=\(surfaceView.backgroundColor?.hexString() ?? "nil") default=\(defaultBackgroundColor.hexString()) source=action.color_change.surface"
+                        "surface override set tab=\(surfaceView.workspaceId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") override=\(surfaceView.backgroundColor?.hexString() ?? "nil") default=\(defaultBackgroundColor.hexString()) source=action.color_change.surface"
                     )
                 }
                 surfaceView.applySurfaceBackground()
                 if backgroundLogEnabled {
-                    logBackground("OSC background change tab=\(surfaceView.tabId?.uuidString ?? "unknown") color=\(surfaceView.backgroundColor?.description ?? "nil")")
+                    logBackground("OSC background change tab=\(surfaceView.workspaceId?.uuidString ?? "unknown") color=\(surfaceView.backgroundColor?.description ?? "nil")")
                 }
                 DispatchQueue.main.async {
                     surfaceView.applyWindowBackgroundIfActive()
@@ -2306,7 +2431,7 @@ class GhosttyApp {
                 surfaceView.backgroundColor = nil
                 if backgroundLogEnabled {
                     logBackground(
-                        "surface override cleared tab=\(surfaceView.tabId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") cleared=\(staleOverride.hexString()) source=action.config_change.surface"
+                        "surface override cleared tab=\(surfaceView.workspaceId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") cleared=\(staleOverride.hexString()) source=action.config_change.surface"
                     )
                 }
                 surfaceView.applySurfaceBackground()
@@ -2316,25 +2441,25 @@ class GhosttyApp {
             }
             updateDefaultBackground(
                 from: action.action.config_change.config,
-                source: "action.config_change.surface tab=\(surfaceView.tabId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil")",
+                source: "action.config_change.surface tab=\(surfaceView.workspaceId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil")",
                 scope: .surface
             )
             if backgroundLogEnabled {
                 logBackground(
-                    "surface config change deferred terminal bg apply tab=\(surfaceView.tabId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") override=\(surfaceView.backgroundColor?.hexString() ?? "nil") default=\(defaultBackgroundColor.hexString())"
+                    "surface config change deferred terminal bg apply tab=\(surfaceView.workspaceId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") override=\(surfaceView.backgroundColor?.hexString() ?? "nil") default=\(defaultBackgroundColor.hexString())"
                 )
             }
             return true
         case GHOSTTY_ACTION_RELOAD_CONFIG:
             let soft = action.action.reload_config.soft
             logThemeAction(
-                "reload request target=surface tab=\(surfaceView.tabId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") soft=\(soft)"
+                "reload request target=surface tab=\(surfaceView.workspaceId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil") soft=\(soft)"
             )
             return performOnMain {
                 // Keep all runtime theme/default-background state in the same path.
                 GhosttyApp.shared.reloadConfiguration(
                     soft: soft,
-                    source: "action.reload_config.surface tab=\(surfaceView.tabId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil")"
+                    source: "action.reload_config.surface tab=\(surfaceView.workspaceId?.uuidString ?? "nil") surface=\(surfaceView.terminalSurface?.id.uuidString ?? "nil")"
                 )
                 return true
             }
@@ -2364,24 +2489,6 @@ class GhosttyApp {
                 #endif
                 return false
             }
-            // Opt/Alt held at click time forces external browser, bypassing
-            // BrowserLinkOpenSettings routing (cmuxBrowser default, host whitelist, regex).
-            if NSEvent.modifierFlags.contains(.option) {
-                #if DEBUG
-                dlog("link.openURL opt-held, forcing external url=\(target.url)")
-                #endif
-                return performOnMain {
-                    NSWorkspace.shared.open(target.url)
-                }
-            }
-            if !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser() {
-                #if DEBUG
-                dlog("link.openURL cmuxBrowser=disabled, opening externally url=\(target.url)")
-                #endif
-                return performOnMain {
-                    NSWorkspace.shared.open(target.url)
-                }
-            }
             switch target {
             case let .external(url):
                 #if DEBUG
@@ -2391,81 +2498,12 @@ class GhosttyApp {
                     NSWorkspace.shared.open(url)
                 }
             case let .embeddedBrowser(url):
-                if BrowserLinkOpenSettings.shouldOpenExternally(url) {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but shouldOpenExternally=true url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but normalizeHost=nil host=\(url.host ?? "nil") url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-
-                // If a host whitelist is configured and this host isn't in it, open externally.
-                if !BrowserLinkOpenSettings.hostMatchesWhitelist(host) {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but hostWhitelist miss host=\(host) url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                let sourceWorkspaceId = callbackTabId ?? surfaceView.tabId
+                let sourceWorkspaceId = callbackWorkspaceId ?? surfaceView.workspaceId
                 let sourcePanelId = callbackSurfaceId ?? surfaceView.terminalSurface?.id
-                guard let sourceWorkspaceId,
-                      let sourcePanelId else {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but tabId/surfaceId=nil")
-                    #endif
-                    return false
-                }
-                #if DEBUG
-                dlog(
-                    "link.openURL target=embedded, opening in browser pane " +
-                    "host=\(host) url=\(url) tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId)"
-                )
-                #endif
+                let optionHeld = NSEvent.modifierFlags.contains(.option)
                 return performOnMain {
-                    guard let app = AppDelegate.shared,
-                          let resolved = app.workspaceContainingPanel(
-                            panelId: sourcePanelId,
-                            preferredWorkspaceId: sourceWorkspaceId
-                          ) else {
-                        #if DEBUG
-                        dlog(
-                            "link.openURL embedded but workspace lookup failed " +
-                            "tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId)"
-                        )
-                        #endif
-                        return false
-                    }
-                    let workspace = resolved.workspace
-                    #if DEBUG
-                    if workspace.id != sourceWorkspaceId {
-                        dlog(
-                            "link.openURL workspace.remap sourceTab=\(sourceWorkspaceId) " +
-                            "resolvedTab=\(workspace.id) surfaceId=\(sourcePanelId)"
-                        )
-                    }
-                    #endif
-                    if let targetPane = workspace.preferredBrowserTargetPane(fromPanelId: sourcePanelId) {
-                        #if DEBUG
-                        dlog("link.openURL opening in existing browser pane=\(targetPane)")
-                        #endif
-                        return workspace.newBrowserSurface(inPane: targetPane, url: url, focus: true) != nil
-                    } else {
-                        #if DEBUG
-                        dlog("link.openURL opening as new browser split from surface=\(sourcePanelId)")
-                        #endif
-                        return workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
-                    }
+                    openC11WebLink(url, sourceWorkspaceId: sourceWorkspaceId,
+                                   sourcePanelId: sourcePanelId, optionHeld: optionHeld)
                 }
             }
         default:
@@ -2664,7 +2702,54 @@ struct GhosttyDisplayIDGate: Equatable {
 
 // MARK: - Terminal Surface (owns the ghostty_surface_t lifecycle)
 
+extension TerminalSurface {
+    /// The c11 surface that owns a Ghostty surface handle, through the
+    /// callback userdata c11 registers for every surface.
+    static func owning(_ surface: ghostty_surface_t) -> TerminalSurface? {
+        guard let userdata = ghostty_surface_userdata(surface) else { return nil }
+        return Unmanaged<GhosttySurfaceCallbackContext>.fromOpaque(userdata)
+            .takeUnretainedValue().terminalSurface
+    }
+}
+
+/// Own the C template before the first deferred AppKit attachment. Producers in
+/// Workspace/WorkspaceManager pass the native template synchronously to init;
+/// none of its borrowed strings or env-array pointers survive that call.
+struct OwnedTerminalSurfaceConfig {
+    let scalars: ghostty_surface_config_s
+    let workingDirectory: String?
+    let command: String?
+    let initialInput: String?
+    let environment: [String: String]
+
+    init(_ source: ghostty_surface_config_s) {
+        workingDirectory = source.working_directory.map { String(cString: $0) }
+        command = source.command.map { String(cString: $0) }
+        initialInput = source.initial_input.map { String(cString: $0) }
+        var environment: [String: String] = [:]
+        if let entries = source.env_vars {
+            for index in 0..<Int(source.env_var_count) {
+                let entry = entries[index]
+                if let key = entry.key, let value = entry.value {
+                    environment[String(cString: key)] = String(cString: value)
+                }
+            }
+        }
+        self.environment = environment
+        var scalars = source
+        scalars.working_directory = nil
+        scalars.command = nil
+        scalars.initial_input = nil
+        scalars.env_vars = nil
+        scalars.env_var_count = 0
+        self.scalars = scalars
+    }
+}
+
 final class TerminalSurface: Identifiable, ObservableObject {
+    // Main-thread OSC admission, before downstream coalescing/metadata precedence.
+    fileprivate var titleChurnFilter = TerminalTitleChurnFilter()
+
     final class SearchState: ObservableObject {
         @Published var needle: String
         @Published var selected: UInt?
@@ -2679,11 +2764,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private(set) var surface: ghostty_surface_t? {
         didSet {
+            if oldValue != surface {
+                nativeSurfaceLifetimeID = UUID()
+            }
             // A different runtime surface has its own renderer thread and its own
             // display-link state, so nothing we told the old one carries over.
             displayIDGate.invalidate()
         }
     }
+    private(set) var nativeSurfaceLifetimeID = UUID()
     /// Collapses redundant `ghostty_surface_set_display_id` traffic. See
     /// `GhosttyDisplayIDGate` for why an unnecessary push is not free.
     private var displayIDGate = GhosttyDisplayIDGate()
@@ -2714,7 +2803,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return window === headlessStartupWindow
     }
     let id: UUID
-    private(set) var tabId: UUID
+    private(set) var workspaceId: UUID
     /// Port ordinal for CMUX_PORT range assignment
     var portOrdinal: Int = 0
     /// Snapshotted once per app session so all workspaces use consistent values
@@ -2727,9 +2816,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return val > 0 ? val : 10
     }()
     private let surfaceContext: ghostty_surface_context_e
-    private let configTemplate: ghostty_surface_config_s?
+    private let configTemplate: OwnedTerminalSurfaceConfig?
     private let workingDirectory: String?
     private let initialCommand: String?
+    private var initialInput: String?
     private let initialEnvironmentOverrides: [String: String]
     var requestedWorkingDirectory: String? { workingDirectory }
     private var additionalEnvironment: [String: String]
@@ -2754,6 +2844,46 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// submits the typed line on cold start.
     private var pendingSubmitOnFlush: Bool = false
     private var backgroundSurfaceStartQueued = false
+    #if DEBUG
+    private var debugRuntimeStartHoldUntil: TimeInterval?
+    private var debugPendingFlushHoldUntil: TimeInterval?
+
+    /// Let a raw-mode PTY oracle start before consuming the actual pre-attach
+    /// queue. Explicit release uses the production flush, with a bounded fallback.
+    @MainActor
+    func debugHoldPendingFlush(_ hold: Bool) {
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugPendingFlushHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugPendingFlushHoldUntil == expiry else { return }
+                self.debugPendingFlushHoldUntil = nil
+                self.flushPendingTextIfNeeded()
+            }
+        } else {
+            flushPendingTextIfNeeded()
+        }
+    }
+
+    /// A bounded, per-tab fixture for the socket timeout/queue path. It never
+    /// tears down a live runtime and automatically releases after ten seconds.
+    @MainActor
+    func debugHoldRuntimeStart(_ hold: Bool) -> Bool {
+        guard !hold || surface == nil else { return false }
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugRuntimeStartHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugRuntimeStartHoldUntil == expiry else { return }
+                self.debugRuntimeStartHoldUntil = nil
+                self.requestBackgroundSurfaceStartIfNeeded()
+            }
+        } else {
+            requestBackgroundSurfaceStartIfNeeded()
+        }
+        return true
+    }
+    #endif
     /// Borderless, off-screen `NSWindow` used to bootstrap Ghostty's runtime surface
     /// before AppKit moves the view into a real portal-backed window. Required because
     /// `ghostty_surface_new` (via `attachToView`) gates on `view.window != nil`; for
@@ -2761,10 +2891,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// arrives until the user selects the tab. We attach into this window, let the
     /// PTY spawn, and release it when the real window arrives (`reconcileAttachedWindowIfNeeded`).
     private var headlessStartupWindow: NSWindow?
-    private var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
+    fileprivate var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
     /// Tracks the last focus state to avoid sending redundant focus events.
     /// This prevents prompt redraw issues with zsh themes like Powerlevel10k.
-    private var lastFocusState: Bool = false
+    private var desiredFocusState: Bool = false
+    private var lastFocusState: Bool?
 #if DEBUG
     private var needsConfirmCloseOverrideForTesting: Bool?
 
@@ -2797,6 +2928,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
     var pendingSubmitOnFlushForTests: Bool {
         pendingSubmitOnFlush
     }
+
+    @MainActor
+    var appliedFocusForTests: Bool? { lastFocusState }
 #endif
     private enum PortalLifecycleState: String {
         case live
@@ -2805,18 +2939,33 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
     private struct PortalHostLease {
         let hostId: ObjectIdentifier
+        let order: UInt64
+        let areaId: UUID?
         let inWindow: Bool
         let area: CGFloat
     }
     private var portalLifecycleState: PortalLifecycleState = .live
     private var portalLifecycleGeneration: UInt64 = 1
     private var activePortalHostLease: PortalHostLease?
+    // Assigned once per host-to-surface assignment, never on a geometry
+    // callback. While a lease is held, only a newer host may take it over.
+    // After release the high-water mark no longer gates: SwiftUI can dismantle
+    // the newer host and keep the older one (an area's split collapsing), and
+    // that survivor must be able to reclaim or the terminal never rebinds.
+    private static var nextPortalHostOrder: UInt64 = 0
+    private var latestPortalHostOrder: UInt64 = 0
+    private var latestPortalAreaId: UUID?
+
+    static func allocatePortalHostOrder() -> UInt64 {
+        nextPortalHostOrder += 1
+        return nextPortalHostOrder
+    }
     @Published var searchState: SearchState? = nil {
 	        didSet {
 	            if let searchState {
 	                hostedView.cancelFocusRequest()
 #if DEBUG
-                dlog("find.searchState created tab=\(tabId.uuidString.prefix(5)) surface=\(id.uuidString.prefix(5))")
+                dlog("find.searchState created tab=\(workspaceId.uuidString.prefix(5)) surface=\(id.uuidString.prefix(5))")
 #endif
                 searchNeedleCancellable = searchState.$needle
                     .removeDuplicates()
@@ -2832,14 +2981,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
                     .switchToLatest()
                     .sink { [weak self] needle in
 #if DEBUG
-                        dlog("find.needle updated tab=\(self?.tabId.uuidString.prefix(5) ?? "?") surface=\(self?.id.uuidString.prefix(5) ?? "?") chars=\(needle.count)")
+                        dlog("find.needle updated tab=\(self?.workspaceId.uuidString.prefix(5) ?? "?") surface=\(self?.id.uuidString.prefix(5) ?? "?") chars=\(needle.count)")
 #endif
                         _ = self?.performBindingAction("search:\(needle)")
                     }
             } else if oldValue != nil {
                 searchNeedleCancellable = nil
 #if DEBUG
-                dlog("find.searchState cleared tab=\(tabId.uuidString.prefix(5)) surface=\(id.uuidString.prefix(5))")
+                dlog("find.searchState cleared tab=\(workspaceId.uuidString.prefix(5)) surface=\(id.uuidString.prefix(5))")
 #endif
                 _ = performBindingAction("end_search")
             }
@@ -2851,21 +3000,23 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     init(
         id: UUID? = nil,
-        tabId: UUID,
+        workspaceId: UUID,
         context: ghostty_surface_context_e,
         configTemplate: ghostty_surface_config_s?,
         workingDirectory: String? = nil,
         initialCommand: String? = nil,
+        initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
         self.id = id ?? UUID()
-        self.tabId = tabId
+        self.workspaceId = workspaceId
         self.surfaceContext = context
-        self.configTemplate = configTemplate
+        self.configTemplate = configTemplate.map(OwnedTerminalSurfaceConfig.init)
         self.workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCommand = initialCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.initialCommand = (trimmedCommand?.isEmpty == false) ? trimmedCommand : nil
+        self.initialInput = (initialInput?.isEmpty == false) ? initialInput : nil
         self.initialEnvironmentOverrides = Self.mergedNormalizedEnvironment(base: [:], overrides: initialEnvironmentOverrides)
         self.additionalEnvironment = Self.mergedNormalizedEnvironment(base: [:], overrides: additionalEnvironment)
         // Match Ghostty's own SurfaceView: ensure a non-zero initial frame so the backing layer
@@ -2878,12 +3029,12 @@ final class TerminalSurface: Identifiable, ObservableObject {
         hostedView.attachSurface(self)
         TerminalSurfaceRegistry.shared.register(self)
 
-        // Surfaces with startup work (`initialCommand`) must spawn their PTY before
+        // Surfaces with startup work (`initialCommand` or `initialInput`) must spawn their PTY before
         // the user focuses the workspace; otherwise the agent restore / cold-boot
         // path stalls until the operator selects the tab. Ghostty's surface creation
         // expects a non-nil `view.window`, so we install the view in a hidden
         // bootstrap window now and swap to the real window when AppKit moves it there.
-        if self.initialCommand != nil {
+        if self.initialCommand != nil || self.initialInput != nil {
             MainActor.assumeIsolated {
                 scheduleHeadlessRuntimeStartIfNeeded(reason: "startup")
             }
@@ -2891,10 +3042,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
 
-    func updateWorkspaceId(_ newTabId: UUID) {
-        tabId = newTabId
-        attachedView?.tabId = newTabId
-        surfaceView.tabId = newTabId
+    func updateWorkspaceId(_ newWorkspaceId: UUID) {
+        workspaceId = newWorkspaceId
+        attachedView?.workspaceId = newWorkspaceId
+        surfaceView.workspaceId = newWorkspaceId
     }
 
     // MARK: - Headless startup window
@@ -2919,15 +3070,21 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     @MainActor
     private func startRuntimeUsingHeadlessWindowIfNeeded(reason: String) {
-        guard surface == nil else { return }
+        guard portalLifecycleState == .live, surface == nil else { return }
         ensureHeadlessStartupWindowIfNeeded(reason: reason)
         hostedView.attachSurface(self)
     }
 
     @MainActor
     private func ensureHeadlessStartupWindowIfNeeded(reason: String) {
-        guard headlessStartupWindow == nil else { return }
-        guard hostedView.window == nil else { return }
+        guard portalLifecycleState == .live, hostedView.window == nil else { return }
+        // Portal churn can park the host while its bootstrap window survives.
+        // Re-adopt it instead of leaving the cold start permanently unattached.
+        if let window = headlessStartupWindow, let contentView = window.contentView {
+            hostedView.frame = contentView.bounds
+            contentView.addSubview(hostedView)
+            return
+        }
 
         let width = max(surfaceView.bounds.width, CGFloat(800))
         let height = max(surfaceView.bounds.height, CGFloat(600))
@@ -2948,11 +3105,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         let contentView = NSView(frame: frame)
         hostedView.frame = contentView.bounds
         hostedView.autoresizingMask = [.width, .height]
-        contentView.addSubview(hostedView)
-        window.contentView = contentView
         headlessStartupWindow = window
         hostedView.setVisibleInUI(false)
         hostedView.setActive(false)
+        contentView.addSubview(hostedView)
+        window.contentView = contentView
 
 #if DEBUG
         dlog(
@@ -3101,7 +3258,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     func debugLastKnownWorkspaceId() -> UUID {
-        tabId
+        workspaceId
     }
 
     func debugSurfaceContextLabel() -> String {
@@ -3135,7 +3292,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private static let portalHostAreaThreshold: CGFloat = 4
-    private static let portalHostReplacementAreaGainRatio: CGFloat = 1.2
 
     private static func portalHostArea(for bounds: CGRect) -> CGFloat {
         max(0, bounds.width) * max(0, bounds.height)
@@ -3147,75 +3303,59 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     func claimPortalHost(
         hostId: ObjectIdentifier,
+        order: UInt64,
+        areaId: UUID? = nil,
+        currentAreaId: UUID? = nil,
         inWindow: Bool,
         bounds: CGRect,
         reason: String
     ) -> Bool {
+        guard portalLifecycleState == .live, areaId == currentAreaId else { return false }
+        // Validate against the model's current area before considering order.
+        // Moving back to an older retained host in another area is legitimate;
+        // callbacks from the area just left must not rearm their obsolete lease.
+        if latestPortalAreaId != currentAreaId {
+            activePortalHostLease = nil
+            latestPortalHostOrder = 0
+            latestPortalAreaId = currentAreaId
+        }
         let next = PortalHostLease(
             hostId: hostId,
+            order: order,
+            areaId: areaId,
             inWindow: inWindow,
             area: Self.portalHostArea(for: bounds)
         )
-
-        if let current = activePortalHostLease {
-            if current.hostId == hostId {
-                activePortalHostLease = next
-                return true
-            }
-
-            let currentUsable = Self.portalHostIsUsable(current)
-            let nextUsable = Self.portalHostIsUsable(next)
-            let shouldReplace =
-                !currentUsable ||
-                (nextUsable && next.area > (current.area * Self.portalHostReplacementAreaGainRatio))
-
-            if shouldReplace {
-#if DEBUG
-                dlog(
-                    "terminal.portal.host.claim surface=\(id.uuidString.prefix(5)) " +
-                    "reason=\(reason) host=\(hostId) inWin=\(inWindow ? 1 : 0) " +
-                    "size=\(String(format: "%.1fx%.1f", bounds.width, bounds.height)) " +
-                    "replacingHost=\(current.hostId) replacingInWin=\(current.inWindow ? 1 : 0) " +
-                    "replacingArea=\(String(format: "%.1f", current.area))"
-                )
-#endif
-                activePortalHostLease = next
-                return true
-            }
-
-#if DEBUG
-            dlog(
-                "terminal.portal.host.skip surface=\(id.uuidString.prefix(5)) " +
-                "reason=\(reason) host=\(hostId) inWin=\(inWindow ? 1 : 0) " +
-                "size=\(String(format: "%.1fx%.1f", bounds.width, bounds.height)) " +
-                "ownerHost=\(current.hostId) ownerInWin=\(current.inWindow ? 1 : 0) " +
-                "ownerArea=\(String(format: "%.1f", current.area))"
-            )
-#endif
-            return false
+        if order < latestPortalHostOrder {
+            // An older host reclaims only an unheld lease, and only once it is
+            // usable, so a stale placeholder cannot take the terminal. A newer
+            // host needs no usability check here: the takeover rule below
+            // already keeps a usable holder from yielding to a placeholder.
+            guard activePortalHostLease == nil, Self.portalHostIsUsable(next) else { return false }
         }
-
+        if let current = activePortalHostLease, current.hostId != hostId {
+            // A newly mounted, equally sized host wins as soon as it is usable.
+            // A zero-sized placeholder must not displace a working portal yet.
+            guard order > current.order else { return false }
+            guard !Self.portalHostIsUsable(current) || Self.portalHostIsUsable(next) else { return false }
+        }
         activePortalHostLease = next
+        latestPortalHostOrder = order
 #if DEBUG
-        dlog(
-            "terminal.portal.host.claim surface=\(id.uuidString.prefix(5)) " +
-            "reason=\(reason) host=\(hostId) inWin=\(inWindow ? 1 : 0) " +
-            "size=\(String(format: "%.1fx%.1f", bounds.width, bounds.height)) replacingHost=nil"
-        )
+        dlog("terminal.portal.host.claim surface=\(id.uuidString.prefix(5)) reason=\(reason) host=\(hostId) order=\(order)")
 #endif
         return true
     }
 
-    func releasePortalHostIfOwned(hostId: ObjectIdentifier, reason: String) {
-        guard let current = activePortalHostLease, current.hostId == hostId else { return }
+    @discardableResult
+    func releasePortalHostIfOwned(hostId: ObjectIdentifier, order: UInt64, reason: String) -> Bool {
+        guard let current = activePortalHostLease,
+              current.hostId == hostId, current.order == order else { return false }
         activePortalHostLease = nil
 #if DEBUG
-        dlog(
-            "terminal.portal.host.release surface=\(id.uuidString.prefix(5)) " +
-            "reason=\(reason) host=\(hostId) inWin=\(current.inWindow ? 1 : 0) " +
-            "area=\(String(format: "%.1f", current.area))"
-        )
+        dlog("terminal.portal.host.release surface=\(id.uuidString.prefix(5)) reason=\(reason) host=\(hostId) order=\(order)")
 #endif
+        return true
     }
 
     private func recordTeardownRequest(reason: String) {
@@ -3245,7 +3385,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 #if DEBUG
         dlog(
             "surface.lifecycle.close.begin surface=\(id.uuidString.prefix(5)) " +
-            "workspace=\(tabId.uuidString.prefix(5)) reason=\(reason) " +
+            "workspace=\(workspaceId.uuidString.prefix(5)) reason=\(reason) " +
             "generation=\(portalLifecycleGeneration)"
         )
 #endif
@@ -3258,7 +3398,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 #if DEBUG
         dlog(
             "surface.lifecycle.close.sealed surface=\(id.uuidString.prefix(5)) " +
-            "workspace=\(tabId.uuidString.prefix(5)) reason=\(reason) " +
+            "workspace=\(workspaceId.uuidString.prefix(5)) reason=\(reason) " +
             "generation=\(portalLifecycleGeneration)"
         )
 #endif
@@ -3353,6 +3493,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     func attachToView(_ view: GhosttyNSView) {
+        guard portalLifecycleState == .live else { return }
 #if DEBUG
         dlog(
             "surface.attach surface=\(id.uuidString.prefix(5)) view=\(Unmanaged.passUnretained(view).toOpaque()) " +
@@ -3434,12 +3575,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func createSurface(for view: GhosttyNSView) {
+        guard portalLifecycleState == .live, surface == nil, view.window != nil else { return }
         #if DEBUG
+        if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
         let resourcesDir = getenv("GHOSTTY_RESOURCES_DIR").flatMap { String(cString: $0) } ?? "(unset)"
         let terminfo = getenv("TERMINFO").flatMap { String(cString: $0) } ?? "(unset)"
         let xdg = getenv("XDG_DATA_DIRS").flatMap { String(cString: $0) } ?? "(unset)"
         let manpath = getenv("MANPATH").flatMap { String(cString: $0) } ?? "(unset)"
-        Self.surfaceLog("createSurface start surface=\(id.uuidString) tab=\(tabId.uuidString) bounds=\(view.bounds) inWindow=\(view.window != nil) resources=\(resourcesDir) terminfo=\(terminfo) xdg=\(xdg) manpath=\(manpath)")
+        Self.surfaceLog("createSurface start surface=\(id.uuidString) tab=\(workspaceId.uuidString) bounds=\(view.bounds) inWindow=\(view.window != nil) resources=\(resourcesDir) terminfo=\(terminfo) xdg=\(xdg) manpath=\(manpath)")
         #endif
 
         guard let app = GhosttyApp.shared.app else {
@@ -3452,7 +3595,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         let scaleFactors = scaleFactors(for: view)
 
-        var surfaceConfig = configTemplate ?? ghostty_surface_config_new()
+        var surfaceConfig = configTemplate?.scalars ?? ghostty_surface_config_new()
+        // Rebuild pointer fields only for this synchronous native create call.
+        let inheritedWorkingDirectory = configTemplate?.workingDirectory.flatMap { strdup($0) }
+        let inheritedCommand = configTemplate?.command.flatMap { strdup($0) }
+        let inheritedInitialInput = configTemplate?.initialInput.flatMap { strdup($0) }
+        defer {
+            free(inheritedWorkingDirectory)
+            free(inheritedCommand)
+            free(inheritedInitialInput)
+        }
+        surfaceConfig.working_directory = inheritedWorkingDirectory.map { UnsafePointer($0) }
+        surfaceConfig.command = inheritedCommand.map { UnsafePointer($0) }
+        surfaceConfig.initial_input = inheritedInitialInput.map { UnsafePointer($0) }
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_MACOS
         surfaceConfig.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
             nsview: Unmanaged.passUnretained(view).toOpaque()
@@ -3479,19 +3634,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
-        var env: [String: String] = [:]
-        if surfaceConfig.env_var_count > 0, let existingEnv = surfaceConfig.env_vars {
-            let count = Int(surfaceConfig.env_var_count)
-            if count > 0 {
-                for i in 0..<count {
-                    let item = existingEnv[i]
-                    if let key = String(cString: item.key, encoding: .utf8),
-                       let value = String(cString: item.value, encoding: .utf8) {
-                        env[key] = value
-                    }
-                }
-            }
-        }
+        var env = configTemplate?.environment ?? [:]
 
         var protectedStartupEnvironmentKeys: Set<String> = []
         func setManagedEnvironmentValue(_ key: String, _ value: String) {
@@ -3509,20 +3652,25 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)
-        setManagedEnvironmentValue("CMUX_WORKSPACE_ID", tabId.uuidString)
-        // Backward-compatible shell integration keys used by existing scripts/tests.
-        // Both CMUX_PANEL_ID and CMUX_TAB_ID are legacy aliases for the surface UUID —
-        // the rename-tab CLI and tests_v2/test_rename_tab_cli_parity.py both expect
-        // CMUX_TAB_ID to resolve to a surface (accepts `tab:<n>` or `surface:<n>`).
+        setManagedEnvironmentValue("CMUX_WORKSPACE_ID", workspaceId.uuidString)
+        // Canonical panel id is C11_PANEL_ID (the C11_ twin of CMUX_PANEL_ID).
+        // C11_TAB_ID / CMUX_TAB_ID and C11_SURFACE_ID / CMUX_SURFACE_ID hold the
+        // same UUID as hidden aliases, exported forever so older agents and
+        // scripts keep resolving their own panel.
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
-        // The integer N of this surface's `surface:N` handle — the number the
-        // tab bar displays when "Show surface IDs in tab titles" is on. C11_-only
-        // (no CMUX twin), like C11_SOCKET_PATH. Address yourself as
-        // `surface:$C11_SURFACE_NUM`; a bare integer is a positional index.
+        // The integer N of this panel's `panel:N` handle: the number the panel
+        // bar displays when panel numbers are shown. C11_-only (no CMUX twin),
+        // like C11_SOCKET_PATH. Address yourself as `panel:$C11_PANEL_NUM`; a
+        // bare integer is a positional index. `C11_TAB_NUM` and
+        // `C11_SURFACE_NUM` carry the same value as hidden aliases. (`C11_AREA_ID`
+        // is deliberately not set: a panel's area changes when it moves, so a
+        // launch-time value would go stale.)
         let surfaceNum = MainActor.assumeIsolated {
             TerminalController.shared.surfaceOrdinal(forSurfaceUUID: id)
         }
+        setManagedEnvironmentValue("C11_PANEL_NUM", String(surfaceNum))
+        setManagedEnvironmentValue("C11_TAB_NUM", String(surfaceNum))
         setManagedEnvironmentValue("C11_SURFACE_NUM", String(surfaceNum))
         // Inject the *actually-bound* socket path (not the recomputed resolution
         // path) so a build that fell back to a safe alternate path (C11-155) still
@@ -3681,6 +3829,20 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
+        // Ghostty copies initial_input during native creation. Keep its UTF-8
+        // pointer alive alongside command/cwd, and never inherit a prior input.
+        let createWithInitialInput = { [self] in
+            if let initialInput {
+                initialInput.withCString { input in
+                    surfaceConfig.initial_input = input
+                    createSurface()
+                }
+            } else {
+                surfaceConfig.initial_input = nil
+                createSurface()
+            }
+        }
+
         let createWithCommandAndWorkingDirectory = { [self] in
             if let initialCommand, !initialCommand.isEmpty {
                 initialCommand.withCString { cCommand in
@@ -3688,19 +3850,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
                     if let workingDirectory, !workingDirectory.isEmpty {
                         workingDirectory.withCString { cWorkingDir in
                             surfaceConfig.working_directory = cWorkingDir
-                            createSurface()
+                            createWithInitialInput()
                         }
                     } else {
-                        createSurface()
+                        createWithInitialInput()
                     }
                 }
             } else if let workingDirectory, !workingDirectory.isEmpty {
                 workingDirectory.withCString { cWorkingDir in
                     surfaceConfig.working_directory = cWorkingDir
-                    createSurface()
+                    createWithInitialInput()
                 }
             } else {
-                createSurface()
+                createWithInitialInput()
             }
         }
 
@@ -3727,6 +3889,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
         guard let createdSurface = surface else { return }
+        // One native creation consumes this request. Runtime reconstruction and
+        // reparenting must never execute the caller's command a second time.
+        initialInput = nil
         recordRuntimeSurfaceCreation()
 
         // Session scrollback replay must be one-shot. Reusing it on a later runtime
@@ -3757,33 +3922,37 @@ final class TerminalSurface: Identifiable, ObservableObject {
             lastYScale = scaleFactors.y
         }
 
-        // Some GhosttyKit builds can drop inherited font_size during post-create
-        // config/scale reconciliation. If runtime points don't match the inherited
-        // template points, re-apply via binding action so all creation paths
-        // (new surface, split, new workspace) preserve zoom from the source terminal.
-        if let inheritedFontPoints = configTemplate?.font_size,
+        // Native creation sets points without marking font_size_adjusted. Preserve
+        // inherited zoom across appearance/config reloads, but leave default-sized
+        // terminals eligible for later operator font-size configuration changes.
+        // Compare to config, not quicklook's asynchronously updated renderer grid.
+        if let inheritedFontPoints = configTemplate?.scalars.font_size,
            inheritedFontPoints > 0 {
-            let currentFontPoints = cmuxCurrentSurfaceFontSizePoints(createdSurface)
-            let shouldReapply = {
-                guard let currentFontPoints else { return true }
-                return abs(currentFontPoints - inheritedFontPoints) > 0.05
-            }()
-            if shouldReapply {
+            let configuredFontPoints = GhosttyApp.shared.configuredFontSizePoints()
+            let isInheritedZoom = configuredFontPoints.map { abs($0 - inheritedFontPoints) > 0.05 } ?? true
+            if isInheritedZoom {
                 let action = String(format: "set_font_size:%.3f", inheritedFontPoints)
                 _ = performBindingAction(action)
             }
         }
+
+        // Ready means queued bytes reached Ghostty, not that the shell executed
+        // them. The existing delayed submit-on-flush remains asynchronous.
+        ghostty_surface_set_focus(createdSurface, desiredFocusState)
+        lastFocusState = desiredFocusState
+        flushPendingTextIfNeeded()
 
         NotificationCenter.default.post(
             name: .terminalSurfaceDidBecomeReady,
             object: self,
             userInfo: [
                 "surfaceId": id,
-                "workspaceId": tabId
+                "workspaceId": workspaceId
             ]
         )
 
-        flushPendingTextIfNeeded()
+        // A ready observer may synchronously close the tab.
+        guard portalLifecycleState == .live, surface == createdSurface else { return }
 
         // Kick an initial draw after creation/size setup. On some startup paths Ghostty can
         // miss the first vsync callback and sit on a blank frame until another focus/visibility
@@ -3846,6 +4015,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             ghostty_surface_set_size(surface, wpx, hpx)
             lastPixelWidth = wpx
             lastPixelHeight = hpx
+            scrollbackGrowth.noteResized()
         }
 
         // Let Ghostty continue rendering on its own wakeups for steady-state frames.
@@ -3901,7 +4071,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     func setFocus(_ focused: Bool) {
-        guard let surface = surface else { return }
+        desiredFocusState = focused
+        guard portalLifecycleState == .live, let surface else { return }
         // Only send focus events when the state changes to avoid redundant
         // prompt redraws with zsh themes like Powerlevel10k.
         guard focused != lastFocusState else { return }
@@ -3923,6 +4094,37 @@ final class TerminalSurface: Identifiable, ObservableObject {
     func setOcclusion(_ visible: Bool) {
         guard let surface = surface else { return }
         ghostty_surface_set_occlusion(surface, visible)
+        scrollbackGrowth.noteVisibilityChanged()
+    }
+
+    // MARK: Tab sheet signals (plain stores; see TabActivitySignals.swift)
+
+    /// When the operator last pressed a key in this terminal. Deliberately not
+    /// `@Published`: it changes per keystroke and must never invalidate SwiftUI.
+    var lastOperatorInputAt: Date?
+    /// Last input that may have left an unsent draft in the PTY's input
+    /// line: an operator keystroke (not a click, not the text box), or text
+    /// sent with `c11 send --no-submit`. The mailbox push reads it to avoid
+    /// splicing onto that draft.
+    var lastOperatorKeyAt: Date?
+    /// When the scrollback last grew while the surface was visible: real output,
+    /// not an in-place repaint. Not `@Published`.
+    var lastOutputGrowthAt: Date?
+    private var scrollbackGrowth = ScrollbackGrowthTracker()
+
+    /// One `GHOSTTY_ACTION_SCROLLBAR` event (main thread, only when the value
+    /// changed). Cost: a subtraction, a compare and at most one `Date()`.
+    func noteScrollbar(total: UInt64, len: UInt64) {
+        if scrollbackGrowth.observe(total: total, len: len) {
+            lastOutputGrowthAt = Date()
+        }
+    }
+
+    /// Process liveness does not inspect prompt state or acquire the renderer lock.
+    /// Cold and closed terminals deliberately cannot supply replayable scrollback.
+    func hasLiveProcess() -> Bool {
+        guard portalLifecycleState == .live, let surface else { return false }
+        return !ghostty_surface_process_exited(surface)
     }
 
     func needsConfirmClose() -> Bool {
@@ -3935,14 +4137,64 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
+    /// Programmatic text into the PTY. While another writer's input
+    /// transaction is in flight (between its paste and its Return), this
+    /// waits its turn instead of splicing into that writer's input line.
+    /// Text left without a trailing newline is a draft for the mailbox push.
     func sendText(_ text: String) {
+        guard !text.isEmpty else { return }
+        writeOrDefer { [weak self] in self?.writeProgrammaticText(text) }
+    }
+
+    /// Queue fallback for socket sends, using the same newline policy as the
+    /// attached path. A raw draft ending in a newline is still a draft for
+    /// mailbox admission; it must not look like a submitted line on attach.
+    func sendQueuedSocketText(_ text: String, submit: Bool, preserveNewlines: Bool) {
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        if delivery.wantsReturn {
+            sendSubmitFormText(text, preserveNewlines: preserveNewlines)
+        } else if preserveNewlines {
+            guard !text.isEmpty else { return }
+            writeOrDefer { [weak self] in
+                self?.writeProgrammaticText(text)
+                self?.lastOperatorKeyAt = Date()
+            }
+        } else {
+            sendText(text)
+        }
+    }
+
+    /// Run an instantaneous write now, unless another writer's transaction
+    /// is in flight and this is not that transaction's own work; then run it
+    /// as the next transaction, in order.
+    func writeOrDefer(_ work: @escaping () -> Void) {
+        if inputTransactionActive, !isRunningInputTransactionBody {
+            performInputTransaction { finish in
+                work()
+                finish()
+            }
+            return
+        }
+        work()
+    }
+
+    /// Write now, inside the current transaction (or with none active).
+    /// `marksDraft: false` is for the mailbox push's own paste.
+    func writeProgrammaticText(_ text: String, marksDraft: Bool = true) {
+        writeTextNow(text)
+        if marksDraft, let last = text.unicodeScalars.last, last.value != 0x0A, last.value != 0x0D {
+            lastOperatorKeyAt = Date()
+        }
+    }
+
+    private func writeTextNow(_ text: String) {
         guard let data = text.data(using: .utf8), !data.isEmpty else { return }
         // C11-24: bump the per-surface activity timestamp. Off-main and
         // debounced; safe to call from this entry point because sendText
         // itself is not the per-keystroke typing-hot path
         // (`forceRefresh`/`hitTest`/`TabItemView` are — sendText handles
         // bigger composed input and synthesised pastes).
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: id.uuidString)
+        PanelActivityTracker.shared.recordActivity(surfaceId: id.uuidString)
         guard let surface = surface else {
             enqueuePendingText(data)
             return
@@ -3972,15 +4224,57 @@ final class TerminalSurface: Identifiable, ObservableObject {
     ///   * defers the Return until the pending-text queue flushes (which
     ///     happens on surface attach, when `view.window` is guaranteed
     ///     non-nil) when the surface is not yet ready.
-    func sendSubmitFormText(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .newlines)
+    func sendSubmitFormText(_ text: String, preserveNewlines: Bool = false) {
+        let trimmed = preserveNewlines ? text : text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty else { return }
-        sendText(trimmed)
-        if surface == nil {
-            pendingSubmitOnFlush = true
-        } else {
-            scheduleSubmitReturnAfterPasteDelay()
+        performInputTransaction { [weak self] finish in
+            guard let self else { return finish() }
+            self.writeProgrammaticText(trimmed)
+            if self.surface == nil {
+                // Submitted on attach (`flushPendingTextIfNeeded`), which
+                // runs its own transaction.
+                self.pendingSubmitOnFlush = true
+                finish()
+            } else {
+                self.scheduleSubmitReturnAfterPasteDelay(then: finish)
+            }
         }
+    }
+
+    /// Mailbox push: the same paste + delayed Return as `sendSubmitFormText`,
+    /// but it never queues for a later attach and it reports whether the
+    /// Return was dispatched. `false` means nothing was submitted: the
+    /// surface was not attached at paste time, it was torn down before the
+    /// Return, or `shouldSubmit` (checked just before the Return) said no.
+    /// The caller undoes its claim on `false`.
+    func sendSubmitFormText(
+        _ text: String,
+        shouldSubmit: @escaping () -> Bool = { true },
+        completion: @escaping (Bool) -> Void
+    ) {
+        let trimmed = text.trimmingCharacters(in: .newlines)
+        guard !trimmed.isEmpty, surface != nil else {
+            completion(false)
+            return
+        }
+        // Only into an idle input slot: the push never queues behind (or
+        // splices into) another writer's paste-then-Return.
+        let started = tryInputTransaction { [weak self] finish in
+            guard let self else { finish(); completion(false); return }
+            self.writeProgrammaticText(trimmed, marksDraft: false)
+            let delay = TimeInterval(max(0, TextBoxBehavior.returnKeyDelayMs)) / 1000.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.surface != nil, shouldSubmit() else {
+                    finish()
+                    completion(false)
+                    return
+                }
+                self.sendKeyNow(.returnKey)
+                finish()
+                completion(true)
+            }
+        }
+        if !started { completion(false) }
     }
 
     /// Dispatch a synthetic Return as a distinct key event after the
@@ -3988,15 +4282,117 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// socket `send` submit path, both of which type text first and must let a
     /// paste-detecting TUI finish ingesting before the Return lands (a Return
     /// inside the input burst is silently swallowed).
-    func scheduleSubmitReturnAfterPasteDelay() {
-        let delayMs = TextBoxBehavior.returnKeyDelayMs
+    /// Call from inside an input transaction; `then` (the transaction's
+    /// finish) runs once the Return has gone out.
+    func scheduleSubmitReturnAfterPasteDelay(
+        then finish: @escaping () -> Void = {},
+        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil
+    ) {
+        let delayMs: Int
+#if DEBUG
+        let feedAnswerHoldMs = feedAnswerGate == nil ? 0 : FeedAnswerDebugHold.shared.consume(panelID: id) ?? 0
+        if feedAnswerGate != nil {
+            delayMs = FeedAnswerTiming.returnDelayMilliseconds(
+                baseDelayMs: TextBoxBehavior.returnKeyDelayMs,
+                debugHoldMs: feedAnswerHoldMs
+            )
+        } else {
+            delayMs = max(0, TextBoxBehavior.returnKeyDelayMs)
+        }
+#else
+        if feedAnswerGate != nil {
+            delayMs = FeedAnswerTiming.returnDelayMilliseconds(
+                baseDelayMs: TextBoxBehavior.returnKeyDelayMs,
+                debugHoldMs: 0
+            )
+        } else {
+            delayMs = TextBoxBehavior.returnKeyDelayMs
+        }
+#endif
         if delayMs <= 0 {
-            sendKey(.returnKey)
+            if let feedAnswerGate {
+                feedAnswerGate.enqueue { work in work() }
+            } else {
+                _ = sendKeyNow(.returnKey)
+            }
+            finish()
             return
         }
         let delay = TimeInterval(delayMs) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.sendKey(.returnKey)
+            guard let self else { finish(); return }
+            if let feedAnswerGate {
+                // Run inline on the main actor inside this transaction. The
+                // worker may cancel while this is still pending; enqueue then
+                // becomes a no-op before any validation or key side effect.
+                feedAnswerGate.enqueue { work in work() }
+            } else {
+                _ = self.sendKeyNow(.returnKey)
+            }
+            finish()
+        }
+    }
+
+    // MARK: - Programmatic input transactions
+    //
+    // One programmatic writer at a time per tab. A transaction spans from a
+    // writer's first byte to its Return (or the end of a no-submit write):
+    // `c11 send`/`send-key`, the text box submit, layout/launch submits, the
+    // attach-time flush, and the mailbox push all run inside one. Anything
+    // else that writes while one is in flight waits its turn, so no writer
+    // ever lands inside another's paste-then-Return window. Main thread only.
+
+    private var inputTransactionActive = false
+    private var isRunningInputTransactionBody = false
+    private var pendingInputTransactions: [(_ finish: @escaping () -> Void) -> Void] = []
+    /// Bumped when a transaction starts. The mailbox push compares it across
+    /// its claim hop: any other writer in between means requeue.
+    private(set) var inputTransactionEpoch: UInt64 = 0
+    /// A writer that never finishes cannot wedge the tab's input.
+    static let inputTransactionWatchdog: TimeInterval = 3
+
+    var isInputTransactionActive: Bool { inputTransactionActive }
+
+    /// Run `body` as the tab's next input transaction: now if the slot is
+    /// free, else after the transactions ahead of it. `body` must call
+    /// `finish` once its last byte (or its Return) is out.
+    func performInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
+        if inputTransactionActive {
+            pendingInputTransactions.append(body)
+            return
+        }
+        beginInputTransaction(body)
+    }
+
+    /// Run `body` only if the slot is free right now. Returns whether it ran.
+    @discardableResult
+    func tryInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) -> Bool {
+        guard !inputTransactionActive else { return false }
+        beginInputTransaction(body)
+        return true
+    }
+
+    private func beginInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
+        inputTransactionActive = true
+        inputTransactionEpoch &+= 1
+        let epoch = inputTransactionEpoch
+        var finished = false
+        let finish: () -> Void = { [weak self] in
+            guard !finished else { return }
+            finished = true
+            self?.endInputTransaction(epoch: epoch)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputTransactionWatchdog) { finish() }
+        isRunningInputTransactionBody = true
+        body(finish)
+        isRunningInputTransactionBody = false
+    }
+
+    private func endInputTransaction(epoch: UInt64) {
+        guard inputTransactionActive, inputTransactionEpoch == epoch else { return }
+        inputTransactionActive = false
+        if !pendingInputTransactions.isEmpty {
+            beginInputTransaction(pendingInputTransactions.removeFirst())
         }
     }
 
@@ -4018,15 +4414,56 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
+#if DEBUG
+    /// Test seam (`debug.terminal.operator_keys`): feed `text` through the real
+    /// `keyDown` handling as if the operator typed it: the touched/key clocks,
+    /// Return classification and the lifecycle edge all run exactly as for a
+    /// physical key. Unlike `debug.type` it does not activate the app or move
+    /// focus. Covers lowercase US letters, space and `\r` (Return). Returns
+    /// the number of keys delivered; 0 when the view has no window.
+    func debugSimulateOperatorKeys(_ text: String) -> Int {
+        let keyCodes: [Character: UInt16] = [
+            "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
+            "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
+            "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45,
+            "m": 46, " ": 49, "\r": 36,
+        ]
+        let view = surfaceView
+        guard let window = view.window else { return 0 }
+        var delivered = 0
+        for ch in text {
+            guard let keyCode = keyCodes[ch] else { continue }
+            let characters = String(ch)
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            ) else { continue }
+            view.keyDown(with: event)
+            delivered += 1
+        }
+        return delivered
+    }
+#endif
+
     /// Build a synthetic `NSEvent` for a named key and deliver it to the
     /// terminal surface the same way AppKit would route a real keystroke.
+    @discardableResult
     func sendSyntheticKey(
         characters: String,
         keyCode: UInt16,
-        modifiers: NSEvent.ModifierFlags = []
-    ) {
+        modifiers: NSEvent.ModifierFlags = [],
+        captureNativeHandoffFor expectedSurface: ghostty_surface_t? = nil
+    ) -> Bool {
         let view = surfaceView
-        guard let window = view.window else { return }
+        guard let window = view.window else { return false }
         guard let event = NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
@@ -4038,8 +4475,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
             charactersIgnoringModifiers: characters,
             isARepeat: false,
             keyCode: keyCode
-        ) else { return }
+        ) else { return false }
+        // Fabricated for socket `send` (and the text box): not the operator's own
+        // keystroke, so it must not stamp the "touched" clock.
+        if let expectedSurface {
+            view.beginSyntheticKeyHandoffCapture(expectedSurface: expectedSurface)
+        }
+        view.isSynthesizingKey = true
+        defer { view.isSynthesizingKey = false }
         view.keyDown(with: event)
+        if expectedSurface != nil {
+            return view.endSyntheticKeyHandoffCapture()
+        }
+        return true
     }
 
     /// Named-key wrapper used by `TextBoxInputContainer` when routing
@@ -4055,25 +4503,49 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Inject straight into Ghostty when there is no window; every key in
     /// `TerminalKey` is a control key, so the keycode alone encodes it.
     func sendKey(_ key: TextBoxKeyRouting.TerminalKey) {
+        writeOrDefer { [weak self] in self?.sendKeyNow(key) }
+    }
+
+    /// Send now, inside the current transaction (or with none active).
+    @discardableResult
+    func sendKeyNow(
+        _ key: TextBoxKeyRouting.TerminalKey,
+        captureNativeHandoff: Bool = false
+    ) -> Bool {
         if case .returnKey = key {
-            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+            PanelLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: id,
-                workspaceId: tabId,
-                activity: .working
+                workspaceId: workspaceId,
+                activity: .working,
+                source: .submit
             )
         }
-        if surfaceView.window == nil, let surface {
-            sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: surface)
-            return
+        let currentSurface = surface
+        if captureNativeHandoff, currentSurface == nil { return false }
+        if surfaceView.window == nil, let currentSurface {
+            return sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: currentSurface)
         }
-        sendSyntheticKey(characters: key.characters, keyCode: key.keyCode)
+        return sendSyntheticKey(
+            characters: key.characters,
+            keyCode: key.keyCode,
+            captureNativeHandoffFor: captureNativeHandoff ? currentSurface : nil
+        )
+    }
+
+    func armFeedAnswerFlagLowerSuppression() {
+        surfaceView.suppressNextSyntheticFlagLower = true
+    }
+
+    func clearFeedAnswerFlagLowerSuppression() {
+        surfaceView.suppressNextSyntheticFlagLower = false
     }
 
     /// Window-independent key injection: hand Ghostty the key event directly
     /// rather than routing a synthesized `NSEvent` through AppKit. Ghostty owns
     /// the keycode → PTY-bytes translation, so this produces the same bytes a
     /// real keypress would.
-    private func sendKeyDirectlyToSurface(keyCode: UInt16, surface: ghostty_surface_t) {
+    @discardableResult
+    private func sendKeyDirectlyToSurface(keyCode: UInt16, surface: ghostty_surface_t) -> Bool {
         var event = ghostty_input_key_s()
         event.action = GHOSTTY_ACTION_PRESS
         event.keycode = UInt32(keyCode)
@@ -4082,7 +4554,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         event.unshifted_codepoint = 0
         event.composing = false
         event.text = nil
-        _ = ghostty_surface_key(surface, event)
+        return ghostty_surface_key(surface, event)
     }
 
     /// Pass-through for a fully-formed NSEvent (Rule 2 `forwardControl`).
@@ -4120,7 +4592,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
 
-        guard surface == nil else { return }
+        guard portalLifecycleState == .live, surface == nil else { return }
         guard !backgroundSurfaceStartQueued else { return }
         backgroundSurfaceStartQueued = true
 
@@ -4128,7 +4600,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             guard let self else { return }
             MainActor.assumeIsolated {
                 self.backgroundSurfaceStartQueued = false
-                guard self.surface == nil else { return }
+                guard self.portalLifecycleState == .live, self.surface == nil else { return }
                 #if DEBUG
                 let startedAt = ProcessInfo.processInfo.systemUptime
                 #endif
@@ -4176,6 +4648,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func flushPendingTextIfNeeded() {
+        #if DEBUG
+        if let expiry = debugPendingFlushHoldUntil,
+           ProcessInfo.processInfo.systemUptime < expiry { return }
+        #endif
         guard let surface = surface, !pendingTextQueue.isEmpty else { return }
         let queued = pendingTextQueue
         let queuedBytes = pendingTextBytes
@@ -4191,7 +4667,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // here because surface creation gates on it (createSurface(for:)).
         if pendingSubmitOnFlush {
             pendingSubmitOnFlush = false
-            scheduleSubmitReturnAfterPasteDelay()
+            performInputTransaction { [weak self] finish in
+                guard let self else { return finish() }
+                self.scheduleSubmitReturnAfterPasteDelay(then: finish)
+            }
         }
         #if DEBUG
         dlog(
@@ -4200,7 +4679,31 @@ final class TerminalSurface: Identifiable, ObservableObject {
         #endif
     }
 
+    /// Run a Ghostty binding action (AppleScript `perform action`, the
+    /// command palette). An action that writes into the input line (`text:`,
+    /// `csi:`, `esc:`, a paste) is a programmatic writer like any other: it
+    /// waits behind an in-flight input transaction and leaves a draft unless
+    /// it ends in a Return.
     func performBindingAction(_ action: String) -> Bool {
+        guard surface != nil else { return false }
+        guard Self.bindingActionWritesInput(action) else { return runBindingAction(action) }
+        var result = true
+        writeOrDefer { [weak self] in
+            guard let self else { return }
+            result = self.runBindingAction(action)
+            if result, !(action.hasSuffix("\\r") || action.hasSuffix("\\n")) {
+                self.lastOperatorKeyAt = Date()
+            }
+        }
+        return result
+    }
+
+    static func bindingActionWritesInput(_ action: String) -> Bool {
+        let name = action.split(separator: ":", maxSplits: 1).first.map(String.init) ?? action
+        return ["text", "csi", "esc", "paste_from_clipboard", "paste_from_selection"].contains(name)
+    }
+
+    private func runBindingAction(_ action: String) -> Bool {
         guard let surface = surface else { return false }
         return action.withCString { cString in
             ghostty_surface_binding_action(surface, cString, UInt(strlen(cString)))
@@ -4236,6 +4739,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
 #if DEBUG
+    var debugCallbackContext: GhosttySurfaceCallbackContext? {
+        surfaceCallbackContext?.takeUnretainedValue()
+    }
+
     @MainActor
     func setNeedsConfirmCloseOverrideForTesting(_ value: Bool?) {
         needsConfirmCloseOverrideForTesting = value
@@ -4276,7 +4783,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 #if DEBUG
             dlog(
                 "surface.lifecycle.deinit.skip surface=\(id.uuidString.prefix(5)) " +
-                "workspace=\(tabId.uuidString.prefix(5)) reason=noRuntimeSurface"
+                "workspace=\(workspaceId.uuidString.prefix(5)) reason=noRuntimeSurface"
             )
 #endif
             callbackContext?.release()
@@ -4285,7 +4792,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
 #if DEBUG
         let surfaceToken = String(id.uuidString.prefix(5))
-        let workspaceToken = String(tabId.uuidString.prefix(5))
+        let workspaceToken = String(workspaceId.uuidString.prefix(5))
         dlog(
             "surface.lifecycle.deinit.begin surface=\(surfaceToken) " +
             "workspace=\(workspaceToken) hasAttachedView=\(attachedView != nil ? 1 : 0) " +
@@ -4323,8 +4830,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         .fileURL,
         .URL
     ]
-    private static let tabTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
-    private static let sidebarTabReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
+    private static let panelTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    private static let sidebarWorkspaceReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
     private static let shellEscapeCharacters = "\\ ()[]{}<>\"'`!#$&;|*?\t"
 
     fileprivate static func focusLog(_ message: String) {
@@ -4335,10 +4842,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     weak var terminalSurface: TerminalSurface?
     var scrollbar: GhosttyScrollbar?
+    /// True only while `TerminalSurface.sendSyntheticKey` drives `keyDown`.
+    var isSynthesizingKey = false
+    var suppressNextSyntheticFlagLower = false
+    private var handoffCaptureExpectedSurface: ghostty_surface_t?
+    private var handoffCaptureObserved: (surface: ghostty_surface_t, handled: Bool)?
     var cellSize: CGSize = .zero
     var desiredFocus: Bool = false
     var suppressingReparentFocus: Bool = false
-    var tabId: UUID?
+    var workspaceId: UUID?
     var onFocus: (() -> Void)?
     var onTriggerFlash: (() -> Void)?
     var backgroundColor: NSColor?
@@ -4351,6 +4863,22 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var keyboardCopyModeConsumedKeyUps: Set<UInt16> = []
     private var keyboardCopyModeInputState = TerminalKeyboardCopyModeInputState()
     private var keyboardCopyModeViewportRow: Int?
+
+    func beginSyntheticKeyHandoffCapture(expectedSurface: ghostty_surface_t) {
+        handoffCaptureExpectedSurface = expectedSurface
+        handoffCaptureObserved = nil
+    }
+
+    func endSyntheticKeyHandoffCapture() -> Bool {
+        defer {
+            handoffCaptureExpectedSurface = nil
+            handoffCaptureObserved = nil
+        }
+        guard let expected = handoffCaptureExpectedSurface,
+              let observed = handoffCaptureObserved,
+              observed.surface == expected else { return false }
+        return observed.handled
+    }
     /// Tracks whether the user has explicitly entered visual selection mode (v).
     /// Separate from Ghostty's `has_selection` because copy mode always maintains
     /// a 1-cell selection as a visible cursor. This flag determines whether
@@ -4465,7 +4993,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 let defaultHex = GhosttyApp.shared.defaultBackgroundColor.hexString()
                 let source = hasOverride ? "surfaceOverride" : "defaultBackground"
                 GhosttyApp.shared.logBackground(
-                    "surface background applied tab=\(tabId?.uuidString ?? "unknown") surface=\(terminalSurface?.id.uuidString ?? "unknown") source=\(source) override=\(overrideHex) default=\(defaultHex) color=\(color.hexString()) opacity=\(String(format: "%.3f", color.alphaComponent))"
+                    "surface background applied tab=\(workspaceId?.uuidString ?? "unknown") surface=\(terminalSurface?.id.uuidString ?? "unknown") source=\(source) override=\(overrideHex) default=\(defaultHex) color=\(color.hexString()) opacity=\(String(format: "%.3f", color.alphaComponent))"
                 )
             }
         }
@@ -4475,18 +5003,18 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     // switches (e.g. jump-to-unread), the global active tab manager can lag behind.
     // Prefer the owning window's selected workspace when available.
     static func shouldApplyWindowBackground(
-        surfaceTabId: UUID?,
+        surfaceWorkspaceId: UUID?,
         owningManagerExists: Bool,
-        owningSelectedTabId: UUID?,
-        activeSelectedTabId: UUID?
+        owningSelectedWorkspaceId: UUID?,
+        activeSelectedWorkspaceId: UUID?
     ) -> Bool {
-        guard let surfaceTabId else { return true }
+        guard let surfaceWorkspaceId else { return true }
         if owningManagerExists {
-            guard let owningSelectedTabId else { return true }
-            return owningSelectedTabId == surfaceTabId
+            guard let owningSelectedWorkspaceId else { return true }
+            return owningSelectedWorkspaceId == surfaceWorkspaceId
         }
-        if let activeSelectedTabId {
-            return activeSelectedTabId == surfaceTabId
+        if let activeSelectedWorkspaceId {
+            return activeSelectedWorkspaceId == surfaceWorkspaceId
         }
         return true
     }
@@ -4494,14 +5022,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     func applyWindowBackgroundIfActive() {
         guard let window else { return }
         let appDelegate = AppDelegate.shared
-        let owningManager = tabId.flatMap { appDelegate?.tabManagerFor(tabId: $0) }
-        let owningSelectedTabId = owningManager?.selectedTabId
-        let activeSelectedTabId = owningManager == nil ? appDelegate?.tabManager?.selectedTabId : nil
+        let owningManager = workspaceId.flatMap { appDelegate?.workspaceManagerFor(workspaceId: $0) }
+        let owningSelectedWorkspaceId = owningManager?.selectedWorkspaceId
+        let activeSelectedWorkspaceId = owningManager == nil ? appDelegate?.workspaceManager?.selectedWorkspaceId : nil
         guard Self.shouldApplyWindowBackground(
-            surfaceTabId: tabId,
+            surfaceWorkspaceId: workspaceId,
             owningManagerExists: owningManager != nil,
-            owningSelectedTabId: owningSelectedTabId,
-            activeSelectedTabId: activeSelectedTabId
+            owningSelectedWorkspaceId: owningSelectedWorkspaceId,
+            activeSelectedWorkspaceId: activeSelectedWorkspaceId
         ) else {
             return
         }
@@ -4523,7 +5051,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 let defaultHex = GhosttyApp.shared.defaultBackgroundColor.hexString()
                 let source = hasOverride ? "surfaceOverride" : "defaultBackground"
                 GhosttyApp.shared.logBackground(
-                    "window background applied tab=\(tabId?.uuidString ?? "unknown") surface=\(terminalSurface?.id.uuidString ?? "unknown") source=\(source) override=\(overrideHex) default=\(defaultHex) transparent=\(cmuxShouldUseClearWindowBackground(for: color.alphaComponent)) color=\(color.hexString()) opacity=\(String(format: "%.3f", color.alphaComponent))"
+                    "window background applied tab=\(workspaceId?.uuidString ?? "unknown") surface=\(terminalSurface?.id.uuidString ?? "unknown") source=\(source) override=\(overrideHex) default=\(defaultHex) transparent=\(cmuxShouldUseClearWindowBackground(for: color.alphaComponent)) color=\(color.hexString()) opacity=\(String(format: "%.3f", color.alphaComponent))"
                 )
             }
         }
@@ -4564,7 +5092,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             appliedColorScheme = nil
         }
         terminalSurface = surface
-        tabId = surface.tabId
+        workspaceId = surface.workspaceId
         if !isAlreadyAttached {
             surface.attachToView(self)
         } else {
@@ -4613,7 +5141,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 object: terminalSurface,
                 userInfo: [
                     "surfaceId": terminalSurface.id,
-                    "workspaceId": terminalSurface.tabId
+                    "workspaceId": terminalSurface.workspaceId
                 ]
             )
         }
@@ -4650,7 +5178,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if GhosttyApp.shared.backgroundLogEnabled {
             let bestMatch = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
             GhosttyApp.shared.logBackground(
-                "surface appearance changed tab=\(tabId?.uuidString ?? "nil") surface=\(terminalSurface?.id.uuidString ?? "nil") bestMatch=\(bestMatch?.rawValue ?? "nil")"
+                "surface appearance changed tab=\(workspaceId?.uuidString ?? "nil") surface=\(terminalSurface?.id.uuidString ?? "nil") bestMatch=\(bestMatch?.rawValue ?? "nil")"
             )
         }
         applySurfaceColorScheme()
@@ -4708,7 +5236,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     private static func hasTabDragPasteboardTypes() -> Bool {
         let types = NSPasteboard(name: .drag).types ?? []
-        return types.contains(tabTransferPasteboardType) || types.contains(sidebarTabReorderPasteboardType)
+        return types.contains(panelTransferPasteboardType) || types.contains(sidebarWorkspaceReorderPasteboardType)
     }
 
     private static func isDragResizeEvent(_ eventType: NSEvent.EventType?) -> Bool {
@@ -4900,7 +5428,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             if GhosttyApp.shared.backgroundLogEnabled {
                 let schemeLabel = scheme == GHOSTTY_COLOR_SCHEME_DARK ? "dark" : "light"
                 GhosttyApp.shared.logBackground(
-                    "surface color scheme tab=\(tabId?.uuidString ?? "nil") surface=\(terminalSurface?.id.uuidString ?? "nil") bestMatch=\(bestMatch?.rawValue ?? "nil") scheme=\(schemeLabel) force=\(force) applied=false"
+                    "surface color scheme tab=\(workspaceId?.uuidString ?? "nil") surface=\(terminalSurface?.id.uuidString ?? "nil") bestMatch=\(bestMatch?.rawValue ?? "nil") scheme=\(schemeLabel) force=\(force) applied=false"
                 )
             }
             return
@@ -4910,7 +5438,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if GhosttyApp.shared.backgroundLogEnabled {
             let schemeLabel = scheme == GHOSTTY_COLOR_SCHEME_DARK ? "dark" : "light"
             GhosttyApp.shared.logBackground(
-                "surface color scheme tab=\(tabId?.uuidString ?? "nil") surface=\(terminalSurface?.id.uuidString ?? "nil") bestMatch=\(bestMatch?.rawValue ?? "nil") scheme=\(schemeLabel) force=\(force) applied=true"
+                "surface color scheme tab=\(workspaceId?.uuidString ?? "nil") surface=\(terminalSurface?.id.uuidString ?? "nil") bestMatch=\(bestMatch?.rawValue ?? "nil") scheme=\(schemeLabel) force=\(force) applied=true"
             )
         }
     }
@@ -5214,8 +5742,21 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         dlog("ime.ax.setValue len=\(content.count)")
 #endif
 
-        let inject = {
-            self.insertText(content, replacementRange: NSRange(location: NSNotFound, length: 0))
+        // An accessibility client typing into the terminal is a programmatic
+        // writer: it waits behind an in-flight input transaction and leaves a
+        // draft for the mailbox push.
+        let inject = { [weak self] in
+            guard let self else { return }
+            let write = { [weak self] in
+                guard let self else { return }
+                self.insertText(content, replacementRange: NSRange(location: NSNotFound, length: 0))
+                self.terminalSurface?.lastOperatorKeyAt = Date()
+            }
+            if let terminalSurface = self.terminalSurface {
+                terminalSurface.writeOrDefer(write)
+            } else {
+                write()
+            }
         }
         if Thread.isMainThread {
             inject()
@@ -5325,7 +5866,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             dlog("focus.firstResponder surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil")")
             if let terminalSurface {
                 AppDelegate.shared?.recordJumpUnreadFocusIfExpected(
-                    tabId: terminalSurface.tabId,
+                    workspaceId: terminalSurface.workspaceId,
                     surfaceId: terminalSurface.id
                 )
             }
@@ -5335,7 +5876,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     name: .ghosttyDidBecomeFirstResponderSurface,
                     object: nil,
                     userInfo: [
-                        GhosttyNotificationKey.tabId: terminalSurface.tabId,
+                        GhosttyNotificationKey.workspaceId: terminalSurface.workspaceId,
                         GhosttyNotificationKey.surfaceId: terminalSurface.id,
                     ]
                 )
@@ -5610,29 +6151,45 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         ensureSurfaceMs = (ProcessInfo.processInfo.systemUptime - ensureSurfaceStart) * 1000.0
 #endif
         if let terminalSurface {
+            // Tab sheet "touched" clock: a plain Date store (~20 ns), nothing
+            // published. Synthesized keys (socket `send`) are not the operator.
+            // One timestamp for the whole event: the mailbox draft guard
+            // compares this key's time against the submit edge it may start.
+            let keyAt = Date()
+            if !isSynthesizingKey {
+                terminalSurface.lastOperatorInputAt = keyAt
+                terminalSurface.lastOperatorKeyAt = keyAt
+            }
 #if DEBUG
             let dismissNotificationStart = ProcessInfo.processInfo.systemUptime
 #endif
-            AppDelegate.shared?.tabManager?.dismissNotificationOnDirectInteraction(
-                tabId: terminalSurface.tabId,
+            AppDelegate.shared?.workspaceManager?.dismissNotificationOnDirectInteraction(
+                workspaceId: terminalSurface.workspaceId,
                 surfaceId: terminalSurface.id
             )
-            // A keystroke into a flagged surface is the operator answering the
-            // flag: lower it immediately. Guarded no-op when nothing is raised.
-            _ = try? SurfaceAttentionService.shared.lowerIfFlagged(
-                workspaceId: terminalSurface.tabId,
-                surfaceId: terminalSurface.id,
-                by: .operator
-            )
+            // The feed-answer Return carries its own answer-bearing lower after
+            // native handoff. Consume only that one synthesized key; ordinary
+            // and operator input keep the existing per-key behavior.
+            let suppressFlagLower = isSynthesizingKey && suppressNextSyntheticFlagLower
+            if suppressFlagLower { suppressNextSyntheticFlagLower = false }
+            if !suppressFlagLower {
+                _ = try? PanelAttentionService.shared.lowerIfFlagged(
+                    workspaceId: terminalSurface.workspaceId,
+                    surfaceId: terminalSurface.id,
+                    by: .operator
+                )
+            }
             let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if !event.isARepeat,
                (event.keyCode == 36 || event.keyCode == 76),
                !submitFlags.contains(.command),
                !hasMarkedText() {
-                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: terminalSurface.id,
-                    workspaceId: terminalSurface.tabId,
-                    activity: .working
+                    workspaceId: terminalSurface.workspaceId,
+                    activity: .working,
+                    source: .submit,
+                    at: keyAt
                 )
             }
 #if DEBUG
@@ -5928,7 +6485,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     )
                     ghosttySendMs += (ProcessInfo.processInfo.systemUptime - ghosttySendStart) * 1000.0
                     #else
-                    _ = ghostty_surface_key(surface, keyEvent)
+                    _ = sendGhosttyKey(surface, keyEvent)
                     #endif
                 }
             }
@@ -5994,7 +6551,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     )
                     ghosttySendMs += (ProcessInfo.processInfo.systemUptime - ghosttySendStart) * 1000.0
                     #else
-                    _ = ghostty_surface_key(surface, keyEvent)
+                    _ = sendGhosttyKey(surface, keyEvent)
                     #endif
                 }
             } else {
@@ -6010,7 +6567,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 )
                 ghosttySendMs += (ProcessInfo.processInfo.systemUptime - ghosttySendStart) * 1000.0
                 #else
-                _ = ghostty_surface_key(surface, keyEvent)
+                _ = sendGhosttyKey(surface, keyEvent)
                 #endif
             }
         }
@@ -6025,6 +6582,23 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #endif
         }
 
+        // Record only after local consumers (copy mode and AppKit/IME routing)
+        // have declined the event and the terminal key path has completed.
+        // In particular, copy-mode Return must not consume the ask's one-submit gate.
+        if let terminalSurface,
+           AgentRoster.isPotentialSubmitKey(event.keyCode),
+           !markedTextBefore, markedText.length == 0 {
+            let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            JournalCoordinator.shared.noteOperatorSubmit(
+                panelID: terminalSurface.id,
+                keyCode: event.keyCode,
+                modifierRaw: submitFlags.rawValue,
+                isRepeat: event.isARepeat,
+                synthesizing: isSynthesizingKey,
+                hasMarkedText: false
+            )
+        }
+
         // Rendering is driven by Ghostty's wakeups/renderer.
     }
 
@@ -6033,7 +6607,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #if DEBUG
         Self.debugGhosttySurfaceKeyEventObserver?(keyEvent)
 #endif
-        return ghostty_surface_key(surface, keyEvent)
+        let handled = ghostty_surface_key(surface, keyEvent)
+        if isSynthesizingKey,
+           let expected = handoffCaptureExpectedSurface,
+           expected == surface,
+           handoffCaptureObserved == nil {
+            handoffCaptureObserved = (surface, handled)
+        }
+        return handled
     }
 
 #if DEBUG
@@ -6380,14 +6961,16 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         requestPointerFocusRecovery()
         window?.makeFirstResponder(self)
         if let terminalSurface {
+            // Tab sheet "touched" clock: a click is the operator too. Plain Date store.
+            terminalSurface.lastOperatorInputAt = Date()
             // CMUX-10: click cancels any persistent flash on this surface. Mouse-only
             // path; the keyDown / typing hot path is not touched here.
-            if let workspace = AppDelegate.shared?.tabManager?.tabs.first(where: { $0.id == terminalSurface.tabId }),
+            if let workspace = AppDelegate.shared?.workspaceManager?.workspaces.first(where: { $0.id == terminalSurface.workspaceId }),
                workspace.persistentFlashPanels[terminalSurface.id] != nil {
                 workspace.cancelPersistentFlash(panelId: terminalSurface.id)
             }
-            AppDelegate.shared?.tabManager?.dismissNotificationOnDirectInteraction(
-                tabId: terminalSurface.tabId,
+            AppDelegate.shared?.workspaceManager?.dismissNotificationOnDirectInteraction(
+                workspaceId: terminalSurface.workspaceId,
                 surfaceId: terminalSurface.id
             )
         }
@@ -6499,12 +7082,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             systemSymbolName: "rectangle.righthalf.inset.filled",
             accessibilityDescription: nil
         )
-        if tabId != nil, terminalSurface?.id != nil {
+        if workspaceId != nil, terminalSurface?.id != nil {
             menu.addItem(.separator())
             let manifestItem = menu.addItem(
                 withTitle: String(
                     localized: "surfaceManifest.menuItem",
-                    defaultValue: "Surface Details"
+                    defaultValue: "Panel Details"
                 ),
                 action: #selector(showSurfaceManifest(_:)),
                 keyEquivalent: ""
@@ -6515,9 +7098,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     @objc private func showSurfaceManifest(_ sender: Any?) {
-        guard let workspaceId = tabId,
+        guard let workspaceId = self.workspaceId,
               let surfaceId = terminalSurface?.id else { return }
-        SurfaceManifestViewerWindowController.show(
+        PanelManifestViewerWindowController.show(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             kind: .terminal
@@ -6525,11 +7108,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     private func canSplitCurrentSurface() -> Bool {
-        guard let tabId,
+        guard let workspaceId,
               let surfaceId = terminalSurface?.id,
               let app = AppDelegate.shared,
-              let manager = app.tabManagerFor(tabId: tabId) ?? app.tabManager,
-              let workspace = manager.tabs.first(where: { $0.id == tabId }) else {
+              let manager = app.workspaceManagerFor(workspaceId: workspaceId) ?? app.workspaceManager,
+              let workspace = manager.workspaces.first(where: { $0.id == workspaceId }) else {
             return false
         }
         return workspace.panels[surfaceId] != nil
@@ -6545,13 +7128,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     @discardableResult
     private func splitCurrentSurface(direction: SplitDirection) -> Bool {
-        guard let tabId,
+        guard let workspaceId,
               let surfaceId = terminalSurface?.id,
               let app = AppDelegate.shared,
-              let manager = app.tabManagerFor(tabId: tabId) ?? app.tabManager else {
+              let manager = app.workspaceManagerFor(workspaceId: workspaceId) ?? app.workspaceManager else {
             return false
         }
-        return manager.createSplit(tabId: tabId, surfaceId: surfaceId, direction: direction) != nil
+        return manager.createSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction) != nil
     }
 
     @objc private func triggerFlash(_ sender: Any?) {
@@ -6824,7 +7407,7 @@ struct GhosttyScrollbar {
 enum GhosttyNotificationKey {
     static let scrollbar = "ghostty.scrollbar"
     static let cellSize = "ghostty.cellSize"
-    static let tabId = "ghostty.tabId"
+    static let workspaceId = "ghostty.tabId"
     static let surfaceId = "ghostty.surfaceId"
     static let title = "ghostty.title"
     static let backgroundColor = "ghostty.backgroundColor"
@@ -6895,13 +7478,13 @@ private final class GhosttyPassthroughVisualEffectView: NSVisualEffectView {
 }
 
 func shouldAllowEnsureFocusWindowActivation(
-    activeTabManager: TabManager?,
-    targetTabManager: TabManager,
+    activeWorkspaceManager: WorkspaceManager?,
+    targetWorkspaceManager: WorkspaceManager,
     keyWindow: NSWindow?,
     mainWindow: NSWindow?,
     targetWindow: NSWindow
 ) -> Bool {
-    guard activeTabManager === targetTabManager || (keyWindow == nil && mainWindow == nil) else {
+    guard activeWorkspaceManager === targetWorkspaceManager || (keyWindow == nil && mainWindow == nil) else {
         return false
     }
 
@@ -6916,7 +7499,7 @@ func shouldAllowEnsureFocusWindowActivation(
     return true
 }
 
-private struct SurfaceFlagBanner: View {
+private struct PanelFlagBanner: View {
     let reason: String
     let onDismiss: () -> Void
 
@@ -6997,12 +7580,12 @@ final class GhosttySurfaceScrollView: NSView {
     private let keyboardCopyModeBadgeView: GhosttyPassthroughVisualEffectView
     private let keyboardCopyModeBadgeIconView: NSImageView
     private let keyboardCopyModeBadgeLabel: NSTextField
-    private var searchOverlayHostingView: NSHostingView<SurfaceSearchOverlay>?
-    private var flagBannerHostingView: NSHostingView<SurfaceFlagBanner>?
+    private var searchOverlayHostingView: NSHostingView<PanelSearchOverlay>?
+    private var flagBannerHostingView: NSHostingView<PanelFlagBanner>?
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var lastSearchOverlayStateID: ObjectIdentifier?
     private var searchOverlayMutationGeneration: UInt64 = 0
-    private var paneInteractionOverlay: PaneInteractionOverlayHost?
+    private var paneInteractionOverlay: AreaInteractionOverlayHost?
     private var observers: [NSObjectProtocol] = []
     private var windowObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
@@ -7057,8 +7640,8 @@ final class GhosttySurfaceScrollView: NSView {
     private var lastDropZoneOverlayLogSignature: String?
     private var lastDragGeometryLogSignature: String?
     private var dragLayoutLogSequence: UInt64 = 0
-    private static let tabTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
-    private static let sidebarTabReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
+    private static let panelTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    private static let sidebarWorkspaceReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
     private static var flashCounts: [UUID: Int] = [:]
     private static var drawCounts: [UUID: Int] = [:]
     private static var lastDrawTimes: [UUID: CFTimeInterval] = [:]
@@ -7187,11 +7770,13 @@ final class GhosttySurfaceScrollView: NSView {
         )
     }
 
-    func releaseOwnedPortalHost(hostId: ObjectIdentifier, reason: String) {
+    @discardableResult
+    func releaseOwnedPortalHost(hostId: ObjectIdentifier, order: UInt64, reason: String) -> Bool {
         surfaceView.terminalSurface?.releasePortalHostIfOwned(
             hostId: hostId,
+            order: order,
             reason: reason
-        )
+        ) ?? false
     }
 
     init(surfaceView: GhosttyNSView) {
@@ -7549,8 +8134,8 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
         guard let terminalSurface = surfaceView.terminalSurface else { return }
-        let snapshot = SurfaceAttentionIndex.shared.snapshot(
-            workspaceId: terminalSurface.tabId,
+        let snapshot = PanelAttentionIndex.shared.snapshot(
+            workspaceId: terminalSurface.workspaceId,
             surfaceId: terminalSurface.id
         )
         guard let reason = snapshot.flagReason else {
@@ -7559,10 +8144,10 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
 
-        let root = SurfaceFlagBanner(reason: reason) { [weak self, weak terminalSurface] in
+        let root = PanelFlagBanner(reason: reason) { [weak self, weak terminalSurface] in
             guard let self, let terminalSurface else { return }
-            _ = try? SurfaceAttentionService.shared.lower(
-                workspaceId: terminalSurface.tabId,
+            _ = try? PanelAttentionService.shared.lower(
+                workspaceId: terminalSurface.workspaceId,
                 surfaceId: terminalSurface.id,
                 by: .operator
             )
@@ -7652,8 +8237,8 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func hasActiveDragLoggingContext() -> Bool {
         let pasteboardTypes = NSPasteboard(name: .drag).types
-        let hasTabDrag = pasteboardTypes?.contains(Self.tabTransferPasteboardType) == true
-        let hasSidebarDrag = pasteboardTypes?.contains(Self.sidebarTabReorderPasteboardType) == true
+        let hasTabDrag = pasteboardTypes?.contains(Self.panelTransferPasteboardType) == true
+        let hasSidebarDrag = pasteboardTypes?.contains(Self.sidebarWorkspaceReorderPasteboardType) == true
         let eventType = NSApp.currentEvent?.type
         return activeDropZone != nil ||
             pendingDropZone != nil ||
@@ -7682,8 +8267,8 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func logLayoutDuringActiveDrag(targetSize: CGSize) {
         let pasteboardTypes = NSPasteboard(name: .drag).types
-        let hasTabDrag = pasteboardTypes?.contains(Self.tabTransferPasteboardType) == true
-        let hasSidebarDrag = pasteboardTypes?.contains(Self.sidebarTabReorderPasteboardType) == true
+        let hasTabDrag = pasteboardTypes?.contains(Self.panelTransferPasteboardType) == true
+        let hasSidebarDrag = pasteboardTypes?.contains(Self.sidebarWorkspaceReorderPasteboardType) == true
         let eventType = NSApp.currentEvent?.type
         let hasActiveDrag =
             activeDropZone != nil ||
@@ -7852,9 +8437,9 @@ final class GhosttySurfaceScrollView: NSView {
     private func makeSearchOverlayRootView(
         terminalSurface: TerminalSurface,
         searchState: TerminalSurface.SearchState
-    ) -> SurfaceSearchOverlay {
-        SurfaceSearchOverlay(
-            tabId: terminalSurface.tabId,
+    ) -> PanelSearchOverlay {
+        PanelSearchOverlay(
+            workspaceId: terminalSurface.workspaceId,
             surfaceId: terminalSurface.id,
             searchState: searchState,
             onMoveFocusToTerminal: { [weak self] in
@@ -7943,9 +8528,9 @@ final class GhosttySurfaceScrollView: NSView {
     /// The overlay observes runtime.$active itself and shows/hides automatically; we only
     /// ever create it, never tear it down — a panel's runtime and id are stable for the
     /// lifetime of its scroll view.
-    func attachPaneInteraction(runtime: PaneInteractionRuntime, panelId: UUID) {
+    func attachPaneInteraction(runtime: AreaInteractionRuntime, panelId: UUID) {
         if paneInteractionOverlay != nil { return }
-        let overlay = PaneInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        let overlay = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
         overlay.frame = bounds
         overlay.autoresizingMask = [.width, .height]
         // Always position above everything else (search overlay included) — it's modal.
@@ -8333,7 +8918,7 @@ final class GhosttySurfaceScrollView: NSView {
                 object: self,
                 userInfo: [
                     GhosttyNotificationKey.surfaceId: surfaceView.terminalSurface?.id as Any,
-                    GhosttyNotificationKey.tabId: surfaceView.tabId as Any
+                    GhosttyNotificationKey.workspaceId: surfaceView.workspaceId as Any
                 ]
             )
         }
@@ -8383,7 +8968,7 @@ final class GhosttySurfaceScrollView: NSView {
 
 #if DEBUG
     private func debugLogWorkspaceSwitchTiming(event: String, suffix: String) {
-        guard let snapshot = AppDelegate.shared?.tabManager?.debugCurrentWorkspaceSwitchSnapshot() else {
+        guard let snapshot = AppDelegate.shared?.workspaceManager?.debugCurrentWorkspaceSwitchSnapshot() else {
             dlog("\(event) id=none \(suffix)")
             return
         }
@@ -8629,7 +9214,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
     #endif
 
-    func ensureFocus(for tabId: UUID, surfaceId: UUID) {
+    func ensureFocus(for workspaceId: UUID, surfaceId: UUID) {
         let hasUsablePortalGeometry: Bool = {
             let size = bounds.size
             return size.width > 1 && size.height > 1
@@ -8661,24 +9246,35 @@ final class GhosttySurfaceScrollView: NSView {
         }
 
         guard let delegate = AppDelegate.shared,
-              let tabManager = delegate.tabManagerFor(tabId: tabId) ?? delegate.tabManager,
-              tabManager.selectedTabId == tabId else {
+              let workspaceManager = delegate.workspaceManagerFor(workspaceId: workspaceId) ?? delegate.workspaceManager,
+              workspaceManager.selectedWorkspaceId == workspaceId else {
             scheduleAutomaticFirstResponderApply(reason: "ensureFocus.inactiveTab")
             return
         }
 
-        guard let tab = tabManager.tabs.first(where: { $0.id == tabId }),
-              let tabIdForSurface = tab.surfaceIdFromPanelId(surfaceId),
-              let paneId = tab.bonsplitController.allPaneIds.first(where: { paneId in
-                  tab.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == tabIdForSurface })
+        guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
+              let bonsplitTabIdForSurface = workspace.bonsplitTabIdFromTabId(surfaceId),
+              let paneId = workspace.bonsplitController.allPaneIds.first(where: { paneId in
+                  workspace.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == bonsplitTabIdForSurface })
               }) else {
             scheduleAutomaticFirstResponderApply(reason: "ensureFocus.missingPane")
             return
         }
 
-        guard tab.bonsplitController.selectedTab(inPane: paneId)?.id == tabIdForSurface,
-              tab.bonsplitController.focusedPaneId == paneId else {
+        guard workspace.bonsplitController.selectedTab(inPane: paneId)?.id == bonsplitTabIdForSurface,
+              workspace.bonsplitController.focusedPaneId == paneId else {
             scheduleAutomaticFirstResponderApply(reason: "ensureFocus.unfocusedPane")
+            return
+        }
+
+        // ensureFocus also runs from deferred workspace/layout reconciliation.
+        // A selected terminal is not permission to leave an editor opened since
+        // that reconciliation was queued. Explicit focus uses moveFocus or a
+        // restored panel focus intent instead.
+        if Self.hasNativeTextEntryFirstResponder(in: window) {
+#if DEBUG
+            dlog("focus.ensure.skip surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") reason=nativeTextEntryFocused")
+#endif
             return
         }
 
@@ -8687,7 +9283,7 @@ final class GhosttySurfaceScrollView: NSView {
 #if DEBUG
             dlog(
                 "focus.ensure.search surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
-                "tab=\(tabId.uuidString.prefix(5)) panel=\(surfaceId.uuidString.prefix(5)) " +
+                "tab=\(workspaceId.uuidString.prefix(5)) panel=\(surfaceId.uuidString.prefix(5)) " +
                 "firstResponder=\(String(describing: window.firstResponder))"
             )
 #endif
@@ -8703,8 +9299,8 @@ final class GhosttySurfaceScrollView: NSView {
 
         if !window.isKeyWindow {
             guard shouldAllowEnsureFocusWindowActivation(
-                activeTabManager: delegate.tabManager,
-                targetTabManager: tabManager,
+                activeWorkspaceManager: delegate.workspaceManager,
+                targetWorkspaceManager: workspaceManager,
                 keyWindow: NSApp.keyWindow,
                 mainWindow: NSApp.mainWindow,
                 targetWindow: window
@@ -8733,7 +9329,7 @@ final class GhosttySurfaceScrollView: NSView {
 #if DEBUG
         dlog(
             "focus.ensure.apply surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
-            "tab=\(tabId.uuidString.prefix(5)) panel=\(surfaceId.uuidString.prefix(5)) " +
+            "tab=\(workspaceId.uuidString.prefix(5)) panel=\(surfaceId.uuidString.prefix(5)) " +
             "result=\(result ? 1 : 0) firstResponder=\(String(describing: window.firstResponder))"
         )
 #endif
@@ -8745,20 +9341,20 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    private func matchesCurrentTerminalFocusTarget(tabId: UUID, surfaceId: UUID) -> Bool {
+    private func matchesCurrentTerminalFocusTarget(workspaceId: UUID, surfaceId: UUID) -> Bool {
         guard let delegate = AppDelegate.shared,
-              let tabManager = delegate.tabManagerFor(tabId: tabId) ?? delegate.tabManager,
-              tabManager.selectedTabId == tabId,
-              let tab = tabManager.tabs.first(where: { $0.id == tabId }),
-              let tabIdForSurface = tab.surfaceIdFromPanelId(surfaceId),
-              let paneId = tab.bonsplitController.allPaneIds.first(where: { paneId in
-                  tab.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == tabIdForSurface })
+              let workspaceManager = delegate.workspaceManagerFor(workspaceId: workspaceId) ?? delegate.workspaceManager,
+              workspaceManager.selectedWorkspaceId == workspaceId,
+              let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
+              let bonsplitTabIdForSurface = workspace.bonsplitTabIdFromTabId(surfaceId),
+              let paneId = workspace.bonsplitController.allPaneIds.first(where: { paneId in
+                  workspace.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == bonsplitTabIdForSurface })
               }) else {
             return false
         }
 
-        return tab.bonsplitController.selectedTab(inPane: paneId)?.id == tabIdForSurface &&
-            tab.bonsplitController.focusedPaneId == paneId
+        return workspace.bonsplitController.selectedTab(inPane: paneId)?.id == bonsplitTabIdForSurface &&
+            workspace.bonsplitController.focusedPaneId == paneId
     }
 
     /// Suppress the surface view's onFocus callback and ghostty_surface_set_focus during
@@ -8827,7 +9423,24 @@ final class GhosttySurfaceScrollView: NSView {
         terminalSurface.forceRefresh(reason: "focus.surface.\(reason)")
     }
 
-    private func applyFirstResponderIfNeeded() {
+    private static func hasNativeTextEntryFirstResponder(in window: NSWindow) -> Bool {
+        if let editor = window.firstResponder as? NSTextView,
+           editor.isFieldEditor, editor.isEditable {
+            return true
+        }
+        return (window.firstResponder as? NSTextField)?.isEditable == true
+    }
+
+    /// Consume only the editor present when an explicit focus request arrives.
+    /// Deferred recovery must still respect an editor opened after this boundary.
+    static func endNativeTextEntryForExplicitFocus(in window: NSWindow) {
+        // The caller supplies its exact target window, which may not be key yet.
+        // Ending its old edit must not activate it or disturb another window.
+        guard hasNativeTextEntryFirstResponder(in: window) else { return }
+        _ = window.makeFirstResponder(nil)
+    }
+
+    private func applyFirstResponderIfNeeded(preservingNativeTextEntry: Bool = true) {
         let hasUsablePortalGeometry: Bool = {
             let size = bounds.size
             return size.width > 1 && size.height > 1
@@ -8847,12 +9460,19 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
         guard let window, window.isKeyWindow else { return }
-        guard let tabId = surfaceView.tabId,
+        guard let workspaceId = surfaceView.workspaceId,
               let panelId = surfaceView.terminalSurface?.id,
-              matchesCurrentTerminalFocusTarget(tabId: tabId, surfaceId: panelId) else {
+              matchesCurrentTerminalFocusTarget(workspaceId: workspaceId, surfaceId: panelId) else {
 #if DEBUG
             dlog("focus.apply.skip surface=\(surfaceShort) reason=stale_target")
 #endif
+            return
+        }
+        // Visibility/layout refreshes are not a request to leave a native editor.
+        // SwiftUI popovers can use the main window's shared field editor, so a
+        // key-window check alone does not protect group name/icon entry. Keep this
+        // guard on recovery; an explicit restored terminal intent may override it.
+        if preservingNativeTextEntry, Self.hasNativeTextEntryFirstResponder(in: window) {
             return
         }
         if surfaceView.terminalSurface?.searchState != nil {
@@ -8991,7 +9611,7 @@ final class GhosttySurfaceScrollView: NSView {
         case .surface:
             searchFocusTarget = .terminal
             setActive(true)
-            applyFirstResponderIfNeeded()
+            applyFirstResponderIfNeeded(preservingNativeTextEntry: false)
             return true
         case .findField:
             guard let terminalSurface = surfaceView.terminalSurface,
@@ -9089,7 +9709,7 @@ final class GhosttySurfaceScrollView: NSView {
         guard let view = responder as? NSView else { return false }
         var current: NSView? = view
         while let v = current {
-            if v is NSHostingView<SurfaceSearchOverlay> { return true }
+            if v is NSHostingView<PanelSearchOverlay> { return true }
             let typeName = String(describing: type(of: v))
             if typeName.contains("BrowserSearchOverlay") { return true }
             current = v.superview
@@ -9838,6 +10458,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
     @Environment(\.paneDropZone) var paneDropZone
 
     let terminalSurface: TerminalSurface
+    var areaId: UUID? = nil
     var isActive: Bool = true
     var isVisibleInUI: Bool = true
     var portalZPriority: Int = 0
@@ -9853,10 +10474,20 @@ struct GhosttyTerminalView: NSViewRepresentable {
     /// Workspace-scoped runtime for the pane-interaction overlay (close-confirm,
     /// rename, socket-triggered consent). `nil` is permitted — when nil, no overlay is
     /// attached, which is the expected state for preview/test-only contexts.
-    var paneInteractionRuntime: PaneInteractionRuntime? = nil
+    var paneInteractionRuntime: AreaInteractionRuntime? = nil
     var paneInteractionPanelId: UUID? = nil
 
     private final class HostContainerView: NSView {
+        private var representedSurfaceId: UUID?
+        private var representedAreaId: UUID?
+        private(set) var portalHostOrder: UInt64 = 0
+
+        func representSurface(_ id: UUID, areaId: UUID?) {
+            guard representedSurfaceId != id || representedAreaId != areaId else { return }
+            representedSurfaceId = id
+            representedAreaId = areaId
+            portalHostOrder = TerminalSurface.allocatePortalHostOrder()
+        }
         var onDidMoveToWindow: (() -> Void)?
         var onGeometryChanged: (() -> Void)?
         private(set) var geometryRevision: UInt64 = 0
@@ -9974,6 +10605,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let container = HostContainerView()
+        container.representSurface(terminalSurface.id, areaId: areaId)
         container.wantsLayer = false
         // The actual terminal surface lives in the AppKit portal layer above SwiftUI.
         // This empty placeholder should not be walked by the accessibility subsystem.
@@ -10004,7 +10636,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         coordinator.hostedView = hostedView
 #if DEBUG
         if desiredStateChanged {
-            if let snapshot = AppDelegate.shared?.tabManager?.debugCurrentWorkspaceSwitchSnapshot() {
+            if let snapshot = AppDelegate.shared?.workspaceManager?.debugCurrentWorkspaceSwitchSnapshot() {
                 let dtMs = (CACurrentMediaTime() - snapshot.startedAt) * 1000
                 dlog(
                     "ws.swiftui.update id=\(snapshot.id) dt=\(String(format: "%.2fms", dtMs)) " +
@@ -10024,7 +10656,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         }
 #endif
         if desiredStateChanged,
-           let signpostID = AppDelegate.shared?.tabManager?.currentSwitchSignpostID {
+           let signpostID = AppDelegate.shared?.workspaceManager?.currentSwitchSignpostID {
             WorkspaceSwitchSignpost.event(
                 signpostID,
                 "swiftui.update",
@@ -10034,21 +10666,36 @@ struct GhosttyTerminalView: NSViewRepresentable {
             )
         }
 
+        // Resolve anew for deferred callbacks: a captured area match becomes stale
+        // when a tab moves while SwiftUI keeps the old host alive.
+        func currentAreaId() -> UUID? {
+            guard areaId != nil,
+                  let manager = AppDelegate.shared?.workspaceManagerFor(workspaceId: terminalSurface.workspaceId),
+                  let workspace = manager.workspaces.first(where: { $0.id == terminalSurface.workspaceId }) else {
+                return nil
+            }
+            return workspace.paneId(forPanelId: terminalSurface.id)?.id
+        }
         let hostContainer = nsView as? HostContainerView
+        hostContainer?.representSurface(terminalSurface.id, areaId: areaId)
         let hostOwnsPortalNow = hostContainer.map { host in
             terminalSurface.claimPortalHost(
                 hostId: ObjectIdentifier(host),
+                order: host.portalHostOrder,
+                areaId: areaId,
+                currentAreaId: currentAreaId(),
                 inWindow: host.window != nil,
                 bounds: host.bounds,
                 reason: "update"
             )
         } ?? true
 
-        // Keep the surface lifecycle and handlers updated even if we defer re-parenting.
-        hostedView.attachSurface(terminalSurface)
-        hostedView.setFocusHandler { onFocus?(terminalSurface.id) }
-        hostedView.setTriggerFlashHandler(onTriggerFlash)
-        if hostOwnsPortalNow {
+        // Apply this again when a deferred host first wins its lease. A replaced
+        // host must not overwrite its successor's interaction handlers.
+        func applyOwnedHostedState() {
+            hostedView.attachSurface(terminalSurface)
+            hostedView.setFocusHandler { onFocus?(terminalSurface.id) }
+            hostedView.setTriggerFlashHandler(onTriggerFlash)
             hostedView.setInactiveOverlay(
                 color: inactiveOverlayColor,
                 opacity: CGFloat(inactiveOverlayOpacity),
@@ -10062,6 +10709,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
             }
             hostedView.syncKeyStateIndicator(text: terminalSurface.currentKeyStateIndicatorText)
         }
+        if hostOwnsPortalNow { applyOwnedHostedState() }
         let portalExpectedSurfaceId = terminalSurface.id
         let portalExpectedGeneration = terminalSurface.portalBindingGeneration()
         func portalBindingStillLive() -> Bool {
@@ -10098,17 +10746,22 @@ struct GhosttyTerminalView: NSViewRepresentable {
         let generation = coordinator.attachGeneration
 
         if let host = hostContainer {
+            let hostOrder = host.portalHostOrder
             host.onDidMoveToWindow = { [weak host, weak hostedView, weak coordinator] in
                 guard let host, let hostedView, let coordinator else { return }
                 guard coordinator.attachGeneration == generation else { return }
                 guard terminalSurface.claimPortalHost(
                     hostId: ObjectIdentifier(host),
+                    order: hostOrder,
+                    areaId: areaId,
+                    currentAreaId: currentAreaId(),
                     inWindow: host.window != nil,
                     bounds: host.bounds,
                     reason: "didMoveToWindow"
                 ) else { return }
                 guard host.window != nil else { return }
                 guard portalBindingStillLive() else { return }
+                applyOwnedHostedState()
                 // Phase 2: skip the bind here when the host's frame hasn't been laid
                 // out yet. AppKit fires `viewDidMoveToWindow` during `addSubview`,
                 // BEFORE SwiftUI's layout pass sizes the host. Binding now would
@@ -10151,11 +10804,15 @@ struct GhosttyTerminalView: NSViewRepresentable {
                 guard coordinator.attachGeneration == generation else { return }
                 guard terminalSurface.claimPortalHost(
                     hostId: ObjectIdentifier(host),
+                    order: hostOrder,
+                    areaId: areaId,
+                    currentAreaId: currentAreaId(),
                     inWindow: host.window != nil,
                     bounds: host.bounds,
                     reason: "geometryChanged"
                 ) else { return }
                 guard portalBindingStillLive() else { return }
+                applyOwnedHostedState()
                 let hostId = ObjectIdentifier(host)
                 if host.window != nil,
                    (coordinator.lastBoundHostId != hostId ||
@@ -10298,7 +10955,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         let hostedView = coordinator.hostedView
 #if DEBUG
         if let hostedView {
-            if let snapshot = AppDelegate.shared?.tabManager?.debugCurrentWorkspaceSwitchSnapshot() {
+            if let snapshot = AppDelegate.shared?.workspaceManager?.debugCurrentWorkspaceSwitchSnapshot() {
                 let dtMs = (CACurrentMediaTime() - snapshot.startedAt) * 1000
                 dlog(
                     "ws.swiftui.dismantle id=\(snapshot.id) dt=\(String(format: "%.2fms", dtMs)) " +
@@ -10314,7 +10971,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         }
 #endif
         if let hostedView,
-           let signpostID = AppDelegate.shared?.tabManager?.currentSwitchSignpostID {
+           let signpostID = AppDelegate.shared?.workspaceManager?.currentSwitchSignpostID {
             WorkspaceSwitchSignpost.event(
                 signpostID,
                 "swiftui.dismantle",
@@ -10323,21 +10980,24 @@ struct GhosttyTerminalView: NSViewRepresentable {
             )
         }
 
+        var releasedCurrentHost = false
         if let host = nsView as? HostContainerView {
             host.onDidMoveToWindow = nil
             host.onGeometryChanged = nil
-            hostedView?.releaseOwnedPortalHost(
+            releasedCurrentHost = hostedView?.releaseOwnedPortalHost(
                 hostId: ObjectIdentifier(host),
+                order: host.portalHostOrder,
                 reason: "dismantle"
-            )
+            ) ?? false
         }
 
-        // SwiftUI can transiently dismantle/rebuild NSViewRepresentable instances during split
-        // tree updates. Do not force visible/active false here; that causes avoidable blackouts
-        // when the same hosted view is rebound moments later.
-        hostedView?.setFocusHandler(nil)
-        hostedView?.setTriggerFlashHandler(nil)
-        hostedView?.setDropZoneOverlay(zone: nil)
+        // A stale dismantle cannot clear the replacement host's handlers or overlay.
+        // Preserve visible/active state through SwiftUI's transient rebuilds.
+        if releasedCurrentHost {
+            hostedView?.setFocusHandler(nil)
+            hostedView?.setTriggerFlashHandler(nil)
+            hostedView?.setDropZoneOverlay(zone: nil)
+        }
         coordinator.hostedView = nil
 
         nsView.subviews.forEach { $0.removeFromSuperview() }

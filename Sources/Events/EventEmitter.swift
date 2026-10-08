@@ -22,6 +22,10 @@ final class EventEmitter {
     /// (status/title/description) minus progress.
     static let canonicalMetadataEventKeys: Set<String> = ["status", "title", "description"]
 
+    /// C11-257: event payloads retain the first 256 KiB of text. The byte cap
+    /// is applied before JSON serialization and never splits a UTF-8 scalar.
+    static let maxRecordedTextBytes = 256 * 1024
+
     private let lock = NSLock()
     private var log: EventLog?
     private var instanceId: String = ""
@@ -81,12 +85,29 @@ final class EventEmitter {
         lock.unlock()
     }
 
+    /// Instance id of the log this process is writing, or nil before `start()`
+    /// and whenever recording is off. Feed watch binds to this id, not newest-mtime.
+    func currentInstance() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard enabled, !instanceId.isEmpty else { return nil }
+        return instanceId
+    }
+
+    /// Whether emits currently reach a log (false before `start()`, when
+    /// disabled, and under XCTest without an injected log).
+    var isRecording: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return enabled && log != nil
+    }
+
     /// Flush the underlying log (tests / shutdown).
     func flush() {
         currentLog()?.flush()
     }
 
-    // MARK: - Emit helpers (v1 taxonomy)
+    // MARK: - Emit helpers
 
     func emitSurfaceCreated(
         workspace: UUID,
@@ -103,13 +124,32 @@ final class EventEmitter {
         emit(.surfaceClosed, workspace: workspace, surface: surface)
     }
 
-    func emitWorkspaceSelected(previous: UUID?, selected: UUID) {
+    func emitWorkspaceReordered(windowId: UUID?, workspaceIds: [UUID]) {
+        var payload: [String: Any] = ["final_workspace_ids": workspaceIds.map(\.uuidString)]
+        if let windowId { payload["window_id"] = windowId.uuidString }
+        emit(.workspaceReordered, payload: payload)
+    }
+
+    func emitWorkspaceSelected(previous: UUID?, selected: UUID, cause: String = "menu", method: String? = nil, callerPanelId: UUID? = nil) {
         var payload: [String: Any] = [:]
         if let previous { payload["previous"] = previous.uuidString }
+        payload["cause"] = cause
+        if let method {
+            payload["method"] = method
+            payload[EventEnvelope.PayloadKey.callerPanelId] = callerPanelId?.uuidString ?? NSNull()
+        }
         emit(.workspaceSelected, workspace: selected, payload: payload)
     }
 
-    /// `scope` is "surface" or "pane"; `source` is the `MetadataSource` raw
+    func emitWorkspaceSwitchBlocked(target: UUID, method: String, callerPanelId: UUID?) {
+        emit(.workspaceSwitchBlocked, workspace: target, payload: [
+            "target": target.uuidString, "method": method,
+            EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull()
+        ])
+    }
+
+    /// `scope` is "surface" or "pane" (callers' v1 spelling); it is written as
+    /// the v2 "panel" / "area". `source` is the `MetadataSource` raw
     /// value stringified by the caller (the pure envelope never names the enum).
     /// `prior` is optional — the surface store does not retain it for free.
     func emitMetadataChanged(
@@ -122,7 +162,7 @@ final class EventEmitter {
         source: String
     ) {
         var payload: [String: Any] = [
-            "scope": scope,
+            EventEnvelope.PayloadKey.scope: EventEnvelope.canonicalScope(scope),
             "key": key,
             "source": source,
         ]
@@ -135,16 +175,26 @@ final class EventEmitter {
         emit(.metadataChanged, workspace: workspace, surface: surface, payload: payload)
     }
 
-    func emitWaiting(entered: Bool, workspace tabId: UUID, surface: UUID?) {
-        emit(entered ? .waitingEntered : .waitingLeft, workspace: tabId, surface: surface)
+    func emitWaiting(entered: Bool, workspace workspaceId: UUID, surface: UUID?) {
+        emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
+    }
+
+    /// The journal builds the payload with a `tab` key; v2 writes it as `panel`.
+    func emitLifecycleChanged(workspace: UUID, panel: UUID, payload: [String: Any]) {
+        var payload = payload
+        if let legacy = payload.removeValue(forKey: EventEnvelope.PayloadKey.legacyTab),
+           payload[EventEnvelope.PayloadKey.panel] == nil {
+            payload[EventEnvelope.PayloadKey.panel] = legacy
+        }
+        emit(.lifecycleChanged, workspace: workspace, surface: panel, payload: payload)
     }
 
     func emitFlagRaised(
         workspace: UUID,
         surface: UUID,
         reason: String,
-        callerSurfaceId: UUID?,
-        by actor: SurfaceAttentionActor
+        callerPanelId: UUID?,
+        by actor: PanelAttentionActor
     ) {
         emit(
             .flagRaised,
@@ -152,22 +202,102 @@ final class EventEmitter {
             surface: surface,
             payload: [
                 "reason": reason,
-                "caller_surface_id": callerSurfaceId?.uuidString ?? NSNull(),
+                // C11-337: v2 writes only `caller_panel_id`; readers accept the
+                // v1 `caller_tab_id` / `caller_surface_id` via `EventEnvelope.callerPanelId`.
+                EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull(),
                 "by": actor.rawValue,
             ]
         )
     }
 
-    func emitFlagLowered(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
-        emit(.flagLowered, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    func emitFlagLowered(
+        workspace: UUID,
+        surface: UUID,
+        by actor: PanelAttentionActor,
+        answer: String? = nil
+    ) {
+        var payload: [String: Any] = ["by": actor.rawValue]
+        if let answer { payload["answer"] = answer }
+        emit(.flagLowered, workspace: workspace, surface: surface, payload: payload)
     }
 
-    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: PanelAttentionActor) {
         emit(.flagSuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
     }
 
-    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: PanelAttentionActor) {
         emit(.flagUnsuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    }
+
+    /// Structural ask open. The payload must not carry prompt text.
+    @discardableResult
+    func emitAskOpened(workspace: UUID?, surface: UUID, payload: [String: Any]) -> Bool {
+        emit(.askOpened, workspace: workspace, surface: surface, payload: payload)
+    }
+
+    /// Structural ask close. `resolution` may be null. The payload must not carry prompt text.
+    @discardableResult
+    func emitAskClosed(workspace: UUID?, surface: UUID, payload: [String: Any]) -> Bool {
+        emit(.askClosed, workspace: workspace, surface: surface, payload: payload)
+    }
+
+    /// C11-257 C1: build the stable payload for a successful socket send. This
+    /// is intentionally pure so the truncation and null-attribution contract
+    /// can be exercised without constructing a workspace or terminal.
+    static func panelInputPayload(
+        callerPanelId: UUID?,
+        callerTitle: String?,
+        targetTitle: String,
+        kind: String,
+        text: String,
+        submitted: Bool,
+        queued: Bool = false
+    ) -> [String: Any] {
+        let recorded = recordedText(text)
+        var payload: [String: Any] = [
+            EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull(),
+            "caller_title": callerTitle ?? NSNull(),
+            "target_title": targetTitle,
+            "kind": kind,
+            "text": recorded.value,
+            "bytes": recorded.bytes,
+            "submitted": submitted,
+        ]
+        if recorded.truncated {
+            payload["truncated"] = true
+        }
+        if queued {
+            payload["queued"] = true
+        }
+        return payload
+    }
+
+    @discardableResult
+    func emitPanelInputSent(
+        workspace: UUID,
+        surface: UUID,
+        callerPanelId: UUID?,
+        callerTitle: String?,
+        targetTitle: String,
+        kind: String,
+        text: String,
+        submitted: Bool,
+        queued: Bool = false
+    ) -> Bool {
+        emit(
+            .panelInputSent,
+            workspace: workspace,
+            surface: surface,
+            payload: Self.panelInputPayload(
+                callerPanelId: callerPanelId,
+                callerTitle: callerTitle,
+                targetTitle: targetTitle,
+                kind: kind,
+                text: text,
+                submitted: submitted,
+                queued: queued
+            )
+        )
     }
 
     func emitMailboxAccepted(
@@ -175,11 +305,24 @@ final class EventEmitter {
         id: String,
         from: String,
         to: String?,
-        topic: String?
+        body: String = "",
+        bodyRef: String? = nil,
+        topic: String?,
+        replyTo: String? = nil,
+        inReplyTo: String? = nil,
+        urgent: Bool? = nil
     ) {
-        var payload: [String: Any] = ["id": id, "from": from]
+        let recordedBody = Self.recordedText(body)
+        var payload: [String: Any] = ["id": id, "from": from, "body": recordedBody.value]
         if let to { payload["to"] = to }
+        if let bodyRef { payload["body_ref"] = bodyRef }
         if let topic { payload["topic"] = topic }
+        if let replyTo { payload["reply_to"] = replyTo }
+        if let inReplyTo { payload["in_reply_to"] = inReplyTo }
+        if let urgent { payload["urgent"] = urgent }
+        if recordedBody.truncated {
+            payload["truncated"] = true
+        }
         emit(.mailboxAccepted, workspace: workspace, payload: payload)
     }
 
@@ -187,13 +330,14 @@ final class EventEmitter {
         workspace: UUID,
         id: String,
         recipient: String,
-        surface: UUID?
+        surface: UUID?,
+        via: String = "inbox"
     ) {
         emit(
             .mailboxDelivered,
             workspace: workspace,
             surface: surface,
-            payload: ["id": id, "recipient": recipient]
+            payload: ["id": id, "recipient": recipient, "via": via]
         )
     }
 
@@ -315,6 +459,24 @@ final class EventEmitter {
         lock.lock()
         defer { lock.unlock() }
         return log
+    }
+
+    private static func recordedText(_ text: String) -> (value: String, bytes: Int, truncated: Bool) {
+        let byteCount = text.utf8.count
+        guard byteCount > maxRecordedTextBytes else {
+            return (text, byteCount, false)
+        }
+        let utf8 = Array(text.utf8)
+
+        var end = maxRecordedTextBytes
+        while end > 0, end < utf8.count, (utf8[end] & 0xC0) == 0x80 {
+            end -= 1
+        }
+        return (
+            String(decoding: utf8.prefix(end), as: UTF8.self),
+            byteCount,
+            true
+        )
     }
 
     // MARK: - Test detection

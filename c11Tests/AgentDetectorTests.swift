@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 
 #if canImport(c11_DEV)
@@ -149,5 +150,124 @@ final class AgentDetectorTests: XCTestCase {
     func testClassifyNativeGrokAndOpencode() {
         XCTAssertEqual(AgentDetector.classify(comm: "grok", args: "grok --always-approve"), "grok")
         XCTAssertEqual(AgentDetector.classify(comm: "opencode", args: "opencode"), "opencode")
+    }
+
+    // MARK: - Long argv0 (C11-246)
+
+    /// `/tmp/fb/claude` is 13 characters, so it fits in the 16-column comm
+    /// field and the basename still matches.
+    func testClassifyShortAbsolutePath() throws {
+        XCTAssertEqual(
+            AgentDetector.classify(comm: "/tmp/fb/claude", args: "/tmp/fb/claude"),
+            "claude-code"
+        )
+        let line = "22769 22744 ??          0 /tmp/fb/claude /tmp/fb/claude"
+        let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
+        XCTAssertEqual(info.comm, "/tmp/fb/claude")
+        XCTAssertEqual(
+            AgentDetector.classify(comm: info.comm, args: info.args),
+            "claude-code"
+        )
+    }
+
+    /// Live `ps` line: comm is a 16-character clip of the path, and the tty
+    /// column is padded. The full argv0 still ends in `claude`.
+    func testClassifyLongDirectoryPath() throws {
+        let line = "22771 22744 ??          0 /tmp/c11-246-psp /tmp/c11-246-psprobe/dir-claude-501-Users-atin-Projects-Stage11-code-c11-0bb5b2bc-702c-4390-a904-scratchpad-worktrees-very-long-component-name/claude"
+        let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
+        XCTAssertEqual(info.comm, "/tmp/c11-246-psp")
+        XCTAssertEqual(
+            AgentDetector.classify(comm: info.comm, args: info.args),
+            "claude-code"
+        )
+        // Same identity when the argv line was sliced down to `tpgid` and
+        // only proc_pidpath still has the path.
+        let path = "/private/tmp/claude-501/Users-atin-Projects-Stage11-code-c11/0bb5b2bc-702c-4390-a904-79405ad6efdd/scratchpad/claude"
+        XCTAssertGreaterThan(path.count, 16)
+        XCTAssertEqual(
+            AgentDetector.classify(AgentDetector.ProcessFacts(
+                comm: String(path.prefix(16)),
+                args: "0 \(String(path.prefix(16)))",
+                executablePath: path
+            )),
+            "claude-code"
+        )
+    }
+
+    /// The basename itself is longer than the 16-column comm field. The clip
+    /// is not a registered name, and a longer name that only starts with one
+    /// (`claude-code`) must not classify. A registered basename that arrives
+    /// only on the executable path still does.
+    func testClassifyBasenameLongerThanSixteenCharacters() throws {
+        let line = "22770 22744 ??          0 /tmp/c11-246-psp /tmp/c11-246-psprobe/short/claude-code-extra-bin"
+        let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
+        XCTAssertTrue(info.args.hasPrefix("/tmp/c11-246-psprobe/short/claude-code-extra-bin"))
+        XCTAssertEqual(
+            AgentDetector.classify(comm: info.comm, args: info.args),
+            "unknown"
+        )
+        let registered = "/opt/homebrew/Cellar/opencode/1.18.30_2/bin/opencode-cli"
+        XCTAssertEqual(
+            AgentDetector.classify(AgentDetector.ProcessFacts(
+                comm: String(registered.prefix(16)),
+                args: "0 \(String(registered.prefix(16)))",
+                executablePath: registered
+            )),
+            "opencode"
+        )
+    }
+
+    /// A long runtime path is clipped in comm (`/opt/homebrew/bin/node` is 22
+    /// characters). The script basename is still the agent.
+    func testClassifyLongRuntimePathUsesScriptBasename() {
+        let node = "/opt/homebrew/bin/node"
+        XCTAssertGreaterThan(node.count, 16)
+        let args = "\(node) /Users/me/.nvm/versions/node/v24.11.1/bin/copilot --allow-all"
+        XCTAssertEqual(
+            AgentDetector.classify(AgentDetector.ProcessFacts(
+                comm: String(node.prefix(16)),
+                args: args
+            )),
+            "github-copilot"
+        )
+    }
+
+    /// `runPS` always passes `-t`, so live lines carry `ttysNNN` and the tty
+    /// column's two-space pad. Captured from `ps -t ttys001`. The 16-character
+    /// comm clip is not the agent; the full argv0 is.
+    func testParsePSLineTTYTwoSpacePadUsesFullArgv0() throws {
+        let line = "62387 62165 ttys001  62387 /Users/atin/.gro /Users/atin/.grok/bin/grok --always-approve"
+        let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
+        XCTAssertEqual(info.tty, "ttys001")
+        XCTAssertEqual(info.comm, "/Users/atin/.gro")
+        XCTAssertEqual(info.args, "/Users/atin/.grok/bin/grok --always-approve")
+        XCTAssertEqual(AgentDetector.classify(comm: info.comm, args: info.args), "grok")
+    }
+
+    /// The scan's path lookup, pointed at this process, is the executable
+    /// dyld reports for it.
+    func testExecutablePathReturnsThisProcess() throws {
+        var size = UInt32(4096)
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        XCTAssertEqual(_NSGetExecutablePath(&buffer, &size), 0)
+        let expected = URL(fileURLWithPath: String(cString: buffer))
+            .resolvingSymlinksInPath().path
+        let pid = Int32(ProcessInfo.processInfo.processIdentifier)
+        let got = try XCTUnwrap(AgentDetector.executablePath(for: pid))
+        XCTAssertEqual(URL(fileURLWithPath: got).resolvingSymlinksInPath().path, expected)
+    }
+
+    /// `~/.local/bin/claude` resolves to a versioned file (`2.1.286`). The
+    /// invoked argv0 basename is what classifies; the resolved basename does
+    /// not hide it.
+    func testClassifySymlinkTargetDoesNotHideArgv0() {
+        XCTAssertEqual(
+            AgentDetector.classify(AgentDetector.ProcessFacts(
+                comm: "/Users/atin/.loc",
+                args: "/Users/atin/.local/bin/claude --dangerously-skip-permissions",
+                executablePath: "/Users/atin/.local/share/claude/versions/2.1.286"
+            )),
+            "claude-code"
+        )
     }
 }

@@ -7,9 +7,9 @@
     "workspace": {},
     "layout": {
       "type": "pane",
-      "pane": { "surfaceIds": ["s1"] }
+      "pane": { "panelIds": ["s1"] }
     },
-    "surfaces": [
+    "panels": [
       {
         "id": "s1",
         "kind": "terminal"

@@ -67,9 +67,9 @@ def _pane_count(layout_payload: dict) -> int:
 
 def _selected_panel_by_pane(layout_payload: dict) -> dict[str, str]:
     out: dict[str, str] = {}
-    for row in layout_payload.get("selectedPanels") or []:
-        pane_id = str(row.get("paneId") or "")
-        panel_id = str(row.get("panelId") or "")
+    for row in layout_payload.get("selectedTabs") or []:
+        pane_id = str(row.get("areaId") or "")
+        panel_id = str(row.get("tabId") or "")
         if pane_id and panel_id:
             out[pane_id] = panel_id
     return out
@@ -87,7 +87,7 @@ def _panel_for_pane(layout_payload: dict, pane: dict) -> str:
     selected = _selected_panel_by_pane(layout_payload)
     panel_id = str(selected.get(pane_id) or "")
     if not panel_id:
-        raise cmuxError(f"missing selected panel for pane: pane_id={pane_id} selected={selected}")
+        raise cmuxError(f"missing selected panel for pane: area_id={pane_id} selected={selected}")
     return panel_id
 
 

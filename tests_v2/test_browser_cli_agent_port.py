@@ -174,31 +174,31 @@ def main() -> int:
             cli,
             ["browser", "open", page_url, "--workspace", workspace, "--id-format", "both", "--json"],
         )
-        tail_surface = str(opened_tail_json.get("surface_ref") or "")
-        _must(tail_surface.startswith("surface:"), f"Expected trailing --json browser open to return surface_ref: {opened_tail_json}")
-        _must(bool(opened_tail_json.get("surface_id")), f"Expected trailing --id-format both to preserve surface_id: {opened_tail_json}")
+        tail_surface = str(opened_tail_json.get("panel_ref") or "")
+        _must(tail_surface.startswith("panel:"), f"Expected trailing --json browser open to return panel_ref: {opened_tail_json}")
+        _must(bool(opened_tail_json.get("panel_id")), f"Expected trailing --id-format both to preserve panel_id: {opened_tail_json}")
         _must("--json" not in str(opened_tail_json.get("url") or ""), f"Trailing output flags leaked into browser open URL: {opened_tail_json}")
         _run_cli_json(cli, ["browser", tail_surface, "wait", "--load-state", "complete", "--timeout-ms", "15000"])
         tail_url_payload = _run_cli_json(cli, ["browser", tail_surface, "url"])
         _must(str(tail_url_payload.get("url") or "").startswith(page_url), f"Expected trailing --json browser open to navigate: {tail_url_payload}")
 
         opened = _run_cli_json(cli, ["browser", "open", page_url])
-        surface = str(opened.get("surface_ref") or opened.get("surface_id") or "")
+        surface = str(opened.get("panel_ref") or opened.get("panel_id") or "")
         _must(bool(surface), f"browser open returned no surface handle: {opened}")
-        _must(surface.startswith("surface:"), f"Expected short surface ref from browser open, got: {opened}")
+        _must(surface.startswith("panel:"), f"Expected short surface ref from browser open, got: {opened}")
 
         _run_cli_json(cli, ["browser", surface, "wait", "--load-state", "complete", "--timeout-ms", "15000"])
         snapshot_text = _run_cli_text(cli, ["browser", surface, "snapshot", "--interactive"])
         _must("ref=e" in snapshot_text, f"Expected snapshot text with refs from CLI: {snapshot_text!r}")
 
         blank_opened = _run_cli_json(cli, ["browser", "open", "about:blank", "--workspace", workspace])
-        blank_surface = str(blank_opened.get("surface_ref") or blank_opened.get("surface_id") or "")
+        blank_surface = str(blank_opened.get("panel_ref") or blank_opened.get("panel_id") or "")
         _must(bool(blank_surface), f"Expected about:blank browser open to return a surface: {blank_opened}")
         blank_snapshot = _run_cli_text(cli, ["browser", blank_surface, "snapshot", "--interactive"])
         _must("about:blank" in blank_snapshot and "get url" in blank_snapshot, f"Expected empty snapshot diagnostics for about:blank: {blank_snapshot!r}")
 
         opened_routed = _run_cli_json(cli, ["browser", "open", page_url, "--workspace", workspace])
-        routed_surface = str(opened_routed.get("surface_ref") or opened_routed.get("surface_id") or "")
+        routed_surface = str(opened_routed.get("panel_ref") or opened_routed.get("panel_id") or "")
         _must(bool(routed_surface), f"browser open --workspace returned no surface handle: {opened_routed}")
         _run_cli_json(cli, ["browser", routed_surface, "wait", "--load-state", "complete", "--timeout-ms", "15000"])
         routed_url_payload = _run_cli_json(cli, ["browser", routed_surface, "url"])
@@ -239,14 +239,14 @@ def main() -> int:
         _run_cli_expect_failure(cli, ["browser", surface, "click", "#does-not-exist"], ["not_found", "snapshot"])
         _run_cli_json(cli, ["browser", surface, "storage", "local", "clear", "--key", "alpha"])
 
-        tabs_before = _run_cli_json(cli, ["browser", surface, "tab", "list"])
-        tab_new = _run_cli_json(cli, ["browser", surface, "tab", "new", "about:blank"])
-        tab_surface = str(tab_new.get("surface_ref") or tab_new.get("surface_id") or "")
+        tabs_before = _run_cli_json(cli, ["browser", surface, "panel", "list"])
+        tab_new = _run_cli_json(cli, ["browser", surface, "panel", "new", "about:blank"])
+        tab_surface = str(tab_new.get("panel_ref") or tab_new.get("panel_id") or "")
         _must(bool(tab_surface), f"Expected tab surface handle via CLI: {tab_new}")
-        tabs_after = _run_cli_json(cli, ["browser", tab_surface, "tab", "list"])
-        _must(len(tabs_after.get("tabs") or []) >= len(tabs_before.get("tabs") or []) + 1, "Expected tab count increase via CLI")
-        _run_cli_json(cli, ["browser", tab_surface, "tab", "switch", surface])
-        _run_cli_json(cli, ["browser", surface, "tab", "close", tab_surface])
+        tabs_after = _run_cli_json(cli, ["browser", tab_surface, "panel", "list"])
+        _must(len(tabs_after.get("panels") or []) >= len(tabs_before.get("panels") or []) + 1, "Expected tab count increase via CLI")
+        _run_cli_json(cli, ["browser", tab_surface, "panel", "switch", surface])
+        _run_cli_json(cli, ["browser", surface, "panel", "close", tab_surface])
 
         addscript = _run_cli_json(cli, ["browser", surface, "addscript", "1 + 2"])
         _must(int(addscript.get("value") or 0) == 3, f"Expected addscript value=3 via CLI: {addscript}")
@@ -268,8 +268,8 @@ def main() -> int:
 
         _run_cli_expect_failure(cli, ["browser", surface, "viewport", "800", "600"], ["not_supported"])
 
-        legacy_new = _run_cli_text(cli, ["new-pane", "--type", "browser", "--direction", "right", "--url", page_url])
-        _must("surface:" in legacy_new, f"Expected new-pane output to prefer short surface refs, got: {legacy_new!r}")
+        legacy_new = _run_cli_text(cli, ["new-area", "--type", "browser", "--direction", "right", "--url", page_url])
+        _must("panel:" in legacy_new, f"Expected new-area output to prefer short surface refs, got: {legacy_new!r}")
 
     print("PASS: browser CLI parity commands are wired for extended families")
     return 0

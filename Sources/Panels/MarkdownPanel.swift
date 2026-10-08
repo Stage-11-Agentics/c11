@@ -29,6 +29,11 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// panel is unbound (empty state — user hasn't picked a file yet).
     @Published private(set) var filePath: String?
 
+    /// Navigation history is transient and belongs to this panel only.
+    @Published private(set) var navigationHistory = MarkdownNavigationHistory()
+    private(set) var pendingNavigationFragment: String?
+    private var navigationGeneration = 0
+
     /// The workspace this panel belongs to.
     private(set) var workspaceId: UUID
 
@@ -67,6 +72,77 @@ final class MarkdownPanel: Panel, ObservableObject {
     var theme: String { presentation.theme }
     var typeface: String { presentation.typeface }
     var outlineOpen: Bool? { presentation.outlineOpen }
+    var canNavigateBack: Bool { navigationHistory.canGoBack }
+    var canNavigateForward: Bool { navigationHistory.canGoForward }
+    var navigationTarget: MarkdownNavigationTarget? { navigationHistory.current?.target }
+
+    /// Navigate this panel without changing workspace or panel selection.
+    /// Target validation and disk reads run away from the main actor.
+    @discardableResult
+    func navigate(
+        to fileURL: URL,
+        fragment: String?,
+        origin: MarkdownNavigationOrigin
+    ) async -> MarkdownNavigationOutcome {
+        guard !isClosed else { return .panelClosed }
+        let target = MarkdownNavigationTarget(fileURL: fileURL, fragment: fragment)
+        guard navigationHistory.current?.target != target else { return .unchanged }
+
+        navigationGeneration &+= 1
+        let generation = navigationGeneration
+        let currentPath = filePath
+        let position = await captureNavigationPosition()
+        guard !isClosed else { return .panelClosed }
+        guard generation == navigationGeneration else { return .superseded }
+
+        let preparation = await Task.detached(priority: .userInitiated) {
+            MarkdownNavigationPolicy.prepare(target, currentFilePath: currentPath, origin: origin)
+        }.value
+        guard !isClosed else { return .panelClosed }
+        guard generation == navigationGeneration else { return .superseded }
+
+        switch preparation {
+        case .rejected(let outcome):
+            return outcome
+        case .ready(let path, let preparedContent, let modificationDate, let scopeRootPath):
+            let sameDocument = currentPath.map {
+                URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path == path
+            } ?? false
+            if !sameDocument {
+                stopFileWatcher()
+                filePath = path
+                displayTitle = Self.titleForFilePath(path)
+                content = preparedContent ?? ""
+                readingContent = nil
+                readingPosition = nil
+                isFileUnavailable = false
+                lastContentChangeAt = modificationDate
+                startFileWatcher()
+            }
+            navigationHistory.push(
+                target,
+                origin: origin,
+                scopeRootPath: scopeRootPath,
+                preserving: position
+            )
+            pendingNavigationFragment = target.fragment
+            if sameDocument, let fragment = target.fragment {
+                renderer?.call("scrollToHeading", arguments: [fragment])
+            } else {
+                renderer?.synchronize()
+            }
+            return .navigated
+        }
+    }
+
+    private func captureNavigationPosition() async -> MarkdownReadingPosition? {
+        guard let renderer else { return readingPosition }
+        return await withCheckedContinuation { continuation in
+            renderer.captureReadingPosition { position in
+                continuation.resume(returning: position)
+            }
+        }
+    }
 
     static let fontScaleRange = MarkdownPresentation.fontScaleRange
     static let fontScaleStep = MarkdownPresentation.fontScaleStep
@@ -366,6 +442,10 @@ final class MarkdownPanel: Panel, ObservableObject {
         self.filePath = filePath
         self.displayTitle = Self.titleForFilePath(filePath)
         self.presentation = MarkdownPresentation.lastUsed()
+        navigationHistory.reset(
+            to: filePath.map { MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: $0)) },
+            origin: .agentCLI
+        )
 
         if filePath != nil {
             loadFileContent()
@@ -393,6 +473,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         guard filePath == nil, !isClosed else { return }
         filePath = path
         displayTitle = Self.titleForFilePath(path)
+        navigationHistory.reset(to: MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: path)), origin: .agentCLI)
         loadFileContent()
         startFileWatcher()
         if isFileUnavailable && fileWatchSource == nil {
@@ -416,6 +497,7 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     func close() {
         isClosed = true
+        navigationGeneration &+= 1
         notifyReaderObservers(.closed)
         readerObservers.removeAll()
         MarkdownRendererCache.shared.remove(self)

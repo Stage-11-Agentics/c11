@@ -380,7 +380,10 @@ struct ModelCostsCommandCore {
     }
 
     private static func optionalRate(_ args: [String], _ key: String) throws -> Double? {
-        guard let raw = option(args, key) else { return nil }
+        guard args.contains(where: { $0 == key || $0.hasPrefix(key + "=") }) else { return nil }
+        guard let raw = option(args, key), !raw.isEmpty, !raw.hasPrefix("--") else {
+            throw Failure(message: "model-costs: \(key) requires a value")
+        }
         guard let value = Double(raw), value.isFinite, value >= 0 else { throw Failure(message: "model-costs: \(key) must be a finite non-negative number") }
         return value
     }

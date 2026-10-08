@@ -124,6 +124,17 @@ final class ModelCostCatalogTests: XCTestCase {
         XCTAssertThrowsError(try ModelCostsCommandCore.run(args: ["set"], store: store))
     }
 
+    func testCacheRateFlagsRequireValuesWithoutWritingCatalog() {
+        let base = ["set", "example", "--in", "2", "--out", "10"]
+        for flag in ["--cache-read", "--cache-write", "--cache-write-1h"] {
+            for suffix in [[flag], [flag, "--notes", "example"], [flag + "="]] {
+                XCTAssertThrowsError(try ModelCostsCommandCore.run(args: base + suffix, store: store))
+                XCTAssertTrue(store.catalog().isEmpty)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(ModelCostCatalogStore.fileName).path))
+            }
+        }
+    }
+
     func testCoreImportFromFileAndRm() throws {
         let path = tempDir.appendingPathComponent("draft.json").path
         let draft = #"{"opus": {"in_usd": 15, "out_usd": 75, "source": "s", "observed_at": "2026-07-30"}}"#

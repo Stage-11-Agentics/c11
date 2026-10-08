@@ -77,7 +77,7 @@
     },
     "ext": {
       "type": "object",
-      "description": "Forward-compat escape hatch. Any keys allowed under ext."
+      "description": "Forward-compat escape hatch. Any keys allowed under ext. c11 stamps c11_activity_text_recorded=false when message history text is off at acceptance. Delivery still carries body/body_ref; history readers must suppress both, including after event-log retention."
     }
   },
   "additionalProperties": false,

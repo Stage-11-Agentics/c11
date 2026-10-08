@@ -219,3 +219,13 @@ For a separate supported history location, launch the app or offline CLI with
 mailbox event receipt readers and offline consumers resolve the same directory.
 Relative overrides are ignored. Use a separate directory for tagged validation
 so its retention cannot remove production history.
+
+## Message-history privacy
+
+The Data & Privacy controls apply immediately to new records. Text-off sends and
+mailbox accepts carry `text_recorded: false` and `bytes`, without `text`, `body`,
+or `body_ref`. Messages view shows “text not recorded” and reads every retained
+numbered event generation. Mailbox delivery files keep the actual payload plus
+`ext.c11_activity_text_recorded: false`; the page honors that durable marker even
+after event-log retention. Delivery still reaches recipients unchanged. See
+[local activity history privacy](activity-history-privacy.md) for scope and defaults.

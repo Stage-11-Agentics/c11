@@ -191,9 +191,12 @@ age apply per build label across all its PIDs and generations: production,
 nightly and each tag have separate policies. A build never prunes another
 production or nightly label. Dead debug/tag labels may also be pruned after a
 fixed fourteen-day idle TTL. Live current files are protected by writer locks.
-Pruning runs at open, rotation, sample and policy changes, including when full
-recording is disabled. Writes maintain a running byte count; ordinary records
-do not scan the directory or take a retention lock.
+Pruning runs at open, rotation, sample, policy changes and clean shutdown.
+With full recording disabled, startup, policy and shutdown checkpoints still
+prune history, but no retention timer runs. A long disabled session can retain
+files past their wall-clock age limit until the next checkpoint. Writes maintain
+a running byte count; ordinary records do not scan the directory or take a
+retention lock.
 
 Shared per-label reconciliation uses a nonblocking lock. If it is busy or
 unavailable, recording continues with best-effort pruning of this instance’s

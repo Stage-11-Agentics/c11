@@ -5809,7 +5809,7 @@ final class Workspace: Identifiable, ObservableObject {
         // terminal), then on every subsequent mutation — a single chokepoint
         // that no create/close/reattach/teardown path can bypass. No debounce:
         // events must be observable within 1s (EVT-6).
-        EventEmitter.shared.emitWorkspaceCreated(workspace: self.id, title: title, rootDirectory: rootDirectory)
+        EventEmitter.shared.emitWorkspaceCreated(workspace: self.id, title: self.title, rootDirectory: self.rootDirectory)
         panelEventsCancellable = $panels
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)

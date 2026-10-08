@@ -129,6 +129,10 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     private struct IndexedFile {
         let signature: Signature
         let document: MarkdownCorpusDocument
+        let linkSlotsUsed: Int
+        let headingsTruncated: Bool
+        let linksTruncated: Bool
+        let ticketIDsTruncated: Bool
     }
 
     let rootURL: URL
@@ -279,6 +283,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         var bytesUsed = 0
         var headingCount = 0
         var linkCount = 0
+        var ticketIDCount = 0
         var truncated = discovery.truncated
 
         for candidate in discovery.files {
@@ -289,11 +294,25 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 continue
             }
             bytesUsed += candidate.signature.size
+            let maximumHeadings = min(limits.maximumHeadingsPerDocument, max(0, limits.maximumTotalHeadings - headingCount))
+            let maximumLinks = min(limits.maximumLinksPerDocument, max(0, limits.maximumTotalLinks - linkCount))
+            let maximumTicketIDs = min(limits.maximumTicketIDsPerDocument, max(0, limits.maximumTotalTicketIDs - ticketIDCount))
             if let cached = old[candidate.relativePath], cached.signature == candidate.signature {
-                updated[candidate.relativePath] = cached
-                headingCount += cached.document.headings.count
-                linkCount += cached.document.links.count
-                continue
+                let needsReparse =
+                    cached.document.headings.count > maximumHeadings ||
+                    cached.linkSlotsUsed > maximumLinks ||
+                    cached.document.ticketIDs.count > maximumTicketIDs ||
+                    (cached.headingsTruncated && maximumHeadings > cached.document.headings.count) ||
+                    (cached.linksTruncated && maximumLinks > cached.linkSlotsUsed) ||
+                    (cached.ticketIDsTruncated && maximumTicketIDs > cached.document.ticketIDs.count)
+                if !needsReparse {
+                    updated[candidate.relativePath] = cached
+                    headingCount += cached.document.headings.count
+                    linkCount += cached.document.links.count
+                    ticketIDCount += cached.document.ticketIDs.count
+                    truncated = truncated || cached.headingsTruncated || cached.linksTruncated || cached.ticketIDsTruncated
+                    continue
+                }
             }
             guard let data = try? rootAccess.read(path: candidate.relativePath, maximumBytes: limits.maximumFileBytes) else {
                 bytesUsed -= candidate.signature.size
@@ -316,15 +335,23 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 source,
                 fileURL: candidate.url,
                 rootURL: rootURL,
-                maximumHeadings: min(limits.maximumHeadingsPerDocument, max(0, limits.maximumTotalHeadings - headingCount)),
-                maximumLinks: min(limits.maximumLinksPerDocument, max(0, limits.maximumTotalLinks - linkCount)),
-                maximumTicketIDs: limits.maximumTicketIDsPerDocument
+                maximumHeadings: maximumHeadings,
+                maximumLinks: maximumLinks,
+                maximumTicketIDs: maximumTicketIDs
             )
             filesReparsed += 1
             headingCount += parsed.document.headings.count
             linkCount += parsed.document.links.count
-            if parsed.wasTruncated { truncated = true }
-            updated[candidate.relativePath] = IndexedFile(signature: candidate.signature, document: parsed.document)
+            ticketIDCount += parsed.document.ticketIDs.count
+            if parsed.headingsTruncated || parsed.linksTruncated || parsed.ticketIDsTruncated { truncated = true }
+            updated[candidate.relativePath] = IndexedFile(
+                signature: candidate.signature,
+                document: parsed.document,
+                linkSlotsUsed: parsed.linkSlotsUsed,
+                headingsTruncated: parsed.headingsTruncated,
+                linksTruncated: parsed.linksTruncated,
+                ticketIDsTruncated: parsed.ticketIDsTruncated
+            )
         }
 
         indexedFiles = updated
@@ -551,7 +578,10 @@ private enum MarkdownCorpusParser {
 
     private struct Parsed {
         let document: MarkdownCorpusDocument
-        let wasTruncated: Bool
+        let linkSlotsUsed: Int
+        let headingsTruncated: Bool
+        let linksTruncated: Bool
+        let ticketIDsTruncated: Bool
     }
 
     static func parse(
@@ -567,10 +597,10 @@ private enum MarkdownCorpusParser {
         var headingAtLine: [Int: MarkdownCorpusHeading] = [:]
         var inFence: (character: Character, length: Int)?
         var headingCounts: [String: Int] = [:]
-        var wasTruncated = false
+        var headingsTruncated = false
 
         func addHeading(text raw: String, level: Int, line: Int) {
-            guard headings.count < maximumHeadings else { wasTruncated = true; return }
+            guard headings.count < maximumHeadings else { headingsTruncated = true; return }
             let text = readableHeadingText(raw)
             guard !text.isEmpty else { return }
             let base = slugify(text)
@@ -610,9 +640,11 @@ private enum MarkdownCorpusParser {
         }
 
         var rawLinks: [RawLink] = []
+        var linksTruncated = false
+        var ticketIDsTruncated = false
         var currentSection: MarkdownCorpusHeading?
         inFence = nil
-        var ids: [String] = []
+        var ids: Set<String> = []
         let ticketPattern = try! NSRegularExpression(pattern: #"\bC11-[0-9]{1,9}\b"#)
         let linkPattern = try! NSRegularExpression(
             pattern: #"\[([^\]]+)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)"#
@@ -631,10 +663,15 @@ private enum MarkdownCorpusParser {
             let range = NSRange(line.startIndex..<line.endIndex, in: line)
             let withoutCode = codePattern.stringByReplacingMatches(in: line, range: range, withTemplate: " ")
             let visibleRange = NSRange(withoutCode.startIndex..<withoutCode.endIndex, in: withoutCode)
-            for match in ticketPattern.matches(in: withoutCode, range: visibleRange) where ids.count < maximumTicketIDs {
-                if let valueRange = Range(match.range, in: withoutCode) { ids.append(String(withoutCode[valueRange])) }
+            for match in ticketPattern.matches(in: withoutCode, range: visibleRange) {
+                guard let valueRange = Range(match.range, in: withoutCode) else { continue }
+                let id = String(withoutCode[valueRange])
+                if ids.contains(id) { continue }
+                guard ids.count < maximumTicketIDs else { ticketIDsTruncated = true; continue }
+                ids.insert(id)
             }
-            for match in linkPattern.matches(in: withoutCode, range: visibleRange) where rawLinks.count < maximumLinks {
+            let linkMatches = linkPattern.matches(in: withoutCode, range: visibleRange)
+            for match in linkMatches.prefix(maximumLinks) {
                 guard let labelRange = Range(match.range(at: 1), in: withoutCode),
                       let hrefRange = Range(match.range(at: match.range(at: 2).location != NSNotFound ? 2 : 3), in: withoutCode) else { continue }
                 rawLinks.append(RawLink(
@@ -644,8 +681,7 @@ private enum MarkdownCorpusParser {
                     section: currentSection
                 ))
             }
-            if ticketPattern.numberOfMatches(in: withoutCode, range: visibleRange) > maximumTicketIDs { wasTruncated = true }
-            if linkPattern.numberOfMatches(in: withoutCode, range: visibleRange) > maximumLinks { wasTruncated = true }
+            if linkMatches.count > maximumLinks { linksTruncated = true }
         }
 
         let sourcePath = fileURL.standardizedFileURL.path
@@ -667,7 +703,7 @@ private enum MarkdownCorpusParser {
             )
         }
         let relativePath = String(sourcePath.dropFirst(rootURL.path == "/" ? 1 : rootURL.path.count + 1))
-        let ticketIDs = Array(Set(ids)).sorted()
+        let ticketIDs = ids.sorted()
         let document = MarkdownCorpusDocument(
             path: sourcePath,
             relativePath: relativePath,
@@ -676,7 +712,13 @@ private enum MarkdownCorpusParser {
             links: links,
             ticketIDs: ticketIDs
         )
-        return Parsed(document: document, wasTruncated: wasTruncated)
+        return Parsed(
+            document: document,
+            linkSlotsUsed: rawLinks.count,
+            headingsTruncated: headingsTruncated,
+            linksTruncated: linksTruncated,
+            ticketIDsTruncated: ticketIDsTruncated
+        )
     }
 
     private static func atxHeading(_ line: String) -> (Int, String)? {

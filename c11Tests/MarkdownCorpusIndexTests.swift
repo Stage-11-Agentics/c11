@@ -88,6 +88,29 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertTrue(byteCapped.truncated)
     }
 
+    func testIncrementalRescanReallocatesGlobalHeadingBudget() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let first = root.appendingPathComponent("a.md")
+        let second = root.appendingPathComponent("b.md")
+        try Data("# First\n".utf8).write(to: first)
+        try Data("# Beta\n## Gamma\n".utf8).write(to: second)
+        var limits = MarkdownCorpusIndexer.Limits()
+        limits.maximumTotalHeadings = 2
+        let indexer = MarkdownCorpusIndexer(fileURL: first, limits: limits) { _ in }
+
+        let initial = await scan(indexer)
+        XCTAssertEqual(initial.documents.flatMap(\.headings).map(\.text), ["First", "Beta"])
+        XCTAssertTrue(initial.truncated)
+
+        try Data("No heading now\n".utf8).write(to: first)
+        let reallocated = await scan(indexer)
+        XCTAssertEqual(reallocated.documents.flatMap(\.headings).map(\.text), ["Beta", "Gamma"])
+        XCTAssertEqual(reallocated.filesReparsed, 4, "the later cached file is reparsed when its bounded allocation expands")
+    }
+
     func testBacklinksPreserveSourceSectionAndResolveTicketCardsReadOnly() async throws {
         let temp = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temp) }

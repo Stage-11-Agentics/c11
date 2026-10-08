@@ -1,6 +1,6 @@
 # C11-349 validation
 
-Status: repairs in progress; no accepted 30-minute performance result yet.
+Acceptance evidence and current gate state: [app PR #627](https://github.com/Stage-11-Agentics/c11/pull/627) and [CLI PR #628](https://github.com/Stage-11-Agentics/c11/pull/628). The Lattice C11-349 validation attachments retain the assertion and runtime receipts.
 
 Use stock `scripts/remote-build.sh --tag c11-349` on Atlas. A tagged app may
 isolate synthetic recording with the validation-only launch hook
@@ -21,5 +21,6 @@ completion and message-routing counts, dropped records, visibility, all-generati
 bytes, screenshots and independently proven synthesized dismissal.
 
 Earlier empty/population-light or harness preflight attempts are invalidated;
-they are smoke evidence only. Final evidence and exact-head review will be
-linked here after the required gates pass.
+they are smoke evidence only. The linked PR evidence must identify the accepted
+source heads, all four variants on both environments, and exact-head review.
+A compiled harness or a completed smoke run does not establish acceptance.

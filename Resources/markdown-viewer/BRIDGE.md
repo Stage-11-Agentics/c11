@@ -69,9 +69,12 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   whether an exact heading exists. Missing headings show closest-heading
   suggestions; choosing one posts a normal `link` event with the pre-jump
   position so native records the selection in panel history.
-- `linkIndex()`: returns parsed headings and links for the current document;
-  `inspectMarkdowns(markdowns)` returns heading lists for up to 128 supplied
-  Markdown strings. These queries do not mutate page state.
+- `linkIndex()`: returns parsed headings and up to 128 links for the current
+  document, with link/heading counts and truncation flags. Individual hrefs,
+  labels, and heading lists are bounded. `inspectMarkdowns(markdowns)` accepts
+  up to 16 Markdown strings and 4 MiB total, returning at most 256 headings per
+  document plus a truncation flag. Native caps each inspected target at 256 KiB
+  and the combined payload at 4 MiB. These queries do not mutate page state.
 - `showLinkPeek(id, filePath, fragment, markdown, rect)` / `hideLinkPeek(id)`:
   show or dismiss native-approved, sanitized relative-link preview content. A
   preview is discarded when its request ID is stale.

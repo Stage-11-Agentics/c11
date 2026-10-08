@@ -475,9 +475,15 @@ extension TerminalController {
             return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil)
         }
         let url = URL(fileURLWithPath: path)
+        let cancellation = MarkdownNavigationCancellation()
         let response: V2CallResult? = v2AwaitCallback(timeout: 20) { finish in
             Task { @MainActor in
-                let outcome = await target.panel.navigate(to: url, fragment: fragment, origin: .agentCLI)
+                let outcome = await target.panel.navigate(
+                    to: url,
+                    fragment: fragment,
+                    origin: .agentCLI,
+                    cancellation: cancellation
+                )
                 let data: [String: Any] = [
                     "panel_id": target.surfaceId.uuidString,
                     "path": target.panel.filePath ?? path,
@@ -502,7 +508,11 @@ extension TerminalController {
                 }
             }
         }
-        return response ?? .err(code: "timeout", message: "Timed out navigating the markdown panel", data: ["panel_id": target.surfaceId.uuidString])
+        guard let response else {
+            cancellation.cancel()
+            return .err(code: "timeout", message: "Timed out navigating the markdown panel", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        return response
     }
 
     private nonisolated func v2MarkdownHistory(params: [String: Any]) -> V2CallResult {
@@ -547,18 +557,27 @@ extension TerminalController {
             return .err(code: "internal_error", message: "Markdown renderer returned an invalid link index", data: nil)
         }
 
-        let links = (index["links"] as? [[String: Any]] ?? []).prefix(1000)
+        let indexedLinks = index["links"] as? [[String: Any]] ?? []
+        let links = Array(indexedLinks.prefix(MarkdownNavigationPolicy.maximumIndexedLinks))
         let sourceHeadings = index["headings"] as? [[String: Any]] ?? []
         let sourceSlugs = Set(sourceHeadings.compactMap { $0["slug"] as? String })
         let canonicalSourcePath = URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath().standardizedFileURL.path
         var brokenReasons: [Int: String] = [:]
         var inspectionPaths: [String] = []
         var inspectionContent: [String: String] = [:]
+        var inspectionPayloadBytes = 0
+        var validationCache: [String: MarkdownNavigationPreparation] = [:]
+        var inspectionCache: [String: MarkdownNavigationPreparation] = [:]
         var fragmentChecks: [Int: (path: String, fragment: String)] = [:]
-        var truncated = (index["links"] as? [[String: Any]] ?? []).count > links.count
+        var truncated = (index["linksTruncated"] as? Bool == true)
+            || (index["headingsTruncated"] as? Bool == true)
+            || (index["linkCount"] as? Int ?? indexedLinks.count) > links.count
+        let sourceHeadingsTruncated = index["headingsTruncated"] as? Bool == true
 
         for (offset, link) in links.enumerated() {
-            guard let href = link["href"] as? String, href.utf8.count <= 16 * 1024 else {
+            guard link["hrefTruncated"] as? Bool != true,
+                  let href = link["href"] as? String,
+                  href.utf8.count <= MarkdownNavigationPolicy.maximumIndexedHrefBytes else {
                 brokenReasons[offset] = "invalid_target"
                 continue
             }
@@ -570,31 +589,100 @@ extension TerminalController {
                     continue
                 }
                 if fragment.hasPrefix("fn-") || fragment.hasPrefix("fnref-") { continue }
-                if !sourceSlugs.contains(fragment) { brokenReasons[offset] = "missing_fragment" }
+                if !sourceSlugs.contains(fragment) {
+                    if sourceHeadingsTruncated { truncated = true }
+                    else { brokenReasons[offset] = "missing_fragment" }
+                }
             case .markdown(let url):
                 let navigationTarget = MarkdownNavigationTarget(fileURL: url)
-                switch MarkdownNavigationPolicy.prepare(
-                    navigationTarget,
-                    currentFilePath: sourcePath,
-                    origin: .documentLink
-                ) {
+                let candidatePath = url.resolvingSymlinksInPath().standardizedFileURL.path
+                let fragment = navigationTarget.fragment
+                if candidatePath == canonicalSourcePath {
+                    if let fragment, !sourceSlugs.contains(fragment) {
+                        if sourceHeadingsTruncated { truncated = true }
+                        else { brokenReasons[offset] = "missing_fragment" }
+                    }
+                    continue
+                }
+
+                let preparation: MarkdownNavigationPreparation
+                if fragment == nil {
+                    if let cached = validationCache[candidatePath] {
+                        preparation = cached
+                    } else {
+                        let value = MarkdownNavigationPolicy.prepare(
+                            navigationTarget,
+                            currentFilePath: sourcePath,
+                            origin: .documentLink,
+                            readContent: false
+                        )
+                        validationCache[candidatePath] = value
+                        preparation = value
+                    }
+                } else if let cached = inspectionCache[candidatePath] {
+                    preparation = cached
+                } else if inspectionPaths.count >= MarkdownNavigationPolicy.maximumLinkInspectionDocuments {
+                    truncated = true
+                    if let cached = validationCache[candidatePath] {
+                        preparation = cached
+                    } else {
+                        let value = MarkdownNavigationPolicy.prepare(
+                            navigationTarget,
+                            currentFilePath: sourcePath,
+                            origin: .documentLink,
+                            readContent: false
+                        )
+                        validationCache[candidatePath] = value
+                        preparation = value
+                    }
+                } else {
+                    let value = MarkdownNavigationPolicy.prepare(
+                        navigationTarget,
+                        currentFilePath: sourcePath,
+                        origin: .documentLink,
+                        maximumContentBytes: MarkdownNavigationPolicy.maximumLinkTargetBytes
+                    )
+                    inspectionCache[candidatePath] = value
+                    preparation = value
+                }
+
+                switch preparation {
                 case .rejected(let outcome):
-                    brokenReasons[offset] = outcome.rawValue
-                case .ready(let path, let content, _, _):
-                    guard let fragment = navigationTarget.fragment else { continue }
-                    let canonicalPath = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
-                    if canonicalPath == canonicalSourcePath {
-                        if !sourceSlugs.contains(fragment) { brokenReasons[offset] = "missing_fragment" }
-                    } else if let content {
-                        if content.utf8.count > 1_048_576 || inspectionPaths.count >= 128 {
-                            truncated = true
-                            continue
+                    if fragment != nil, outcome == .notReadable {
+                        // A read cap is not proof that the link is broken. A
+                        // metadata-only pass distinguishes an uninspectable
+                        // large file from a genuinely unreadable target.
+                        let validation = validationCache[candidatePath] ?? MarkdownNavigationPolicy.prepare(
+                            navigationTarget,
+                            currentFilePath: sourcePath,
+                            origin: .documentLink,
+                            readContent: false
+                        )
+                        validationCache[candidatePath] = validation
+                        if case .ready = validation { truncated = true }
+                        else if case .rejected(let validationOutcome) = validation {
+                            brokenReasons[offset] = validationOutcome.linkReasonCode
                         }
+                    } else {
+                        brokenReasons[offset] = outcome.linkReasonCode
+                    }
+                case .ready(let path, let content, _, _):
+                    let canonicalPath = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+                    guard let fragment else { continue }
+                    if let content {
                         if inspectionContent[canonicalPath] == nil {
+                            let contentBytes = content.utf8.count
+                            guard inspectionPayloadBytes + contentBytes <= MarkdownNavigationPolicy.maximumLinkInspectionBytes else {
+                                truncated = true
+                                continue
+                            }
                             inspectionContent[canonicalPath] = content
                             inspectionPaths.append(canonicalPath)
+                            inspectionPayloadBytes += contentBytes
                         }
                         fragmentChecks[offset] = (canonicalPath, fragment)
+                    } else if let validation = validationCache[canonicalPath], case .ready = validation {
+                        truncated = true
                     }
                 }
             case .blocked:
@@ -611,33 +699,51 @@ extension TerminalController {
                 method: "inspectMarkdowns",
                 arguments: [markdown],
                 timeout: 12
-            ), case .success(let value) = inspected, let headingsByDocument = value as? [[[String: Any]]] {
+            ), case .success(let value) = inspected,
+               let inspection = value as? [String: Any],
+               let items = inspection["items"] as? [[String: Any]],
+               items.count == inspectionPaths.count {
                 var headingSets: [String: Set<String>] = [:]
-                for (path, headings) in zip(inspectionPaths, headingsByDocument) {
+                var truncatedPaths = Set<String>()
+                for (path, item) in zip(inspectionPaths, items) {
+                    let headings = item["headings"] as? [[String: Any]] ?? []
                     headingSets[path] = Set(headings.compactMap { $0["slug"] as? String })
+                    if item["truncated"] as? Bool == true { truncatedPaths.insert(path) }
                 }
+                if inspection["truncated"] as? Bool == true { truncated = true }
                 for (linkIndex, check) in fragmentChecks where headingSets[check.path]?.contains(check.fragment) != true {
-                    brokenReasons[linkIndex] = "missing_fragment"
+                    if truncatedPaths.contains(check.path) { truncated = true }
+                    else { brokenReasons[linkIndex] = "missing_fragment" }
                 }
             } else {
                 truncated = true
             }
         }
 
-        let allLinks = index["links"] as? [[String: Any]] ?? []
-        let broken = brokenReasons.keys.sorted().compactMap { linkIndex -> [String: Any]? in
+        let totalLinks = index["linkCount"] as? Int ?? indexedLinks.count
+        let candidates = brokenReasons.keys.sorted().compactMap { linkIndex -> [String: Any]? in
             guard links.indices.contains(linkIndex) else { return nil }
             var entry = links[linkIndex]
             entry["broken"] = true
             entry["reason"] = brokenReasons[linkIndex]
             return entry
         }
+        var broken: [[String: Any]] = []
+        var responseBytes = 0
+        for entry in candidates {
+            guard let bytes = try? JSONSerialization.data(withJSONObject: entry).count,
+                  responseBytes + bytes <= MarkdownNavigationPolicy.maximumLinksResponseBytes else {
+                truncated = true
+                break
+            }
+            broken.append(entry)
+            responseBytes += bytes
+        }
         return .ok([
             "panel_id": target.surfaceId.uuidString,
             "path": sourcePath,
             "links": broken,
-            "broken": broken,
-            "total": allLinks.count,
+            "total": totalLinks,
             "truncated": truncated
         ])
     }

@@ -94,7 +94,8 @@ def main() -> None:
                         elif method == "markdown.links":
                             stream.write(response(request, result={
                                 "panel_id": params.get("panel_id"),
-                                "broken": [],
+                                "links": [],
+                                "total": 0,
                                 "truncated": False,
                             }))
                             stream.flush()
@@ -156,6 +157,10 @@ def main() -> None:
 
         try:
             panel = "panel:8"
+            hash_prefix = Path(directory) / "C"
+            hash_prefix.write_text("# Short prefix\n", encoding="utf-8")
+            hash_filename = Path(directory) / "C#notes.md"
+            hash_filename.write_text("# Hash filename\n\n## Install\n", encoding="utf-8")
             cases = [
                 (
                     ["--json", "markdown", "scroll", "--panel", panel, "--heading", "Installation"],
@@ -186,6 +191,26 @@ def main() -> None:
                     "markdown.navigate",
                     {"panel_id": panel, "path": "/tmp/guide.md", "fragment": "installation"},
                 ),
+                (
+                    ["--json", "markdown", "open", str(hash_filename)],
+                    "markdown.open",
+                    {"path": str(hash_filename)},
+                ),
+                (
+                    ["--json", "markdown", str(hash_filename)],
+                    "markdown.open",
+                    {"path": str(hash_filename)},
+                ),
+                (
+                    ["--json", "markdown", "open", f"{hash_filename}#install"],
+                    "markdown.open",
+                    {"path": str(hash_filename), "fragment": "install"},
+                ),
+                (
+                    ["--json", "markdown", "open", f"{hash_filename}#install", "--panel", panel],
+                    "markdown.navigate",
+                    {"panel_id": panel, "path": str(hash_filename), "fragment": "install"},
+                ),
                 (["--json", "markdown", "history", "--panel", panel, "--json"], "markdown.history", {"panel_id": panel}),
                 (["--json", "markdown", "links", "--panel", panel, "--broken", "--json"], "markdown.links", {"panel_id": panel, "broken": True}),
             ]
@@ -196,6 +221,11 @@ def main() -> None:
                 method_requests = [item for item in requests[start:] if item.get("method") != "system.capabilities"]
                 assert len(method_requests) == 1 and method_requests[0]["method"] == expected_method, method_requests
                 assert method_requests[0]["params"] == expected_params, method_requests[0]
+                if expected_method == "markdown.links":
+                    payload = json.loads(result.stdout)
+                    result_payload = payload.get("result", payload)
+                    assert "links" in result_payload, payload
+                    assert "broken" not in result_payload, payload
 
             for args in [
                 ["markdown", "scroll", "--heading", "Installation"],

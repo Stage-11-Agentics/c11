@@ -5626,7 +5626,34 @@ struct CMUXCLI {
     }
 
     private func splitMarkdownTarget(_ value: String) throws -> (path: String, fragment: String?) {
-        guard let separator = value.firstIndex(of: "#") else { return (value, nil) }
+        guard value.contains("#") else { return (value, nil) }
+        if isExistingMarkdownOpenFile(value) { return (value, nil) }
+
+        var separator = value.startIndex
+        var existingPathSeparator: String.Index?
+        while let candidate = value[separator...].firstIndex(of: "#") {
+            let path = String(value[..<candidate])
+            if isExistingMarkdownOpenFile(path) {
+                existingPathSeparator = candidate
+            }
+            guard candidate < value.endIndex else { break }
+            separator = value.index(after: candidate)
+        }
+
+        if let existingPathSeparator {
+            return try markdownPathAndFragment(value, separator: existingPathSeparator)
+        }
+        guard let firstSeparator = value.firstIndex(of: "#") else { return (value, nil) }
+        return try markdownPathAndFragment(value, separator: firstSeparator)
+    }
+
+    private func isExistingMarkdownOpenFile(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: resolvePath(path), isDirectory: &isDirectory)
+            && !isDirectory.boolValue
+    }
+
+    private func markdownPathAndFragment(_ value: String, separator: String.Index) throws -> (path: String, fragment: String?) {
         let path = String(value[..<separator])
         let encodedFragment = String(value[value.index(after: separator)...])
         guard !path.isEmpty, let fragment = encodedFragment.removingPercentEncoding else {

@@ -9328,7 +9328,8 @@ final class Workspace: Identifiable, ObservableObject {
         fragment: String? = nil,
         focus: Bool? = nil,
         panelId: UUID? = nil,
-        createdAt: Date? = Date()
+        createdAt: Date? = Date(),
+        initialNavigationOrigin: MarkdownNavigationOrigin = .agentCLI
     ) -> MarkdownPanel? {
         let shouldFocusNewPanel = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
@@ -9339,7 +9340,8 @@ final class Workspace: Identifiable, ObservableObject {
             createdAt: createdAt,
             workspaceId: id,
             filePath: filePath,
-            fragment: fragment
+            fragment: fragment,
+            initialNavigationOrigin: initialNavigationOrigin
         )
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle

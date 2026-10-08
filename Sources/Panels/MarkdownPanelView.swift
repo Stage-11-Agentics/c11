@@ -346,13 +346,20 @@ private struct MarkdownReaderToolbar: View {
         return String(format: String(localized: "markdown.reader.progress.format", defaultValue: "%d%% · %d min left"), percent, minutes)
     }
     private var breadcrumb: String {
-        let path = readout.value.headingPath.filter { !$0.isEmpty }
-        return ([panel.displayTitle] + path).filter { !$0.isEmpty }.joined(separator: "  ›  ")
+        MarkdownBreadcrumbText.full(
+            filePath: panel.filePath,
+            displayTitle: panel.displayTitle,
+            headingPath: readout.value.headingPath
+        )
     }
 
     private func breadcrumb(for width: CGFloat) -> String {
-        guard width < 600 else { return breadcrumb }
-        return readout.value.headingPath.last ?? panel.displayTitle
+        MarkdownBreadcrumbText.compact(
+            filePath: panel.filePath,
+            displayTitle: panel.displayTitle,
+            headingPath: readout.value.headingPath,
+            compact: width < 600
+        )
     }
 
     var body: some View {

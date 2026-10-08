@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 #if canImport(c11_DEV)
 @testable import c11_DEV
 #elseif canImport(c11)
@@ -111,6 +112,8 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         let current = documents.appendingPathComponent("current.md")
         let target = repository.appendingPathComponent("guide/install.md")
         let escapedLink = documents.appendingPathComponent("escape.md")
+        let internalLink = documents.appendingPathComponent("notes.md")
+        let secret = repository.appendingPathComponent(".env")
         try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
@@ -118,7 +121,9 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         try "# Current".write(to: current, atomically: true, encoding: .utf8)
         try "# Installation\n\nSafe section".write(to: target, atomically: true, encoding: .utf8)
         try "# Outside".write(to: outside, atomically: true, encoding: .utf8)
+        try "SECRET=synthetic".write(to: secret, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: escapedLink, withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: internalLink, withDestinationURL: secret)
 
         let sameDocument = MarkdownNavigationPolicy.prepare(
             MarkdownNavigationTarget(fileURL: current, fragment: "current"),
@@ -153,6 +158,15 @@ final class MarkdownAssetPolicyTests: XCTestCase {
             guard case .rejected(.outsideScope) = result else {
                 return XCTFail("automatic navigation must reject \(escaped.path): \(result)")
             }
+        }
+
+        let disguised = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: internalLink),
+            currentFilePath: current.path,
+            origin: .documentLink
+        )
+        guard case .rejected(.invalidTarget) = disguised else {
+            return XCTFail("an in-repository Markdown symlink must still resolve to a Markdown extension: \(disguised)")
         }
     }
 
@@ -210,6 +224,39 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         )
         guard case .ready = historyRestore else {
             return XCTFail("history should restore an explicitly agent-selected entry: \(historyRestore)")
+        }
+    }
+
+    func testMarkdownNavigationRejectsFIFOsAndBoundsContentReads() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-navigation-bounds-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fifo = root.appendingPathComponent("pipe.md")
+        XCTAssertEqual(fifo.path.withCString { Darwin.mkfifo($0, mode_t(S_IRUSR | S_IWUSR)) }, 0)
+        let fifoDescriptor = fifo.path.withCString { Darwin.open($0, O_RDWR | O_NONBLOCK | O_CLOEXEC) }
+        XCTAssertGreaterThanOrEqual(fifoDescriptor, 0, "keep the FIFO open so a regression cannot hang the test process")
+        defer { Darwin.close(fifoDescriptor) }
+
+        let fifoResult = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: fifo),
+            currentFilePath: nil,
+            origin: .agentCLI
+        )
+        guard case .rejected(.notReadable) = fifoResult else {
+            return XCTFail("named pipes are not readable Markdown targets: \(fifoResult)")
+        }
+
+        let large = root.appendingPathComponent("large.md")
+        try Data(repeating: 0x61, count: 33).write(to: large)
+        let bounded = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: large),
+            currentFilePath: nil,
+            origin: .agentCLI,
+            maximumContentBytes: 32
+        )
+        guard case .rejected(.notReadable) = bounded else {
+            return XCTFail("navigation preparation must reject a target larger than its byte cap: \(bounded)")
         }
     }
 

@@ -24,6 +24,22 @@ struct MarkdownReadingPosition: Equatable, Sendable {
     }
 }
 
+enum MarkdownBreadcrumbText {
+    static func full(filePath: String?, displayTitle: String, headingPath: [String]) -> String {
+        let file = URL(fileURLWithPath: filePath ?? displayTitle).lastPathComponent
+        let directory = filePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent }
+        return ([directory].compactMap { $0 } + [file] + headingPath)
+            .filter { !$0.isEmpty }
+            .joined(separator: "  ›  ")
+    }
+
+    static func compact(filePath: String?, displayTitle: String, headingPath: [String], compact: Bool) -> String {
+        guard compact else { return full(filePath: filePath, displayTitle: displayTitle, headingPath: headingPath) }
+        let file = URL(fileURLWithPath: filePath ?? displayTitle).lastPathComponent
+        return ([file, headingPath.last].compactMap { $0 }.filter { !$0.isEmpty }).joined(separator: "  ›  ")
+    }
+}
+
 struct MarkdownNavigationTarget: Equatable, Sendable {
     let fileURL: URL
     let fragment: String?
@@ -49,6 +65,34 @@ enum MarkdownNavigationOrigin: String, Sendable {
     case history
 }
 
+/// Shared between the socket worker's timeout and the main-actor navigation
+/// commit so a timed-out request cannot move the panel later.
+final class MarkdownNavigationCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    @MainActor
+    func commitIfActive(_ commit: () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled else { return false }
+        commit()
+        return true
+    }
+}
+
 enum MarkdownNavigationOutcome: String, Equatable, Sendable {
     case navigated
     case unchanged
@@ -58,6 +102,19 @@ enum MarkdownNavigationOutcome: String, Equatable, Sendable {
     case outsideScope
     case superseded
     case panelClosed
+
+    var linkReasonCode: String {
+        switch self {
+        case .navigated: return "navigated"
+        case .unchanged: return "unchanged"
+        case .invalidTarget: return "invalid_target"
+        case .notFound: return "not_found"
+        case .notReadable: return "not_readable"
+        case .outsideScope: return "outside_scope"
+        case .superseded: return "superseded"
+        case .panelClosed: return "panel_closed"
+        }
+    }
 }
 
 struct MarkdownNavigationEntry: Equatable, Sendable {

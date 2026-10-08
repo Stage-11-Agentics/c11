@@ -205,13 +205,23 @@ enum MarkdownNavigationPreparation: Sendable {
 /// repository (or its containing directory when there is no repository).
 enum MarkdownNavigationPolicy {
     private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown"]
+    static let maximumNavigationContentBytes = 20 * 1024 * 1024
+    static let maximumPeekContentBytes = 256 * 1024
+    static let maximumLinkTargetBytes = 256 * 1024
+    static let maximumLinkInspectionDocuments = 16
+    static let maximumLinkInspectionBytes = maximumLinkInspectionDocuments * maximumLinkTargetBytes
+    static let maximumIndexedLinks = 128
+    static let maximumIndexedHrefBytes = 4 * 1024
+    static let maximumLinksResponseBytes = 512 * 1024
 
     static func prepare(
         _ target: MarkdownNavigationTarget,
         currentFilePath: String?,
         origin: MarkdownNavigationOrigin,
         scopeRootPath: String? = nil,
-        allowOutsideScope: Bool = false
+        allowOutsideScope: Bool = false,
+        readContent: Bool = true,
+        maximumContentBytes: Int = maximumNavigationContentBytes
     ) -> MarkdownNavigationPreparation {
         let fileURL = target.fileURL.standardizedFileURL
         let filePath = fileURL.path
@@ -236,9 +246,16 @@ enum MarkdownNavigationPolicy {
             return .rejected(.notReadable)
         }
 
+        let resolvedTargetURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        guard Self.isRegularFile(at: resolvedTargetURL) else {
+            return .rejected(.notReadable)
+        }
+        if requiresMarkdown, !markdownExtensions.contains(resolvedTargetURL.pathExtension.lowercased()) {
+            return .rejected(.invalidTarget)
+        }
+
         let scoped = origin != .agentCLI && !allowOutsideScope
         var rootURL: URL?
-        let resolvedTargetURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
         if scoped {
             let root: URL
             if let scopeRootPath {
@@ -268,6 +285,14 @@ enum MarkdownNavigationPolicy {
                 scopeRootPath: scopeRootPath
             )
         }
+        guard readContent else {
+            return .ready(
+                filePath: resolvedTargetURL.path,
+                content: nil,
+                modificationDate: modificationDate,
+                scopeRootPath: scopeRootPath
+            )
+        }
 
         let data: Data
         if let rootURL {
@@ -278,13 +303,13 @@ enum MarkdownNavigationPolicy {
                 return .rejected(.notReadable)
             }
             do {
-                data = try root.read(path: relativePath, maximumBytes: Int.max)
+                data = try root.read(path: relativePath, maximumBytes: max(0, maximumContentBytes))
             } catch {
                 return .rejected(.notReadable)
             }
         } else {
             do {
-                data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+                data = try Self.readRegularFile(at: resolvedTargetURL, maximumBytes: max(0, maximumContentBytes))
             } catch {
                 return .rejected(.notReadable)
             }
@@ -299,6 +324,37 @@ enum MarkdownNavigationPolicy {
             modificationDate: modificationDate,
             scopeRootPath: scopeRootPath
         )
+    }
+
+    private static func isRegularFile(at url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+    }
+
+    private static func readRegularFile(at url: URL, maximumBytes: Int) throws -> Data {
+        let descriptor = url.path.withCString {
+            Darwin.open($0, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else { throw CocoaError(.fileReadNoPermission) }
+        defer { Darwin.close(descriptor) }
+
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_size >= 0, info.st_size <= maximumBytes else {
+            throw CocoaError(.fileReadTooLarge)
+        }
+
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = Darwin.read(descriptor, &buffer, buffer.count)
+            if count == 0 { return result }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw CocoaError(.fileReadUnknown)
+            }
+            guard result.count + count <= maximumBytes else { throw CocoaError(.fileReadTooLarge) }
+            result.append(contentsOf: buffer.prefix(count))
+        }
     }
 
     private static func documentRoot(for filePath: String) -> URL? {

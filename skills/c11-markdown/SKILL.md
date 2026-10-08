@@ -142,17 +142,18 @@ c11 markdown open plan.md
 # Open in a specific workspace
 c11 markdown open plan.md --workspace workspace:2
 
-# Open splitting from a specific panel
+# Navigate an existing Markdown panel in place
 c11 markdown open plan.md --panel panel:5
 
 # Open in a specific window
 c11 markdown open plan.md --window window:1
 ```
 
-An optional `#fragment` selects a heading in the new panel. With a stable
-`--panel` target, `c11 markdown open <path>#<fragment> --panel panel:8` navigates
-that markdown panel in place. This does not change the visible workspace or
-focus. The panel validates the target and records back/forward history.
+Without `--panel`, an optional `#fragment` selects a heading in the new panel.
+With a stable `--panel` target, `c11 markdown open <path>#<fragment> --panel
+panel:8` navigates that existing Markdown panel in place. This does not change
+the visible workspace or focus. The panel validates the target and records
+back/forward history.
 
 ## Deep-Dive References
 
@@ -195,9 +196,10 @@ responder only when C11-359's panel focus policy allows it.
 
 Document links navigate in the same panel by default. The toolbar's default
 link-destination toggle switches ordinary relative links to a new markdown
-panel; Cmd-click also opens a new panel. Same-document anchors stay in the page
-and participate in panel history. Use ⌘[ / ⌘] or the toolbar arrows to move
-through that panel's history. A broken anchor offers the closest headings.
+panel; Cmd-click uses the opposite destination. Same-document anchors always
+stay in the current panel, including Cmd-click, and participate in panel
+history. Use ⌘[ / ⌘] or the toolbar arrows to move through that panel's history.
+A broken anchor offers the closest headings.
 Hovering a relative link briefly previews the target section after native path
 validation. Automatic document, palette and backlink navigation stays inside
 the source document's repository (or its directory when it has no repository).
@@ -258,8 +260,10 @@ behind c11.
 
 Local raster images are limited to the document directory and its subdirectories;
 symlinks outside that tree and remote images are blocked. Document HTML and
-scripts never execute. Relative markdown links open another markdown panel;
-web links follow c11's browser routing settings. Anchors stay in the document.
+scripts never execute. Relative Markdown links navigate in the same panel by
+default; the toolbar toggle changes that default, and Cmd-click uses the
+opposite destination. Same-document anchors stay in the current panel. Web links
+follow c11's browser routing settings.
 Validated `mailto:` links accept recipients, cc, bcc, subject and body only;
 hosts, ports, fragments and control characters are refused. They open through
 `NSWorkspace` only after an operator clicks.

@@ -346,26 +346,43 @@ function buildHeadings(tokens) {
 }
 function inspectMarkdown(markdown) {
   const {body}=prep(String(markdown||'')),tokens=md.parse(body,{}),headings=[],links=[];
+  let headingCount=0,linkCount=0,headingsTruncated=false,linksTruncated=false;
   for(let i=0;i<tokens.length;i++) {
     const token=tokens[i];
-    if(token.type==='heading_open')headings.push({
-      level:+token.tag.slice(1),text:plain(tokens[i+1]),slug:token.attrGet('id'),line:(token.map?.[0]??0)+1
-    });
+    if(token.type==='heading_open') {
+      headingCount++;
+      if(headings.length<256)headings.push({
+        level:+token.tag.slice(1),text:plain(tokens[i+1]).slice(0,512),slug:String(token.attrGet('id')||'').slice(0,1024),line:(token.map?.[0]??0)+1
+      });
+      else headingsTruncated=true;
+    }
     if(token.type!=='inline')continue;
     let active=null;
     for(const child of token.children||[]) {
       if(child.type==='link_open')active={href:child.attrGet('href')||'',text:''};
       else if(child.type==='link_close'&&active) {
-        links.push({href:active.href,text:active.text.trim().slice(0,512),line:(token.map?.[0]??0)+1});active=null;
-      } else if(active&&['text','code_inline','image'].includes(child.type))active.text+=child.content;
+        linkCount++;
+        if(links.length<128)links.push({href:active.href.slice(0,1024),hrefTruncated:active.href.length>1024,text:active.text.trim().slice(0,512),line:(token.map?.[0]??0)+1});
+        else linksTruncated=true;
+        active=null;
+      } else if(active&&['text','code_inline','image'].includes(child.type))active.text=(active.text+child.content).slice(0,512);
     }
   }
-  return {headings,links};
+  return {headings,links,headingCount,linkCount,headingsTruncated,linksTruncated};
 }
 function linkIndex() {return {...inspectMarkdown(S.markdown),file:S.file};}
 function inspectMarkdowns(markdowns) {
-  if(!Array.isArray(markdowns)||markdowns.length>128)return [];
-  return markdowns.map(markdown=>inspectMarkdown(markdown).headings);
+  if(!Array.isArray(markdowns)||markdowns.length>16)return {items:[],truncated:true};
+  let estimatedBytes=0;
+  for(const markdown of markdowns) {
+    if(typeof markdown!=='string')return {items:[],truncated:true};
+    estimatedBytes+=new TextEncoder().encode(markdown).byteLength;
+    if(estimatedBytes>4*1024*1024)return {items:[],truncated:true};
+  }
+  return {items:markdowns.map(markdown=>{
+    const result=inspectMarkdown(markdown);
+    return {headings:result.headings,truncated:result.headingsTruncated};
+  }),truncated:false};
 }
 function activeOutlineSection(current=currentHeading()) {
   if(!current)return null;
@@ -944,7 +961,9 @@ function showLinkPeek(id,filePath,fragment,markdown,rect={}) {
   const title=document.createElement('div');title.className='peek-title';
   title.textContent=[S.strings.linkPeekTitle,String(filePath||'').split('/').at(-1),preview.heading].filter(Boolean).join('  ›  ');
   linkPeek.append(title,content);linkPeek.hidden=false;
-  const box=surface.getBoundingClientRect(),x=(Number(rect.x)||12)-box.left,y=(Number(rect.y)||12)-box.top,h=Number(rect.height)||0;
+  const x=Number.isFinite(Number(rect.x))?Number(rect.x):12;
+  const y=Number.isFinite(Number(rect.y))?Number(rect.y):12;
+  const h=Number.isFinite(Number(rect.height))?Number(rect.height):0;
   const left=clamp(x,12,surface.clientWidth-linkPeek.offsetWidth-12);
   let top=y+h+8;if(top+linkPeek.offsetHeight>surface.clientHeight-10)top=Math.max(10,y-linkPeek.offsetHeight-8);
   linkPeek.style.left=`${left}px`;linkPeek.style.top=`${top}px`;

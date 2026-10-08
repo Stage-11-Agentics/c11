@@ -1703,6 +1703,97 @@ final class SocketClient {
         return try sendV2Raw(method: method, params: params, deadline: deadline)
     }
 
+    /// Opens a single v2 request whose response is a sequence of newline-framed
+    /// result envelopes. Used by markdown.visible --watch; closing this client
+    /// socket cancels the server-side state subscription.
+    func sendV2Stream(
+        method: String,
+        params: [String: Any],
+        onPayload: ([String: Any]) throws -> Void
+    ) throws {
+        guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
+        let tier = probeServerVocabularyTier(deadline: .default)
+        guard tier == .panel else {
+            throw CLIError(message: "Markdown agent commands require a current c11 socket")
+        }
+        let streamReceiveTimeout: TimeInterval?
+        if let deadline = Self.processDeadline {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0.01 else { throw CLIError(message: SocketClient.commandTimedOutMessage) }
+            streamReceiveTimeout = remaining
+        } else {
+            streamReceiveTimeout = nil
+        }
+
+        let requestID = UUID().uuidString
+        let request: [String: Any] = ["id": requestID, "method": method, "params": params]
+        guard JSONSerialization.isValidJSONObject(request),
+              let data = try? JSONSerialization.data(withJSONObject: request, options: []),
+              let line = String(data: data, encoding: .utf8) else {
+            throw CLIError(message: "Failed to encode v2 stream request")
+        }
+        try configureTimeout(SO_SNDTIMEO, 10)
+        let outgoing = Array((line + "\n").utf8)
+        var offset = 0
+        while offset < outgoing.count {
+            let written = outgoing.withUnsafeBytes { bytes in
+                Darwin.write(socketFD, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+            }
+            if written < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw CLIError(message: SocketClient.commandTimedOutMessage)
+                }
+                throw CLIError(message: "Failed to write markdown watch request")
+            }
+            guard written > 0 else { throw CLIError(message: "Failed to write markdown watch request") }
+            offset += written
+        }
+        try configureTimeout(SO_SNDTIMEO, nil)
+        try configureReceiveTimeout(streamReceiveTimeout)
+
+        var pending = Data()
+        var receivedPayload = false
+        var buffer = [UInt8](repeating: 0, count: 8192)
+        while true {
+            let count = Darwin.read(socketFD, &buffer, buffer.count)
+            if count < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw CLIError(message: SocketClient.commandTimedOutMessage)
+                }
+                throw CLIError(message: "Markdown watch socket read failed")
+            }
+            if count == 0 { break }
+            pending.append(contentsOf: buffer[0..<count])
+            while let newline = pending.firstIndex(of: 0x0A) {
+                let frame = Data(pending[..<newline])
+                pending.removeSubrange(...newline)
+                guard let object = try? JSONSerialization.jsonObject(with: frame),
+                      let envelope = object as? [String: Any] else {
+                    throw CLIError(message: "Invalid markdown watch response")
+                }
+                guard (envelope["id"] as? String) == requestID else {
+                    throw CLIError(message: "Markdown watch response id did not match request")
+                }
+                guard (envelope["ok"] as? Bool) == true else {
+                    let error = envelope["error"] as? [String: Any] ?? [:]
+                    let code = error["code"] as? String ?? "request_failed"
+                    let message = error["message"] as? String ?? "Markdown watch failed"
+                    throw CLIError(message: "\(code): \(message)")
+                }
+                guard let payload = envelope["result"] as? [String: Any] else {
+                    throw CLIError(message: "Markdown watch returned an invalid result")
+                }
+                receivedPayload = true
+                try onPayload(payload)
+            }
+        }
+        guard receivedPayload else {
+            throw CLIError(message: "Markdown watch ended before its initial state")
+        }
+    }
+
     private func validateScopedTargets(_ params: [String: Any], window: String, deadline: SocketDeadline) throws {
         let payload = try sendV2(method: "workspace.list", params: ["window_id": window], deadline: deadline)
         let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
@@ -5421,6 +5512,20 @@ struct CMUXCLI {
         let (paneOpt, argsAfterPane) = parseOption(argsAfterSurface, name: "--area")
         args = argsAfterPane
 
+        if let first = args.first?.lowercased(),
+           ["scroll", "visible", "theme", "typeface", "font", "open-external"].contains(first) {
+            try runMarkdownAgentCommand(
+                subcommand: first,
+                arguments: Array(args.dropFirst()),
+                panelRaw: surfaceOpt,
+                hasOtherRouting: workspaceOpt != nil || windowOpt != nil || paneOpt != nil,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat
+            )
+            return
+        }
+
         // Determine subcommand. Explicit "open" is supported, otherwise treat
         // a single positional argument as shorthand path.
         let subArgs: [String]
@@ -5498,6 +5603,147 @@ struct CMUXCLI {
             let paneText = formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown"
             let filePath = (payload["path"] as? String) ?? absolutePath
             print("OK panel=\(surfaceText) area=\(paneText) path=\(filePath)")
+        }
+    }
+
+    private func runMarkdownAgentCommand(
+        subcommand: String,
+        arguments: [String],
+        panelRaw: String?,
+        hasOtherRouting: Bool,
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        guard !hasOtherRouting else {
+            throw CLIError(message: "markdown \(subcommand) accepts only --panel routing")
+        }
+        guard let panelRaw, !panelRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CLIError(message: "markdown \(subcommand) requires --panel <id|ref>")
+        }
+        guard let panelID = try normalizeSurfaceHandle(panelRaw, client: client) else {
+            throw CLIError(message: "markdown \(subcommand): invalid panel handle")
+        }
+
+        switch subcommand {
+        case "scroll":
+            let (headings, remaining) = parseRepeatedOption(arguments, name: "--heading")
+            guard headings.count == 1, !headings[0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  remaining.isEmpty else {
+                throw CLIError(message: "Usage: c11 markdown scroll --panel <id|ref> --heading <text>")
+            }
+            let result = try client.sendV2(method: "markdown.scroll", params: [
+                "panel_id": panelID,
+                "heading": headings[0]
+            ])
+            if jsonOutput {
+                print(jsonString(formatIDs(result, mode: idFormat)))
+            } else {
+                let heading = (result["heading"] as? [String: Any])?["text"] as? String ?? headings[0]
+                print("OK scrolled to heading: \(heading)")
+            }
+
+        case "visible":
+            let (jsonFlag, afterJSON) = removeMarkdownFlag(arguments, name: "--json")
+            let (watch, afterWatch) = removeMarkdownFlag(afterJSON, name: "--watch")
+            guard afterWatch.isEmpty else {
+                throw CLIError(message: "Usage: c11 markdown visible --panel <id|ref> --json [--watch]")
+            }
+            guard jsonOutput || jsonFlag else {
+                throw CLIError(message: "markdown visible requires --json")
+            }
+            let params: [String: Any] = ["panel_id": panelID, "watch": watch]
+            if watch {
+                try client.sendV2Stream(method: "markdown.visible", params: params) { payload in
+                    try writeMarkdownWatchLine(formatIDs(payload, mode: idFormat))
+                }
+            } else {
+                let result = try client.sendV2(method: "markdown.visible", params: params)
+                print(jsonString(formatIDs(result, mode: idFormat)))
+            }
+
+        case "theme", "typeface":
+            let (list, afterList) = removeMarkdownFlag(arguments, name: "--list")
+            let (values, remaining) = parseRepeatedOption(afterList, name: "--set")
+            guard remaining.isEmpty,
+                  (list && values.isEmpty || !list && values.count == 1) else {
+                throw CLIError(message: "Usage: c11 markdown \(subcommand) --panel <id|ref> (--list | --set <name>)")
+            }
+            let method = "markdown.\(subcommand)"
+            let params: [String: Any] = list
+                ? ["panel_id": panelID, "action": "list"]
+                : ["panel_id": panelID, "action": "set", "name": values[0]]
+            let result = try client.sendV2(method: method, params: params)
+            if jsonOutput {
+                print(jsonString(formatIDs(result, mode: idFormat)))
+            } else if list {
+                let key = subcommand == "theme" ? "themes" : "typefaces"
+                let names = result[key] as? [String] ?? []
+                print(names.joined(separator: "\n"))
+            } else {
+                print("OK \(subcommand)=\(values[0])")
+            }
+
+        case "font":
+            let (scales, remaining) = parseRepeatedOption(arguments, name: "--scale")
+            guard scales.count == 1, remaining.isEmpty,
+                  let scale = Double(scales[0]), scale.isFinite, (0.5...3.0).contains(scale) else {
+                throw CLIError(message: "Usage: c11 markdown font --panel <id|ref> --scale <0.5..3.0>")
+            }
+            let result = try client.sendV2(method: "markdown.font", params: [
+                "panel_id": panelID,
+                "scale": scale
+            ])
+            if jsonOutput {
+                print(jsonString(formatIDs(result, mode: idFormat)))
+            } else {
+                print("OK font_scale=\(result["font_scale"] ?? scale)")
+            }
+
+        case "open-external":
+            guard arguments.isEmpty else {
+                throw CLIError(message: "Usage: c11 markdown open-external --panel <id|ref>")
+            }
+            let result = try client.sendV2(method: "markdown.open_external", params: ["panel_id": panelID])
+            if jsonOutput {
+                print(jsonString(formatIDs(result, mode: idFormat)))
+            } else {
+                print("OK opened externally: \(result["path"] as? String ?? "")")
+            }
+
+        default:
+            throw CLIError(message: "Unknown markdown subcommand: \(subcommand)")
+        }
+    }
+
+    private func removeMarkdownFlag(_ args: [String], name: String) -> (Bool, [String]) {
+        var found = false
+        let remaining = args.filter { arg in
+            guard arg == name else { return true }
+            found = true
+            return false
+        }
+        return (found, remaining)
+    }
+
+    private func writeMarkdownWatchLine(_ payload: Any) throws {
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.withoutEscapingSlashes]),
+              let json = String(data: data, encoding: .utf8) else {
+            throw CLIError(message: "Markdown watch returned an invalid JSON value")
+        }
+        let bytes = Array((json + "\n").utf8)
+        var offset = 0
+        while offset < bytes.count {
+            let written = bytes.withUnsafeBytes { buffer in
+                Darwin.write(STDOUT_FILENO, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+            }
+            if written < 0 {
+                if errno == EINTR { continue }
+                throw CLIError(message: "Markdown watch output closed")
+            }
+            guard written > 0 else { throw CLIError(message: "Markdown watch output closed") }
+            offset += written
         }
     }
 
@@ -11977,6 +12223,17 @@ struct CMUXCLI {
               c11 markdown open plan.md
               c11 markdown ~/project/CHANGELOG.md
               c11 markdown open ./docs/design.md --workspace 0
+
+            Agent commands require an explicit --panel target:
+              c11 markdown scroll --panel <id|ref> --heading <text>
+              c11 markdown visible --panel <id|ref> --json [--watch]
+              c11 markdown theme --panel <id|ref> (--list | --set <name>)
+              c11 markdown typeface --panel <id|ref> (--list | --set <name>)
+              c11 markdown font --panel <id|ref> --scale <0.5..3.0>
+              c11 markdown open-external --panel <id|ref>
+
+            visible --watch emits newline-delimited JSON until the panel closes
+            or the client disconnects.
             """
         case "snapshot":
             return """

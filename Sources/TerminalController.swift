@@ -2258,6 +2258,35 @@ class TerminalController {
                 return SocketCommandContext.withContext(connection) {
                     processCommandUsingSocketExecutionPolicy(command)
                 }
+            },
+            stream: { command, streamSocket in
+                guard let request = self.parseV2SocketRequest(command),
+                      request.method == "markdown.visible",
+                      request.params["watch"] as? Bool == true else { return false }
+                if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+                   let rejection = LegacyWireAliases.unsupportedRoutingKey(request.params) {
+                    _ = Self.writeSocketResponse(
+                        self.v2Error(id: request.id, code: rejection.code, message: rejection.message),
+                        to: streamSocket
+                    )
+                    return true
+                }
+                if let authResponse = self.authResponseIfNeeded(for: command, authenticated: &authenticated) {
+                    _ = Self.writeSocketResponse(authResponse, to: streamSocket)
+                    return true
+                }
+                let context = SocketCommandContext(
+                    method: request.method,
+                    allowsFocus: false,
+                    callerPanelId: nil,
+                    callerTTYDevice: callerTTYDevice
+                )
+                SocketCommandContext.withContext(context) {
+                    self.withSocketCommandPolicy(commandKey: request.method, isV2: true) {
+                        self.v2StreamMarkdownVisible(id: request.id, params: request.params, socket: streamSocket)
+                    }
+                }
+                return true
             }
         )
     }
@@ -2302,6 +2331,24 @@ class TerminalController {
         shouldContinue: () -> Bool,
         respond: (String) -> String
     ) {
+        serveCommandLinesImpl(socket: socket, shouldContinue: shouldContinue, stream: nil, respond: respond)
+    }
+
+    nonisolated static func serveCommandLines(
+        socket: Int32,
+        shouldContinue: () -> Bool,
+        respond: (String) -> String,
+        stream: @escaping (String, Int32) -> Bool
+    ) {
+        serveCommandLinesImpl(socket: socket, shouldContinue: shouldContinue, stream: stream, respond: respond)
+    }
+
+    private nonisolated static func serveCommandLinesImpl(
+        socket: Int32,
+        shouldContinue: () -> Bool,
+        stream: ((String, Int32) -> Bool)?,
+        respond: (String) -> String
+    ) {
         var buffer = [UInt8](repeating: 0, count: 4096)
         var pending = Data()
 
@@ -2321,6 +2368,7 @@ class TerminalController {
                     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
 
+                    if stream?(trimmed, socket) == true { return false }
                     guard writeSocketResponse(respond(trimmed), to: socket) else { return false }
                 }
                 return true
@@ -2433,6 +2481,14 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        // Markdown WebKit commands query state off-main and use only bounded
+        // main-actor hops for panel/model access and JavaScript submission.
+        "markdown.scroll",
+        "markdown.visible",
+        "markdown.theme",
+        "markdown.typeface",
+        "markdown.font",
+        "markdown.open_external",
         "browser.profiles.list",
         "browser.profiles.add",
         "browser.profiles.rename",

@@ -2,8 +2,124 @@ import AppKit
 import Carbon.HIToolbox
 import CryptoKit
 import Foundation
+import CoreFoundation
 import Bonsplit
 import WebKit
+
+final class MarkdownVisibleStateBuffer: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var pending: [[String: Any]] = []
+    private var lastState: [String: Any]?
+    private var initialized = false
+    private var initialPending = false
+    private var finished = false
+
+    func begin(with state: [String: Any]) {
+        let snapshot = Self.snapshot(state)
+        condition.lock()
+        defer { condition.unlock() }
+        guard !finished else { return }
+        pending.removeAll(keepingCapacity: true)
+        lastState = snapshot
+        initialized = true
+        initialPending = true
+        pending.append(snapshot)
+        condition.broadcast()
+    }
+
+    func publish(_ state: [String: Any]) {
+        let snapshot = Self.snapshot(state)
+        condition.lock()
+        defer { condition.unlock() }
+        guard initialized, !finished else { return }
+        if let lastState, NSDictionary(dictionary: lastState).isEqual(to: snapshot) { return }
+        lastState = snapshot
+        if pending.isEmpty {
+            pending.append(snapshot)
+        } else if initialPending {
+            if pending.count == 1 { pending.append(snapshot) }
+            else { pending[1] = snapshot }
+        } else {
+            pending[0] = snapshot
+        }
+        condition.signal()
+    }
+
+    func next() -> [String: Any]? {
+        condition.lock()
+        defer { condition.unlock() }
+        while pending.isEmpty && !finished { condition.wait() }
+        guard !pending.isEmpty else { return nil }
+        let next = pending.removeFirst()
+        if initialPending { initialPending = false }
+        return next
+    }
+
+    func finish() {
+        condition.lock()
+        finished = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    static func snapshotForResponse(_ state: [String: Any]) -> [String: Any] {
+        let pane = state["pane"] as? [String: Any] ?? [:]
+        let lines = state["lines"] as? [String: Any] ?? [:]
+        return [
+            "file": state["file"] ?? NSNull(),
+            "heading_path": state["heading_path"] ?? [],
+            "lines": [
+                "first": lines["first"] ?? NSNull(),
+                "last": lines["last"] ?? NSNull(),
+                "total": lines["total"] ?? NSNull()
+            ],
+            "progress": state["progress"] ?? 0,
+            "minutes_left": state["minutes_left"] ?? 0,
+            "size": pane["size"] ?? NSNull(),
+            "theme": state["theme"] ?? NSNull(),
+            "typeface": state["typeface"] ?? NSNull(),
+            "font_scale": state["font_scale"] ?? NSNull(),
+            "find": state["find"] ?? NSNull(),
+            "selection": state["selection"] ?? NSNull()
+        ]
+    }
+
+    private static func snapshot(_ state: [String: Any]) -> [String: Any] {
+        snapshotForResponse(state)
+    }
+}
+
+private struct MarkdownPanelTarget {
+    let workspace: Workspace
+    let panel: MarkdownPanel
+    let surfaceId: UUID
+}
+
+private final class MarkdownWebCallGate {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var completed = false
+
+    func begin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !cancelled && !completed
+    }
+
+    func complete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled, !completed else { return false }
+        completed = true
+        return true
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+}
 
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
@@ -22,6 +138,292 @@ extension TerminalController {
             return v2Result(id: id, self.v2MarkdownGetContent(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+        }
+    }
+
+    nonisolated func v2DispatchMarkdownWorker(_ method: String, params: [String: Any]) -> V2CallResult {
+        guard CapabilityFeatures.current.supports(.markdownAgentCLI) else {
+            return .err(code: "unsupported", message: "Markdown agent commands are disabled", data: ["feature": CapabilityFeatures.ID.markdownAgentCLI.rawValue])
+        }
+        switch method {
+        case "markdown.scroll": return v2MarkdownScroll(params: params)
+        case "markdown.visible":
+            guard v2Bool(params, "watch") != true else {
+                return .err(code: "invalid_params", message: "markdown.visible watch requires a streaming socket", data: nil)
+            }
+            return v2MarkdownVisible(params: params)
+        case "markdown.theme": return v2MarkdownTheme(params: params)
+        case "markdown.typeface": return v2MarkdownTypeface(params: params)
+        case "markdown.font": return v2MarkdownFont(params: params)
+        case "markdown.open_external": return v2MarkdownOpenExternal(params: params)
+        default: return .err(code: "method_not_found", message: "Unknown method", data: nil)
+        }
+    }
+
+    private nonisolated func v2MarkdownPanelTarget(
+        params: [String: Any]
+    ) -> (target: MarkdownPanelTarget?, error: V2CallResult?) {
+        guard let panelRef = params["surface_id"] as? String else {
+            return (nil, .err(code: "invalid_params", message: "Missing 'panel_id' parameter", data: ["field": "panel_id"]))
+        }
+        guard !panelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return (nil, .err(code: "invalid_params", message: "'panel_id' must not be empty", data: ["field": "panel_id"]))
+        }
+
+        guard let resolved = v2BrowserMainHop({ () -> (target: MarkdownPanelTarget?, error: V2CallResult?) in
+            self.v2RefreshKnownRefs()
+            guard let (workspace, surfaceId) = self.v2ResolveWorkspaceSurface(params: params) else {
+                return (target: nil, error: V2CallResult.err(
+                    code: "not_found", message: "Panel not found", data: ["panel_id": panelRef]
+                ))
+            }
+            guard let panel = workspace.panels[surfaceId] as? MarkdownPanel else {
+                if workspace.panels[surfaceId] == nil {
+                    return (target: nil, error: V2CallResult.err(
+                        code: "not_found", message: "Panel not found", data: ["panel_id": panelRef]
+                    ))
+                }
+                return (target: nil, error: V2CallResult.err(
+                    code: "invalid_params", message: "Panel is not a markdown panel", data: ["panel_id": panelRef]
+                ))
+            }
+            return (target: MarkdownPanelTarget(workspace: workspace, panel: panel, surfaceId: surfaceId), error: nil)
+        }) else {
+            return (nil, v2BrowserMainHopTimeoutResult())
+        }
+        return resolved
+    }
+
+    private nonisolated func v2MarkdownWebCall(
+        target: MarkdownPanelTarget,
+        method: String,
+        arguments: [Any] = [],
+        timeout: TimeInterval = 8
+    ) -> Result<Any, Error>? {
+        guard let resolvedRenderer = v2BrowserMainHop({ () -> MarkdownWebRenderer? in
+            guard let renderer = target.panel.renderer, renderer.isReadyForQueries else { return nil }
+            return renderer
+        }), let renderer = resolvedRenderer else { return nil }
+        let gate = MarkdownWebCallGate()
+        let result: Result<Any, Error>? = v2AwaitCallback(timeout: timeout) { finish in
+            Task { @MainActor in
+                guard gate.begin() else { return }
+                renderer.call(method, arguments: arguments) { value in
+                    guard gate.complete() else { return }
+                    finish(value)
+                }
+            }
+        }
+        if case .none = result { gate.cancel() }
+        return result
+    }
+
+    /// A hidden WKWebView can finish the scroll command while WebKit suspends
+    /// its animation-frame state publisher. Query the settled state directly
+    /// so a markdown.visible --watch stream sees this command-driven change.
+    private nonisolated func v2MarkdownPublishVisibleState(target: MarkdownPanelTarget) {
+        _ = v2BrowserMainHop {
+            guard let renderer = target.panel.renderer, renderer.isReadyForQueries else { return }
+            renderer.call("visible") { result in
+                guard case .success(let value) = result,
+                      let state = value as? [String: Any] else { return }
+                renderer.publishObservedState(state)
+            }
+        }
+    }
+
+    private nonisolated func v2MarkdownScroll(params: [String: Any]) -> V2CallResult {
+        guard let heading = v2String(params, "heading"), !heading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .err(code: "invalid_params", message: "Missing 'heading' parameter", data: ["field": "heading"])
+        }
+        guard heading.utf8.count <= 16 * 1024 else {
+            return .err(code: "invalid_params", message: "Heading exceeds 16384 UTF-8 bytes", data: ["field": "heading"])
+        }
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        guard let result = v2MarkdownWebCall(target: target, method: "scrollToHeading", arguments: [heading]) else {
+            return .err(code: "not_ready", message: "Markdown renderer is not ready", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        switch result {
+        case .failure(let error):
+            return .err(code: "request_failed", message: error.localizedDescription, data: nil)
+        case .success(let value):
+            guard let response = value as? [String: Any] else {
+                return .err(code: "internal_error", message: "Markdown renderer returned an invalid scroll result", data: nil)
+            }
+            guard response["ok"] as? Bool == true else {
+                return .err(code: "not_found", message: "Markdown heading not found", data: ["heading": heading])
+            }
+            v2MarkdownPublishVisibleState(target: target)
+            return .ok([
+                "panel_id": target.surfaceId.uuidString,
+                "scrolled": true,
+                "heading": response["heading"] ?? NSNull()
+            ])
+        }
+    }
+
+    private nonisolated func v2MarkdownVisible(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        guard let result = v2MarkdownWebCall(target: target, method: "visible") else {
+            return .err(code: "not_ready", message: "Markdown renderer is not ready", data: ["panel_id": target.surfaceId.uuidString])
+        }
+        switch result {
+        case .failure(let error):
+            return .err(code: "request_failed", message: error.localizedDescription, data: nil)
+        case .success(let value):
+            guard let state = value as? [String: Any] else {
+                return .err(code: "internal_error", message: "Markdown renderer returned an invalid visible state", data: nil)
+            }
+            return .ok(MarkdownVisibleStateBuffer.snapshotForResponse(state))
+        }
+    }
+
+    private nonisolated func v2MarkdownTheme(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        let action = v2String(params, "action") ?? ""
+        if action == "list" {
+            guard let current = v2BrowserMainHop({ target.panel.theme }) else { return v2BrowserMainHopTimeoutResult() }
+            return .ok(["themes": MarkdownPresentation.themeNames, "current": current])
+        }
+        guard action == "set", let name = v2String(params, "name") else {
+            return .err(code: "invalid_params", message: "Use action 'list' or 'set' with a theme name", data: nil)
+        }
+        guard MarkdownPresentation.themeNames.contains(name) else {
+            return .err(code: "invalid_params", message: "Unknown markdown theme: \(name)", data: ["theme": name, "allowed": MarkdownPresentation.themeNames])
+        }
+        guard let applied = v2BrowserMainHop({ target.panel.setTheme(name) }) else { return v2BrowserMainHopTimeoutResult() }
+        guard applied else { return .err(code: "invalid_params", message: "Unknown markdown theme: \(name)", data: ["theme": name]) }
+        return .ok(["panel_id": target.surfaceId.uuidString, "theme": name, "applied": true])
+    }
+
+    private nonisolated func v2MarkdownTypeface(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        let action = v2String(params, "action") ?? ""
+        if action == "list" {
+            guard let current = v2BrowserMainHop({ target.panel.typeface }) else { return v2BrowserMainHopTimeoutResult() }
+            return .ok(["typefaces": MarkdownPresentation.typefaceNames, "current": current])
+        }
+        guard action == "set", let name = v2String(params, "name") else {
+            return .err(code: "invalid_params", message: "Use action 'list' or 'set' with a typeface name", data: nil)
+        }
+        guard MarkdownPresentation.typefaceNames.contains(name) else {
+            return .err(code: "invalid_params", message: "Unknown markdown typeface: \(name)", data: ["typeface": name, "allowed": MarkdownPresentation.typefaceNames])
+        }
+        guard let applied = v2BrowserMainHop({ target.panel.setTypeface(name) }) else { return v2BrowserMainHopTimeoutResult() }
+        guard applied else { return .err(code: "invalid_params", message: "Unknown markdown typeface: \(name)", data: ["typeface": name]) }
+        return .ok(["panel_id": target.surfaceId.uuidString, "typeface": name, "applied": true])
+    }
+
+    private nonisolated func v2MarkdownFont(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        guard let number = params["scale"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            return .err(code: "invalid_params", message: "Missing numeric 'scale' parameter", data: ["field": "scale"])
+        }
+        let scale = number.doubleValue
+        guard scale.isFinite, MarkdownPresentation.fontScaleRange.contains(scale) else {
+            let scaleValue: Any = scale.isFinite ? NSNumber(value: scale) : String(describing: scale)
+            return .err(code: "invalid_params", message: "Markdown font scale must be between 0.5 and 3.0", data: ["scale": scaleValue])
+        }
+        guard let result = v2BrowserMainHop({ () -> V2CallResult in
+            guard target.panel.setFontScale(scale) else {
+                return .err(code: "internal_error", message: "Could not update markdown font scale", data: nil)
+            }
+            return .ok(["panel_id": target.surfaceId.uuidString, "font_scale": target.panel.fontScale, "applied": true])
+        }) else { return v2BrowserMainHopTimeoutResult() }
+        return result
+    }
+
+    private nonisolated func v2MarkdownOpenExternal(params: [String: Any]) -> V2CallResult {
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
+        guard let result = v2BrowserMainHop({ () -> V2CallResult in
+            guard let path = target.panel.filePath else {
+                return .err(code: "unavailable", message: "Markdown panel has no bound file", data: ["panel_id": target.surfaceId.uuidString])
+            }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue,
+                  FileManager.default.isReadableFile(atPath: path) else {
+                return .err(code: "unavailable", message: "Markdown file is unavailable or unreadable", data: ["path": path])
+            }
+            guard NSWorkspace.shared.open(URL(fileURLWithPath: path)) else {
+                return .err(code: "request_failed", message: "Could not open markdown file externally", data: ["path": path])
+            }
+            return .ok(["panel_id": target.surfaceId.uuidString, "path": path, "opened": true])
+        }) else { return v2BrowserMainHopTimeoutResult() }
+        return result
+    }
+
+    /// The socket connection owns each streamed write. The read dispatch
+    /// source only watches for peer closure; it never performs WebKit work.
+    nonisolated func v2StreamMarkdownVisible(id: Any?, params: [String: Any], socket: Int32) {
+        let buffer = MarkdownVisibleStateBuffer()
+        let disconnect = DispatchSource.makeReadSource(
+            fileDescriptor: socket,
+            queue: DispatchQueue(label: "com.stage11.c11.markdown-visible-watch-disconnect")
+        )
+        disconnect.setEventHandler {
+            var byte: UInt8 = 0
+            let count = recv(socket, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+            if count == 0 || count > 0 || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                buffer.finish()
+            }
+        }
+        disconnect.resume()
+        defer { disconnect.cancel(); buffer.finish() }
+
+        guard CapabilityFeatures.current.supports(.markdownAgentCLI) else {
+            _ = Self.writeSocketResponse(v2Result(id: id, .err(
+                code: "unsupported", message: "Markdown agent commands are disabled",
+                data: ["feature": CapabilityFeatures.ID.markdownAgentCLI.rawValue]
+            )), to: socket)
+            return
+        }
+
+        let resolved = v2MarkdownPanelTarget(params: params)
+        guard let target = resolved.target else {
+            _ = Self.writeSocketResponse(v2Result(id: id, resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil)), to: socket)
+            return
+        }
+
+        let setup = v2BrowserMainHop { () -> (MarkdownWebRenderer, UUID)? in
+            guard let renderer = target.panel.renderer,
+                  let subscription = renderer.observeState({ state in
+                      if let state { buffer.publish(state) } else { buffer.finish() }
+                  }) else { return nil }
+            renderer.call("visible") { result in
+                switch result {
+                case .success(let value):
+                    if let state = value as? [String: Any] {
+                        // The cached state includes any coalesced state messages
+                        // delivered while the visible query was in flight.
+                        buffer.begin(with: renderer.state.isEmpty ? state : renderer.state)
+                    } else { buffer.finish() }
+                case .failure:
+                    buffer.finish()
+                }
+            }
+            return (renderer, subscription.id)
+        }
+        guard let setup, let (renderer, observerID) = setup else {
+            _ = Self.writeSocketResponse(v2Result(id: id, .err(
+                code: "not_ready", message: "Markdown renderer is not ready", data: ["panel_id": target.surfaceId.uuidString]
+            )), to: socket)
+            return
+        }
+        defer {
+            Task { @MainActor in renderer.removeStateObserver(observerID) }
+        }
+
+        while let state = buffer.next() {
+            let wrote = autoreleasepool {
+                Self.writeSocketResponse(v2Result(id: id, .ok(state)), to: socket)
+            }
+            guard wrote else { return }
         }
     }
 

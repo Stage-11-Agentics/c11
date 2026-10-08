@@ -188,6 +188,32 @@ System theme follows c11's effective appearance, which follows the OS when c11
 appearance is set to System. Typing in page controls keeps the web view as first
 responder only when C11-359's panel focus policy allows it.
 
+## Agent Reading Controls
+
+These commands target an explicit markdown panel. They do not select its
+workspace or change c11's in-app focus:
+
+```bash
+c11 markdown scroll --panel panel:8 --heading "Installation"
+c11 markdown visible --panel panel:8 --json
+c11 markdown visible --panel panel:8 --json --watch
+c11 markdown theme --panel panel:8 --list
+c11 markdown theme --panel panel:8 --set dark
+c11 markdown typeface --panel panel:8 --list
+c11 markdown typeface --panel panel:8 --set mono
+c11 markdown font --panel panel:8 --scale 1.2
+c11 markdown open-external --panel panel:8
+```
+
+`visible` reports the current heading path, visible source-line range, reading
+progress, theme, typeface, text scale, pane size, find state and bounded text
+selection. `visible --watch` emits one JSON object per line for the initial
+state and later changes. It follows renderer state events rather than polling;
+interrupting the command or closing its output pipe ends the subscription.
+Theme and typeface names come from the panel's registered options. Font scale
+must be between 0.5 and 3.0 and is stored at the panel's 0.1-step precision.
+`open-external` opens the panel's bound file in the macOS default application.
+
 Local raster images are limited to the document directory and its subdirectories;
 symlinks outside that tree and remote images are blocked. Document HTML and
 scripts never execute. Relative markdown links open another markdown panel;

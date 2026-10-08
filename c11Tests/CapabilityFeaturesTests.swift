@@ -11,7 +11,26 @@ final class CapabilityFeaturesTests: XCTestCase {
         let featureIDs = Set(CapabilityFeatures.current.payload.compactMap { $0["id"] as? String })
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.browserProfiles.rawValue))
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.feedAsks.rawValue))
+        XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.markdownAgentCLI.rawValue))
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.terminalInputState.rawValue))
+    }
+
+    func testMarkdownAgentMethodsRunOnSocketWorkersWithoutInAppFocusIntent() {
+        let methods = [
+            "markdown.scroll",
+            "markdown.visible",
+            "markdown.theme",
+            "markdown.typeface",
+            "markdown.font",
+            "markdown.open_external"
+        ]
+        for method in methods {
+            XCTAssertEqual(TerminalController.executionPolicy(forV2Method: method), .socketWorker, method)
+            XCTAssertFalse(
+                TerminalController.socketCommandAllowsInAppFocusMutations(commandKey: method, isV2: true),
+                method
+            )
+        }
     }
 
     func testDisabledAndMissingFeaturesNeverExecute() throws {

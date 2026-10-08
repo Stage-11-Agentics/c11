@@ -238,6 +238,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     }
     @Published private(set) var renderedRevision: Int?
     private weak var panel: MarkdownPanel?
+    private var stateObservers: [UUID: ([String: Any]?) -> Void] = [:]
     private var ready = false
     private var entryNavigationAdmitted = false
     private var closed = false
@@ -250,6 +251,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private let startedAt = ProcessInfo.processInfo.systemUptime
     var hasQueriesInFlight: Bool { activeQueries > 0 }
     var canCaptureReadingPosition: Bool { ready || failure }
+    var isReadyForQueries: Bool { ready && !closed }
     private var recoveringAfterTermination = false
 
     init(panel: MarkdownPanel) {
@@ -292,12 +294,42 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     func close() {
         guard !closed else { return }
         closed = true
+        let observers = Array(stateObservers.values)
+        stateObservers.removeAll()
+        observers.forEach { $0(nil) }
         webView.stopLoading()
         webView.renderer = nil
         webView.onShowPanelDetails = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "c11md")
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
+    }
+
+    /// State observers power the markdown CLI's event-driven watch stream. A
+    /// subscription pins this renderer against retention eviction until its
+    /// owner removes the observer.
+    func observeState(_ observer: @escaping ([String: Any]?) -> Void) -> (id: UUID, state: [String: Any])? {
+        guard ready, !closed, let panel else { return nil }
+        let id = UUID()
+        stateObservers[id] = observer
+        activeQueries += 1
+        MarkdownRendererCache.shared.queryStarted(panel)
+        return (id, state)
+    }
+
+    func removeStateObserver(_ id: UUID) {
+        guard stateObservers.removeValue(forKey: id) != nil else { return }
+        activeQueries = max(0, activeQueries - 1)
+        if let panel { MarkdownRendererCache.shared.queryFinished(panel) }
+    }
+
+    /// Updates the query cache and notifies watches from a native-initiated
+    /// WebKit query. Hidden workspaces can throttle requestAnimationFrame, so
+    /// command results must not depend on a later bridge state message.
+    func publishObservedState(_ value: [String: Any]) {
+        guard !closed else { return }
+        state = value
+        for observer in stateObservers.values { observer(value) }
     }
 
     /// Native callers use JSON arguments, never interpolate document text into JS.
@@ -383,7 +415,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             loadedSettings = settings
             call("setSettings", arguments: [["theme": panel.theme, "typeface": panel.typeface, "scale": panel.fontScale,
                                              "outlineOpen": panel.outlineOpen as Any? ?? "auto", "osAppearance": appearance,
-                                             "strings": Self.localizedStrings]])
+                                             "strings": Self.localizedStrings]]) { [weak self] result in
+                guard case .success(let value) = result,
+                      let state = value as? [String: Any] else { return }
+                self?.publishObservedState(state)
+            }
         }
         let content = restoreContentBeforeReload ?? panel.content
         if loadedContent != content {
@@ -391,7 +427,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             revision += 1
             call("load", arguments: [["markdown": content, "documentPath": panel.filePath ?? "",
                                       "baseURL": panel.filePath.map { URL(fileURLWithPath: $0).absoluteString } ?? "",
-                                      "revision": revision]])
+                                      "revision": revision]]) { [weak self] result in
+                guard case .success(let value) = result,
+                      let state = value as? [String: Any] else { return }
+                self?.publishObservedState(state)
+            }
         }
     }
 
@@ -409,7 +449,10 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             synchronize()
             MarkdownRendererCache.shared.reconsider()
         case "state":
-            if let value = body["state"] as? [String: Any] { updateReaderState(value) }
+            if let value = body["state"] as? [String: Any] {
+                updateReaderState(value)
+                publishObservedState(value)
+            }
         case "error":
             if body["code"] as? String == "render_failed" { failure = true }
         case "rendered":

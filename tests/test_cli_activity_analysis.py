@@ -256,6 +256,48 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(quiet['observed_agent_hours'], 24)
         self.assertEqual(result['hang_rate_by_open_load'][0]['observed_hours'], 48)
 
+    def test_daily_load_remains_unknown_across_gap_and_quiet_days(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()][:4]
+        for seq, ts, kind, panel, payload in [
+            (6, '2026-01-02T00:30:00Z', 'panel.created', 'panel-b', {'kind': 'terminal'}),
+            (7, '2026-01-02T00:30:00Z', 'liveness.derived', 'panel-b', {'state': 'working'}),
+            (8, '2026-01-04T00:00:00Z', 'hang.precursor', None, {}),
+        ]:
+            rows.append(dict(v=2, instance='synthetic', seq=seq, ts=ts,
+                             type=kind, panel=panel, payload=payload))
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        days = {day['date']: day for day in result['daily_utc']}
+        for day in days.values():
+            self.assertIsNone(day['peak_open'])
+            self.assertIsNone(day['peak_working'])
+        quiet = days['2026-01-03']
+        self.assertEqual(quiet['events'], 0)
+        self.assertEqual(quiet['load_unknown_hours'], 24)
+        self.assertEqual(quiet['observed_peak_open'], 1)
+        self.assertEqual(quiet['observed_peak_working'], 1)
+        self.assertEqual(quiet['observed_agent_hours'], 24)
+        self.assertEqual(sum(d['load_unknown_hours'] for d in days.values()), result['load_unknown_hours'])
+        self.assertEqual(sum(d['observed_agent_hours'] for d in days.values()), result['observed_agent_hours'])
+        self.assertEqual(result['hangs_with_unknown_load'], 1)
+
+    def test_truncated_daily_load_is_unknown_with_observed_lower_bounds(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        for row in rows: row['seq'] += 100
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        day = result['daily_utc'][0]
+        self.assertIsNone(day['peak_open'])
+        self.assertIsNone(day['peak_working'])
+        self.assertEqual(day['observed_peak_open'], 1)
+        self.assertEqual(day['observed_peak_working'], 1)
+        self.assertEqual(day['observed_agent_hours'], 1)
+        self.assertEqual(day['load_unknown_hours'], 1)
+
     def test_aggregated_codex_delta_does_not_invent_long_context_premium(self):
         # Two small 150K requests were aggregated before the next token_count.
         # last_token_usage identifies only the latest request, not the other contexts.

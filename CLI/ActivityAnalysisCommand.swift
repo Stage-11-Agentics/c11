@@ -367,10 +367,19 @@ enum ActivityAnalysisCommand {
         }
         func dailyRow(_ key: String) -> Object {
             daily[key] ?? ["date": key, "events": 0, "panels_created": 0, "peak_open": 0, "peak_working": 0,
+                           "observed_peak_open": 0, "observed_peak_working": 0, "load_unknown_hours": 0.0,
                            "observed_hours": 0.0, "observed_agent_hours": 0.0, "observed_foreground_hours": 0.0,
                            "presence_unknown_hours": 0.0]
         }
-        func integrateDaily(_ from: Date, _ to: Date, open: Int, working: Int, presence: Bool?, loadKnown: Bool) {
+        func dailyPeaks(_ d: inout Object, open: Int, working: Int, loadKnown: Bool) {
+            d["observed_peak_open"] = max(d["observed_peak_open"] as? Int ?? 0, open)
+            d["observed_peak_working"] = max(d["observed_peak_working"] as? Int ?? 0, working)
+            if loadKnown && !(d["peak_open"] is NSNull) {
+                d["peak_open"] = max(d["peak_open"] as? Int ?? 0, open)
+                d["peak_working"] = max(d["peak_working"] as? Int ?? 0, working)
+            } else { d["peak_open"] = null; d["peak_working"] = null }
+        }
+        func integrateDaily(_ from: Date, _ to: Date, open: Int, working: Int, presence: Bool?, loadKnown: Bool, observedLoad: Bool) {
             var cursor = from
             while cursor < to {
                 let midnight = calendar.startOfDay(for: cursor)
@@ -380,11 +389,11 @@ enum ActivityAnalysisCommand {
                 let key = dayFormatter.string(from: cursor)
                 var d = dailyRow(key)
                 d["observed_hours"] = (d["observed_hours"] as? Double ?? 0) + hours
-                if loadKnown {
-                    d["peak_open"] = max(d["peak_open"] as? Int ?? 0, open)
-                    d["peak_working"] = max(d["peak_working"] as? Int ?? 0, working)
+                dailyPeaks(&d, open: observedLoad ? open : 0, working: observedLoad ? working : 0, loadKnown: loadKnown)
+                if observedLoad {
                     d["observed_agent_hours"] = (d["observed_agent_hours"] as? Double ?? 0) + hours * Double(working)
                 }
+                if !loadKnown { d["load_unknown_hours"] = (d["load_unknown_hours"] as? Double ?? 0) + hours }
                 if presence == true { d["observed_foreground_hours"] = (d["observed_foreground_hours"] as? Double ?? 0) + hours }
                 if presence == nil { d["presence_unknown_hours"] = (d["presence_unknown_hours"] as? Double ?? 0) + hours }
                 daily[key] = d; cursor = end
@@ -450,7 +459,8 @@ enum ActivityAnalysisCommand {
                 if presence == nil { foregroundUnknown += duration }
                 if duration > 0 {
                     integrateDaily(max(start, previous), min(end, now), open: open.count, working: working.count,
-                                   presence: presence, loadKnown: !sequenceGap && historyEnabled)
+                                   presence: presence, loadKnown: !sequenceGap && historyEnabled && loadKnown,
+                                   observedLoad: !sequenceGap && historyEnabled)
                 }
                 previous = now
                 let inRange = event.ts >= start
@@ -534,8 +544,7 @@ enum ActivityAnalysisCommand {
                     var d = dailyRow(day)
                     d["events"] = (d["events"] as? Int ?? 0) + 1
                     if event.type == "panel.created" { d["panels_created"] = (d["panels_created"] as? Int ?? 0) + 1 }
-                    d["peak_open"] = max(d["peak_open"] as? Int ?? 0, open.count)
-                    d["peak_working"] = max(d["peak_working"] as? Int ?? 0, working.count)
+                    dailyPeaks(&d, open: open.count, working: working.count, loadKnown: historyEnabled && loadKnown)
                     daily[day] = d; rhythm[hourFormatter.string(from: event.ts), default: 0] += 1
                 }
             }

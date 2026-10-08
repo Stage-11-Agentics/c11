@@ -155,7 +155,77 @@
     "daily_utc": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "date",
+          "events",
+          "panels_created",
+          "peak_open",
+          "peak_working",
+          "observed_peak_open",
+          "observed_peak_working",
+          "observed_hours",
+          "observed_agent_hours",
+          "load_unknown_hours",
+          "observed_foreground_hours",
+          "presence_unknown_hours"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "peak_open": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "peak_working": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "panels_created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_peak_open": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_peak_working": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_agent_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "load_unknown_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_foreground_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "presence_unknown_hours": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
       }
     },
     "hour_of_day_utc_events": {

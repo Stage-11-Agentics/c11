@@ -223,6 +223,17 @@ final class MarkdownReaderFindState: ObservableObject {
 final class MarkdownReaderOutlineState: ObservableObject {
     @Published private(set) var value = MarkdownReaderOutlineSnapshot()
     func update(_ value: MarkdownReaderOutlineSnapshot) { if self.value != value { self.value = value } }
+
+    func update(from state: [String: Any]) {
+        let outline = state["outline"] as? [String: Any] ?? [:]
+        let revision = state["revision"].map { String(describing: $0) } ?? ""
+        update(MarkdownReaderOutlineSnapshot(
+            revision: revision,
+            isOpen: outline["open"] as? Bool ?? false,
+            isDocked: outline["docked"] as? Bool ?? false,
+            choice: outline["choice"] as? Bool
+        ))
+    }
 }
 
 @MainActor
@@ -377,6 +388,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     func publishObservedState(_ value: [String: Any]) {
         guard !closed else { return }
         state = value
+        readerOutline.update(from: value)
         for observer in stateObservers.values { observer(value) }
         panel?.publishRendererState(value)
     }
@@ -543,7 +555,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
         case "outlineDismiss":
-            panel?.setOutlineOpen(false)
+            panel?.recordPageOutlineDismissal()
         case "escapeUnhandled":
             _ = panel?.dismissReaderOverlay(pageConsumedEscape: false)
         default: break
@@ -569,14 +581,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             current: max(0, find?["current"] as? Int ?? 0)
         ) : nil)
 
-        let outline = value["outline"] as? [String: Any] ?? [:]
-        let revision = value["revision"].map { String(describing: $0) } ?? ""
-        readerOutline.update(MarkdownReaderOutlineSnapshot(
-            revision: revision,
-            isOpen: outline["open"] as? Bool ?? false,
-            isDocked: outline["docked"] as? Bool ?? false,
-            choice: outline["choice"] as? Bool
-        ))
+        readerOutline.update(from: value)
     }
 
     private func loadRegistryChoices() {

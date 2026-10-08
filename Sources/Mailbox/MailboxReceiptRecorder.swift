@@ -76,7 +76,7 @@ final class MailboxReceiptRecorder {
         flush: @escaping () -> Void = { EventEmitter.shared.flush() },
         isRecording: @escaping () -> Bool = { EventEmitter.shared.isRecording },
         eventsDirectory: @escaping () -> URL? = {
-            (try? EventLogLayout.defaultStateURL()).map(EventLogLayout.eventsDirectoryURL(state:))
+            (try? EventLogLayout.defaultStateURL()).map { EventLogLayout.eventsDirectoryURL(state: $0) }
         },
         fileManager: FileManager = .default
     ) {

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Append-only NDJSON writer for the c11 events stream (C11-163). Cloned from
 /// `MailboxDispatchLog`: writes ride a dedicated serial `.utility` queue so the
@@ -9,7 +10,7 @@ import Foundation
 ///   so file order and `seq` order always agree even under concurrent emits
 ///   (EVT-1).
 /// - **Size-capped rotation** (EVT-4): at the cap the current file rolls to
-///   `.1`, one generation is retained, and a `log.rotated` marker is written as
+///   `.1`, older generations are retained within age and total-byte bounds, and a `log.rotated` marker is written as
 ///   the first line of the fresh file so consumers detect the boundary.
 ///
 /// Non-blocking under a slow/full disk (EVT-3): `append` never touches the disk
@@ -26,6 +27,23 @@ final class EventLog {
     private let instance: String
     private let sizeCap: Int
     private let maxPending: Int
+    private let totalSizeCap: Int
+    private var retentionDays = 14
+    private let titleWindow: TimeInterval
+    private let maxTitlePanels: Int
+    private struct TitleWindow {
+        let started: Date
+        var latest: EventEnvelope
+        var count: Int
+    }
+    private var titles: [String: TitleWindow] = [:]
+    private var nextTitleExpiry = Date.distantFuture
+    private var knownHistoryBytes = 0
+    private var sampleTimer: DispatchSourceTimer?
+    private var sampleProvider: (() -> EventEnvelope?)?
+    private var samplingAsleep = false
+    private var recordingEnabled = true
+    private var analyticsEnabled = true
     private let now: () -> Date
 
     private let queue: DispatchQueue
@@ -55,18 +73,27 @@ final class EventLog {
         instance: String,
         sizeCap: Int = 8 * 1024 * 1024,
         maxPending: Int = 4096,
+        totalSizeCap: Int = 64 * 1024 * 1024,
+        retentionDays: Int = 14,
+        titleWindow: TimeInterval = 60,
+        maxTitlePanels: Int = 4096,
         now: @escaping () -> Date = { Date() },
         label: String = "com.stage11.c11.events.log"
     ) {
         self.url = url
         self.instance = instance
-        self.sizeCap = sizeCap
+        self.sizeCap = max(1, min(sizeCap, totalSizeCap / 2))
         self.maxPending = maxPending
+        self.totalSizeCap = max(1, totalSizeCap)
+        self.retentionDays = retentionDays
+        self.titleWindow = titleWindow
+        self.maxTitlePanels = max(1, maxTitlePanels)
         self.now = now
         self.queue = DispatchQueue(label: label, qos: .utility)
     }
 
     deinit {
+        sampleTimer?.cancel()
         try? fileHandle?.close()
     }
 
@@ -87,7 +114,7 @@ final class EventLog {
         queue.async { [weak self] in
             guard let self else { return }
             self.reportDropsIfNeeded()
-            self.writeAssigningSeq(envelope)
+            self.process(envelope)
             self.counterLock.lock()
             self.pendingCount -= 1
             self.counterLock.unlock()
@@ -104,6 +131,7 @@ final class EventLog {
             payload: ["pid": ProcessInfo.processInfo.processIdentifier]
         )
         queue.async { [weak self] in
+            self?.pruneHistory()
             self?.writeAssigningSeq(env)
         }
     }
@@ -111,10 +139,165 @@ final class EventLog {
     /// Blocks until all previously-enqueued appends have completed. For tests
     /// and shutdown. Never call from within `queue`.
     func flush() {
-        queue.sync {}
+        waitForQueue { self.flushTitles() }
+    }
+
+    /// Settings changes are rare and become one ordered queue mutation.
+    func updatePolicy(_ policy: ActivityHistoryPolicy) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.recordingEnabled = policy.enabled
+            self.analyticsEnabled = policy.analyticsEnabled
+            self.retentionDays = policy.retentionDays
+            if !policy.enabled { self.titles.removeAll(); self.nextTitleExpiry = .distantFuture }
+            if policy.enabled { self.pruneHistory() }
+            if !policy.enabled || !policy.analyticsEnabled {
+                self.sampleTimer?.cancel()
+                self.sampleTimer = nil
+            } else { self.scheduleSampling() }
+        }
+    }
+
+    /// The sole new timer. It runs on the existing writer queue and has one
+    /// minute of leeway. Sleep cancels the source and wake schedules a fresh
+    /// ten-minute interval, so no catch-up samples run after a long sleep.
+    func startSampling(_ provider: @escaping () -> EventEnvelope?) {
+        queue.async { [weak self] in
+            self?.sampleProvider = provider
+            self?.scheduleSampling()
+        }
+    }
+
+    private func scheduleSampling() {
+        guard sampleTimer == nil, !samplingAsleep, recordingEnabled, analyticsEnabled, sampleProvider != nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 600, repeating: 600, leeway: .seconds(60))
+        timer.setEventHandler { [weak self] in self?.sampleNow() }
+        sampleTimer = timer
+        timer.resume()
+    }
+
+    func setSamplingAsleep(_ asleep: Bool) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.samplingAsleep = asleep
+            if asleep { self.sampleTimer?.cancel(); self.sampleTimer = nil }
+            else { self.scheduleSampling() }
+        }
+    }
+
+    func stopSampling() {
+        waitForQueue {
+            self.sampleTimer?.cancel()
+            self.sampleTimer = nil
+            self.sampleProvider = nil
+        }
+    }
+
+    func finishSampling(_ provider: @escaping () -> EventEnvelope?) {
+        waitForQueue {
+            self.sampleTimer?.cancel()
+            self.sampleTimer = nil
+            self.sampleProvider = nil
+            self.flushTitles()
+            if self.recordingEnabled, self.analyticsEnabled, let event = provider() { self.writeAssigningSeq(event) }
+            if self.recordingEnabled { self.pruneHistory() }
+        }
+    }
+
+    /// Deterministic behavioral seam: uses the exact timer path, without sleeps.
+    func sampleForTesting() { waitForQueue { self.sampleNow() } }
+
+    /// DispatchQueue.sync may execute its body on the calling main thread.
+    /// Enqueue then wait only at explicit drain/shutdown seams, so metrics,
+    /// title-tail serialization and disk I/O always execute off-main.
+    private func waitForQueue(_ body: @escaping () -> Void) {
+        let completion = DispatchSemaphore(value: 0)
+        queue.async {
+            body()
+            completion.signal()
+        }
+        completion.wait()
+    }
+
+    private func sampleNow() {
+        guard !samplingAsleep else { return }
+        flushTitles(expiredOnly: true)
+        if recordingEnabled, analyticsEnabled, let event = sampleProvider?() { writeAssigningSeq(event) }
+        pruneHistory()
     }
 
     // MARK: - Queue-confined writing
+
+    private func process(_ envelope: EventEnvelope) {
+        guard recordingEnabled else { return }
+        if now() >= nextTitleExpiry { flushTitles(expiredOnly: true) }
+        if envelope.type == EventEnvelope.EventType.surfaceClosed.rawValue {
+            flushTitles(panel: envelope.surface)
+        }
+        if envelope.type == EventEnvelope.EventType.metadataChanged.rawValue,
+           envelope.payload["key"] as? String == "title",
+           envelope.payload["source"] as? String == "osc",
+           let panel = envelope.surface, let title = envelope.payload["value"] as? String {
+            let key = panel + ":" + (envelope.payload["scope"] as? String ?? "panel")
+            let canonical = Self.titleWithoutStatusGlyphs(title)
+            if let prior = envelope.payload["prior"] as? String,
+               Self.titleWithoutStatusGlyphs(prior) == canonical { return }
+            if var pending = titles[key] {
+                // Spinner-only title changes never become log records.
+                guard Self.titleWithoutStatusGlyphs(pending.latest.payload["value"] as? String ?? "") != canonical else { return }
+                pending.latest = envelope
+                pending.count += 1
+                titles[key] = pending
+                return
+            }
+            if titles.count >= maxTitlePanels, let oldest = titles.min(by: { $0.value.started < $1.value.started })?.key {
+                flushTitle(oldest)
+            }
+            let started = now()
+            titles[key] = TitleWindow(started: started, latest: envelope, count: 1)
+            nextTitleExpiry = min(nextTitleExpiry, started.addingTimeInterval(titleWindow))
+        }
+        if envelope.type == EventEnvelope.EventType.hangPrecursor.rawValue {
+            var payload = envelope.payload
+            payload["rss_mb"] = ActivityHistoryMetrics.sample()["rss_mb"] ?? NSNull()
+            writeAssigningSeq(EventEnvelope(type: envelope.type, instance: envelope.instance, ts: envelope.ts,
+                                           workspace: envelope.workspace, surface: envelope.surface, pane: envelope.pane, payload: payload))
+        } else { writeAssigningSeq(envelope) }
+    }
+
+    private func flushTitle(_ key: String) {
+        guard let state = titles.removeValue(forKey: key), state.count > 1 else { return }
+        let event = state.latest
+        var payload = event.payload
+        payload["title_change_count"] = state.count
+        writeAssigningSeq(EventEnvelope(type: event.type, instance: event.instance, ts: event.ts,
+                                       workspace: event.workspace, surface: event.surface, pane: event.pane, payload: payload))
+    }
+
+    private func flushTitles(expiredOnly: Bool = false, panel: String? = nil) {
+        let date = now()
+        let keys = titles.filter { _, state in
+            if let panel { return state.latest.surface == panel }
+            return !expiredOnly || date.timeIntervalSince(state.started) >= titleWindow
+        }.sorted { $0.value.started < $1.value.started }.map(\.key)
+        for key in keys { flushTitle(key) }
+        nextTitleExpiry = titles.values.map { $0.started.addingTimeInterval(titleWindow) }.min() ?? .distantFuture
+    }
+
+    private static func titleWithoutStatusGlyphs(_ title: String) -> String {
+        var scalars = title.unicodeScalars[...]
+        while let first = scalars.first {
+            let category = first.properties.generalCategory
+            let glyph = category == .otherSymbol || category == .mathSymbol || category == .modifierSymbol
+                || first.value == 0xFE0F || first.value == 0x200D
+                || (0x2800...0x28FF).contains(first.value)
+            if glyph || CharacterSet.whitespaces.contains(first) { scalars = scalars.dropFirst() }
+            else { break }
+        }
+        return String(String.UnicodeScalarView(scalars))
+    }
+
 
     private func writeAssigningSeq(_ envelope: EventEnvelope) {
         nextSeq &+= 1
@@ -151,7 +334,18 @@ final class EventLog {
         do {
             try ensureHandle()
             if let data = line.data(using: .utf8) {
+                // A single record larger than the whole configured budget
+                // cannot be retained while honoring that budget.
+                guard data.count <= totalSizeCap else { return }
+                if knownHistoryBytes + data.count > totalSizeCap {
+                    pruneHistory(reserving: data.count)
+                    // Several concurrently live instances may consume the
+                    // whole shared budget. Stop growing instead of unlinking
+                    // another live writer's open file.
+                    guard knownHistoryBytes + data.count <= totalSizeCap else { return }
+                }
                 try fileHandle?.write(contentsOf: data)
+                knownHistoryBytes += data.count
             }
         } catch {
             // Best-effort: drop the handle so the next call reopens from scratch.
@@ -192,8 +386,17 @@ final class EventLog {
             // fall through; we still attempt the rename + reopen
         }
         fileHandle = nil
-        // Retain exactly one rolled generation: replace any prior `.1`.
-        try? fm.removeItem(at: rolled)
+        // Plain renames only. Numbered generations preserve the `.1` tail
+        // compatibility contract; newest is always `.1`.
+        let generations = historyFiles().filter { $0.deletingLastPathComponent() == url.deletingLastPathComponent()
+            && $0.lastPathComponent.hasPrefix(url.lastPathComponent + ".") }
+        let numbered = generations.compactMap { item -> (URL, Int)? in
+            guard let number = Int(item.path.replacingOccurrences(of: url.path + ".", with: "")) else { return nil }
+            return (item, number)
+        }.sorted { $0.1 > $1.1 }
+        for (item, number) in numbered {
+            try? fm.moveItem(at: item, to: URL(fileURLWithPath: url.path + "." + String(number + 1)))
+        }
         do {
             try fm.moveItem(at: url, to: rolled)
         } catch {
@@ -211,5 +414,49 @@ final class EventLog {
         )
         nextSeq &+= 1
         writeLine(marker.serialize(seq: nextSeq))
+        pruneHistory()
+    }
+
+    private func historyFiles() -> [URL] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(),
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])) ?? []
+        return files.filter { item in
+            let name = item.lastPathComponent
+            // Only event files in this dedicated directory. Custom test paths
+            // are supported without granting deletion of unrelated artifacts.
+            if EventLogLayout.isLogFileName(name) { return true }
+            if name == url.lastPathComponent { return true }
+            let ownPrefix = url.lastPathComponent + "."
+            guard name.hasPrefix(ownPrefix), let generation = Int(name.dropFirst(ownPrefix.count)) else { return false }
+            return generation > 0
+        }
+    }
+
+    private func pruneHistory(reserving bytes: Int = 0) {
+        let fm = FileManager.default
+        let cutoff = now().addingTimeInterval(-Double(retentionDays) * 86_400)
+        var entries = historyFiles().compactMap { item -> (URL, Date, Int)? in
+            guard let values = try? item.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { return nil }
+            return (item, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0)
+        }.sorted { $0.1 < $1.1 }
+        func isProtected(_ item: URL) -> Bool {
+            if item == url { return true }
+            // Never unlink another live instance's current file. Its writer
+            // enforces the same shared budget as it next rotates/samples.
+            guard item.pathExtension == "ndjson",
+                  let pidText = item.deletingPathExtension().lastPathComponent.split(separator: "-").last,
+                  let pid = Int32(pidText) else { return false }
+            return kill(pid, 0) == 0 || errno == EPERM
+        }
+        for entry in entries where entry.1 < cutoff && !isProtected(entry.0) {
+            try? fm.removeItem(at: entry.0)
+        }
+        entries.removeAll { !fm.fileExists(atPath: $0.0.path) }
+        var total = entries.reduce(0) { $0 + $1.2 }
+        for entry in entries where total + bytes > totalSizeCap && !isProtected(entry.0) {
+            do { try fm.removeItem(at: entry.0); total -= entry.2 } catch { }
+        }
+        knownHistoryBytes = total
     }
 }

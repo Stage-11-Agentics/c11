@@ -1,4 +1,47 @@
 import Foundation
+import Darwin
+
+
+/// Cached local-only recording policy. UserDefaults is consulted at launch and
+/// on changes, never by the hot emission path. The full switch is defaults-only.
+struct ActivityHistoryPolicy: Equatable {
+    static let enabledKey = "c11.activityHistory.enabled"
+    static let analyticsEnabledKey = "c11.activityHistory.analyticsEnabled"
+    static let keepTextKey = "c11.activityHistory.keepText"
+    static let retentionDaysKey = "c11.activityHistory.retentionDays"
+    var enabled = true
+    var analyticsEnabled = true
+    var keepText = true
+    var retentionDays = 14
+
+    init(enabled: Bool = true, analyticsEnabled: Bool = true, keepText: Bool = true, retentionDays: Int = 14) {
+        self.enabled = enabled
+        self.analyticsEnabled = analyticsEnabled
+        self.keepText = keepText
+        self.retentionDays = [7, 14, 30].contains(retentionDays) ? retentionDays : 14
+    }
+
+    init(defaults: UserDefaults) {
+        self.init(enabled: defaults.object(forKey: Self.enabledKey) as? Bool ?? true,
+                  analyticsEnabled: defaults.object(forKey: Self.analyticsEnabledKey) as? Bool ?? true,
+                  keepText: defaults.object(forKey: Self.keepTextKey) as? Bool ?? true,
+                  retentionDays: defaults.object(forKey: Self.retentionDaysKey) as? Int ?? 14)
+    }
+}
+
+/// One kernel query, off-main, for all three health fields. No panel census or
+/// transcript work is performed by the app. CPU is cumulative process seconds.
+enum ActivityHistoryMetrics {
+    static func sample() -> [String: Any] {
+        var info = proc_taskinfo()
+        let size = MemoryLayout<proc_taskinfo>.size
+        let read = proc_pidinfo(getpid(), PROC_PIDTASKINFO, 0, &info, Int32(size))
+        guard read == Int32(size) else { return [:] }
+        return ["rss_mb": Double(info.pti_resident_size) / 1_048_576,
+                "cpu_s_total": Double(info.pti_total_user + info.pti_total_system) / 1_000_000_000,
+                "threads": Int(info.pti_threadnum)]
+    }
+}
 
 /// Process-wide facade for the c11 events stream (C11-163). `EventEmitter.shared`
 /// is callable from **any** thread — main-actor emit sites (surface create/close,
@@ -30,6 +73,11 @@ final class EventEmitter {
     private var log: EventLog?
     private var instanceId: String = ""
     private var enabled = false
+    private var policy = ActivityHistoryPolicy()
+    private var defaultsObserver: NSObjectProtocol?
+    private var appActive: Bool?
+    private var screenLocked: Bool?
+    private var sleeping: Bool?
 
     private init() {}
 
@@ -61,10 +109,20 @@ final class EventEmitter {
         guard log == nil else { lock.unlock(); return }
         log = newLog
         instanceId = instance
-        enabled = true
+        policy = ActivityHistoryPolicy(defaults: .standard)
+        enabled = policy.enabled
+        let initialPolicy = policy
         lock.unlock()
 
-        newLog.open()
+        newLog.updatePolicy(initialPolicy)
+        if initialPolicy.enabled {
+            newLog.open()
+            emit(.logPolicy, payload: Self.policyPayload(initialPolicy))
+        }
+        newLog.startSampling { [weak self] in self?.sampleEnvelope() }
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: nil
+        ) { [weak self] _ in self?.reloadPolicy() }
     }
 
     /// Test seam: install a caller-provided log + instance and enable emission.
@@ -73,12 +131,20 @@ final class EventEmitter {
         self.log = log
         self.instanceId = instance
         self.enabled = true
+        self.policy = ActivityHistoryPolicy()
         lock.unlock()
     }
 
     /// Test seam: tear down so the next `startForTesting` starts clean.
     func resetForTesting() {
+        if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
+        defaultsObserver = nil
+        currentLog()?.stopSampling()
         lock.lock()
+        appActive = nil
+        screenLocked = nil
+        sleeping = nil
+        policy = ActivityHistoryPolicy()
         log = nil
         instanceId = ""
         enabled = false
@@ -102,9 +168,104 @@ final class EventEmitter {
         return enabled && log != nil
     }
 
+    var keepText: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return policy.keepText
+    }
+
     /// Flush the underlying log (tests / shutdown).
     func flush() {
         currentLog()?.flush()
+    }
+
+    func reloadPolicy(defaults: UserDefaults = .standard) {
+        updatePolicy(ActivityHistoryPolicy(defaults: defaults))
+    }
+
+    private static func policyPayload(_ policy: ActivityHistoryPolicy) -> [String: Any] {
+        ["enabled": policy.enabled, "analytics_enabled": policy.analyticsEnabled,
+         "keep_text": policy.keepText, "retention_days": policy.retentionDays]
+    }
+
+    func updatePolicy(_ newPolicy: ActivityHistoryPolicy) {
+        lock.lock()
+        let previous = policy
+        guard previous != newPolicy else { lock.unlock(); return }
+        let target = log
+        // Enqueue a final coverage marker while recording is still enabled.
+        if previous.enabled && !newPolicy.enabled, let target {
+            target.append(EventEnvelope(type: .logPolicy, instance: instanceId, ts: Date(), payload: Self.policyPayload(newPolicy)))
+        }
+        target?.updatePolicy(newPolicy)
+        policy = newPolicy
+        enabled = newPolicy.enabled && target != nil
+        if newPolicy.enabled, let target {
+            target.append(EventEnvelope(type: .logPolicy, instance: instanceId, ts: Date(), payload: Self.policyPayload(newPolicy)))
+        }
+        let resume = newPolicy.enabled && newPolicy.analyticsEnabled && (!previous.enabled || !previous.analyticsEnabled)
+        let active = appActive, locked = screenLocked, asleep = sleeping
+        lock.unlock()
+        if resume {
+            if let active { emit(active ? .appActivated : .appDeactivated, payload: ["snapshot": true]) }
+            if let locked { emit(locked ? .screenLocked : .screenUnlocked, payload: ["snapshot": true]) }
+            if let asleep { emit(asleep ? .systemSleep : .systemWake, payload: ["snapshot": true]) }
+        }
+    }
+
+    /// Notification callbacks already run on main. Cache the tiny state here;
+    /// the watchdog reads it without querying AppKit while main is stalled.
+    func observePresence(appActive: Bool? = nil, screenLocked: Bool? = nil, sleeping: Bool? = nil, snapshot: Bool = false) {
+        lock.lock()
+        var edges: [EventEnvelope.EventType] = []
+        if let appActive, self.appActive != appActive {
+            self.appActive = appActive
+            edges.append(appActive ? .appActivated : .appDeactivated)
+        }
+        if let screenLocked, self.screenLocked != screenLocked {
+            self.screenLocked = screenLocked
+            edges.append(screenLocked ? .screenLocked : .screenUnlocked)
+        }
+        if let sleeping, self.sleeping != sleeping {
+            self.sleeping = sleeping
+            edges.append(sleeping ? .systemSleep : .systemWake)
+        }
+        let target = log
+        lock.unlock()
+        if let sleeping { target?.setSamplingAsleep(sleeping) }
+        for edge in edges { emit(edge, payload: snapshot ? ["snapshot": true] : [:]) }
+    }
+
+    func emitWorkspaceCreated(workspace: UUID, title: String, rootDirectory: String?) {
+        emit(.workspaceCreated, workspace: workspace, payload: ["title": title, "root_directory": rootDirectory ?? NSNull()])
+    }
+
+    func emitWorkspaceRenamed(workspace: UUID, title: String, prior: String) {
+        guard title != prior else { return }
+        emit(.workspaceRenamed, workspace: workspace, payload: ["title": title, "prior": prior])
+    }
+
+    /// One helper balances every remaining panel before the workspace edge.
+    /// Callers clear their baseline first so repeated teardown is idempotent.
+    func emitWorkspaceClosed(workspace: UUID, title: String, remainingPanels: Set<UUID>) {
+        for panel in remainingPanels.sorted(by: { $0.uuidString < $1.uuidString }) {
+            emitSurfaceClosed(workspace: workspace, surface: panel)
+        }
+        emit(.workspaceClosed, workspace: workspace, payload: ["title": title])
+    }
+
+    func shutdown() {
+        currentLog()?.finishSampling { [weak self] in self?.sampleEnvelope(shutdown: true) }
+    }
+
+    private func sampleEnvelope(shutdown: Bool = false) -> EventEnvelope? {
+        lock.lock()
+        guard enabled, policy.analyticsEnabled else { lock.unlock(); return nil }
+        let instance = instanceId
+        lock.unlock()
+        var payload = ActivityHistoryMetrics.sample()
+        if shutdown { payload["shutdown"] = true }
+        return EventEnvelope(type: .instanceSample, instance: instance, ts: Date(), payload: payload)
     }
 
     // MARK: - Emit helpers
@@ -310,10 +471,11 @@ final class EventEmitter {
         topic: String?,
         replyTo: String? = nil,
         inReplyTo: String? = nil,
-        urgent: Bool? = nil
+        urgent: Bool? = nil,
+        textRecorded: Bool? = nil
     ) {
         let recordedBody = Self.recordedText(body)
-        var payload: [String: Any] = ["id": id, "from": from, "body": recordedBody.value]
+        var payload: [String: Any] = ["id": id, "from": from, "body": recordedBody.value, "bytes": recordedBody.bytes]
         if let to { payload["to"] = to }
         if let bodyRef { payload["body_ref"] = bodyRef }
         if let topic { payload["topic"] = topic }
@@ -323,6 +485,7 @@ final class EventEmitter {
         if recordedBody.truncated {
             payload["truncated"] = true
         }
+        if let textRecorded { payload["text_recorded"] = textRecorded }
         emit(.mailboxAccepted, workspace: workspace, payload: payload)
     }
 
@@ -409,9 +572,15 @@ final class EventEmitter {
         durationsMs: [Int],
         fingerprint: [String]
     ) -> Bool {
-        emit(
+        lock.lock()
+        let active: Any = appActive.map { $0 as Any } ?? NSNull()
+        let locked: Any = screenLocked.map { $0 as Any } ?? NSNull()
+        lock.unlock()
+        return emit(
             .hangPrecursor,
             payload: [
+                "app_active": active,
+                "screen_locked": locked,
                 "cause": cause,
                 "culprit": culprit ?? NSNull(),
                 "count": count,
@@ -431,16 +600,31 @@ final class EventEmitter {
         workspace: UUID? = nil,
         surface: UUID? = nil,
         pane: UUID? = nil,
-        payload: [String: Any] = [:]
+        payload: @autoclosure () -> [String: Any] = [:]
     ) -> Bool {
         // Capture ts + snapshot the log under the lock; build + append outside.
         lock.lock()
-        guard enabled, let log else {
+        guard enabled, let log, !Self.analyticsTypes.contains(type) || policy.analyticsEnabled else {
             lock.unlock()
             return false
         }
         let instance = instanceId
+        let keepText = policy.keepText
         lock.unlock()
+        var recordedPayload = payload()
+        if !(recordedPayload["text_recorded"] as? Bool ?? keepText) {
+            if type == .panelInputSent, let text = recordedPayload.removeValue(forKey: "text") as? String {
+                if recordedPayload["bytes"] == nil { recordedPayload["bytes"] = text.utf8.count }
+                recordedPayload["text_recorded"] = false
+                recordedPayload.removeValue(forKey: "truncated")
+            } else if type == .mailboxAccepted {
+                let body = recordedPayload.removeValue(forKey: "body") as? String ?? ""
+                if recordedPayload["bytes"] == nil { recordedPayload["bytes"] = body.utf8.count }
+                recordedPayload["text_recorded"] = false
+                recordedPayload.removeValue(forKey: "body_ref")
+                recordedPayload.removeValue(forKey: "truncated")
+            }
+        }
 
         let envelope = EventEnvelope(
             type: type,
@@ -449,11 +633,17 @@ final class EventEmitter {
             workspace: workspace?.uuidString,
             surface: surface?.uuidString,
             pane: pane?.uuidString,
-            payload: payload
+            payload: recordedPayload
         )
         log.append(envelope)
         return true
     }
+
+    private static let analyticsTypes: Set<EventEnvelope.EventType> = [
+        .appActivated, .appDeactivated, .screenLocked, .screenUnlocked,
+        .systemSleep, .systemWake, .workspaceCreated, .workspaceRenamed,
+        .workspaceClosed, .instanceSample,
+    ]
 
     private func currentLog() -> EventLog? {
         lock.lock()

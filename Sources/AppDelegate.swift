@@ -3268,7 +3268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         isTerminatingApp = true
         // C11-163: drain any queued events before exit so a tailing consumer
         // sees the final transitions of this instance.
-        EventEmitter.shared.flush()
+        EventEmitter.shared.shutdown()
         let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
         _ = persistCleanShutdownSnapshot(bundleId: bundleId)
 

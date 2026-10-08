@@ -68,8 +68,28 @@ enum EventLogLayout {
     // MARK: - Path builders
 
     /// `<state>/events/`.
-    static func eventsDirectoryURL(state: URL) -> URL {
-        state.appendingPathComponent(eventsDirectoryName, isDirectory: true)
+    /// Supported history storage location override, shared by app and offline
+    /// CLI readers. Tagged validation can keep its recording/retention entirely
+    /// outside production history. Relative paths are rejected.
+    static func eventsDirectoryURL(
+        state: URL,
+        directoryOverride: String? = ProcessInfo.processInfo.environment["C11_ACTIVITY_HISTORY_DIRECTORY"]
+    ) -> URL {
+        if let directoryOverride, directoryOverride.hasPrefix("/") {
+            return URL(fileURLWithPath: directoryOverride, isDirectory: true)
+        }
+        return state.appendingPathComponent(eventsDirectoryName, isDirectory: true)
+    }
+
+    /// Exact current/numbered-generation filename recognition. Readers accept
+    /// all generations; only the current file is eligible for newestLogURL.
+    static func isLogFileName(_ name: String, includingRolled: Bool = true) -> Bool {
+        guard name.hasPrefix(logFilePrefix), let range = name.range(of: ".ndjson", options: .backwards),
+              range.lowerBound > name.index(name.startIndex, offsetBy: logFilePrefix.count) else { return false }
+        let suffix = name[range.upperBound...]
+        if suffix.isEmpty { return true }
+        guard includingRolled, suffix.first == ".", let generation = Int(suffix.dropFirst()) else { return false }
+        return generation > 0
     }
 
     /// Filename for a given instance id: `events-<instance>.ndjson`.

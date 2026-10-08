@@ -4805,7 +4805,9 @@ struct PanelShapeCounts: Equatable {
 @MainActor
 final class Workspace: Identifiable, ObservableObject {
     let id: UUID
-    @Published var title: String
+    @Published var title: String {
+        didSet { EventEmitter.shared.emitWorkspaceRenamed(workspace: id, title: title, prior: oldValue) }
+    }
     @Published var customTitle: String?
     @Published var isPinned: Bool = false
     @Published var groupId: UUID? = nil
@@ -5809,6 +5811,7 @@ final class Workspace: Identifiable, ObservableObject {
         // terminal), then on every subsequent mutation — a single chokepoint
         // that no create/close/reattach/teardown path can bypass. No debounce:
         // events must be observable within 1s (EVT-6).
+        EventEmitter.shared.emitWorkspaceCreated(workspace: id, title: title, rootDirectory: rootDirectory)
         panelEventsCancellable = $panels
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)
@@ -5827,6 +5830,7 @@ final class Workspace: Identifiable, ObservableObject {
         // `@MainActor` so the last release must run on main; `assumeIsolated`
         // lets the iso-checker see that.
         MainActor.assumeIsolated {
+            emitWorkspaceTeardownEvents()
             for state in persistentFlashPanels.values {
                 state.timer.invalidate()
             }
@@ -5840,6 +5844,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// blocks. A rolled-back create surfaces as a balanced created→closed pair;
     /// a cross-pane detach→reattach as closed→created (amendment D move policy).
     private func reconcilePanelEvents(_ newPanels: [UUID: any Panel]) {
+        guard !didEmitWorkspaceClose else { return }
         let newIds = Set(newPanels.keys)
         guard newIds != lastKnownPanelIds else { return }
         for createdId in newIds.subtracting(lastKnownPanelIds) {
@@ -9399,6 +9404,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
     func teardownAllPanels() {
+        emitWorkspaceTeardownEvents()
+
         // Drain every pending pane interaction with .dismissed FIRST so any
         // in-flight presentConfirmClose / presentTextInput / socket pane.confirm
         // continuation resumes before the panel state disappears. Skipping this
@@ -9434,6 +9441,16 @@ final class Workspace: Identifiable, ObservableObject {
         terminalInheritanceFontPointsByPanelId.removeAll(keepingCapacity: false)
         lastTerminalConfigInheritancePanelId = nil
         lastTerminalConfigInheritanceFontPoints = nil
+    }
+
+    private var didEmitWorkspaceClose = false
+
+    private func emitWorkspaceTeardownEvents() {
+        guard !didEmitWorkspaceClose else { return }
+        didEmitWorkspaceClose = true
+        let remaining = lastKnownPanelIds
+        lastKnownPanelIds.removeAll()
+        EventEmitter.shared.emitWorkspaceClosed(workspace: id, title: title, remainingPanels: remaining)
     }
 
     /// Close a panel.

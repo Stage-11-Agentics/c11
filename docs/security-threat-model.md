@@ -253,7 +253,10 @@ Bridge messages are accepted only from its bundled main frame. Native code
 independently resolves the original link: anchors stay in the document,
 relative markdown links open a markdown panel, and HTTP(S) links follow c11's
 browser routing settings. Other schemes and arbitrary local files are
-refused. No bridge method exposes a socket, shell, evaluator or file read.
+refused, except for the validated `mailto:` route. Mail links accept recipients,
+cc, bcc, subject and body only; hosts, ports, fragments and control characters
+are refused. They open through `NSWorkspace` only after an operator clicks. No
+bridge method exposes a socket, shell, evaluator or file read.
 Copy messages write bounded text to the pasteboard. Content-state messages
 remain transient; durable presentation fields use the session snapshot.
 

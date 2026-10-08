@@ -215,6 +215,24 @@ final class DescriptionSanitizerTests: XCTestCase {
             .paragraph("Step 2. two")
         ])
     }
+
+    func testUncheckedTaskListMarkerAndLabel() {
+        XCTAssertEqual(nativeBlocks(titleBarDescriptionBlocks("- [ ] Pending")), [
+            .listItem(marker: "☐", text: "Pending", depth: 0)
+        ])
+    }
+
+    func testLowercaseCheckedTaskListMarkerAndLabel() {
+        XCTAssertEqual(nativeBlocks(titleBarDescriptionBlocks("- [x] Complete")), [
+            .listItem(marker: "☑", text: "Complete", depth: 0)
+        ])
+    }
+
+    func testUppercaseCheckedTaskListMarkerAndLabel() {
+        XCTAssertEqual(nativeBlocks(titleBarDescriptionBlocks("- [X] Complete")), [
+            .listItem(marker: "☑", text: "Complete", depth: 0)
+        ])
+    }
 }
 
 

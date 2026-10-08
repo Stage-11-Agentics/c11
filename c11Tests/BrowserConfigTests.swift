@@ -3172,7 +3172,7 @@ final class BrowserHistoryStoreTests: XCTestCase {
 
 @MainActor
 final class CmuxWebViewDragRoutingTests: XCTestCase {
-    func testMarkdownWebViewPreservesFileDropsWithoutSwallowingInternalDrags() {
+    func testMarkdownWebViewFiltersRegisteredDragTypesAndCannotBecomeFirstResponder() {
         let view = MarkdownWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         view.registerForDraggedTypes([.string, .fileURL,
             NSPasteboard.PasteboardType("public.text"),
@@ -3184,6 +3184,50 @@ final class CmuxWebViewDragRoutingTests: XCTestCase {
         XCTAssertFalse(view.registeredDraggedTypes.contains(DragOverlayRoutingPolicy.bonsplitTabTransferType))
         XCTAssertFalse(view.registeredDraggedTypes.contains(DragOverlayRoutingPolicy.sidebarWorkspaceReorderType))
         XCTAssertFalse(view.becomeFirstResponder(), "unfocused content cannot acquire focus")
+    }
+
+    func testMarkdownReaderContextMenuKeepsTextActionsAndAddsPanelDetails() {
+        let view = MarkdownWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let menu = NSMenu()
+        func add(_ identifier: String, title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.identifier = NSUserInterfaceItemIdentifier(identifier)
+            menu.addItem(item)
+        }
+        add("WKMenuItemIdentifierOpenLink", title: "Open Link")
+        add("WKMenuItemIdentifierOpenLinkInNewWindow", title: "Open Link in New Window")
+        add("WKMenuItemIdentifierDownloadLinkedFile", title: "Download Linked File")
+        add("WKMenuItemIdentifierReload", title: "Reload")
+        add("WKMenuItemIdentifierCopyLink", title: "Copy Link")
+        add("WKMenuItemIdentifierCopy", title: "Copy")
+        add("WKMenuItemIdentifierLookUp", title: "Look Up")
+        menu.addItem(NSMenuItem(title: "Services", action: nil, keyEquivalent: ""))
+
+        let event = NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )!
+        view.willOpenMenu(menu, with: event)
+
+        let titles = menu.items.map(\.title)
+        XCTAssertFalse(titles.contains("Open Link"))
+        XCTAssertFalse(titles.contains("Open Link in New Window"))
+        XCTAssertFalse(titles.contains("Download Linked File"))
+        XCTAssertFalse(titles.contains("Reload"))
+        XCTAssertFalse(titles.contains("Copy Link"))
+        XCTAssertTrue(titles.contains("Copy"))
+        XCTAssertTrue(titles.contains("Look Up"))
+        XCTAssertTrue(titles.contains("Services"))
+        XCTAssertEqual(menu.items.last?.title, String(localized: "surfaceManifest.menuItem", defaultValue: "Panel Details"))
+        XCTAssertTrue(menu.items.last?.target === view)
+        XCTAssertNotNil(menu.items.last?.action)
     }
 
     func testRejectsInternalPaneDragEvenWhenFilePromiseTypesArePresent() {

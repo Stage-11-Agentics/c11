@@ -207,7 +207,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         let recreated = panel.ensureRenderer()
         hosted = sourceMode ? recreated.webView : NSHostingView(rootView: MarkdownWebContent(panel: panel, isFocused: false))
         window.contentView = hosted
-        await rendered(recreated, revision: 1)
+        await rendered(recreated, revision: 2)
         let afterValue = try await call(recreated, "visible")
         let after = try XCTUnwrap(afterValue as? [String: Any])
         let restored = try XCTUnwrap(MarkdownReadingPosition(state: after))
@@ -514,6 +514,70 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertNil(retained, "Closing must break WKUserContentController's message-handler cycle")
     }
 
+    /// PM-359-f probe (round 3): record every stage of a chrome appearance flip.
+    func testProbeAppearanceFlipReachesMountedSystemThemeReader() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-appearance-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Reader\n\nA stable paragraph.\n".write(to: path, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        defer { panel.close() }
+        panel.applyRestoredPresentation(SessionMarkdownPanelSnapshot(fontScale: 1, theme: "system", typeface: "theme", outlineOpen: false))
+        let oldAppearance = NSApp.appearance
+        NSApp.appearance = NSAppearance(named: .aqua)
+        defer { NSApp.appearance = oldAppearance }
+        let runtime = AreaInteractionRuntime()
+        let host = NSHostingView(rootView: MarkdownPanelView(
+            panel: panel, isFocused: false, isVisibleInUI: true, portalPriority: 0,
+            onRequestPanelFocus: {}, paneInteractionRuntime: runtime))
+        host.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        var created: MarkdownWebRenderer?
+        for _ in 0..<200 where created == nil {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            created = panel.renderer
+        }
+        let renderer = try XCTUnwrap(created, "The SwiftUI host must create the renderer")
+        await rendered(renderer, revision: 1)
+        func resolvedTheme() async throws -> String {
+            let now = try await call(renderer, "visible") as? [String: Any]
+            return (now?["theme"] as? [String: Any])?["resolved"] as? String ?? "?"
+        }
+        func effective() -> String { renderer.webView.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])?.rawValue ?? "?" }
+        func settle(_ seconds: Double, until: () async throws -> Bool) async throws {
+            for _ in 0..<Int(seconds * 20) { try await Task.sleep(nanoseconds: 50_000_000); if try await until() { return } }
+        }
+        var log: [String] = []
+        log.append("initial: effective=\(effective()) resolved=\(try await resolvedTheme())")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        try await settle(4) { try await resolvedTheme() == "dark" }
+        log.append("after NSApp.appearance=dark + 4s: effective=\(effective()) resolved=\(try await resolvedTheme())")
+        let stage1 = try await resolvedTheme()
+        ThemeManager.shared.objectWillChange.send()
+        try await settle(2) { try await resolvedTheme() == "dark" }
+        log.append("after ThemeManager publish + 2s: effective=\(effective()) resolved=\(try await resolvedTheme())")
+        let stage2 = try await resolvedTheme()
+        host.frame = NSRect(x: 0, y: 0, width: 790, height: 600)
+        host.layoutSubtreeIfNeeded()
+        try await settle(2) { try await resolvedTheme() == "dark" }
+        log.append("after host resize + 2s: effective=\(effective()) resolved=\(try await resolvedTheme())")
+        let stage3 = try await resolvedTheme()
+        renderer.synchronize()
+        try await settle(2) { try await resolvedTheme() == "dark" }
+        log.append("after manual synchronize + 2s: effective=\(effective()) resolved=\(try await resolvedTheme())")
+        let stage4 = try await resolvedTheme()
+        XCTAssertTrue(panel.renderer === renderer)
+        XCTAssertEqual(stage4, "dark", "PROBE LOG: " + log.joined(separator: " | "))
+        XCTAssertEqual(stage1, "dark", "appearance flip alone did not reach the reader. PROBE LOG: " + log.joined(separator: " | "))
+        XCTAssertEqual(stage2, "dark", "ThemeManager publish did not reach the reader. PROBE LOG: " + log.joined(separator: " | "))
+        XCTAssertEqual(stage3, "dark", "host relayout did not reach the reader. PROBE LOG: " + log.joined(separator: " | "))
+    }
+
+
     private func installVisibleGate(_ renderer: MarkdownWebRenderer, heldCalls: [Int]) async throws {
         let installed = try await evaluateAsync(renderer, #"""
             const original = window.c11md;
@@ -649,5 +713,91 @@ private final class MarkdownWebRendererDelegateProbe: NSObject, WKNavigationDele
         let result = renderer?.webView(webView, createWebViewWith: configuration, for: navigationAction, windowFeatures: windowFeatures)
         if result != nil { returnedWebViewCount += 1 }
         return result
+    }
+}
+
+// Post-merge review probes: real file watcher, bundle, cache and non-visible AppKit host.
+extension MarkdownWebRendererTests {
+    func testPostMergeRetainedReloadKeepsContentWhenLinesAreInsertedAbove() async throws {
+        try await postMergeInsertedLines(evict: false)
+    }
+
+    func testPostMergeEvictedReloadKeepsContentWhenLinesAreInsertedAbove() async throws {
+        try await postMergeInsertedLines(evict: true)
+    }
+
+    // SYNTH PROBE: deletion above the anchor while evicted.
+    func testSynthEvictedReloadKeepsContentWhenLinesAreDeletedAbove() async throws {
+        try await postMergeInsertedLines(evict: true, deleteAbove: true)
+    }
+
+    private func postMergeInsertedLines(evict: Bool, deleteAbove: Bool = false) async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-pm-reload-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        let text = "# Reader\n\n" + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
+        try text.write(to: path, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        panel.applyRestoredPresentation(SessionMarkdownPanelSnapshot(fontScale: 1, theme: "light", typeface: "sans", outlineOpen: false))
+        var others: [MarkdownPanel] = []
+        defer { panel.close(); others.forEach { $0.close() } }
+        let hostID = UUID()
+        panel.setRendererVisible(true, hostID: hostID)
+        var renderer = panel.ensureRenderer()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 480), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+        _ = try await call(renderer, "scrollToHeading", arguments: ["Section 40"])
+        let beforeValue = try await call(renderer, "visible")
+        let before = try XCTUnwrap(beforeValue as? [String: Any])
+        let headingBefore = try XCTUnwrap((before["heading"] as? [String: Any])?["text"] as? String)
+        let yBeforeValue = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top")
+        let yBefore = try XCTUnwrap(yBeforeValue as? Double)
+        XCTAssertEqual(headingBefore, "Section 40")
+
+        if evict {
+            let evicted = expectation(description: "postmerge target evicted")
+            let token = MarkdownRendererCache.shared.evictions.first(where: { $0 == panel.id }).sink { _ in evicted.fulfill() }
+            panel.setRendererVisible(false, hostID: hostID)
+            window.contentView = nil
+            for _ in 0..<5 {
+                let other = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+                others.append(other)
+                _ = other.ensureRenderer()
+            }
+            await fulfillment(of: [evicted], timeout: 30)
+            withExtendedLifetime(token) {}
+            XCTAssertNil(panel.renderer)
+        }
+
+        let inserted = (1...12).map { "## Added \($0)\n\nNew paragraph \($0).\n\n" }.joined()
+        let deletedPrefix = (1...12).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
+        let changed = deleteAbove ? text.replacingOccurrences(of: deletedPrefix, with: "") : inserted + text
+        if deleteAbove { XCTAssertNotEqual(changed, text) }
+        let reloaded = expectation(description: "postmerge watcher applied inserted text")
+        let contentToken = panel.$content.first(where: { $0 == changed }).sink { _ in reloaded.fulfill() }
+        try changed.write(to: path, atomically: true, encoding: .utf8)
+        await fulfillment(of: [reloaded], timeout: 10)
+        withExtendedLifetime(contentToken) {}
+        if evict {
+            XCTAssertNil(panel.renderer)
+            panel.setRendererVisible(true, hostID: hostID)
+            renderer = panel.ensureRenderer()
+            window.contentView = renderer.webView
+            await rendered(renderer, revision: 2)
+        } else {
+            await rendered(renderer, revision: 2)
+        }
+        let afterValue = try await call(renderer, "visible")
+        let after = try XCTUnwrap(afterValue as? [String: Any])
+        let yAfterValue = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top")
+        let yAfter = try XCTUnwrap(yAfterValue as? Double)
+        let headingAfter = (after["heading"] as? [String: Any])?["text"] as? String
+        print("POSTMERGE_INSERT evict=\(evict) before=\(headingBefore) after=\(headingAfter ?? "nil") beforeLines=\(String(describing: before["lines"])) afterLines=\(String(describing: after["lines"])) beforeY=\(yBefore) afterY=\(yAfter)")
+        XCTAssertEqual(headingAfter, headingBefore, "Inserting earlier sections while evicted must preserve the content being read")
+        XCTAssertEqual(yAfter, yBefore, accuracy: 1, "Unchanged Section 40 must stay in the same viewport position")
     }
 }

@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
-import MarkdownUI
+import WebKit
 import UniformTypeIdentifiers
 
-/// SwiftUI view that renders a MarkdownPanel's content using MarkdownUI.
+/// SwiftUI shell with a lazy, retained WKWebView reading surface.
 struct MarkdownPanelView: View {
     @ObservedObject var panel: MarkdownPanel
     @ObservedObject private var themeManager = ThemeManager.shared
@@ -75,86 +75,15 @@ struct MarkdownPanelView: View {
     // MARK: - Content
 
     private var markdownContentView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // File path breadcrumb
-                filePathHeader
-                    .padding(.horizontal, 24)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
-
-                Divider()
-                    .padding(.horizontal, 16)
-
-                // Rendered content segments
-                if panel.segments.isEmpty {
-                    Markdown(panel.content)
-                        .markdownTheme(cmuxMarkdownTheme)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 16)
-                } else {
-                    ForEach(panel.segments) { segment in
-                        segmentView(segment)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func segmentView(_ segment: MarkdownSegment) -> some View {
-        switch segment {
-        case .markdown(_, let content):
-            Markdown(content)
-                .markdownTheme(cmuxMarkdownTheme)
-                .textSelection(.enabled)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
-        case .fencedCode(_, let language, let code, let image, let errorHint):
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 8)
+        VStack(spacing: 0) {
+            filePathHeader.padding(.horizontal, 16).padding(.vertical, 8)
+            Divider()
+            if isVisibleInUI {
+                MarkdownWebContent(panel: panel)
             } else {
-                fencedCodeFallbackView(language: language, code: code, errorHint: errorHint)
+                Color.clear
             }
         }
-    }
-
-    private func fencedCodeFallbackView(language: String, code: String, errorHint: String?) -> some View {
-        // Per-render hint wins over the renderer's static install hint, since
-        // the segment-level hint reflects the actual cause of *this* render's
-        // failure (e.g. missing chrome-headless-shell) rather than a generic
-        // "tool not installed" message.
-        let hint = errorHint ?? FencedCodeRendererRegistry.shared.renderer(for: language)?.installHint
-        return VStack(alignment: .leading, spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: true) {
-                Text(code)
-                    .font(.system(size: 13 * panel.fontScale, design: .monospaced))
-                    .foregroundColor(colorScheme == .dark
-                        ? Color(red: 0.9, green: 0.9, blue: 0.9)
-                        : Color(red: 0.2, green: 0.2, blue: 0.2))
-                    .textSelection(.enabled)
-                    .padding(12)
-            }
-            .background(colorScheme == .dark
-                ? Color(nsColor: NSColor(white: 0.08, alpha: 1.0))
-                : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-
-            if let hint {
-                Text(hint)
-                    .font(.system(size: 11 * panel.fontScale))
-                    .foregroundColor(.secondary)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 8)
     }
 
     private var filePathHeader: some View {
@@ -310,176 +239,6 @@ struct MarkdownPanelView: View {
             : Color(nsColor: NSColor(white: 0.98, alpha: 1.0))
     }
 
-    /// Theme instances cached per (appearance, font scale). Rebuilding the
-    /// theme on every body evaluation churned ~20 closure allocations and
-    /// invalidated the MarkdownUI environment, forcing full re-parse and
-    /// re-layout of every segment on unrelated app events.
-    @MainActor private static var themeCache: [String: Theme] = [:]
-
-    private static func cachedTheme(isDark: Bool, fontScale: Double) -> Theme {
-        let key = "\(isDark ? "d" : "l"):\(Int((fontScale * 100).rounded()))"
-        if let cached = themeCache[key] { return cached }
-        let theme = buildTheme(isDark: isDark, fontScale: fontScale)
-        themeCache[key] = theme
-        return theme
-    }
-
-    private var cmuxMarkdownTheme: Theme {
-        Self.cachedTheme(isDark: colorScheme == .dark, fontScale: panel.fontScale)
-    }
-
-    private static func buildTheme(isDark: Bool, fontScale: Double) -> Theme {
-        let scale = CGFloat(fontScale)
-
-        return Theme()
-            // Text
-            .text {
-                ForegroundColor(isDark ? .white.opacity(0.9) : .primary)
-                FontSize(14 * scale)
-            }
-            // Headings
-            .heading1 { configuration in
-                VStack(alignment: .leading, spacing: 8) {
-                    configuration.label
-                        .markdownTextStyle {
-                            FontWeight(.bold)
-                            FontSize(28 * scale)
-                            ForegroundColor(isDark ? .white : .primary)
-                        }
-                    Divider()
-                }
-                .markdownMargin(top: 24, bottom: 16)
-            }
-            .heading2 { configuration in
-                VStack(alignment: .leading, spacing: 6) {
-                    configuration.label
-                        .markdownTextStyle {
-                            FontWeight(.bold)
-                            FontSize(22 * scale)
-                            ForegroundColor(isDark ? .white : .primary)
-                        }
-                    Divider()
-                }
-                .markdownMargin(top: 20, bottom: 12)
-            }
-            .heading3 { configuration in
-                configuration.label
-                    .markdownTextStyle {
-                        FontWeight(.semibold)
-                        FontSize(18 * scale)
-                        ForegroundColor(isDark ? .white : .primary)
-                    }
-                    .markdownMargin(top: 16, bottom: 8)
-            }
-            .heading4 { configuration in
-                configuration.label
-                    .markdownTextStyle {
-                        FontWeight(.semibold)
-                        FontSize(16 * scale)
-                        ForegroundColor(isDark ? .white : .primary)
-                    }
-                    .markdownMargin(top: 12, bottom: 6)
-            }
-            .heading5 { configuration in
-                configuration.label
-                    .markdownTextStyle {
-                        FontWeight(.medium)
-                        FontSize(14 * scale)
-                        ForegroundColor(isDark ? .white : .primary)
-                    }
-                    .markdownMargin(top: 10, bottom: 4)
-            }
-            .heading6 { configuration in
-                configuration.label
-                    .markdownTextStyle {
-                        FontWeight(.medium)
-                        FontSize(13 * scale)
-                        ForegroundColor(isDark ? .white.opacity(0.7) : .secondary)
-                    }
-                    .markdownMargin(top: 8, bottom: 4)
-            }
-            // Code blocks
-            .codeBlock { configuration in
-                ScrollView(.horizontal, showsIndicators: true) {
-                    configuration.label
-                        .markdownTextStyle {
-                            FontFamilyVariant(.monospaced)
-                            FontSize(13 * scale)
-                            ForegroundColor(isDark ? Color(red: 0.9, green: 0.9, blue: 0.9) : Color(red: 0.2, green: 0.2, blue: 0.2))
-                        }
-                        .padding(12)
-                }
-                .background(isDark
-                    ? Color(nsColor: NSColor(white: 0.08, alpha: 1.0))
-                    : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .markdownMargin(top: 8, bottom: 8)
-            }
-            // Inline code
-            .code {
-                FontFamilyVariant(.monospaced)
-                FontSize(13 * scale)
-                ForegroundColor(isDark ? Color(red: 0.85, green: 0.6, blue: 0.95) : Color(red: 0.6, green: 0.2, blue: 0.7))
-                BackgroundColor(isDark
-                    ? Color(nsColor: NSColor(white: 0.18, alpha: 1.0))
-                    : Color(nsColor: NSColor(white: 0.92, alpha: 1.0)))
-            }
-            // Block quotes
-            .blockquote { configuration in
-                HStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(isDark ? Color.white.opacity(0.2) : Color.gray.opacity(0.4))
-                        .frame(width: 3)
-                    configuration.label
-                        .markdownTextStyle {
-                            ForegroundColor(isDark ? .white.opacity(0.6) : .secondary)
-                            FontSize(14 * scale)
-                        }
-                        .padding(.leading, 12)
-                }
-                .markdownMargin(top: 8, bottom: 8)
-            }
-            // Links
-            .link {
-                ForegroundColor(Color.accentColor)
-            }
-            // Strong
-            .strong {
-                FontWeight(.semibold)
-            }
-            // Tables
-            .table { configuration in
-                configuration.label
-                    .markdownTableBorderStyle(.init(color: isDark ? .white.opacity(0.15) : .gray.opacity(0.3)))
-                    .markdownTableBackgroundStyle(
-                        .alternatingRows(
-                            isDark
-                                ? Color(nsColor: NSColor(white: 0.14, alpha: 1.0))
-                                : Color(nsColor: NSColor(white: 0.96, alpha: 1.0)),
-                            isDark
-                                ? Color(nsColor: NSColor(white: 0.10, alpha: 1.0))
-                                : Color(nsColor: NSColor(white: 1.0, alpha: 1.0))
-                        )
-                    )
-                    .markdownMargin(top: 8, bottom: 8)
-            }
-            // Thematic break (horizontal rule)
-            .thematicBreak {
-                Divider()
-                    .markdownMargin(top: 16, bottom: 16)
-            }
-            // List items
-            .listItem { configuration in
-                configuration.label
-                    .markdownMargin(top: 4, bottom: 4)
-            }
-            // Paragraphs
-            .paragraph { configuration in
-                configuration.label
-                    .markdownMargin(top: 4, bottom: 8)
-            }
-    }
-
     // MARK: - Focus Flash
 
     private func triggerFocusFlashAnimation() {
@@ -505,6 +264,43 @@ struct MarkdownPanelView: View {
             return .easeOut(duration: duration)
         }
     }
+}
+
+private struct MarkdownWebContent: NSViewRepresentable {
+    let panel: MarkdownPanel
+
+    func makeNSView(context: Context) -> NSView {
+        let renderer = panel.ensureRenderer()
+        let host = NSHostingView(rootView: MarkdownRendererContent(renderer: renderer))
+        return host
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        panel.renderer?.synchronize()
+    }
+}
+
+private struct MarkdownRendererContent: View {
+    @ObservedObject var renderer: MarkdownWebRenderer
+
+    var body: some View {
+        if renderer.failure {
+            VStack(spacing: 12) {
+                Text(String(localized: "markdown.rendererUnavailable.title", defaultValue: "Renderer unavailable"))
+                    .font(.headline)
+                Text(String(localized: "markdown.rendererUnavailable.message", defaultValue: "The bundled markdown renderer could not be loaded."))
+                    .foregroundColor(.secondary)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            MarkdownWebViewHost(webView: renderer.webView)
+        }
+    }
+}
+
+private struct MarkdownWebViewHost: NSViewRepresentable {
+    let webView: WKWebView
+    func makeNSView(context: Context) -> WKWebView { webView }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 
 private struct MarkdownPointerObserver: NSViewRepresentable {

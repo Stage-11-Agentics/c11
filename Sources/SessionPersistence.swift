@@ -357,6 +357,52 @@ struct SessionMarkdownPanelSnapshot: Codable, Sendable {
     /// Font scale multiplier (1.0 = default). Optional for backwards
     /// compatibility; old snapshots decode with nil.
     var fontScale: Double? = nil
+    var theme: String? = nil
+    var typeface: String? = nil
+    /// Nil preserves the renderer's width-dependent default for legacy panels.
+    var outlineOpen: Bool? = nil
+
+    init(
+        filePath: String? = nil,
+        fontScale: Double? = nil,
+        theme: String? = nil,
+        typeface: String? = nil,
+        outlineOpen: Bool? = nil
+    ) {
+        self.filePath = filePath
+        self.fontScale = fontScale
+        self.theme = theme
+        self.typeface = typeface
+        self.outlineOpen = outlineOpen
+    }
+
+    var presentation: MarkdownPresentation {
+        MarkdownPresentation(
+            fontScale: fontScale ?? 1.0,
+            theme: theme ?? "system",
+            typeface: typeface ?? "theme",
+            outlineOpen: outlineOpen
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case filePath, fontScale, theme, typeface, outlineOpen
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // A malformed preference must not discard this panel or its workspace.
+        // Keep absent fields optional for legacy snapshots; presentation applies
+        // built-in defaults without consulting the new-panel UserDefaults.
+        filePath = try? values.decode(String.self, forKey: .filePath)
+        fontScale = (try? values.decode(Double.self, forKey: .fontScale))
+            .map(MarkdownPresentation.normalizedFontScale)
+        theme = (try? values.decode(String.self, forKey: .theme))
+            .map(MarkdownPresentation.normalizedTheme)
+        typeface = (try? values.decode(String.self, forKey: .typeface))
+            .map(MarkdownPresentation.normalizedTypeface)
+        outlineOpen = try? values.decode(Bool.self, forKey: .outlineOpen)
+    }
 }
 
 struct SessionPanelSnapshot: Codable, Sendable {

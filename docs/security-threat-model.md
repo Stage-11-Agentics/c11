@@ -214,6 +214,53 @@ Sources/BrowserSnapshotStore.swift                     (snapshot capture)
 
 ---
 
+## Markdown document renderer (C11-359)
+
+Markdown panels load a bundled, offline WKWebView renderer through
+`c11md://bundle/index.html`. They never receive `file://` read access.
+Each panel gets its own content controller and directory capabilities; the
+process pool and nonpersistent website data store are shared. A panel that
+has never been visible does not allocate a web view.
+
+The native scheme handler injects a restrictive CSP before the bundled
+page's scripts: remote requests, connections, frames, objects, forms and base
+URLs are denied. Scripts and fonts come only from the bundled renderer.
+Document text enters `c11md.load` as a JSON argument, never interpolated
+JavaScript or a page URL. The web renderer disables raw HTML and sanitizes
+Mermaid output; document directives cannot configure Mermaid.
+
+Local raster images use `c11md-asset://doc/`. The handler percent-decodes
+paths, rejects traversal, checks the resolved real path against the open
+document's directory tree, and opens each component relative to a pinned
+directory descriptor without following symlinks. A symlink resolving within
+that tree is allowed; one escaping it is denied. HTML, SVG and script files
+are not image resources. Reads are bounded to 20 MiB per image and run off
+main; stopped scheme requests receive no late callbacks. This capability
+permits the document to display images in its directory tree, including
+subdirectories, and grants no arbitrary file-read bridge.
+
+Only the initial bundled main-frame navigation is allowed. Document links,
+redirects, frames, downloads and new windows cannot navigate the reader.
+Bridge messages are accepted only from its bundled main frame. Native code
+independently resolves the original link: anchors stay in the document,
+relative markdown links open a markdown panel, and HTTP(S) links follow c11's
+browser routing settings. Other schemes and arbitrary local files are
+refused. No bridge method exposes a socket, shell, evaluator or file read.
+Copy messages write bounded text to the pasteboard. Content-state messages
+remain transient; durable presentation fields use the session snapshot.
+
+Evidence:
+
+```
+Sources/MarkdownAssetPolicy.swift                     (scoped reads and link validation)
+Sources/Panels/MarkdownWebRenderer.swift               (WebKit and native bridge policy)
+Resources/markdown-viewer/BRIDGE.md                    (renderer contract)
+c11Tests/MarkdownAssetPolicyTests.swift               (positive and negative capabilities)
+c11Tests/MarkdownPresentationTests.swift              (field-local restore fallback)
+```
+
+---
+
 ## 5. AppleScript and Apple Events
 
 c11 enables the AppleScript bridge:

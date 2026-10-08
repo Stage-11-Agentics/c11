@@ -2760,9 +2760,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // retroactive primer. Runs once, idempotent.
         TCCPrimer.migrateExistingUserIfNeeded()
 
-        // Register fenced code renderers for the markdown panel content pipeline.
-        FencedCodeRendererRegistry.shared.register(MermaidRenderer.shared)
-
         // C11-203 Part D: build the model catalog index off-main so the first
         // agent-config editor open finds it ready. Parsing the compiled
         // snapshot is ~13 ms in Release and ~30 ms in Debug; cheap, but not on

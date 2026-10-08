@@ -171,4 +171,17 @@ The markdown panel renders:
 - Horizontal rules
 - Images (inline)
 
-Supports both light and dark mode.
+The offline WKWebView renderer bundles Mermaid, syntax highlighting, math,
+footnotes, task lists and callouts. No external Mermaid CLI is required.
+
+Text scale (50–300% in 10% steps), theme (`system`, `light`, `dark`), typeface
+(`theme`, `serif`, `sans`, `mono`) and the outline choice belong to each panel
+and survive session restore. The last setting changed becomes the default for
+new panels. Invalid saved values fall back independently to their defaults.
+⌘= / ⌘− / ⌘0 change text scale through c11's focused-panel shortcuts.
+
+Local raster images are limited to the document directory and its subdirectories;
+symlinks outside that tree and remote images are blocked. Document HTML and
+scripts never execute. Relative markdown links open another markdown panel;
+web links follow c11's browser routing settings. Anchors stay in the document.
+Live reload preserves the reading position, with no separate change-tracking UI.

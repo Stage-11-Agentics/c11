@@ -90,31 +90,13 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
         XCTAssertEqual(next.fontScale, 1.0, "restore must not leak into the new-panel default")
     }
 
-    // MARK: - Segment identity
-
-    func testSegmentIdChangesWhenContentBeyondPrefixChanges() {
-        // Regression: the ID hashed only the first 64 chars, so a fenced
-        // block edited past that prefix kept its ID and its stale rendered
-        // image was preserved indefinitely.
-        let prefix = String(repeating: "a", count: 64)
-        let original = prefix + "graph TD; A-->B"
-        let edited = prefix + "graph TD; A-->C"
-
-        XCTAssertNotEqual(
-            MarkdownPanel.segmentId(index: 0, content: original),
-            MarkdownPanel.segmentId(index: 0, content: edited)
-        )
-    }
-
-    func testSegmentIdStableForIdenticalContent() {
-        let content = "## Heading\n\nsome body text"
-        XCTAssertEqual(
-            MarkdownPanel.segmentId(index: 3, content: content),
-            MarkdownPanel.segmentId(index: 3, content: content)
-        )
-        XCTAssertNotEqual(
-            MarkdownPanel.segmentId(index: 3, content: content),
-            MarkdownPanel.segmentId(index: 4, content: content)
-        )
+    func testRestoredInvalidScaleFallsBackRatherThanClamping() {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        for value in [0.1, 10, Double.nan, Double.infinity] {
+            panel.applyRestoredFontScale(value)
+            XCTAssertEqual(panel.fontScale, 1.0)
+        }
+        XCTAssertNil(panel.renderer, "hidden model never creates a web view")
     }
 }

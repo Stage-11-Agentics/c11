@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import MarkdownUI
 
 // M7 — Surface title bar.
 //
@@ -178,8 +177,7 @@ struct PanelTitleBarView: View {
     @ViewBuilder
     private func expandedDescription(_ description: String) -> some View {
         let sanitized = sanitizeDescriptionMarkdown(description)
-        let markdown = Markdown(sanitized)
-            .markdownTheme(titleBarMarkdownTheme(for: colorScheme))
+        let markdown = TitleBarDescriptionMarkdown(text: sanitized)
             .environment(\.openURL, OpenURLAction { _ in .discarded })
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -226,7 +224,7 @@ private struct TitleBarDescriptionHeightKey: PreferenceKey {
 // MARK: - Markdown subset enforcement
 
 /// Strips markdown constructs that the title-bar subset does not allow before
-/// the string reaches MarkdownUI. Preserves inline code, bold, italic, lists,
+/// the string reaches the native renderer. Preserves inline code, bold, italic, lists,
 /// headings, blockquotes, rules, and links (link navigation is disabled
 /// elsewhere via OpenURLAction { .discarded }).
 ///
@@ -276,116 +274,161 @@ func sanitizeDescriptionMarkdown(_ input: String) -> String {
     return s
 }
 
-// MARK: - Compact MarkdownUI theme
+// MARK: - Compact native markdown subset
 
-/// Tight variant of `cmuxMarkdownTheme` sized for a 5-line-capped title bar.
-/// Base font 11pt; heading hierarchy 13/12/11 so a `#` heading stays readable
-/// but does not dominate a short description region.
-func titleBarMarkdownTheme(for colorScheme: ColorScheme) -> Theme {
-    let isDark = colorScheme == .dark
-    let baseSize: CGFloat = 11
-    let inlineCodeFill = isDark
-        ? Color(nsColor: NSColor(white: 0.18, alpha: 1.0))
-        : Color(nsColor: NSColor(white: 0.92, alpha: 1.0))
-    let inlineCodeFg = isDark
-        ? Color(red: 0.85, green: 0.6, blue: 0.95)
-        : Color(red: 0.6, green: 0.2, blue: 0.7)
+/// Block structure stays native and lightweight: expanded descriptions never
+/// create a web view. The caller sanitizes unsupported constructs first.
+enum TitleBarDescriptionBlock: Equatable {
+    case paragraph(String)
+    case heading(level: Int, text: String)
+    case listItem(marker: String, text: String, depth: Int)
+    case quote(String)
+    case rule
+}
 
-    return Theme()
-        .text {
-            ForegroundColor(.secondary)
-            FontSize(baseSize)
+func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
+    var blocks: [TitleBarDescriptionBlock] = []
+    var paragraph: [String] = []
+    func flushParagraph() {
+        if !paragraph.isEmpty {
+            blocks.append(.paragraph(paragraph.joined(separator: " ")))
+            paragraph.removeAll(keepingCapacity: true)
         }
-        .heading1 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.bold)
-                    FontSize(13)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 4, bottom: 2)
+    }
+
+    let listPattern = try? NSRegularExpression(pattern: #"^(\s*)([-+*]|[0-9]{1,9}[.)])\s+(.+)$"#)
+    for line in text.components(separatedBy: "\n") {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            flushParagraph()
+            continue
         }
-        .heading2 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.bold)
-                    FontSize(12)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 4, bottom: 2)
+
+        let hashes = trimmed.prefix(while: { $0 == "#" }).count
+        if (1...6).contains(hashes),
+           trimmed.count == hashes || trimmed.dropFirst(hashes).first?.isWhitespace == true {
+            flushParagraph()
+            let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+            blocks.append(.heading(level: hashes, text: heading))
+            continue
         }
-        .heading3 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.semibold)
-                    FontSize(11)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 3, bottom: 2)
+
+        let ruleCharacters = trimmed.filter { !$0.isWhitespace }
+        if ruleCharacters.count >= 3,
+           let first = ruleCharacters.first,
+           "*-_".contains(first), ruleCharacters.allSatisfy({ $0 == first }) {
+            flushParagraph()
+            blocks.append(.rule)
+            continue
         }
-        .heading4 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.semibold)
-                    FontSize(11)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 3, bottom: 2)
-        }
-        .heading5 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.medium)
-                    FontSize(11)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 2, bottom: 2)
-        }
-        .heading6 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.medium)
-                    FontSize(11)
-                    ForegroundColor(.secondary)
-                }
-                .markdownMargin(top: 2, bottom: 2)
-        }
-        .code {
-            FontFamilyVariant(.monospaced)
-            FontSize(baseSize)
-            ForegroundColor(inlineCodeFg)
-            BackgroundColor(inlineCodeFill)
-        }
-        .blockquote { configuration in
-            HStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(isDark ? Color.white.opacity(0.2) : Color.gray.opacity(0.4))
-                    .frame(width: 2)
-                configuration.label
-                    .markdownTextStyle {
-                        ForegroundColor(.secondary)
-                        FontSize(baseSize)
-                    }
-                    .padding(.leading, 8)
+
+        if trimmed.hasPrefix(">") {
+            flushParagraph()
+            let quote = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+            if let last = blocks.last, case .quote(let previous) = last {
+                blocks[blocks.count - 1] = .quote(previous + "\n" + quote)
+            } else {
+                blocks.append(.quote(quote))
             }
-            .markdownMargin(top: 3, bottom: 3)
+            continue
         }
-        .link {
-            ForegroundColor(Color.accentColor)
+
+        let range = NSRange(line.startIndex..., in: line)
+        if let match = listPattern?.firstMatch(in: line, range: range),
+           let indentRange = Range(match.range(at: 1), in: line),
+           let markerRange = Range(match.range(at: 2), in: line),
+           let bodyRange = Range(match.range(at: 3), in: line) {
+            flushParagraph()
+            let marker = String(line[markerRange])
+            let indentation = line[indentRange].reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+            blocks.append(.listItem(
+                marker: "-+*".contains(marker) ? "•" : marker,
+                text: String(line[bodyRange]),
+                depth: indentation / 2
+            ))
+            continue
         }
-        .strong {
-            FontWeight(.semibold)
+
+        paragraph.append(trimmed)
+    }
+    flushParagraph()
+    return blocks
+}
+
+/// Foundation supplies inline emphasis/code parsing. Drop the URL attribute
+/// entirely so links retain their text but cannot navigate or become controls.
+func titleBarDescriptionInline(_ text: String) -> AttributedString {
+    var result = (try? AttributedString(
+        markdown: text,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(text)
+    for run in result.runs where run.link != nil {
+        result[run.range].foregroundColor = Color.accentColor
+        result[run.range].link = nil
+    }
+    return result
+}
+
+private struct TitleBarDescriptionMarkdown: View {
+    let text: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(titleBarDescriptionBlocks(text).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
         }
-        .thematicBreak {
-            Divider()
-                .markdownMargin(top: 4, bottom: 4)
+        .font(.system(size: 11))
+        .foregroundColor(.secondary)
+    }
+
+    private func inline(_ text: String, size: CGFloat = 11) -> Text {
+        var attributed = titleBarDescriptionInline(text)
+        for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
+            attributed[run.range].font = .system(size: size, design: .monospaced)
+            attributed[run.range].foregroundColor = colorScheme == .dark
+                ? Color(red: 0.85, green: 0.6, blue: 0.95)
+                : Color(red: 0.6, green: 0.2, blue: 0.7)
         }
-        .listItem { configuration in
-            configuration.label
-                .markdownMargin(top: 2, bottom: 2)
+        return Text(attributed)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: TitleBarDescriptionBlock) -> some View {
+        switch block {
+        case .paragraph(let text):
+            inline(text)
+                .padding(.vertical, 2)
+        case .heading(let level, let text):
+            let size: CGFloat = level == 1 ? 13 : (level == 2 ? 12 : 11)
+            inline(text, size: size)
+                .font(.system(size: size, weight: level < 3 ? .bold : (level < 5 ? .semibold : .medium)))
+                .foregroundColor(level == 6 ? .secondary : .primary)
+                .padding(.top, level < 3 ? 4 : (level < 5 ? 3 : 2))
+                .padding(.bottom, 2)
+        case .listItem(let marker, let text, let depth):
+            HStack(alignment: .top, spacing: 5) {
+                Text(verbatim: marker)
+                    .monospacedDigit()
+                    .frame(minWidth: 12, alignment: .trailing)
+                inline(text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, CGFloat(depth) * 12)
+            .padding(.vertical, 2)
+        case .quote(let text):
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.2) : Color.gray.opacity(0.4))
+                    .frame(width: 2)
+                inline(text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 3)
+        case .rule:
+            Divider().padding(.vertical, 4)
         }
-        .paragraph { configuration in
-            configuration.label
-                .markdownMargin(top: 2, bottom: 3)
-        }
+    }
 }

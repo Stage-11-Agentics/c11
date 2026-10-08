@@ -397,12 +397,13 @@ enum ActivityAnalysisCommand {
             guard last.ts >= start else { continue }
             starts.append(start); ends.append(end)
             if first.seq != 1 { gaps.insert("event_history_truncated"); replayIncomplete = true }
+            if first.type != "log.opened" { gaps.insert("instance_start_missing"); replayIncomplete = true }
             var open = Set<String>(), working = Set<String>(), births: [String: Date] = [:]
             var panelKinds: [String: String] = [:], panelWorkspaces: [String: String] = [:]
             var selectedWorkspace: String?
             // Edges can rebuild a lower bound after a gap, but cannot establish a full
             // census. No event currently restores exact load knowledge in this format.
-            var loadKnown = first.seq == 1 && !malformedEnvelope
+            var loadKnown = first.seq == 1 && first.type == "log.opened" && !malformedEnvelope
             var active: Bool?, locked: Bool?, asleep: Bool?
             var analyticsEnabled = true, historyEnabled = true
             var previous = first.ts, previousSeq = first.seq - 1
@@ -559,9 +560,14 @@ enum ActivityAnalysisCommand {
                         "hangs": unknownLoadHangs, "hangs_per_hour": null])
         openBuckets.append(["open_panels": "unknown", "observed_hours": unknownLoadSeconds / 3600,
                             "hangs": unknownLoadHangs, "hangs_per_hour": null])
-        var usageOptions = options
-        if let start = starts.min() { usageOptions.since = start }
-        let tokens = try usageResult(usageOptions, gaps: &gaps, until: ends.max())
+        let tokens: Object?
+        if let start = starts.min(), let end = ends.max() {
+            var usageOptions = options; usageOptions.since = start
+            tokens = try usageResult(usageOptions, gaps: &gaps, until: end)
+        } else {
+            gaps.insert("usage_span_unavailable")
+            tokens = nil // No span means no transcript or journal scan, not host-wide usage.
+        }
         return ["schema_version": 1, "instances": events.keys.sorted(), "start": starts.min().map(iso.string) as Any? ?? null,
                 "end": ends.max().map(iso.string) as Any? ?? null, "span_hours": starts.min().flatMap { s in ends.max().map { $0.timeIntervalSince(s) / 3600 } } as Any? ?? null,
                 "panels_created": starts.isEmpty ? null : created as Any,
@@ -587,7 +593,8 @@ enum ActivityAnalysisCommand {
                                       "total": hangDurationUnknown > 0 || starts.isEmpty || replayIncomplete ? null : hangDurationTotal as Any,
                                       "max": hangDurationUnknown > 0 || starts.isEmpty || replayIncomplete ? null : hangDurationMax as Any,
                                       "observed_total": hangDurationTotal, "observed_max": hangDurationMax], "hang_rate_by_working_load": buckets, "hang_rate_by_open_load": openBuckets,
-                "host_usage": tokens, "usage_scope": "Host transcripts during the observed span, across all instances; not exclusive instance usage. Unknown transcript timestamps are included separately in coverage.",
+                "host_usage": tokens.map { $0 as Any } ?? null,
+                "usage_scope": tokens == nil ? "Unknown: no observed event span; host transcripts were not scanned." : "Host transcripts during the observed span, across all instances; not exclusive instance usage. Unknown transcript timestamps are included separately in coverage.",
                 "coverage_gaps": gaps.sorted()]
     }
     private static func usageMarkdown(_ result: Object) -> String {
@@ -601,6 +608,8 @@ enum ActivityAnalysisCommand {
     }
     private static func reportMarkdown(_ report: Object) -> String {
         func show(_ key: String) -> String { report[key] is NSNull ? "unknown" : String(describing: report[key] ?? "unknown") }
+        let tokenMarkdown = (report["host_usage"] as? Object).map(usageMarkdown)
+            ?? "Unknown: no observed event span; host transcripts were not scanned."
         var output = "# Local activity report\n\nObserved span: \(show("start")) to \(show("end")) (\(show("span_hours")) h).\n\n"
         for (label, key) in [("Panels created", "panels_created"), ("Peak open per instance", "peak_open_per_instance"), ("Peak working per instance", "peak_working_per_instance"), ("Observed agent hours", "observed_agent_hours"), ("Foreground hours", "foreground_hours"), ("Observed foreground hours", "observed_foreground_hours"), ("Presence unknown hours", "presence_unknown_hours"), ("Hang precursors", "hang_precursors")] { output += "- \(label): \(show(key))\n" }
         output += "\n## Daily activity (UTC)\n\nDate | Events | Created | Peak open | Peak working | Observed h | Agent h\n--- | ---: | ---: | ---: | ---: | ---: | ---:\n"
@@ -610,7 +619,7 @@ enum ActivityAnalysisCommand {
         let extraKeys = ["kinds_created", "peak_open_kinds", "peak_open_by_kind", "mailbox_accepted", "mailbox_delivered", "mail_from", "flag_events", "hang_causes", "hang_durations_ms", "workspace_selection_unknown_hours", "workspace_agent_hours_unattributed", "waiting_entered_unattributed"]
         var extra: Object = [:]; for key in extraKeys { extra[key] = report[key] ?? null }
         output += "\n## Workspace dwell, coordination and health summaries\n\n```json\n\((try? json(["workspaces": report["workspaces"] ?? null, "summaries": extra])) ?? "{}")\n```\n"
-        output += "\n## Lifetimes, rhythm and hang rates\n\n```json\n\((try? json(["closed_lifetimes_minutes": report["closed_lifetimes_minutes"] ?? null, "hour_of_day_utc_events": report["hour_of_day_utc_events"] ?? null, "hang_rate_by_working_load": report["hang_rate_by_working_load"] ?? null, "hang_rate_by_open_load": report["hang_rate_by_open_load"] ?? null])) ?? "{}")\n```\n\n## Host token usage\n\n\(report["usage_scope"] ?? "")\n\n\(usageMarkdown(object(report["host_usage"])))\n\nCoverage gaps: \((report["coverage_gaps"] as? [String] ?? []).joined(separator: ", "))\n"
+        output += "\n## Lifetimes, rhythm and hang rates\n\n```json\n\((try? json(["closed_lifetimes_minutes": report["closed_lifetimes_minutes"] ?? null, "hour_of_day_utc_events": report["hour_of_day_utc_events"] ?? null, "hang_rate_by_working_load": report["hang_rate_by_working_load"] ?? null, "hang_rate_by_open_load": report["hang_rate_by_open_load"] ?? null])) ?? "{}")\n```\n\n## Host token usage\n\n\(report["usage_scope"] ?? "")\n\n\(tokenMarkdown)\n\nCoverage gaps: \((report["coverage_gaps"] as? [String] ?? []).joined(separator: ", "))\n"
         return output
     }
 }

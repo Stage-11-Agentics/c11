@@ -56,7 +56,9 @@ UTC midnight, so days without events retain their observed exposure, concurrency
 peaks, agent-hours and foreground lower bounds. Hang rates reproduce open-panel
 load buckets (under40, 40–79, 80+) with exposure hours and precursor counts.
 Working-panel buckets (0–9, 10–24, 25–49, 50+) are also included.
-Truncated initial history, a sequence gap, dropped events or a full log kill
+A known instance start requires sequence 1 to be `log.opened`; sequence 1
+`log.policy` after logging was enabled late is not a panel census and records
+`instance_start_missing`. Truncated initial history, a sequence gap, dropped events or a full log kill
 makes the instance's load unknown permanently for the retained replay. Presence
 snapshots and later panel edges are not a full panel census. Subsequent edges
 can establish observed lower-bound peaks/agent-hours, but never definite load
@@ -90,7 +92,10 @@ known recorded samples remain visible. Historical event counts are observations
 within retention, with coverage gaps, not complete lifetime totals.
 
 `host_usage` covers transcripts within the observed report span across the host;
-it is explicitly **not exclusive instance usage**. Inspect `usage --by panel`
+it is explicitly **not exclusive instance usage**. Without an observed event
+span (including a missing requested instance), `host_usage` is null and
+`usage_span_unavailable` is reported. Transcripts and journals are not scanned
+for such a report, and Markdown labels usage as unknown. Inspect `usage --by panel`
 for panel-level attribution.
 
 Foreground time requires known app-active, screen-lock and sleep states. An

@@ -411,6 +411,41 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['hangs_with_unknown_load'], 1)
         self.assertEqual(result['hang_rate_by_open_load'][0]['hangs'], 0)
 
+    def test_policy_at_sequence_one_is_not_an_instance_start_or_census(self):
+        rows = [
+            {'type': 'log.policy', 'payload': {'enabled': True, 'analytics_enabled': True}},
+            {'type': 'app.activated', 'payload': {'snapshot': True}},
+            {'type': 'screen.unlocked', 'payload': {'snapshot': True}},
+            {'type': 'system.wake', 'payload': {'snapshot': True}},
+            {'type': 'hang.precursor', 'payload': {'cause': 'synthetic'}},
+        ]
+        for index, row in enumerate(rows):
+            row.update(v=2, instance='synthetic', seq=index + 1,
+                       ts='2026-01-02T00:00:00Z' if index < 4 else '2026-01-02T01:00:00Z')
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertIsNone(result['peak_open_per_instance'])
+        self.assertIsNone(result['peak_working_per_instance'])
+        self.assertEqual(result['load_unknown_hours'], 1)
+        self.assertEqual(result['hangs_with_unknown_load'], 1)
+        self.assertEqual(result['hang_rate_by_open_load'][0]['observed_hours'], 0)
+        self.assertEqual(result['hang_rate_by_open_load'][0]['hangs'], 0)
+        self.assertIn('instance_start_missing', result['coverage_gaps'])
+
+    def test_missing_instance_does_not_scan_or_claim_unbounded_host_usage(self):
+        transcript = self.claude / 'session-a.jsonl'
+        self.write(transcript, [self.claude_row()])
+        with transcript.open('a') as stream: stream.write('malformed transcript line\n')
+        result = self.run_cli('report', '--instance', 'absent-instance', '--format', 'json')
+        self.assertIsNone(result['host_usage'])
+        self.assertIn('usage_span_unavailable', result['coverage_gaps'])
+        self.assertNotIn('malformed_jsonl', result['coverage_gaps'])
+        self.assertNotIn('transcript_retention_and_unrecorded_usage_unknown', result['coverage_gaps'])
+        self.assertIn('not scanned', result['usage_scope'])
+        markdown = self.run_cli('report', '--instance', 'absent-instance', '--format', 'md')
+        self.assertIn('not scanned', markdown)
+        self.assertNotIn('test-model', markdown)
+
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)
         self.run_cli('usage', '--since', 'garbage', ok=False)

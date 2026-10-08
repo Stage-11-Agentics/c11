@@ -69,7 +69,14 @@
       ]
     },
     "host_usage": {
-      "$ref": "usage.v1.schema.json"
+      "anyOf": [
+        {
+          "$ref": "usage.v1.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "coverage_gaps": {
       "type": "array",

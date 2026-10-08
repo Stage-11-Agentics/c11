@@ -56,6 +56,7 @@ final class EventLog {
     private let now: () -> Date
     private let healthMetrics: () -> [String: Any]
     private let acquireWriterLock: (Int32) -> Int32
+    private let acquirePruneLock: (Int32) -> Int32
 
     private let queue: DispatchQueue
     private var fileHandle: FileHandle?
@@ -101,6 +102,9 @@ final class EventLog {
         acquireWriterLock: @escaping (Int32) -> Int32 = { fd in
             flock(fd, LOCK_SH | LOCK_NB) == 0 ? 0 : errno
         },
+        acquirePruneLock: @escaping (Int32) -> Int32 = { fd in
+            flock(fd, LOCK_EX | LOCK_NB) == 0 ? 0 : errno
+        },
         label: String = "com.stage11.c11.events.log"
     ) {
         self.url = url
@@ -117,6 +121,7 @@ final class EventLog {
         self.now = now
         self.healthMetrics = healthMetrics
         self.acquireWriterLock = acquireWriterLock
+        self.acquirePruneLock = acquirePruneLock
         self.nextPruneAt = now().addingTimeInterval(86_400)
         self.queue = DispatchQueue(label: label, qos: .utility, autoreleaseFrequency: .workItem)
     }
@@ -648,13 +653,19 @@ final class EventLog {
             // file is safe to prune even if an EX probe appears to succeed.
             if let error = writerLockError, error != EWOULDBLOCK && error != EAGAIN,
                item.lastPathComponent.hasSuffix(".ndjson") { return false }
+            // This writer never appends to its rolled generations. They need
+            // no liveness probe, including on volumes without flock support.
+            if item.lastPathComponent != url.lastPathComponent,
+               isOwnInstanceFile(item.lastPathComponent) {
+                do { try fm.removeItem(at: item); return true } catch { return false }
+            }
             // The kernel releases a live writer's SH lock on process death;
             // pid reuse cannot make an abandoned file immortal. Hold EX until
             // unlink completes so another writer cannot acquire SH meanwhile.
             let fd = Darwin.open(item.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
             guard fd >= 0 else { return false }
             defer { Darwin.close(fd) }
-            guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
+            guard acquirePruneLock(fd) == 0 else { return false }
             do { try fm.removeItem(at: item); return true } catch { return false }
         }
         if !ownInstanceOnly {

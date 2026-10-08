@@ -1692,3 +1692,60 @@ extension EventLogTests {
         XCTAssertEqual(readLines(current).map(parse).last?["type"] as? String, "panel.closed", "The writer must remain attached to the retained directory entry")
     }
 }
+
+
+extension EventLogTests {
+    func testUnavailablePruneLocksStillPruneOwnRollsByAgeAndBudgetAndKeepWriting() throws {
+        for failure in [ENOTSUP, ENOLCK] {
+            let directory = tempDir.appendingPathComponent("synthetic-prune-lock-\(failure)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let current = directory.appendingPathComponent("events-synthetic-prune-lock-7001.ndjson")
+            let agedOwn = URL(fileURLWithPath: current.path + ".3")
+            let budgetOwn = [1, 2].map { URL(fileURLWithPath: current.path + ".\($0)") }
+            let foreignRoll = directory.appendingPathComponent("events-synthetic-prune-lock-7002.ndjson.1")
+            let foreignCurrent = directory.appendingPathComponent("events-synthetic-prune-lock-7002.ndjson")
+            let otherTagRoll = directory.appendingPathComponent("events-synthetic-other-tag-7003.ndjson.1")
+            for file in [agedOwn, foreignRoll, foreignCurrent, otherTagRoll] {
+                try Data(repeating: 0x53, count: 128).write(to: file)
+                try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-30 * 86_400)], ofItemAtPath: file.path)
+            }
+            for (index, file) in budgetOwn.enumerated() {
+                try Data(repeating: 0x53, count: 900).write(to: file)
+                try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-Double(index + 1))], ofItemAtPath: file.path)
+            }
+            var pruneProbes = 0
+            let log = EventLog(url: current, instance: "synthetic-prune-lock-7001", sizeCap: 1024, totalSizeCap: 2048,
+                               acquireWriterLock: { _ in failure }, acquirePruneLock: { _ in
+                pruneProbes += 1
+                errno = failure
+                return errno
+            })
+            log.open(); log.flush()
+            XCTAssertFalse(FileManager.default.fileExists(atPath: agedOwn.path), "Age pruning of our immutable rolls needs no lock support")
+            XCTAssertLessThan(budgetOwn.filter { FileManager.default.fileExists(atPath: $0.path) }.count, 2,
+                              "The byte target must prune young own rolls even when EX locking is unavailable")
+            XCTAssertGreaterThan(pruneProbes, 0, "Foreign rolled files must still execute the failing exclusive probe")
+            for file in [foreignRoll, foreignCurrent, otherTagRoll] {
+                XCTAssertEqual(try Data(contentsOf: file), Data(repeating: 0x53, count: 128))
+            }
+            for _ in 0..<3 {
+                log.append(EventEnvelope(type: .surfaceCreated, instance: "synthetic-prune-lock-7001", ts: Date(),
+                                         payload: ["synthetic_padding": String(repeating: "S", count: 300)]))
+            }
+            log.append(EventEnvelope(type: .surfaceClosed, instance: "synthetic-prune-lock-7001", ts: Date()))
+            log.flush()
+            log.sampleForTesting() // reconcile the byte target after continuing writes
+            let ownFiles = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
+                .filter { $0.lastPathComponent == current.lastPathComponent || $0.lastPathComponent.hasPrefix(current.lastPathComponent + ".") }
+            let bytes = try ownFiles.reduce(0) { try $0 + Data(contentsOf: $1).count }
+            XCTAssertLessThanOrEqual(bytes, 2048)
+            let ownEvents = ownFiles.flatMap { readLines($0).map(parse) }
+            XCTAssertTrue(ownEvents.contains { $0["type"] as? String == "panel.closed" }, "New records must continue to reach retained files")
+            XCTAssertFalse(ownEvents.contains { $0["type"] as? String == "log.dropped" })
+            XCTAssertTrue(ownEvents.contains { $0["type"] as? String == "log.rotated" }, "The regression must exercise actual writer rotation")
+            for file in [foreignRoll, foreignCurrent, otherTagRoll] {
+                XCTAssertEqual(try Data(contentsOf: file), Data(repeating: 0x53, count: 128))
+            }
+        }
+    }
+}

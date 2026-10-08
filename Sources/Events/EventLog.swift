@@ -39,6 +39,7 @@ final class EventLog {
     private var titles: [String: TitleWindow] = [:]
     private var nextTitleExpiry = Date.distantFuture
     private var knownHistoryBytes = 0
+    private var historyInitialized = false
     private var sampleTimer: DispatchSourceTimer?
     private var sampleProvider: (() -> EventEnvelope?)?
     private var samplingAsleep = false
@@ -366,6 +367,7 @@ final class EventLog {
         let fh = try FileHandle(forWritingTo: url)
         try fh.seekToEnd()
         fileHandle = fh
+        if !historyInitialized { pruneHistory() }
     }
 
     // MARK: - Rotation (EVT-4)
@@ -458,5 +460,6 @@ final class EventLog {
             do { try fm.removeItem(at: entry.0); total -= entry.2 } catch { }
         }
         knownHistoryBytes = total
+        historyInitialized = true
     }
 }

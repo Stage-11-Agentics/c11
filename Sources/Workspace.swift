@@ -4805,9 +4805,7 @@ struct PanelShapeCounts: Equatable {
 @MainActor
 final class Workspace: Identifiable, ObservableObject {
     let id: UUID
-    @Published var title: String {
-        didSet { EventEmitter.shared.emitWorkspaceRenamed(workspace: id, title: title, prior: oldValue) }
-    }
+    @Published var title: String
     @Published var customTitle: String?
     @Published var isPinned: Bool = false
     @Published var groupId: UUID? = nil
@@ -7256,6 +7254,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func setCustomTitle(_ title: String?) {
+        let prior = self.title
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty {
             customTitle = nil
@@ -7264,6 +7263,8 @@ final class Workspace: Identifiable, ObservableObject {
             customTitle = trimmed
             self.title = trimmed
         }
+        // Intentional workspace rename/restore, never the OSC title mirror.
+        EventEmitter.shared.emitWorkspaceRenamed(workspace: id, title: self.title, prior: prior)
     }
 
     /// Set or clear the stable root (socket `workspace.set_root`, the GUI

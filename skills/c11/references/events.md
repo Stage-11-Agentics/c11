@@ -173,10 +173,12 @@ process metrics query. `instance.sample` carries current
 `rss_mb`, cumulative process `cpu_s_total`, and `threads`. A single
 `proc_pidinfo(PROC_PIDTASKINFO)` query obtains these together on the writer
 queue. One combined timer schedules the earlier of the next ten-minute health
-sample or sixty-second OSC title-tail deadline. Sampling has sixty seconds of
-leeway; title deadlines use a short leeway. Sleep suspends the timer and wake
-starts a fresh sample interval without catch-up. Analytics-off cancels sampling
-but keeps pending title deadlines. Clean shutdown records one final sample with
+sample, sixty-second OSC title-tail deadline or daily retention checkpoint.
+Health and retention work allow sixty seconds of leeway; title tails allow two
+seconds for wakeup coalescing. Sleep suspends the timer and a real wake starts
+a fresh sample interval without catch-up. Duplicate awake notifications do not
+reset sampling. Analytics-off cancels health sampling but keeps title and daily
+retention deadlines. Clean shutdown records one final sample with
 `shutdown: true`. Samples never enumerate panels or parse transcripts.
 
 OSC title changes differing only in a recognized leading status/spinner glyph
@@ -194,7 +196,8 @@ age apply per build label across all its PIDs and generations: production,
 nightly and each tag have separate policies. A build never prunes another
 production or nightly label. Dead debug/tag labels may also be pruned after a
 fixed fourteen-day idle TTL. Live current files are protected by writer locks.
-Pruning runs at open, rotation, sample, policy changes and clean shutdown.
+Pruning runs at open, rotation, sample, policy changes and clean shutdown,
+plus a daily checkpoint while recording is enabled.
 With full recording disabled, startup, policy and shutdown checkpoints still
 prune history, but no retention timer runs. A long disabled session can retain
 files past their wall-clock age limit until the next checkpoint. Writes maintain

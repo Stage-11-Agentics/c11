@@ -1,0 +1,2 @@
+# Preserve pinned upstream distribution bytes, including literal shader whitespace.
+*.min.js -whitespace

@@ -1668,3 +1668,27 @@ extension EventLogTests {
         log.stopSampling()
     }
 }
+
+
+extension EventLogTests {
+    func testFreshCurrentWriterWithoutSharedLockSurvivesAnotherInstancesBudgetPruning() throws {
+        let current = logURL("events-synthetic-unlocked-7001.ndjson")
+        let writer = EventLog(url: current, instance: "synthetic-unlocked-7001", acquireWriterLock: { _ in ENOLCK })
+        writer.open()
+        writer.append(EventEnvelope(type: .surfaceCreated, instance: "synthetic-unlocked-7001", ts: Date(),
+                                    payload: ["synthetic_padding": String(repeating: "S", count: 2048)]))
+        writer.flush()
+        let original = try Data(contentsOf: current)
+        XCTAssertGreaterThan(original.count, 1024)
+        // This instance can acquire EX on the unlocked writer's fresh file.
+        // Its deliberately tiny shared target must still preserve that file.
+        let observer = EventLog(url: logURL("events-synthetic-unlocked-7002.ndjson"), instance: "synthetic-unlocked-7002", totalSizeCap: 1024)
+        observer.open(); observer.flush()
+        XCTAssertEqual(try Data(contentsOf: current), original)
+        observer.sampleForTesting()
+        XCTAssertEqual(try Data(contentsOf: current), original)
+        writer.append(EventEnvelope(type: .surfaceClosed, instance: "synthetic-unlocked-7001", ts: Date()))
+        writer.flush()
+        XCTAssertEqual(readLines(current).map(parse).last?["type"] as? String, "panel.closed", "The writer must remain attached to the retained directory entry")
+    }
+}

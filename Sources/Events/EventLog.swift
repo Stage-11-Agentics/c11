@@ -631,14 +631,19 @@ final class EventLog {
         let fm = FileManager.default
         let cutoff = now().addingTimeInterval(-Double(retentionDays) * 86_400)
         let developmentCutoff = now().addingTimeInterval(-14 * 86_400)
+        let currentFileCutoff = now().addingTimeInterval(-86_400)
         let allEntries = historyFiles().compactMap { item -> (url: URL, date: Date, bytes: Int, label: String?)? in
             guard let values = try? item.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]),
                   values.isRegularFile == true else { return nil }
             return (item, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0,
                     isOwnInstanceFile(item.lastPathComponent) ? retentionNamespace : Self.buildLabel(for: item.lastPathComponent))
         }.sorted { $0.date < $1.date }
-        func removeIfInactive(_ item: URL) -> Bool {
+        func removeIfInactive(_ item: URL, modified: Date) -> Bool {
             if item.lastPathComponent == url.lastPathComponent, fileHandle != nil { return false }
+            // A writer may continue without SH after a transient/resource lock
+            // error. An EX probe alone cannot establish its absence: require a
+            // full day without writes before deleting any current file.
+            if item.lastPathComponent.hasSuffix(".ndjson"), modified >= currentFileCutoff { return false }
             // If this volume cannot establish writer liveness, no current
             // file is safe to prune even if an EX probe appears to succeed.
             if let error = writerLockError, error != EWOULDBLOCK && error != EAGAIN,
@@ -660,7 +665,7 @@ final class EventLog {
                 && entry.label != "com.stage11.c11"
                 && entry.label != "com.stage11.c11.nightly"
                 && entry.date < developmentCutoff {
-                _ = removeIfInactive(entry.url)
+                _ = removeIfInactive(entry.url, modified: entry.date)
             }
         }
         var entries = allEntries.filter {
@@ -668,12 +673,12 @@ final class EventLog {
         }
         var removed = Set<String>()
         for entry in entries where entry.date < cutoff {
-            if removeIfInactive(entry.url) { removed.insert(entry.url.lastPathComponent) }
+            if removeIfInactive(entry.url, modified: entry.date) { removed.insert(entry.url.lastPathComponent) }
         }
         entries.removeAll { removed.contains($0.url.lastPathComponent) }
         var total = entries.reduce(0) { $0 + $1.bytes }
         for entry in entries where total > totalSizeCap {
-            if removeIfInactive(entry.url) { total -= entry.bytes }
+            if removeIfInactive(entry.url, modified: entry.date) { total -= entry.bytes }
         }
         knownHistoryBytes = total
         historyInitialized = true

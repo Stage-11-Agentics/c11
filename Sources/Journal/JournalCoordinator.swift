@@ -459,17 +459,39 @@ struct JournalOpenAsk: Sendable {
     }
 }
 
+/// A live turn edge the mailbox stdin gate acts on. Hook and plugin turn edges
+/// count at commit time. A transcript turn end counts too, stamped with the
+/// agent's own clock: the 10 s transcript poll can fold a Codex turn end before
+/// its notify hook lands (the hook then folds as duplicate evidence), and a
+/// transcript is Grok's only journal turn source (C11-365). The gate ignores a
+/// turn end older than the newest Return typed into the panel, so a late poll
+/// cannot reopen it over a newer turn. A transcript turn start is not a
+/// boundary: the Return that started the turn already closed the gate.
 struct JournalMailboxBoundary: Sendable {
     let working: Bool
     let pid: Int32?
     let at: Date
+    /// A hook or plugin edge without an interactive PID came from a headless
+    /// run nested in the panel. A transcript edge follows the panel's exact
+    /// owner and never carries a PID.
+    let headless: Bool
     static func make(draft: JournalDraft, result: JournalAppendResult, historical: Bool, pid: Int32?) -> Self? {
         guard !historical, !result.receipt.replayed, result.receipt.projectionEffect == .applied,
-              !draft.isChild, [.hook, .plugin].contains(draft.source),
-              let state = result.changedSnapshot, state.confirmation == .confirmed,
-              (draft.kind == .turnStarted && state.phase == .working)
-                || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
-        return Self(working: state.phase == .working, pid: pid,
-                    at: Date(timeIntervalSince1970: Double(result.receipt.committedAtMs) / 1000))
+              !draft.isChild, let state = result.changedSnapshot, state.confirmation == .confirmed else { return nil }
+        switch draft.source {
+        case .hook, .plugin:
+            guard (draft.kind == .turnStarted && state.phase == .working)
+                    || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
+            return Self(working: state.phase == .working, pid: pid,
+                        at: Date(timeIntervalSince1970: Double(result.receipt.committedAtMs) / 1000),
+                        headless: pid == nil)
+        case .transcript:
+            guard draft.kind == .turnCompleted, state.phase == .idle,
+                  JournalNativeClockEvidence.verifies(draft), let endedAtMs = draft.occurredAtMs else { return nil }
+            return Self(working: false, pid: nil,
+                        at: Date(timeIntervalSince1970: Double(endedAtMs) / 1000), headless: false)
+        default:
+            return nil
+        }
     }
 }

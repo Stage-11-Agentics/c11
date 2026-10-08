@@ -425,6 +425,101 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertFalse(buffer.isPushInFlight(surfaceId: shell))
     }
 
+    // MARK: - C11-365: turn ends that reach the gate late or from the transcript
+
+    /// The MouthKeys stall, replayed at the gate: a push starts a Codex turn,
+    /// the transcript's turn start closes the gate, and the turn end arrives
+    /// from the transcript poll stamped with Codex's own clock. The idle agent
+    /// gets the next message at once.
+    func testIdleAgentAfterTranscriptTurnEndGetsMailInjected() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))      // notify, previous turn
+        buffer.beginPush(surfaceId: panel)
+        buffer.endPush(surfaceId: panel, typedAt: t(1))                       // paste
+        buffer.noteSubmit(surfaceId: panel, at: t(1.2))                       // its Return
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(10))   // transcript turn start
+        XCTAssertEqual(
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(29.8))  // transcript turn end, native time
+        XCTAssertEqual(
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .injectNow
+        )
+        // The notify hook lands 25 ms after the poll; a repeated edge changes nothing.
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(30.025))
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel)?.since, t(29.8))
+    }
+
+    /// Mail for a busy agent waits for its next prompt edge and then flushes
+    /// as one paste in arrival order.
+    func testBusyAgentBuffersThenFlushesAtNextPromptEdge() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.noteSubmit(surfaceId: panel, at: t(1))
+        for i in 0..<3 {
+            XCTAssertEqual(
+                buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+                .buffer
+            )
+            buffer.enqueue(surfaceId: panel, entry: entry(id: "m\(i)", block: "<m\(i)/>", at: t(2 + Double(i))))
+        }
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(20))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .injectNow
+        )
+        let flush = buffer.drainForFlush(surfaceId: panel, now: t(20), trigger: .agentPrompt)
+        XCTAssertEqual(flush.fresh.map(\.id), ["m0", "m1", "m2"])
+        XCTAssertEqual(MailboxStdinBuffer.joinedBlock(flush.fresh), "<m0/><m1/><m2/>")
+    }
+
+    /// The operator typing after the push's Return is a draft: the transcript
+    /// turn end does not open the gate over it.
+    func testDraftStillDefersAfterTranscriptTurnEnd() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteSubmit(surfaceId: panel, at: t(1))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(1))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(30))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(25)),
+            .buffer
+        )
+    }
+
+    /// A turn end older than the newest Return describes a turn the agent has
+    /// moved past: a late transcript poll or hook must not reopen the gate.
+    func testTurnEndOlderThanNewestReturnIsIgnored() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.noteSubmit(surfaceId: panel, at: t(10))                        // operator starts a new turn
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(8))     // previous turn's end, polled late
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel)?.atPrompt, false)
+        XCTAssertEqual(
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(12))    // the new turn's end
+        XCTAssertEqual(
+            buffer.decide(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .injectNow
+        )
+    }
+
+    /// Under a live journal the gate still hears Returns and explicit wrapper
+    /// reports (Grok's only native turn edges); inferred and headless never.
+    func testJournalLiveForwardsOnlyReturnsAndExplicitReports() {
+        XCTAssertTrue(PanelLivenessDeriver.forwardsToMailboxGateWhileJournalLive(.submit))
+        XCTAssertTrue(PanelLivenessDeriver.forwardsToMailboxGateWhileJournalLive(.reported))
+        XCTAssertFalse(PanelLivenessDeriver.forwardsToMailboxGateWhileJournalLive(.inferred))
+        XCTAssertFalse(PanelLivenessDeriver.forwardsToMailboxGateWhileJournalLive(.headless))
+    }
+
     /// A push that typed waits for the agent's next prompt edge.
     func testTypedPushWaitsForNextEdge() {
         var buffer = MailboxStdinBuffer()

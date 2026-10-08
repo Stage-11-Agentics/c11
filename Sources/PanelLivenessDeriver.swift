@@ -166,6 +166,12 @@ enum PanelLivenessDeriver {
         }
     }
 
+    /// Which lifecycle edges reach the mailbox gate for a panel whose journal
+    /// connection is live. Notification-inferred and headless edges never do.
+    static func forwardsToMailboxGateWhileJournalLive(_ source: AgentLifecycleSource) -> Bool {
+        source == .submit || source == .reported
+    }
+
     /// Exact agent-loop lifecycle signal. Claude/Codex wrappers and terminal
     /// completion/input seams use this when they know whether the agent is at
     /// its prompt or actively handling a turn. This deliberately updates the
@@ -182,13 +188,17 @@ enum PanelLivenessDeriver {
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             if JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection == .live {
-                // A Return still closes the mailbox prompt gate, but cannot invent a journal turn.
-                if source == .submit {
+                // The journal owns the sidebar, but neither a Return nor an explicit
+                // wrapper report (interactive PID: Grok's turn watcher, the Codex
+                // launch seed) can invent a journal turn. Both still reach the
+                // mailbox gate; for Grok they are its only native edges (C11-365).
+                if forwardsToMailboxGateWhileJournalLive(source) {
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
                             AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
                                 .workspaces.first(where: { $0.id == workspaceId })?
-                                .noteMailboxAgentLifecycle(surfaceId: surfaceId, source: .submit, activity: activity, at: eventAt)
+                                .noteMailboxAgentLifecycle(surfaceId: surfaceId, source: source, activity: activity,
+                                                           at: eventAt, agentPid: agentPid)
                         }
                     }
                 }
@@ -232,11 +242,29 @@ enum PanelLivenessDeriver {
     }
 
     /// Committed immutable projection. The main hop only mirrors current cache data.
+    ///
+    /// Snapshots coalesce; mailbox turn edges do not. A boundary whose snapshot
+    /// a newer one of the same owner already replaced still reaches the gate, in
+    /// order: a Codex notify can refresh the transcript's turn end 25 ms after
+    /// it, and dropping that projection must not drop the turn end (C11-365).
     static func onJournalProjection(panelID: UUID, snapshot: JournalSnapshot?, boundary: JournalMailboxBoundary?) {
         queue.async {
             let coordinator = JournalCoordinator.shared
-            guard coordinator.snapshot(panelID: panelID) == snapshot,
-                  let workspaceID = coordinator.target(panelID: panelID) else { return }
+            guard let workspaceID = coordinator.target(panelID: panelID) else { return }
+            guard coordinator.snapshot(panelID: panelID) == snapshot else {
+                if let boundary, let snapshot, coordinator.snapshot(panelID: panelID)?.owner == snapshot.owner {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard coordinator.target(panelID: panelID) == workspaceID,
+                                  coordinator.snapshot(panelID: panelID)?.owner == snapshot.owner,
+                                  let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
+                                    .workspaces.first(where: { $0.id == workspaceID }) else { return }
+                            workspace.noteMailboxBoundary(boundary, panelID: panelID)
+                        }
+                    }
+                }
+                return
+            }
             let derived: SidebarActivityState? = snapshot.flatMap {
                 $0.phase == .unknown || ($0.isHistorical && !$0.paintsAttention) ? nil : ($0.phase == .working ? .working : .idle)
             }
@@ -251,10 +279,15 @@ enum PanelLivenessDeriver {
             let mirrored = after.flatMap(SidebarActivityState.init(rawValue:))
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard coordinator.snapshot(panelID: panelID) == snapshot,
-                          coordinator.target(panelID: panelID) == workspaceID,
+                    guard coordinator.target(panelID: panelID) == workspaceID,
                           let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
                             .workspaces.first(where: { $0.id == workspaceID }) else { return }
+                    guard coordinator.snapshot(panelID: panelID) == snapshot else {
+                        if let boundary, let snapshot, coordinator.snapshot(panelID: panelID)?.owner == snapshot.owner {
+                            workspace.noteMailboxBoundary(boundary, panelID: panelID)
+                        }
+                        return
+                    }
                     if journalEdgeClearsCold(prior: workspace.journalByPanel[panelID], next: snapshot) {
                         workspace.setAgentCold(false, forSurface: panelID)
                     }
@@ -263,9 +296,7 @@ enum PanelLivenessDeriver {
                     // A coalesced start may already have been superseded by its ask.
                     // Closing a prior prompt gate is safe; only the live boundary below opens it.
                     if let boundary {
-                        workspace.noteMailboxAgentLifecycle(surfaceId: panelID,
-                            source: boundary.pid == nil ? .headless : .reported,
-                            activity: boundary.working ? .working : .idle, at: boundary.at, agentPid: boundary.pid)
+                        workspace.noteMailboxBoundary(boundary, panelID: panelID)
                     } else if let snapshot, [.working, .blocked, .error].contains(snapshot.phase) {
                         workspace.noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported,
                             activity: .working, at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))

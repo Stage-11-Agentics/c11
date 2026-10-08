@@ -60,8 +60,72 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertNil(JournalMailboxBoundary.make(draft: stop, result: result(stop), historical: true, pid: 123))
         let ask = JournalTestData.draft(.questionRequested)
         XCTAssertNil(JournalMailboxBoundary.make(draft: ask, result: result(ask), historical: false, pid: 123))
+        // A transcript turn end without the agent's own verified clock is not a boundary.
         var transcript = stop; transcript.source = .transcript; transcript.adapter = .codexTranscript
         XCTAssertNil(JournalMailboxBoundary.make(draft: transcript, result: result(transcript), historical: false, pid: 123))
+        // A hook edge without the interactive PID is a headless run.
+        XCTAssertEqual(JournalMailboxBoundary.make(draft: stop, result: result(stop), historical: false, pid: nil)?.headless, true)
+        XCTAssertEqual(JournalMailboxBoundary.make(draft: stop, result: result(stop), historical: false, pid: 123)?.headless, false)
+    }
+
+    private func codexTranscript(_ kind: JournalKind, turn: String, endedAtMs: Int64) -> JournalDraft {
+        var draft = JournalDraft(kind: kind, emittedAtMs: endedAtMs + 200, panelID: JournalTestData.panel,
+                                 workspaceID: JournalTestData.workspace, sessionID: "fixture-session",
+                                 agentKind: "codex", source: .transcript, adapter: .codexTranscript,
+                                 nativeEvent: kind == .turnStarted ? "turn.started" : "turn.completed")
+        draft.adapterVersion = JournalNativeClockEvidence.codexTranscriptVersion
+        draft.turnID = turn
+        draft.occurredAtMs = endedAtMs
+        draft.timeQuality = .nativeLocal
+        return draft
+    }
+
+    private func codexNotify(at: Int64) -> JournalDraft {
+        JournalDraft(kind: .turnCompleted, emittedAtMs: at, panelID: JournalTestData.panel,
+                     workspaceID: JournalTestData.workspace, sessionID: "fixture-session",
+                     agentKind: "codex", source: .hook, adapter: .codexNotify, nativeEvent: "agent-turn-complete")
+    }
+
+    private func appended(_ prior: JournalSnapshot?, _ draft: JournalDraft, seq: Int64) -> (JournalAppendResult, JournalSnapshot?) {
+        let context = draft.source == .transcript
+            ? JournalContext.forTranscriptAppend(draft: draft, eligible: true)
+            : JournalContext.forAppend(draft: draft, eligible: true)
+        let fold = JournalTestData.fold(prior, draft, seq: seq, context: context)
+        let result = JournalAppendResult(receipt: JournalReceipt(eventID: draft.eventID, sequence: seq,
+            committedAtMs: 10_000 + seq, replayed: false, projectionEffect: fold.effect),
+            changedSnapshot: fold.snapshot == prior ? nil : fold.snapshot)
+        return (result, fold.snapshot)
+    }
+
+    // C11-365: the 10 s transcript poll folded a Codex turn end 25 ms before the
+    // notify hook; the hook folded as duplicate evidence and the gate never
+    // heard the prompt edge. The transcript turn end is now the boundary,
+    // stamped with Codex's own clock.
+    func testTranscriptTurnEndThatBeatsTheNotifyHookIsTheBoundary() throws {
+        let (startResult, working) = appended(nil, codexTranscript(.turnStarted, turn: "t1", endedAtMs: 5_000), seq: 1)
+        XCTAssertEqual(working?.phase, .working)
+        XCTAssertNil(JournalMailboxBoundary.make(draft: codexTranscript(.turnStarted, turn: "t1", endedAtMs: 5_000),
+            result: startResult, historical: false, pid: nil), "a transcript turn start never touches the gate")
+
+        let end = codexTranscript(.turnCompleted, turn: "t1", endedAtMs: 9_800)
+        let (endResult, idle) = appended(working, end, seq: 2)
+        XCTAssertEqual(endResult.receipt.projectionEffect, .applied)
+        let boundary = try XCTUnwrap(JournalMailboxBoundary.make(draft: end, result: endResult, historical: false, pid: nil))
+        XCTAssertFalse(boundary.working)
+        XCTAssertFalse(boundary.headless)
+        XCTAssertNil(boundary.pid)
+        XCTAssertEqual(boundary.at, Date(timeIntervalSince1970: 9.8), "stamped when the turn ended, not when the poll saw it")
+
+        let hook = codexNotify(at: 10_025)
+        let (hookResult, _) = appended(idle, hook, seq: 3)
+        XCTAssertEqual(hookResult.receipt.projectionEffect, .duplicateEvidence)
+        XCTAssertNil(JournalMailboxBoundary.make(draft: hook, result: hookResult, historical: false, pid: 4242))
+
+        XCTAssertNil(JournalMailboxBoundary.make(draft: end, result: endResult, historical: true, pid: nil))
+        var child = end; child.isChild = true
+        XCTAssertNil(JournalMailboxBoundary.make(draft: child, result: endResult, historical: false, pid: nil))
+        var unverified = end; unverified.timeQuality = .observed
+        XCTAssertNil(JournalMailboxBoundary.make(draft: unverified, result: endResult, historical: false, pid: nil))
     }
 
     // C11-271 derived-late-pretool-after-stop and the spec's missing/hook-start clock variants.

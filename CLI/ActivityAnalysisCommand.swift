@@ -37,7 +37,10 @@ enum ActivityAnalysisCommand {
         var codex: URL
         init(_ args: [String], json: Bool) throws {
             let home = FileManager.default.homeDirectoryForCurrentUser
-            state = try EventLogLayout.defaultStateURL()
+            // Read-only resolution: do not trigger the app's state migration from an offline query.
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? home.appendingPathComponent("Library/Application Support")
+            state = support.appendingPathComponent("c11")
             claude = home.appendingPathComponent(".claude/projects")
             codex = home.appendingPathComponent(".codex/sessions")
             self.json = json
@@ -261,12 +264,12 @@ enum ActivityAnalysisCommand {
                 "coverage_gaps": gaps.sorted(), "pricing_basis": "Current catalog standard API list rates, not subscription spend or historical billing; missing rates or TTL make the estimate unknown."]
     }
     private static func estimate(_ row: UsageRow, catalog: [String: ModelCostEntry]) -> Double? {
-        guard row.speed == "standard", let price = catalog[row.model], row.tokens.writeUnknown == 0 else { return nil }
+        guard row.speed == "standard", let price = catalog[row.model], row.tokens.writeUnknown == 0, price.inUSD.isFinite, price.inUSD >= 0, price.outUSD.isFinite, price.outUSD >= 0 else { return nil }
         let t = row.tokens
         var cost = Double(t.input) * price.inUSD + Double(t.output) * price.outUSD
-        if t.read > 0 { guard let p = price.cacheReadUSD else { return nil }; cost += Double(t.read) * p }
-        if t.write5 > 0 { guard let p = price.cacheWriteUSD else { return nil }; cost += Double(t.write5) * p }
-        if t.write1 > 0 { guard let p = price.cacheWrite1hUSD else { return nil }; cost += Double(t.write1) * p }
+        if t.read > 0 { guard let p = price.cacheReadUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.read) * p }
+        if t.write5 > 0 { guard let p = price.cacheWriteUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.write5) * p }
+        if t.write1 > 0 { guard let p = price.cacheWrite1hUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.write1) * p }
         // The shipped GPT-6 reference lists long-context premiums explicitly.
         // Agent-maintained custom catalogs may have their own pricing policies.
         if row.harness == "codex", row.model.hasPrefix("gpt-6"),
@@ -275,7 +278,7 @@ enum ActivityAnalysisCommand {
             let outputCost = Double(t.output) * price.outUSD
             cost = (cost - outputCost) * 2 + outputCost * 1.5
         }
-        return cost / 1_000_000
+        return cost.isFinite ? cost / 1_000_000 : nil
     }
     private struct Event {
         let raw: Object
@@ -298,7 +301,9 @@ enum ActivityAnalysisCommand {
         }
         let selected = names.filter {
             let name = $0.lastPathComponent
-            guard name.hasPrefix("events-"), name.contains(".ndjson") else { return false }
+            guard name.hasPrefix("events-"), let marker = name.range(of: ".ndjson", options: .backwards) else { return false }
+            let suffix = String(name[marker.upperBound...])
+            guard suffix.isEmpty || (suffix.hasPrefix(".") && Int(suffix.dropFirst()) != nil) else { return false }
             if let instance { return name == "events-\(instance).ndjson" || name.hasPrefix("events-\(instance).ndjson.") }
             return true
         }
@@ -343,6 +348,7 @@ enum ActivityAnalysisCommand {
                 }
                 previousSeq = event.seq
                 if !sequenceGap && analyticsEnabled {
+                    if duration > 0 { peakOpen = max(peakOpen, open.count); peakWorking = max(peakWorking, working.count) }
                     agentSeconds += duration * Double(working.count)
                     loadSeconds[bucket(working.count), default: 0] += duration
                 }

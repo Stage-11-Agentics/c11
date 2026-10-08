@@ -2254,6 +2254,12 @@ struct CMUXCLI {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
+        // Offline analytics read local files in this CLI process only, even with the app down.
+        if command == "usage" || command == "report" {
+            try ActivityAnalysisCommand.run(command: command, args: commandArgs, json: jsonOutput)
+            return
+        }
+
         var rpcCall: (method: String, params: [String: Any])?
         if command == "rpc" {
             if commandArgs == ["--help"] || commandArgs == ["-h"] {
@@ -2439,12 +2445,6 @@ struct CMUXCLI {
                 subArgs: Array(commandArgs.dropFirst()),
                 jsonOutput: jsonOutput
             )
-            return
-        }
-
-        // Offline analytics read local files in this CLI process only, even with the app down.
-        if command == "usage" || command == "report" {
-            try ActivityAnalysisCommand.run(command: command, args: commandArgs, json: jsonOutput)
             return
         }
 
@@ -20547,7 +20547,7 @@ struct CMUXCLI {
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--panel <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-panel <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
-          model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
+          model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--cache-read <usd>] [--cache-write <usd>] [--cache-write-1h <usd>] [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
           raise-flag --panel <id|ref> "<reason>"
           lower-flag --panel <id|ref>
           suppress --panel <id|ref>

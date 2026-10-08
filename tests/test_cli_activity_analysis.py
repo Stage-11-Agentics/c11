@@ -170,6 +170,45 @@ class ActivityCLI(unittest.TestCase):
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
         self.assertEqual(result['host_usage']['totals']['calls'], 1)
 
+    def test_since_replays_baseline_before_the_first_in_range_close(self):
+        self.events()
+        result = self.run_cli('report', '--instance', 'synthetic', '--since',
+                              '2026-01-02T00:45:00Z', '--format', 'json')
+        self.assertEqual(result['panels_created'], 0)
+        self.assertEqual(result['peak_open_per_instance'], 1)
+        self.assertEqual(result['peak_working_per_instance'], 1)
+        self.assertEqual(result['observed_agent_hours'], .25)
+        self.assertEqual(result['foreground_hours'], .25)
+
+    def test_policy_disabled_interval_is_not_foreground(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[4]['type'] = 'log.policy'
+        rows[4]['payload'] = {'enabled': True, 'analytics_enabled': False}
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertIsNone(result['foreground_hours'])
+        self.assertEqual(result['observed_foreground_hours'], .5)
+        self.assertEqual(result['presence_unknown_hours'], .5)
+        self.assertIn('analytics_disabled_span', result['coverage_gaps'])
+
+    def test_v1_names_and_missing_logs(self):
+        result = self.run_cli('report', '--instance', 'missing', '--format', 'json')
+        self.assertIsNone(result['panels_created'])
+        self.assertIsNone(result['foreground_hours'])
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        for row in rows:
+            row['v'] = 1
+            row['type'] = row['type'].replace('panel.', 'surface.')
+            row['surface'] = row.pop('panel')
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['panels_created'], 1)
+        self.assertEqual(result['open_at_observed_end'], 0)
+
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)
         self.run_cli('usage', '--since', 'garbage', ok=False)

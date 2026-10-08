@@ -92,3 +92,14 @@ See `docs/c11-messaging-primitive-design.md` §3 for the full envelope contract 
 - `from` / `to` / `reply_to` matching a live surface in the workspace.
 
 Those live in `Sources/Mailbox/MailboxEnvelope.swift` or the dispatcher.
+
+## Offline analytics output
+
+`usage.v1.schema.json` and `report.v1.schema.json` describe the file-only CLI's
+versioned JSON results. `null` denotes unknown information, including prices
+without a catalog entry and foreground time with incomplete presence evidence.
+Coverage gaps are part of the output contract, not diagnostics to discard.
+`spec/model-costs-current.json` is a dated, first-party-sourced catalog snapshot
+for explicit `c11 model-costs import`; it is not an automatic network refresh or
+an assertion about historical billing. Full semantics and examples live in
+`skills/c11/references/usage-report.md`.

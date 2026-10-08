@@ -344,7 +344,7 @@ extension TerminalController {
         }
         if CapabilityFeatures.current.supports(.markdownAgentCLI) {
             methods.append(contentsOf: [
-                "markdown.scroll", "markdown.navigate", "markdown.history", "markdown.links",
+                "markdown.scroll", "markdown.navigate", "markdown.history", "markdown.links", "markdown.backlinks",
                 "markdown.visible", "markdown.theme", "markdown.typeface", "markdown.font",
                 "markdown.open_external"
             ])

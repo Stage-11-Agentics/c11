@@ -15,12 +15,24 @@ final class CapabilityFeaturesTests: XCTestCase {
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.terminalInputState.rawValue))
     }
 
+    @MainActor
+    func testMarkdownBacklinksCapabilityIsAdvertised() throws {
+        let controller = TerminalController.makeForTesting()
+        let data = try XCTUnwrap(controller.v2DispatchSystem("system.capabilities", id: 1, params: [:]).data(using: .utf8))
+        let envelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let result = try XCTUnwrap(envelope["result"] as? [String: Any])
+        let methods = try XCTUnwrap(result["methods"] as? [String])
+        XCTAssertTrue(methods.contains("markdown.backlinks"))
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "markdown.backlinks"), .socketWorker)
+    }
+
     func testMarkdownAgentMethodsRunOnSocketWorkersWithoutInAppFocusIntent() {
         let methods = [
             "markdown.scroll",
             "markdown.navigate",
             "markdown.history",
             "markdown.links",
+            "markdown.backlinks",
             "markdown.visible",
             "markdown.theme",
             "markdown.typeface",

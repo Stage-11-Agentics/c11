@@ -267,6 +267,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
     private var pendingRestorePosition: MarkdownReadingPosition?
+    private var lastCorpusPublishedKey: String?
     private var pendingNavigationFragment: String?
     private var hasPendingNavigation = false
     private var pendingNavigationToken = 0
@@ -485,7 +486,19 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
 
     func publishCorpusSnapshot() {
         guard let panel, ready, !closed else { return }
-        call("setCorpus", arguments: [panel.corpusSnapshot.bridgeValue(currentPath: panel.filePath)])
+        let snapshot = panel.corpusSnapshot
+        let currentPath = panel.corpusCurrentPath
+        let key = "\(snapshot.revision)\u{0}\(currentPath ?? "")"
+        guard key != lastCorpusPublishedKey else { return }
+        lastCorpusPublishedKey = key
+#if DEBUG
+        let submitStartedAt = ProcessInfo.processInfo.systemUptime
+#endif
+        call("setCorpusJSON", arguments: [snapshot.bridgeJSON, currentPath as Any? ?? NSNull()])
+#if DEBUG
+        let elapsedMs = (ProcessInfo.processInfo.systemUptime - submitStartedAt) * 1000
+        dlog("markdown.corpus.publish.submit revision=\(snapshot.revision) bytes=\(snapshot.bridgeJSON.utf8.count) mainMs=\(String(format: "%.3f", elapsedMs))")
+#endif
     }
 
     private func restoreReadingPosition(
@@ -666,19 +679,15 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                   origin == .palette || origin == .backlink else { return }
             let fragment = (body["fragment"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(512)) }
             let snapshot = panel.corpusSnapshot
-            guard let document = snapshot.documents.first(where: { $0.path == path }) else { return }
-            if let fragment {
-                guard document.headings.contains(where: { $0.slug == fragment }) else { return }
-            }
-            if origin == .backlink {
-                guard let currentPath = panel.filePath,
-                      snapshot.links.contains(where: {
-                          $0.sourcePath == path && $0.targetPath == currentPath && $0.sourceSectionSlug == fragment
-                      }) else { return }
-            }
+            guard snapshot.validatesNavigation(
+                path: path,
+                fragment: fragment,
+                origin: origin,
+                currentPath: panel.corpusCurrentPath
+            ) else { return }
             Task { @MainActor [weak panel] in
                 _ = await panel?.navigate(
-                    to: URL(fileURLWithPath: path),
+                    to: URL(fileURLWithPath: path).standardizedFileURL,
                     fragment: fragment,
                     origin: origin
                 )
@@ -909,6 +918,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         pendingRestorePosition = MarkdownReadingPosition(state: state)
         pendingNavigationToken = navigationToken
         ready = false
+        lastCorpusPublishedKey = nil
         renderedRevision = nil
         entryNavigationAdmitted = false
         loadedContent = nil

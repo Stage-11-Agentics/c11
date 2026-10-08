@@ -12324,11 +12324,13 @@ struct CMUXCLI {
               c11 markdown open-external --panel <id|ref>
               c11 markdown history --panel <id|ref> --json
               c11 markdown links --panel <id|ref> --broken --json
+              c11 markdown backlinks --panel <id|ref> --json
 
             visible --watch emits newline-delimited JSON until the panel closes
             or the client disconnects.
             history reports the panel's back/forward entries and saved reading positions.
             links --broken reports relative Markdown targets or heading fragments that fail validation.
+            backlinks reports Markdown documents that link to the current document in its corpus.
             Same-document anchors stay in the page and participate in history. ⌘[ and ⌘]
             navigate back and forward; the toolbar arrows do the same.
             """

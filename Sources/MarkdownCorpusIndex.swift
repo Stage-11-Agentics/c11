@@ -42,6 +42,36 @@ struct MarkdownCorpusSnapshot: Equatable, Sendable {
     let truncated: Bool
     let revision: Int
     let filesReparsed: Int
+    /// Encoded on the indexer's utility queue so the main actor only submits a
+    /// single immutable string to WebKit.
+    let bridgeJSON: String
+
+    init(
+        rootPath: String?,
+        documents: [MarkdownCorpusDocument],
+        links: [MarkdownCorpusLink],
+        tickets: [String: MarkdownTicketCard],
+        truncated: Bool,
+        revision: Int,
+        filesReparsed: Int,
+        bridgeJSON precomputedBridgeJSON: String? = nil
+    ) {
+        self.rootPath = rootPath
+        self.documents = documents
+        self.links = links
+        self.tickets = tickets
+        self.truncated = truncated
+        self.revision = revision
+        self.filesReparsed = filesReparsed
+        bridgeJSON = precomputedBridgeJSON ?? Self.encodeBridgeValue(
+            rootPath: rootPath,
+            documents: documents,
+            links: links,
+            tickets: tickets,
+            truncated: truncated,
+            revision: revision
+        )
+    }
 
     static let empty = MarkdownCorpusSnapshot(
         rootPath: nil,
@@ -58,14 +88,50 @@ struct MarkdownCorpusSnapshot: Equatable, Sendable {
     }
 
     func backlinks(to path: String, fragment: String? = nil) -> [MarkdownCorpusLink] {
-        links.filter { link in
-            guard link.targetPath == path else { return false }
+        let resolvedPath = Self.resolvedPath(path)
+        return links.filter { link in
+            guard Self.resolvedPath(link.targetPath) == resolvedPath else { return false }
             guard let fragment, !fragment.isEmpty else { return true }
             return link.targetFragment?.caseInsensitiveCompare(fragment) == .orderedSame
         }
     }
 
-    func bridgeValue(currentPath: String?) -> [String: Any] {
+    func validatesNavigation(
+        path: String,
+        fragment: String?,
+        origin: MarkdownNavigationOrigin,
+        currentPath: String?
+    ) -> Bool {
+        let targetPath = Self.standardizedPath(path)
+        guard let document = documents.first(where: { Self.standardizedPath($0.path) == targetPath }) else { return false }
+        if let fragment, !fragment.isEmpty,
+           !document.headings.contains(where: { $0.slug == fragment }) { return false }
+        guard origin == .backlink else { return origin == .palette }
+        guard let currentPath else { return false }
+        let resolvedCurrent = Self.standardizedPath(currentPath)
+        return links.contains {
+            Self.standardizedPath($0.sourcePath) == targetPath
+                && Self.standardizedPath($0.targetPath) == resolvedCurrent
+                && $0.sourceSectionSlug == (fragment?.isEmpty == true ? nil : fragment)
+        }
+    }
+
+    static func resolvedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private static func encodeBridgeValue(
+        rootPath: String?,
+        documents: [MarkdownCorpusDocument],
+        links: [MarkdownCorpusLink],
+        tickets: [String: MarkdownTicketCard],
+        truncated: Bool,
+        revision: Int
+    ) -> String {
         let documentValues: [[String: Any]] = documents.map { document in
             [
                 "path": document.path,
@@ -89,15 +155,18 @@ struct MarkdownCorpusSnapshot: Equatable, Sendable {
             ]
         }
         let ticketValues = tickets.mapValues { ["title": $0.title, "status": $0.status] }
-        return [
+        let value: [String: Any] = [
             "root": rootPath as Any? ?? NSNull(),
-            "current": currentPath as Any? ?? NSNull(),
+            "current": NSNull(),
             "documents": documentValues,
             "links": linkValues,
             "tickets": ticketValues,
             "truncated": truncated,
             "revision": revision
         ]
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else { return "{}" }
+        return json
     }
 }
 
@@ -120,6 +189,12 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         var maximumBoardLookupBytes = 8_388_608
     }
 
+    private static let skippedDirectoryNames: Set<String> = [
+        ".git", ".claude", ".lattice", ".build", ".next", ".swiftpm",
+        "node_modules", "DerivedData", "build", "build-remote", "build-test-local",
+        "dist", "target", "c11-worktrees", ".venv", "venv"
+    ]
+
     private struct Signature: Equatable {
         let size: Int
         let modified: TimeInterval
@@ -135,6 +210,11 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         let ticketIDsTruncated: Bool
     }
 
+    private struct BoardIndex {
+        let tasksByTicket: [String: String]
+        let prefixes: Set<String>
+    }
+
     let rootURL: URL
     private let rootAccess: MarkdownAssetRoot?
     private let queue = DispatchQueue(label: "com.stage11.c11.markdown-corpus", qos: .utility)
@@ -143,6 +223,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private var indexedFiles: [String: IndexedFile] = [:]
     private var snapshotValue = MarkdownCorpusSnapshot.empty
+    private var priorityRelativePaths: [String]
     private var revision = 0
     private var filesReparsed = 0
     private var scanQueued = false
@@ -151,6 +232,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     init(
         rootURL: URL,
         limits: Limits = Limits(),
+        priorityFileURLs: [URL] = [],
         onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot) -> Void
     ) {
         let canonicalRoot = rootURL.resolvingSymlinksInPath().standardizedFileURL
@@ -158,6 +240,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         rootAccess = MarkdownAssetRoot(directory: canonicalRoot)
         self.limits = limits
         self.onUpdate = onUpdate
+        priorityRelativePaths = Self.relativePaths(for: priorityFileURLs, under: canonicalRoot)
     }
 
     convenience init(
@@ -165,11 +248,34 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         limits: Limits = Limits(),
         onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot) -> Void
     ) {
-        self.init(rootURL: Self.corpusRoot(for: fileURL), limits: limits, onUpdate: onUpdate)
+        self.init(rootURL: Self.corpusRoot(for: fileURL), limits: limits, priorityFileURLs: [fileURL], onUpdate: onUpdate)
     }
 
     static func corpusRoot(for fileURL: URL) -> URL {
         MarkdownDocumentRoot.corpusRoot(for: fileURL)
+    }
+
+    func updatePriorityFiles(_ fileURLs: [URL]) {
+        queue.async { [weak self] in
+            guard let self, !self.stopped else { return }
+            let paths = Self.relativePaths(for: fileURLs, under: self.rootURL)
+            guard paths != self.priorityRelativePaths else { return }
+            self.priorityRelativePaths = paths
+            self.scanAndPublish()
+        }
+    }
+
+    private static func relativePaths(for fileURLs: [URL], under rootURL: URL) -> [String] {
+        let rootPath = rootURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        var seen: Set<String> = []
+        return fileURLs.compactMap { fileURL in
+            let path = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+            guard path.hasPrefix(prefix) else { return nil }
+            let relative = String(path.dropFirst(prefix.count))
+            guard !relative.isEmpty, seen.insert(relative).inserted else { return nil }
+            return relative
+        }
     }
 
     func start() {
@@ -212,9 +318,25 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         }
     }
 
-    private func scheduleRescan() {
+    private func scheduleRescan(for paths: [String], eventFlags: [FSEventStreamEventFlags]) {
         queue.async { [weak self] in
             guard let self, !self.stopped, !self.scanQueued else { return }
+            let events = paths.enumerated().compactMap { index, path -> (String, Bool)? in
+                let flags: FSEventStreamEventFlags = index < eventFlags.count ? eventFlags[index] : 0
+                let integerFlags = Int(flags)
+                let canonicalPath = Self.resolvedPathAllowingMissingTail(path)
+                let isDirectory = integerFlags & kFSEventStreamEventFlagItemIsDir != 0
+                    || (canonicalPath == self.rootURL.path
+                        && integerFlags & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0)
+                return self.isRelevantFileEvent(canonicalPath, isDirectory: isDirectory) ? (canonicalPath, isDirectory) : nil
+            }
+            guard !events.isEmpty else { return }
+            let ignored = self.ignoredEventPaths(events.map(\.0))
+            let rootPrefix = self.rootURL.path.hasSuffix("/") ? self.rootURL.path : self.rootURL.path + "/"
+            guard events.contains(where: { event in
+                let relative = event.0.hasPrefix(rootPrefix) ? String(event.0.dropFirst(rootPrefix.count)) : ""
+                return Self.isBoardEventPath(relative, isDirectory: event.1) || !ignored.contains(event.0)
+            }) else { return }
             self.scanQueued = true
             self.queue.async { [weak self] in
                 guard let self else { return }
@@ -234,9 +356,13 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             release: nil,
             copyDescription: nil
         )
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, eventCount, rawPaths, eventFlags, _ in
             guard let info else { return }
-            Unmanaged<MarkdownCorpusIndexer>.fromOpaque(info).takeUnretainedValue().scheduleRescan()
+            let indexer = Unmanaged<MarkdownCorpusIndexer>.fromOpaque(info).takeUnretainedValue()
+            let cfPaths = unsafeBitCast(rawPaths, to: CFArray.self)
+            let paths = (cfPaths as NSArray).compactMap { $0 as? String }
+            let flags = (0..<eventCount).map { index in eventFlags[index] }
+            indexer.scheduleRescan(for: paths, eventFlags: flags)
         }
         let paths = [rootURL.path] as CFArray
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
@@ -258,6 +384,85 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         self.stream = stream
     }
 
+    private func isRelevantFileEvent(_ eventPath: String, isDirectory: Bool) -> Bool {
+        let path = Self.resolvedPathAllowingMissingTail(eventPath)
+        let rootPath = rootURL.path
+        if path == rootPath { return isDirectory }
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard path.hasPrefix(prefix) else { return false }
+        let relative = String(path.dropFirst(prefix.count))
+        return Self.shouldRescan(relativePath: relative, isDirectory: isDirectory)
+    }
+
+    static func shouldRescan(relativePath: String, isDirectory: Bool) -> Bool {
+        if relativePath.isEmpty { return isDirectory }
+        let components = relativePath.split(separator: "/").map(String.init)
+        guard !components.isEmpty else { return false }
+        if components[0] == ".lattice" {
+            return isBoardEventPath(relativePath, isDirectory: isDirectory)
+        }
+        guard !components.contains(where: skippedDirectoryNames.contains) else { return false }
+        if isDirectory { return true }
+        return isMarkdownPath(relativePath)
+    }
+
+    private static func isBoardEventPath(_ relativePath: String, isDirectory: Bool) -> Bool {
+        if relativePath == ".lattice/ids.json" { return !isDirectory }
+        if relativePath == ".lattice/tasks" { return isDirectory }
+        if relativePath.hasPrefix(".lattice/tasks/") {
+            let taskFile = String(relativePath.dropFirst(".lattice/tasks/".count))
+            return !isDirectory
+                && !taskFile.contains("/")
+                && URL(fileURLWithPath: taskFile).pathExtension.lowercased() == "json"
+        }
+        return false
+    }
+
+    private func ignoredEventPaths(_ absolutePaths: [String]) -> Set<String> {
+        guard !absolutePaths.isEmpty else { return [] }
+        let rootPrefix = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+        let eventPairs = absolutePaths.compactMap { path -> (absolute: String, relative: String)? in
+            let standardized = Self.resolvedPathAllowingMissingTail(path)
+            guard standardized.hasPrefix(rootPrefix) else { return nil }
+            return (standardized, String(standardized.dropFirst(rootPrefix.count)))
+        }
+        guard !eventPairs.isEmpty else { return [] }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", rootURL.path, "check-ignore", "-z", "--stdin"]
+        let input = Pipe()
+        let output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            var bytes = Data()
+            for pair in eventPairs {
+                bytes.append(contentsOf: pair.relative.utf8)
+                bytes.append(0)
+            }
+            let inputBytes = bytes
+            let writeFinished = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .utility).async {
+                input.fileHandleForWriting.write(inputBytes)
+                try? input.fileHandleForWriting.close()
+                writeFinished.signal()
+            }
+            let ignoredData = output.fileHandleForReading.readDataToEndOfFile()
+            writeFinished.wait()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return [] }
+            let ignored = Set(ignoredData.split(separator: 0).map { String(decoding: $0, as: UTF8.self) })
+            return Set(eventPairs.compactMap { pair in
+                ignored.contains(pair.relative) ? pair.absolute : nil
+            })
+        } catch {
+            return []
+        }
+    }
+
     private func stopWatcherOnQueue() {
         guard let stream else { return }
         FSEventStreamStop(stream)
@@ -268,16 +473,12 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
 
     private func scanAndPublish() {
         guard let rootAccess else {
-            revision += 1
-            snapshotValue = MarkdownCorpusSnapshot(
-                rootPath: rootURL.path, documents: [], links: [], tickets: [:],
-                truncated: false, revision: revision, filesReparsed: filesReparsed
-            )
-            onUpdate(snapshotValue)
+            updateSnapshot(rootPath: rootURL.path, documents: [], links: [], tickets: [:], truncated: false)
             return
         }
 
         let discovery = discoverFiles(rootURL: rootURL)
+        let boardIndex = loadBoardIndex(rootAccess: rootAccess, rootURL: rootURL)
         let old = indexedFiles
         var updated: [String: IndexedFile] = [:]
         var bytesUsed = 0
@@ -337,7 +538,8 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 rootURL: rootURL,
                 maximumHeadings: maximumHeadings,
                 maximumLinks: maximumLinks,
-                maximumTicketIDs: maximumTicketIDs
+                maximumTicketIDs: maximumTicketIDs,
+                ticketPrefixes: boardIndex?.prefixes ?? []
             )
             filesReparsed += 1
             headingCount += parsed.document.headings.count
@@ -355,29 +557,53 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         }
 
         indexedFiles = updated
-        revision += 1
-        let orderedDocuments = updated.keys.sorted().compactMap { updated[$0]?.document }
+        let orderedDocuments = discovery.files.compactMap { updated[$0.relativePath]?.document }
         let indexedPaths = Set(orderedDocuments.map(\.path))
         let links = orderedDocuments.flatMap(\.links).filter { indexedPaths.contains($0.targetPath) }
-        var ticketIDs = Set<String>()
+        var ticketIDs: [String] = []
+        var seenTicketIDs: Set<String> = []
         for document in orderedDocuments {
             for id in document.ticketIDs {
                 guard ticketIDs.count < limits.maximumTotalTicketIDs else { truncated = true; break }
-                ticketIDs.insert(id)
+                if seenTicketIDs.insert(id).inserted { ticketIDs.append(id) }
             }
             if ticketIDs.count >= limits.maximumTotalTicketIDs { break }
         }
-        let tickets = loadTicketCards(for: ticketIDs, rootAccess: rootAccess, rootURL: rootURL)
-        snapshotValue = MarkdownCorpusSnapshot(
+        let tickets = loadTicketCards(for: ticketIDs, boardIndex: boardIndex, rootAccess: rootAccess)
+        updateSnapshot(
             rootPath: rootURL.path,
             documents: orderedDocuments,
             links: links,
             tickets: tickets,
+            truncated: truncated
+        )
+    }
+
+    private func updateSnapshot(
+        rootPath: String?,
+        documents: [MarkdownCorpusDocument],
+        links: [MarkdownCorpusLink],
+        tickets: [String: MarkdownTicketCard],
+        truncated: Bool
+    ) {
+        let changed = snapshotValue.rootPath != rootPath
+            || snapshotValue.documents != documents
+            || snapshotValue.links != links
+            || snapshotValue.tickets != tickets
+            || snapshotValue.truncated != truncated
+        if changed { revision += 1 }
+        let next = MarkdownCorpusSnapshot(
+            rootPath: rootPath,
+            documents: documents,
+            links: links,
+            tickets: tickets,
             truncated: truncated,
             revision: revision,
-            filesReparsed: filesReparsed
+            filesReparsed: filesReparsed,
+            bridgeJSON: changed ? nil : snapshotValue.bridgeJSON
         )
-        onUpdate(snapshotValue)
+        snapshotValue = next
+        if changed { onUpdate(next) }
     }
 
     private struct Candidate {
@@ -387,43 +613,40 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     }
 
     private func discoverFiles(rootURL: URL) -> (files: [Candidate], truncated: Bool) {
-        let excluded = Set([".git", "node_modules", "DerivedData", "build", "dist", ".build"])
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
             .fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey
         ]
         var candidates: [Candidate] = []
-        var visited = 0
-        var truncated = false
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: Array(keys),
-            options: [],
-            errorHandler: { _, _ in true }
-        ) else { return ([], false) }
+        var paths = repositoryPaths(rootURL: rootURL) ?? walkedPaths(rootURL: rootURL)
+        for priorityPath in priorityRelativePaths where FileManager.default.fileExists(
+            atPath: rootURL.appendingPathComponent(priorityPath).path
+        ) {
+            paths.append(priorityPath)
+        }
+        var seen: Set<String> = []
+        let orderedPaths = paths
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
+            .filter {
+                !$0.isEmpty && seen.insert($0).inserted
+                    && (!Self.isExcludedPath($0) || priorityRelativePaths.contains($0))
+            }
+            .sorted {
+                let left = proximityRank(for: $0)
+                let right = proximityRank(for: $1)
+                return left == right ? $0 < $1 : left < right
+            }
+        var truncated = orderedPaths.count > limits.maximumVisitedEntries
+        let visitedPaths = orderedPaths.prefix(limits.maximumVisitedEntries)
 
-        while let url = enumerator.nextObject() as? URL {
-            visited += 1
-            if visited > limits.maximumVisitedEntries {
-                truncated = true
-                break
-            }
-            if excluded.contains(url.lastPathComponent) {
-                enumerator.skipDescendants()
-                continue
-            }
-            guard let values = try? url.resourceValues(forKeys: keys), values.isSymbolicLink != true else {
-                enumerator.skipDescendants()
-                continue
-            }
-            if values.isDirectory == true { continue }
-            guard values.isRegularFile == true,
-                  ["md", "markdown", "mdown"].contains(url.pathExtension.lowercased()) else { continue }
+        for relative in visitedPaths {
+            guard Self.isMarkdownPath(relative) else { continue }
+            let url = rootURL.appendingPathComponent(relative)
+            guard let values = try? url.resourceValues(forKeys: keys),
+                  values.isSymbolicLink != true,
+                  values.isRegularFile == true else { continue }
             let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-            guard Self.isContained(resolved, in: rootURL),
-                  let size = values.fileSize, size >= 0 else { continue }
-            let rootPath = rootURL.path
-            let relative = String(url.standardizedFileURL.path.dropFirst(rootPath == "/" ? 1 : rootPath.count + 1))
+            guard Self.isContained(resolved, in: rootURL), let size = values.fileSize, size >= 0 else { continue }
             candidates.append(Candidate(
                 relativePath: relative,
                 url: resolved,
@@ -435,7 +658,6 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             ))
         }
 
-        candidates.sort { $0.relativePath < $1.relativePath }
         if candidates.count > limits.maximumDocuments {
             candidates = Array(candidates.prefix(limits.maximumDocuments))
             truncated = true
@@ -443,21 +665,132 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         return (candidates, truncated)
     }
 
-    private func loadTicketCards(
-        for ids: Set<String>,
-        rootAccess: MarkdownAssetRoot,
-        rootURL: URL
-    ) -> [String: MarkdownTicketCard] {
-        guard !ids.isEmpty,
-              Self.isDirectoryWithoutSymlink(rootURL.appendingPathComponent(".lattice", isDirectory: true)),
-              let data = try? rootAccess.read(path: ".lattice/ids.json", maximumBytes: limits.maximumBoardBytes),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let map = object["map"] as? [String: String] else { return [:] }
+    private func repositoryPaths(rootURL: URL) -> [String]? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", rootURL.path, "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return data.split(separator: 0).compactMap { bytes in
+                let path = String(decoding: bytes, as: UTF8.self)
+                guard !path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { return nil }
+                return path
+            }
+        } catch {
+            return nil
+        }
+    }
 
+    private func walkedPaths(rootURL: URL) -> [String] {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: Array(keys),
+            options: [],
+            errorHandler: { _, _ in true }
+        ) else { return [] }
+        var paths: [String] = []
+        while let url = enumerator.nextObject() as? URL {
+            let relative = Self.relativePath(url, under: rootURL)
+            if Self.isExcludedPath(relative) {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard let values = try? url.resourceValues(forKeys: keys), values.isSymbolicLink != true else {
+                enumerator.skipDescendants()
+                continue
+            }
+            if values.isDirectory == true { continue }
+            paths.append(relative)
+        }
+        return paths
+    }
+
+    private func proximityRank(for relativePath: String) -> Int {
+        if priorityRelativePaths.contains(relativePath) { return -1 }
+        let candidateDirectory = Array(relativePath.split(separator: "/").dropLast().map(String.init))
+        return priorityRelativePaths.map { priority in
+            let priorityDirectory = Array(priority.split(separator: "/").dropLast().map(String.init))
+            var common = 0
+            while common < min(candidateDirectory.count, priorityDirectory.count),
+                  candidateDirectory[common] == priorityDirectory[common] { common += 1 }
+            return candidateDirectory.count + priorityDirectory.count - (2 * common) + 1
+        }.min() ?? Int.max
+    }
+
+    private static func relativePath(_ url: URL, under rootURL: URL) -> String {
+        let rootPath = rootURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
+    }
+
+    private static func resolvedPathAllowingMissingTail(_ path: String) -> String {
+        var url = URL(fileURLWithPath: path).standardizedFileURL
+        var missingComponents: [String] = []
+        while !FileManager.default.fileExists(atPath: url.path), url.path != "/" {
+            missingComponents.append(url.lastPathComponent)
+            url.deleteLastPathComponent()
+        }
+        url = url.resolvingSymlinksInPath().standardizedFileURL
+        for component in missingComponents.reversed() {
+            url.appendPathComponent(component)
+        }
+        return url.standardizedFileURL.path
+    }
+
+    private static func isExcludedPath(_ relativePath: String) -> Bool {
+        relativePath.split(separator: "/").contains { skippedDirectoryNames.contains(String($0)) }
+    }
+
+    private static func isMarkdownPath(_ relativePath: String) -> Bool {
+        ["md", "markdown", "mdown"].contains(URL(fileURLWithPath: relativePath).pathExtension.lowercased())
+    }
+
+    private func loadBoardIndex(rootAccess: MarkdownAssetRoot, rootURL: URL) -> BoardIndex? {
+        guard Self.isDirectoryWithoutSymlink(rootURL.appendingPathComponent(".lattice", isDirectory: true)) else { return nil }
+        var tasksByTicket: [String: String] = [:]
+        if let data = try? rootAccess.read(path: ".lattice/ids.json", maximumBytes: limits.maximumBoardBytes),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let map = object["map"] as? [String: String] {
+            tasksByTicket = map
+        }
+        var prefixes = Set(tasksByTicket.keys.compactMap(Self.ticketPrefix))
+        if prefixes.isEmpty,
+           let data = try? rootAccess.read(path: ".lattice/config.json", maximumBytes: limits.maximumBoardBytes),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for key in ["ticket_prefix", "project_code"] {
+                if let prefix = object[key] as? String,
+                   prefix.range(of: #"^[A-Z][A-Z0-9]{0,15}$"#, options: .regularExpression) != nil {
+                    prefixes.insert(prefix)
+                }
+            }
+        }
+        return BoardIndex(tasksByTicket: tasksByTicket, prefixes: prefixes)
+    }
+
+    private static func ticketPrefix(_ id: String) -> String? {
+        guard id.range(of: #"^[A-Z][A-Z0-9]{0,15}-[0-9]{1,9}$"#, options: .regularExpression) != nil else { return nil }
+        guard let separator = id.lastIndex(of: "-") else { return nil }
+        return String(id[..<separator])
+    }
+
+    private func loadTicketCards(
+        for ids: [String],
+        boardIndex: BoardIndex?,
+        rootAccess: MarkdownAssetRoot
+    ) -> [String: MarkdownTicketCard] {
+        guard !ids.isEmpty, let map = boardIndex?.tasksByTicket else { return [:] }
         var result: [String: MarkdownTicketCard] = [:]
         var taskBytesRead = 0
-        for id in ids.sorted() {
-            guard result.count < 2_000, id.range(of: #"^C11-[0-9]{1,9}$"#, options: .regularExpression) != nil,
+        for id in ids {
+            guard result.count < 2_000, Self.ticketPrefix(id) != nil,
                   taskBytesRead < limits.maximumBoardLookupBytes,
                   let taskID = map[id], taskID.range(of: #"^task_[0-9A-HJKMNP-TV-Z]{26}$"#, options: .regularExpression) != nil,
                   let taskData = try? rootAccess.read(
@@ -491,7 +824,9 @@ actor MarkdownCorpusIndexRegistry {
 
     private struct Subscriber {
         let generation: UInt64
-        let onUpdate: @Sendable (MarkdownCorpusSnapshot) -> Void
+        let fileURL: URL
+        let currentPath: String
+        let onUpdate: @Sendable (MarkdownCorpusSnapshot, String) -> Void
     }
 
     private struct Entry {
@@ -509,7 +844,7 @@ actor MarkdownCorpusIndexRegistry {
         panelID: UUID,
         generation: UInt64,
         fileURL: URL,
-        onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot) -> Void
+        onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot, String) -> Void
     ) {
         guard generation >= panelGenerations[panelID, default: 0] else { return }
         panelGenerations[panelID] = generation
@@ -519,17 +854,24 @@ actor MarkdownCorpusIndexRegistry {
             detach(panelID, from: previousRoot)
         }
 
-        let subscriber = Subscriber(generation: generation, onUpdate: onUpdate)
+        let resolvedFileURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        let subscriber = Subscriber(
+            generation: generation,
+            fileURL: resolvedFileURL,
+            currentPath: resolvedFileURL.path,
+            onUpdate: onUpdate
+        )
         if var existing = entries[rootPath] {
             existing.subscribers[panelID] = subscriber
             entries[rootPath] = existing
             panelRoots[panelID] = rootPath
-            if let snapshot = existing.snapshot { onUpdate(snapshot) }
+            existing.indexer.updatePriorityFiles(existing.subscribers.values.sorted { $0.currentPath < $1.currentPath }.map(\.fileURL))
+            if let snapshot = existing.snapshot { onUpdate(snapshot, subscriber.currentPath) }
             return
         }
 
         let entryID = UUID()
-        let indexer = MarkdownCorpusIndexer(rootURL: rootURL) { [weak self] snapshot in
+        let indexer = MarkdownCorpusIndexer(rootURL: rootURL, priorityFileURLs: [resolvedFileURL]) { [weak self] snapshot in
             Task { await self?.publish(rootPath: rootPath, entryID: entryID, snapshot: snapshot) }
         }
         entries[rootPath] = Entry(id: entryID, indexer: indexer, subscribers: [panelID: subscriber], snapshot: nil)
@@ -560,10 +902,11 @@ actor MarkdownCorpusIndexRegistry {
 
     private func publish(rootPath: String, entryID: UUID, snapshot: MarkdownCorpusSnapshot) {
         guard var entry = entries[rootPath], entry.id == entryID else { return }
+        if let current = entry.snapshot, snapshot.revision <= current.revision { return }
         entry.snapshot = snapshot
         entries[rootPath] = entry
         for subscriber in entry.subscribers.values {
-            subscriber.onUpdate(snapshot)
+            subscriber.onUpdate(snapshot, subscriber.currentPath)
         }
     }
 }
@@ -590,9 +933,19 @@ enum MarkdownCorpusParser {
         rootURL: URL,
         maximumHeadings: Int,
         maximumLinks: Int,
-        maximumTicketIDs: Int
+        maximumTicketIDs: Int,
+        ticketPrefixes: Set<String> = []
     ) -> Parsed {
         let lines = source.components(separatedBy: .newlines)
+        let frontmatterRange: ClosedRange<Int>? = {
+            guard let first = lines.first,
+                  first.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}")) == "---" else { return nil }
+            guard let closing = lines.indices.dropFirst().first(where: { index in
+                let delimiter = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                return delimiter == "---" || delimiter == "..."
+            }) else { return nil }
+            return 0...closing
+        }()
         var headings: [MarkdownCorpusHeading] = []
         var headingAtLine: [Int: MarkdownCorpusHeading] = [:]
         var inFence: (character: Character, length: Int)?
@@ -619,7 +972,15 @@ enum MarkdownCorpusParser {
         var previousLine: String?
         var previousLineNumber = 0
         for (index, line) in lines.enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if frontmatterRange?.contains(index) == true {
+                previousLine = nil
+                continue
+            }
+            if isIndentedCodeLine(line) {
+                previousLine = nil
+                continue
+            }
+            let trimmed = markdownContentLine(line, lineNumber: index)
             if let fence = inFence {
                 if isFenceEnd(trimmed, fence: fence) { inFence = nil }
                 previousLine = nil
@@ -645,14 +1006,20 @@ enum MarkdownCorpusParser {
         var currentSection: MarkdownCorpusHeading?
         inFence = nil
         var ids: Set<String> = []
-        let ticketPattern = try! NSRegularExpression(pattern: #"\bC11-[0-9]{1,9}\b"#)
+        let ticketPattern: NSRegularExpression? = {
+            let prefixes = ticketPrefixes.sorted { $0.count == $1.count ? $0 < $1 : $0.count > $1.count }
+                .map(NSRegularExpression.escapedPattern(for:))
+            guard !prefixes.isEmpty else { return nil }
+            return try? NSRegularExpression(pattern: #"\b(?:"# + prefixes.joined(separator: "|") + #")-[0-9]{1,9}\b"#)
+        }()
         let linkPattern = try! NSRegularExpression(
             pattern: #"\[([^\]]+)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)"#
         )
         let codePattern = try! NSRegularExpression(pattern: #"`+[^`]*`+"#)
 
         for (index, line) in lines.enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if frontmatterRange?.contains(index) == true || isIndentedCodeLine(line) { continue }
+            let trimmed = markdownContentLine(line, lineNumber: index)
             if let fence = inFence {
                 if isFenceEnd(trimmed, fence: fence) { inFence = nil }
                 continue
@@ -663,12 +1030,16 @@ enum MarkdownCorpusParser {
             let range = NSRange(line.startIndex..<line.endIndex, in: line)
             let withoutCode = codePattern.stringByReplacingMatches(in: line, range: range, withTemplate: " ")
             let visibleRange = NSRange(withoutCode.startIndex..<withoutCode.endIndex, in: withoutCode)
-            for match in ticketPattern.matches(in: withoutCode, range: visibleRange) {
+            for match in ticketPattern?.matches(in: withoutCode, range: visibleRange) ?? [] {
                 guard let valueRange = Range(match.range, in: withoutCode) else { continue }
                 let id = String(withoutCode[valueRange])
                 if ids.contains(id) { continue }
                 guard ids.count < maximumTicketIDs else { ticketIDsTruncated = true; continue }
                 ids.insert(id)
+            }
+            guard line.utf8.count <= 16 * 1024 else {
+                linksTruncated = true
+                continue
             }
             let linkMatches = linkPattern.matches(in: withoutCode, range: visibleRange)
             for match in linkMatches.prefix(maximumLinks) {
@@ -721,6 +1092,22 @@ enum MarkdownCorpusParser {
         )
     }
 
+    private static func markdownContentLine(_ line: String, lineNumber: Int) -> String {
+        if lineNumber == 0, line.first == "\u{FEFF}" { return String(line.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func isIndentedCodeLine(_ line: String) -> Bool {
+        guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        var spaces = 0
+        for character in line {
+            if character == " " { spaces += 1; continue }
+            if character == "\t" { return true }
+            return spaces >= 4
+        }
+        return false
+    }
+
     private static func atxHeading(_ line: String) -> (Int, String)? {
         let chars = Array(line)
         var count = 0
@@ -751,11 +1138,34 @@ enum MarkdownCorpusParser {
     }
 
     private static func readableHeadingText(_ source: String) -> String {
+        let codeSpanPattern = try? NSRegularExpression(pattern: #"`+([^`]+)`+"#)
         var value = source
+        var codeSegments: [String] = []
+        if let codeSpanPattern {
+            let matches = codeSpanPattern.matches(in: source, range: NSRange(source.startIndex..<source.endIndex, in: source))
+            var rebuilt = ""
+            var cursor = source.startIndex
+            for match in matches {
+                guard let wholeRange = Range(match.range, in: source),
+                      let contentRange = Range(match.range(at: 1), in: source) else { continue }
+                rebuilt += source[cursor..<wholeRange.lowerBound]
+                let marker = "\u{E000}\(codeSegments.count)\u{E001}"
+                rebuilt += marker
+                codeSegments.append(String(source[contentRange]).trimmingCharacters(in: .whitespacesAndNewlines))
+                cursor = wholeRange.upperBound
+            }
+            rebuilt += source[cursor...]
+            value = rebuilt
+        }
         let patterns: [(String, String)] = [
             (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),
             (#"<[^>]+>"#, ""),
-            (#"[`*_~]"#, ""),
+            (#"\*\*(?=\S)(.+?)(?<=\S)\*\*"#, "$1"),
+            (#"__(?=\S)(.+?)(?<=\S)__"#, "$1"),
+            (#"~~(?=\S)(.+?)(?<=\S)~~"#, "$1"),
+            (#"(?<!\\)\*(?=\S)(.+?)(?<=\S)\*"#, "$1"),
+            (#"(?<![\p{L}\p{N}_])_(?=\S)(.+?)(?<=\S)_(?![\p{L}\p{N}_])"#, "$1"),
+            (#"[`~]"#, ""),
             (#"\\([\\`*_{}\[\]()#+.!<>|])"#, "$1")
         ]
         for (pattern, replacement) in patterns {
@@ -764,18 +1174,24 @@ enum MarkdownCorpusParser {
                 value = regex.stringByReplacingMatches(in: value, range: range, withTemplate: replacement)
             }
         }
+        for (index, code) in codeSegments.enumerated() {
+            value = value.replacingOccurrences(of: "\u{E000}\(index)\u{E001}", with: code)
+        }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func slugify(_ text: String) -> String {
         let lower = text.lowercased()
         var filtered = String.UnicodeScalarView()
-        for scalar in lower.unicodeScalars where CharacterSet.letters.contains(scalar)
-            || CharacterSet.decimalDigits.contains(scalar)
-            || scalar == " " || scalar == "\t" || scalar == "\n" || scalar == "_" || scalar == "-" {
-            filtered.append(scalar)
+        for scalar in lower.unicodeScalars {
+            let category = scalar.properties.generalCategory
+            let isLetter = [.uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter].contains(category)
+            let isNumber = [.decimalNumber, .letterNumber, .otherNumber].contains(category)
+            if isLetter || isNumber || CharacterSet.whitespacesAndNewlines.contains(scalar) || scalar == "_" || scalar == "-" {
+                filtered.append(CharacterSet.whitespacesAndNewlines.contains(scalar) ? "-" : scalar)
+            }
         }
-        return String(filtered).replacingOccurrences(of: #"\s"#, with: "-", options: .regularExpression)
+        return String(filtered)
     }
 
     private static func isContained(_ target: URL, in root: URL) -> Bool {

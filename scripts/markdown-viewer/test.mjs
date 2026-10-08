@@ -179,10 +179,11 @@ try {
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='outlineDismiss')?.type),'outlineDismiss','Escape did not request persistence of the closed choice');
   scenario('page outline filters with ancestor/task context, jumps without closing, and Esc reports the explicit closed choice');
 
-  const corpusDoc='/synthetic/reader.md', corpusSource='# Reader\n\n## Setup\n\nA local reference and ticket C11-123; C11-999 has no board match.\n\n'+
+  const corpusDoc='/synthetic/reader.md', corpusSource='# Reader\n\n## Setup\n\nA local reference and ticket C11-123, DOCS-321; C11-999 has no board match.\n\n## `dispatch_log`\n\n'+
     Array.from({length:20},(_,index)=>`Corpus tail ${index} keeps section navigation scrollable.\n\n`).join('');
-  await page.setViewportSize({width:900,height:720});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
+  await page.setViewportSize({width:900,height:720});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true,strings:{corpusBacklinks:'Link Sources'}});
   await load(corpusSource,corpusDoc,1);
+  assert.equal(await page.locator('#article #c11md-h-dispatch_log').count(),1,'viewer slug rules preserve underscores inside code spans');
   const corpusFixture={
     root:'/synthetic',current:corpusDoc,revision:1,truncated:false,
     documents:[
@@ -190,12 +191,15 @@ try {
       {path:'/synthetic/guide.md',relative_path:'guide.md',title:'guide.md',headings:[{level:2,text:'Installation',slug:'installation',line:3}]}
     ],
     links:[{source:'/synthetic/guide.md',source_title:'guide.md',section:'Setup',section_slug:'setup',line:4,text:'Reader setup',target:corpusDoc,fragment:'setup'}],
-    tickets:{'C11-123':{title:'Synthetic task',status:'open'}}
+    tickets:{'C11-123':{title:'Synthetic task',status:'open'},'DOCS-321':{title:'Docs task',status:'done'}}
   };
-  await page.evaluate(snapshot=>c11md.setCorpus(snapshot),corpusFixture);
-  assert.equal(await page.locator('.ticket-ref').count(),1,'a ticket links only when a matching local board card exists');
+  assert.equal(await page.evaluate(({json,current})=>c11md.setCorpusJSON(json,current),
+    {json:JSON.stringify(corpusFixture),current:corpusDoc}),true,'pre-serialized corpus bridge applies its active document path');
+  assert.equal(await page.locator('.ticket-ref').count(),2,'ticket prefixes come from local board IDs rather than a C11 constant');
   assert.ok((await page.locator('#article').innerText()).includes('C11-999'),'unmatched ticket ID did not stay plain text');
-  await page.locator('.ticket-ref').hover();
+  assert.equal(await page.locator('#backlinkList').getAttribute('aria-label'),'Link Sources','backlink list exposes the localized label');
+  await settings({strings:{corpusBacklinks:'Referenced by'}});
+  await page.locator('.ticket-ref[data-ticket="C11-123"]').hover();
   assert.match(await page.locator('#ticketCard').innerText(),/Synthetic task[\s\S]*Status: open/);
   await page.evaluate(()=>c11md.scrollToHeading('Setup'));
   await page.waitForFunction(()=>c11md.visible().heading?.slug==='setup');

@@ -5,6 +5,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const surface = $('#surface'), scroller = $('#scroller'), srcScroller = $('#srcScroller');
 const article = $('#article'), col = $('#col'), layout = $('#layout'), source = $('#source');
 const outlinePanel = $('#outlinePanel'), outlineFilter = $('#outlineFilter'), outlineList = $('#outlineList'), backlinkList = $('#backlinkList');
@@ -490,7 +491,9 @@ function renderOutlineList({scrollToCurrent=false}={}) {
   if(scrollToCurrent)scrollOutlineToCurrent();
 }
 function renderBacklinks(query=outlineFilter.value.trim().toLocaleLowerCase()) {
-  const links=(S.corpus?.links||[]).filter(link=>link.target===S.file);
+  backlinkList.setAttribute('aria-label',S.strings.corpusBacklinks);
+  const currentPath=S.corpus?.current||S.file;
+  const links=(S.corpus?.links||[]).filter(link=>link.target===currentPath);
   const current=currentHeading();
   const sectionLinks=current?links.filter(link=>String(link.fragment||'').toLocaleLowerCase()===current.slug.toLocaleLowerCase()):[];
   $('#backlinkCount').textContent=String(links.length);
@@ -602,20 +605,33 @@ function setCorpus(value) {
   decorateTicketReferences();
   return true;
 }
+function setCorpusJSON(json,currentPath) {
+  if(typeof json!=='string'||json.length>96*1024*1024)return false;
+  let value;
+  try { value=JSON.parse(json); } catch { return false; }
+  if(!value||typeof value!=='object')return false;
+  value.current=typeof currentPath==='string'?currentPath:null;
+  return setCorpus(value);
+}
 function decorateTicketReferences() {
   const card=$('#ticketCard');
   card.hidden=true;S.ticketCardPinned=false;
   $$('.ticket-ref',article).forEach(button=>button.replaceWith(document.createTextNode(button.dataset.ticket||button.textContent||'')));
   const tickets=S.corpus?.tickets||{};
   if(!Object.keys(tickets).length)return;
+  const ticketIds=Object.keys(tickets).filter(id=>/^[A-Z][A-Z0-9]{0,15}-[0-9]{1,9}$/.test(id))
+    .sort((a,b)=>b.length-a.length||a.localeCompare(b));
+  if(!ticketIds.length)return;
+  const pattern=new RegExp(`\\b(?:${ticketIds.map(escapeRegex).join('|')})\\b`,'g');
   const walker=document.createTreeWalker(article,NodeFilter.SHOW_TEXT,{acceptNode:node=>{
     const parent=node.parentElement;
-    return parent&&node.data.includes('C11-')&&!parent.closest('a,button,code,pre,textarea,script,style,.katex,.mermaid')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
+    return parent&&node.data.includes('-')&&!parent.closest('a,button,code,pre,textarea,script,style,.katex,.mermaid')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
   }});
   const nodes=[];let node;while((node=walker.nextNode()))nodes.push(node);
-  const pattern=/\bC11-[0-9]{1,9}\b/g;
   for(const textNode of nodes) {
     const text=textNode.data,fragment=document.createDocumentFragment();let last=0,match,changed=false;
+    pattern.lastIndex=0;
+    if(!pattern.test(text))continue;
     pattern.lastIndex=0;
     while((match=pattern.exec(text))) {
       if(!tickets[match[0]])continue;
@@ -1281,8 +1297,8 @@ document.addEventListener('selectionchange',publish);
 new ResizeObserver(()=>{const a=stableAnchor;layoutAll();restore(a);publish();}).observe(surface);
 article.addEventListener('load',()=>{const a=stableAnchor;layoutAll();restore(a);publish();},true);
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(S.theme==='system'&&!S.os)setSettings({});});
-window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,setCorpus,openCorpusPalette,closeCorpusPalette,
-  corpusSnapshot:()=>S.corpus,corpusBacklinks:()=>({path:S.file,heading:currentHeading(),links:(S.corpus?.links||[]).filter(link=>link.target===S.file)}),
+window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,setCorpus,setCorpusJSON,openCorpusPalette,closeCorpusPalette,
+  corpusSnapshot:()=>S.corpus,corpusBacklinks:()=>({path:S.corpus?.current||S.file,heading:currentHeading(),links:(S.corpus?.links||[]).filter(link=>link.target===(S.corpus?.current||S.file))}),
   openFind,find:query=>search(query),findNext:()=>nextHit(1),findPrevious:()=>nextHit(-1),findClose:closeFind,setSourceMode,expandDiagram,closeDiagram,
   themes:()=>[{id:'system',label:'system',scheme:'system',defaultTypeface:'serif'},...C11MD.themes.map(t=>({id:t.id,label:t.label,scheme:t.scheme,defaultTypeface:t.faceDef.id}))],
   typefaces:()=>[{id:'theme',label:'theme default',family:'theme',measure:null,leading:null},...C11MD.faces.map(f=>({id:f.id,label:f.label,family:f.family,measure:parseFloat(f.tokens['--face-measure']),leading:+f.tokens['--face-lh']}))]});

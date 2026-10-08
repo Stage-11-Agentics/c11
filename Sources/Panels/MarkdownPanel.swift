@@ -35,6 +35,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     }
 
     @Published private(set) var corpusSnapshot = MarkdownCorpusSnapshot.empty
+    private(set) var corpusCurrentPath: String?
     private var corpusIndexGeneration: UInt64 = 0
 
     /// Navigation history is transient and belongs to this panel only.
@@ -711,6 +712,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         let generation = corpusIndexGeneration
         guard !isClosed, let path else {
             corpusSnapshot = .empty
+            corpusCurrentPath = nil
             renderer?.publishCorpusSnapshot()
             Task { await MarkdownCorpusIndexRegistry.shared.remove(panelID: id, generation: generation) }
             return
@@ -718,6 +720,7 @@ final class MarkdownPanel: Panel, ObservableObject {
 
         let fileURL = URL(fileURLWithPath: path)
         corpusSnapshot = .empty
+        corpusCurrentPath = nil
         renderer?.publishCorpusSnapshot()
         Task { [weak self] in
             guard let self else { return }
@@ -725,10 +728,12 @@ final class MarkdownPanel: Panel, ObservableObject {
                 panelID: self.id,
                 generation: generation,
                 fileURL: fileURL
-            ) { [weak self] snapshot in
+            ) { [weak self] snapshot, currentPath in
                 Task { @MainActor [weak self] in
                     guard let self, !self.isClosed, self.filePath == path,
-                          self.corpusIndexGeneration == generation else { return }
+                          self.corpusIndexGeneration == generation,
+                          snapshot.revision >= self.corpusSnapshot.revision else { return }
+                    self.corpusCurrentPath = currentPath
                     self.corpusSnapshot = snapshot
                     self.renderer?.publishCorpusSnapshot()
                 }

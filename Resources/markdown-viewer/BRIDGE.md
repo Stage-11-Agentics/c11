@@ -49,7 +49,10 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   `corpusFile`, `corpusHeading`, `corpusHint`, `corpusTicketStatus`,
   `corpusLine`, `corpusMore`. Native localizes these when constructing
   settings; content is never used as localization markup.
-- `setCorpus(snapshot)`: replaces the current immutable corpus snapshot.
+- `setCorpus(snapshot)` / `setCorpusJSON(json, currentPath)`: replace the
+  current immutable corpus snapshot. Native serializes the bounded snapshot
+  off-main and submits one JSON string; `currentPath` is the resolved active
+  document path. The page parses the string and never scans files itself.
   Documents carry an absolute path, relative path, title and bounded heading
   list; links carry the source path/section and in-corpus target; ticket cards
   contain only locally resolved title/status. The page filters this data and

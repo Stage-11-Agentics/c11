@@ -9272,11 +9272,12 @@ final class Workspace: Identifiable, ObservableObject {
         orientation: SplitOrientation,
         insertFirst: Bool = false,
         filePath: String? = nil,
+        fragment: String? = nil,
         focus: Bool = true
     ) -> MarkdownPanel? {
         guard let paneId = paneIdForPanel(panelId) else { return nil }
 
-        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath)
+        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath, fragment: fragment)
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
@@ -9324,6 +9325,7 @@ final class Workspace: Identifiable, ObservableObject {
     func newMarkdownPanel(
         inPane paneId: PaneID,
         filePath: String? = nil,
+        fragment: String? = nil,
         focus: Bool? = nil,
         panelId: UUID? = nil,
         createdAt: Date? = Date()
@@ -9336,7 +9338,8 @@ final class Workspace: Identifiable, ObservableObject {
             id: panelId,
             createdAt: createdAt,
             workspaceId: id,
-            filePath: filePath
+            filePath: filePath,
+            fragment: fragment
         )
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle

@@ -2494,6 +2494,9 @@ class TerminalController {
         // Markdown WebKit commands query state off-main and use only bounded
         // main-actor hops for panel/model access and JavaScript submission.
         "markdown.scroll",
+        "markdown.navigate",
+        "markdown.history",
+        "markdown.links",
         "markdown.visible",
         "markdown.theme",
         "markdown.typeface",

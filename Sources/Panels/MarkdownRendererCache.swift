@@ -49,7 +49,7 @@ enum MarkdownNavigationOrigin: String, Sendable {
     case history
 }
 
-enum MarkdownNavigationOutcome: Equatable, Sendable {
+enum MarkdownNavigationOutcome: String, Equatable, Sendable {
     case navigated
     case unchanged
     case invalidTarget
@@ -135,6 +135,13 @@ struct MarkdownNavigationHistory: Equatable, Sendable {
     func jsonSnapshot() -> [String: Any] {
         [
             "index": currentIndex,
+            "can_back": canGoBack,
+            "can_forward": canGoForward,
+            "current": current.map { [
+                "path": $0.target.fileURL.path,
+                "fragment": $0.target.fragment as Any? ?? NSNull(),
+                "origin": $0.origin.rawValue
+            ] as [String: Any] } ?? NSNull(),
             "entries": entries.enumerated().map { index, entry in
                 var value: [String: Any] = [
                     "index": index,

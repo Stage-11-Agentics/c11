@@ -32,6 +32,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Navigation history is transient and belongs to this panel only.
     @Published private(set) var navigationHistory = MarkdownNavigationHistory()
     private(set) var pendingNavigationFragment: String?
+    private(set) var pendingNavigationPosition: MarkdownReadingPosition?
     private var navigationGeneration = 0
 
     /// The workspace this panel belongs to.
@@ -84,19 +85,94 @@ final class MarkdownPanel: Panel, ObservableObject {
         fragment: String?,
         origin: MarkdownNavigationOrigin
     ) async -> MarkdownNavigationOutcome {
+        await performNavigation(
+            to: MarkdownNavigationTarget(fileURL: fileURL, fragment: fragment),
+            origin: origin,
+            preserving: nil,
+            pageAlreadyHandled: false,
+            historyDestination: nil,
+            historyEntry: nil
+        )
+    }
+
+    @discardableResult
+    func navigateBack() async -> MarkdownNavigationOutcome {
+        await navigateHistory(backward: true)
+    }
+
+    @discardableResult
+    func navigateForward() async -> MarkdownNavigationOutcome {
+        await navigateHistory(backward: false)
+    }
+
+    /// Called after the bundled page has validated and applied a same-page
+    /// anchor jump. The supplied position is captured before that jump.
+    @discardableResult
+    func navigateFromDocumentLink(
+        to fileURL: URL,
+        fragment: String?,
+        position: MarkdownReadingPosition?,
+        pageAlreadyHandled: Bool
+    ) async -> MarkdownNavigationOutcome {
+        await performNavigation(
+            to: MarkdownNavigationTarget(fileURL: fileURL, fragment: fragment),
+            origin: .documentLink,
+            preserving: position,
+            pageAlreadyHandled: pageAlreadyHandled,
+            historyDestination: nil,
+            historyEntry: nil
+        )
+    }
+
+    func prepareDocumentLink(_ fileURL: URL) async -> MarkdownNavigationPreparation {
+        let currentPath = filePath
+        let target = MarkdownNavigationTarget(fileURL: fileURL)
+        return await Task.detached(priority: .userInitiated) {
+            MarkdownNavigationPolicy.prepare(target, currentFilePath: currentPath, origin: .documentLink)
+        }.value
+    }
+
+    private func navigateHistory(backward: Bool) async -> MarkdownNavigationOutcome {
         guard !isClosed else { return .panelClosed }
-        let target = MarkdownNavigationTarget(fileURL: fileURL, fragment: fragment)
-        guard navigationHistory.current?.target != target else { return .unchanged }
+        guard let destination = navigationHistory.target(backward: backward) else { return .unchanged }
+        return await performNavigation(
+            to: destination.entry.target,
+            origin: .history,
+            preserving: nil,
+            pageAlreadyHandled: false,
+            historyDestination: destination.index,
+            historyEntry: destination.entry
+        )
+    }
+
+    private func performNavigation(
+        to target: MarkdownNavigationTarget,
+        origin: MarkdownNavigationOrigin,
+        preserving suppliedPosition: MarkdownReadingPosition?,
+        pageAlreadyHandled: Bool,
+        historyDestination: Int?,
+        historyEntry: MarkdownNavigationEntry?
+    ) async -> MarkdownNavigationOutcome {
+        guard !isClosed else { return .panelClosed }
+        if historyDestination == nil, navigationHistory.current?.target == target { return .unchanged }
 
         navigationGeneration &+= 1
         let generation = navigationGeneration
         let currentPath = filePath
-        let position = await captureNavigationPosition()
+        let position: MarkdownReadingPosition?
+        if let suppliedPosition { position = suppliedPosition }
+        else { position = await captureNavigationPosition() }
         guard !isClosed else { return .panelClosed }
         guard generation == navigationGeneration else { return .superseded }
 
         let preparation = await Task.detached(priority: .userInitiated) {
-            MarkdownNavigationPolicy.prepare(target, currentFilePath: currentPath, origin: origin)
+            MarkdownNavigationPolicy.prepare(
+                target,
+                currentFilePath: currentPath,
+                origin: historyEntry == nil ? origin : .history,
+                scopeRootPath: historyEntry?.scopeRootPath,
+                allowOutsideScope: historyEntry?.origin == .agentCLI
+            )
         }.value
         guard !isClosed else { return .panelClosed }
         guard generation == navigationGeneration else { return .superseded }
@@ -119,16 +195,32 @@ final class MarkdownPanel: Panel, ObservableObject {
                 lastContentChangeAt = modificationDate
                 startFileWatcher()
             }
-            navigationHistory.push(
-                target,
-                origin: origin,
-                scopeRootPath: scopeRootPath,
-                preserving: position
-            )
-            pendingNavigationFragment = target.fragment
-            if sameDocument, let fragment = target.fragment {
-                renderer?.call("scrollToHeading", arguments: [fragment])
+
+            if let historyDestination, let historyEntry {
+                guard navigationHistory.move(to: historyDestination, preserving: position) != nil else {
+                    return .superseded
+                }
+                pendingNavigationPosition = historyEntry.readingPosition
             } else {
+                navigationHistory.push(
+                    target,
+                    origin: origin,
+                    scopeRootPath: scopeRootPath,
+                    preserving: position
+                )
+                pendingNavigationPosition = nil
+            }
+            pendingNavigationFragment = target.fragment
+
+            if sameDocument {
+                if !pageAlreadyHandled {
+                    renderer?.navigateWithinDocument(
+                        position: pendingNavigationPosition,
+                        fragment: target.fragment
+                    )
+                }
+            } else {
+                renderer?.prepareNavigation(position: pendingNavigationPosition, fragment: target.fragment)
                 renderer?.synchronize()
             }
             return .navigated
@@ -398,6 +490,17 @@ final class MarkdownPanel: Panel, ObservableObject {
         return created
     }
 
+    func takePendingNavigation() -> (position: MarkdownReadingPosition?, fragment: String?) {
+        let pending = (pendingNavigationPosition, pendingNavigationFragment)
+        clearPendingNavigation()
+        return pending
+    }
+
+    func clearPendingNavigation() {
+        pendingNavigationPosition = nil
+        pendingNavigationFragment = nil
+    }
+
     /// Observer for system appearance changes.
     private var appearanceObserver: NSObjectProtocol?
 
@@ -434,16 +537,18 @@ final class MarkdownPanel: Panel, ObservableObject {
         id: UUID? = nil,
         createdAt: Date? = Date(),
         workspaceId: UUID,
-        filePath: String? = nil
+        filePath: String? = nil,
+        fragment: String? = nil
     ) {
         self.id = id ?? UUID()
         self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = Self.titleForFilePath(filePath)
+        self.pendingNavigationFragment = filePath == nil ? nil : fragment
         self.presentation = MarkdownPresentation.lastUsed()
         navigationHistory.reset(
-            to: filePath.map { MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: $0)) },
+            to: filePath.map { MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: $0), fragment: fragment) },
             origin: .agentCLI
         )
 
@@ -712,6 +817,18 @@ final class MarkdownPanel: Panel, ObservableObject {
 
 @MainActor
 enum MarkdownReaderShortcutRouter {
+    static func routeNavigationHistory(event: NSEvent, panel: MarkdownPanel?) -> Bool {
+        guard let panel, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command else {
+            return false
+        }
+        switch event.charactersIgnoringModifiers {
+        case "[": Task { @MainActor [weak panel] in _ = await panel?.navigateBack() }
+        case "]": Task { @MainActor [weak panel] in _ = await panel?.navigateForward() }
+        default: return false
+        }
+        return true
+    }
+
     static func routeOutlineToggle(
         event: NSEvent,
         panel: MarkdownPanel?,

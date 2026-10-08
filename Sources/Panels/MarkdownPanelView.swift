@@ -331,6 +331,7 @@ private struct MarkdownReaderToolbar: View {
     @ObservedObject var readout: MarkdownReaderReadoutState
     @ObservedObject var readerOutline: MarkdownReaderOutlineState
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("markdown.links.openInNewPanel") private var opensLinksInNewPanel = false
 
     private var palette: MarkdownReaderPalette { MarkdownReaderPalette(theme: panel.theme, colorScheme: colorScheme) }
     private var outlineOpen: Bool {
@@ -424,6 +425,28 @@ private struct MarkdownReaderToolbar: View {
 
     private var controls: some View {
         HStack(spacing: 3) {
+            Button { Task { _ = await panel.navigateBack() } } label: {
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 22, height: 26)
+            }
+            .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
+            .disabled(!panel.canNavigateBack)
+            .safeHelp(String(localized: "markdown.reader.history.back", defaultValue: "Back in reading history (⌘[)"))
+            .accessibilityLabel(String(localized: "markdown.reader.history.back", defaultValue: "Back in reading history"))
+            .accessibilityIdentifier("MarkdownHistoryBack")
+
+            Button { Task { _ = await panel.navigateForward() } } label: {
+                Image(systemName: "chevron.forward")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 22, height: 26)
+            }
+            .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
+            .disabled(!panel.canNavigateForward)
+            .safeHelp(String(localized: "markdown.reader.history.forward", defaultValue: "Forward in reading history (⌘])"))
+            .accessibilityLabel(String(localized: "markdown.reader.history.forward", defaultValue: "Forward in reading history"))
+            .accessibilityIdentifier("MarkdownHistoryForward")
+
             Button { panel.requestFind() } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13, weight: .medium))
@@ -480,6 +503,23 @@ private struct MarkdownReaderToolbar: View {
             .padding(.horizontal, 2)
             .fixedSize()
             .background(palette.control.opacity(0.75), in: RoundedRectangle(cornerRadius: 5))
+
+            Button { opensLinksInNewPanel.toggle() } label: {
+                Image(systemName: opensLinksInNewPanel ? "rectangle.on.rectangle" : "arrow.turn.down.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 24, height: 22)
+            }
+            .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette, active: opensLinksInNewPanel))
+            .safeHelp(opensLinksInNewPanel
+                ? String(localized: "markdown.reader.navigation.default.help.newPanel", defaultValue: "Links open in a new panel by default")
+                : String(localized: "markdown.reader.navigation.default.help.samePanel", defaultValue: "Links open in this panel by default")
+            )
+            .accessibilityLabel(String(localized: "markdown.reader.navigation.default.label", defaultValue: "Default link destination"))
+            .accessibilityValue(opensLinksInNewPanel
+                ? String(localized: "markdown.reader.navigation.default.newPanel", defaultValue: "New panel")
+                : String(localized: "markdown.reader.navigation.default.samePanel", defaultValue: "This panel")
+            )
+            .accessibilityIdentifier("MarkdownNavigationDefault")
 
             themeMenu
 

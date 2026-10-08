@@ -210,6 +210,22 @@ input { font: inherit; color: inherit; }
   background: var(--pop); border-radius: 7px; box-shadow: var(--shadow); font-family: var(--font-prose);
   font-size: calc(14px * var(--scale) * var(--face-rail)); line-height: 1.5; color: var(--ink);
 }
+.anchor-suggestions, .link-peek {
+  position:absolute; z-index:48; left:16px; bottom:16px; width:min(360px,calc(100% - 32px));
+  max-height:42%; overflow:auto; padding:12px 14px; border:1px solid var(--rule);
+  border-radius:8px; background:var(--pop); color:var(--ink);
+  box-shadow:var(--shadow); font:12px/1.5 var(--mono);
+}
+.anchor-suggestions[hidden], .link-peek[hidden] { display:none; }
+.anchor-suggestions .suggestion-title { display:block; margin-bottom:7px; color:var(--c-dim); }
+.anchor-suggestions button { display:block; width:100%; padding:5px 0; border:0; background:transparent; color:var(--c-text); text-align:left; cursor:pointer; }
+.anchor-suggestions button:hover { color:var(--gold-ink); }
+.link-peek { left:auto; bottom:auto; max-height:40%; font:12px/1.55 var(--font-prose); }
+.link-peek .peek-title { margin:0 0 6px; font:600 12px/1.4 var(--mono); color:var(--ink-dim); }
+.link-peek .peek-content { overflow:hidden; }
+.link-peek .peek-content > :first-child { margin-top:0; }
+.link-peek .peek-content > :last-child { margin-bottom:0; }
+.link-peek a { pointer-events:none; color:inherit; text-decoration:none; }
 .fnpop.open { display: block; }
 .fnpop .sn { font-family: var(--mono); font-size: 10.5px; color: var(--k-note); margin-right: 6px; }
 .fnpop code { font-family: var(--mono); font-size: 0.84em; }

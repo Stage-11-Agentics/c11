@@ -103,6 +103,116 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         }
     }
 
+    func testMarkdownNavigationConfinesAutomaticLinksToRepositoryAndRejectsEscapingSymlinks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-navigation-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("project")
+        let documents = repository.appendingPathComponent("docs")
+        let outside = root.appendingPathComponent("outside.md")
+        let current = documents.appendingPathComponent("current.md")
+        let target = repository.appendingPathComponent("guide/install.md")
+        let escapedLink = documents.appendingPathComponent("escape.md")
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Current".write(to: current, atomically: true, encoding: .utf8)
+        try "# Installation\n\nSafe section".write(to: target, atomically: true, encoding: .utf8)
+        try "# Outside".write(to: outside, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: escapedLink, withDestinationURL: outside)
+
+        let sameDocument = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: current, fragment: "current"),
+            currentFilePath: current.path,
+            origin: .documentLink
+        )
+        guard case let .ready(path, content, _, scopeRootPath) = sameDocument else {
+            return XCTFail("same-document anchors should navigate without rereading content: \(sameDocument)")
+        }
+        XCTAssertEqual(path, current.path)
+        XCTAssertNil(content)
+        XCTAssertEqual(scopeRootPath, repository.resolvingSymlinksInPath().standardizedFileURL.path)
+
+        let inRepository = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: target, fragment: "installation"),
+            currentFilePath: current.path,
+            origin: .documentLink
+        )
+        guard case let .ready(targetPath, targetContent, _, targetScope) = inRepository else {
+            return XCTFail("a repository-local target should be readable: \(inRepository)")
+        }
+        XCTAssertEqual(targetPath, target.path)
+        XCTAssertTrue(try XCTUnwrap(targetContent).contains("Safe section"))
+        XCTAssertEqual(targetScope, repository.path)
+
+        for escaped in [outside, escapedLink] {
+            let result = MarkdownNavigationPolicy.prepare(
+                MarkdownNavigationTarget(fileURL: escaped),
+                currentFilePath: current.path,
+                origin: .documentLink
+            )
+            guard case .rejected(.outsideScope) = result else {
+                return XCTFail("automatic navigation must reject \(escaped.path): \(result)")
+            }
+        }
+    }
+
+    func testMarkdownNavigationOutcomesValidateTypeExistenceAndExplicitAgentTargets() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-navigation-\(UUID().uuidString)")
+        let source = root.appendingPathComponent("source/reader.md")
+        let outside = root.appendingPathComponent("outside.txt")
+        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Reader".write(to: source, atomically: true, encoding: .utf8)
+        try "Explicit target".write(to: outside, atomically: true, encoding: .utf8)
+
+        let invalidExtension = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: outside),
+            currentFilePath: source.path,
+            origin: .palette
+        )
+        guard case .rejected(.invalidTarget) = invalidExtension else {
+            return XCTFail("automatic navigation only accepts Markdown files: \(invalidExtension)")
+        }
+        let missing = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: root.appendingPathComponent("missing.md")),
+            currentFilePath: source.path,
+            origin: .backlink
+        )
+        guard case .rejected(.notFound) = missing else {
+            return XCTFail("missing Markdown targets should report notFound: \(missing)")
+        }
+        let longFragment = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: source, fragment: String(repeating: "a", count: 4097)),
+            currentFilePath: source.path,
+            origin: .palette
+        )
+        guard case .rejected(.invalidTarget) = longFragment else {
+            return XCTFail("oversized fragments should report invalidTarget: \(longFragment)")
+        }
+
+        let explicitAgentTarget = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: outside),
+            currentFilePath: source.path,
+            origin: .agentCLI
+        )
+        guard case let .ready(path, content, _, scopeRootPath) = explicitAgentTarget else {
+            return XCTFail("an explicit agent-selected target should remain available: \(explicitAgentTarget)")
+        }
+        XCTAssertEqual(path, outside.path)
+        XCTAssertEqual(content, "Explicit target")
+        XCTAssertNil(scopeRootPath)
+
+        let historyRestore = MarkdownNavigationPolicy.prepare(
+            MarkdownNavigationTarget(fileURL: outside),
+            currentFilePath: source.path,
+            origin: .history,
+            allowOutsideScope: true
+        )
+        guard case .ready = historyRestore else {
+            return XCTFail("history should restore an explicitly agent-selected entry: \(historyRestore)")
+        }
+    }
+
     private static let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")!
 
     func testDisguisedExecutableAndDirectoryAreNotImages() throws {

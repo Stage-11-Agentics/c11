@@ -209,7 +209,9 @@ enum MarkdownNavigationPolicy {
     static func prepare(
         _ target: MarkdownNavigationTarget,
         currentFilePath: String?,
-        origin: MarkdownNavigationOrigin
+        origin: MarkdownNavigationOrigin,
+        scopeRootPath: String? = nil,
+        allowOutsideScope: Bool = false
     ) -> MarkdownNavigationPreparation {
         let fileURL = target.fileURL.standardizedFileURL
         let filePath = fileURL.path
@@ -220,7 +222,7 @@ enum MarkdownNavigationPolicy {
             return .rejected(.invalidTarget)
         }
 
-        let requiresMarkdown = origin != .agentCLI
+        let requiresMarkdown = origin != .agentCLI && !allowOutsideScope
         if requiresMarkdown, !markdownExtensions.contains(fileURL.pathExtension.lowercased()) {
             return .rejected(.invalidTarget)
         }
@@ -234,14 +236,16 @@ enum MarkdownNavigationPolicy {
             return .rejected(.notReadable)
         }
 
-        let scoped = origin != .agentCLI
+        let scoped = origin != .agentCLI && !allowOutsideScope
         var rootURL: URL?
         let resolvedTargetURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
         if scoped {
-            guard let currentFilePath,
-                  let root = documentRoot(for: currentFilePath) else {
-                return .rejected(.outsideScope)
-            }
+            let root: URL
+            if let scopeRootPath {
+                root = URL(fileURLWithPath: scopeRootPath, isDirectory: true).standardizedFileURL
+            } else if let currentFilePath, let discovered = documentRoot(for: currentFilePath) {
+                root = discovered
+            } else { return .rejected(.outsideScope) }
             rootURL = root
             let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
             let prefix = resolvedRoot.path.hasSuffix("/") ? resolvedRoot.path : resolvedRoot.path + "/"

@@ -74,6 +74,64 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
     }
 
+    func testPanelNavigationOwnsHistoryAndLeavesItsIdentityStable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-panel-navigation-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        let documents = repository.appendingPathComponent("docs")
+        let source = documents.appendingPathComponent("reader.md")
+        let target = documents.appendingPathComponent("target.md")
+        let outside = root.appendingPathComponent("outside.md")
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Reader\n\nSource content.\n".write(to: source, atomically: true, encoding: .utf8)
+        let targetMarkdown = "# Target\n\n## Details\n\n" + (1...30).map { "Target content \($0).\n\n" }.joined()
+        try targetMarkdown.write(to: target, atomically: true, encoding: .utf8)
+        try "# Outside\n".write(to: outside, atomically: true, encoding: .utf8)
+
+        let workspaceID = UUID()
+        let panel = MarkdownPanel(workspaceId: workspaceID, filePath: source.path)
+        defer { panel.close() }
+        let panelID = panel.id
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let firstNavigation = await panel.navigate(to: target, fragment: "details", origin: .palette)
+        XCTAssertEqual(firstNavigation, .navigated)
+        await rendered(renderer, revision: 2)
+        XCTAssertEqual(panel.id, panelID)
+        XCTAssertEqual(panel.workspaceId, workspaceID)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.navigationHistory.current?.origin, .palette)
+        XCTAssertTrue(panel.canNavigateBack)
+        let targetStateValue = try await call(renderer, "visible")
+        let targetState = try XCTUnwrap(targetStateValue as? [String: Any])
+        XCTAssertEqual((targetState["heading"] as? [String: Any])?["text"] as? String, "Details")
+
+        let backOutcome = await panel.navigateBack()
+        XCTAssertEqual(backOutcome, .navigated)
+        await rendered(renderer, revision: 3)
+        XCTAssertEqual(panel.filePath, source.path)
+        XCTAssertTrue(panel.canNavigateForward)
+        let forwardOutcome = await panel.navigateForward()
+        XCTAssertEqual(forwardOutcome, .navigated)
+        await rendered(renderer, revision: 4)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.id, panelID)
+        XCTAssertEqual(panel.workspaceId, workspaceID)
+
+        let entriesBeforeRejection = panel.navigationHistory.entries.count
+        let rejectedNavigation = await panel.navigate(to: outside, fragment: nil, origin: .backlink)
+        XCTAssertEqual(rejectedNavigation, .outsideScope)
+        XCTAssertEqual(panel.filePath, target.path)
+        XCTAssertEqual(panel.navigationHistory.entries.count, entriesBeforeRejection)
+    }
+
     func testScrollToHeadingPrefersExactAndReportsAmbiguousBroaderMatches() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-heading-match-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

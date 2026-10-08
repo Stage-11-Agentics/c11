@@ -64,10 +64,39 @@ def main() -> None:
                         params = request.get("params", {})
                         if method == "system.capabilities":
                             payload = {
-                                "methods": ["panel.list", "system.capabilities"],
-                                "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}],
+                                "methods": [
+                                    "panel.list", "system.capabilities", "markdown.navigate",
+                                    "markdown.history", "markdown.links",
+                                ],
+                                "features": [
+                                    {"id": "vocabulary.workspace_area_panel", "version": 1},
+                                    {"id": "markdown.agent_cli", "version": 1},
+                                ],
                             }
                             stream.write(response(request, result=payload))
+                            stream.flush()
+                        elif method == "markdown.navigate":
+                            stream.write(response(request, result={
+                                "panel_id": params.get("panel_id"),
+                                "path": params.get("path"),
+                                "fragment": params.get("fragment"),
+                                "outcome": "navigated",
+                            }))
+                            stream.flush()
+                        elif method == "markdown.history":
+                            stream.write(response(request, result={
+                                "panel_id": params.get("panel_id"),
+                                "entries": [],
+                                "can_back": False,
+                                "can_forward": False,
+                            }))
+                            stream.flush()
+                        elif method == "markdown.links":
+                            stream.write(response(request, result={
+                                "panel_id": params.get("panel_id"),
+                                "broken": [],
+                                "truncated": False,
+                            }))
                             stream.flush()
                         elif method == "markdown.visible" and params.get("watch") is True:
                             stream.write(response(request, result=state))
@@ -152,6 +181,13 @@ def main() -> None:
                 ),
                 (["--json", "markdown", "font", "--panel", panel, "--scale", "1.4"], "markdown.font", {"panel_id": panel, "scale": 1.4}),
                 (["--json", "markdown", "open-external", "--panel", panel], "markdown.open_external", {"panel_id": panel}),
+                (
+                    ["--json", "markdown", "open", "/tmp/guide.md#installation", "--panel", panel],
+                    "markdown.navigate",
+                    {"panel_id": panel, "path": "/tmp/guide.md", "fragment": "installation"},
+                ),
+                (["--json", "markdown", "history", "--panel", panel, "--json"], "markdown.history", {"panel_id": panel}),
+                (["--json", "markdown", "links", "--panel", panel, "--broken", "--json"], "markdown.links", {"panel_id": panel, "broken": True}),
             ]
             for args, expected_method, expected_params in cases:
                 start = len(requests)
@@ -168,6 +204,9 @@ def main() -> None:
                 ["markdown", "font", "--panel", panel, "--scale", "3.1"],
                 ["markdown", "font", "--panel", panel, "--scale", "nan"],
                 ["markdown", "font", "--panel", panel, "--scale", "0x1p0"],
+                ["markdown", "open", "/tmp/guide.md#bad%ZZ", "--panel", panel],
+                ["markdown", "open", "/tmp/guide.md#target", "--panel", panel, "--workspace", "workspace:1"],
+                ["markdown", "open", "/tmp/guide.md#target", "--panel", "8"],
             ]:
                 start = len(requests)
                 result = run(*args)
@@ -195,7 +234,7 @@ def main() -> None:
             watch_requests = [item for item in requests[start:] if item.get("method") == "markdown.visible"]
             assert len(watch_requests) == 1 and watch_requests[0]["params"]["watch"] is True, watch_requests
             assert not errors, errors
-            print("PASS: markdown agent CLI sends explicit panel targets and exact socket methods/params")
+            print("PASS: markdown agent CLI sends explicit panel targets, navigates in place, and sends exact socket methods/params")
             print("PASS: invalid CLI scales and missing targets reject before markdown mutation; visible watch prints NDJSON")
         finally:
             stopped.set()

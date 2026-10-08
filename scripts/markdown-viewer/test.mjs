@@ -487,8 +487,43 @@ try {
   const url=page.url();await page.getByRole('link',{name:'remote',exact:true}).click();assert.equal(page.url(),url);
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').kind),'external');
   await page.getByRole('link',{name:'local',exact:true}).click();assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').kind),'local');
-  await page.locator('#article a[href="#target"]').click();assert.equal(await page.locator('#back').isVisible(),true);await page.locator('#back').click();
-  scenario('link interception/native classification and in-document return pill');
+  const anchorURL=page.url();await page.locator('#article a[href="#target"]').click();assert.equal(page.url(),anchorURL);
+  const anchorMessage=await page.evaluate(()=>testMessages.findLast(x=>x.type==='link'));
+  assert.equal(anchorMessage.kind,'anchor');assert.equal(anchorMessage.position.lines.first,1);
+  assert.equal(await page.locator('#back').isVisible(),false);
+  const jumpedState=await page.evaluate(()=>{const sc=document.getElementById('scroller'),target=document.querySelector('[data-heading-slug="target"]'),rect=target.getBoundingClientRect(),box=sc.getBoundingClientRect();return {state:c11md.visible(),scrollTop:sc.scrollTop,targetVisible:rect.top<box.bottom&&rect.bottom>box.top};});
+  assert.ok(jumpedState.scrollTop>0&&jumpedState.targetVisible,JSON.stringify(jumpedState));
+  scenario('link interception carries the pre-jump position and leaves history to the native panel');
+
+  const brokenAnchorDocument='# Guide\n\n[broken](#instalation)\n\n'+Array.from({length:30},(_,i)=>'Introductory paragraph '+i+'. Keep the target heading below the fold.\n\n').join('')+'## Installation\n\nTarget section.\n\n## Integrations\n\nAnother section.\n';
+  await load(brokenAnchorDocument,'/synthetic/broken-anchor.md');
+  await page.locator('#article a[href="#instalation"]').click();
+  assert.equal(await page.locator('#anchorSuggestions').isVisible(),true);
+  const beforeSuggestion=await page.evaluate(()=>c11md.visible());
+  const suggestion=page.locator('#anchorSuggestions button').first();
+  assert.ok((await suggestion.innerText()).includes('Installation'));
+  await suggestion.click();
+  const suggestedLink=await page.evaluate(()=>testMessages.findLast(x=>x.type==='link'));
+  assert.equal(suggestedLink.href,'#installation');assert.equal(suggestedLink.position.lines.first,beforeSuggestion.lines.first);
+  const suggestedState=await page.evaluate(()=>{const sc=document.getElementById('scroller'),target=document.getElementById('c11md-h-installation'),rect=target.getBoundingClientRect(),box=sc.getBoundingClientRect();return {state:c11md.visible(),scrollTop:sc.scrollTop,targetVisible:rect.top<box.bottom&&rect.bottom>box.top};});
+  assert.ok(suggestedState.scrollTop>0&&suggestedState.targetVisible,JSON.stringify(suggestedState));
+  scenario('broken anchors suggest the closest heading and its selection emits a history link');
+
+  await load('# Reader\n\n[peek](target.md#Details)\n');
+  const peekLink=page.getByRole('link',{name:'peek',exact:true});await peekLink.hover();
+  await page.waitForFunction(()=>testMessages.some(x=>x.type==='peek'&&x.action==='show'));
+  const peekRequest=await page.evaluate(()=>testMessages.findLast(x=>x.type==='peek'&&x.action==='show'));
+  const peekShown=await page.evaluate(request=>c11md.showLinkPeek(request.id,'/synthetic/target.md','details',
+    '# Target\n\n## Details\n\nActual section content from the linked document.\n',request.rect),peekRequest);
+  assert.equal(peekShown,true);assert.equal(await page.locator('#linkPeek').isVisible(),true);
+  assert.ok((await page.locator('#linkPeek').innerText()).includes('Actual section content from the linked document.'));
+  assert.equal(await page.evaluate(id=>c11md.hideLinkPeek(id),peekRequest.id),true);
+  assert.equal(await page.locator('#linkPeek').isVisible(),false);
+  const index=await page.evaluate(()=>c11md.linkIndex());
+  assert.ok(index.links.some(link=>link.href==='target.md#Details'));
+  assert.ok(index.headings.some(heading=>heading.slug==='reader'));
+  assert.ok((await page.evaluate(()=>c11md.inspectMarkdowns(['# Synthetic\n\n## Target\n'])))[0].some(heading=>heading.slug==='target'));
+  scenario('native-fed hover peek displays real target section content and page link index exposes parsed headings/links');
   await load('# Article\n\n## Source\n\n## Target\n\n## Target\n');
   for(const name of ['article','source','target','target-1'])assert.equal(await page.evaluate(name=>c11md.scrollToHeading(name).ok,name),true);
   assert.equal(await page.locator('article#article').count(),1);assert.equal(await page.locator('#source.source').count(),1);

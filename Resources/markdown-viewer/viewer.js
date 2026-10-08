@@ -9,13 +9,14 @@ const surface = $('#surface'), scroller = $('#scroller'), srcScroller = $('#srcS
 const article = $('#article'), col = $('#col'), layout = $('#layout'), source = $('#source');
 const outlinePanel = $('#outlinePanel'), outlineFilter = $('#outlineFilter'), outlineList = $('#outlineList');
 const findbar = $('#findbar'), findInput = $('#findInput'), findCount = $('#findCount'), findTicks = $('#findTicks');
+const anchorSuggestions = $('#anchorSuggestions'), linkPeek = $('#linkPeek');
 const findPreviousButton = $('#findPrevious'), findNextButton = $('#findNext'), findCloseButton = $('#findClose');
 let findDebounce=null;
-const defaults = {copy:'copy', copied:'copied', copyLink:'copy link to this section', expand:'expand ⤢', close:'close', diagram:'diagram', diagramError:'Diagram could not be rendered', imageBlocked:'Image unavailable', notes:'notes', back:'back to', source:'source', frontmatter:'frontmatter', outlineTitle:'Outline', outlineFilter:'Filter outline', outlineEmpty:'No headings', outlineNoMatches:'No headings match', outlineClearFilter:'Clear filter', outlineSummary:'%d min · %d words · %d lines', outlineTaskCount:'%d of %d tasks complete', findOpen:'Find (⌘F)', findPlaceholder:'Find in document', findPrevious:'Previous match', findNext:'Next match', findClose:'Close find', findCount:'%d / %d'};
+const defaults = {copy:'copy', copied:'copied', copyLink:'copy link to this section', expand:'expand ⤢', close:'close', diagram:'diagram', diagramError:'Diagram could not be rendered', imageBlocked:'Image unavailable', notes:'notes', back:'back to', source:'source', frontmatter:'frontmatter', outlineTitle:'Outline', outlineFilter:'Filter outline', outlineEmpty:'No headings', outlineNoMatches:'No headings match', outlineClearFilter:'Clear filter', outlineSummary:'%d min · %d words · %d lines', outlineTaskCount:'%d of %d tasks complete', findOpen:'Find (⌘F)', findPlaceholder:'Find in document', findPrevious:'Previous match', findNext:'Next match', findClose:'Close find', findCount:'%d / %d', brokenAnchorTitle:'Heading “%s” not found. Closest headings:', linkPeekTitle:'Preview'};
 const S = {markdown:'', file:'', baseURL:'', revision:null, mode:'read', scale:1,
   theme:'system', typeface:'theme', outlineChoice:'auto', os:null, resolved:'dark', face:'serif',
   heads:[], tree:[], outlineSections:new Map(), blocks:[], generation:0, renderQueue:Promise.resolve(),
-  find:{query:'', draft:'', hits:[], index:-1}, findOpen:false, strings:{...defaults}, words:0, lines:1, diagram:null};
+  find:{query:'', draft:'', hits:[], index:-1}, findOpen:false, strings:{...defaults}, words:0, lines:1, diagram:null, peekGeneration:0};
 function post(message) { window.webkit?.messageHandlers?.c11md?.postMessage(message); }
 function error(code, e) { post({type:'error', code, message:String(e?.message || e).slice(0,400), revision:S.revision}); }
 const plain = t => (t.children || []).map(c => ['text','code_inline','image'].includes(c.type) ? c.content : '').join('').trim();
@@ -342,6 +343,29 @@ function buildHeadings(tokens) {
   S.outlineSections=new Map();let section=null;
   for(const heading of S.heads) {if(heading.level<=2)section=heading.slug;S.outlineSections.set(heading.slug,section);}
   renderOutlineList();
+}
+function inspectMarkdown(markdown) {
+  const {body}=prep(String(markdown||'')),tokens=md.parse(body,{}),headings=[],links=[];
+  for(let i=0;i<tokens.length;i++) {
+    const token=tokens[i];
+    if(token.type==='heading_open')headings.push({
+      level:+token.tag.slice(1),text:plain(tokens[i+1]),slug:token.attrGet('id'),line:(token.map?.[0]??0)+1
+    });
+    if(token.type!=='inline')continue;
+    let active=null;
+    for(const child of token.children||[]) {
+      if(child.type==='link_open')active={href:child.attrGet('href')||'',text:''};
+      else if(child.type==='link_close'&&active) {
+        links.push({href:active.href,text:active.text.trim().slice(0,512),line:(token.map?.[0]??0)+1});active=null;
+      } else if(active&&['text','code_inline','image'].includes(child.type))active.text+=child.content;
+    }
+  }
+  return {headings,links};
+}
+function linkIndex() {return {...inspectMarkdown(S.markdown),file:S.file};}
+function inspectMarkdowns(markdowns) {
+  if(!Array.isArray(markdowns)||markdowns.length>128)return [];
+  return markdowns.map(markdown=>inspectMarkdown(markdown).headings);
 }
 function activeOutlineSection(current=currentHeading()) {
   if(!current)return null;
@@ -858,6 +882,76 @@ function scrollToHeading(query) {
   const el=headingElement(h.slug);if(el){scroller.scrollTop=topIn(el)-18;el.classList.remove('section-flash');void el.offsetWidth;el.classList.add('section-flash');}
   publish();return {ok:true,heading:h};
 }
+function navigateFragment(fragment) {
+  const slug=String(fragment||'').replace(/^#/,''),heading=S.heads.find(candidate=>candidate.slug===slug);
+  if(!heading) {showBrokenAnchorSuggestions(slug);return {ok:false,heading:null};}
+  if(S.mode==='source')setSourceMode(false);
+  const element=headingElement(heading.slug);
+  if(element) {scroller.scrollTop=topIn(element)-18;element.classList.remove('section-flash');void element.offsetWidth;element.classList.add('section-flash');}
+  publish();return {ok:true,heading};
+}
+function headingDistance(left,right) {
+  const a=String(left).toLowerCase().slice(0,96),b=String(right).toLowerCase().slice(0,96);
+  let previous=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++) {
+    const next=[i];
+    for(let j=1;j<=b.length;j++)next[j]=Math.min(next[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));
+    previous=next;
+  }
+  return previous[b.length]/Math.max(1,a.length,b.length);
+}
+function suggestHeading(query) {
+  const normalized=String(query||'').toLowerCase().slice(0,96);
+  return S.heads.map((heading,index)=>({heading,index,score:Math.min(
+    headingDistance(normalized,heading.slug),headingDistance(normalized,heading.text)
+  )})).sort((a,b)=>a.score-b.score||a.index-b.index).slice(0,5).map(x=>x.heading);
+}
+function showBrokenAnchorSuggestions(query) {
+  hideNavigationOverlays();
+  anchorSuggestions.replaceChildren();
+  const title=document.createElement('span');title.className='suggestion-title';
+  title.textContent=S.strings.brokenAnchorTitle.replace('%s',String(query).slice(0,120));
+  anchorSuggestions.append(title);
+  for(const heading of suggestHeading(query)) {
+    const button=document.createElement('button');button.type='button';button.textContent=heading.text;
+    button.addEventListener('click',()=>{
+      const position=visible(),href='#'+encodeURIComponent(heading.slug);
+      post({type:'link',href,kind:'anchor',resolvedURL:href,position,
+        modifiers:{meta:false,ctrl:false,shift:false,alt:false}});
+      scrollToHeading(heading.slug);anchorSuggestions.hidden=true;
+    });
+    anchorSuggestions.append(button);
+  }
+  anchorSuggestions.hidden=false;
+}
+function peekMarkup(markdown,fragment) {
+  const tokens=md.parse(prep(String(markdown||'')).body,{}),heads=[];
+  tokens.forEach((token,index)=>{if(token.type==='heading_open')heads.push({index,level:+token.tag.slice(1),slug:token.attrGet('id')||''});});
+  let selected=fragment?heads.findIndex(head=>head.slug===fragment.replace(/^#/,'')):0;
+  let start=selected>=0?heads[selected].index:0,end=tokens.length;
+  if(selected>=0) {
+    for(let i=selected+1;i<heads.length;i++)if(heads[i].level<=heads[selected].level){end=heads[i].index;break;}
+  } else end=Math.min(tokens.length,18);
+  const previousBase=S.baseURL;S.baseURL='https://c11.invalid/';
+  try {return {html:sanitize(md.renderer.render(tokens.slice(start,end),md.options,{})),heading:selected>=0?plain(tokens[heads[selected].index+1]):''};}
+  finally {S.baseURL=previousBase;}
+}
+function showLinkPeek(id,filePath,fragment,markdown,rect={}) {
+  if(id!==S.peekGeneration||typeof markdown!=='string')return false;
+  const preview=peekMarkup(markdown,fragment),content=document.createElement('div');content.className='peek-content';content.innerHTML=preview.html;
+  $$('.h-anchor,.copy,.expand,input,button,figure.diagram',content).forEach(node=>node.remove());
+  linkPeek.replaceChildren();
+  const title=document.createElement('div');title.className='peek-title';
+  title.textContent=[S.strings.linkPeekTitle,String(filePath||'').split('/').at(-1),preview.heading].filter(Boolean).join('  ›  ');
+  linkPeek.append(title,content);linkPeek.hidden=false;
+  const box=surface.getBoundingClientRect(),x=(Number(rect.x)||12)-box.left,y=(Number(rect.y)||12)-box.top,h=Number(rect.height)||0;
+  const left=clamp(x,12,surface.clientWidth-linkPeek.offsetWidth-12);
+  let top=y+h+8;if(top+linkPeek.offsetHeight>surface.clientHeight-10)top=Math.max(10,y-linkPeek.offsetHeight-8);
+  linkPeek.style.left=`${left}px`;linkPeek.style.top=`${top}px`;
+  return true;
+}
+function hideLinkPeek(id) {if(id!==S.peekGeneration)return false;linkPeek.hidden=true;return true;}
+function hideNavigationOverlays() {S.peekGeneration++;anchorSuggestions.hidden=true;linkPeek.hidden=true;}
 let overlayScale=1;
 function expandDiagram(number) {
   const fig=$$('figure.diagram',article).find(x=>+x.dataset.n===+number),svg=fig?.querySelector('svg');if(!svg)return false;
@@ -879,22 +973,47 @@ function handleClick(e) {
   const expand=target.closest('.expand,.diagram-stage');if(expand){expandDiagram(+expand.closest('figure').dataset.n);return;}
   if(!a)return;
   const href=a.getAttribute('href')||'',info=linkInfo(href);
-  post({type:'link',href,...info,modifiers:{meta:e.metaKey,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey}});
-  if(info.kind!=='anchor')return;
+  const modifiers={meta:e.metaKey,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey};
+  if(info.kind!=='anchor') {
+    post({type:'link',href,...info,modifiers});hideNavigationOverlays();return;
+  }
+  const before=visible();
   let id;try{id=decodeURIComponent(href.slice(1));}catch{return;}
   if(a.closest('.fn-ref')) {
+    post({type:'link',href,...info,modifiers,localOnly:true,position:before});
     const note=$(`.footnotes li[data-fn="${a.dataset.fn}"]`,article);if(!note)return;
     if(layout.classList.contains('with-sn')) {const margin=$(`.sidenote[data-fn="${a.dataset.fn}"]`);margin?.classList.toggle('hot');return;}
     const pop=$('#note');pop.innerHTML=note.innerHTML;$$('.fn-back',pop).forEach(x=>x.remove());pop.style.left=clamp(a.getBoundingClientRect().left,12,surface.clientWidth-352)+'px';
     pop.style.top=Math.min(a.getBoundingClientRect().bottom+12,surface.clientHeight*.5)+'px';pop.hidden=false;return;
   }
-  const dest=headingElement(id)||$$('[id]',article).find(x=>x.id===id);if(!dest)return;
-  const before=capture(),h=currentHeading();scroller.scrollTop=topIn(dest)-18;
-  const back=$('#back');back.textContent='↩ '+S.strings.back+' '+(h?.text||S.file.split('/').at(-1));back.hidden=false;back.classList.add('open');
-  back.onclick=()=>{restore(before);back.hidden=true;back.classList.remove('open');publish();};publish();
+  if(a.closest('.fn-back')) {
+    post({type:'link',href,...info,modifiers,localOnly:true,position:before});
+    const ref=document.getElementById(id);if(ref)scroller.scrollTop=topIn(ref)-18;return;
+  }
+  const dest=headingElement(id)||$$('[id]',article).find(x=>x.id===id);
+  if(!dest) {showBrokenAnchorSuggestions(id);return;}
+  post({type:'link',href,...info,modifiers,position:before});
+  hideNavigationOverlays();scroller.scrollTop=topIn(dest)-18;publish();
 }
 surface.addEventListener('click',handleClick);
 surface.addEventListener('auxclick',handleClick);
+let peekTimer=null;
+surface.addEventListener('pointerover',event=>{
+  const target=event.target instanceof Element?event.target:null,link=target?.closest('a[href]');
+  if(!link||link.closest('.olist'))return;
+  const href=link.getAttribute('href')||'',info=linkInfo(href);
+  if(!['anchor','local'].includes(info.kind))return;
+  clearTimeout(peekTimer);
+  const id=++S.peekGeneration,linkRect=link.getBoundingClientRect(),surfaceRect=surface.getBoundingClientRect();
+  const rect={x:linkRect.left-surfaceRect.left,y:linkRect.top-surfaceRect.top,width:linkRect.width,height:linkRect.height};
+  peekTimer=setTimeout(()=>post({type:'peek',action:'show',id,href,rect}),280);
+});
+surface.addEventListener('pointerout',event=>{
+  const target=event.target instanceof Element?event.target:null,link=target?.closest('a[href]');
+  if(!link||event.relatedTarget instanceof Node&&link.contains(event.relatedTarget))return;
+  clearTimeout(peekTimer);peekTimer=null;
+  const id=++S.peekGeneration;post({type:'peek',action:'hide',id});
+});
 outlineFilter.addEventListener('input',()=>renderOutlineList());
 $('#outlineClear').addEventListener('click',()=>{outlineFilter.value='';renderOutlineList();outlineFilter.focus({preventScroll:true});});
 outlineFilter.addEventListener('keydown',e=>{
@@ -930,6 +1049,7 @@ pan.addEventListener('pointerup',()=>{drag=null;});pan.addEventListener('pointer
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
   if(S.diagram!==null) {closeDiagram();e.preventDefault();return;}
+  if(!anchorSuggestions.hidden||!linkPeek.hidden) {hideNavigationOverlays();e.preventDefault();return;}
   if(!$('#note').hidden) {$('#note').hidden=true;e.preventDefault();return;}
   if(S.findOpen) {closeFind();e.preventDefault();return;}
   if(outlineFilter.value) {outlineFilter.value='';renderOutlineList();outlineFilter.focus({preventScroll:true});e.preventDefault();return;}
@@ -946,7 +1066,7 @@ document.addEventListener('selectionchange',publish);
 new ResizeObserver(()=>{const a=stableAnchor;layoutAll();restore(a);publish();}).observe(surface);
 article.addEventListener('load',()=>{const a=stableAnchor;layoutAll();restore(a);publish();},true);
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(S.theme==='system'&&!S.os)setSettings({});});
-window.c11md=Object.freeze({load,setSettings,scrollToHeading,scrollToLine,visible,outline:()=>S.tree,progress,
+window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,
   openFind,find:query=>search(query),findNext:()=>nextHit(1),findPrevious:()=>nextHit(-1),findClose:closeFind,setSourceMode,expandDiagram,closeDiagram,
   themes:()=>[{id:'system',label:'system',scheme:'system',defaultTypeface:'serif'},...C11MD.themes.map(t=>({id:t.id,label:t.label,scheme:t.scheme,defaultTypeface:t.faceDef.id}))],
   typefaces:()=>[{id:'theme',label:'theme default',family:'theme',measure:null,leading:null},...C11MD.faces.map(f=>({id:f.id,label:f.label,family:f.family,measure:parseFloat(f.tokens['--face-measure']),leading:+f.tokens['--face-lh']}))]});

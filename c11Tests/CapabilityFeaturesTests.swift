@@ -18,6 +18,9 @@ final class CapabilityFeaturesTests: XCTestCase {
     func testMarkdownAgentMethodsRunOnSocketWorkersWithoutInAppFocusIntent() {
         let methods = [
             "markdown.scroll",
+            "markdown.navigate",
+            "markdown.history",
+            "markdown.links",
             "markdown.visible",
             "markdown.theme",
             "markdown.typeface",

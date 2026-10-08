@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Bonsplit
 import WebKit
 
 @MainActor
@@ -111,7 +112,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private static let dataStore = WKWebsiteDataStore.nonPersistent()
     let webView: MarkdownWKWebView
     @Published private(set) var state: [String: Any] = [:]
-    @Published private(set) var failure: Bool = false
+    @Published private(set) var failure: Bool = false {
+        didSet { if failure { MarkdownRendererCache.shared.reconsider() } }
+    }
     @Published private(set) var renderedRevision: Int?
     private weak var panel: MarkdownPanel?
     private var ready = false
@@ -120,11 +123,16 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var loadedContent: String?
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
-    private var recoveryLine: Int?
+    private var pendingRestorePosition: MarkdownReadingPosition?
+    private var activeQueries = 0
+    private let startedAt = ProcessInfo.processInfo.systemUptime
+    var hasQueriesInFlight: Bool { activeQueries > 0 }
+    var canCaptureReadingPosition: Bool { ready || failure }
     private var recoveringAfterTermination = false
 
     init(panel: MarkdownPanel) {
         self.panel = panel
+        pendingRestorePosition = panel.readingPosition
         let root = Bundle.main.resourceURL?.appendingPathComponent("markdown-viewer", isDirectory: true)
         let policy = MarkdownAssetPolicy(
             bundle: root.flatMap(MarkdownAssetRoot.init(directory:)),
@@ -164,10 +172,54 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             completion?(.failure(URLError(.resourceUnavailable)))
             return
         }
+        activeQueries += 1
+        if let panel { MarkdownRendererCache.shared.queryStarted(panel) }
         webView.callAsyncJavaScript(
             "return await window.c11md[method](...args)",
             arguments: ["method": method, "args": arguments], in: nil, in: .page
-        ) { result in completion?(result) }
+        ) { [self] result in
+            // Completion may issue the next step of a restore. Keep this pin
+            // until that continuation has had the chance to add its own pin.
+            completion?(result)
+            activeQueries -= 1
+            if let panel { MarkdownRendererCache.shared.queryFinished(panel) }
+        }
+    }
+
+    func captureReadingPosition(completion: @escaping (MarkdownReadingPosition) -> Void) {
+        let fallback = MarkdownReadingPosition(state: state) ?? panel?.readingPosition ?? MarkdownReadingPosition()
+        guard ready, !closed else { completion(fallback); return }
+        // The cache tracks this capture separately from agent/native queries;
+        // a concurrent query increments its epoch and invalidates the capture.
+        webView.callAsyncJavaScript("return window.c11md.visible()", arguments: [:], in: nil, in: .page) { result in
+            let position: MarkdownReadingPosition?
+            if case .success(let value) = result, let state = value as? [String: Any] {
+                position = MarkdownReadingPosition(state: state)
+            } else { position = nil }
+            completion(position ?? fallback)
+        }
+    }
+
+    private func finishRender(_ revision: Int) {
+        guard !closed, revision == self.revision else { return }
+        renderedRevision = revision
+#if DEBUG
+        let elapsed = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+        dlog("markdown.renderer.ready panel=\(panel?.id.uuidString ?? "unknown") elapsedMs=\(String(format: "%.3f", elapsed))")
+#endif
+    }
+
+    private func restoreReadingPosition(_ position: MarkdownReadingPosition, revision: Int) {
+        call("setSourceMode", arguments: [position.sourceMode]) { [weak self] _ in
+            guard let self, !self.closed else { return }
+            let scroll = {
+                self.call("scrollToLine", arguments: [position.line, position.offset]) { [weak self] _ in
+                    self?.finishRender(revision)
+                }
+            }
+            if position.findQuery.isEmpty { scroll() }
+            else { self.call("find", arguments: [position.findQuery]) { _ in scroll() } }
+        }
     }
 
     func synchronize() {
@@ -203,6 +255,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             ready = true
             failure = false
             synchronize()
+            MarkdownRendererCache.shared.reconsider()
         case "state":
             if let value = body["state"] as? [String: Any] { state = value }
         case "error":
@@ -210,11 +263,10 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         case "rendered":
             recoveringAfterTermination = false
             if let value = body["revision"] as? Int {
-                renderedRevision = value
-                if let line = recoveryLine {
-                    recoveryLine = nil
-                    call("scrollToLine", arguments: [line])
-                }
+                if let position = pendingRestorePosition {
+                    pendingRestorePosition = nil
+                    restoreReadingPosition(position, revision: value)
+                } else { finishRender(value) }
             }
         case "link":
             if let href = body["href"] as? String, href.utf8.count <= 16 * 1024 {
@@ -269,7 +321,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             return
         }
         recoveringAfterTermination = true
-        recoveryLine = (state["lines"] as? [String: Int])?["first"]
+        pendingRestorePosition = MarkdownReadingPosition(state: state)
         ready = false
         renderedRevision = nil
         entryNavigationAdmitted = false

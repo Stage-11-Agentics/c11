@@ -270,14 +270,27 @@ private struct MarkdownWebContent: NSViewRepresentable {
     let panel: MarkdownPanel
     let isFocused: Bool
 
+    final class Coordinator {
+        let id = UUID()
+        weak var panel: MarkdownPanel?
+        init(_ panel: MarkdownPanel) { self.panel = panel }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(panel) }
+
     func makeNSView(context: Context) -> NSView {
+        panel.setRendererVisible(true, hostID: context.coordinator.id)
         let renderer = panel.ensureRenderer()
         renderer.webView.allowsPanelFocus = isFocused
         let host = NSHostingView(rootView: MarkdownRendererContent(renderer: renderer))
         return host
     }
 
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.panel?.setRendererVisible(false, hostID: coordinator.id)
+    }
+
     func updateNSView(_ nsView: NSView, context: Context) {
+        panel.setRendererVisible(true, hostID: context.coordinator.id)
         if let view = panel.renderer?.webView {
             let changed = view.allowsPanelFocus != isFocused
             view.allowsPanelFocus = isFocused

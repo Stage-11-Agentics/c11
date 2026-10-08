@@ -221,7 +221,12 @@ Markdown panels load a bundled, offline WKWebView renderer through
 `c11md://bundle/index.html`. They never receive `file://` read access.
 Each panel gets its own content controller and directory capabilities; the
 process pool and nonpersistent website data store are shared. A panel that
-has never been visible does not allocate a web view.
+has never been visible does not allocate a web view. Every visible reader stays
+live; a process-wide LRU retains at most four hidden readers. Eviction captures
+source line/offset, mode and find query, then removes the message handler and
+releases WebKit. Queries pin their renderer until completion. Recreation restores
+transient reading state before revealing the reader; raw content queries remain
+model-only even when no web view exists.
 
 The native scheme handler sends a restrictive CSP response header and injects
 the same policy before the bundled

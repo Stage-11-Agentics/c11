@@ -72,6 +72,73 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
     }
 
+    func testEvictionWaitsForQueryAndRestoresPositionModeFindAndLatestContent() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-eviction-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        let text = "# Reader\n\n" + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
+        try text.write(to: path, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        var others: [MarkdownPanel] = []
+        defer { panel.close(); others.forEach { $0.close() } }
+        let host = UUID()
+        panel.setRendererVisible(true, hostID: host)
+        var first: MarkdownWebRenderer? = panel.ensureRenderer()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = first!.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(first!, revision: 1)
+        _ = try await call(first!, "setSourceMode", arguments: [true])
+        _ = try await call(first!, "find", arguments: ["Paragraph 40"])
+        _ = try await call(first!, "scrollToLine", arguments: [160, 7.25])
+        let beforeValue = try await call(first!, "visible")
+        let before = try XCTUnwrap(beforeValue as? [String: Any])
+        let position = try XCTUnwrap(MarkdownReadingPosition(state: before))
+        XCTAssertGreaterThan(position.line, 1)
+        XCTAssertGreaterThan(position.offset, 0, "Approved offset bridge must be present")
+        XCTAssertTrue(position.sourceMode)
+        XCTAssertEqual(position.findQuery, "Paragraph 40")
+        let evicted = expectation(description: "oldest hidden reader evicted")
+        let token = MarkdownRendererCache.shared.evictions.first(where: { $0 == panel.id }).sink { _ in evicted.fulfill() }
+        first!.call("visible") // A genuine asynchronous query pins the renderer.
+        XCTAssertTrue(first!.hasQueriesInFlight)
+        window.contentView = nil
+        panel.setRendererVisible(false, hostID: host)
+        for _ in 0..<5 {
+            let other = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+            others.append(other)
+            _ = other.ensureRenderer()
+        }
+        XCTAssertNotNil(panel.renderer, "An in-flight query must prevent eviction")
+        await fulfillment(of: [evicted], timeout: 30)
+        withExtendedLifetime(token) {}
+        XCTAssertNil(panel.renderer)
+        XCTAssertEqual(panel.readingPosition, position)
+        first = nil
+        let changed = text + "\nLatest content while evicted.\n"
+        let reloaded = expectation(description: "evicted model reload")
+        let contentToken = panel.$content.first(where: { $0 == changed }).sink { _ in reloaded.fulfill() }
+        try changed.write(to: path, atomically: true, encoding: .utf8)
+        await fulfillment(of: [reloaded], timeout: 10)
+        withExtendedLifetime(contentToken) {}
+        XCTAssertNil(panel.renderer, "File reload must remain model-only while evicted")
+        panel.setRendererVisible(true, hostID: host)
+        let recreated = panel.ensureRenderer()
+        window.contentView = recreated.webView
+        await rendered(recreated, revision: 1)
+        let afterValue = try await call(recreated, "visible")
+        let after = try XCTUnwrap(afterValue as? [String: Any])
+        let restored = try XCTUnwrap(MarkdownReadingPosition(state: after))
+        XCTAssertEqual(restored.line, position.line)
+        XCTAssertEqual(restored.offset, position.offset, accuracy: 1)
+        XCTAssertEqual(restored.sourceMode, position.sourceMode)
+        XCTAssertEqual(restored.findQuery, position.findQuery)
+        XCTAssertTrue(panel.content.contains("Latest content while evicted."))
+        XCTAssertEqual(recreated.webView.pageZoom, 1)
+    }
+
     func testEveryPresentationFieldInvalidatesSessionAutosaveFingerprint() throws {
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)

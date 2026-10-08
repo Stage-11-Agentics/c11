@@ -185,3 +185,7 @@ symlinks outside that tree and remote images are blocked. Document HTML and
 scripts never execute. Relative markdown links open another markdown panel;
 web links follow c11's browser routing settings. Anchors stay in the document.
 Live reload preserves the reading position, with no separate change-tracking UI.
+Visible readers stay live. c11 retains four recently hidden readers across the
+app and releases older web views. Reopening a panel restores its source line and
+offset, read/source mode, find query, and native reading preferences. Reading raw
+content remains available while a panel's web view is released.

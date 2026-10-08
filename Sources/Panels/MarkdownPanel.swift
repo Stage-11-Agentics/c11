@@ -97,11 +97,30 @@ final class MarkdownPanel: Panel, ObservableObject {
         renderer?.synchronize()
     }
 
+    private var visibleRendererHosts: Set<UUID> = []
+    var isRendererVisible: Bool { !visibleRendererHosts.isEmpty }
+    private(set) var readingPosition: MarkdownReadingPosition?
+
+    func setRendererVisible(_ visible: Bool, hostID: UUID) {
+        let previous = isRendererVisible
+        if visible { visibleRendererHosts.insert(hostID) }
+        else { visibleRendererHosts.remove(hostID) }
+        if isRendererVisible != previous { MarkdownRendererCache.shared.visibilityChanged(self) }
+    }
+
+    func evictRenderer(_ renderer: MarkdownWebRenderer, position: MarkdownReadingPosition) {
+        guard self.renderer === renderer else { return }
+        readingPosition = position
+        renderer.close()
+        self.renderer = nil
+    }
+
     /// Called by the visible NSView host only; model construction never starts WebKit.
     func ensureRenderer() -> MarkdownWebRenderer {
         if let renderer { return renderer }
         let created = MarkdownWebRenderer(panel: self)
         renderer = created
+        MarkdownRendererCache.shared.register(self)
         return created
     }
 
@@ -199,6 +218,7 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     func close() {
         isClosed = true
+        MarkdownRendererCache.shared.remove(self)
         stopFileWatcher()
         stopAppearanceObserver()
         renderer?.close()

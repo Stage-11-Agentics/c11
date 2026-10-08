@@ -72,6 +72,18 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
     }
 
+    func testClosingPanelReleasesItsRendererAndScopedHandlers() {
+        weak var retained: MarkdownWebRenderer?
+        autoreleasepool {
+            let panel = MarkdownPanel(workspaceId: UUID())
+            retained = panel.ensureRenderer()
+            XCTAssertNotNil(retained)
+            panel.close()
+            XCTAssertNil(panel.renderer)
+        }
+        XCTAssertNil(retained, "Closing must break WKUserContentController's message-handler cycle")
+    }
+
     private func rendered(_ renderer: MarkdownWebRenderer, revision: Int) async {
         let done = expectation(description: "renderer settled revision \(revision)")
         let token = renderer.$renderedRevision.first(where: { $0 == revision }).sink { _ in done.fulfill() }

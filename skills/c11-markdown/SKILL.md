@@ -179,10 +179,14 @@ Text scale (50–300% in 10% steps), theme (`system`, `light`, `dark`), typeface
 and survive session restore. The last setting changed becomes the default for
 new panels. Invalid saved values fall back independently to their defaults.
 ⌘= / ⌘− / ⌘0 change text scale through c11's focused-panel shortcuts.
-⌘F opens the focused Markdown panel's find bar; Return and ⇧Return move between
-matches. ⇧⌘O toggles the page-rendered outline. The outline docks when the
-effective width fits, otherwise it overlays the page; click a heading to jump
-without closing it, type to filter, and press Escape to close it.
+⌘F opens the focused Markdown panel's in-page find popover; Return and ⇧Return
+move between matches. ⇧⌘O toggles the page-rendered outline through the
+customizable shortcut registry. The outline docks when the effective width
+fits, otherwise it overlays the page; click a heading to jump without closing
+it, type to filter, and press Escape to clear the filter before closing it.
+System theme follows c11's effective appearance, which follows the OS when c11
+appearance is set to System. Typing in page controls keeps the web view as first
+responder only when C11-359's panel focus policy allows it.
 
 Local raster images are limited to the document directory and its subdirectories;
 symlinks outside that tree and remote images are blocked. Document HTML and

@@ -269,8 +269,7 @@ struct MarkdownWebContent: NSViewRepresentable {
         let host = NSHostingView(rootView: MarkdownRendererContent(
             panel: panel,
             renderer: renderer,
-            readerOutline: renderer.readerOutline,
-            readerFind: renderer.readerFind
+            readerOutline: renderer.readerOutline
         ))
         return host
     }
@@ -294,11 +293,8 @@ private struct MarkdownRendererContent: View {
     @ObservedObject var panel: MarkdownPanel
     @ObservedObject var renderer: MarkdownWebRenderer
     @ObservedObject var readerOutline: MarkdownReaderOutlineState
-    @ObservedObject var readerFind: MarkdownReaderFindState
-    @FocusState private var findFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    private var findPresented: Bool { panel.isFindVisible }
     private var palette: MarkdownReaderPalette { MarkdownReaderPalette(theme: panel.theme, colorScheme: colorScheme) }
 
     var body: some View {
@@ -309,7 +305,7 @@ private struct MarkdownRendererContent: View {
                 readout: renderer.readerReadout,
                 readerOutline: readerOutline
             )
-            ZStack(alignment: .topTrailing) {
+            Group {
                 if renderer.failure {
                     VStack(spacing: 12) {
                         Text(String(localized: "markdown.rendererUnavailable.title", defaultValue: "Renderer unavailable"))
@@ -322,93 +318,10 @@ private struct MarkdownRendererContent: View {
                     MarkdownWebViewHost(webView: renderer.webView)
                         .opacity(renderer.renderedRevision == nil ? 0 : 1)
                 }
-                if findPresented {
-                    findBar
-                        .padding(12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .transition(.opacity)
-                        .zIndex(2)
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.12), value: findPresented)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: panel.findFocusRequestToken) { _ in
-            findFieldFocused = true
-        }
-        .onChange(of: panel.isFindVisible) { visible in
-            if !visible { findFieldFocused = false }
-        }
-        .onExitCommand {
-            _ = panel.dismissReaderOverlay()
-        }
-    }
-
-    private var findBar: some View {
-        HStack(spacing: 5) {
-            TextField(
-                String(localized: "markdown.reader.find.placeholder", defaultValue: "Find in document"),
-                text: Binding(
-                    get: { panel.findQuery.isEmpty ? (readerFind.value?.query ?? "") : panel.findQuery },
-                    set: panel.setFindQuery
-                )
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 12, design: .monospaced))
-            .frame(minWidth: 90, idealWidth: 164, maxWidth: 220)
-            .focused($findFieldFocused)
-            .onSubmit {
-                if NSEvent.modifierFlags.contains(.shift) { panel.findPrevious() }
-                else { panel.findNext() }
-            }
-            .accessibilityIdentifier("MarkdownFindField")
-
-            Text(findCountLabel)
-                .font(.system(size: 10, design: .monospaced).monospacedDigit())
-                .foregroundStyle(palette.secondary)
-                .frame(width: 54, alignment: .trailing)
-                .lineLimit(1)
-                .accessibilityIdentifier("MarkdownFindCount")
-
-            Button { panel.findPrevious() } label: {
-                Image(systemName: "chevron.up")
-                    .frame(width: 24, height: 26)
-            }
-            .buttonStyle(MarkdownChromeButtonStyle())
-            .safeHelp(String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"))
-            .accessibilityLabel(String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"))
-
-            Button { panel.findNext() } label: {
-                Image(systemName: "chevron.down")
-                    .frame(width: 24, height: 26)
-            }
-            .buttonStyle(MarkdownChromeButtonStyle())
-            .safeHelp(String(localized: "markdown.reader.find.next", defaultValue: "Next match"))
-            .accessibilityLabel(String(localized: "markdown.reader.find.next", defaultValue: "Next match"))
-
-            Button { panel.closeFind() } label: {
-                Image(systemName: "xmark")
-                    .frame(width: 24, height: 26)
-            }
-            .buttonStyle(MarkdownChromeButtonStyle())
-            .safeHelp(String(localized: "markdown.reader.find.close", defaultValue: "Close find"))
-            .accessibilityLabel(String(localized: "markdown.reader.find.close", defaultValue: "Close find"))
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .background(.ultraThinMaterial)
-        .background(palette.paper.opacity(0.82))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(palette.rule, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .shadow(color: .black.opacity(0.16), radius: 12, y: 4)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var findCountLabel: String {
-        let matches = readerFind.value?.matches ?? 0
-        let current = readerFind.value?.current ?? 0
-        return String(format: String(localized: "markdown.reader.find.count", defaultValue: "%d / %d"), current, matches)
     }
 }
 
@@ -436,33 +349,37 @@ private struct MarkdownReaderToolbar: View {
         return ([panel.displayTitle] + path).filter { !$0.isEmpty }.joined(separator: "  ›  ")
     }
 
+    private func breadcrumb(for width: CGFloat) -> String {
+        guard width < 600 else { return breadcrumb }
+        return readout.value.headingPath.last ?? panel.displayTitle
+    }
+
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     outlineButton(showLabel: geometry.size.width >= 700)
-                    if geometry.size.width >= 430 {
-                        Text(breadcrumb)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(palette.ink)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .help(breadcrumb)
-                            .accessibilityIdentifier("MarkdownBreadcrumb")
-                    }
+                    Text(breadcrumb(for: geometry.size.width))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
+                        .truncationMode(geometry.size.width < 600 ? .tail : .middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(breadcrumb)
+                        .accessibilityIdentifier("MarkdownBreadcrumb")
 
                     if geometry.size.width >= 430 {
                         Text(progressLabel)
                             .font(.system(size: 10, design: .monospaced).monospacedDigit())
                             .foregroundStyle(palette.secondary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                            .frame(width: 116, alignment: .trailing)
+                            .truncationMode(.tail)
+                            .frame(width: 128, alignment: .trailing)
                             .accessibilityIdentifier("MarkdownProgressLabel")
                     }
 
                     controls
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(.horizontal, geometry.size.width < 360 ? 4 : 8)
                 .frame(height: 35)
@@ -479,6 +396,7 @@ private struct MarkdownReaderToolbar: View {
             .background(palette.chrome)
         }
         .frame(height: 36)
+        .environment(\.colorScheme, palette.isDark ? .dark : .light)
     }
 
     private func outlineButton(showLabel: Bool) -> some View {
@@ -491,9 +409,10 @@ private struct MarkdownReaderToolbar: View {
                         .font(.system(size: 11, design: .monospaced))
                 }
             }
-            .frame(width: showLabel ? 84 : 32, height: 28)
+            .frame(width: showLabel ? 92 : 30, height: 26)
         }
-        .buttonStyle(MarkdownChromeButtonStyle(active: outlineOpen))
+        .foregroundStyle(palette.ink)
+        .buttonStyle(MarkdownChromeButtonStyle(palette: palette, active: outlineOpen))
         .safeHelp(String(localized: "markdown.reader.outline.toggle", defaultValue: "Toggle outline (⇧⌘O)"))
         .accessibilityLabel(String(localized: "markdown.reader.outline.title", defaultValue: "Outline"))
         .accessibilityAddTraits(outlineOpen ? .isSelected : [])
@@ -508,9 +427,10 @@ private struct MarkdownReaderToolbar: View {
         HStack(spacing: 3) {
             Button { panel.requestFind() } label: {
                 Image(systemName: "magnifyingglass")
-                    .frame(width: 30, height: 28)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 26, height: 26)
             }
-            .buttonStyle(MarkdownChromeButtonStyle())
+            .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
             .safeHelp(String(localized: "markdown.reader.find.open", defaultValue: "Find (⌘F)"))
             .accessibilityLabel(String(localized: "markdown.reader.find.open", defaultValue: "Find (⌘F)"))
             .accessibilityIdentifier("MarkdownFindButton")
@@ -519,10 +439,10 @@ private struct MarkdownReaderToolbar: View {
                 renderer.call("setSourceMode", arguments: [!sourceMode])
             } label: {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 30, height: 28)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 26, height: 26)
             }
-            .buttonStyle(MarkdownChromeButtonStyle(active: sourceMode))
+            .buttonStyle(MarkdownChromeButtonStyle(palette: palette, active: sourceMode))
             .safeHelp(String(localized: "markdown.reader.source.toggle", defaultValue: "Toggle source view"))
             .accessibilityLabel(String(localized: "markdown.reader.source.toggle", defaultValue: "Toggle source view"))
             .accessibilityAddTraits(sourceMode ? .isSelected : [])
@@ -530,9 +450,9 @@ private struct MarkdownReaderToolbar: View {
 
             HStack(spacing: 2) {
                 Button { panel.zoomOut() } label: {
-                    Text("−").font(.system(size: 14, weight: .regular)).frame(width: 26, height: 28)
+                    Text("−").font(.system(size: 14, weight: .regular)).frame(width: 26, height: 26)
                 }
-                .buttonStyle(MarkdownChromeButtonStyle())
+                .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
                 .disabled(scale <= MarkdownPanel.fontScaleRange.lowerBound)
                 .safeHelp(String(localized: "markdown.reader.size.decrease", defaultValue: "Decrease text size"))
                 .accessibilityLabel(String(localized: "markdown.reader.size.decrease", defaultValue: "Decrease text size"))
@@ -541,7 +461,7 @@ private struct MarkdownReaderToolbar: View {
                     Text("\(Int((scale * 100).rounded()))%")
                         .font(.system(size: 10, design: .monospaced).monospacedDigit())
                         .foregroundStyle(palette.ink)
-                        .frame(width: 42, height: 28)
+                        .frame(width: 42, height: 26)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -551,9 +471,9 @@ private struct MarkdownReaderToolbar: View {
                 .accessibilityIdentifier("MarkdownTextScale")
 
                 Button { panel.zoomIn() } label: {
-                    Text("+").font(.system(size: 14, weight: .regular)).frame(width: 26, height: 28)
+                    Text("+").font(.system(size: 14, weight: .regular)).frame(width: 26, height: 26)
                 }
-                .buttonStyle(MarkdownChromeButtonStyle())
+                .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
                 .disabled(scale >= MarkdownPanel.fontScaleRange.upperBound)
                 .safeHelp(String(localized: "markdown.reader.size.increase", defaultValue: "Increase text size"))
                 .accessibilityLabel(String(localized: "markdown.reader.size.increase", defaultValue: "Increase text size"))
@@ -566,10 +486,11 @@ private struct MarkdownReaderToolbar: View {
 
             Button { panel.openExternally() } label: {
                 Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 30, height: 28)
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 22, height: 22)
             }
-            .buttonStyle(MarkdownChromeButtonStyle())
+            .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
+            .frame(width: 22, height: 22)
             .safeHelp(String(
                 format: String(localized: "markdown.reader.openExternal.help", defaultValue: "Open in %@"),
                 panel.defaultExternalAppName
@@ -606,13 +527,15 @@ private struct MarkdownReaderToolbar: View {
             }
         } label: {
             Image(systemName: themeIcon)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 30, height: 28)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
-        .frame(width: 30, height: 28)
-        .background(palette.control.opacity(0.75), in: RoundedRectangle(cornerRadius: 5))
+        .menuIndicator(.hidden)
+        .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette))
+        .foregroundStyle(palette.ink)
+        .frame(width: 22, height: 22)
         .safeHelp(String(localized: "markdown.reader.theme.open", defaultValue: "Theme and typeface"))
         .accessibilityLabel(String(localized: "markdown.reader.theme.open", defaultValue: "Theme and typeface"))
         .accessibilityIdentifier("MarkdownThemeMenu")
@@ -690,16 +613,51 @@ private struct MarkdownReaderPalette {
 }
 
 private struct MarkdownChromeButtonStyle: ButtonStyle {
+    let palette: MarkdownReaderPalette
     var active = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(active ? Color.primary : Color.secondary)
+            .foregroundStyle(palette.ink)
             .background(
-                configuration.isPressed ? Color.primary.opacity(0.14) : (active ? Color.primary.opacity(0.08) : Color.clear),
+                configuration.isPressed ? palette.ink.opacity(0.16) : (active ? palette.ink.opacity(0.08) : Color.clear),
                 in: RoundedRectangle(cornerRadius: 5)
             )
             .contentShape(RoundedRectangle(cornerRadius: 5))
+    }
+}
+
+private struct MarkdownOmnibarButtonStyle: ButtonStyle {
+    let palette: MarkdownReaderPalette
+
+    func makeBody(configuration: Configuration) -> some View {
+        MarkdownOmnibarButtonStyleBody(configuration: configuration, palette: palette)
+    }
+}
+
+private struct MarkdownOmnibarButtonStyleBody: View {
+    let configuration: MarkdownOmnibarButtonStyle.Configuration
+    let palette: MarkdownReaderPalette
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    private var backgroundOpacity: Double {
+        guard isEnabled else { return 0 }
+        if configuration.isPressed { return 0.16 }
+        return isHovered ? 0.08 : 0
+    }
+
+    var body: some View {
+        configuration.label
+            .foregroundStyle(palette.ink)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(palette.ink.opacity(backgroundOpacity))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
 }
 

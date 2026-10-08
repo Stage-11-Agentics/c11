@@ -53,7 +53,6 @@ final class MarkdownWKWebView: WKWebView {
     var allowsPanelFocus = false
     weak var renderer: MarkdownWebRenderer?
     var onShowPanelDetails: (() -> Void)?
-    var onReaderEscape: (() -> Bool)?
     private var pointerFocus = false
     private var retainedViewport: NSSize?
 
@@ -153,7 +152,6 @@ final class MarkdownWKWebView: WKWebView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, onReaderEscape?() == true { return }
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
            AppDelegate.shared?.handleWebPanelKeyEquivalent(event) == true { return }
         super.keyDown(with: event)
@@ -177,6 +175,7 @@ struct MarkdownReaderReadout: Equatable {
 }
 
 struct MarkdownReaderFindSnapshot: Equatable {
+    let isOpen: Bool
     let query: String
     let matches: Int
     let current: Int
@@ -201,7 +200,7 @@ struct MarkdownReaderOutlineSnapshot: Equatable {
     var revision = ""
     var isOpen = false
     var isDocked = false
-    var choice = "auto"
+    var choice: Bool? = nil
 }
 
 @MainActor
@@ -270,7 +269,6 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.viewerScheme)
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
         webView = MarkdownWKWebView(frame: .zero, configuration: config)
-        webView.onReaderEscape = { [weak panel] in panel?.dismissReaderOverlay() ?? false }
         super.init()
         webView.renderer = self
         webView.onShowPanelDetails = { [weak panel] in
@@ -365,8 +363,12 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                     else { self.finishRender(revision) }
                 }
             }
-            if position.findQuery.isEmpty { scroll() }
-            else { self.call("find", arguments: [position.findQuery]) { _ in scroll() } }
+            let restoreFindPopover = {
+                guard position.findOpen else { scroll(); return }
+                self.call("openFind", arguments: [self.webView.allowsPanelFocus]) { _ in scroll() }
+            }
+            if position.findQuery.isEmpty { restoreFindPopover() }
+            else { self.call("find", arguments: [position.findQuery]) { _ in restoreFindPopover() } }
         }
     }
 
@@ -449,6 +451,8 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             NSPasteboard.general.setString(text, forType: .string)
         case "outlineDismiss":
             panel?.setOutlineOpen(false)
+        case "escapeUnhandled":
+            _ = panel?.dismissReaderOverlay(pageConsumedEscape: false)
         default: break
         }
     }
@@ -464,11 +468,13 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
 
         let find = value["find"] as? [String: Any]
         let query = find?["query"] as? String ?? ""
-        readerFind.update(query.isEmpty ? nil : MarkdownReaderFindSnapshot(
+        let findOpen = find?["open"] as? Bool ?? !query.isEmpty
+        readerFind.update((findOpen || !query.isEmpty) ? MarkdownReaderFindSnapshot(
+            isOpen: findOpen,
             query: query,
             matches: max(0, find?["matches"] as? Int ?? 0),
             current: max(0, find?["current"] as? Int ?? 0)
-        ))
+        ) : nil)
 
         let outline = value["outline"] as? [String: Any] ?? [:]
         let revision = value["revision"].map { String(describing: $0) } ?? ""
@@ -476,7 +482,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             revision: revision,
             isOpen: outline["open"] as? Bool ?? false,
             isDocked: outline["docked"] as? Bool ?? false,
-            choice: outline["choice"] as? String ?? "auto"
+            choice: outline["choice"] as? Bool
         ))
     }
 
@@ -581,6 +587,24 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         "outlineNoMatches": String(localized: "markdown.reader.outline.noMatches", defaultValue: "No headings match"),
         "outlineClearFilter": String(localized: "markdown.reader.outline.clearFilter", defaultValue: "Clear filter"),
         "outlineSummary": String(localized: "markdown.reader.outline.summary", defaultValue: "%d min · %d words · %d lines"),
-        "outlineTaskCount": String(localized: "markdown.reader.outline.taskCount", defaultValue: "%d of %d tasks complete")
+        "outlineTaskCount": String(localized: "markdown.reader.outline.taskCount", defaultValue: "%d of %d tasks complete"),
+        "findOpen": String(localized: "markdown.reader.find.open", defaultValue: "Find (⌘F)"),
+        "findPlaceholder": String(localized: "markdown.reader.find.placeholder", defaultValue: "Find in document"),
+        "findPrevious": String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"),
+        "findNext": String(localized: "markdown.reader.find.next", defaultValue: "Next match"),
+        "findClose": String(localized: "markdown.reader.find.close", defaultValue: "Close find"),
+        "findCount": String(localized: "markdown.reader.find.count", defaultValue: "%d / %d")
     ] }
+}
+
+extension MarkdownWebRenderer: MarkdownPanelReaderCommanding {
+    var readerOutlineIsOpen: Bool { readerOutline.value.isOpen }
+
+    func call(_ method: String) {
+        call(method, arguments: [])
+    }
+
+    func openFind(focusAllowed: Bool) {
+        call("openFind", arguments: [focusAllowed])
+    }
 }

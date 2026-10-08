@@ -55460,6 +55460,18 @@
         }
       }
     },
+    "shortcut.toggleMarkdownOutline.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Toggle Markdown Outline"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "Markdownのアウトラインを切り替え"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перемкнути структуру Markdown"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "Markdown 개요 전환"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换 Markdown 大纲"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換 Markdown 大綱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Переключить структуру Markdown"}}
+      }
+    },
     "shortcut.togglePaneZoom.label": {
       "extractionState": "manual",
       "localizations": {

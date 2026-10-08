@@ -46,6 +46,7 @@ enum KeyboardShortcutSettings {
         case openBrowser
         case toggleBrowserDeveloperTools
         case showBrowserJavaScriptConsole
+        case toggleMarkdownOutline
 
         // Input
         case toggleTextBoxInput
@@ -91,6 +92,7 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .toggleBrowserDeveloperTools: return String(localized: "shortcut.toggleBrowserDevTools.label", defaultValue: "Toggle Browser Developer Tools")
             case .showBrowserJavaScriptConsole: return String(localized: "shortcut.showBrowserJSConsole.label", defaultValue: "Show Browser JavaScript Console")
+            case .toggleMarkdownOutline: return String(localized: "shortcut.toggleMarkdownOutline.label", defaultValue: "Toggle Markdown Outline")
             case .toggleTextBoxInput: return String(localized: "shortcut.toggleTextBoxInput.label", defaultValue: "Toggle TextBox Input")
             case .globalFontIncrease: return String(localized: "shortcut.globalFontIncrease.label", defaultValue: "Increase Font Size (All Terminals)")
             case .globalFontDecrease: return String(localized: "shortcut.globalFontDecrease.label", defaultValue: "Decrease Font Size (All Terminals)")
@@ -132,6 +134,7 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return "shortcut.openBrowser"
             case .toggleBrowserDeveloperTools: return "shortcut.toggleBrowserDeveloperTools"
             case .showBrowserJavaScriptConsole: return "shortcut.showBrowserJavaScriptConsole"
+            case .toggleMarkdownOutline: return "shortcut.toggleMarkdownOutline"
             case .toggleTextBoxInput: return "shortcut.toggleTextBoxInput"
             case .globalFontIncrease: return "shortcut.globalFontIncrease"
             case .globalFontDecrease: return "shortcut.globalFontDecrease"
@@ -206,6 +209,8 @@ enum KeyboardShortcutSettings {
             case .showBrowserJavaScriptConsole:
                 // Safari default: Show JavaScript Console.
                 return StoredShortcut(key: "c", command: true, shift: false, option: true, control: false)
+            case .toggleMarkdownOutline:
+                return StoredShortcut(key: "o", command: true, shift: true, option: false, control: false)
             case .toggleTextBoxInput:
                 // Cmd+Option+T is already bound in AppDelegate to close-other-tabs
                 // (see AppDelegateShortcutRoutingTests); the upstream fork author's

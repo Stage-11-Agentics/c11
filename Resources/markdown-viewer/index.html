@@ -28,6 +28,14 @@
     <nav class="olist" id="outlineList" aria-label="Outline"></nav>
     <div class="ofoot" id="outlineSummary"></div>
   </aside>
+  <aside class="findbar" id="findbar" role="search" aria-hidden="true">
+    <input id="findInput" type="search" autocomplete="off" spellcheck="false">
+    <span class="find-count" id="findCount" aria-live="polite"></span>
+    <button id="findPrevious" type="button">↑</button>
+    <button id="findNext" type="button">↓</button>
+    <button id="findClose" type="button">×</button>
+  </aside>
+  <div class="find-ticks" id="findTicks" aria-hidden="true" hidden></div>
   <div class="scroller" id="scroller"><div class="layout" id="layout"><div class="col" id="col"><article class="prose" id="article"></article><aside class="sidenotes" id="sidenotes"></aside></div></div></div>
   <div class="scroller" id="srcScroller"><div class="source" id="source"></div></div>
   <button class="backpill" id="back" hidden></button>

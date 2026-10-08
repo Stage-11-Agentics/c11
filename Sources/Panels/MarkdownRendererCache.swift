@@ -8,6 +8,7 @@ struct MarkdownReadingPosition: Equatable {
     var offset: Double = 0
     var sourceMode = false
     var findQuery = ""
+    var findOpen = false
 
     init() {}
     init?(state: [String: Any]) {
@@ -16,8 +17,10 @@ struct MarkdownReadingPosition: Equatable {
         let offset = lines["offset"] as? Double ?? 0
         self.offset = offset.isFinite ? min(max(offset, -1_000_000), 1_000_000) : 0
         sourceMode = state["mode"] as? String == "source"
-        let query = (state["find"] as? [String: Any])?["query"] as? String ?? ""
+        let find = state["find"] as? [String: Any]
+        let query = find?["query"] as? String ?? ""
         findQuery = String(query.prefix(8192))
+        findOpen = find?["open"] as? Bool ?? false
     }
 }
 

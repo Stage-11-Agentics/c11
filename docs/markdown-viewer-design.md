@@ -33,13 +33,15 @@ The toolbar (breadcrumb, progress, size, every button) is always visible; the ou
 
 **Open by default; the operator chooses to hide it.** When the effective width (pane ÷ text scale) has room for the panel plus the full text column, the column is laid out clear of the panel, so the open outline covers nothing and closing it leaves the text where it is. With the serif face that threshold is an effective width of 962 px (272 px panel, 28 px gap, 630 px column, 32 px right padding); mono docks from about 866 px, and a document with margin footnotes needs 222 px more. Below the threshold the panel would cover text, so it starts hidden and opens as an overlay. The operator's explicit open or hide is remembered like theme, typeface and size (per panel, last used as the new-panel default) and overrides the width default.
 
+The docking threshold uses the active body size and its effective scale; the serif and mono figures above are reference values.
+
 The toggle sits at the left end of the toolbar, next to where the panel appears (SF Symbol `sidebar.left`), with full-contrast ink, a clear pressed state while open, and an "outline" label when the toolbar has room (only the label drops when tight; the button keeps a fixed width). It also toggles with ⇧⌘O (checked against `KeyboardShortcutSettings` for conflicts in the build).
 
 The panel is translucent (backdrop blur over the page) and appears and disappears with a quick crossfade of about 120 ms, with no slide. It shows the scrollspy position, the current section's subheadings, and task counts (`2/4`), and typing filters it. Clicking a heading jumps there and keeps the panel open; Esc or the toggle closes it.
 
 ## Themes
 
-A registry of named token sets. Each theme defines prose, chrome, code highlighting, callout colours, Mermaid theme variables, and font families. The picker builds itself from the registry, so adding a theme means registering one token set. It ships **system, light and dark**; system follows the OS appearance. Dark is first-class, not an inverted light.
+A registry of named token sets. Each theme defines prose, chrome, code highlighting, callout colours, Mermaid theme variables, and font families. The picker builds itself from the registry, so adding a theme means registering one token set. It ships **system, light and dark**; system follows c11's effective appearance, which follows the OS when c11 appearance is set to System. Dark is first-class, not an inverted light.
 
 The control mirrors the browser's theme button (`browserThemeModeButton` in `Sources/Panels/BrowserPanelView.swift`): an icon button that opens a small menu.
 

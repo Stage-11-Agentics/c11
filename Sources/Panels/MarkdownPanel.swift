@@ -2,6 +2,14 @@ import AppKit
 import Foundation
 import Combine
 
+@MainActor
+protocol MarkdownPanelReaderCommanding: AnyObject {
+    var readerOutlineIsOpen: Bool { get }
+    func synchronize()
+    func call(_ method: String)
+    func openFind(focusAllowed: Bool)
+}
+
 /// A panel that renders a markdown file with live file-watching.
 /// When the file changes on disk, the content is automatically reloaded.
 @MainActor
@@ -37,13 +45,16 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     @Published private(set) var presentation: MarkdownPresentation
     private(set) var renderer: MarkdownWebRenderer?
-    @Published private(set) var isFindPresented = false
-    @Published private(set) var isFindDismissed = false
-    @Published private(set) var findQuery = ""
-    @Published private(set) var findFocusRequestToken = 0
+    private var readerCommandRendererOverride: (any MarkdownPanelReaderCommanding)?
+    var readerCommandRendererForTesting: (any MarkdownPanelReaderCommanding)? {
+        get { readerCommandRendererOverride }
+        set { readerCommandRendererOverride = newValue }
+    }
+    private var readerCommandRenderer: (any MarkdownPanelReaderCommanding)? {
+        readerCommandRendererOverride ?? renderer
+    }
     private var cachedExternalAppPath: String?
     private var cachedExternalAppName: String?
-    private var pendingFindUpdate: DispatchWorkItem?
     var fontScale: Double { presentation.fontScale }
     var theme: String { presentation.theme }
     var typeface: String { presentation.typeface }
@@ -91,78 +102,42 @@ final class MarkdownPanel: Panel, ObservableObject {
     func setOutlineOpen(_ value: Bool?) {
         presentation.outlineOpen = value
         presentation.saveLastUsed(fields: [.outlineOpen])
-        renderer?.synchronize()
+        readerCommandRenderer?.synchronize()
     }
 
     func toggleOutline() {
-        let bridgeOpen = renderer?.readerOutline.value.isOpen
+        let bridgeOpen = readerCommandRenderer?.readerOutlineIsOpen
         setOutlineOpen(!(presentation.outlineOpen ?? bridgeOpen ?? false))
     }
 
     func requestFind() {
-        isFindDismissed = false
-        isFindPresented = true
-        findFocusRequestToken &+= 1
-    }
-
-    func setFindQuery(_ query: String) {
-        isFindDismissed = false
-        findQuery = query
-        pendingFindUpdate?.cancel()
-        pendingFindUpdate = nil
-        guard !query.isEmpty else {
-            renderer?.call("findClose")
-            return
+        let focusAllowed = renderer?.webView.allowsPanelFocus == true
+        readerCommandRenderer?.openFind(focusAllowed: focusAllowed)
+        if focusAllowed, let renderer {
+            renderer.webView.requestPanelFocusIfAllowed()
         }
-        let update = DispatchWorkItem { [weak self] in
-            self?.renderer?.call("find", arguments: [query])
-        }
-        pendingFindUpdate = update
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: update)
     }
 
     func findNext() {
-        applyPendingFindUpdate()
-        renderer?.call("findNext")
+        readerCommandRenderer?.call("findNext")
     }
 
     func findPrevious() {
-        applyPendingFindUpdate()
-        renderer?.call("findPrevious")
-    }
-
-    private func applyPendingFindUpdate() {
-        guard let pendingFindUpdate else { return }
-        pendingFindUpdate.cancel()
-        self.pendingFindUpdate = nil
-        if !findQuery.isEmpty { renderer?.call("find", arguments: [findQuery]) }
+        readerCommandRenderer?.call("findPrevious")
     }
 
     func closeFind() {
-        guard isFindVisible else { return }
-        isFindDismissed = true
-        isFindPresented = false
-        findQuery = ""
-        pendingFindUpdate?.cancel()
-        pendingFindUpdate = nil
-        renderer?.call("findClose")
+        readerCommandRenderer?.call("findClose")
     }
 
     var isFindVisible: Bool {
-        isFindPresented || !findQuery.isEmpty || (!isFindDismissed && renderer?.readerFind.value != nil)
+        renderer?.readerFind.value?.isOpen == true
     }
 
     @discardableResult
-    func dismissReaderOverlay() -> Bool {
-        if renderer?.state["diagram_open"] is Int {
-            renderer?.call("closeDiagram")
-            return true
-        }
-        if isFindVisible {
-            closeFind()
-            return true
-        }
-        let bridgeOpen = renderer?.readerOutline.value.isOpen
+    func dismissReaderOverlay(pageConsumedEscape: Bool) -> Bool {
+        guard !pageConsumedEscape else { return false }
+        let bridgeOpen = readerCommandRenderer?.readerOutlineIsOpen
         guard presentation.outlineOpen ?? bridgeOpen ?? false else { return false }
         setOutlineOpen(false)
         return true
@@ -538,5 +513,26 @@ final class MarkdownPanel: Panel, ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         DistributedNotificationCenter.default().removeObserver(self)
+    }
+}
+
+@MainActor
+enum MarkdownReaderShortcutRouter {
+    static func routeOutlineToggle(
+        event: NSEvent,
+        panel: MarkdownPanel?,
+        matches: (NSEvent, StoredShortcut) -> Bool
+    ) -> Bool {
+        guard let panel,
+              matches(event, KeyboardShortcutSettings.shortcut(for: .toggleMarkdownOutline)) else { return false }
+        panel.toggleOutline()
+        return true
+    }
+}
+
+extension MarkdownPanelReaderCommanding {
+    func openFind(focusAllowed: Bool) {
+        _ = focusAllowed
+        call("openFind")
     }
 }

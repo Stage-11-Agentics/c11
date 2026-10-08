@@ -136,10 +136,11 @@ renders HTML. The relevant ATS posture:
   `http://` for the loopback subdomain c11 uses to render local
   developer servers.
 
-There is no explicit JS bridge from web content to the c11 socket. The
-browser panel communicates with c11 via `WKContentController` script
-message handlers configured per panel; new handlers must be added to
-this doc when introduced (the diff signal in section 9 catches this).
+The browser exposes no page-reachable bridge to the c11 socket. Markdown
+uses a separate, allowlisted `c11md` script-message channel described below;
+its controller is never shared with browser content. New handlers must be
+recorded here when introduced. The ATS relaxation applies to markdown too,
+so its CSP and native navigation policy enforce the offline boundary.
 
 Browser-triggered modals (the `http://` navigation warning, JavaScript
 `alert`/`confirm`/`prompt`) are raised by page content or by
@@ -222,7 +223,8 @@ Each panel gets its own content controller and directory capabilities; the
 process pool and nonpersistent website data store are shared. A panel that
 has never been visible does not allocate a web view.
 
-The native scheme handler injects a restrictive CSP before the bundled
+The native scheme handler sends a restrictive CSP response header and injects
+the same policy before the bundled
 page's scripts: remote requests, connections, frames, objects, forms and base
 URLs are denied. Scripts and fonts come only from the bundled renderer.
 Document text enters `c11md.load` as a JSON argument, never interpolated

@@ -28,8 +28,12 @@ final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
                 switch result {
                 case .success(let (data, mime)):
                     guard let url else { return }
-                    urlSchemeTask.didReceive(URLResponse(url: url, mimeType: mime, expectedContentLength: data.count,
-                                                         textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil))
+                    let headers = ["Content-Type": mime + (mime.hasPrefix("text/") ? "; charset=utf-8" : ""),
+                                   "Content-Security-Policy": MarkdownAssetPolicy.csp,
+                                   "X-Content-Type-Options": "nosniff"]
+                    let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)
+                        ?? URLResponse(url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: nil)
+                    urlSchemeTask.didReceive(response)
                     urlSchemeTask.didReceive(data)
                     urlSchemeTask.didFinish()
                 case .failure(let error): urlSchemeTask.didFailWithError(error)
@@ -45,13 +49,59 @@ final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
 
 /// Read-only content must not claim WebKit's page zoom shortcuts.
 final class MarkdownWKWebView: WKWebView {
+    var allowsPanelFocus = false
+    private var pointerFocus = false
+
+    override func becomeFirstResponder() -> Bool {
+        guard allowsPanelFocus || pointerFocus else { return false }
+        return super.becomeFirstResponder()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        requestPanelFocusIfAllowed()
+    }
+
+    func requestPanelFocusIfAllowed() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.allowsPanelFocus else { return }
+            self.window?.makeFirstResponder(self)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        pointerFocus = true
+        defer { pointerFocus = false }
+        super.mouseDown(with: event)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
-           ["=", "+", "-", "0"].contains(event.charactersIgnoringModifiers ?? "") {
-            return false // AppDelegate's focused-markdown zoom path owns these keys.
+        if event.keyCode == 36 || event.keyCode == 76 { return false }
+        guard shouldRouteCommandEquivalentDirectlyToMainMenu(event) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        if AppDelegate.shared?.handleWebPanelKeyEquivalent(event) == true { return true }
+        if ["=", "+", "-", "0"].contains(event.charactersIgnoringModifiers ?? "") {
+            return false // Never let WebKit page zoom claim c11's scale shortcuts.
         }
         return super.performKeyEquivalent(with: event)
     }
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+           AppDelegate.shared?.handleWebPanelKeyEquivalent(event) == true { return }
+        super.keyDown(with: event)
+    }
+
+    override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {
+        let filtered = DragOverlayRoutingPolicy.webViewDragTypes(newTypes)
+        if !filtered.isEmpty { super.registerForDraggedTypes(filtered) }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { [] }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { [] }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool { false }
 }
 
 @MainActor
@@ -62,6 +112,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     let webView: MarkdownWKWebView
     @Published private(set) var state: [String: Any] = [:]
     @Published private(set) var failure: Bool = false
+    @Published private(set) var renderedRevision: Int?
     private weak var panel: MarkdownPanel?
     private var ready = false
     private var entryNavigationAdmitted = false
@@ -69,6 +120,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var loadedContent: String?
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
+    private var recoveryLine: Int?
 
     init(panel: MarkdownPanel) {
         self.panel = panel
@@ -89,6 +141,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsMagnification = false
+        webView.allowsBackForwardNavigationGestures = false
         webView.pageZoom = 1
         webView.setValue(false, forKey: "drawsBackground")
         config.userContentController.add(self, name: "c11md")
@@ -151,6 +204,14 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             synchronize()
         case "state":
             if let value = body["state"] as? [String: Any] { state = value }
+        case "rendered":
+            if let value = body["revision"] as? Int {
+                renderedRevision = value
+                if let line = recoveryLine {
+                    recoveryLine = nil
+                    call("scrollToLine", arguments: [line])
+                }
+            }
         case "link":
             if let href = body["href"] as? String, href.utf8.count <= 16 * 1024 {
                 routeLink(href, optionHeld: (body["modifiers"] as? [String: Bool])?["alt"] == true)
@@ -172,14 +233,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                   let pane = workspace.paneId(forPanelId: panel.id) else { return }
             _ = workspace.newMarkdownPanel(inPane: pane, filePath: url.path, focus: true)
         case .web(let url):
-            if optionHeld || !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser()
-                || BrowserLinkOpenSettings.shouldOpenExternally(url)
-                || !BrowserLinkOpenSettings.hostMatchesWhitelist(url.host ?? "") {
-                NSWorkspace.shared.open(url)
-            } else if let workspace = AppDelegate.shared?.workspaceContainingPanel(panelId: panel.id, preferredWorkspaceId: panel.workspaceId)?.workspace,
-                      let pane = workspace.preferredBrowserTargetPane(fromPanelId: panel.id) ?? workspace.paneId(forPanelId: panel.id) {
-                _ = workspace.newBrowserSurface(inPane: pane, url: url, focus: true)
-            }
+            openC11WebLink(url, sourceWorkspaceId: panel.workspaceId, sourcePanelId: panel.id, optionHeld: optionHeld)
         }
     }
 
@@ -206,7 +260,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failure = true }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard !closed else { return }
+        recoveryLine = (state["lines"] as? [String: Int])?["first"]
         ready = false
+        renderedRevision = nil
         entryNavigationAdmitted = false
         loadedContent = nil
         loadedSettings = [:]

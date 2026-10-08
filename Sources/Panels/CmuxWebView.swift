@@ -1250,21 +1250,13 @@ final class CmuxWebView: WKWebView {
     //
     // Fix: filter out text-based types that conflict with bonsplit tab drags, but keep
     // file URL types so Finder file drops and HTML drag-and-drop work.
-    private static let blockedDragTypes: Set<NSPasteboard.PasteboardType> = [
-        .string, // public.utf8-plain-text — matches bonsplit's NSString tab drags
-        NSPasteboard.PasteboardType("public.text"),
-        NSPasteboard.PasteboardType("public.plain-text"),
-        NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer"),
-        NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder"),
-    ]
-
     static func shouldRejectInternalPaneDrag(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
         DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
             || DragOverlayRoutingPolicy.hasSidebarWorkspaceReorder(pasteboardTypes)
     }
 
     override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {
-        let filtered = newTypes.filter { !Self.blockedDragTypes.contains($0) }
+        let filtered = DragOverlayRoutingPolicy.webViewDragTypes(newTypes)
         if !filtered.isEmpty {
             super.registerForDraggedTypes(filtered)
         }

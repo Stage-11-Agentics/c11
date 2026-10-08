@@ -13063,6 +13063,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// through the same app-level shortcut handler used by the local key monitor.
     @discardableResult
     func handleBrowserSurfaceKeyEquivalent(_ event: NSEvent) -> Bool {
+        handleWebPanelKeyEquivalent(event)
+    }
+
+    /// Shared by browser and read-only markdown web views. Does not infer a
+    /// browser panel from the first responder or alter socket focus policy.
+    @discardableResult
+    func handleWebPanelKeyEquivalent(_ event: NSEvent) -> Bool {
         handleCustomShortcut(event: event, operatorIntent: true)
     }
 

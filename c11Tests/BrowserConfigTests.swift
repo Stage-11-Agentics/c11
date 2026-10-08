@@ -3172,6 +3172,20 @@ final class BrowserHistoryStoreTests: XCTestCase {
 
 @MainActor
 final class CmuxWebViewDragRoutingTests: XCTestCase {
+    func testMarkdownWebViewPreservesFileDropsWithoutSwallowingInternalDrags() {
+        let view = MarkdownWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        view.registerForDraggedTypes([.string, .fileURL,
+            NSPasteboard.PasteboardType("public.text"),
+            DragOverlayRoutingPolicy.bonsplitTabTransferType,
+            DragOverlayRoutingPolicy.sidebarWorkspaceReorderType])
+        XCTAssertTrue(view.registeredDraggedTypes.contains(.fileURL))
+        XCTAssertFalse(view.registeredDraggedTypes.contains(.string))
+        XCTAssertFalse(view.registeredDraggedTypes.contains(NSPasteboard.PasteboardType("public.text")))
+        XCTAssertFalse(view.registeredDraggedTypes.contains(DragOverlayRoutingPolicy.bonsplitTabTransferType))
+        XCTAssertFalse(view.registeredDraggedTypes.contains(DragOverlayRoutingPolicy.sidebarWorkspaceReorderType))
+        XCTAssertFalse(view.becomeFirstResponder(), "unfocused content cannot acquire focus")
+    }
+
     func testRejectsInternalPaneDragEvenWhenFilePromiseTypesArePresent() {
         XCTAssertTrue(
             CmuxWebView.shouldRejectInternalPaneDrag([

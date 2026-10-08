@@ -79,7 +79,7 @@ struct MarkdownPanelView: View {
             filePathHeader.padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
             if isVisibleInUI {
-                MarkdownWebContent(panel: panel)
+                MarkdownWebContent(panel: panel, isFocused: isFocused)
             } else {
                 Color.clear
             }
@@ -268,14 +268,21 @@ struct MarkdownPanelView: View {
 
 private struct MarkdownWebContent: NSViewRepresentable {
     let panel: MarkdownPanel
+    let isFocused: Bool
 
     func makeNSView(context: Context) -> NSView {
         let renderer = panel.ensureRenderer()
+        renderer.webView.allowsPanelFocus = isFocused
         let host = NSHostingView(rootView: MarkdownRendererContent(renderer: renderer))
         return host
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        if let view = panel.renderer?.webView {
+            let changed = view.allowsPanelFocus != isFocused
+            view.allowsPanelFocus = isFocused
+            if changed && isFocused { view.requestPanelFocusIfAllowed() }
+        }
         panel.renderer?.synchronize()
     }
 }
@@ -293,6 +300,7 @@ private struct MarkdownRendererContent: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             MarkdownWebViewHost(webView: renderer.webView)
+                .opacity(renderer.renderedRevision == nil ? 0 : 1)
         }
     }
 }

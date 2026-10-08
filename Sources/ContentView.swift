@@ -374,6 +374,15 @@ enum SidebarResizeInteraction {
 // MARK: - File Drop Overlay
 
 enum DragOverlayRoutingPolicy {
+    /// WebKit must not register text types that swallow sibling tab/drop overlays.
+    static func webViewDragTypes(_ types: [NSPasteboard.PasteboardType]) -> [NSPasteboard.PasteboardType] {
+        let blocked: Set<NSPasteboard.PasteboardType> = [
+            .string, NSPasteboard.PasteboardType("public.text"), NSPasteboard.PasteboardType("public.plain-text"),
+            bonsplitTabTransferType, sidebarWorkspaceReorderType
+        ]
+        return types.filter { !blocked.contains($0) }
+    }
+
     static let bonsplitTabTransferType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
     static let sidebarWorkspaceReorderType = NSPasteboard.PasteboardType(SidebarWorkspaceDragPayload.typeIdentifier)
 

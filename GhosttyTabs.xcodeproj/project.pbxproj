@@ -605,6 +605,7 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		E82D48CDE3BD488B8AAFA67D /* MarkdownPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */; };
 		13F986E4DA1C4EAF92CA9445 /* MarkdownAssetPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */; };
 		05251A54C599458CAD99E315 /* markdown-viewer in Resources */ = {isa = PBXBuildFile; fileRef = 0D0D85360E4743C8A64E4740 /* markdown-viewer */; };
+		36493FA6400141C484A5DCBD /* MarkdownWebRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1227,6 +1228,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPresentationTests.swift; sourceTree = "<group>"; };
 		AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownAssetPolicyTests.swift; sourceTree = "<group>"; };
 		0D0D85360E4743C8A64E4740 /* markdown-viewer */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/markdown-viewer; sourceTree = SOURCE_ROOT; };
+		F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownWebRendererTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1762,6 +1764,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				D7001BF1A1B2C3D4E5F60718 /* PanelTitleBarRenderTests.swift */,
 				C11250C1A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift */,
 				D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */,
+				F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */,
 				4D11AA02B2C3D4E5F6071921 /* MarkdownPanelFontScaleTests.swift */,
 				AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */,
 				24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */,
@@ -2671,6 +2674,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				36493FA6400141C484A5DCBD /* MarkdownWebRendererTests.swift in Sources */,
 				A721E30DB74CE0665ECC036B /* WorkspaceManagerSessionSnapshotTests.swift in Sources */,
 				DE686C76120208E59FAE152A /* PanelIdentityRestoreTests.swift in Sources */,
 				C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */,

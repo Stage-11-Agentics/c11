@@ -14,6 +14,27 @@ import CommonCrypto
 import Security
 #endif
 
+/// Operator-click web links from terminal and markdown use the same settings,
+/// placement and source-workspace lookup. Never changes the selected workspace.
+@MainActor
+@discardableResult
+func openC11WebLink(_ url: URL, sourceWorkspaceId: UUID?, sourcePanelId: UUID?, optionHeld: Bool) -> Bool {
+    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host else { return false }
+    if optionHeld || !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser()
+        || BrowserLinkOpenSettings.shouldOpenExternally(url)
+        || !BrowserLinkOpenSettings.hostMatchesWhitelist(host) {
+        return NSWorkspace.shared.open(url)
+    }
+    guard let sourcePanelId, let sourceWorkspaceId,
+          let workspace = AppDelegate.shared?.workspaceContainingPanel(
+            panelId: sourcePanelId, preferredWorkspaceId: sourceWorkspaceId
+          )?.workspace else { return false }
+    if let pane = workspace.preferredBrowserTargetPane(fromPanelId: sourcePanelId) {
+        return workspace.newBrowserSurface(inPane: pane, url: url, focus: true) != nil
+    }
+    return workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
+}
+
 fileprivate func dedupedCanonicalURLs(_ urls: [URL]) -> [URL] {
     var seen = Set<String>()
     var result: [URL] = []

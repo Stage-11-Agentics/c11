@@ -2489,24 +2489,6 @@ class GhosttyApp {
                 #endif
                 return false
             }
-            // Opt/Alt held at click time forces external browser, bypassing
-            // BrowserLinkOpenSettings routing (cmuxBrowser default, host whitelist, regex).
-            if NSEvent.modifierFlags.contains(.option) {
-                #if DEBUG
-                dlog("link.openURL opt-held, forcing external url=\(target.url)")
-                #endif
-                return performOnMain {
-                    NSWorkspace.shared.open(target.url)
-                }
-            }
-            if !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser() {
-                #if DEBUG
-                dlog("link.openURL cmuxBrowser=disabled, opening externally url=\(target.url)")
-                #endif
-                return performOnMain {
-                    NSWorkspace.shared.open(target.url)
-                }
-            }
             switch target {
             case let .external(url):
                 #if DEBUG
@@ -2516,81 +2498,12 @@ class GhosttyApp {
                     NSWorkspace.shared.open(url)
                 }
             case let .embeddedBrowser(url):
-                if BrowserLinkOpenSettings.shouldOpenExternally(url) {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but shouldOpenExternally=true url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but normalizeHost=nil host=\(url.host ?? "nil") url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-
-                // If a host whitelist is configured and this host isn't in it, open externally.
-                if !BrowserLinkOpenSettings.hostMatchesWhitelist(host) {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but hostWhitelist miss host=\(host) url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
                 let sourceWorkspaceId = callbackWorkspaceId ?? surfaceView.workspaceId
                 let sourcePanelId = callbackSurfaceId ?? surfaceView.terminalSurface?.id
-                guard let sourceWorkspaceId,
-                      let sourcePanelId else {
-                    #if DEBUG
-                    dlog("link.openURL target=embedded but tabId/surfaceId=nil")
-                    #endif
-                    return false
-                }
-                #if DEBUG
-                dlog(
-                    "link.openURL target=embedded, opening in browser pane " +
-                    "host=\(host) url=\(url) tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId)"
-                )
-                #endif
+                let optionHeld = NSEvent.modifierFlags.contains(.option)
                 return performOnMain {
-                    guard let app = AppDelegate.shared,
-                          let resolved = app.workspaceContainingPanel(
-                            panelId: sourcePanelId,
-                            preferredWorkspaceId: sourceWorkspaceId
-                          ) else {
-                        #if DEBUG
-                        dlog(
-                            "link.openURL embedded but workspace lookup failed " +
-                            "tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId)"
-                        )
-                        #endif
-                        return false
-                    }
-                    let workspace = resolved.workspace
-                    #if DEBUG
-                    if workspace.id != sourceWorkspaceId {
-                        dlog(
-                            "link.openURL workspace.remap sourceTab=\(sourceWorkspaceId) " +
-                            "resolvedTab=\(workspace.id) surfaceId=\(sourcePanelId)"
-                        )
-                    }
-                    #endif
-                    if let targetPane = workspace.preferredBrowserTargetPane(fromPanelId: sourcePanelId) {
-                        #if DEBUG
-                        dlog("link.openURL opening in existing browser pane=\(targetPane)")
-                        #endif
-                        return workspace.newBrowserSurface(inPane: targetPane, url: url, focus: true) != nil
-                    } else {
-                        #if DEBUG
-                        dlog("link.openURL opening as new browser split from surface=\(sourcePanelId)")
-                        #endif
-                        return workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
-                    }
+                    openC11WebLink(url, sourceWorkspaceId: sourceWorkspaceId,
+                                   sourcePanelId: sourcePanelId, optionHeld: optionHeld)
                 }
             }
         default:

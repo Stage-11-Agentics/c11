@@ -187,11 +187,14 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     func focus() {
         // Only focus a mounted renderer. Background socket focus never raises a window.
-        if let view = renderer?.webView, let window = view.window { window.makeFirstResponder(view) }
+        if let view = renderer?.webView {
+            view.allowsPanelFocus = true
+            view.requestPanelFocusIfAllowed()
+        }
     }
 
     func unfocus() {
-        // No-op for read-only panel.
+        renderer?.webView.allowsPanelFocus = false
     }
 
     func close() {

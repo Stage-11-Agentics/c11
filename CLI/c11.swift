@@ -2442,6 +2442,12 @@ struct CMUXCLI {
             return
         }
 
+        // Offline analytics read local files in this CLI process only, even with the app down.
+        if command == "usage" || command == "report" {
+            try ActivityAnalysisCommand.run(command: command, args: commandArgs, json: jsonOutput)
+            return
+        }
+
         // C11-163: `c11 events tail` reads the NDJSON event log directly — the
         // file is the contract, so it must work with no running app. Handle it
         // before the socket connect, like `state verify`.
@@ -10368,6 +10374,8 @@ struct CMUXCLI {
               launch <name|id> [fields]              Launch a configuration.
 
             """
+        case "usage", "report":
+            return ActivityAnalysisCommand.usage
         case "events":
             return eventsUsage()
         case "messages":
@@ -20614,6 +20622,8 @@ struct CMUXCLI {
           browser addscript <script>
           browser addstyle <css>
           browser identify [--panel <id|ref|index>]
+          usage [--since <date|duration>] [--by panel|workspace|model|harness] [--json]
+          report [--instance <id>] [--since <date|duration>] [--format md|json]
           events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
           help
 

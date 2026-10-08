@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Offline behavioral checks through a built, real c11 CLI. No app or socket needed.
+
+C11_CLI=/path/to/tagged.app/Contents/Resources/bin/c11 python3 tests/test_cli_activity_analysis.py
+All inputs are synthetic and confined to a system temporary directory.
+"""
+import json
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
+import tempfile
+import unittest
+
+
+class ActivityCLI(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='c11-activity-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.state = self.root / 'state'
+        self.claude = self.root / 'claude'
+        self.codex = self.root / 'codex'
+        for path in (self.state / 'events', self.claude, self.codex):
+            path.mkdir(parents=True)
+        self.journal = self.root / 'lifecycle.sqlite3'
+        with sqlite3.connect(self.journal) as db:
+            db.execute('CREATE TABLE journal_events(tab_id TEXT,session_id TEXT,agent_kind TEXT,workspace_id TEXT)')
+        self.cli = os.environ.get('C11_CLI_BIN', os.environ.get('C11_CLI', 'c11'))
+
+    def run_cli(self, command, *args, ok=True):
+        proc = subprocess.run([self.cli, '--socket', str(self.root / 'absent.sock'), command,
+                               '--state-root', str(self.state), '--claude-root', str(self.claude),
+                               '--codex-root', str(self.codex), '--journal', str(self.journal), *args],
+                              capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode == 0, ok, proc.stderr + proc.stdout)
+        return json.loads(proc.stdout) if ok and ('--json' in args or 'json' in args) else proc.stdout
+
+    def write(self, path, rows):
+        path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+
+    def link(self, panel, session, kind, workspace='workspace-a'):
+        with sqlite3.connect(self.journal) as db:
+            db.execute('INSERT INTO journal_events VALUES(?,?,?,?)', (panel, session, kind, workspace))
+
+    def claude_row(self, msg='message-a', request='request-a', session='session-a', output=10, **usage):
+        return {'type': 'assistant', 'timestamp': '2026-01-02T01:00:00Z', 'sessionId': session,
+                'requestId': request, 'message': {'id': msg, 'model': 'test-model',
+                'usage': {'input_tokens': 100, 'output_tokens': output, **usage}}}
+
+    def test_claude_dedup_request_and_final_snapshot(self):
+        rows = [self.claude_row(output=1), self.claude_row(output=10), self.claude_row(output=10),
+                self.claude_row(request='request-b', output=20)]
+        self.write(self.claude / 'session-a.jsonl', rows)
+        self.write(self.claude / 'duplicate.jsonl', rows)
+        self.link('panel-a', 'session-a', 'claude-code')
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 200)
+        self.assertEqual(result['totals']['output_tokens'], 30)
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['groups'][0]['key'], 'panel-a')
+        self.assertEqual(result['unattributed']['total_tokens'], 0)
+        self.assertIsNone(result['groups'][0]['estimated_api_usd'])
+
+    def test_unknown_identity_does_not_collapse_requests(self):
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row(msg=None), self.claude_row(msg=None)])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertIn('claude_dedup_identity_missing', result['coverage_gaps'])
+        self.assertEqual(result['unattributed']['total_tokens'], result['totals']['total_tokens'])
+
+    def test_ambiguous_session_remains_unattributed(self):
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
+        self.link('panel-a', 'session-a', 'claude-code')
+        self.link('panel-b', 'session-a', 'claude-code')
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+        self.assertEqual(result['unattributed']['total_tokens'], 110)
+        self.assertIn('ambiguous_session_attribution', result['coverage_gaps'])
+
+    def test_cache_ttl_is_preserved_and_prices_are_not_assumed(self):
+        (self.state / 'model-costs.json').write_text(json.dumps({'test-model': {
+            'in_usd': 2, 'out_usd': 10, 'cache_read_usd': .1,
+            'cache_write_usd': 2.5, 'cache_write_1h_usd': 4}}))
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row(cache_read_input_tokens=200,
+            cache_creation_input_tokens=70, cache_creation={
+                'ephemeral_5m_input_tokens': 30, 'ephemeral_1h_input_tokens': 40})])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['total_tokens'], 380)
+        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd'], .000555)
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row(cache_creation_input_tokens=70)])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['cache_write_unknown_ttl_tokens'], 70)
+        self.assertIsNone(result['groups'][0]['estimated_api_usd'])
+
+    def test_codex_cumulative_deltas_since_and_reset(self):
+        def usage(ts, i, cached, out, last=None):
+            return {'type': 'event_msg', 'timestamp': ts, 'payload': {'type': 'token_count', 'info': {
+                'total_token_usage': {'input_tokens': i, 'cached_input_tokens': cached,
+                                      'output_tokens': out, 'reasoning_output_tokens': out // 2},
+                'last_token_usage': last or {}}}}
+        rows = [{'type': 'session_meta', 'payload': {'id': 'codex-a'}},
+                {'type': 'turn_context', 'payload': {'model': 'test-model'}},
+                usage('2026-01-01T00:00:00Z', 100, 30, 20),
+                usage('2026-01-02T00:00:00Z', 150, 40, 30),
+                usage('2026-01-02T00:00:01Z', 150, 40, 30),
+                usage('2026-01-02T00:01:00Z', 10, 2, 4,
+                      {'input_tokens': 10, 'cached_input_tokens': 2, 'output_tokens': 4})]
+        self.write(self.codex / 'rollout.jsonl', rows)
+        self.write(self.codex / 'copy.jsonl', rows)
+        self.link('panel-c', 'codex-a', 'codex')
+        result = self.run_cli('usage', '--since', '2026-01-02T00:00:00Z', '--by', 'panel', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 48)
+        self.assertEqual(result['totals']['cache_read_tokens'], 12)
+        self.assertEqual(result['totals']['output_tokens'], 14)
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['groups'][0]['key'], 'panel-c')
+        self.assertIn('codex_counter_reset_last_usage_only', result['coverage_gaps'])
+
+    def events(self, gap=False, presence=True):
+        rows = []
+        def add(ts, kind, payload=None, panel=None, workspace=None):
+            rows.append({'v': 2, 'instance': 'synthetic', 'seq': len(rows) + 1, 'ts': ts,
+                         'type': kind, 'payload': payload or {}, 'panel': panel, 'workspace': workspace})
+        add('2026-01-02T00:00:00Z', 'log.opened', {'app_active': True, 'screen_locked': False, 'system_asleep': False} if presence else {})
+        add('2026-01-02T00:00:00Z', 'workspace.created', {'title': 'Test workspace'}, workspace='workspace-a')
+        add('2026-01-02T00:00:00Z', 'panel.created', {'kind': 'terminal'}, panel='panel-a', workspace='workspace-a')
+        add('2026-01-02T00:00:00Z', 'liveness.derived', {'state': 'working'}, panel='panel-a')
+        add('2026-01-02T00:30:00Z', 'hang.precursor')
+        add('2026-01-02T01:00:00Z', 'panel.closed', panel='panel-a')
+        add('2026-01-02T01:00:00Z', 'workspace.closed', {'title': 'Test workspace'}, workspace='workspace-a')
+        if gap:
+            rows[4]['seq'] += 1
+            for row in rows[5:]: row['seq'] += 1
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+
+    def test_report_replays_rotation_foreground_lifetime_and_load(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        lines = path.read_text().splitlines()
+        Path(str(path) + '.1').write_text('\n'.join(lines[:4]) + '\n')
+        path.write_text('\n'.join(lines[4:]) + '\n')
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['panels_created'], 1)
+        self.assertEqual(result['peak_open_per_instance'], 1)
+        self.assertEqual(result['open_at_observed_end'], 0)
+        self.assertEqual(result['foreground_hours'], 1)
+        self.assertEqual(result['observed_agent_hours'], 1)
+        self.assertEqual(result['closed_lifetimes_minutes']['median'], 60)
+        self.assertEqual(result['workspaces'][0]['name'], 'Test workspace')
+        self.assertEqual(result['hang_rate_by_working_load'][0]['hangs_per_hour'], 1)
+        markdown = self.run_cli('report', '--instance', 'synthetic', '--format', 'md')
+        self.assertIn('Test workspace', markdown)
+        self.assertIn('Daily activity', markdown)
+
+    def test_report_missing_presence_and_sequence_gap_are_unknown(self):
+        self.events(gap=True, presence=False)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertIsNone(result['foreground_hours'])
+        self.assertIn('event_sequence_gap', result['coverage_gaps'])
+        self.assertGreater(result['presence_unknown_hours'], 0)
+
+    def test_report_usage_is_bounded_by_observed_span(self):
+        self.events()
+        before = self.claude_row(msg='before')
+        before['timestamp'] = '2026-01-01T23:00:00Z'
+        after = self.claude_row(msg='after')
+        after['timestamp'] = '2026-01-02T02:00:00Z'
+        self.write(self.claude / 'session-a.jsonl', [before, self.claude_row(), after])
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['host_usage']['totals']['calls'], 1)
+
+    def test_bad_input_is_rejected(self):
+        self.run_cli('usage', '--by', 'account', ok=False)
+        self.run_cli('usage', '--since', 'garbage', ok=False)
+        self.run_cli('report', '--format', 'html', ok=False)
+
+
+if __name__ == '__main__':
+    unittest.main()

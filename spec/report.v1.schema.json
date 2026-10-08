@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://c11.stage11.ai/spec/report.v1.schema.json",
+  "title": "c11 offline report output v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "instances",
+    "start",
+    "end",
+    "span_hours",
+    "panels_created",
+    "peak_open_per_instance",
+    "peak_working_per_instance",
+    "observed_agent_hours",
+    "foreground_hours",
+    "observed_foreground_hours",
+    "presence_unknown_hours",
+    "workspaces",
+    "daily_utc",
+    "hour_of_day_utc_events",
+    "hang_rate_by_working_load",
+    "host_usage",
+    "coverage_gaps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "instances": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "start": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "end": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "span_hours": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "host_usage": {
+      "$ref": "usage.v1.schema.json"
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "foreground_hours": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "observed_foreground_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "presence_unknown_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "daily_utc": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "hour_of_day_utc_events": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "hang_rate_by_working_load": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "working_panels",
+          "observed_hours",
+          "hangs",
+          "hangs_per_hour"
+        ]
+      }
+    }
+  }
+}

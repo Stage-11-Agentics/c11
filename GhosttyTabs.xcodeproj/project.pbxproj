@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11349000000000000000002 /* ActivityAnalysisCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11349000000000000000001 /* ActivityAnalysisCommand.swift */; };
 		022A09F1BE71E4DC6867B9FA /* ThemeRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F012 /* ThemeRegistryTests.swift */; };
 		05251A54C599458CAD99E315 /* markdown-viewer in Resources */ = {isa = PBXBuildFile; fileRef = 0D0D85360E4743C8A64E4740 /* markdown-viewer */; };
 		0553CFD8D0141F43D50CA586 /* WorkspaceSnapshotSetCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */; };
@@ -678,6 +679,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11349000000000000000001 /* ActivityAnalysisCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityAnalysisCommand.swift; sourceTree = "<group>"; };
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		0095C3D72A7722FFA42A7ED1 /* AreaSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AreaSizePolicy.swift; sourceTree = "<group>"; };
 		00B9399C201ED734873E67B9 /* EventEmitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EventEmitter.swift; path = Events/EventEmitter.swift; sourceTree = "<group>"; };
@@ -1688,6 +1690,7 @@
 			isa = PBXGroup;
 			children = (
 				C11277000000000000000301 /* JournalQueryCommand.swift */,
+				C11349000000000000000001 /* ActivityAnalysisCommand.swift */,
 				FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */,
 				C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */,
 				B9000001A1B2C3D4E5F60719 /* c11.swift */,
@@ -2620,6 +2623,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C11277000000000000000302 /* JournalQueryCommand.swift in Sources */,
+				C11349000000000000000002 /* ActivityAnalysisCommand.swift in Sources */,
 				C11277000000000000000202 /* JournalExport.swift in Sources */,
 				C11277000000000000000102 /* JournalQuery.swift in Sources */,
 				AEBFCF000212C27520A056EF /* JournalCommand.swift in Sources */,

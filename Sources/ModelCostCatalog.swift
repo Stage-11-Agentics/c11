@@ -22,6 +22,9 @@ import Foundation
 struct ModelCostEntry: Codable, Equatable {
     var inUSD: Double
     var outUSD: Double
+    var cacheReadUSD: Double? = nil
+    var cacheWriteUSD: Double? = nil
+    var cacheWrite1hUSD: Double? = nil
     var source: String?
     var observedAt: String?
     var notes: String?
@@ -29,6 +32,9 @@ struct ModelCostEntry: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case inUSD = "in_usd"
         case outUSD = "out_usd"
+        case cacheReadUSD = "cache_read_usd"
+        case cacheWriteUSD = "cache_write_usd"
+        case cacheWrite1hUSD = "cache_write_1h_usd"
         case source
         case observedAt = "observed_at"
         case notes
@@ -145,7 +151,7 @@ struct ModelCostsCommandCore {
 
       list [--json]                     Print the catalog (model → $in/$out per Mtok)
       get <model> [--json]              Print one model's entry
-      set <model> --in <usd> --out <usd> [--source <url>] [--notes <text>]
+      set <model> --in <usd> --out <usd> [--cache-read <usd>] [--cache-write <5m-usd>] [--cache-write-1h <usd>] [--source <url>] [--notes <text>]
                                         Add or update a model (stamps observed_at)
       rm <model>                        Remove a model
       import <path|-> [--replace]       Bulk import a catalog JSON (merge by default)
@@ -214,6 +220,7 @@ struct ModelCostsCommandCore {
         }
         if json { return try encodeJSON([model: entry]) }
         var out = "\(model)  $\(trim(entry.inUSD))/$\(trim(entry.outUSD)) per Mtok"
+        out += "\n  cache read: \(entry.cacheReadUSD.map(trim) ?? "unknown"), write (5m): \(entry.cacheWriteUSD.map(trim) ?? "unknown"), write (1h): \(entry.cacheWrite1hUSD.map(trim) ?? "unknown") USD per Mtok"
         if let s = entry.source { out += "\n  source: \(s)" }
         if let o = entry.observedAt { out += "\n  observed: \(o)" }
         if let n = entry.notes { out += "\n  notes: \(n)" }
@@ -224,10 +231,10 @@ struct ModelCostsCommandCore {
         guard let model = firstPositional(args) else {
             throw Failure(message: "model-costs set: missing <model>")
         }
-        guard let inRaw = option(args, "--in"), let inUSD = Double(inRaw), inUSD >= 0 else {
+        guard let inRaw = option(args, "--in"), let inUSD = Double(inRaw), inUSD.isFinite, inUSD >= 0 else {
             throw Failure(message: "model-costs set: --in <usd-per-Mtok> is required and must be a non-negative number")
         }
-        guard let outRaw = option(args, "--out"), let outUSD = Double(outRaw), outUSD >= 0 else {
+        guard let outRaw = option(args, "--out"), let outUSD = Double(outRaw), outUSD.isFinite, outUSD >= 0 else {
             throw Failure(message: "model-costs set: --out <usd-per-Mtok> is required and must be a non-negative number")
         }
         let formatter = DateFormatter()
@@ -236,6 +243,9 @@ struct ModelCostsCommandCore {
         let entry = ModelCostEntry(
             inUSD: inUSD,
             outUSD: outUSD,
+            cacheReadUSD: try optionalRate(args, "--cache-read"),
+            cacheWriteUSD: try optionalRate(args, "--cache-write"),
+            cacheWrite1hUSD: try optionalRate(args, "--cache-write-1h"),
             source: option(args, "--source"),
             observedAt: formatter.string(from: now),
             notes: option(args, "--notes")
@@ -263,6 +273,10 @@ struct ModelCostsCommandCore {
         } catch {
             throw Failure(message: "model-costs import: invalid catalog JSON — expected {\"<model>\": {\"in_usd\": n, \"out_usd\": n, ...}} (\(error.localizedDescription))")
         }
+        for entry in incoming.values {
+            let rates = [entry.inUSD, entry.outUSD] + [entry.cacheReadUSD, entry.cacheWriteUSD, entry.cacheWrite1hUSD].compactMap { $0 }
+            guard rates.allSatisfy({ $0.isFinite && $0 >= 0 }) else { throw Failure(message: "model-costs import: rates must be finite and non-negative") }
+        }
         try store.importCatalog(incoming, replace: args.contains("--replace"))
         return "OK imported \(incoming.count) entr\(incoming.count == 1 ? "y" : "ies")\(args.contains("--replace") ? " (replaced catalog)" : "")"
     }
@@ -281,6 +295,12 @@ struct ModelCostsCommandCore {
         if n >= 1, n.truncatingRemainder(dividingBy: 1) == 0 { return String(Int(n)) }
         let two = String(format: "%.2f", n)
         return two.hasSuffix("0") && n >= 1 ? String(two.dropLast()) : two
+    }
+
+    private static func optionalRate(_ args: [String], _ key: String) throws -> Double? {
+        guard let raw = option(args, key) else { return nil }
+        guard let value = Double(raw), value.isFinite, value >= 0 else { throw Failure(message: "model-costs: \(key) must be a finite non-negative number") }
+        return value
     }
 
     private static func option(_ args: [String], _ name: String) -> String? {

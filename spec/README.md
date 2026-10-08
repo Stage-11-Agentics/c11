@@ -41,11 +41,11 @@ In each fixture directory, `valid-*.json` must all parse successfully and `inval
 
 - `seq` is an integer ≥ 0, the monotonic per-instance sequence number.
 - `ts` is an RFC3339 / ISO-8601 UTC timestamp with `Z` suffix and optional fractional seconds.
-- `type` is one of the closed enum: `panel.created`, `panel.closed`, `workspace.selected`, `workspace.switch_blocked`, `workspace.reordered`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `lifecycle.changed`, `flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, `mailbox.accepted`, `panel.input_sent`, `mailbox.delivered`, `conversation.resume.mode`, `conversation.resume.decision`, `hang.precursor`, `ask.opened`, `ask.closed`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`. (v1 spells the three renamed types as in the table above.)
+- `type` is one of the closed enum: `panel.created`, `panel.closed`, `workspace.selected`, `workspace.switch_blocked`, `workspace.reordered`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `lifecycle.changed`, `flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, `mailbox.accepted`, `panel.input_sent`, `mailbox.delivered`, `conversation.resume.mode`, `conversation.resume.decision`, `hang.precursor`, `ask.opened`, `ask.closed`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`, `log.policy`, `log.retention`. Local history adds presence edges, workspace created/renamed/closed, and instance.sample. (v1 spells the three renamed types as in the table above.)
 - `instance` is a non-empty string.
 - `v` is the integer `2` (`1` in the v1 schema).
 - `workspace`, `panel`, `area` are optional UUID strings (`workspace`, `surface`, `pane` in v1).
-- `payload` is an optional, free-form object (any keys); its shape is keyed by `type`. `mailbox.accepted` carries `{id, from, body, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?, truncated?}`, `panel.input_sent` carries `{caller_panel_id, caller_title, target_title, kind, text, bytes, submitted, truncated?, queued?}`, and `mailbox.delivered` carries `{id, recipient, via}`. `via` is `push`, `drain`, or `inbox`; `queued` marks input accepted before the target panel attached.
+- `payload` is an optional, free-form object (any keys); its shape is keyed by `type`. `mailbox.accepted` carries `{id, from, bytes, text_recorded, body?, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?, truncated?}`, `panel.input_sent` carries `{caller_panel_id, caller_title, target_title, kind, text?, bytes, submitted, text_recorded?, truncated?, queued?}`, and `mailbox.delivered` carries `{id, recipient, via}`. `via` is `push`, `drain`, or `inbox`; `queued` marks input accepted before the target panel attached.
 - `seq`, `ts`, `type`, `instance`, `v` are required; `additionalProperties: false` at the top level.
 
 ## What the schema does NOT enforce
@@ -56,6 +56,10 @@ In each fixture directory, `valid-*.json` must all parse successfully and `inval
 - **`ts` ordering.** `ts` is captured on the emitting thread and is only approximately monotonic; it may invert relative to `seq` across racing threads.
 
 **`seq` (not `ts`) is the ordering oracle.** Consumers order by `seq`, which the writer assigns on its serial queue so file order and seq order always agree. Those cross-line and liveness invariants live in `Sources/Events/EventEnvelope.swift` and the `EventLog` writer / `c11 events tail` reader, not the schema.
+
+## C11-349 latency exception
+
+Only meaningful OSC title churn is coalesced into first/last/count windows with a sixty-second awake tail deadline, even with analytics off. Spinner-only changes are discarded. Other event types retain EVT-6’s one-second latency; pending tails flush before non-OSC panel events, panel/workspace close, policy changes and shutdown.
 
 # Mailbox Envelope Spec
 

@@ -71,7 +71,7 @@ struct EventEnvelope {
     // MARK: - Taxonomy
 
     /// The event-type taxonomy (EVT-2, v2 spellings). Dotted strings; the wire value is the
-    /// `rawValue`. `logOpened` / `logRotated` / `logDropped` are stream-control
+    /// `rawValue`. `logOpened` / `logRotated` / `logDropped` / `logPolicy` / `logRetention` are stream-control
     /// markers (not taxonomy members) that let consumers detect instance
     /// boundaries, rotation, and backpressure drops.
     enum EventType: String, CaseIterable {
@@ -109,6 +109,7 @@ struct EventEnvelope {
         case askClosed = "ask.closed"
         // Stream-control markers:
         case logPolicy = "log.policy"
+        case logRetention = "log.retention"
         case logOpened = "log.opened"
         case logRotated = "log.rotated"
         case logDropped = "log.dropped"

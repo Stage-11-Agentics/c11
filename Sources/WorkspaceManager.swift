@@ -5769,6 +5769,18 @@ extension WorkspaceManager {
             hasher.combine(workspace.isPinned)
             hasher.combine(workspace.groupId)
             hasher.combine(workspace.panels.count)
+            // Reading preference edits must reach the next autosave even when
+            // panel counts, focus and titles remain unchanged. This runs on the
+            // autosave cadence, and reads only model state (never creates WebKit).
+            let markdownPanels = workspace.panels.values.compactMap { $0 as? MarkdownPanel }
+                .sorted { $0.id.uuidString < $1.id.uuidString }
+            for panel in markdownPanels {
+                hasher.combine(panel.id)
+                hasher.combine(panel.fontScale)
+                hasher.combine(panel.theme)
+                hasher.combine(panel.typeface)
+                hasher.combine(panel.outlineOpen)
+            }
             hasher.combine(workspace.statusEntries.count)
             hasher.combine(workspace.metadataBlocks.count)
             // Hash operator-authored workspace metadata by sorted keys so

@@ -72,6 +72,30 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
     }
 
+    func testEveryPresentationFieldInvalidatesSessionAutosaveFingerprint() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let pane = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let panel = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: nil, focus: false))
+        defer { for value in workspace.panels.values { value.close() } }
+        var snapshot = SessionMarkdownPanelSnapshot(fontScale: 1, theme: "system", typeface: "theme", outlineOpen: nil)
+        panel.applyRestoredPresentation(snapshot)
+        var before = manager.sessionAutosaveFingerprint()
+        for field in 0..<4 {
+            switch field {
+            case 0: snapshot.fontScale = 1.4
+            case 1: snapshot.theme = "dark"
+            case 2: snapshot.typeface = "mono"
+            default: snapshot.outlineOpen = false
+            }
+            panel.applyRestoredPresentation(snapshot)
+            let after = manager.sessionAutosaveFingerprint()
+            XCTAssertNotEqual(after, before, "Presentation field \(field) must trigger autosave")
+            before = after
+        }
+        XCTAssertNil(panel.renderer, "Autosave must not create WebKit for hidden documents")
+    }
+
     func testClosingPanelReleasesItsRendererAndScopedHandlers() {
         weak var retained: MarkdownWebRenderer?
         autoreleasepool {

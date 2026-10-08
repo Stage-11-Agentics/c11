@@ -137,7 +137,7 @@ enum MarkdownLinkTarget: Equatable {
            let host = url.host, !host.isEmpty, url.user == nil, url.password == nil { return .web(url) }
         // Only relative markdown links. Never delegate arbitrary files to Launch Services.
         guard URLComponents(string: href)?.scheme == nil, !href.hasPrefix("/"),
-              url.path.rangeOfCharacter(from: .controlCharacters) == nil,
+              URLComponents(url: url, resolvingAgainstBaseURL: true)?.percentEncodedPath.removingPercentEncoding?.rangeOfCharacter(from: .controlCharacters) == nil,
               url.isFileURL, ["md", "markdown", "mdown"].contains(url.pathExtension.lowercased()) else { return .blocked }
         return .markdown(url)
     }

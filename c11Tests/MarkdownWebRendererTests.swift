@@ -15,9 +15,11 @@ final class MarkdownWebRendererTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let path = folder.appendingPathComponent("reader.md")
+        let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")!
+        try image.write(to: folder.appendingPathComponent("local.png"))
         let text = "# Reader\n\n```mermaid\ngraph TD\nA-->B\n```\n\n"
             + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
-            + "<script>window.hostileExecuted=true</script>\n<img src=x onerror='window.hostileExecuted=true'>\n[jump](javascript:alert(1))\n![remote](https://example.invalid/canary.png)\n[executable](./evil.command)\n[application](file:///System/Applications/Calculator.app)\n"
+            + "![local](local.png)\n<script>window.hostileExecuted=true</script>\n<img src=x onerror='window.hostileExecuted=true'>\n[jump](javascript:alert(1))\n![remote](https://example.invalid/canary.png)\n[executable](./evil.command)\n[application](file:///System/Applications/Calculator.app)\n"
         try text.write(to: path, atomically: true, encoding: .utf8)
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
         defer { panel.close() }
@@ -28,19 +30,27 @@ final class MarkdownWebRendererTests: XCTestCase {
         // Attaching to a non-visible window supplies AppKit layout without any
         // screen activation, clicks, or changes to the operator's workspace.
         let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = renderer.webView
         defer { window.contentView = nil; window.close() }
         await rendered(renderer, revision: 1)
         XCTAssertFalse(renderer.failure)
         XCTAssertEqual(renderer.webView.pageZoom, 1)
         XCTAssertFalse(renderer.webView.allowsMagnification)
-        XCTAssertEqual(renderer.state["font_scale"] as? Double, 1.3)
-        XCTAssertEqual((renderer.state["theme"] as? [String: Any])?["choice"] as? String, "dark")
-        XCTAssertEqual((renderer.state["typeface"] as? [String: Any])?["choice"] as? String, "mono")
+        let initial = try await call(renderer, "visible") as? [String: Any]
+        XCTAssertEqual(initial?["font_scale"] as? Double, 1.3)
+        XCTAssertEqual((initial?["theme"] as? [String: Any])?["choice"] as? String, "dark")
+        XCTAssertEqual((initial?["typeface"] as? [String: Any])?["choice"] as? String, "mono")
         let secure = try await evaluate(renderer, "({executed:window.hostileExecuted===true,remote:document.querySelectorAll('[src^=https]').length,svg:document.querySelectorAll('svg').length})") as? [String: Any]
         XCTAssertEqual(secure?["executed"] as? Bool, false)
         XCTAssertEqual(secure?["remote"] as? Int, 0)
         XCTAssertGreaterThan(secure?["svg"] as? Int ?? 0, 0, "Mermaid must render offline through the custom scheme")
+        let imageLoaded: Any = try await withCheckedThrowingContinuation { continuation in
+            renderer.webView.callAsyncJavaScript(
+            "const img=document.querySelector('img[src^=\"c11md-asset:\"]'); if(!img)return false; await img.decode(); return img.naturalWidth===1;",
+            arguments: [:], in: nil, in: .page) { continuation.resume(with: $0) }
+        }
+        XCTAssertEqual(imageLoaded as? Bool, true, "Scoped image bytes must load through WebKit")
         _ = try await call(renderer, "scrollToHeading", arguments: ["Section 40"])
         let before = try await call(renderer, "visible") as? [String: Any]
         let firstLine = (before?["lines"] as? [String: Int])?["first"]

@@ -31,7 +31,11 @@ result is needed. Other methods return synchronously. Queries never mutate focus
 - `scrollToHeading(textOrSlug)`: exact slug, exact case-insensitive text, then
   prefix/substring text match. Returns `{ok:boolean, heading:Heading|null}`.
   Switches to read mode and briefly highlights the target; no window focus.
-- `scrollToLine(line)`: 1-based source line, clamped to the document. Returns state.
+- `scrollToLine(line, offset = 0)`: 1-based source line, clamped to the document;
+  offset is a signed CSS-pixel distance from that line's origin to the viewport
+  top (positive means the viewport has moved down into the line). Zero aligns the
+  line origin with the viewport top. Returns state; the original one-argument call
+  is unchanged.
 - `visible()`: returns State below, including bounded selection (max 120 chars).
 - `outline()`: returns nested `Heading[]`; `progress()`: returns
   `{progress, minutesLeft}`. Both are read-only.
@@ -53,13 +57,15 @@ table stacking, footnotes and outline docking all use that effective width.
 Task counts include the heading's section (until a same/higher-level heading).
 
 `State = {file, revision, mode:"read"|"source", pane:{width,effectiveWidth,size},
-heading_path:string[], heading:Heading|null, lines:{first,last,total},
+heading_path:string[], heading:Heading|null, lines:{first,last,total,offset},
 progress:number, minutes_left:number, find:{query,matches,current}|null,
 outline:{open,docked,choice:true|false|"auto",tree:Heading[]},
 theme:{choice,resolved}, typeface:{choice,resolved}, font_scale:number,
 diagram_open:number|null, selection:string|null}`.
-Widths/offsets are CSS pixels; progress is a clamped fraction 0..1, minutes are
-nonnegative whole minutes, source lines are 1-based inclusive. `size` is
+`lines.offset` is the signed CSS-pixel distance from the first visible line's
+origin to the viewport top. Widths/offsets are CSS pixels; progress is a clamped
+fraction 0..1, minutes are nonnegative whole minutes, source lines are 1-based
+inclusive. `size` is
 `narrow|medium|wide` at effective widths <620 / <1000 / >=1000.
 
 ## Page → native

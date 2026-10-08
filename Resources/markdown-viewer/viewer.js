@@ -217,6 +217,24 @@ function buildHeadings(tokens) {
 
 const activeScroller=()=>S.mode==='source'?srcScroller:scroller;
 const topIn=(el,sc=scroller)=>el.getBoundingClientRect().top-sc.getBoundingClientRect().top+sc.scrollTop;
+function firstTextOrigin(block) {
+  const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest('svg,button,.code-head,figcaption,.katex-mathml')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
+  let n;
+  while((n=walker.nextNode())) {
+    const range=document.createRange();range.selectNodeContents(n);
+    const rect=[...range.getClientRects()].find(x=>x.height);if(rect)return rect.top;
+  }
+  return null;
+}
+function lineOrigin(line,block=null,sc=activeScroller()) {
+  if(S.mode==='source') {const row=$(`.sl[data-line="${line}"]`,source);return row?topIn(row,sc):sc.scrollTop;}
+  if(!block)block=S.blocks.find(x=>+x.dataset.ls<=line&&+x.dataset.le>=line)||S.blocks.find(x=>+x.dataset.ls>=line)||S.blocks.at(-1);
+  if(!block)return sc.scrollTop;
+  const start=+block.dataset.ls,end=Math.max(start,+block.dataset.le),span=end-start+1,index=clamp(line,start,end)-start;
+  const top=topIn(block,sc),first=firstTextOrigin(block),origin=first===null?top:first-sc.getBoundingClientRect().top+sc.scrollTop;
+  if(span<=1)return origin;
+  return origin+Math.max(0,top+(block.offsetHeight||1)-origin)*index/(span-1);
+}
 function firstTextAt(block,y) {
   // A character anchor holds a real rendered text row through metric changes.
   const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest('svg,button,.code-head,figcaption,.katex-mathml')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
@@ -425,16 +443,21 @@ function visibleLines() {
   const sc=activeScroller(),top=sc.scrollTop,bottom=top+sc.clientHeight;
   if(S.mode==='source') {
     const rows=$$('.sl',source),visible=rows.filter(x=>topIn(x,sc)+x.offsetHeight>top&&topIn(x,sc)<bottom);
-    return {first:+visible[0]?.dataset.line||1,last:+visible.at(-1)?.dataset.line||1,total:S.lines};
+    const firstRow=visible[0];return {first:+firstRow?.dataset.line||1,last:+visible.at(-1)?.dataset.line||1,total:S.lines,
+      offset:firstRow?top-topIn(firstRow,sc):0};
   }
-  let first=null,last=1;
+  let first=null,last=1,firstBlock=null;
   for(const b of S.blocks) {
     const t=topIn(b),height=b.offsetHeight||1;if(t+height<top)continue;if(t>bottom)break;
     const start=+b.dataset.ls,end=+b.dataset.le,span=Math.max(1,end-start+1);
-    first ??=start+Math.floor(clamp((top-t)/height,0,1)*(span-1));
+    if(first===null) {
+      firstBlock=b;const firstOrigin=lineOrigin(start,b,sc),lastOrigin=lineOrigin(end,b,sc);
+      first=start+Math.floor(clamp((top-firstOrigin)/Math.max(1,lastOrigin-firstOrigin),0,1)*(span-1));
+    }
     last=Math.min(end,start+Math.ceil(clamp((bottom-t)/height,0,1)*(span-1)));
   }
-  return {first:first||1,last:Math.max(first||1,last),total:S.lines};
+  first ||= 1;
+  return {first,last:Math.max(first,last),total:S.lines,offset:firstBlock?top-lineOrigin(first,firstBlock,sc):0};
 }
 function progress() {
   const sc=activeScroller(),p=clamp(sc.scrollTop/Math.max(1,sc.scrollHeight-sc.clientHeight*1.5),0,1);
@@ -503,10 +526,11 @@ function setSourceMode(enabled) {
   if(mode==='source')modeAnchor={anchor:a,sourceLine:visibleLines().first};else modeAnchor=null;
   if(query)search(query,{keepPlace:true});publish();return visible();
 }
-function scrollToLine(raw) {
+function scrollToLine(raw,rawOffset=0) {
   const line=clamp(Math.round(Number(raw)||1),1,S.lines),sc=activeScroller();
   const b=S.mode==='source'?$(`.sl[data-line="${line}"]`,source):S.blocks.find(x=>+x.dataset.ls<=line&&+x.dataset.le>=line)||S.blocks.find(x=>+x.dataset.ls>=line);
-  if(b)sc.scrollTop=topIn(b,sc);publish();return visible();
+  const requestedOffset=Number(rawOffset),offset=Number.isFinite(requestedOffset)?requestedOffset:0;
+  if(b)sc.scrollTop=lineOrigin(line,b,sc)+offset;publish();return visible();
 }
 function scrollToHeading(query) {
   const q=String(query||'').toLowerCase().replace(/^#/,'');

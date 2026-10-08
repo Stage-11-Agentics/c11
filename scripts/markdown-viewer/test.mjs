@@ -81,6 +81,20 @@ try {
     await page.evaluate(()=>c11md.setSourceMode(false));const back=await page.locator('#c11md-h-section-30').evaluate(x=>x.getBoundingClientRect().top);assert.ok(Math.abs(top-back)<1,'source round-trip anchor');
   }
   scenario('reload preserves anchor, unchanged node/selection; theme/typeface/scale/outline/source preserve position at all widths');
+  const evictionMarkdown='# Eviction restore\n\n'+Array.from({length:80},(_,i)=>`Eviction witness ${i}: ${'A visible source line keeps its exact viewport position. '.repeat(2)}`).join('\n\n')+'\n';
+  await settings({theme:'light',typeface:'serif',scale:1});await load(evictionMarkdown,'/synthetic/eviction.md',1);
+  const captured=await page.evaluate(()=>{
+    const block=[...document.querySelector('#article').children].find(x=>x.textContent.startsWith('Eviction witness 40:'));
+    const sc=document.querySelector('#scroller'),line=Number(block.dataset.ls),range=document.createRange();range.selectNodeContents(block);
+    const origin=range.getClientRects()[0].top-sc.getBoundingClientRect().top+sc.scrollTop;
+    sc.scrollTop=origin+8.25;return {line,state:c11md.visible()};
+  });
+  assert.equal(captured.state.lines.first,captured.line);assert.ok(Math.abs(captured.state.lines.offset-8.25)<=1,`capture offset ${captured.state.lines.offset}`);
+  await page.reload();await page.waitForFunction(()=>window.testMessages.some(m=>m.type==='ready'));
+  await settings({theme:'light',typeface:'serif',scale:1});await load(evictionMarkdown,'/synthetic/eviction.md',2);
+  const restored=await page.evaluate(({line,offset})=>c11md.scrollToLine(line,offset).lines,{line:captured.line,offset:captured.state.lines.offset});
+  assert.equal(restored.first,captured.line);assert.ok(Math.abs(restored.offset-captured.state.lines.offset)<=1,`restore offset ${captured.state.lines.offset} -> ${restored.offset}`);
+  scenario('eviction restore after fresh page reload preserves first visible source line and signed CSS-pixel offset');
   // Async diagram replacement above an unchanged lower section holds its position.
   const graph='```mermaid\nflowchart TD\n A --> B\n```\n\n', above='# Async\n\n'+graph+long;
   await settings({scale:1,typeface:'serif'});await load(above,'/synthetic/async.md');await page.evaluate(()=>c11md.scrollToHeading('Section 30'));

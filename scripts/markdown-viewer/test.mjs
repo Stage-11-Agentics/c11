@@ -170,8 +170,6 @@ try {
   await page.locator('#outlineList a[data-outline-slug="tasks"]').click();
   await page.waitForFunction(()=>c11md.visible().heading?.slug==='tasks');
   assert.equal(await page.locator('#outlinePanel').evaluate(x=>x.classList.contains('open')),true,'heading jump closed the outline');
-  await outlineFilter.fill('task');
-  assert.equal(await page.locator('#outlineList a.on').getAttribute('data-outline-slug'),'tasks','filter repaint dropped the active scrollspy mark');
   await outlineFilter.fill('no such heading');assert.equal(await page.locator('#outlineList .empty').innerText(),'No headings match');
   await page.keyboard.press('Escape');
   assert.equal(await outlineFilter.inputValue(),'','Escape did not clear the outline filter first');
@@ -180,6 +178,19 @@ try {
   assert.equal(await page.locator('#outlinePanel').evaluate(x=>x.classList.contains('open')),false,'Escape did not close the outline');
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='outlineDismiss')?.type),'outlineDismiss','Escape did not request persistence of the closed choice');
   scenario('page outline filters with ancestor/task context, jumps without closing, and Esc reports the explicit closed choice');
+
+  const n10Document='# Scrollspy\n\n'+Array.from({length:24},(_,i)=>`## Section ${i}\n\nA stable heading remains active when the outline list is filtered.\n`).join('\n');
+  await page.setViewportSize({width:1200,height:820});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
+  await load(n10Document,'/synthetic/n10-scrollspy.md',1);
+  await page.evaluate(()=>c11md.scrollToHeading('Section 12'));
+  await page.waitForFunction(()=>c11md.visible().heading?.slug==='section-12'&&
+    document.querySelector('#outlineList a.on')?.dataset.outlineSlug==='section-12');
+  // Let queued scroll and resize work settle before rebuilding the list.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('#outlineList a.on').getAttribute('data-outline-slug'),'section-12');
+  await page.locator('#outlineFilter').fill('Section 12');
+  assert.deepEqual(await page.locator('#outlineList a.on').evaluateAll(links=>links.map(link=>link.dataset.outlineSlug)),['section-12'],'filter repaint dropped the settled active scrollspy mark');
+  scenario('N10: settled Section 12 scrollspy mark survives outline filtering');
 
   await page.setViewportSize({width:560,height:820});await settings({theme:'light',typeface:'serif',scale:3,outlineOpen:true});
   await load(outlineSample,'/synthetic/outline-scale-300.md',1);

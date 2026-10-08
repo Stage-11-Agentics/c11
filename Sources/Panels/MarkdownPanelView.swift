@@ -379,7 +379,6 @@ private struct MarkdownReaderToolbar: View {
                     }
 
                     controls
-                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(.horizontal, geometry.size.width < 360 ? 4 : 8)
                 .frame(height: 35)
@@ -442,7 +441,7 @@ private struct MarkdownReaderToolbar: View {
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 26, height: 26)
             }
-            .buttonStyle(MarkdownChromeButtonStyle(palette: palette, active: sourceMode))
+            .buttonStyle(MarkdownOmnibarButtonStyle(palette: palette, active: sourceMode))
             .safeHelp(String(localized: "markdown.reader.source.toggle", defaultValue: "Toggle source view"))
             .accessibilityLabel(String(localized: "markdown.reader.source.toggle", defaultValue: "Toggle source view"))
             .accessibilityAddTraits(sourceMode ? .isSelected : [])
@@ -629,22 +628,24 @@ private struct MarkdownChromeButtonStyle: ButtonStyle {
 
 private struct MarkdownOmnibarButtonStyle: ButtonStyle {
     let palette: MarkdownReaderPalette
+    var active = false
 
     func makeBody(configuration: Configuration) -> some View {
-        MarkdownOmnibarButtonStyleBody(configuration: configuration, palette: palette)
+        MarkdownOmnibarButtonStyleBody(configuration: configuration, palette: palette, active: active)
     }
 }
 
 private struct MarkdownOmnibarButtonStyleBody: View {
     let configuration: MarkdownOmnibarButtonStyle.Configuration
     let palette: MarkdownReaderPalette
+    let active: Bool
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     private var backgroundOpacity: Double {
         guard isEnabled else { return 0 }
         if configuration.isPressed { return 0.16 }
-        return isHovered ? 0.08 : 0
+        return isHovered || active ? 0.08 : 0
     }
 
     var body: some View {

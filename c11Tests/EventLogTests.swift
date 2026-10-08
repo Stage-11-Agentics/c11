@@ -706,3 +706,210 @@ extension EventLogTests {
         }
     }
 }
+
+
+extension EventLogTests {
+    func testPresenceSnapshotsDeduplicateAndResumeAfterAnalyticsGap() {
+        let log = EventLog(url: logURL(), instance: "presence")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "presence")
+        emitter.observePresence(appActive: true, screenLocked: false, sleeping: false, snapshot: true)
+        emitter.observePresence(appActive: true, screenLocked: false, sleeping: false)
+        emitter.observePresence(screenLocked: true)
+        emitter.updatePolicy(ActivityHistoryPolicy(analyticsEnabled: false))
+        emitter.observePresence(appActive: false, screenLocked: false)
+        emitter.emitWorkspaceCreated(workspace: UUID(), title: "Hidden", rootDirectory: nil)
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        emitter.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, [
+            "app.activated", "screen.unlocked", "system.wake", "screen.locked",
+            "log.policy", "log.policy", "app.deactivated", "screen.unlocked", "system.wake"])
+        XCTAssertEqual((events[0]["payload"] as? [String: Any])?["snapshot"] as? Bool, true)
+        XCTAssertEqual((events[4]["payload"] as? [String: Any])?["analytics_enabled"] as? Bool, false)
+        XCTAssertEqual((events[6]["payload"] as? [String: Any])?["snapshot"] as? Bool, true)
+    }
+
+    func testWorkspaceTeardownBalancesRemainingPanelsBeforeClose() {
+        let log = EventLog(url: logURL(), instance: "workspaces")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "workspaces")
+        let workspace = UUID(), first = UUID(), second = UUID()
+        emitter.emitWorkspaceCreated(workspace: workspace, title: "Research", rootDirectory: "/tmp/project")
+        emitter.emitSurfaceCreated(workspace: workspace, surface: first, kind: "terminal")
+        emitter.emitSurfaceCreated(workspace: workspace, surface: second, kind: "browser")
+        emitter.emitWorkspaceRenamed(workspace: workspace, title: "Review", prior: "Research")
+        emitter.emitWorkspaceClosed(workspace: workspace, title: "Review", remainingPanels: [first, second])
+        emitter.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["workspace.created", "panel.created", "panel.created", "workspace.renamed", "panel.closed", "panel.closed", "workspace.closed"])
+        XCTAssertEqual(Set(events[4...5].compactMap { $0["panel"] as? String }), [first.uuidString, second.uuidString])
+        XCTAssertEqual((events.last?["payload"] as? [String: Any])?["title"] as? String, "Review")
+    }
+
+    func testTextOffRedactsNewInputAndMailboxBodiesCentrally() {
+        let log = EventLog(url: logURL(), instance: "privacy")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "privacy")
+        emitter.updatePolicy(ActivityHistoryPolicy(keepText: false))
+        let workspace = UUID()
+        emitter.emitPanelInputSent(workspace: workspace, surface: UUID(), callerPanelId: nil,
+                                   callerTitle: nil, targetTitle: "worker", kind: "text", text: "private input", submitted: true)
+        emitter.emitMailboxAccepted(workspace: workspace, id: "mail", from: "sender", to: "worker", body: "private body", bodyRef: "/tmp/private", topic: nil)
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        // Acceptance's durable decision wins over a racing later setting.
+        emitter.emitMailboxAccepted(workspace: workspace, id: "mail2", from: "sender", to: nil, body: "also private", topic: nil, textRecorded: false)
+        emitter.emitPanelInputSent(workspace: workspace, surface: UUID(), callerPanelId: nil,
+                                   callerTitle: nil, targetTitle: "worker", kind: "text", text: "public input", submitted: true)
+        emitter.flush()
+        let events = readLines(logURL()).map(parse).filter { $0["type"] as? String != "log.policy" }
+        for (event, bytes) in zip(events.prefix(3), [13, 12, 12]) {
+            let payload = event["payload"] as? [String: Any]
+            XCTAssertEqual(payload?["text_recorded"] as? Bool, false)
+            XCTAssertEqual(payload?["bytes"] as? Int, bytes)
+            XCTAssertNil(payload?["text"])
+            XCTAssertNil(payload?["body"])
+            XCTAssertNil(payload?["body_ref"])
+        }
+        XCTAssertEqual((events.last?["payload"] as? [String: Any])?["text"] as? String, "public input")
+    }
+
+    func testFullSwitchEndsCoverageAndStopsAllEventWrites() {
+        let log = EventLog(url: logURL(), instance: "disabled")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "disabled")
+        emitter.updatePolicy(ActivityHistoryPolicy(enabled: false))
+        emitter.emitSurfaceClosed(workspace: UUID(), surface: UUID())
+        emitter.observePresence(appActive: true)
+        emitter.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0]["type"] as? String, "log.policy")
+        XCTAssertEqual((events[0]["payload"] as? [String: Any])?["enabled"] as? Bool, false)
+        XCTAssertFalse(emitter.isRecording)
+    }
+
+    func testSpinnerFramesDisappearAndRealTitleChurnKeepsFirstLastCount() {
+        var clock = Date(timeIntervalSince1970: 1_800_000_000)
+        let log = EventLog(url: logURL(), instance: "titles", now: { clock })
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "titles")
+        let workspace = UUID(), panel = UUID()
+        func title(_ value: String, prior: String? = nil, source: String = "osc") {
+            emitter.emitMetadataChanged(scope: "panel", workspace: workspace, surface: panel,
+                                        key: "title", value: value, prior: prior, source: source)
+        }
+        title("⠋ Working")
+        for _ in 0..<1000 { title("⠙ Working", prior: "⠋ Working") }
+        title("✳ Reading", prior: "⠙ Working")
+        title("✓ Done", prior: "✳ Reading")
+        // A subsequent structural edge expires the window, without a new timer.
+        log.sampleForTesting() // drain queued title changes before advancing the fake clock
+        clock.addTimeInterval(61)
+        emitter.emitSurfaceClosed(workspace: workspace, surface: panel)
+        emitter.flush()
+        let events = readLines(logURL()).map(parse)
+        let titles = events.filter { $0["type"] as? String == "metadata.changed" }
+        XCTAssertEqual(titles.count, 2)
+        XCTAssertEqual((titles.first?["payload"] as? [String: Any])?["value"] as? String, "⠋ Working")
+        XCTAssertEqual((titles.last?["payload"] as? [String: Any])?["value"] as? String, "✓ Done")
+        XCTAssertEqual((titles.last?["payload"] as? [String: Any])?["title_change_count"] as? Int, 3)
+        XCTAssertEqual(events.last?["type"] as? String, "panel.closed")
+    }
+
+    func testSamplingRunsOnWriterQueueSkipsSleepAndOffAndEndsAtShutdown() {
+        let log = EventLog(url: logURL(), instance: "samples")
+        var calls = 0
+        log.startSampling {
+            XCTAssertFalse(Thread.isMainThread)
+            calls += 1
+            return EventEnvelope(type: .instanceSample, instance: "samples", ts: Date(), payload: ["threads": calls])
+        }
+        log.sampleForTesting()
+        log.setSamplingAsleep(true)
+        log.sampleForTesting()
+        log.setSamplingAsleep(false)
+        log.updatePolicy(ActivityHistoryPolicy(analyticsEnabled: false))
+        log.sampleForTesting()
+        log.updatePolicy(ActivityHistoryPolicy())
+        log.sampleForTesting()
+        log.finishSampling { EventEnvelope(type: .instanceSample, instance: "samples", ts: Date(), payload: ["shutdown": true]) }
+        XCTAssertEqual(calls, 2)
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 3)
+        XCTAssertEqual((events.last?["payload"] as? [String: Any])?["shutdown"] as? Bool, true)
+    }
+
+    func testHangContextUsesCachedPresenceAndCurrentProcessRSS() {
+        let log = EventLog(url: logURL(), instance: "hang")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "hang")
+        emitter.observePresence(appActive: true, screenLocked: false)
+        emitter.emitHangPrecursor(cause: "socket", culprit: nil, count: 3, windowMs: 1000, spanMs: 500,
+                                  durationsMs: [100, 200, 200], fingerprint: ["sample"])
+        emitter.flush()
+        let event = readLines(logURL()).map(parse).last
+        let payload = event?["payload"] as? [String: Any]
+        XCTAssertEqual(payload?["app_active"] as? Bool, true)
+        XCTAssertEqual(payload?["screen_locked"] as? Bool, false)
+        XCTAssertGreaterThan(payload?["rss_mb"] as? Double ?? 0, 0)
+    }
+
+    func testRotationRetainsSeveralGenerationsWithinDirectoryBudgetAndAge() throws {
+        let date = Date()
+        let url = logURL("events-budget.ndjson")
+        let stale = logURL("events-old.ndjson.2")
+        let unrelated = logURL("other-data.ndjson")
+        try Data(repeating: 120, count: 500).write(to: stale)
+        try FileManager.default.setAttributes([.modificationDate: date.addingTimeInterval(-15 * 86_400)], ofItemAtPath: stale.path)
+        try Data("preserve".utf8).write(to: unrelated)
+        let log = EventLog(url: url, instance: "budget", sizeCap: 500, totalSizeCap: 2400, now: { date })
+        log.open()
+        for index in 0..<30 {
+            log.append(EventEnvelope(type: .surfaceCreated, instance: "budget", ts: date, payload: ["n": index, "title": String(repeating: "x", count: 100)]))
+        }
+        log.flush()
+        let files = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.fileSizeKey])
+            .filter { $0.lastPathComponent.hasPrefix("events-") }
+        XCTAssertGreaterThan(files.count, 2)
+        XCTAssertLessThanOrEqual(try files.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }, 2400)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertEqual(try String(contentsOf: unrelated, encoding: .utf8), "preserve")
+    }
+
+    func testOversizedRecordDoesNotExceedBudget() throws {
+        let log = EventLog(url: logURL(), instance: "oversized", sizeCap: 8192, totalSizeCap: 512)
+        log.append(EventEnvelope(type: .panelInputSent, instance: "oversized", ts: Date(), payload: ["text": String(repeating: "x", count: 2048)]))
+        log.flush()
+        let values = try logURL().resourceValues(forKeys: [.fileSizeKey])
+        XCTAssertLessThanOrEqual(values.fileSize ?? 0, 512)
+    }
+}
+
+
+extension EventLogTests {
+    func testHistoryDirectoryOverrideAndExactGenerationRecognition() {
+        let state = URL(fileURLWithPath: "/tmp/history-state")
+        XCTAssertEqual(EventLogLayout.eventsDirectoryURL(state: state, directoryOverride: "/tmp/isolated-history").path, "/tmp/isolated-history")
+        XCTAssertEqual(EventLogLayout.eventsDirectoryURL(state: state, directoryOverride: "relative").path, "/tmp/history-state/events")
+        for name in ["events-test.ndjson", "events-test.ndjson.1", "events-test.ndjson.25"] {
+            XCTAssertTrue(EventLogLayout.isLogFileName(name))
+        }
+        for name in ["events-.ndjson", "events-test.ndjson.bad", "events-test.ndjson.0", "unrelated.ndjson", "events-test.ndjson.1.extra"] {
+            XCTAssertFalse(EventLogLayout.isLogFileName(name))
+        }
+    }
+
+    func testCustomLogPathStillRetainsAndPrunesItsOwnGenerations() throws {
+        let url = logURL("custom.log")
+        let log = EventLog(url: url, instance: "custom", sizeCap: 400, totalSizeCap: 1800)
+        log.open()
+        for index in 0..<30 {
+            log.append(EventEnvelope(type: .surfaceCreated, instance: "custom", ts: Date(), payload: ["n": index, "title": String(repeating: "x", count: 100)]))
+        }
+        log.flush()
+        let files = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.fileSizeKey])
+        XCTAssertGreaterThan(files.count, 2)
+        XCTAssertLessThanOrEqual(try files.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }, 1800)
+    }
+}

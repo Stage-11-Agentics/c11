@@ -234,10 +234,19 @@ final class MailboxReceiptRecorder {
         }
         for delivery in pending {
             emit(workspaceId, delivery.id, delivery.recipient, receipt.panelId)
-            remember(delivery.id)
         }
-        // The events are on disk before the receipt that proves them is gone.
+        // Queue admission is not persistence. A failed write or bounded drain
+        // timeout must leave the durable proof intact. Confirm only this batch
+        // through the writer's bounded in-memory acknowledgement cache.
         flush()
+        let ids = Set(pending.map(\.id))
+        let confirmed = confirmedDeliveries(ids).intersection(ids)
+        confirmed.forEach(remember)
+        guard confirmed == ids else {
+            // Hold the claim for recovery after this process exits. Do not
+            // retry an uncertain write in this run or deliver it twice.
+            return
+        }
         try? fileManager.removeItem(at: claimed)
     }
 

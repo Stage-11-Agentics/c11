@@ -183,6 +183,92 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
     }
 
+    func testTextOptOutPersistenceFailureHoldsEnvelopeWithoutDeliveryOrRetry() throws {
+        try assertTextOptOutPersistenceFailure(recipientExists: true)
+    }
+
+    func testTextOptOutPersistenceFailureHoldsUnresolvedEnvelopeWithoutQuarantine() throws {
+        try assertTextOptOutPersistenceFailure(recipientExists: false)
+    }
+
+    private func assertTextOptOutPersistenceFailure(recipientExists: Bool) throws {
+        let instance = "privacy-persistence-failure"
+        let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)
+        EventEmitter.shared.startForTesting(log: eventLog, instance: instance)
+        EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: false))
+        defer { EventEmitter.shared.resetForTesting() }
+        let recipient = seedSurface(name: "privacy-recipient", delivery: "privacy-test")
+        let resolver = MailboxPanelResolver(
+            workspaceId: workspaceId,
+            livePanels: { recipientExists ? [recipient] : [] }
+        )
+        let envelope = try MailboxEnvelope.build(
+            from: "sender", to: "privacy-recipient", body: "PRIVATE_FAILED_MARKER_BODY"
+        )
+        let originalBytes = try envelope.encode()
+        let filename = MailboxLayout.envelopeFilename(id: envelope.id)
+        let outboxURL = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(filename)
+        let processingURL = MailboxLayout.processingURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(filename)
+        var replacementAttempts = 0
+        let dispatcher = MailboxDispatcher(
+            workspaceId: workspaceId,
+            stateURL: tempState,
+            resolver: resolver,
+            replaceProcessingEnvelope: { bytes, url in
+                replacementAttempts += 1
+                XCTAssertEqual(url, processingURL)
+                let marked = try MailboxEnvelope.validate(data: bytes)
+                XCTAssertEqual(marked.body, envelope.body)
+                XCTAssertEqual(marked.ext?["c11_activity_text_recorded"] as? Bool, false)
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+        )
+        self.dispatcher = dispatcher
+        var handlerCalls = 0
+        dispatcher.registerHandler(name: "privacy-test") { _, _, _ in
+            handlerCalls += 1
+            return .init(outcome: .ok)
+        }
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: outboxURL)
+        // Replayed watcher notifications and a new dispatcher cannot find an
+        // outbox file to retry. The original is held solely for recovery.
+        dispatcher.dispatchOne(url: outboxURL)
+        let restarted = MailboxDispatcher(workspaceId: workspaceId, stateURL: tempState, resolver: resolver)
+        restarted.dispatchOne(url: outboxURL)
+        dispatcher.log.flush()
+        restarted.log.flush()
+        eventLog.flush()
+
+        XCTAssertEqual(replacementAttempts, 1)
+        XCTAssertEqual(handlerCalls, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outboxURL.path))
+        XCTAssertEqual(try? Data(contentsOf: processingURL), originalBytes)
+        XCTAssertNil(try? readInboxFile(panel: recipient, id: envelope.id))
+        let rejectedURL = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(filename)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rejectedURL.path))
+        let dispatchEvents = try readLog()
+        XCTAssertEqual(dispatchEvents.compactMap { $0["event"] as? String }, ["rejected"])
+        let reason = dispatchEvents.first?["reason"] as? String ?? ""
+        XCTAssertTrue(reason.contains("activity history"))
+        XCTAssertTrue(reason.contains("_processing"))
+        XCTAssertFalse(reason.contains(envelope.body))
+        XCTAssertTrue(MessagesPageSource.load(stateURL: tempState).events.isEmpty)
+
+        try FileManager.default.removeItem(at: eventLog.url)
+        EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: true))
+        let source = MessagesPageSource.load(stateURL: tempState)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+        XCTAssertFalse(message.textRecorded)
+        XCTAssertTrue(message.body.isEmpty)
+        XCTAssertNil(message.bodyRef)
+        XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
+    }
+
     func testDispatchesToNamedRecipient() throws {
         let watcher = seedSurface(name: "watcher", delivery: "silent")
         let dispatcher = makeDispatcher(surfaces: [watcher])

@@ -82,6 +82,49 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(delivered.body))
     }
 
+    func testUnacceptedOutboxAndProcessingHideTextWhileAcceptedInboxHistoryRemainsReadable() throws {
+        let root = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+        let directories = [
+            (MailboxLayout.outboxDirectoryName, "outbox", false),
+            (MailboxLayout.processingDirectoryName, "processing", false),
+            ("recipient", "pending", true),
+            ("_read", "read", true),
+            (MailboxLayout.rejectedDirectoryName, "rejected", true),
+        ]
+        var expected: [(MailboxEnvelope, String, Bool)] = []
+        for (directoryName, state, textRecorded) in directories {
+            let directory = root.appendingPathComponent(directoryName, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for usesReference in [false, true] {
+                let envelope = try MailboxEnvelope.build(
+                    from: "sender", to: "recipient",
+                    body: usesReference ? "" : "BODY_FOR_\(state)",
+                    bodyRef: usesReference ? "/tmp/reference-for-\(state)" : nil
+                )
+                try envelope.encode().write(to: directory.appendingPathComponent("\(envelope.id).msg"))
+                expected.append((envelope, state, textRecorded))
+            }
+        }
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertTrue(source.events.isEmpty, "No accepted events are needed to reproduce durable artifact loading")
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        XCTAssertEqual(snapshot.messages.count, expected.count)
+        for (envelope, state, textRecorded) in expected {
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+            XCTAssertEqual(message.status, state)
+            XCTAssertEqual(message.textRecorded, textRecorded)
+            XCTAssertEqual(message.body, textRecorded ? envelope.body : "")
+            XCTAssertEqual(message.bodyRef, textRecorded ? envelope.bodyRef : nil)
+            if !textRecorded {
+                XCTAssertEqual(message.recordedBytes, envelope.body.utf8.count)
+            }
+        }
+        let rendered = MessagesPageRenderer.render(snapshot: snapshot)
+        XCTAssertFalse(rendered.contains("BODY_FOR_outbox"))
+        XCTAssertFalse(rendered.contains("BODY_FOR_processing"))
+        XCTAssertTrue(rendered.contains("BODY_FOR_pending"))
+    }
+
     func testReadsOlderNumberedEventGenerations() throws {
         let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

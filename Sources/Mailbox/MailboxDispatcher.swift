@@ -44,6 +44,7 @@ final class MailboxDispatcher {
     let resolver: MailboxPanelResolver
     let log: MailboxDispatchLog
     let queue: DispatchQueue
+    private let replaceProcessingEnvelope: (Data, URL) throws -> Void
 
     private var watcher: MailboxOutboxWatcher?
     private var gcTimer: DispatchSourceTimer?
@@ -65,12 +66,16 @@ final class MailboxDispatcher {
             label: "com.stage11.c11.mailbox.dispatcher",
             qos: .utility
         ),
-        log: MailboxDispatchLog? = nil
+        log: MailboxDispatchLog? = nil,
+        replaceProcessingEnvelope: @escaping (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        }
     ) {
         self.workspaceId = workspaceId
         self.stateURL = stateURL
         self.resolver = resolver
         self.queue = queue
+        self.replaceProcessingEnvelope = replaceProcessingEnvelope
         self.log = log ?? MailboxDispatchLog(
             url: MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
         )
@@ -304,7 +309,7 @@ final class MailboxDispatcher {
             do {
                 // The processing file already exists. MailboxIO.atomicWrite is
                 // create-only; Foundation's atomic data write replaces it.
-                try envelope.encode().write(to: processingURL, options: .atomic)
+                try replaceProcessingEnvelope(envelope.encode(), processingURL)
             } catch {
                 // Deliver the marked in-memory envelope; the accepted event
                 // still suppresses the unmarked processing file in Messages.

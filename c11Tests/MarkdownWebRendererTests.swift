@@ -53,7 +53,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertEqual(imageLoaded as? Bool, true, "Scoped image bytes must load through WebKit")
         _ = try await call(renderer, "scrollToHeading", arguments: ["Section 40"])
         let before = try await call(renderer, "visible") as? [String: Any]
-        let firstLine = (before?["lines"] as? [String: Int])?["first"]
+        let firstLine = (before?["lines"] as? [String: Any])?["first"] as? Int
         XCTAssertGreaterThan(firstLine ?? 0, 1, "The witness must be scrolled away from the top")
         let beforeY = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top") as? Double
         // A real file-watcher reload that changes layout above the viewport.
@@ -61,7 +61,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         try changed.write(to: path, atomically: true, encoding: .utf8)
         await rendered(renderer, revision: 2)
         let after = try await call(renderer, "visible") as? [String: Any]
-        XCTAssertEqual((after?["lines"] as? [String: Int])?["first"], firstLine)
+        XCTAssertEqual((after?["lines"] as? [String: Any])?["first"] as? Int, firstLine)
         let afterY = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top") as? Double
         XCTAssertEqual(try XCTUnwrap(afterY), try XCTUnwrap(beforeY), accuracy: 1)
         XCTAssertEqual(panel.content, changed)

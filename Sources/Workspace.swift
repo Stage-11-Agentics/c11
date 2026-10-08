@@ -6258,6 +6258,17 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// A journal turn edge for the mailbox gate (`JournalMailboxBoundary`).
+    func noteMailboxBoundary(_ boundary: JournalMailboxBoundary, panelID: UUID) {
+        noteMailboxAgentLifecycle(
+            surfaceId: panelID,
+            source: boundary.headless ? .headless : .reported,
+            activity: boundary.working ? .working : .idle,
+            at: boundary.at,
+            agentPid: boundary.pid
+        )
+    }
+
     /// An agent lifecycle edge for the mailbox gate. `reported` edges come
     /// from explicit turn-end and turn-start reports (`report_agent_activity`
     /// without `--source=notification`, the Codex turn-complete notify);

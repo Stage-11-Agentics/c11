@@ -8,8 +8,10 @@ import Foundation
 /// **Agent tabs** (Claude Code, Codex, Grok, ...). The agent TUI keeps its
 /// shell in one long-running command for life, so the shell state says
 /// nothing. The gate is the agent's own turn edge, which c11 learns from
-/// explicit lifecycle reports (`report_agent_activity`, the Codex
-/// turn-complete notify) and from every submit Return typed into the tab:
+/// explicit lifecycle reports (`report_agent_activity`, hooks, the Codex
+/// turn-complete notify), from the turn ends in Codex and Grok transcripts
+/// (stamped with the agent's clock), and from every submit Return typed into
+/// the tab:
 ///
 ///   - at its prompt, no operator draft, and the prompt edge is newer than
 ///     our last push → inject now;
@@ -230,8 +232,12 @@ struct MailboxStdinBuffer {
     // MARK: - Agent turn edges
 
     /// An explicit lifecycle report: the agent reached its prompt
-    /// (`atPrompt: true`) or started working.
+    /// (`atPrompt: true`) or started working. A prompt edge stamped before the
+    /// newest submit is stale: the agent has had input since. A transcript
+    /// turn end carries the agent's own clock, so one polled late is caught
+    /// here; hook and wrapper edges are stamped when c11 receives them.
     mutating func noteAgentTurn(surfaceId: UUID, atPrompt: Bool, at now: Date) {
+        if atPrompt, let lastSubmit = lastSubmitAt[surfaceId], now < lastSubmit { return }
         if let current = turns[surfaceId], current.atPrompt == atPrompt { return }
         turns[surfaceId] = AgentTurn(atPrompt: atPrompt, since: now)
     }

@@ -292,8 +292,10 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 | Harness | At its prompt when | Working when |
 |---------|--------------------|--------------|
 | Claude Code | session start (not after a compaction), each `Stop` hook | prompt submit, any submitted Return |
-| Codex | launch, each completed turn (its `notify` callback) | any submitted Return |
-| Grok | launch, each `turn_ended` in its session's `events.jsonl` | `turn_started`, any submitted Return |
+| Codex | launch, each completed turn (its `notify` callback, or the turn end in its rollout file, whichever c11 records first) | any submitted Return |
+| Grok | launch, each `turn_ended` in its session's `events.jsonl` (from its wrapper or c11's transcript reader) | `turn_started`, any submitted Return |
+
+A turn end read from a transcript counts at the time the agent wrote it, not when c11 read it, and is ignored if a Return was submitted after it: the agent has had input since.
 
 | Recipient agent state | Push behavior |
 |-----------------------|---------------|

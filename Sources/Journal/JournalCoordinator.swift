@@ -234,7 +234,9 @@ final class JournalCoordinator: @unchecked Sendable {
             )
             rememberApplied(draft: draft, result: result)
             if let changed = result.changedSnapshot {
-                let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical, pid: interactivePID)
+                let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical,
+                                                           pid: interactivePID,
+                                                           verifiedNativeClock: context.verifiedNativeClock)
                 let opensAsk = [JournalKind.questionRequested, .planReviewRequested, .approvalRequested].contains(draft.kind)
                 let eventID = opensAsk && !historical && !result.receipt.replayed && result.receipt.projectionEffect == .applied
                     ? result.receipt.eventID : nil
@@ -459,17 +461,56 @@ struct JournalOpenAsk: Sendable {
     }
 }
 
+/// A live turn edge the mailbox stdin gate acts on. Hook and plugin turn edges
+/// count at commit time. A transcript turn end counts too, stamped with the
+/// agent's own clock: the 10 s transcript poll can fold a Codex turn end before
+/// its notify hook lands (the hook then folds as duplicate evidence), and a
+/// transcript is Grok's only journal turn source (C11-365). The gate ignores a
+/// turn end older than the newest Return typed into the panel, so a late poll
+/// cannot reopen it over a newer turn. A transcript turn start is not a
+/// boundary: the Return that started the turn already closed the gate.
 struct JournalMailboxBoundary: Sendable {
     let working: Bool
     let pid: Int32?
     let at: Date
-    static func make(draft: JournalDraft, result: JournalAppendResult, historical: Bool, pid: Int32?) -> Self? {
+    /// A hook or plugin edge without an interactive PID came from a headless
+    /// run nested in the panel. A transcript edge follows the panel's exact
+    /// owner and never carries a PID.
+    let headless: Bool
+    /// `verifiedNativeClock` is the append route's own evidence (only the
+    /// in-process transcript reader sets it); a draft's fields alone never
+    /// qualify a transcript turn end.
+    static func make(draft: JournalDraft, result: JournalAppendResult, historical: Bool, pid: Int32?,
+                     verifiedNativeClock: Bool = false) -> Self? {
         guard !historical, !result.receipt.replayed, result.receipt.projectionEffect == .applied,
-              !draft.isChild, [.hook, .plugin].contains(draft.source),
-              let state = result.changedSnapshot, state.confirmation == .confirmed,
-              (draft.kind == .turnStarted && state.phase == .working)
-                || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
-        return Self(working: state.phase == .working, pid: pid,
-                    at: Date(timeIntervalSince1970: Double(result.receipt.committedAtMs) / 1000))
+              !draft.isChild, let state = result.changedSnapshot, state.confirmation == .confirmed else { return nil }
+        let committedAtMs = result.receipt.committedAtMs
+        switch draft.source {
+        case .hook, .plugin:
+            guard (draft.kind == .turnStarted && state.phase == .working)
+                    || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
+            return Self(working: state.phase == .working, pid: pid,
+                        at: Date(timeIntervalSince1970: Double(committedAtMs) / 1000),
+                        headless: pid == nil)
+        case .transcript:
+            guard draft.kind == .turnCompleted, state.phase == .idle, verifiedNativeClock,
+                  let endedAtMs = draft.occurredAtMs else { return nil }
+            // Never later than c11 recorded it: a skewed agent clock must not
+            // stamp the gate in the future.
+            return Self(working: false, pid: nil,
+                        at: Date(timeIntervalSince1970: Double(min(endedAtMs, committedAtMs)) / 1000),
+                        headless: false)
+        default:
+            return nil
+        }
+    }
+
+    /// Whether this boundary still describes the panel after a newer snapshot
+    /// replaced its own: same owner, and the current phase agrees with the
+    /// edge. Appends for one panel finish on several threads, so an older edge
+    /// can arrive after a newer state; one that disagrees is dropped.
+    func stillHolds(projected: JournalSnapshot?, current: JournalSnapshot?) -> Bool {
+        guard let projected, let current, current.owner == projected.owner else { return false }
+        return working ? [.working, .blocked, .error].contains(current.phase) : current.phase == .idle
     }
 }

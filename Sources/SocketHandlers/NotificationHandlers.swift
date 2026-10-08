@@ -140,9 +140,12 @@ extension TerminalController {
             // Codex's notify callback fires only on a completed agent turn, so
             // this is an explicit prompt edge for the mailbox stdin gate. It
             // goes through the deriver queue like every other lifecycle edge,
-            // so a Return typed just before it is applied first.
+            // so a Return typed just before it is applied first. A callback the
+            // journal did not attribute to its live owner (another thread, such
+            // as a sub-agent) stays off that panel's gate (C11-365).
             if !appendLegacyCodexCompletion(params: params, panelID: surfaceId, workspaceID: ws.id),
                params[LegacyCodexNotifyGuard.payloadKey] != nil,
+               JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live,
                let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
                 PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
@@ -196,9 +199,12 @@ extension TerminalController {
             // Codex's notify callback fires only on a completed agent turn, so
             // this is an explicit prompt edge for the mailbox stdin gate. It
             // goes through the deriver queue like every other lifecycle edge,
-            // so a Return typed just before it is applied first.
+            // so a Return typed just before it is applied first. A callback the
+            // journal did not attribute to its live owner (another thread, such
+            // as a sub-agent) stays off that panel's gate (C11-365).
             if !appendLegacyCodexCompletion(params: params, panelID: surfaceId, workspaceID: ws.id),
                params[LegacyCodexNotifyGuard.payloadKey] != nil,
+               JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live,
                let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
                 PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,

@@ -166,6 +166,7 @@ enum ActivityAnalysisCommand {
         let timestamp: Date?
         let tokens: Tokens
         var speed: String = "standard"
+        var sessions: Set<String> = []
     }
     private static func claudeRow(_ d: Object, file: URL, line: Int) -> (String, UsageRow)? {
         let m = object(d["message"])
@@ -174,7 +175,7 @@ enum ActivityAnalysisCommand {
         let session = text(d["sessionId"]) ?? file.deletingPathExtension().lastPathComponent
         let id = text(m["id"]), request = text(d["requestId"])
         let key: String
-        if let id { key = session + ":" + id + ":" + (request ?? "unknown") }
+        if let id { key = id + ":" + (request ?? "unknown") }
         else { key = file.path + ":" + String(line) }
         let creation = object(u["cache_creation"])
         let w5 = number(creation["ephemeral_5m_input_tokens"])
@@ -196,10 +197,18 @@ enum ActivityAnalysisCommand {
         for file in files(options.claude, ext: "jsonl", gaps: &gaps) {
             lines(file, gaps: &gaps) { d, line in
                 if d["type"] as? String == "assistant", !object(object(d["message"])["usage"]).isEmpty, text(object(d["message"])["id"]) == nil { missingIdentity = true }
-                guard let (key, row) = claudeRow(d, file: file, line: line) else { return }
+                guard let (key, parsed) = claudeRow(d, file: file, line: line) else { return }
+                var row = parsed
+                row.sessions = [row.session]
                 let tokens = row.tokens
                 // Streaming snapshots repeat identity; retain the most complete usage snapshot.
-                if let old = claude[key], number(old.tokens.json["total_tokens"]) > number(tokens.json["total_tokens"]) { return }
+                if var old = claude[key] {
+                    let sessions = old.sessions.union(row.sessions)
+                    if number(old.tokens.json["total_tokens"]) > number(tokens.json["total_tokens"]) {
+                        old.sessions = sessions; claude[key] = old; return
+                    }
+                    row.sessions = sessions
+                }
                 claude[key] = row
             }
         }
@@ -238,13 +247,16 @@ enum ActivityAnalysisCommand {
         }
         var total = Tokens(), unattributed = Tokens(), groups: [String: Tokens] = [:]
         var estimates: [String: Double] = [:], unknownCost = Set<String>()
-        let catalog = ModelCostCatalogStore(directory: options.state).catalog()
+        let catalog = ModelCostCatalogStore(directory: options.state).resolvedCatalog()
         let axis = options.value("--by") ?? "model"
         for row in rows {
             if row.timestamp == nil { gaps.insert("usage_timestamp_unknown_included") }
             if let since = options.since, let ts = row.timestamp, ts < since { continue }
             if let until, let ts = row.timestamp, ts > until { continue }
-            let candidates = attribution[row.harness + ":" + row.session] ?? []
+            let sessionIDs = row.sessions.isEmpty ? Set([row.session]) : row.sessions
+            let candidates = sessionIDs.reduce(into: Set<Link>()) { result, session in
+                result.formUnion(attribution[row.harness + ":" + session] ?? [])
+            }
             let link = candidates.count == 1 ? candidates.first : nil
             if link == nil || (axis == "workspace" && link?.workspace == nil) { unattributed.add(row.tokens); if candidates.count > 1 { gaps.insert("ambiguous_session_attribution") } }
             let key: String
@@ -323,9 +335,37 @@ enum ActivityAnalysisCommand {
         var workspaces: [String: Object] = [:], daily: [String: Object] = [:], rhythm: [String: Int] = [:]
         var lifetime: [Double] = [], censored = 0, openAtEnd = 0
         var loadSeconds: [String: Double] = [:], loadHangs: [String: Int] = [:]
+        var openLoadSeconds: [String: Double] = [:], openLoadHangs: [String: Int] = [:]
         let dayFormatter = DateFormatter(); dayFormatter.dateFormat = "yyyy-MM-dd"; dayFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         let hourFormatter = DateFormatter(); hourFormatter.dateFormat = "HH"; hourFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         func bucket(_ n: Int) -> String { n < 10 ? "0-9" : n < 25 ? "10-24" : n < 50 ? "25-49" : "50+" }
+        func openBucket(_ n: Int) -> String { n < 40 ? "under40" : n < 80 ? "40-79" : "80+" }
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func dailyRow(_ key: String) -> Object {
+            daily[key] ?? ["date": key, "events": 0, "panels_created": 0, "peak_open": 0, "peak_working": 0,
+                           "observed_hours": 0.0, "observed_agent_hours": 0.0, "observed_foreground_hours": 0.0,
+                           "presence_unknown_hours": 0.0]
+        }
+        func integrateDaily(_ from: Date, _ to: Date, open: Int, working: Int, presence: Bool?, loadKnown: Bool) {
+            var cursor = from
+            while cursor < to {
+                let midnight = calendar.startOfDay(for: cursor)
+                let boundary = calendar.date(byAdding: .day, value: 1, to: midnight)!
+                let end = min(boundary, to)
+                let hours = end.timeIntervalSince(cursor) / 3600
+                let key = dayFormatter.string(from: cursor)
+                var d = dailyRow(key)
+                d["observed_hours"] = (d["observed_hours"] as? Double ?? 0) + hours
+                if loadKnown {
+                    d["peak_open"] = max(d["peak_open"] as? Int ?? 0, open)
+                    d["peak_working"] = max(d["peak_working"] as? Int ?? 0, working)
+                    d["observed_agent_hours"] = (d["observed_agent_hours"] as? Double ?? 0) + hours * Double(working)
+                }
+                if presence == true { d["observed_foreground_hours"] = (d["observed_foreground_hours"] as? Double ?? 0) + hours }
+                if presence == nil { d["presence_unknown_hours"] = (d["presence_unknown_hours"] as? Double ?? 0) + hours }
+                daily[key] = d; cursor = end
+            }
+        }
         for id in events.keys.sorted() {
             let ordered = events[id]!.values.sorted { $0.seq < $1.seq }
             guard let first = ordered.first, let last = ordered.last else { continue }
@@ -335,7 +375,7 @@ enum ActivityAnalysisCommand {
             if first.seq != 1 { gaps.insert("event_history_truncated"); replayIncomplete = true }
             var open = Set<String>(), working = Set<String>(), births: [String: Date] = [:]
             var active: Bool?, locked: Bool?, asleep: Bool?
-            var analyticsEnabled = true
+            var analyticsEnabled = true, historyEnabled = true
             var previous = first.ts, previousSeq = first.seq - 1
             for event in ordered {
                 let now = max(previous, event.ts) // seq is authoritative; clamp racing timestamp inversions.
@@ -347,15 +387,23 @@ enum ActivityAnalysisCommand {
                     open.removeAll(); working.removeAll(); censored += births.count; births.removeAll()
                 }
                 previousSeq = event.seq
-                if !sequenceGap && analyticsEnabled {
+                if !sequenceGap && historyEnabled {
                     if duration > 0 { peakOpen = max(peakOpen, open.count); peakWorking = max(peakWorking, working.count) }
                     agentSeconds += duration * Double(working.count)
                     loadSeconds[bucket(working.count), default: 0] += duration
+                    openLoadSeconds[openBucket(open.count), default: 0] += duration
                 }
-                if !analyticsEnabled { foregroundUnknown += duration }
-                else if active == false || locked == true || asleep == true { /* known unavailable */ }
-                else if active == true && locked == false && asleep == false { foreground += duration }
-                else { foregroundUnknown += duration }
+                let presence: Bool?
+                if !analyticsEnabled { presence = nil }
+                else if active == false || locked == true || asleep == true { presence = false }
+                else if active == true && locked == false && asleep == false { presence = true }
+                else { presence = nil }
+                if presence == true { foreground += duration }
+                if presence == nil { foregroundUnknown += duration }
+                if duration > 0 {
+                    integrateDaily(max(start, previous), min(end, now), open: open.count, working: working.count,
+                                   presence: presence, loadKnown: !sequenceGap && historyEnabled)
+                }
                 previous = now
                 let inRange = event.ts >= start
                 let panel = event.panel, payload = event.payload
@@ -389,9 +437,13 @@ enum ActivityAnalysisCommand {
                 case "log.opened":
                     active = payload["app_active"] as? Bool; locked = payload["screen_locked"] as? Bool; asleep = payload["system_asleep"] as? Bool
                 case "hang.precursor":
-                    if inRange { hangCount += 1; loadHangs[bucket(working.count), default: 0] += 1 }
+                    if inRange {
+                        hangCount += 1; loadHangs[bucket(working.count), default: 0] += 1
+                        openLoadHangs[openBucket(open.count), default: 0] += 1
+                    }
                 case "log.policy":
-                    analyticsEnabled = payload["enabled"] as? Bool != false && payload["analytics_enabled"] as? Bool != false
+                    historyEnabled = payload["enabled"] as? Bool != false
+                    analyticsEnabled = historyEnabled && payload["analytics_enabled"] as? Bool != false
                     if !analyticsEnabled { active = nil; locked = nil; asleep = nil; gaps.insert("analytics_disabled_span") }
                     if payload["enabled"] as? Bool == false { replayIncomplete = true; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
                 case "log.dropped": gaps.insert("event_log_dropped_events")
@@ -400,7 +452,7 @@ enum ActivityAnalysisCommand {
                 if inRange {
                     peakOpen = max(peakOpen, open.count); peakWorking = max(peakWorking, working.count)
                     let day = dayFormatter.string(from: event.ts)
-                    var d = daily[day] ?? ["date": day, "events": 0, "panels_created": 0, "peak_open": 0, "peak_working": 0]
+                    var d = dailyRow(day)
                     d["events"] = (d["events"] as? Int ?? 0) + 1
                     if event.type == "panel.created" { d["panels_created"] = (d["panels_created"] as? Int ?? 0) + 1 }
                     d["peak_open"] = max(d["peak_open"] as? Int ?? 0, open.count)
@@ -419,6 +471,11 @@ enum ActivityAnalysisCommand {
             let hours = (loadSeconds[key] ?? 0) / 3600
             return ["working_panels": key, "observed_hours": hours, "hangs": loadHangs[key] ?? 0, "hangs_per_hour": hours > 0 ? Double(loadHangs[key] ?? 0) / hours as Any : null]
         }
+        let openBuckets: [Object] = ["under40", "40-79", "80+"].map { key in
+            let hours = (openLoadSeconds[key] ?? 0) / 3600
+            return ["open_panels": key, "observed_hours": hours, "hangs": openLoadHangs[key] ?? 0,
+                    "hangs_per_hour": hours > 0 ? Double(openLoadHangs[key] ?? 0) / hours as Any : null]
+        }
         var usageOptions = options
         if let start = starts.min() { usageOptions.since = start }
         let tokens = try usageResult(usageOptions, gaps: &gaps, until: ends.max())
@@ -433,7 +490,7 @@ enum ActivityAnalysisCommand {
                 "observed_foreground_hours": foreground / 3600, "presence_unknown_hours": foregroundUnknown / 3600,
                 "closed_lifetimes_minutes": ["count": lifetime.count, "p10": percentile(0.1), "median": percentile(0.5), "p90": percentile(0.9), "censored_panels": censored],
                 "workspaces": workspaces.keys.sorted().compactMap { workspaces[$0] }, "daily_utc": daily.keys.sorted().compactMap { daily[$0] },
-                "hour_of_day_utc_events": rhythm, "hang_precursors": hangCount, "hang_rate_by_working_load": buckets,
+                "hour_of_day_utc_events": rhythm, "hang_precursors": hangCount, "hang_rate_by_working_load": buckets, "hang_rate_by_open_load": openBuckets,
                 "host_usage": tokens, "usage_scope": "Host transcripts during the observed span, across all instances; not exclusive instance usage. Unknown transcript timestamps are included separately in coverage.",
                 "coverage_gaps": gaps.sorted()]
     }
@@ -450,11 +507,11 @@ enum ActivityAnalysisCommand {
         func show(_ key: String) -> String { report[key] is NSNull ? "unknown" : String(describing: report[key] ?? "unknown") }
         var output = "# Local activity report\n\nObserved span: \(show("start")) to \(show("end")) (\(show("span_hours")) h).\n\n"
         for (label, key) in [("Panels created", "panels_created"), ("Peak open per instance", "peak_open_per_instance"), ("Peak working per instance", "peak_working_per_instance"), ("Observed agent hours", "observed_agent_hours"), ("Foreground hours", "foreground_hours"), ("Observed foreground hours", "observed_foreground_hours"), ("Presence unknown hours", "presence_unknown_hours"), ("Hang precursors", "hang_precursors")] { output += "- \(label): \(show(key))\n" }
-        output += "\n## Daily activity (UTC)\n\nDate | Events | Created | Peak open | Peak working\n--- | ---: | ---: | ---: | ---:\n"
-        for d in report["daily_utc"] as? [Object] ?? [] { output += "\(d["date"] ?? "") | \(d["events"] ?? 0) | \(d["panels_created"] ?? 0) | \(d["peak_open"] ?? 0) | \(d["peak_working"] ?? 0)\n" }
+        output += "\n## Daily activity (UTC)\n\nDate | Events | Created | Peak open | Peak working | Observed h | Agent h\n--- | ---: | ---: | ---: | ---: | ---: | ---:\n"
+        for d in report["daily_utc"] as? [Object] ?? [] { output += "\(d["date"] ?? "") | \(d["events"] ?? 0) | \(d["panels_created"] ?? 0) | \(d["peak_open"] ?? 0) | \(d["peak_working"] ?? 0) | \(d["observed_hours"] ?? 0) | \(d["observed_agent_hours"] ?? 0)\n" }
         output += "\n## Workspaces and observed topics\n\n"
         for w in report["workspaces"] as? [Object] ?? [] { output += "- \(w["name"] is NSNull ? "unknown" : String(describing: w["name"] ?? "unknown")) (\(w["id"] ?? "")): \((w["topics"] as? [String] ?? []).joined(separator: ", "))\n" }
-        output += "\n## Lifetimes, rhythm and hang rates\n\n```json\n\((try? json(["closed_lifetimes_minutes": report["closed_lifetimes_minutes"] ?? null, "hour_of_day_utc_events": report["hour_of_day_utc_events"] ?? null, "hang_rate_by_working_load": report["hang_rate_by_working_load"] ?? null])) ?? "{}")\n```\n\n## Host token usage\n\n\(report["usage_scope"] ?? "")\n\n\(usageMarkdown(object(report["host_usage"])))\n\nCoverage gaps: \((report["coverage_gaps"] as? [String] ?? []).joined(separator: ", "))\n"
+        output += "\n## Lifetimes, rhythm and hang rates\n\n```json\n\((try? json(["closed_lifetimes_minutes": report["closed_lifetimes_minutes"] ?? null, "hour_of_day_utc_events": report["hour_of_day_utc_events"] ?? null, "hang_rate_by_working_load": report["hang_rate_by_working_load"] ?? null, "hang_rate_by_open_load": report["hang_rate_by_open_load"] ?? null])) ?? "{}")\n```\n\n## Host token usage\n\n\(report["usage_scope"] ?? "")\n\n\(usageMarkdown(object(report["host_usage"])))\n\nCoverage gaps: \((report["coverage_gaps"] as? [String] ?? []).joined(separator: ", "))\n"
         return output
     }
 }

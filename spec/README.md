@@ -100,6 +100,7 @@ versioned JSON results. `null` denotes unknown information, including prices
 without a catalog entry and foreground time with incomplete presence evidence.
 Coverage gaps are part of the output contract, not diagnostics to discard.
 `spec/model-costs-current.json` is a dated, first-party-sourced catalog snapshot
-for explicit `c11 model-costs import`; it is not an automatic network refresh or
+also bundled as missing-model defaults, with persisted whole-entry overrides
+winning. It is not an automatic network refresh or
 an assertion about historical billing. Full semantics and examples live in
 `skills/c11/references/usage-report.md`.

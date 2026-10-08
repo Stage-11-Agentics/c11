@@ -149,6 +149,7 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['closed_lifetimes_minutes']['median'], 60)
         self.assertEqual(result['workspaces'][0]['name'], 'Test workspace')
         self.assertEqual(result['hang_rate_by_working_load'][0]['hangs_per_hour'], 1)
+        self.assertEqual(result['hang_rate_by_open_load'][0]['hangs_per_hour'], 1)
         markdown = self.run_cli('report', '--instance', 'synthetic', '--format', 'md')
         self.assertIn('Test workspace', markdown)
         self.assertIn('Daily activity', markdown)
@@ -208,6 +209,52 @@ class ActivityCLI(unittest.TestCase):
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
         self.assertEqual(result['panels_created'], 1)
         self.assertEqual(result['open_at_observed_end'], 0)
+
+    def test_copied_claude_history_deduplicates_across_sessions(self):
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row(session='session-a')])
+        self.write(self.claude / 'session-b.jsonl', [self.claude_row(session='session-b')])
+        self.link('panel-a', 'session-a', 'claude-code')
+        self.link('panel-b', 'session-b', 'claude-code')
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertEqual(result['totals']['total_tokens'], 110)
+        self.assertEqual(result['unattributed']['total_tokens'], 110)
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+        self.assertIn('ambiguous_session_attribution', result['coverage_gaps'])
+
+    def test_native_defaults_and_whole_custom_price_override(self):
+        row = self.claude_row(cache_read_input_tokens=200)
+        row['message']['model'] = 'claude-sonnet-5-5'
+        self.write(self.claude / 'session-a.jsonl', [row])
+        result = self.run_cli('usage', '--json')
+        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd'], .00032)
+        self.assertFalse((self.state / 'model-costs.json').exists())
+        (self.state / 'model-costs.json').write_text(json.dumps({'claude-sonnet-5-5': {
+            'in_usd': 1, 'out_usd': 1, 'cache_read_usd': 1}}))
+        result = self.run_cli('usage', '--json')
+        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd'], .00031)
+        # An operator entry without cache rates does not silently inherit rates from a different tier.
+        (self.state / 'model-costs.json').write_text(json.dumps({'claude-sonnet-5-5': {
+            'in_usd': 1, 'out_usd': 1}}))
+        result = self.run_cli('usage', '--json')
+        self.assertIsNone(result['groups'][0]['estimated_api_usd'])
+
+    def test_quiet_intervals_crossing_midnight_have_daily_exposure(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows = rows[:4] + rows[5:]
+        for row in rows[4:]: row['ts'] = '2026-01-04T00:00:00Z'
+        for index, row in enumerate(rows): row['seq'] = index + 1
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        quiet = next(day for day in result['daily_utc'] if day['date'] == '2026-01-03')
+        self.assertEqual(quiet['events'], 0)
+        self.assertEqual(quiet['peak_open'], 1)
+        self.assertEqual(quiet['peak_working'], 1)
+        self.assertEqual(quiet['observed_hours'], 24)
+        self.assertEqual(quiet['observed_agent_hours'], 24)
+        self.assertEqual(result['hang_rate_by_open_load'][0]['observed_hours'], 48)
 
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)

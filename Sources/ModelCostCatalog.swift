@@ -3,10 +3,10 @@ import Foundation
 // MARK: - Model token-cost catalog (picker cost column, agent-maintained)
 //
 // The launch picker's `$in/$out` per-Mtok column reads from one JSON file at
-// the c11 state root, `model-costs.json`. There is no bundled price table and
-// no network fetch: the catalog is filled and refreshed by agents over
+// the c11 state root, `model-costs.json`. A dated bundled standard-rate snapshot supplies missing model rows.
+// There is no network fetch: persisted whole-entry overrides are maintained over
 // `c11 model-costs` (file-first, app-down capable, same rail as `c11 config`),
-// so prices carry their own `source` + `observed_at` provenance instead of
+// and prices carry their own `source` + `observed_at` provenance instead of
 // silently rotting inside a release binary. Values are API list prices — on
 // subscription plans the marginal cost differs; the column is a relative
 // magnitude signal, not billing truth.
@@ -68,6 +68,86 @@ final class ModelCostCatalogStore: @unchecked Sendable {
         queue.sync { loadLocked() }
     }
 
+    /// Read-only shipped defaults, replaced by whole persisted entries when the operator
+    /// has supplied a custom price. No catalog file is written by this resolution.
+    func resolvedCatalog() -> [String: ModelCostEntry] {
+        Self.currentDefaults.merging(catalog()) { _, override in override }
+    }
+
+    static let currentDefaults: [String: ModelCostEntry] = {
+        let data = Data(#"""
+{
+  "claude-fable-5-1": {
+    "cache_read_usd": 0.25,
+    "cache_write_1h_usd": 20,
+    "cache_write_usd": 12.5,
+    "in_usd": 10,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 50,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-opus-5-5": {
+    "cache_read_usd": 0.2,
+    "cache_write_1h_usd": 8,
+    "cache_write_usd": 5,
+    "in_usd": 4,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 20,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-sonnet-5-5": {
+    "cache_read_usd": 0.1,
+    "cache_write_1h_usd": 4,
+    "cache_write_usd": 2.5,
+    "in_usd": 2,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 10,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "gpt-6-astra": {
+    "cache_read_usd": 1,
+    "cache_write_usd": 12.5,
+    "in_usd": 10,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 50,
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+  },
+  "gpt-6-luna": {
+    "cache_read_usd": 0.01,
+    "cache_write_usd": 0.125,
+    "in_usd": 0.1,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 0.5,
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-luna"
+  },
+  "gpt-6-sol": {
+    "cache_read_usd": 0.2,
+    "cache_write_usd": 2.5,
+    "in_usd": 2,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 10,
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-sol"
+  },
+  "gpt-6.1-sol": {
+    "cache_read_usd": 0.1,
+    "cache_write_usd": 2.5,
+    "in_usd": 2,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 10,
+    "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+  }
+}
+"""#.utf8)
+        return (try? JSONDecoder().decode([String: ModelCostEntry].self, from: data)) ?? [:]
+    }()
+
     /// Picker lookup. Tries the exact id, the lowercased id, then the
     /// provider-stripped form (`deepseek/deepseek-chat` → `deepseek-chat`).
     /// `nil` model (inherit) or no entry → no cost shown; deliberately no
@@ -76,7 +156,7 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     func cost(forModel model: String?) -> (inUSD: Double, outUSD: Double)? {
         guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines),
               !model.isEmpty else { return nil }
-        let entries = catalog()
+        let entries = resolvedCatalog()
         let lowered = model.lowercased()
         var candidates = [model, lowered]
         if let slash = lowered.firstIndex(of: "/") {
@@ -157,7 +237,9 @@ struct ModelCostsCommandCore {
       import <path|-> [--replace]       Bulk import a catalog JSON (merge by default)
 
     The catalog is model-costs.json at the c11 state root — agent-maintained
-    API list prices feeding the launch picker's cost column.
+    API list prices feeding the launch picker's cost column. Bundled current-model
+    rows supply missing entries; stored entries override each bundled row whole.
+    Removing a stored override reveals its bundled default, if any.
     """
 
     /// Run a subcommand against `store`. `now` is injectable for tests.
@@ -198,7 +280,7 @@ struct ModelCostsCommandCore {
     // MARK: Subcommands
 
     private static func list(store: ModelCostCatalogStore, json: Bool) throws -> String {
-        let entries = store.catalog()
+        let entries = store.resolvedCatalog()
         if json {
             return try encodeJSON(entries)
         }
@@ -215,7 +297,7 @@ struct ModelCostsCommandCore {
     }
 
     private static func get(model: String, store: ModelCostCatalogStore, json: Bool) throws -> String {
-        guard let entry = store.catalog()[model] else {
+        guard let entry = store.resolvedCatalog()[model] else {
             throw Failure(message: "model-costs get: no entry for '\(model)'")
         }
         if json { return try encodeJSON([model: entry]) }

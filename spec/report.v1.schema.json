@@ -21,7 +21,8 @@
     "hour_of_day_utc_events",
     "hang_rate_by_working_load",
     "host_usage",
-    "coverage_gaps"
+    "coverage_gaps",
+    "hang_rate_by_open_load"
   ],
   "properties": {
     "schema_version": {
@@ -100,6 +101,18 @@
         "type": "object",
         "required": [
           "working_panels",
+          "observed_hours",
+          "hangs",
+          "hangs_per_hour"
+        ]
+      }
+    },
+    "hang_rate_by_open_load": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "open_panels",
           "observed_hours",
           "hangs",
           "hangs_per_hour"

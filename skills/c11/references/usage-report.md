@@ -31,8 +31,9 @@ totals. The unattributed aggregate refers to the requested grouping axis, so
 workspace grouping also includes linked panels with unknown workspace IDs.
 Other harness transcripts are not yet parsed.
 
-Claude streaming snapshots are deduplicated by session, message ID and request
-ID, retaining the most complete token snapshot. Missing message identity is
+Claude streaming snapshots are deduplicated globally by message ID and request
+ID, retaining the most complete token snapshot across files and copied/forked
+sessions. Conflicting journal links across those sessions remain unattributed. Missing message identity is
 counted rather than collapsing unrelated requests and is marked as a coverage
 gap. Explicit 5-minute and 1-hour cache creation are separate categories. A cache
 creation total without the TTL split stays `cache_write_unknown_ttl_tokens`;
@@ -50,9 +51,11 @@ complete by this command.
 
 Report derives span, panel creation, per-instance peak open/working counts,
 observed agent hours, closed-panel lifetime percentiles, workspace names and
-explicit panel-title topics, UTC daily activity and hour-of-day event rhythm.
-Hang rates use observed working-panel load buckets (0–9, 10–24, 25–49, 50+),
-with exposure hours and precursor count, not just a raw hang count.
+explicit panel-title topics, UTC daily activity and hour-of-day event rhythm. Quiet intervals are split at
+UTC midnight, so days without events retain their observed exposure, concurrency
+peaks, agent-hours and foreground lower bounds. Hang rates reproduce open-panel
+load buckets (under40, 40–79, 80+) with exposure hours and precursor counts.
+Working-panel buckets (0–9, 10–24, 25–49, 50+) are also included.
 `host_usage` covers transcripts within the observed report span across the host;
 it is explicitly **not exclusive instance usage**. Inspect `usage --by panel`
 for panel-level attribution.
@@ -74,13 +77,17 @@ applies to report. No server is started and no app focus changes.
 
 ## Prices and their limits
 
-The catalog remains agent-maintained in the state root's `model-costs.json`.
-The repository's `spec/model-costs-current.json` is an explicit importable
-snapshot verified against first-party documentation on 2026-10-08. It adds Opus
-5.5, Sonnet 5.5, Fable 5.1, GPT-6 Sol/Luna/Astra and GPT-6.1 Sol. No import or
-network refresh happens automatically:
+The catalog resolves bundled standard rates plus agent-maintained overrides in
+the state root's `model-costs.json`. Seven bundled rows are verified against
+first-party documentation on 2026-10-08; `spec/model-costs-current.json` records
+the same importable snapshot. Reading defaults never writes a catalog file. It adds Opus
+5.5, Sonnet 5.5, Fable 5.1, GPT-6 Sol/Luna/Astra and GPT-6.1 Sol. A persisted entry overrides its entire bundled row, including missing cache
+rates. Removing that stored override reveals the bundled row again. Unknown
+models remain unknown. No network refresh happens automatically:
 
 ```sh
+c11 model-costs list --json
+# Optional: persist this snapshot as explicit operator overrides.
 c11 model-costs import spec/model-costs-current.json
 c11 model-costs set example-model --in 2 --out 10 --cache-read 0.1 \
   --cache-write 2.5 --cache-write-1h 4 --source <verified-url>

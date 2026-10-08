@@ -217,6 +217,10 @@ struct cmuxApp: App {
         Self.applyAppearance(.dark)
         // Carry the old `tabLayoutMode` forward before the Settings picker or any workspace reads it.
         PanelLayoutSettings.migrateLegacyKeys(defaults: .standard)
+        // The initial WorkspaceManager immediately creates a workspace and its
+        // terminal. Start recording before those lifecycle edges can be emitted.
+        mirrorC11CmuxEnv()
+        EventEmitter.shared.start()
         _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard

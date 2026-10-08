@@ -183,7 +183,7 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
     }
 
-    func testTextOptOutPersistenceFailureHoldsEnvelopeWithoutDeliveryOrRetry() throws {
+    func testTextOptOutPersistenceFailureStillDeliversNormalizedEnvelope() throws {
         try assertTextOptOutPersistenceFailure(recipientExists: true)
     }
 
@@ -230,7 +230,7 @@ final class MailboxDispatcherTests: XCTestCase {
         }
     }
 
-    func testLateTextOptOutPersistsBeforeDeliveryOrHoldsIfSecondWriteFails() throws {
+    func testLateTextOptOutDeliversEvenIfSecondMarkerWriteFails() throws {
         let instance = "privacy-late-policy"
         let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)
         EventEmitter.shared.startForTesting(log: eventLog, instance: instance)
@@ -266,16 +266,10 @@ final class MailboxDispatcherTests: XCTestCase {
             XCTAssertEqual(writes, 2)
             let processing = MailboxLayout.processingURL(state: tempState, workspaceId: workspaceId)
                 .appendingPathComponent(filename)
-            XCTAssertEqual(FileManager.default.fileExists(atPath: processing.path), secondWriteFails)
-            if secondWriteFails {
-                XCTAssertNil(try? readInboxFile(panel: recipient, id: envelope.id))
-                let held = try MailboxEnvelope.validate(data: Data(contentsOf: processing))
-                XCTAssertEqual(held.body, envelope.body)
-            } else {
-                let delivery = try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: envelope.id))
-                XCTAssertEqual(delivery.body, envelope.body)
-                XCTAssertEqual(delivery.ext?["c11_activity_text_recorded"] as? Bool, false)
-            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: processing.path))
+            let delivery = try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: envelope.id))
+            XCTAssertEqual(delivery.body, envelope.body)
+            XCTAssertEqual(delivery.ext?["c11_activity_text_recorded"] as? Bool, false)
             let accepted = try XCTUnwrap(MessagesPageSource.load(stateURL: tempState).events.first {
                 $0.type == "mailbox.accepted" && $0.payload["id"] as? String == envelope.id
             })
@@ -351,20 +345,26 @@ final class MailboxDispatcherTests: XCTestCase {
         eventLog.flush()
 
         XCTAssertEqual(replacementAttempts, 1)
-        XCTAssertEqual(handlerCalls, 0)
+        XCTAssertEqual(handlerCalls, recipientExists ? 1 : 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outboxURL.path))
-        XCTAssertEqual(try? Data(contentsOf: processingURL), originalBytes)
-        XCTAssertNil(try? readInboxFile(panel: recipient, id: envelope.id))
         let rejectedURL = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
             .appendingPathComponent(filename)
         XCTAssertFalse(FileManager.default.fileExists(atPath: rejectedURL.path))
         let dispatchEvents = try readLog()
-        XCTAssertEqual(dispatchEvents.compactMap { $0["event"] as? String }, ["rejected"])
-        let reason = dispatchEvents.first?["reason"] as? String ?? ""
-        XCTAssertTrue(reason.contains("activity history"))
-        XCTAssertTrue(reason.contains("_processing"))
-        XCTAssertFalse(reason.contains(envelope.body))
-        XCTAssertTrue(MessagesPageSource.load(stateURL: tempState).events.isEmpty)
+        if recipientExists {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: processingURL.path))
+            let delivered = try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: envelope.id))
+            XCTAssertEqual(delivered.body, envelope.body)
+            XCTAssertEqual(delivered.ext?["c11_activity_text_recorded"] as? Bool, false)
+            XCTAssertFalse(dispatchEvents.contains { $0["event"] as? String == "rejected" })
+        } else {
+            XCTAssertEqual(try? Data(contentsOf: processingURL), originalBytes)
+            XCTAssertNil(try? readInboxFile(panel: recipient, id: envelope.id))
+            let reason = dispatchEvents.last?["reason"] as? String ?? ""
+            XCTAssertTrue(reason.contains("activity history"))
+            XCTAssertTrue(reason.contains("_processing"))
+            XCTAssertFalse(reason.contains(envelope.body))
+        }
 
         try FileManager.default.removeItem(at: eventLog.url)
         EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: true))

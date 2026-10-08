@@ -2708,9 +2708,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         mirrorC11CmuxEnv()
 
-        // C11-163: open the events stream early — before session restore
-        // recreates workspaces/surfaces — so surface.created and the
-        // log.opened marker land from the first instant (amendment K).
+        // Normally started before WorkspaceManager construction in cmuxApp.
+        // Keep this idempotent fallback for alternate application hosts.
         EventEmitter.shared.start()
         // C11-257 D: keep the local, self-contained messages page current.
         // The writer rebuilds off-main and starts from the existing event and

@@ -125,6 +125,30 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertTrue(rendered.contains("BODY_FOR_pending"))
     }
 
+    func testRejectedInvalidArtifactFollowsCurrentPolicyWithoutAnAcceptanceDecision() throws {
+        let log = EventLog(url: EventLogLayout.logURL(state: tempDir, instance: "rejected-policy"), instance: "rejected-policy")
+        EventEmitter.shared.startForTesting(log: log, instance: "rejected-policy")
+        defer { EventEmitter.shared.resetForTesting() }
+        let directory = MailboxLayout.rejectedURL(state: tempDir, workspaceId: UUID())
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Deliberately invalid: validation rejects an envelope with no version
+        // or routing fields before the dispatcher can accept it.
+        let object: [String: Any] = ["id": "invalid-message", "body": "PRIVATE_INVALID_BODY",
+                                     "body_ref": "/tmp/private-invalid-reference",
+                                     "ext": ["c11_activity_text_recorded": true]]
+        try JSONSerialization.data(withJSONObject: object).write(to: directory.appendingPathComponent("invalid-message.msg"))
+        for keepText in [false, true] {
+            EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: keepText))
+            let source = MessagesPageSource.load(stateURL: tempDir)
+            let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == "invalid-message" })
+            XCTAssertEqual(message.textRecorded, keepText)
+            XCTAssertEqual(message.body, keepText ? "PRIVATE_INVALID_BODY" : "")
+            XCTAssertEqual(message.bodyRef, keepText ? "/tmp/private-invalid-reference" : nil)
+            if !keepText { XCTAssertEqual(message.recordedBytes, "PRIVATE_INVALID_BODY".utf8.count) }
+        }
+    }
+
     func testReadsOlderNumberedEventGenerations() throws {
         let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

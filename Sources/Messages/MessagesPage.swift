@@ -780,6 +780,9 @@ enum MessagesPageSource {
                 return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
             }
 
+        // Rejected envelopes may have failed validation before c11 could
+        // persist an acceptance decision. Apply the current policy to them.
+        let keepRejectedText = EventEmitter.shared.keepText
         var artifacts: [MessagesPageMailboxArtifact] = []
         for workspaceURL in workspaceURLs {
             let mailboxRoot = workspaceURL.appendingPathComponent(MailboxLayout.mailboxesDirectoryName, isDirectory: true)
@@ -807,7 +810,8 @@ enum MessagesPageSource {
                         workspace: workspaceURL.lastPathComponent,
                         id: id,
                         state: state,
-                        dispatch: dispatch[id]
+                        dispatch: dispatch[id],
+                        keepRejectedText: keepRejectedText
                     )
                     artifacts.append(artifact)
                     seenIDs.insert(id)
@@ -844,7 +848,8 @@ enum MessagesPageSource {
         workspace: String,
         id: String,
         state: String,
-        dispatch: DispatchHistory?
+        dispatch: DispatchHistory?,
+        keepRejectedText: Bool
     ) -> MessagesPageMailboxArtifact {
         let object = object ?? [:]
         let ext = object["ext"] as? [String: Any] ?? [:]
@@ -853,6 +858,7 @@ enum MessagesPageSource {
         // failed. Neither location can authorize showing text in history.
         // "pending" is an accepted recipient inbox and keeps normal behavior.
         let textRecorded = state != "outbox" && state != "processing"
+            && (state != "rejected" || keepRejectedText)
             && (MessagesPageJSON.bool(ext["c11_activity_text_recorded"]) ?? true)
         let rawBody = MessagesPageJSON.string(object["body"])
         let body = textRecorded ? boundedDurableBody(rawBody) : (value: nil, truncated: false)
@@ -1119,6 +1125,7 @@ enum MessagesPageRenderer {
             const clear = (element) => { while (element.firstChild) element.removeChild(element.firstChild); };
             const messageBody = (message) => {
               const body = message.body || (message.body_ref ? `body_ref: ${message.body_ref}` : "(no inline body)");
+              if (message.text_recorded === false && Number.isInteger(message.bytes)) return `${body} (${message.bytes} B)`;
               return message.truncated ? `${body}\n\n[body truncated at source]` : body;
             };
             const mailboxKey = (message) => {

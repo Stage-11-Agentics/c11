@@ -161,7 +161,10 @@ transition. Duplicate lock/session notifications do not emit duplicate edges.
 `workspace.renamed` carries `{title, prior}`, and `workspace.closed` carries
 `{title}`. Workspace teardown emits `panel.closed` for every remaining known
 panel before the workspace edge, including graphs replaced by session restore.
-Panel closes remain structural events when analytics are off.
+Panel closes remain structural events when analytics are off. On restore,
+`panel.created` may precede `workspace.created`; the workspace edge is deferred
+until the restored title and root are known. Replay must join these edges by UUID
+without requiring their arrival order.
 
 `hang.precursor` additionally carries `app_active`, `screen_locked` (null when
 not yet known), and current `rss_mb` while usage analytics are enabled. Turning
@@ -241,5 +244,5 @@ mailbox accepts carry `text_recorded: false` and `bytes`, without `text`, `body`
 or `body_ref`. Messages view shows “text not recorded” and reads every retained
 numbered event generation. Mailbox delivery files keep the actual payload plus
 `ext.c11_activity_text_recorded: false`; the page honors that durable marker even
-after event-log retention. Sender-supplied reserved privacy markers cannot override c11’s acceptance policy. Unaccepted outbox/processing artifacts never expose text in Messages. If c11 cannot persist a required opt-out marker, it holds the original processing envelope for manual recovery, records a metadata-only failure and stops delivery without automatic retry. See
+after event-log retention. Sender-supplied reserved privacy markers cannot override c11’s acceptance policy. Unaccepted outbox/processing artifacts never expose text in Messages. If c11 cannot persist a required opt-out marker, valid delivery continues using the normalized in-memory envelope and marked recipient copies. An unresolved recipient instead leaves the original processing envelope held for manual recovery, with a metadata-only failure and no automatic retry. Rejected artifacts without an acceptance decision follow the current text policy. See
 [local activity history privacy](activity-history-privacy.md) for scope and defaults.

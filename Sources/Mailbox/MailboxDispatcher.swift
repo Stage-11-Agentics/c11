@@ -321,8 +321,9 @@ final class MailboxDispatcher {
         }
         // Preserve c11's policy on delivery and quarantine files. No tenant
         // files are changed; this is c11's own processing envelope.
+        var privacyDecisionSaved = true
         if !textRecorded || hasSenderPrivacyMarker {
-            guard persistPrivacyDecision(envelope, at: processingURL) else { return }
+            privacyDecisionSaved = persistPrivacyDecision(envelope, at: processingURL)
         }
 
         log.append(
@@ -351,7 +352,7 @@ final class MailboxDispatcher {
         // emitter's decision is authoritative and must outlive its event.
         if textRecorded && !acceptedTextRecorded {
             envelope = envelope.suppressActivityHistoryText()
-            guard persistPrivacyDecision(envelope, at: processingURL) else { return }
+            privacyDecisionSaved = persistPrivacyDecision(envelope, at: processingURL)
         }
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
@@ -368,6 +369,13 @@ final class MailboxDispatcher {
         // envelopes (no `to`) keep the Stage-2 accept-but-empty contract and
         // fall through to the no-op copy/handler steps below.
         if envelope.to != nil && recipients.isEmpty {
+            // Recipient copies use the normalized in-memory envelope, so a
+            // marker-write failure must not stop valid delivery. Quarantine
+            // retains the processing file and therefore needs the saved marker.
+            guard privacyDecisionSaved else {
+                holdForPrivacyRecovery(id: envelope.id)
+                return
+            }
             rejectUnresolved(
                 id: envelope.id,
                 processingURL: processingURL,
@@ -401,7 +409,6 @@ final class MailboxDispatcher {
             try replaceProcessingEnvelope(envelope.encode(), processingURL)
             return true
         } catch {
-            holdForPrivacyRecovery(id: envelope.id)
             return false
         }
     }

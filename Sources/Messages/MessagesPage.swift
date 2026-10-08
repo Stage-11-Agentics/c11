@@ -545,9 +545,18 @@ enum MessagesPageBuilder {
                 record.body = ""
                 record.bodyRef = nil
                 record.truncated = false
-            } else if record.textRecorded {
-                record.body = record.body.isEmpty ? (MessagesPageJSON.string(payload["body"]) ?? "") : record.body
-                record.bodyRef = record.bodyRef ?? MessagesPageJSON.string(payload["body_ref"])
+            } else {
+                // Only the accepted event can override a sender's artifact
+                // marker. Legacy events without an explicit decision keep
+                // honoring the durable opt-out.
+                if MessagesPageJSON.bool(payload["text_recorded"]) == true {
+                    record.textRecorded = true
+                    record.recordedBytes = MessagesPageJSON.int(payload["bytes"])
+                }
+                if record.textRecorded {
+                    record.body = record.body.isEmpty ? (MessagesPageJSON.string(payload["body"]) ?? "") : record.body
+                    record.bodyRef = record.bodyRef ?? MessagesPageJSON.string(payload["body_ref"])
+                }
             }
             record.topic = record.topic ?? MessagesPageJSON.string(payload["topic"])
             record.replyTo = record.replyTo ?? MessagesPageJSON.string(payload["reply_to"])
@@ -625,8 +634,13 @@ enum MessagesPageBuilder {
 }
 
 struct MessagesPageEventLogCache {
-    fileprivate var eventsByURL: [URL: [MessagesPageEvent]] = [:]
-    fileprivate var signatures: [URL: MessagesPageEventLogSignature] = [:]
+    fileprivate var eventsByIdentity: [MessagesPageEventLogIdentity: [MessagesPageEvent]] = [:]
+    fileprivate var signatures: [MessagesPageEventLogIdentity: MessagesPageEventLogSignature] = [:]
+}
+
+fileprivate enum MessagesPageEventLogIdentity: Hashable {
+    case file(AnyHashable)
+    case path(URL)
 }
 
 fileprivate struct MessagesPageEventLogSignature: Equatable {
@@ -695,19 +709,25 @@ enum MessagesPageSource {
             }
             .sorted { $0.path < $1.path }
 
-        let currentURLs = Set(urls)
-        eventLogCache.eventsByURL = eventLogCache.eventsByURL.filter { currentURLs.contains($0.key) }
-        eventLogCache.signatures = eventLogCache.signatures.filter { currentURLs.contains($0.key) }
-
+        var currentIdentities = Set<MessagesPageEventLogIdentity>()
         var events: [MessagesPageEvent] = []
         for url in urls {
-            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let values = try? url.resourceValues(forKeys: [
+                .fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey,
+            ])
+            let identity: MessagesPageEventLogIdentity
+            if let identifier = values?.fileResourceIdentifier as? AnyHashable {
+                identity = .file(identifier)
+            } else {
+                identity = .path(url)
+            }
+            currentIdentities.insert(identity)
             let signature = MessagesPageEventLogSignature(
                 fileSize: values?.fileSize ?? -1,
                 modificationDate: values?.contentModificationDate
             )
-            if eventLogCache.signatures[url] == signature,
-               let cachedEvents = eventLogCache.eventsByURL[url] {
+            if eventLogCache.signatures[identity] == signature,
+               let cachedEvents = eventLogCache.eventsByIdentity[identity] {
                 events.append(contentsOf: cachedEvents)
                 continue
             }
@@ -715,8 +735,8 @@ enum MessagesPageSource {
             var parsedEvents: [MessagesPageEvent] = []
             guard let data = try? readEventData(url),
                   containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil else {
-                eventLogCache.signatures[url] = signature
-                eventLogCache.eventsByURL[url] = []
+                eventLogCache.signatures[identity] = signature
+                eventLogCache.eventsByIdentity[identity] = []
                 continue
             }
             // Event logs contain many lifecycle/UI records that the page does
@@ -735,10 +755,12 @@ enum MessagesPageSource {
                     parsedEvents.append(event)
                 }
             }
-            eventLogCache.signatures[url] = signature
-            eventLogCache.eventsByURL[url] = parsedEvents
+            eventLogCache.signatures[identity] = signature
+            eventLogCache.eventsByIdentity[identity] = parsedEvents
             events.append(contentsOf: parsedEvents)
         }
+        eventLogCache.eventsByIdentity = eventLogCache.eventsByIdentity.filter { currentIdentities.contains($0.key) }
+        eventLogCache.signatures = eventLogCache.signatures.filter { currentIdentities.contains($0.key) }
         return events
     }
 

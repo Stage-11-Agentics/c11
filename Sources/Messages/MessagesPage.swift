@@ -662,13 +662,15 @@ enum MessagesPageSource {
         stateURL: URL,
         fileManager: FileManager = .default,
         eventLogCache: inout MessagesPageEventLogCache,
-        mailboxArtifacts: [MessagesPageMailboxArtifact]? = nil
+        mailboxArtifacts: [MessagesPageMailboxArtifact]? = nil,
+        readEventData: (URL) throws -> Data = { try Data(contentsOf: $0) }
     ) -> MessagesPageSourceData {
         MessagesPageSourceData(
             events: readEvents(
                 stateURL: stateURL,
                 fileManager: fileManager,
-                eventLogCache: &eventLogCache
+                eventLogCache: &eventLogCache,
+                readEventData: readEventData
             ),
             mailboxArtifacts: mailboxArtifacts
                 ?? readMailboxArtifacts(stateURL: stateURL, fileManager: fileManager)
@@ -678,7 +680,8 @@ enum MessagesPageSource {
     private static func readEvents(
         stateURL: URL,
         fileManager: FileManager,
-        eventLogCache: inout MessagesPageEventLogCache
+        eventLogCache: inout MessagesPageEventLogCache,
+        readEventData: (URL) throws -> Data
     ) -> [MessagesPageEvent] {
         let directory = EventLogLayout.eventsDirectoryURL(state: stateURL)
         let urls = ((try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
@@ -710,7 +713,7 @@ enum MessagesPageSource {
             }
 
             var parsedEvents: [MessagesPageEvent] = []
-            guard let data = try? Data(contentsOf: url),
+            guard let data = try? readEventData(url),
                   containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil else {
                 eventLogCache.signatures[url] = signature
                 eventLogCache.eventsByURL[url] = []

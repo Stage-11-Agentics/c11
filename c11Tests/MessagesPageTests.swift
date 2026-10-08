@@ -136,6 +136,69 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(snapshot.messages.first?.body, "C11_257_TEXT_PROOF")
     }
 
+    func testExplicitAcceptedTextDecisionOverridesSenderArtifactOptOut() throws {
+        let directory = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for usesReference in [false, true] {
+            let envelope = try MailboxEnvelope.build(
+                from: "sender", to: "recipient", body: usesReference ? "" : "ACCEPTED_BODY",
+                bodyRef: usesReference ? "/tmp/accepted-reference" : nil,
+                ext: ["c11_activity_text_recorded": false]
+            )
+            try envelope.encode().write(to: directory.appendingPathComponent("\(envelope.id).msg"))
+            var payload: [String: Any] = [
+                "id": envelope.id, "body": envelope.body, "text_recorded": true,
+                "bytes": envelope.body.utf8.count,
+            ]
+            if let reference = envelope.bodyRef { payload["body_ref"] = reference }
+            let event = try XCTUnwrap(MessagesPageEvent(object: [
+                "v": 2, "type": "mailbox.accepted", "instance": "accepted-policy",
+                "ts": "2026-10-08T00:00:00.000Z", "seq": 1, "payload": payload,
+            ]))
+            let source = MessagesPageSource.load(stateURL: tempDir)
+            let snapshot = MessagesPageBuilder.build(events: [event], mailboxArtifacts: source.mailboxArtifacts)
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+            XCTAssertTrue(message.textRecorded)
+            XCTAssertEqual(message.body, envelope.body)
+            XCTAssertEqual(message.bodyRef, envelope.bodyRef)
+        }
+    }
+
+    func testRotatingGenerationsReuseCachedFileContentsByIdentity() throws {
+        let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let current = directory.appendingPathComponent("events-cache.ndjson")
+        let first = directory.appendingPathComponent("events-cache.ndjson.1")
+        let second = directory.appendingPathComponent("events-cache.ndjson.2")
+        try c1Line.write(to: current, atomically: true, encoding: .utf8)
+        var cache = MessagesPageEventLogCache()
+        var reads = 0
+        func load() -> MessagesPageSourceData {
+            MessagesPageSource.load(stateURL: tempDir, eventLogCache: &cache, readEventData: { url in
+                reads += 1
+                return try Data(contentsOf: url)
+            })
+        }
+        XCTAssertEqual(load().events.count, 1)
+        XCTAssertEqual(reads, 1)
+        try FileManager.default.moveItem(at: current, to: first)
+        try acceptedLine.write(to: current, atomically: true, encoding: .utf8)
+        XCTAssertEqual(load().events.count, 2)
+        XCTAssertEqual(reads, 2, "The renamed first generation must not be read again")
+        try FileManager.default.moveItem(at: first, to: second)
+        try FileManager.default.moveItem(at: current, to: first)
+        try deliveredLine.write(to: current, atomically: true, encoding: .utf8)
+        let rotated = load()
+        XCTAssertEqual(rotated.events.count, 3)
+        XCTAssertEqual(reads, 3, "Only the newly created current file needs a read")
+        let snapshot = MessagesPageBuilder.build(events: rotated.events)
+        XCTAssertEqual(snapshot.messages.first { $0.channel == "mailbox" }?.status, "delivered")
+        try FileManager.default.removeItem(at: second)
+        XCTAssertEqual(load().events.count, 2, "Pruned file identities must leave the cache")
+        XCTAssertEqual(reads, 3)
+    }
+
     func testPinnedC1AndC2FixturesShapeBothChannelsAndLifecycle() throws {
         let events = [c1Line, acceptedLine, deliveredLine].compactMap(MessagesPageEvent.init(line:))
         let snapshot = MessagesPageBuilder.build(

@@ -99,8 +99,10 @@ All fields are USD per million tokens. `cache_read_usd`, `cache_write_usd`
 output catalogs remain compatible. Missing cache rates never become zero.
 Unknown models, missing required rates, unknown Claude cache-write TTL or
 nonstandard speed yield a null `estimated_api_usd`, displayed as `unknown`.
-Current reference GPT-6 prices account for the documented >272K prompt premium
-when the native transcript exposes a per-request delta at that size. Estimates
+GPT-6 deltas above 272K input tokens have an unknown estimate: cumulative
+Codex deltas may combine several small requests, so their sum does not establish
+whether a per-request long-context premium applies. Token counts stay visible;
+`codex_per_request_context_unknown` records the pricing gap. Estimates
 exclude tool charges and any billing category not present in transcripts.
 Rates are current standard API comparisons, not historical invoices or
 subscription spend; custom provider, residency, batch and speed pricing require

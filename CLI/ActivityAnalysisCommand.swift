@@ -113,10 +113,16 @@ enum ActivityAnalysisCommand {
     }
     private static func files(_ root: URL, ext: String, gaps: inout Set<String>) -> [URL] {
         guard FileManager.default.fileExists(atPath: root.path) else { gaps.insert("missing_\(ext)_root"); return [] }
-        guard let iterator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles], errorHandler: { _, _ in false }) else {
+        var failedSubtree = false
+        guard let iterator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles], errorHandler: { _, _ in
+            failedSubtree = true
+            return true // Keep other readable subtrees; expose the missing coverage below.
+        }) else {
             gaps.insert("unreadable_\(ext)_root"); return []
         }
-        return iterator.compactMap { $0 as? URL }.filter { $0.pathExtension == ext }.sorted { $0.path < $1.path }
+        let result = iterator.compactMap { $0 as? URL }.filter { $0.pathExtension == ext }.sorted { $0.path < $1.path }
+        if failedSubtree { gaps.insert("unreadable_\(ext)_subtree") }
+        return result
     }
     private struct Link: Hashable {
         let panel: String
@@ -263,6 +269,9 @@ enum ActivityAnalysisCommand {
             switch axis { case "panel": key = link?.panel ?? "unattributed"; case "workspace": key = link?.workspace ?? "unattributed"; case "harness": key = row.harness; default: key = row.model }
             total.add(row.tokens); groups[key, default: Tokens()].add(row.tokens)
             if row.tokens.writeUnknown > 0 { gaps.insert("cache_write_ttl_unknown") }
+            if row.harness == "codex", row.model.hasPrefix("gpt-6"), row.tokens.input + row.tokens.read > 272_000 {
+                gaps.insert("codex_per_request_context_unknown")
+            }
             if let cost = estimate(row, catalog: catalog) { estimates[key, default: 0] += cost } else { unknownCost.insert(key) }
         }
         gaps.insert("transcript_retention_and_unrecorded_usage_unknown")
@@ -282,14 +291,11 @@ enum ActivityAnalysisCommand {
         if t.read > 0 { guard let p = price.cacheReadUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.read) * p }
         if t.write5 > 0 { guard let p = price.cacheWriteUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.write5) * p }
         if t.write1 > 0 { guard let p = price.cacheWrite1hUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.write1) * p }
-        // The shipped GPT-6 reference lists long-context premiums explicitly.
-        // Agent-maintained custom catalogs may have their own pricing policies.
+        // A cumulative Codex delta may contain several small requests. Its token sum
+        // cannot establish the per-request context used by the documented premium.
         if row.harness == "codex", row.model.hasPrefix("gpt-6"),
            price.source?.hasPrefix("https://developers.openai.com/") == true,
-           t.input + t.read > 272_000 {
-            let outputCost = Double(t.output) * price.outUSD
-            cost = (cost - outputCost) * 2 + outputCost * 1.5
-        }
+           t.input + t.read > 272_000 { return nil }
         return cost.isFinite ? cost / 1_000_000 : nil
     }
     private struct Event {
@@ -315,7 +321,7 @@ enum ActivityAnalysisCommand {
             let name = $0.lastPathComponent
             guard name.hasPrefix("events-"), let marker = name.range(of: ".ndjson", options: .backwards) else { return false }
             let suffix = String(name[marker.upperBound...])
-            guard suffix.isEmpty || (suffix.hasPrefix(".") && Int(suffix.dropFirst()) != nil) else { return false }
+            guard suffix.isEmpty || (suffix.hasPrefix(".") && (Int(suffix.dropFirst()) ?? 0) > 0) else { return false }
             if let instance { return name == "events-\(instance).ndjson" || name.hasPrefix("events-\(instance).ndjson.") }
             return true
         }

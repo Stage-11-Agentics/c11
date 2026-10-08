@@ -256,6 +256,50 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(quiet['observed_agent_hours'], 24)
         self.assertEqual(result['hang_rate_by_open_load'][0]['observed_hours'], 48)
 
+    def test_aggregated_codex_delta_does_not_invent_long_context_premium(self):
+        # Two small 150K requests were aggregated before the next token_count.
+        # last_token_usage identifies only the latest request, not the other contexts.
+        rows = [{'type': 'session_meta', 'payload': {'id': 'aggregate-session'}},
+                {'type': 'turn_context', 'payload': {'model': 'gpt-6-sol'}},
+                {'type': 'event_msg', 'timestamp': '2026-01-02T00:00:00Z', 'payload': {
+                    'type': 'token_count', 'info': {
+                        'total_token_usage': {'input_tokens': 300000, 'output_tokens': 0},
+                        'last_token_usage': {'input_tokens': 150000, 'output_tokens': 0}}}}]
+        self.write(self.codex / 'aggregate.jsonl', rows)
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 300000)
+        self.assertIsNone(result['groups'][0]['estimated_api_usd'])
+        self.assertIn('codex_per_request_context_unknown', result['coverage_gaps'])
+        rows[-1]['payload']['info']['total_token_usage']['input_tokens'] = 150000
+        self.write(self.codex / 'aggregate.jsonl', rows)
+        result = self.run_cli('usage', '--json')
+        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd'], .3)
+
+    def test_unreadable_subtree_is_a_visible_gap(self):
+        blocked = self.claude / 'blocked-project'
+        blocked.mkdir()
+        self.write(blocked / 'session-a.jsonl', [self.claude_row()])
+        blocked.chmod(0)
+        self.addCleanup(blocked.chmod, 0o700)
+        try:
+            os.listdir(blocked)
+        except PermissionError:
+            pass
+        else:
+            self.skipTest('This process can bypass directory read permissions')
+        result = self.run_cli('usage', '--json')
+        self.assertIn('unreadable_jsonl_subtree', result['coverage_gaps'])
+
+    def test_nonpositive_rotation_generations_are_ignored(self):
+        self.events()
+        extra = {'v': 2, 'instance': 'synthetic', 'seq': 8, 'ts': '2026-01-02T02:00:00Z',
+                 'type': 'panel.created', 'panel': 'spurious-panel'}
+        for suffix in ('0', '-1'):
+            self.write(self.state / ('events/events-synthetic.ndjson.' + suffix), [extra])
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['panels_created'], 1)
+        self.assertEqual(result['open_at_observed_end'], 0)
+
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)
         self.run_cli('usage', '--since', 'garbage', ok=False)

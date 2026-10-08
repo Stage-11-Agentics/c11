@@ -17,7 +17,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         let path = folder.appendingPathComponent("reader.md")
         let text = "# Reader\n\n```mermaid\ngraph TD\nA-->B\n```\n\n"
             + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
-            + "<script>window.hostileExecuted=true</script>\n<img src=x onerror='window.hostileExecuted=true'>\n[jump](javascript:alert(1))\n![remote](https://example.invalid/canary.png)\n"
+            + "<script>window.hostileExecuted=true</script>\n<img src=x onerror='window.hostileExecuted=true'>\n[jump](javascript:alert(1))\n![remote](https://example.invalid/canary.png)\n[executable](./evil.command)\n[application](file:///System/Applications/Calculator.app)\n"
         try text.write(to: path, atomically: true, encoding: .utf8)
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
         defer { panel.close() }

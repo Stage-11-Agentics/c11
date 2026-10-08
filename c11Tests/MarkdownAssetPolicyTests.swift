@@ -66,7 +66,7 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         XCTAssertEqual(MarkdownLinkTarget.resolve("#a", documentPath: doc), .anchor)
         XCTAssertEqual(MarkdownLinkTarget.resolve("other.md", documentPath: doc), .markdown(URL(fileURLWithPath: "/tmp/docs/other.md")))
         XCTAssertEqual(MarkdownLinkTarget.resolve("https://example.invalid/page", documentPath: doc), .web(URL(string: "https://example.invalid/page")!))
-        for href in ["javascript:alert(1)", "data:text/html,test", "file:///etc/passwd", "/tmp/test.md", "//example.invalid/x.md", "script.sh", "mailto:a@example.invalid", "https://user:pass@example.invalid/", "\nhttps://example.invalid/"] {
+        for href in ["javascript:alert(1)", "data:text/html,test", "file:///etc/passwd", "/tmp/test.md", "//example.invalid/x.md", "script.sh", "evil.command", "file:///System/Applications/Calculator.app", "hidden%00.md", "mailto:a@example.invalid", "https://user:pass@example.invalid/", "\nhttps://example.invalid/"] {
             XCTAssertEqual(MarkdownLinkTarget.resolve(href, documentPath: doc), .blocked, href)
         }
     }

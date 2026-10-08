@@ -20,9 +20,11 @@ import Security
 @discardableResult
 func openC11WebLink(_ url: URL, sourceWorkspaceId: UUID?, sourcePanelId: UUID?, optionHeld: Bool) -> Bool {
     guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host else { return false }
+    let normalizedHost = BrowserInsecureHTTPSettings.normalizeHost(host)
     if optionHeld || !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser()
         || BrowserLinkOpenSettings.shouldOpenExternally(url)
-        || !BrowserLinkOpenSettings.hostMatchesWhitelist(host) {
+        || normalizedHost == nil
+        || !BrowserLinkOpenSettings.hostMatchesWhitelist(normalizedHost ?? host) {
         return NSWorkspace.shared.open(url)
     }
     guard let sourcePanelId, let sourceWorkspaceId,

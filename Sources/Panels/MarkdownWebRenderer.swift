@@ -121,6 +121,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
     private var recoveryLine: Int?
+    private var recoveringAfterTermination = false
 
     init(panel: MarkdownPanel) {
         self.panel = panel
@@ -204,7 +205,10 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             synchronize()
         case "state":
             if let value = body["state"] as? [String: Any] { state = value }
+        case "error":
+            if body["code"] as? String == "render_failed" { failure = true }
         case "rendered":
+            recoveringAfterTermination = false
             if let value = body["revision"] as? Int {
                 renderedRevision = value
                 if let line = recoveryLine {
@@ -260,6 +264,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failure = true }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard !closed else { return }
+        guard !recoveringAfterTermination else {
+            failure = true
+            return
+        }
+        recoveringAfterTermination = true
         recoveryLine = (state["lines"] as? [String: Int])?["first"]
         ready = false
         renderedRevision = nil

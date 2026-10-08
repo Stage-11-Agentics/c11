@@ -22,7 +22,9 @@ import Foundation
 /// - **Bad entries:** a receipt's invalid deliveries are dropped (listed in
 ///   `_rejected/<receipt>.dropped`) and its valid ones recorded.
 /// - **Never lost:** nothing is deleted unless the event log is recording and
-///   has been flushed; otherwise the receipt stays and is retried. Spools of
+///   has confirmed each delivery was written. Uncertain writes retain the claim
+///   for recovery after this process exits; disabled recording leaves unclaimed
+///   receipts for the existing retry path. Spools of
 ///   workspaces that are not open are swept again every
 ///   `everyWorkspaceSweepInterval`.
 /// - **One app at a time per receipt:** several c11 builds can share the state
@@ -47,6 +49,7 @@ final class MailboxReceiptRecorder {
     private let startedAt: Date
     private let emit: Emit
     private let flush: () -> Void
+    private let confirmedDeliveries: (Set<String>) -> Set<String>
     private let isRecording: () -> Bool
     private let eventsDirectory: () -> URL?
     private let fileManager: FileManager
@@ -74,6 +77,7 @@ final class MailboxReceiptRecorder {
             )
         },
         flush: @escaping () -> Void = { EventEmitter.shared.flush() },
+        confirmedDeliveries: @escaping (Set<String>) -> Set<String> = { EventEmitter.shared.confirmedDrainDeliveryIDs($0) },
         isRecording: @escaping () -> Bool = { EventEmitter.shared.isRecording },
         eventsDirectory: @escaping () -> URL? = {
             (try? EventLogLayout.defaultStateURL()).map { EventLogLayout.eventsDirectoryURL(state: $0) }
@@ -84,6 +88,7 @@ final class MailboxReceiptRecorder {
         self.startedAt = startedAt
         self.emit = emit
         self.flush = flush
+        self.confirmedDeliveries = confirmedDeliveries
         self.isRecording = isRecording
         self.eventsDirectory = eventsDirectory
         self.fileManager = fileManager

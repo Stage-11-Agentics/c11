@@ -195,6 +195,10 @@ final class EventEmitter {
         currentLog()?.flush()
     }
 
+    func confirmedDrainDeliveryIDs(_ ids: Set<String>) -> Set<String> {
+        currentLog()?.confirmedDrainDeliveryIDs(ids) ?? []
+    }
+
     func reloadPolicy(defaults: UserDefaults = .standard) {
         updatePolicy(ActivityHistoryPolicy(defaults: defaults))
     }

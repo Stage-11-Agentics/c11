@@ -232,9 +232,10 @@ struct MailboxStdinBuffer {
     // MARK: - Agent turn edges
 
     /// An explicit lifecycle report: the agent reached its prompt
-    /// (`atPrompt: true`) or started working. A prompt edge older than the
-    /// newest submit is stale: the agent has had input since, so a late or
-    /// duplicate turn end cannot reopen the gate over a newer turn.
+    /// (`atPrompt: true`) or started working. A prompt edge stamped before the
+    /// newest submit is stale: the agent has had input since. A transcript
+    /// turn end carries the agent's own clock, so one polled late is caught
+    /// here; hook and wrapper edges are stamped when c11 receives them.
     mutating func noteAgentTurn(surfaceId: UUID, atPrompt: Bool, at now: Date) {
         if atPrompt, let lastSubmit = lastSubmitAt[surfaceId], now < lastSubmit { return }
         if let current = turns[surfaceId], current.atPrompt == atPrompt { return }

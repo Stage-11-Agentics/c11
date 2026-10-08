@@ -243,20 +243,21 @@ enum PanelLivenessDeriver {
 
     /// Committed immutable projection. The main hop only mirrors current cache data.
     ///
-    /// Snapshots coalesce; mailbox turn edges do not. A boundary whose snapshot
-    /// a newer one of the same owner already replaced still reaches the gate, in
-    /// order: a Codex notify can refresh the transcript's turn end 25 ms after
-    /// it, and dropping that projection must not drop the turn end (C11-365).
+    /// Snapshots coalesce; mailbox turn edges mostly do not. A boundary whose
+    /// snapshot a newer one already replaced still reaches the gate when the
+    /// current state agrees with it (`JournalMailboxBoundary.stillHolds`): a
+    /// Codex notify can refresh the transcript's turn end 25 ms later, and
+    /// dropping that projection must not drop the turn end (C11-365).
     static func onJournalProjection(panelID: UUID, snapshot: JournalSnapshot?, boundary: JournalMailboxBoundary?) {
         queue.async {
             let coordinator = JournalCoordinator.shared
             guard let workspaceID = coordinator.target(panelID: panelID) else { return }
             guard coordinator.snapshot(panelID: panelID) == snapshot else {
-                if let boundary, let snapshot, coordinator.snapshot(panelID: panelID)?.owner == snapshot.owner {
+                if let boundary, boundary.stillHolds(projected: snapshot, current: coordinator.snapshot(panelID: panelID)) {
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
                             guard coordinator.target(panelID: panelID) == workspaceID,
-                                  coordinator.snapshot(panelID: panelID)?.owner == snapshot.owner,
+                                  boundary.stillHolds(projected: snapshot, current: coordinator.snapshot(panelID: panelID)),
                                   let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
                                     .workspaces.first(where: { $0.id == workspaceID }) else { return }
                             workspace.noteMailboxBoundary(boundary, panelID: panelID)
@@ -283,7 +284,7 @@ enum PanelLivenessDeriver {
                           let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID)?
                             .workspaces.first(where: { $0.id == workspaceID }) else { return }
                     guard coordinator.snapshot(panelID: panelID) == snapshot else {
-                        if let boundary, let snapshot, coordinator.snapshot(panelID: panelID)?.owner == snapshot.owner {
+                        if let boundary, boundary.stillHolds(projected: snapshot, current: coordinator.snapshot(panelID: panelID)) {
                             workspace.noteMailboxBoundary(boundary, panelID: panelID)
                         }
                         return

@@ -110,22 +110,52 @@ final class JournalReducerTests: XCTestCase {
         let end = codexTranscript(.turnCompleted, turn: "t1", endedAtMs: 9_800)
         let (endResult, idle) = appended(working, end, seq: 2)
         XCTAssertEqual(endResult.receipt.projectionEffect, .applied)
-        let boundary = try XCTUnwrap(JournalMailboxBoundary.make(draft: end, result: endResult, historical: false, pid: nil))
+        let boundary = try XCTUnwrap(JournalMailboxBoundary.make(draft: end, result: endResult, historical: false,
+                                                                 pid: nil, verifiedNativeClock: true))
         XCTAssertFalse(boundary.working)
         XCTAssertFalse(boundary.headless)
         XCTAssertNil(boundary.pid)
         XCTAssertEqual(boundary.at, Date(timeIntervalSince1970: 9.8), "stamped when the turn ended, not when the poll saw it")
 
         let hook = codexNotify(at: 10_025)
-        let (hookResult, _) = appended(idle, hook, seq: 3)
+        let (hookResult, refreshed) = appended(idle, hook, seq: 3)
         XCTAssertEqual(hookResult.receipt.projectionEffect, .duplicateEvidence)
         XCTAssertNil(JournalMailboxBoundary.make(draft: hook, result: hookResult, historical: false, pid: 4242))
+        // The hook's refresh replaces the transcript's snapshot; the turn end still holds.
+        XCTAssertTrue(boundary.stillHolds(projected: idle, current: refreshed))
 
-        XCTAssertNil(JournalMailboxBoundary.make(draft: end, result: endResult, historical: true, pid: nil))
+        // Only the transcript route's own clock evidence qualifies a transcript turn end.
+        XCTAssertNil(JournalMailboxBoundary.make(draft: end, result: endResult, historical: false, pid: nil))
+        XCTAssertNil(JournalMailboxBoundary.make(draft: end, result: endResult, historical: true, pid: nil,
+                                                 verifiedNativeClock: true))
         var child = end; child.isChild = true
-        XCTAssertNil(JournalMailboxBoundary.make(draft: child, result: endResult, historical: false, pid: nil))
-        var unverified = end; unverified.timeQuality = .observed
-        XCTAssertNil(JournalMailboxBoundary.make(draft: unverified, result: endResult, historical: false, pid: nil))
+        XCTAssertNil(JournalMailboxBoundary.make(draft: child, result: endResult, historical: false, pid: nil,
+                                                 verifiedNativeClock: true))
+        // A skewed agent clock never stamps the gate later than c11 recorded the turn end.
+        var future = end; future.occurredAtMs = 99_000
+        XCTAssertEqual(JournalMailboxBoundary.make(draft: future, result: endResult, historical: false, pid: nil,
+                                                   verifiedNativeClock: true)?.at,
+                       Date(timeIntervalSince1970: Double(endResult.receipt.committedAtMs) / 1000))
+    }
+
+    // C11-365: a turn edge whose snapshot was superseded reaches the gate only
+    // while the current state of the same owner agrees with it.
+    func testSupersededTurnEdgeReachesTheGateOnlyWhenStateAgrees() throws {
+        let (_, working) = appended(nil, codexTranscript(.turnStarted, turn: "t1", endedAtMs: 5_000), seq: 1)
+        let (_, idle) = appended(working, codexTranscript(.turnCompleted, turn: "t1", endedAtMs: 9_800), seq: 2)
+        let (_, nextTurn) = appended(idle, codexTranscript(.turnStarted, turn: "t2", endedAtMs: 12_000), seq: 3)
+        let idleEdge = JournalMailboxBoundary(working: false, pid: nil, at: Date(timeIntervalSince1970: 9.8), headless: false)
+        let workingEdge = JournalMailboxBoundary(working: true, pid: 4242, at: Date(timeIntervalSince1970: 5), headless: false)
+
+        XCTAssertTrue(idleEdge.stillHolds(projected: idle, current: idle))
+        XCTAssertFalse(idleEdge.stillHolds(projected: idle, current: nextTurn), "an old turn end never reopens a newer turn")
+        XCTAssertFalse(workingEdge.stillHolds(projected: working, current: idle), "an old start never strands an idle agent")
+        XCTAssertTrue(workingEdge.stillHolds(projected: working, current: nextTurn))
+
+        var otherOwner = try XCTUnwrap(idle)
+        otherOwner.owner = JournalOwner(panelID: JournalTestData.panel, agentKind: "codex", sessionID: "another-session")
+        XCTAssertFalse(idleEdge.stillHolds(projected: idle, current: otherOwner))
+        XCTAssertFalse(idleEdge.stillHolds(projected: idle, current: nil))
     }
 
     // C11-271 derived-late-pretool-after-stop and the spec's missing/hook-start clock variants.

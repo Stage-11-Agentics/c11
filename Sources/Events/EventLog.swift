@@ -28,6 +28,7 @@ final class EventLog {
     private let sizeCap: Int
     private let maxPending: Int
     private let totalSizeCap: Int
+    private let retentionNamespace: String
     private var retentionDays = 14
     private let titleWindow: TimeInterval
     private let maxTitlePanels: Int
@@ -41,7 +42,9 @@ final class EventLog {
     private var knownHistoryBytes = 0
     private var historyInitialized = false
     private var historyLockFD: Int32 = -1
+    private var retentionDegraded = false
     private var sampleTimer: DispatchSourceTimer?
+    private var nextSampleAt = Date.distantFuture
     private var sampleProvider: (() -> EventEnvelope?)?
     private var samplingAsleep = false
     private var recordingEnabled = true
@@ -60,6 +63,8 @@ final class EventLog {
 
     /// Assigned and read only on `queue`.
     private var nextSeq: UInt64 = 0
+    private var confirmedDrainIDs = Set<String>()
+    private var confirmedDrainOrder: [String] = []
 
     /// Guards the caller-visible backpressure counters.
     private let counterLock = NSLock()
@@ -89,12 +94,13 @@ final class EventLog {
         self.sizeCap = max(1, min(sizeCap, totalSizeCap / 2))
         self.maxPending = maxPending
         self.totalSizeCap = max(1, totalSizeCap)
+        self.retentionNamespace = Self.buildLabel(for: url.lastPathComponent) ?? instance
         self.retentionDays = retentionDays
         self.titleWindow = titleWindow
         self.maxTitlePanels = max(1, maxTitlePanels)
         self.now = now
         self.healthMetrics = healthMetrics
-        self.queue = DispatchQueue(label: label, qos: .utility)
+        self.queue = DispatchQueue(label: label, qos: .utility, autoreleaseFrequency: .workItem)
     }
 
     deinit {
@@ -154,33 +160,38 @@ final class EventLog {
     func updatePolicy(_ policy: ActivityHistoryPolicy) {
         queue.async { [weak self] in
             guard let self else { return }
+            if self.recordingEnabled { self.flushTitles() }
             self.recordingEnabled = policy.enabled
             self.analyticsEnabled = policy.analyticsEnabled
             self.retentionDays = policy.retentionDays
-            if !policy.enabled { self.titles.removeAll(); self.nextTitleExpiry = .distantFuture }
             if policy.enabled { self.pruneHistory() }
-            if !policy.enabled || !policy.analyticsEnabled {
-                self.sampleTimer?.cancel()
-                self.sampleTimer = nil
-            } else { self.scheduleSampling() }
+            self.nextSampleAt = policy.enabled && policy.analyticsEnabled
+                ? self.now().addingTimeInterval(600) : .distantFuture
+            self.scheduleSampling()
         }
     }
 
-    /// The sole new timer. It runs on the existing writer queue and has one
-    /// minute of leeway. Sleep cancels the source and wake schedules a fresh
-    /// ten-minute interval, so no catch-up samples run after a long sleep.
+    /// One timer serves title deadlines and ten-minute health samples. Health
+    /// deadlines have one minute of leeway; title deadlines have 100 ms.
     func startSampling(_ provider: @escaping () -> EventEnvelope?) {
         queue.async { [weak self] in
             self?.sampleProvider = provider
+            self?.nextSampleAt = self?.now().addingTimeInterval(600) ?? .distantFuture
             self?.scheduleSampling()
         }
     }
 
     private func scheduleSampling() {
-        guard sampleTimer == nil, !samplingAsleep, recordingEnabled, analyticsEnabled, sampleProvider != nil else { return }
+        sampleTimer?.cancel()
+        sampleTimer = nil
+        guard !samplingAsleep, recordingEnabled else { return }
+        let sampleDeadline = analyticsEnabled && sampleProvider != nil ? nextSampleAt : .distantFuture
+        let deadline = min(nextTitleExpiry, sampleDeadline)
+        guard deadline != .distantFuture else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 600, repeating: 600, leeway: .seconds(60))
-        timer.setEventHandler { [weak self] in self?.sampleNow() }
+        timer.schedule(deadline: .now() + max(0, deadline.timeIntervalSince(now())),
+                       leeway: nextTitleExpiry <= sampleDeadline ? .milliseconds(100) : .seconds(60))
+        timer.setEventHandler { [weak self] in self?.deadlineFired() }
         sampleTimer = timer
         timer.resume()
     }
@@ -190,7 +201,10 @@ final class EventLog {
             guard let self else { return }
             self.samplingAsleep = asleep
             if asleep { self.sampleTimer?.cancel(); self.sampleTimer = nil }
-            else { self.scheduleSampling() }
+            else {
+                self.nextSampleAt = self.now().addingTimeInterval(600)
+                self.scheduleSampling()
+            }
         }
     }
 
@@ -216,23 +230,48 @@ final class EventLog {
     /// Deterministic behavioral seam: uses the exact timer path, without sleeps.
     func sampleForTesting() { waitForQueue { self.sampleNow() } }
 
+    /// Execute the actual combined timer callback against an injected clock.
+    func fireDeadlineForTesting() { waitForQueue { self.deadlineFired() } }
+
+    /// Only successful drain-delivery writes enter this bounded acknowledgment
+    /// set. A timed-out barrier confirms nothing, so the receipt stays durable.
+    func confirmedDrainDeliveryIDs(_ ids: Set<String>) -> Set<String> {
+        var result = Set<String>()
+        let completed = waitForQueue { result = self.confirmedDrainIDs.intersection(ids) }
+        return completed ? result : []
+    }
+
     /// DispatchQueue.sync may execute its body on the calling main thread.
     /// Enqueue then wait only at explicit drain/shutdown seams, so metrics,
     /// title-tail serialization and disk I/O always execute off-main.
-    private func waitForQueue(_ body: @escaping () -> Void) {
+    @discardableResult
+    private func waitForQueue(_ body: @escaping () -> Void) -> Bool {
         let completion = DispatchSemaphore(value: 0)
         queue.async {
             body()
             completion.signal()
         }
-        completion.wait()
+        return completion.wait(timeout: .now() + 2) == .success
+    }
+
+    private func deadlineFired() {
+        guard recordingEnabled, !samplingAsleep else { return }
+        flushTitles(expiredOnly: true)
+        if analyticsEnabled, sampleProvider != nil, now() >= nextSampleAt {
+            sampleNow()
+        } else {
+            scheduleSampling()
+        }
     }
 
     private func sampleNow() {
-        guard !samplingAsleep else { return }
+        guard recordingEnabled, !samplingAsleep else { return }
         flushTitles(expiredOnly: true)
+        reportDropsIfNeeded()
         if recordingEnabled, analyticsEnabled, let event = sampleProvider?() { writeAssigningSeq(event) }
         pruneHistory()
+        nextSampleAt = now().addingTimeInterval(600)
+        scheduleSampling()
     }
 
     // MARK: - Queue-confined writing
@@ -240,12 +279,16 @@ final class EventLog {
     private func process(_ envelope: EventEnvelope) {
         guard recordingEnabled else { return }
         if now() >= nextTitleExpiry { flushTitles(expiredOnly: true) }
-        if envelope.type == EventEnvelope.EventType.surfaceClosed.rawValue {
+        let oscTitle = envelope.type == EventEnvelope.EventType.metadataChanged.rawValue
+            && envelope.payload["key"] as? String == "title"
+            && envelope.payload["source"] as? String == "osc"
+        if envelope.type == EventEnvelope.EventType.logPolicy.rawValue
+            || envelope.type == EventEnvelope.EventType.workspaceClosed.rawValue {
+            flushTitles()
+        } else if !oscTitle, envelope.surface != nil {
             flushTitles(panel: envelope.surface)
         }
-        if envelope.type == EventEnvelope.EventType.metadataChanged.rawValue,
-           envelope.payload["key"] as? String == "title",
-           envelope.payload["source"] as? String == "osc",
+        if oscTitle,
            let panel = envelope.surface, let title = envelope.payload["value"] as? String {
             let key = panel + ":" + (envelope.payload["scope"] as? String ?? "panel")
             let canonical = Self.titleWithoutStatusGlyphs(title)
@@ -261,10 +304,12 @@ final class EventLog {
             }
             if titles.count >= maxTitlePanels, let oldest = titles.min(by: { $0.value.started < $1.value.started })?.key {
                 flushTitle(oldest)
+                nextTitleExpiry = titles.values.map { $0.started.addingTimeInterval(titleWindow) }.min() ?? .distantFuture
             }
             let started = now()
             titles[key] = TitleWindow(started: started, latest: envelope, count: 1)
             nextTitleExpiry = min(nextTitleExpiry, started.addingTimeInterval(titleWindow))
+            scheduleSampling()
         }
         if envelope.type == EventEnvelope.EventType.hangPrecursor.rawValue {
             var payload = envelope.payload
@@ -295,15 +340,23 @@ final class EventLog {
             if let panel { return state.latest.surface == panel }
             return !expiredOnly || date.timeIntervalSince(state.started) >= titleWindow
         }.sorted { $0.value.started < $1.value.started }.map(\.key)
+        guard !keys.isEmpty else { return }
         for key in keys { flushTitle(key) }
         nextTitleExpiry = titles.values.map { $0.started.addingTimeInterval(titleWindow) }.min() ?? .distantFuture
+        scheduleSampling()
     }
 
     private static func titleWithoutStatusGlyphs(_ title: String) -> String {
         var scalars = title.unicodeScalars[...]
         while let first = scalars.first {
             let category = first.properties.generalCategory
-            let glyph = category == .otherSymbol || category == .mathSymbol || category == .modifierSymbol
+            let spinnerValues: Set<UInt32> = [0x2F, 0x2D, 0x5C, 0x7C]
+            let asciiSpinner = spinnerValues.contains(first.value)
+                && (scalars.dropFirst().first.map {
+                    CharacterSet.whitespaces.contains($0) || spinnerValues.contains($0.value)
+                        || $0.properties.generalCategory == .otherSymbol || (0x2800...0x28FF).contains($0.value)
+                } ?? true)
+            let glyph = category == .otherSymbol || asciiSpinner
                 || first.value == 0xFE0F || first.value == 0x200D
                 || (0x2800...0x28FF).contains(first.value)
             if glyph || CharacterSet.whitespaces.contains(first) { scalars = scalars.dropFirst() }
@@ -313,16 +366,41 @@ final class EventLog {
     }
 
 
-    private func writeAssigningSeq(_ envelope: EventEnvelope) {
-        nextSeq &+= 1
-        let line = envelope.serialize(seq: nextSeq)
-        writeLine(line)
+    @discardableResult
+    private func writeAssigningSeq(_ envelope: EventEnvelope, countDrop: Bool = true, rotate: Bool = true) -> Bool {
+        do { try ensureHandle() } catch {
+            if countDrop { recordDrop() }
+            return false
+        }
+        if !historyInitialized { pruneHistory() }
+        let sequence = nextSeq &+ 1
+        let line = envelope.serialize(seq: sequence)
+        guard writeLine(line) else {
+            if countDrop { recordDrop() }
+            return false
+        }
+        nextSeq = sequence
+        if envelope.type == EventEnvelope.EventType.mailboxDelivered.rawValue,
+           envelope.payload["via"] as? String == "drain", let id = envelope.payload["id"] as? String,
+           confirmedDrainIDs.insert(id).inserted {
+            confirmedDrainOrder.append(id)
+            if confirmedDrainOrder.count > 32_768 {
+                confirmedDrainIDs.remove(confirmedDrainOrder.removeFirst())
+            }
+        }
         NotificationCenter.default.post(
             name: Self.eventWrittenNotification,
             object: envelope.type,
             userInfo: ["seq": nextSeq]
         )
-        rotateIfNeeded()
+        if rotate { rotateIfNeeded() }
+        return true
+    }
+
+    private func recordDrop(_ count: Int = 1) {
+        counterLock.lock()
+        droppedSinceReport += count
+        counterLock.unlock()
     }
 
     /// Emits a `log.dropped` marker when the backpressure guard has shed events
@@ -339,27 +417,20 @@ final class EventLog {
             ts: now(),
             payload: ["count": dropped]
         )
-        nextSeq &+= 1
-        writeLine(env.serialize(seq: nextSeq))
+        if !writeAssigningSeq(env, countDrop: false) { recordDrop(dropped) }
     }
 
-    private func writeLine(_ line: String) {
+    private func writeLine(_ line: String) -> Bool {
         onQueueBeforeWrite?()
         do {
             try ensureHandle()
             if let data = line.data(using: .utf8) {
                 // A single record larger than the whole configured budget
                 // cannot be retained while honoring that budget.
-                guard data.count <= totalSizeCap else { return }
-                try withHistoryLock {
-                    // Writers in separate c11 processes share this directory.
-                    // Reconcile the budget under the same advisory lock as the
-                    // append, so two fresh cached totals cannot both spend it.
-                    pruneHistoryLocked(reserving: data.count)
-                    guard knownHistoryBytes + data.count <= totalSizeCap else { return }
-                    try fileHandle?.write(contentsOf: data)
-                    knownHistoryBytes += data.count
-                }
+                guard data.count <= totalSizeCap, let fileHandle else { return false }
+                try fileHandle.write(contentsOf: data)
+                knownHistoryBytes += data.count
+                return true
             }
         } catch {
             // Best-effort: drop the handle so the next call reopens from scratch.
@@ -368,6 +439,7 @@ final class EventLog {
             try? fileHandle?.close()
             fileHandle = nil
         }
+        return false
     }
 
     private func ensureHandle() throws {
@@ -378,9 +450,13 @@ final class EventLog {
             FileManager.default.createFile(atPath: url.path, contents: nil)
         }
         let fh = try FileHandle(forWritingTo: url)
+        guard flock(fh.fileDescriptor, LOCK_SH | LOCK_NB) == 0 else {
+            try? fh.close()
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        _ = fcntl(fh.fileDescriptor, F_SETFD, FD_CLOEXEC)
         try fh.seekToEnd()
         fileHandle = fh
-        if !historyInitialized { pruneHistory() }
     }
 
     // MARK: - Rotation (EVT-4)
@@ -395,11 +471,8 @@ final class EventLog {
     private func rotate() {
         let fm = FileManager.default
         let rolled = EventLogLayout.rolledURL(for: url)
-        do {
-            try fileHandle?.close()
-        } catch {
-            // fall through; we still attempt the rename + reopen
-        }
+        // Keep the old file's shared liveness lock until the rename completes.
+        let previousHandle = fileHandle
         fileHandle = nil
         // Plain renames only. Numbered generations preserve the `.1` tail
         // compatibility contract; newest is always `.1`.
@@ -419,8 +492,10 @@ final class EventLog {
         } catch {
             // If the roll failed, keep appending to the current file rather than
             // losing events; reopen and carry on (cap will retrigger).
+            fileHandle = previousHandle
             return
         }
+        try? previousHandle?.close()
         // Fresh current file starts with a rotation marker so a consumer that
         // re-reads from the top after detecting the shrink lands on the boundary.
         let marker = EventEnvelope(
@@ -429,8 +504,7 @@ final class EventLog {
             ts: now(),
             payload: ["rolled_to": rolled.lastPathComponent]
         )
-        nextSeq &+= 1
-        writeLine(marker.serialize(seq: nextSeq))
+        writeAssigningSeq(marker, rotate: false)
         pruneHistory()
     }
 
@@ -453,50 +527,93 @@ final class EventLog {
         }
     }
 
-    /// Shared-directory coordination is confined to the writer queue and only
-    /// surviving records take the lock. Suppressed spinner frames do no I/O.
-    /// No ledger, polling, or new timer is needed for the cross-process budget.
-    private func withHistoryLock(_ body: () throws -> Void) rethrows {
+    /// Only open, rotation, health sample and policy changes reconcile files.
+    /// Normal appends update cached bytes without directory scans or flock.
+    private func acquireHistoryLock() -> String? {
         if historyLockFD < 0 {
             let directory = url.deletingLastPathComponent()
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             historyLockFD = Darwin.open(directory.appendingPathComponent(".activity-history.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         }
-        guard historyLockFD >= 0, flock(historyLockFD, LOCK_EX) == 0 else { return }
-        defer { flock(historyLockFD, LOCK_UN) }
-        try body()
+        guard historyLockFD >= 0 else { return "lock_unavailable" }
+        if flock(historyLockFD, LOCK_EX | LOCK_NB) == 0 { return nil }
+        return errno == EWOULDBLOCK || errno == EAGAIN ? "lock_busy" : "lock_unavailable"
     }
 
-    private func pruneHistory(reserving bytes: Int = 0) {
-        withHistoryLock { pruneHistoryLocked(reserving: bytes) }
+    private func pruneHistory() {
+        let failure = acquireHistoryLock()
+        // Contention degrades the shared target to a bounded own-instance
+        // namespace. It must never stall or shed activity records.
+        pruneHistoryFiles(ownInstanceOnly: failure != nil)
+        if failure == nil { flock(historyLockFD, LOCK_UN) }
+        historyInitialized = true
+        if let failure, !retentionDegraded {
+            retentionDegraded = true
+            writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
+                payload: ["state": "degraded", "reason": failure]), rotate: false)
+        } else if failure == nil, retentionDegraded {
+            retentionDegraded = false
+            writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
+                payload: ["state": "recovered"]), rotate: false)
+        }
     }
 
-    private func pruneHistoryLocked(reserving bytes: Int = 0) {
+    /// Build label excludes the per-process pid and numbered generation.
+    private static func buildLabel(for name: String) -> String? {
+        guard EventLogLayout.isLogFileName(name), let suffix = name.range(of: ".ndjson", options: .backwards) else { return nil }
+        let instance = String(name[name.index(name.startIndex, offsetBy: EventLogLayout.logFilePrefix.count)..<suffix.lowerBound])
+        guard let dash = instance.lastIndex(of: "-"), Int32(instance[instance.index(after: dash)...]) != nil else { return instance }
+        return String(instance[..<dash])
+    }
+
+    private func isOwnInstanceFile(_ name: String) -> Bool {
+        if name == url.lastPathComponent { return true }
+        let prefix = url.lastPathComponent + "."
+        guard name.hasPrefix(prefix), let generation = Int(name.dropFirst(prefix.count)) else { return false }
+        return generation > 0
+    }
+
+    private func pruneHistoryFiles(ownInstanceOnly: Bool) {
         let fm = FileManager.default
         let cutoff = now().addingTimeInterval(-Double(retentionDays) * 86_400)
-        var entries = historyFiles().compactMap { item -> (URL, Date, Int)? in
+        let developmentCutoff = now().addingTimeInterval(-14 * 86_400)
+        let allEntries = historyFiles().compactMap { item -> (url: URL, date: Date, bytes: Int, label: String?)? in
             guard let values = try? item.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]),
                   values.isRegularFile == true else { return nil }
-            return (item, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0)
-        }.sorted { $0.1 < $1.1 }
-        func isProtected(_ item: URL) -> Bool {
-            // Every item comes from this writer's directory; filename is its
-            // identity even when directory symlink spellings differ.
-            if item.lastPathComponent == url.lastPathComponent { return true }
-            // Never unlink another live instance's current file. Its writer
-            // enforces the same shared budget as it next rotates/samples.
-            guard item.pathExtension == "ndjson",
-                  let pidText = item.deletingPathExtension().lastPathComponent.split(separator: "-").last,
-                  let pid = Int32(pidText) else { return false }
-            return kill(pid, 0) == 0 || errno == EPERM
+            return (item, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0,
+                    isOwnInstanceFile(item.lastPathComponent) ? retentionNamespace : Self.buildLabel(for: item.lastPathComponent))
+        }.sorted { $0.date < $1.date }
+        func removeIfInactive(_ item: URL) -> Bool {
+            if item.lastPathComponent == url.lastPathComponent { return false }
+            // The kernel releases a live writer's SH lock on process death;
+            // pid reuse cannot make an abandoned file immortal. Hold EX until
+            // unlink completes so another writer cannot acquire SH meanwhile.
+            let fd = Darwin.open(item.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+            guard fd >= 0 else { return false }
+            defer { Darwin.close(fd) }
+            guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
+            do { try fm.removeItem(at: item); return true } catch { return false }
         }
-        for entry in entries where entry.1 < cutoff && !isProtected(entry.0) {
-            try? fm.removeItem(at: entry.0)
+        if !ownInstanceOnly {
+            // A fixed development TTL may clean dead foreign tagged builds.
+            // Production and nightly labels are never governed by our policy.
+            for entry in allEntries where entry.label != retentionNamespace
+                && entry.label?.hasPrefix("com.stage11.c11.debug") == true
+                && entry.date < developmentCutoff {
+                _ = removeIfInactive(entry.url)
+            }
         }
-        entries.removeAll { !fm.fileExists(atPath: $0.0.path) }
-        var total = entries.reduce(0) { $0 + $1.2 }
-        for entry in entries where total + bytes > totalSizeCap && !isProtected(entry.0) {
-            do { try fm.removeItem(at: entry.0); total -= entry.2 } catch { }
+        var entries = allEntries.filter {
+            ownInstanceOnly ? isOwnInstanceFile($0.url.lastPathComponent) : $0.label == retentionNamespace
+        }
+        var removed = Set<String>()
+        for entry in entries where entry.date < cutoff {
+            if removeIfInactive(entry.url) { removed.insert(entry.url.lastPathComponent) }
+        }
+        entries.removeAll { removed.contains($0.url.lastPathComponent) }
+        var total = entries.reduce(0) { $0 + $1.bytes }
+        for entry in entries where total > totalSizeCap {
+            if removeIfInactive(entry.url) { total -= entry.bytes }
         }
         knownHistoryBytes = total
         historyInitialized = true

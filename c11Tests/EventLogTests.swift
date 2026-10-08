@@ -945,3 +945,68 @@ extension EventLogTests {
         XCTAssertFalse(readLines(secondURL).isEmpty)
     }
 }
+
+
+extension EventLogTests {
+    func testSymlinkedHistoryDirectoryProtectsCurrentAndShiftsGenerations() throws {
+        let target = tempDir.appendingPathComponent("history-real", isDirectory: true)
+        let alias = tempDir.appendingPathComponent("history-alias", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: target)
+        let url = alias.appendingPathComponent("events-symlink.ndjson")
+        // Newly created files have wall-clock mtimes. An advanced retention
+        // clock exposes a mistaken failure to protect our own current file.
+        let future = Date().addingTimeInterval(60 * 86_400)
+        let log = EventLog(url: url, instance: "symlink", sizeCap: 500, totalSizeCap: 4096, now: { future })
+        log.open()
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "symlink", ts: future))
+        log.flush()
+        XCTAssertFalse(readLines(url).isEmpty)
+
+        // Use a wall-clock writer to exercise generation shifts through the
+        // same alias without intentionally aging out every archived file.
+        let rotating = EventLog(url: alias.appendingPathComponent("events-generations.ndjson"),
+                                instance: "generations", sizeCap: 500, totalSizeCap: 4096)
+        rotating.open()
+        for index in 0..<12 {
+            rotating.append(EventEnvelope(type: .surfaceCreated, instance: "generations", ts: Date(),
+                payload: ["n": index, "title": String(repeating: "x", count: 100)]))
+        }
+        rotating.flush()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rotating.url.path + ".2"))
+        XCTAssertFalse(readLines(rotating.url).isEmpty)
+    }
+
+    func testAnalyticsOffKeepsOriginalHangWithoutNewHealthContext() {
+        var metricQueries = 0
+        let log = EventLog(url: logURL(), instance: "hang-off", healthMetrics: {
+            XCTAssertFalse(Thread.isMainThread)
+            metricQueries += 1
+            return ["rss_mb": 42]
+        })
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "hang-off")
+        emitter.observePresence(appActive: true, screenLocked: false)
+        emitter.updatePolicy(ActivityHistoryPolicy(analyticsEnabled: false))
+        emitter.emitHangPrecursor(cause: "socket", culprit: "worker", count: 3,
+                                  windowMs: 1000, spanMs: 500, durationsMs: [100, 200, 200], fingerprint: ["sample"])
+        emitter.flush()
+        let event = readLines(logURL()).map(parse).last
+        XCTAssertEqual(event?["type"] as? String, "hang.precursor")
+        let payload = event?["payload"] as? [String: Any]
+        XCTAssertEqual(payload?["cause"] as? String, "socket")
+        XCTAssertEqual(payload?["culprit"] as? String, "worker")
+        XCTAssertEqual(payload?["count"] as? Int, 3)
+        XCTAssertNil(payload?["app_active"])
+        XCTAssertNil(payload?["screen_locked"])
+        XCTAssertNil(payload?["rss_mb"])
+        XCTAssertEqual(metricQueries, 0)
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        emitter.emitHangPrecursor(cause: "socket", culprit: nil, count: 3,
+                                  windowMs: 1000, spanMs: 500, durationsMs: [100, 200, 200], fingerprint: ["sample"])
+        emitter.flush()
+        XCTAssertEqual(metricQueries, 1)
+        let enabledPayload = readLines(logURL()).map(parse).last?["payload"] as? [String: Any]
+        XCTAssertEqual(enabledPayload?["rss_mb"] as? Int, 42)
+    }
+}

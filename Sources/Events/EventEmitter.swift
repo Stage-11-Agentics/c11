@@ -576,23 +576,24 @@ final class EventEmitter {
         fingerprint: [String]
     ) -> Bool {
         lock.lock()
+        let includeContext = enabled && policy.analyticsEnabled
         let active: Any = appActive.map { $0 as Any } ?? NSNull()
         let locked: Any = screenLocked.map { $0 as Any } ?? NSNull()
         lock.unlock()
-        return emit(
-            .hangPrecursor,
-            payload: [
-                "app_active": active,
-                "screen_locked": locked,
-                "cause": cause,
-                "culprit": culprit ?? NSNull(),
-                "count": count,
-                "window_ms": windowMs,
-                "span_ms": spanMs,
-                "durations_ms": durationsMs,
-                "fingerprint": fingerprint,
-            ]
-        )
+        var payload: [String: Any] = [
+            "cause": cause,
+            "culprit": culprit ?? NSNull(),
+            "count": count,
+            "window_ms": windowMs,
+            "span_ms": spanMs,
+            "durations_ms": durationsMs,
+            "fingerprint": fingerprint,
+        ]
+        if includeContext {
+            payload["app_active"] = active
+            payload["screen_locked"] = locked
+        }
+        return emit(.hangPrecursor, payload: payload)
     }
 
     // MARK: - Core

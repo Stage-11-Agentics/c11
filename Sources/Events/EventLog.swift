@@ -47,6 +47,7 @@ final class EventLog {
     private var recordingEnabled = true
     private var analyticsEnabled = true
     private let now: () -> Date
+    private let healthMetrics: () -> [String: Any]
 
     private let queue: DispatchQueue
     private var fileHandle: FileHandle?
@@ -80,6 +81,7 @@ final class EventLog {
         titleWindow: TimeInterval = 60,
         maxTitlePanels: Int = 4096,
         now: @escaping () -> Date = { Date() },
+        healthMetrics: @escaping () -> [String: Any] = ActivityHistoryMetrics.sample,
         label: String = "com.stage11.c11.events.log"
     ) {
         self.url = url
@@ -91,6 +93,7 @@ final class EventLog {
         self.titleWindow = titleWindow
         self.maxTitlePanels = max(1, maxTitlePanels)
         self.now = now
+        self.healthMetrics = healthMetrics
         self.queue = DispatchQueue(label: label, qos: .utility)
     }
 
@@ -263,7 +266,13 @@ final class EventLog {
         }
         if envelope.type == EventEnvelope.EventType.hangPrecursor.rawValue {
             var payload = envelope.payload
-            payload["rss_mb"] = ActivityHistoryMetrics.sample()["rss_mb"] ?? NSNull()
+            if analyticsEnabled, payload["app_active"] != nil {
+                payload["rss_mb"] = healthMetrics()["rss_mb"] ?? NSNull()
+            } else {
+                payload.removeValue(forKey: "app_active")
+                payload.removeValue(forKey: "screen_locked")
+                payload.removeValue(forKey: "rss_mb")
+            }
             writeAssigningSeq(EventEnvelope(type: envelope.type, instance: envelope.instance, ts: envelope.ts,
                                            workspace: envelope.workspace, surface: envelope.surface, pane: envelope.pane, payload: payload))
         } else { writeAssigningSeq(envelope) }
@@ -392,10 +401,12 @@ final class EventLog {
         fileHandle = nil
         // Plain renames only. Numbered generations preserve the `.1` tail
         // compatibility contract; newest is always `.1`.
-        let generations = historyFiles().filter { $0.deletingLastPathComponent() == url.deletingLastPathComponent()
-            && $0.lastPathComponent.hasPrefix(url.lastPathComponent + ".") }
+        // historyFiles enumerates exactly this directory. Match filenames,
+        // because Foundation can return /private/var aliases for a /var URL.
+        let generationPrefix = url.lastPathComponent + "."
+        let generations = historyFiles().filter { $0.lastPathComponent.hasPrefix(generationPrefix) }
         let numbered = generations.compactMap { item -> (URL, Int)? in
-            guard let number = Int(item.path.replacingOccurrences(of: url.path + ".", with: "")) else { return nil }
+            guard let number = Int(item.lastPathComponent.dropFirst(generationPrefix.count)) else { return nil }
             return (item, number)
         }.sorted { $0.1 > $1.1 }
         for (item, number) in numbered {
@@ -463,7 +474,9 @@ final class EventLog {
             return (item, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0)
         }.sorted { $0.1 < $1.1 }
         func isProtected(_ item: URL) -> Bool {
-            if item == url { return true }
+            // Every item comes from this writer's directory; filename is its
+            // identity even when directory symlink spellings differ.
+            if item.lastPathComponent == url.lastPathComponent { return true }
             // Never unlink another live instance's current file. Its writer
             // enforces the same shared budget as it next rotates/samples.
             guard item.pathExtension == "ndjson",

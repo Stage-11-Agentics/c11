@@ -1070,8 +1070,8 @@ extension EventLogTests {
         let sampled = payload?["cpu_s_total"] as? Double ?? -.infinity
         // Independent timevals bracket the query; allow only scheduling and
         // kernel-accounting quantization, with no busy loop or timing sleep.
-        XCTAssertGreaterThanOrEqual(sampled, lower - 0.01)
-        XCTAssertLessThanOrEqual(sampled, upper + 0.01)
+        XCTAssertGreaterThanOrEqual(sampled, lower - 0.001)
+        XCTAssertLessThanOrEqual(sampled, upper + 0.001)
         XCTAssertGreaterThan(payload?["rss_mb"] as? Double ?? 0, 0)
         XCTAssertGreaterThan(payload?["threads"] as? Int ?? 0, 0)
     }

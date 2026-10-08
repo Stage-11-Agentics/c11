@@ -208,8 +208,13 @@ Shared per-label reconciliation uses a nonblocking lock. If it is busy or
 unavailable, recording continues with best-effort pruning of this instance’s
 64 MiB history. The shared cap is soft during that episode; `log.retention`
 marks degradation once and recovery once. A dead process releases its kernel
-lock automatically. No retention lock can stall a writer or the UI. Actual
-write failures and backpressure are counted in `log.dropped`; only successful
+lock automatically. A failed writer liveness lock also preserves recording:
+`liveness_lock_unavailable` marks non-contention failures, retries occur at rare
+checkpoints, and successful recovery is recorded. While liveness is unavailable,
+that writer never prunes current files. Other writers require an exclusive probe
+and a current file older than 24 hours before pruning it; age pruning also
+requires the selected retention horizon. Rolled generations remain eligible.
+No retention lock can stall a writer or the UI. Actual write failures and backpressure are counted in `log.dropped`; only successful
 writes consume sequence numbers and publish written notifications.
 
 Policy defaults: analytics on, text on, retention 14 days. The cached keys are

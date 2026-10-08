@@ -823,7 +823,12 @@ enum MessagesPageSource {
     ) -> MessagesPageMailboxArtifact {
         let object = object ?? [:]
         let ext = object["ext"] as? [String: Any] ?? [:]
-        let textRecorded = MessagesPageJSON.bool(ext["c11_activity_text_recorded"]) ?? true
+        // Sender-controlled files have no durable acceptance policy yet.
+        // Processing also holds undelivered envelopes whose marker write
+        // failed. Neither location can authorize showing text in history.
+        // "pending" is an accepted recipient inbox and keeps normal behavior.
+        let textRecorded = state != "outbox" && state != "processing"
+            && (MessagesPageJSON.bool(ext["c11_activity_text_recorded"]) ?? true)
         let rawBody = MessagesPageJSON.string(object["body"])
         let body = textRecorded ? boundedDurableBody(rawBody) : (value: nil, truncated: false)
         return MessagesPageMailboxArtifact(

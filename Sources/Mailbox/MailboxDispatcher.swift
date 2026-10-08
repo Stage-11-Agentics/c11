@@ -311,8 +311,14 @@ final class MailboxDispatcher {
                 // create-only; Foundation's atomic data write replaces it.
                 try replaceProcessingEnvelope(envelope.encode(), processingURL)
             } catch {
-                // Deliver the marked in-memory envelope; the accepted event
-                // still suppresses the unmarked processing file in Messages.
+                // Acceptance requires a durable privacy decision. Retain the
+                // original body for manual recovery, without delivery or an
+                // automatic retry. Messages hides all processing bodies.
+                log.append(.rejected(
+                    id: envelope.id,
+                    reason: "activity history privacy marker could not be saved; undelivered envelope retained in _processing for manual recovery"
+                ))
+                return
             }
         }
 

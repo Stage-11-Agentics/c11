@@ -1010,3 +1010,38 @@ extension EventLogTests {
         XCTAssertEqual(enabledPayload?["rss_mb"] as? Int, 42)
     }
 }
+
+
+extension EventLogTests {
+    func testRepeatedReceiptReadDrainsDoNotEndTitleCoalescingWindow() {
+        let log = EventLog(url: logURL(), instance: "receipt-drain")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "receipt-drain")
+        let workspace = UUID(), panel = UUID()
+        func title(_ value: String, prior: String? = nil) {
+            emitter.emitMetadataChanged(scope: "panel", workspace: workspace, surface: panel,
+                                        key: "title", value: value, prior: prior, source: "osc")
+        }
+        title("First")
+        title("Second", prior: "First")
+        // MailboxReceiptRecorder drains the emitter before reading. Repeated
+        // reads must not turn one window into multiple first/last pairs.
+        for _ in 0..<3 {
+            emitter.flush()
+            let interimTitles = readLines(logURL()).map(parse)
+                .filter { $0["type"] as? String == "metadata.changed" }
+            XCTAssertEqual(interimTitles.count, 1)
+            XCTAssertEqual((interimTitles.first?["payload"] as? [String: Any])?["value"] as? String, "First")
+        }
+        title("Third", prior: "Second")
+        emitter.emitSurfaceClosed(workspace: workspace, surface: panel)
+        emitter.flush()
+        let events = readLines(logURL()).map(parse)
+        let titles = events.filter { $0["type"] as? String == "metadata.changed" }
+        XCTAssertEqual(titles.count, 2)
+        XCTAssertEqual((titles.first?["payload"] as? [String: Any])?["value"] as? String, "First")
+        XCTAssertEqual((titles.last?["payload"] as? [String: Any])?["value"] as? String, "Third")
+        XCTAssertEqual((titles.last?["payload"] as? [String: Any])?["title_change_count"] as? Int, 3)
+        XCTAssertEqual(events.last?["type"] as? String, "panel.closed")
+    }
+}

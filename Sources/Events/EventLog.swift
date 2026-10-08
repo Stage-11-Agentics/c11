@@ -142,10 +142,12 @@ final class EventLog {
         }
     }
 
-    /// Blocks until all previously-enqueued appends have completed. For tests
-    /// and shutdown. Never call from within `queue`.
+    /// Drain previously-enqueued writes for readers such as mailbox receipts.
+    /// A read barrier must not end a live title window. Close, expiry and
+    /// finishSampling() are the explicit tail-flush boundaries.
+    /// Never call from within `queue`.
     func flush() {
-        waitForQueue { self.flushTitles() }
+        waitForQueue {}
     }
 
     /// Settings changes are rare and become one ordered queue mutation.

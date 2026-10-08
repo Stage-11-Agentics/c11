@@ -316,7 +316,7 @@ extension Workspace {
         let restoredStableDefaultTitle = snapshot.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         stableDefaultTitle = restoredStableDefaultTitle.isEmpty ? nil : restoredStableDefaultTitle
         applyProcessTitle(snapshot.processTitle)
-        setCustomTitle(snapshot.customTitle)
+        setCustomTitle(snapshot.customTitle, recordRename: false)
         setCustomColor(snapshot.customColor)
         isPinned = snapshot.isPinned
         groupId = snapshot.groupId
@@ -371,6 +371,11 @@ extension Workspace {
             focusPanel(fallbackFocusedPanelId)
         } else {
             scheduleFocusReconcile()
+        }
+
+        if workspaceCreationPendingRestore {
+            workspaceCreationPendingRestore = false
+            EventEmitter.shared.emitWorkspaceCreated(workspace: id, title: title, rootDirectory: rootDirectory)
         }
 
         // C11-24: schedule agent-resume for restored terminal surfaces that
@@ -4890,6 +4895,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// subscription. `lastKnownPanelIds` is the diff baseline.
     private var panelEventsCancellable: AnyCancellable?
     private var lastKnownPanelIds: Set<UUID> = []
+    private var workspaceCreationPendingRestore = false
 
     /// Monotonically incrementing token used by the sidebar workspace row to
     /// observe focus flashes targeting any panel in this workspace. Bumped
@@ -5572,7 +5578,8 @@ final class Workspace: Identifiable, ObservableObject {
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
         initialTerminalInput: String? = nil,
-        initialTerminalEnvironment: [String: String] = [:]
+        initialTerminalEnvironment: [String: String] = [:],
+        restoringSession: Bool = false
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
         // workspace UUIDs can survive across app restarts. Nil mints a fresh
@@ -5809,7 +5816,10 @@ final class Workspace: Identifiable, ObservableObject {
         // terminal), then on every subsequent mutation — a single chokepoint
         // that no create/close/reattach/teardown path can bypass. No debounce:
         // events must be observable within 1s (EVT-6).
-        EventEmitter.shared.emitWorkspaceCreated(workspace: self.id, title: self.title, rootDirectory: self.rootDirectory)
+        workspaceCreationPendingRestore = restoringSession
+        if !restoringSession {
+            EventEmitter.shared.emitWorkspaceCreated(workspace: self.id, title: self.title, rootDirectory: self.rootDirectory)
+        }
         panelEventsCancellable = $panels
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)
@@ -7253,7 +7263,7 @@ final class Workspace: Identifiable, ObservableObject {
         return true
     }
 
-    func setCustomTitle(_ title: String?) {
+    func setCustomTitle(_ title: String?, recordRename: Bool = true) {
         let prior = self.title
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty {
@@ -7263,8 +7273,10 @@ final class Workspace: Identifiable, ObservableObject {
             customTitle = trimmed
             self.title = trimmed
         }
-        // Intentional workspace rename/restore, never the OSC title mirror.
-        EventEmitter.shared.emitWorkspaceRenamed(workspace: id, title: self.title, prior: prior)
+        // Restoring persisted identity is not an operator rename.
+        if recordRename {
+            EventEmitter.shared.emitWorkspaceRenamed(workspace: id, title: self.title, prior: prior)
+        }
     }
 
     /// Set or clear the stable root (socket `workspace.set_root`, the GUI

@@ -82,6 +82,7 @@ final class EventEmitter {
     private var log: EventLog?
     private var instanceId: String = ""
     private var enabled = false
+    private var hasOpened = false
     private var policy = ActivityHistoryPolicy()
     private var defaultsObserver: NSObjectProtocol?
     private var appActive: Bool?
@@ -121,6 +122,7 @@ final class EventEmitter {
         policy = ActivityHistoryPolicy(defaults: .standard)
         enabled = policy.enabled
         let initialPolicy = policy
+        hasOpened = initialPolicy.enabled
         lock.unlock()
 
         newLog.updatePolicy(initialPolicy)
@@ -135,12 +137,13 @@ final class EventEmitter {
     }
 
     /// Test seam: install a caller-provided log + instance and enable emission.
-    func startForTesting(log: EventLog, instance: String) {
+    func startForTesting(log: EventLog, instance: String, policy: ActivityHistoryPolicy = ActivityHistoryPolicy(), opened: Bool = true) {
         lock.lock()
         self.log = log
         self.instanceId = instance
-        self.enabled = true
-        self.policy = ActivityHistoryPolicy()
+        self.enabled = policy.enabled
+        self.policy = policy
+        self.hasOpened = opened
         self.appActive = nil
         self.screenLocked = nil
         self.sleeping = nil
@@ -160,6 +163,7 @@ final class EventEmitter {
         log = nil
         instanceId = ""
         enabled = false
+        hasOpened = false
         lock.unlock()
     }
 
@@ -213,6 +217,10 @@ final class EventEmitter {
         policy = newPolicy
         enabled = newPolicy.enabled && target != nil
         if newPolicy.enabled, let target {
+            if !hasOpened {
+                target.open()
+                hasOpened = true
+            }
             target.append(EventEnvelope(type: .logPolicy, instance: instanceId, ts: Date(), payload: Self.policyPayload(newPolicy)))
         }
         let resume = newPolicy.enabled && newPolicy.analyticsEnabled && (!previous.enabled || !previous.analyticsEnabled)
@@ -485,7 +493,7 @@ final class EventEmitter {
         inReplyTo: String? = nil,
         urgent: Bool? = nil,
         textRecorded: Bool? = nil
-    ) {
+    ) -> Bool {
         let recordedBody = Self.recordedText(body)
         var payload: [String: Any] = ["id": id, "from": from, "body": recordedBody.value, "bytes": recordedBody.bytes]
         if let to { payload["to"] = to }
@@ -498,7 +506,9 @@ final class EventEmitter {
             payload["truncated"] = true
         }
         if let textRecorded { payload["text_recorded"] = textRecorded }
-        emit(.mailboxAccepted, workspace: workspace, payload: payload)
+        var actualTextRecorded = false
+        emit(.mailboxAccepted, workspace: workspace, payload: payload, textDecision: { actualTextRecorded = $0 })
+        return actualTextRecorded
     }
 
     func emitMailboxDelivered(
@@ -613,19 +623,24 @@ final class EventEmitter {
         workspace: UUID? = nil,
         surface: UUID? = nil,
         pane: UUID? = nil,
-        payload: @autoclosure () -> [String: Any] = [:]
+        payload: @autoclosure () -> [String: Any] = [:],
+        textDecision: ((Bool) -> Void)? = nil
     ) -> Bool {
         // Capture ts + snapshot the log under the lock; build + append outside.
         lock.lock()
         guard enabled, let log, policy.analyticsEnabled || !Self.analyticsTypes.contains(type) else {
             lock.unlock()
+            textDecision?(false)
             return false
         }
         let instance = instanceId
         let keepText = policy.keepText
         lock.unlock()
         var recordedPayload = payload()
-        if !(recordedPayload["text_recorded"] as? Bool ?? keepText) {
+        let recordText = keepText && (recordedPayload["text_recorded"] as? Bool ?? true)
+        textDecision?(recordText)
+        if type == .mailboxAccepted { recordedPayload["text_recorded"] = recordText }
+        if !recordText {
             if type == .panelInputSent, let text = recordedPayload.removeValue(forKey: "text") as? String {
                 if recordedPayload["bytes"] == nil { recordedPayload["bytes"] = text.utf8.count }
                 recordedPayload["text_recorded"] = false
@@ -636,6 +651,9 @@ final class EventEmitter {
                 recordedPayload["text_recorded"] = false
                 recordedPayload.removeValue(forKey: "body_ref")
                 recordedPayload.removeValue(forKey: "truncated")
+            } else if type == .flagLowered, let answer = recordedPayload.removeValue(forKey: "answer") as? String {
+                recordedPayload["answer_bytes"] = answer.utf8.count
+                recordedPayload["text_recorded"] = false
             }
         }
 

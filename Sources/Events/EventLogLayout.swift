@@ -23,6 +23,9 @@ import Foundation
 /// See `spec/event-envelope.v2.schema.json` (v1 lines: `.v1.schema.json`) for the line format and
 /// `skills/c11/references/events.md` for the consumer contract.
 enum EventLogLayout {
+    // Validation-only override. Capture once; ProcessInfo.environment copies
+    // the complete environment dictionary when read.
+    private static let historyDirectoryOverride = ProcessInfo.processInfo.environment["C11_ACTIVITY_HISTORY_DIRECTORY"]
 
     // MARK: - Names
 
@@ -69,12 +72,12 @@ enum EventLogLayout {
     // MARK: - Path builders
 
     /// `<state>/events/`.
-    /// Supported history storage location override, shared by app and offline
+    /// Validation-only history storage override, shared by app and offline
     /// CLI readers. Tagged validation can keep its recording/retention entirely
     /// outside production history. Relative paths are rejected.
     static func eventsDirectoryURL(
         state: URL,
-        directoryOverride: String? = ProcessInfo.processInfo.environment["C11_ACTIVITY_HISTORY_DIRECTORY"]
+        directoryOverride: String? = historyDirectoryOverride
     ) -> URL {
         if let directoryOverride, directoryOverride.hasPrefix("/") {
             return URL(fileURLWithPath: directoryOverride, isDirectory: true)

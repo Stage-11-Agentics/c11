@@ -443,7 +443,7 @@ final class EventLog {
         if historyLockFD < 0 {
             let directory = url.deletingLastPathComponent()
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            historyLockFD = Darwin.open(directory.appendingPathComponent(".activity-history.lock").path, O_CREAT | O_RDWR, 0o600)
+            historyLockFD = Darwin.open(directory.appendingPathComponent(".activity-history.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         }
         guard historyLockFD >= 0, flock(historyLockFD, LOCK_EX) == 0 else { return }
         defer { flock(historyLockFD, LOCK_UN) }

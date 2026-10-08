@@ -132,6 +132,9 @@ final class EventEmitter {
         self.instanceId = instance
         self.enabled = true
         self.policy = ActivityHistoryPolicy()
+        self.appActive = nil
+        self.screenLocked = nil
+        self.sleeping = nil
         lock.unlock()
     }
 

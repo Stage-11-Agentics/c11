@@ -19,6 +19,23 @@
 </head>
 <body>
 <main class="surface" id="surface" data-mode="read" data-size="wide">
+  <aside class="opanel" id="outlinePanel" aria-label="Outline" aria-hidden="true">
+    <div class="ohead">
+      <input id="outlineFilter" type="search" placeholder="Filter outline" autocomplete="off" spellcheck="false">
+      <button class="oclear" id="outlineClear" type="button" hidden aria-label="Clear filter">×</button>
+      <span class="oc" id="outlineCount"></span>
+    </div>
+    <nav class="olist" id="outlineList" aria-label="Outline"></nav>
+    <div class="ofoot" id="outlineSummary"></div>
+  </aside>
+  <aside class="findbar" id="findbar" role="search" aria-hidden="true">
+    <input id="findInput" type="search" autocomplete="off" spellcheck="false">
+    <span class="find-count" id="findCount" aria-live="polite"></span>
+    <button id="findPrevious" type="button">↑</button>
+    <button id="findNext" type="button">↓</button>
+    <button id="findClose" type="button">×</button>
+  </aside>
+  <div class="find-ticks" id="findTicks" aria-hidden="true" hidden></div>
   <div class="scroller" id="scroller"><div class="layout" id="layout"><div class="col" id="col"><article class="prose" id="article"></article><aside class="sidenotes" id="sidenotes"></aside></div></div></div>
   <div class="scroller" id="srcScroller"><div class="source" id="source"></div></div>
   <button class="backpill" id="back" hidden></button>

@@ -4,7 +4,12 @@ The host loads `index.html` from a private custom scheme rooted at this folder
 (or `file:` in the hermetic harness). All bundle assets are relative. No document
 content is a script, stylesheet or page URL. No renderer request uses the network.
 The native host owns file access, navigation policy, persistence and toolbar controls.
-The page owns layout, scroll anchoring, content interactions and engine queries.
+The page renders the outline and find popover and owns their layout, filtering,
+scrollspy, find marks/ticks and heading jumps alongside the reading layout and
+content interactions. Native persists an explicit outline choice and passes it
+back through `setSettings`. The native Find menu route opens the page popover with
+`openFind()`; the web view keeps first responder only when the panel focus policy
+allows it.
 
 ## Native → page
 
@@ -22,11 +27,15 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   omitted fields keep their value. theme: `system|light|dark`; typeface:
   `theme|serif|sans|mono`; scale: number 0.5–3.0 (native controls step by 0.1);
   outlineOpen: `true|false|"auto"`; osAppearance: `light|dark` (optional host
-  override; otherwise follows matchMedia). Invalid values restore the default for
-  that field (`system`, `theme`, `1`, `auto`). Returns settled `visible()`.
+  override; otherwise follows the c11 effective appearance, which follows the OS
+  when c11 appearance is System). Invalid values restore the default for that
+  field (`system`, `theme`, `1`, `auto`). Returns settled `visible()`.
   `strings` is an optional localized string map, merged over English defaults:
   `copy`, `copied`, `copyLink`, `expand`, `close`, `diagram`, `diagramError`,
-  `imageBlocked`, `notes`, `back`, `source`, `frontmatter`. Native localizes these
+  `imageBlocked`, `notes`, `back`, `source`, `frontmatter`, `outlineTitle`,
+  `outlineFilter`, `outlineEmpty`, `outlineNoMatches`, `outlineClearFilter`,
+  `outlineSummary`, `outlineTaskCount`, `findOpen`, `findPlaceholder`,
+  `findPrevious`, `findNext`, `findClose`, `findCount`. Native localizes these
   when constructing settings; content is never used as localization markup.
 - `scrollToHeading(textOrSlug)`: exact slug, exact case-insensitive text, then
   prefix/substring text match. Returns `{ok:boolean, heading:Heading|null}`.
@@ -37,12 +46,17 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   line origin with the viewport top. Returns state; the original one-argument call
   is unchanged.
 - `visible()`: returns State below, including bounded selection (max 120 chars).
-- `outline()`: returns nested `Heading[]`; `progress()`: returns
+- `outline()` returns the page-owned nested `Heading[]`; the heading tree is not
+  part of bridged `State`. `progress()` returns
   `{progress, minutesLeft}`. Both are read-only.
+- `openFind()`: opens the page-owned find popover, focuses its input in the
+  current web view, and returns `{open,query,matches,current}`. Focus is subject
+  to the native panel first-responder policy.
 - `find(query)`: literal case-insensitive text search in the current mode; marks
-  matches, selects the first and returns `{query,matches,current}`. `current` is
-  1-based, or 0 with no hits. `findNext()` / `findPrevious()` wrap and return the
-  same shape. `findClose()` removes marks and returns the empty find state.
+  matches, selects the first and returns `{open,query,matches,current}`. `current`
+  is 1-based, or 0 with no hits. `findNext()` / `findPrevious()` wrap and return
+  the same shape. `findClose()` closes the popover, removes marks and returns the
+  empty find state.
 - `setSourceMode(boolean)`: read-only source mode, preserving source position;
   returns State. `expandDiagram(number)` opens a 1-based diagram in an in-pane
   pan/zoom overlay and returns boolean; `closeDiagram()` closes it.
@@ -58,8 +72,8 @@ Task counts include the heading's section (until a same/higher-level heading).
 
 `State = {file, revision, mode:"read"|"source", pane:{width,effectiveWidth,size},
 heading_path:string[], heading:Heading|null, lines:{first,last,total,offset},
-progress:number, minutes_left:number, find:{query,matches,current}|null,
-outline:{open,docked,choice:true|false|"auto",tree:Heading[]},
+progress:number, minutes_left:number, find:{open,query,matches,current}|null,
+outline:{open,docked,choice:true|false|"auto"},
 theme:{choice,resolved}, typeface:{choice,resolved}, font_scale:number,
 diagram_open:number|null, selection:string|null}`.
 `lines.offset` is the signed CSS-pixel distance from the first visible line's
@@ -88,14 +102,30 @@ with `type` and the following fields (no JSON string wrapping):
   schemes and malformed URLs are blocked. No link creates a window or loads a URL.
 - `{type:"copy", text, kind:"code"|"heading"}`: user pressed a copy button;
   native writes text to the pasteboard. The page does not require Clipboard API.
+- `{type:"outlineDismiss"}`: the page handled Escape while the outline was open;
+  native persists the explicit closed choice and sends it back through
+  `setSettings({outlineOpen:false})`.
+- `{type:"escapeUnhandled"}`: the page's popover, footnote, filter and outline
+  layers did not consume Escape; native may then close and persist the outline.
 - `{type:"error", code, message, revision}`: recoverable renderer error. Codes
   include `render_failed`, `diagram_failed`, `invalid_argument`. A malformed
   Mermaid diagram shows escaped source inline and does not fail the document.
 
-## Anchoring and security
+## Outline rendering, anchoring and security
+
+The outline and find popover are part of the page so they use the active theme
+tokens, typeface, blur and scale without a native mirror of page state. Outline
+docking is computed from pane body width divided by scale. The dock gutter stays
+reserved while the outline is closed; overlay and docked open/close transitions
+preserve the page's character anchor. Outline clicks scroll locally and leave it
+open. Escape is handled in page order: diagram, footnote, find popover, outline
+filter text, then outline. The page reports explicit outline dismissal to native
+for persistence; only an unhandled Escape reaches the native outline fallback.
+The native snapshot preserves `choice` as `Bool?` (`nil` for `"auto"`). Source
+mode reserves the same dock gutter as read mode, whether or not the outline is open.
 
 The JS page owns scroll holding, including live reload, theme/typeface/scale,
-outline layout, source toggles, font loading, resize and asynchronous Mermaid.
+outline visibility/layout, source toggles, font loading, resize and asynchronous Mermaid.
 Native must not restore a second scroll offset after an ordinary reload/settings
 change. New-document navigation and explicit scroll commands may move the reader.
 

@@ -31018,6 +31018,414 @@
         }
       }
     },
+    "markdown.reader.defaultApp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "default app"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "デフォルトのアプリ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "програма за замовчуванням"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "기본 앱"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "默认应用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "預設 App"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "приложение по умолчанию"}}
+      }
+    },
+    "markdown.reader.find.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Close find"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "検索を閉じる"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Закрити пошук"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "찾기 닫기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "关闭查找"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "關閉尋找"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Закрыть поиск"}}
+      }
+    },
+    "markdown.reader.find.count": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%d / %d"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%d / %d"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%d / %d"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%d / %d"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%d / %d"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%d / %d"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%d / %d"}}
+      }
+    },
+    "markdown.reader.find.next": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Next match"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "次の一致"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Наступний збіг"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "다음 일치 항목"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "下一个匹配项"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "下一個相符項目"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Следующее совпадение"}}
+      }
+    },
+    "markdown.reader.find.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Find (⌘F)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "検索 (⌘F)"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Знайти (⌘F)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "찾기 (⌘F)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "查找 (⌘F)"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "尋找 (⌘F)"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Найти (⌘F)"}}
+      }
+    },
+    "markdown.reader.find.placeholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Find in document"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "書類内を検索"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Знайти в документі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "문서에서 찾기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "在文档中查找"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "在文件中尋找"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Найти в документе"}}
+      }
+    },
+    "markdown.reader.find.previous": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Previous match"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "前の一致"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Попередній збіг"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이전 일치 항목"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "上一个匹配项"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "上一個相符項目"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Предыдущее совпадение"}}
+      }
+    },
+    "markdown.reader.openExternal.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Open in %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%@ で開く"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Відкрити в %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@에서 열기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "在 %@ 中打开"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "在 %@ 中開啟"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Открыть в %@"}}
+      }
+    },
+    "markdown.reader.outline.clearFilter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Clear filter"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "絞り込みをクリア"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Очистити фільтр"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "필터 지우기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "清除筛选"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除篩選"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Очистить фильтр"}}
+      }
+    },
+    "markdown.reader.outline.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Close outline"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "アウトラインを閉じる"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Закрити структуру"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "개요 닫기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "关闭大纲"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "關閉大綱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Закрыть структуру"}}
+      }
+    },
+    "markdown.reader.outline.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No headings"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "見出しがありません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Немає заголовків"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "제목이 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "没有标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Нет заголовков"}}
+      }
+    },
+    "markdown.reader.outline.filter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Filter outline"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "アウトラインを絞り込む"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Фільтрувати структуру"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "개요 필터링"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "筛选大纲"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "篩選大綱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Фильтр структуры"}}
+      }
+    },
+    "markdown.reader.outline.noMatches": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No headings match"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "一致する見出しがありません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Немає відповідних заголовків"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "일치하는 제목이 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "没有匹配的标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有相符的標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Нет совпадающих заголовков"}}
+      }
+    },
+    "markdown.reader.outline.state.hidden": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Hidden"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "非表示"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Приховано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "숨김"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已隐藏"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已隱藏"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Скрыт"}}
+      }
+    },
+    "markdown.reader.outline.state.shown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Shown"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "表示中"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Показано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "표시"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已显示"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已顯示"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Показан"}}
+      }
+    },
+    "markdown.reader.outline.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%d min · %d words · %d lines"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%d 分 · %d 語 · %d 行"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%d хв · %d слів · %d рядків"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%d분 · %d단어 · %d줄"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%d 分钟 · %d 字 · %d 行"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%d 分鐘 · %d 字 · %d 行"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%d мин · %d слов · %d строк"}}
+      }
+    },
+    "markdown.reader.outline.taskCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%d of %d tasks complete"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%d/%d 件のタスクが完了"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%d із %d завдань виконано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%d/%d개 작업 완료"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%d/%d 项任务已完成"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%d/%d 項任務已完成"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Выполнено задач: %d из %d"}}
+      }
+    },
+    "markdown.reader.outline.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Outline"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "アウトライン"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Структура"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "개요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "大纲"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "大綱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Структура"}}
+      }
+    },
+    "markdown.reader.outline.toggle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Toggle outline (⇧⌘O)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "アウトラインを切り替え (⇧⌘O)"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перемкнути структуру (⇧⌘O)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "개요 전환 (⇧⌘O)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换大纲 (⇧⌘O)"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換大綱 (⇧⌘O)"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Переключить структуру (⇧⌘O)"}}
+      }
+    },
+    "markdown.reader.progress.format": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%d%% · %d min left"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%d%% · 残り%d分"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%d%% · ще %d хв"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%d%% · %d분 남음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%d%% · 还需 %d 分钟"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%d%% · 還需 %d 分鐘"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%d%% · осталось %d мин"}}
+      }
+    },
+    "markdown.reader.size.decrease": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Decrease text size"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "文字サイズを縮小"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Зменшити розмір тексту"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "텍스트 크기 줄이기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "缩小文字"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "縮小文字"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Уменьшить размер текста"}}
+      }
+    },
+    "markdown.reader.size.increase": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Increase text size"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "文字サイズを拡大"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Збільшити розмір тексту"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "텍스트 크기 키우기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "放大文字"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "放大文字"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Увеличить размер текста"}}
+      }
+    },
+    "markdown.reader.size.reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Reset text size"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "文字サイズをリセット"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Скинути розмір тексту"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "텍스트 크기 재설정"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "重置文字大小"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "重設文字大小"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сбросить размер текста"}}
+      }
+    },
+    "markdown.reader.source.toggle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Toggle source view"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ソース表示を切り替え"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перемкнути перегляд джерела"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "소스 보기 전환"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换源代码视图"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換原始碼檢視"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Переключить просмотр исходного текста"}}
+      }
+    },
+    "markdown.reader.theme.dark": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Dark"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ダーク"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Темна"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "어둡게"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "深色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "深色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Тёмная"}}
+      }
+    },
+    "markdown.reader.theme.light": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Light"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ライト"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Світла"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "밝게"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "浅色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "淺色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Светлая"}}
+      }
+    },
+    "markdown.reader.theme.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Theme and typeface"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "テーマと書体"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Тема та гарнітура"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "테마 및 서체"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "主题和字体"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "主題與字體"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Тема и гарнитура"}}
+      }
+    },
+    "markdown.reader.theme.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Theme"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "テーマ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Тема"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "테마"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "主题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "主題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Тема"}}
+      }
+    },
+    "markdown.reader.theme.system": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "System"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "システム"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Системна"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "시스템"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "系统"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "系統"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Системная"}}
+      }
+    },
+    "markdown.reader.typeface.mono": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Mono"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "等幅"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Моноширинний"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "고정폭"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "等宽"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "等寬"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Моноширинный"}}
+      }
+    },
+    "markdown.reader.typeface.sans": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Sans"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "サンセリフ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Без засічок"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "산세리프"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无衬线"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無襯線"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Без засечек"}}
+      }
+    },
+    "markdown.reader.typeface.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Typeface"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "書体"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Гарнітура"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "서체"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "字体"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "字體"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Гарнитура"}}
+      }
+    },
+    "markdown.reader.typeface.serif": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Serif"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "セリフ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Із засічками"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세리프"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "衬线"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "襯線"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "С засечками"}}
+      }
+    },
+    "markdown.reader.typeface.theme": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Theme default"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "テーマの既定"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "За темою"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "테마 기본값"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "主题默认"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "主題預設"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "По умолчанию темы"}}
+      }
+    },
     "markdown.rendererUnavailable.message": {
       "extractionState": "manual",
       "localizations": {
@@ -55050,6 +55458,18 @@
             "value": "Перемкнути інструменти розробника браузера"
           }
         }
+      }
+    },
+    "shortcut.toggleMarkdownOutline.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Toggle Markdown Outline"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "Markdownのアウトラインを切り替え"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перемкнути структуру Markdown"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "Markdown 개요 전환"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "切换 Markdown 大纲"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "切換 Markdown 大綱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Переключить структуру Markdown"}}
       }
     },
     "shortcut.togglePaneZoom.label": {

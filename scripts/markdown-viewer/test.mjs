@@ -104,6 +104,36 @@ try {
   assert.equal(await page.evaluate(()=>c11md.find('alpha beta').matches),2);assert.equal(await page.evaluate(()=>c11md.findNext().current),2);
   assert.equal(await page.evaluate(()=>c11md.findNext().current),1);assert.equal(await page.evaluate(()=>c11md.findPrevious().current),2);await page.evaluate(()=>c11md.findClose());
   scenario('literal find spans inline formatting, next/previous wrap, close clears marks');
+  const findUIDocument='# Find witness\n\nalpha beta alpha beta alpha\n\n'+Array.from({length:24},(_,i)=>`## Find section ${i}\n\nKeep this reader anchor stable while the find popover opens and closes.\n`).join('\n');
+  await settings({outlineOpen:false});await load(findUIDocument,'/synthetic/find-ui.md');
+  await page.evaluate(()=>c11md.scrollToHeading('Find section 12'));
+  const findWitness=()=>page.locator('#c11md-h-find-section-12').evaluate(x=>x.getBoundingClientRect().top);
+  const findAnchorBefore=await findWitness();
+  await page.evaluate(()=>c11md.openFind());
+  assert.equal(await page.locator('#findbar').evaluate(x=>x.classList.contains('open')),true);
+  await page.waitForFunction(()=>document.activeElement?.id==='findInput');
+  assert.equal(await page.evaluate(()=>document.activeElement?.id),'findInput','opening Find did not focus the page input');
+  assert.ok(Math.abs(findAnchorBefore-await findWitness())<1,'opening the empty find popover moved the reading anchor');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#findbar').evaluate(x=>x.classList.contains('open')),false);
+  assert.ok(Math.abs(findAnchorBefore-await findWitness())<1,'closing the empty find popover moved the reading anchor');
+  await page.evaluate(()=>c11md.openFind());
+  const findInput=page.locator('#findInput');await findInput.fill('alpha');
+  await page.waitForFunction(()=>c11md.visible().find?.matches===3);
+  assert.equal(await page.locator('#findCount').innerText(),'1 / 3');
+  assert.equal(await page.locator('#findTicks i').count(),3);
+  await page.locator('#findPrevious').click();assert.equal(await page.locator('#findCount').innerText(),'3 / 3');
+  await page.locator('#findNext').click();assert.equal(await page.locator('#findCount').innerText(),'1 / 3');
+  await findInput.fill('');
+  await page.evaluate(()=>c11md.openFind(false));
+  assert.equal(await findInput.inputValue(),'','a find render restored the previous query while the new input was debouncing');
+  await page.waitForFunction(()=>c11md.visible().find?.query==='');
+  const queriedAnchor=await findWitness();await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#findbar').evaluate(x=>x.classList.contains('open')),false,'Escape did not close the find popover');
+  assert.equal(await page.locator('mark.hit').count(),0,'Escape left page-owned find marks behind');
+  assert.equal(await page.evaluate(()=>c11md.visible().find),null);
+  assert.ok(Math.abs(queriedAnchor-await findWitness())<1,'closing the populated find popover moved the reading anchor');
+  scenario('page find opens with input focus, reports count, wraps next/previous, clears on Esc, and preserves anchors');
   // The selected and visible block must remain the same node when a prior block grows.
   const long='# Anchor\n\n'+Array.from({length:60},(_,i)=>`## Section ${i}\n\nParagraph ${i}: `+'An anchored reader keeps this line in the same place. '.repeat(6)+'\n').join('\n');
   for(const width of [560,820,1200]) {
@@ -126,6 +156,120 @@ try {
     await page.evaluate(()=>c11md.setSourceMode(false));const back=await page.locator('#c11md-h-section-30').evaluate(x=>x.getBoundingClientRect().top);assert.ok(Math.abs(top-back)<1,'source round-trip anchor');
   }
   scenario('reload preserves anchor, unchanged node/selection; theme/typeface/scale/outline/source preserve position at all widths');
+  const outlineSample='# Reader\n\n## Tasks\n\n- [x] Complete\n- [ ] Pending\n\n### Child task section\n\n- [ ] Later\n\n## Finish\n\nThe outline filter and jump keep this page open.\n';
+  await page.setViewportSize({width:560,height:820});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
+  await load(outlineSample,'/synthetic/outline-controls.md',1);
+  const outlineFilter=page.locator('#outlineFilter');
+  const localizedFilter='アウトラインを絞り込む';await settings({strings:{outlineFilter:localizedFilter}});
+  assert.equal(await outlineFilter.getAttribute('placeholder'),localizedFilter,'outline filter placeholder did not use its localized string');
+  assert.equal(await outlineFilter.getAttribute('aria-label'),localizedFilter,'outline filter accessible name did not use its localized string');
+  await outlineFilter.fill('Tasks');
+  assert.equal(await page.locator('#outlineList a[data-outline-slug="tasks"]').count(),1);
+  assert.equal(await page.locator('#outlineList a[data-outline-slug="tasks"] .tc').getAttribute('aria-label'),'1 of 3 tasks complete');
+  assert.equal(await page.locator('#outlineList a[data-outline-slug="reader"]').count(),1,'filter did not retain the matching heading parent');
+  await page.locator('#outlineList a[data-outline-slug="tasks"]').click();
+  await page.waitForFunction(()=>c11md.visible().heading?.slug==='tasks');
+  assert.equal(await page.locator('#outlinePanel').evaluate(x=>x.classList.contains('open')),true,'heading jump closed the outline');
+  await outlineFilter.fill('no such heading');assert.equal(await page.locator('#outlineList .empty').innerText(),'No headings match');
+  await page.keyboard.press('Escape');
+  assert.equal(await outlineFilter.inputValue(),'','Escape did not clear the outline filter first');
+  assert.equal(await page.locator('#outlinePanel').evaluate(x=>x.classList.contains('open')),true,'Escape closed the outline before clearing its filter');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#outlinePanel').evaluate(x=>x.classList.contains('open')),false,'Escape did not close the outline');
+  assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='outlineDismiss')?.type),'outlineDismiss','Escape did not request persistence of the closed choice');
+  scenario('page outline filters with ancestor/task context, jumps without closing, and Esc reports the explicit closed choice');
+
+  const n10Document='# Scrollspy\n\n'+Array.from({length:24},(_,i)=>`## Section ${i}\n\nA stable heading remains active when the outline list is filtered.\n`).join('\n');
+  await page.setViewportSize({width:1200,height:820});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
+  await load(n10Document,'/synthetic/n10-scrollspy.md',1);
+  await page.evaluate(()=>c11md.scrollToHeading('Section 12'));
+  await page.waitForFunction(()=>c11md.visible().heading?.slug==='section-12'&&
+    document.querySelector('#outlineList a.on')?.dataset.outlineSlug==='section-12');
+  // Let queued scroll and resize work settle before rebuilding the list.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('#outlineList a.on').getAttribute('data-outline-slug'),'section-12');
+  await page.locator('#outlineFilter').fill('Section 12');
+  assert.deepEqual(await page.locator('#outlineList a.on').evaluateAll(links=>links.map(link=>link.dataset.outlineSlug)),['section-12'],'filter repaint dropped the settled active scrollspy mark');
+  scenario('N10: settled Section 12 scrollspy mark survives outline filtering');
+
+  await page.setViewportSize({width:560,height:820});await settings({theme:'light',typeface:'serif',scale:3,outlineOpen:true});
+  await load(outlineSample,'/synthetic/outline-scale-300.md',1);
+  const largeOutlineMetrics=await page.locator('.ohead').evaluate(header=>{
+    const input=header.querySelector('input'),headerBox=header.getBoundingClientRect(),inputBox=input.getBoundingClientRect();
+    return {headerHeight:headerBox.height,inputHeight:inputBox.height,inputFontSize:parseFloat(getComputedStyle(input).fontSize),inputScrollHeight:input.scrollHeight};
+  });
+  assert.ok(largeOutlineMetrics.headerHeight>=114,`300% outline header clipped its controls: ${largeOutlineMetrics.headerHeight}px`);
+  assert.ok(largeOutlineMetrics.inputHeight>=largeOutlineMetrics.inputFontSize*2,`300% outline filter glyphs may clip: ${JSON.stringify(largeOutlineMetrics)}`);
+  assert.ok(largeOutlineMetrics.inputHeight>=largeOutlineMetrics.inputScrollHeight,`300% outline filter scroll height exceeds its box: ${JSON.stringify(largeOutlineMetrics)}`);
+  scenario('300% outline filter scales its header and input so the glyphs fit');
+
+  await page.setViewportSize({width:1400,height:900});
+  await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
+  await load(outlineSample,'/synthetic/source-docked-outline.md',1);
+  await page.evaluate(()=>c11md.setSourceMode(true));
+  assert.equal(await page.evaluate(()=>c11md.visible().outline.docked),true,'source outline fixture did not dock');
+  assert.equal(await page.evaluate(()=>c11md.visible().outline.open),true,'source outline fixture did not open');
+  const sourceTextBox=await page.locator('#source .sl:first-child .t').boundingBox();
+  assert.ok(sourceTextBox,'missing first source text row');
+  for(const selector of ['.n','.t']) {
+    const box=await page.locator(`#source .sl:first-child ${selector}`).boundingBox();
+    assert.ok(box,`missing source row ${selector}`);
+    const point={x:box.x+(selector==='.n'?box.width/2:1),y:box.y+box.height/2};
+    const result=await page.evaluate(({x,y})=>{
+      const hit=document.elementFromPoint(x,y);
+      return {sourceRow:!!hit?.closest('#source .sl'),insideOutline:!!hit&&document.querySelector('#outlinePanel').contains(hit)};
+    },point);
+    assert.equal(result.sourceRow,true,`docked outline covered source ${selector==='.n'?'line number':'text start'}`);
+    assert.equal(result.insideOutline,false,`source ${selector} probe hit the outline`);
+  }
+  await settings({outlineOpen:false});
+  const sourceTextAfterClose=await page.locator('#source .sl:first-child .t').boundingBox();
+  assert.ok(sourceTextAfterClose&&Math.abs(sourceTextBox.x-sourceTextAfterClose.x)<1,'closing a docked outline shifted source lines');
+  scenario('docked outline reserves its gutter over source line numbers and text');
+
+  await load(long,'/synthetic/outline-threshold.md',1);await settings({outlineOpen:'auto'});
+  let low=500,high=1600;
+  const resizeAndReadDocked=async width=>{
+    await page.setViewportSize({width,height:820});
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    return page.evaluate(()=>c11md.visible().outline.docked);
+  };
+  while(low+1<high) {
+    const middle=Math.floor((low+high)/2);
+    if(await resizeAndReadDocked(middle))high=middle;else low=middle;
+  }
+  assert.equal(await resizeAndReadDocked(low),false,'outline docked below its effective-width threshold');
+  assert.equal(await resizeAndReadDocked(high),true,'outline did not dock at the first width that fits');
+  const stateCountBeforeOutlineJump=await page.evaluate(()=>testMessages.filter(x=>x.type==='state').length);
+  await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
+  await page.waitForFunction(count=>testMessages.filter(x=>x.type==='state').length>count,stateCountBeforeOutlineJump);
+  const outlineTransport=await page.evaluate(()=>({
+    keys:Object.keys(c11md.visible().outline).sort(),
+    pageHeadings:c11md.outline().length,
+    stateMessagesKeepTreePageLocal:testMessages.filter(x=>x.type==='state').every(x=>x.state?.outline&&!Object.hasOwn(x.state.outline,'tree'))
+  }));
+  assert.deepEqual(outlineTransport.keys,['choice','docked','open']);
+  assert.ok(outlineTransport.pageHeadings>0,'the page no longer owns the outline tree');
+  assert.equal(outlineTransport.stateMessagesKeepTreePageLocal,true,'a coalesced state message transferred the outline tree');
+  scenario('page keeps its heading tree local and bridge state sends only open, docked, and choice');
+  const outlineAnchor=()=>page.locator('#c11md-h-section-30').evaluate(x=>{const r=document.createRange();r.selectNodeContents(x.lastChild);const b=r.getBoundingClientRect();return {x:b.left,y:b.top};});
+  const assertOutlineAnchor=(before,after,phase)=>{
+    assert.ok(Math.abs(before.x-after.x)<1,`${phase} moved the text anchor horizontally ${before.x} -> ${after.x}`);
+    assert.ok(Math.abs(before.y-after.y)<1,`${phase} moved the text anchor vertically ${before.y} -> ${after.y}`);
+  };
+  for(const mode of [{name:'overlay',width:low},{name:'docked',width:high}]) {
+    await resizeAndReadDocked(mode.width);await settings({outlineOpen:false});
+    const before=await outlineAnchor();
+    await settings({outlineOpen:true});const opened=await outlineAnchor();
+    assertOutlineAnchor(before,opened,`${mode.name} outline open`);
+    assert.equal(await page.evaluate(()=>c11md.visible().outline.docked),mode.name==='docked');
+    if(mode.name==='docked')assert.equal(await page.locator('#layout').evaluate(x=>parseFloat(getComputedStyle(x).paddingLeft)>0),true,'closed dock gutter was not reserved');
+    await settings({outlineOpen:false});const closed=await outlineAnchor();
+    assertOutlineAnchor(before,closed,`${mode.name} outline close`);
+  }
+  scenario('outline flips between overlay and docked at the exact adjacent-width threshold; open and close preserve the reading anchor in both modes');
+  await page.setViewportSize({width:1200,height:820});await settings({outlineOpen:'auto'});
+
   const evictionMarkdown='# Eviction restore\n\n'+Array.from({length:80},(_,i)=>`Eviction witness ${i}: ${'A visible source line keeps its exact viewport position. '.repeat(2)}`).join('\n\n')+'\n';
   await settings({theme:'light',typeface:'serif',scale:1});await load(evictionMarkdown,'/synthetic/eviction.md',1);
   const captured=await page.evaluate(()=>{
@@ -343,7 +487,7 @@ try {
   const url=page.url();await page.getByRole('link',{name:'remote',exact:true}).click();assert.equal(page.url(),url);
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').kind),'external');
   await page.getByRole('link',{name:'local',exact:true}).click();assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').kind),'local');
-  await page.locator('a[href="#target"]').click();assert.equal(await page.locator('#back').isVisible(),true);await page.locator('#back').click();
+  await page.locator('#article a[href="#target"]').click();assert.equal(await page.locator('#back').isVisible(),true);await page.locator('#back').click();
   scenario('link interception/native classification and in-document return pill');
   await load('# Article\n\n## Source\n\n## Target\n\n## Target\n');
   for(const name of ['article','source','target','target-1'])assert.equal(await page.evaluate(name=>c11md.scrollToHeading(name).ok,name),true);

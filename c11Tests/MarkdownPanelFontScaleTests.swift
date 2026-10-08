@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 #if canImport(c11_DEV)
@@ -98,5 +99,130 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
             XCTAssertEqual(panel.fontScale, 1.0)
         }
         XCTAssertNil(panel.renderer, "hidden model never creates a web view")
+    }
+}
+
+@MainActor
+private final class StubMarkdownPanelReaderRenderer: MarkdownPanelReaderCommanding {
+    var readerOutlineIsOpen = false
+    private(set) var synchronizeCount = 0
+    private(set) var commands: [String] = []
+    private(set) var findFocusRequests: [Bool] = []
+
+    func synchronize() { synchronizeCount += 1 }
+    func call(_ method: String) { commands.append(method) }
+    func openFind(focusAllowed: Bool) {
+        findFocusRequests.append(focusAllowed)
+        commands.append("openFind")
+    }
+}
+
+@MainActor
+final class MarkdownReaderInteractionTests: XCTestCase {
+    private let outlineDefaultsKey = MarkdownPresentation.Field.outlineOpen.defaultsKey
+    private let outlineShortcut = KeyboardShortcutSettings.Action.toggleMarkdownOutline
+    private var savedOutlineChoice: Any?
+    private var savedOutlineShortcut: Any?
+
+    override func setUp() async throws {
+        savedOutlineChoice = UserDefaults.standard.object(forKey: outlineDefaultsKey)
+        savedOutlineShortcut = UserDefaults.standard.object(forKey: outlineShortcut.defaultsKey)
+        UserDefaults.standard.removeObject(forKey: outlineDefaultsKey)
+        KeyboardShortcutSettings.resetShortcut(for: outlineShortcut)
+    }
+
+    override func tearDown() async throws {
+        restore(savedOutlineChoice, key: outlineDefaultsKey)
+        restore(savedOutlineShortcut, key: outlineShortcut.defaultsKey)
+    }
+
+    func testTogglePersistsExplicitChoiceAndSynchronizesStubRenderer() {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let renderer = StubMarkdownPanelReaderRenderer()
+        renderer.readerOutlineIsOpen = true
+        panel.readerCommandRendererForTesting = renderer
+
+        panel.toggleOutline()
+        XCTAssertEqual(panel.outlineOpen, false)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: outlineDefaultsKey) as? Bool, false)
+        XCTAssertEqual(renderer.synchronizeCount, 1)
+
+        panel.toggleOutline()
+        XCTAssertEqual(panel.outlineOpen, true)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: outlineDefaultsKey) as? Bool, true)
+        XCTAssertEqual(renderer.synchronizeCount, 2)
+    }
+
+    func testNativeEscapeFallbackRunsOnlyAfterPageLeavesEscapeUnhandled() {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        panel.applyRestoredPresentation(SessionMarkdownPanelSnapshot(outlineOpen: true))
+        let renderer = StubMarkdownPanelReaderRenderer()
+        renderer.readerOutlineIsOpen = true
+        panel.readerCommandRendererForTesting = renderer
+
+        XCTAssertFalse(panel.dismissReaderOverlay(pageConsumedEscape: true))
+        XCTAssertEqual(panel.outlineOpen, true)
+        XCTAssertEqual(renderer.synchronizeCount, 0)
+
+        XCTAssertTrue(panel.dismissReaderOverlay(pageConsumedEscape: false))
+        XCTAssertEqual(panel.outlineOpen, false)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: outlineDefaultsKey) as? Bool, false)
+        XCTAssertEqual(renderer.synchronizeCount, 1)
+    }
+
+    func testFindRequestKeepsWebViewFocusSubjectToPanelPolicy() {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let renderer = StubMarkdownPanelReaderRenderer()
+        panel.readerCommandRendererForTesting = renderer
+
+        panel.requestFind()
+
+        XCTAssertEqual(renderer.findFocusRequests, [false])
+        XCTAssertEqual(renderer.commands, ["openFind"])
+    }
+
+    func testOutlineShortcutRoutesThroughCustomizedRegistryToPanelAndStubRenderer() throws {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let renderer = StubMarkdownPanelReaderRenderer()
+        panel.readerCommandRendererForTesting = renderer
+        let custom = StoredShortcut(key: "j", command: true, shift: false, option: false, control: false)
+        KeyboardShortcutSettings.setShortcut(custom, for: outlineShortcut)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "j",
+            charactersIgnoringModifiers: "j",
+            isARepeat: false,
+            keyCode: 38
+        ))
+        var routedShortcut: StoredShortcut?
+        let handled = MarkdownReaderShortcutRouter.routeOutlineToggle(
+            event: event,
+            panel: panel
+        ) { event, shortcut in
+            routedShortcut = shortcut
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                .subtracting([.numericPad, .function, .capsLock])
+            return flags == shortcut.modifierFlags
+                && event.charactersIgnoringModifiers?.lowercased() == shortcut.key.lowercased()
+        }
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(routedShortcut, custom)
+        XCTAssertEqual(panel.outlineOpen, true)
+        XCTAssertEqual(renderer.synchronizeCount, 1)
+    }
+
+    private func restore(_ value: Any?, key: String) {
+        if let value { UserDefaults.standard.set(value, forKey: key) }
+        else { UserDefaults.standard.removeObject(forKey: key) }
     }
 }

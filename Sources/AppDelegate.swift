@@ -11937,6 +11937,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return false
         }
 
+        // Markdown outline uses the customizable shortcut registry. Find stays
+        // on the existing Find menu route through WorkspaceManager.startSearch.
+        if MarkdownReaderShortcutRouter.routeOutlineToggle(
+            event: event,
+            panel: workspaceManager?.focusedMarkdownPanel,
+            matches: { self.matchShortcut(event: $0, shortcut: $1) }
+        ) { return true }
+
         // Chrome-like omnibar navigation while holding Cmd+N / Ctrl+N / Cmd+P / Ctrl+P.
         if let delta = commandOmnibarSelectionDelta(flags: flags, chars: chars) {
             dispatchBrowserOmnibarSelectionMove(delta: delta)

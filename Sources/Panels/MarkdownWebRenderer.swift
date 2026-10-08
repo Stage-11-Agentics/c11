@@ -167,13 +167,72 @@ final class MarkdownWKWebView: WKWebView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool { false }
 }
 
+struct MarkdownReaderReadout: Equatable {
+    var headingPath: [String] = []
+    var progress = 0.0
+    var minutesLeft = 0
+    var mode = "read"
+}
+
+struct MarkdownReaderFindSnapshot: Equatable {
+    let isOpen: Bool
+    let query: String
+    let matches: Int
+    let current: Int
+}
+
+struct MarkdownReaderThemeChoice: Equatable, Identifiable {
+    let id: String
+    let label: String
+    let scheme: String
+    let defaultTypeface: String
+}
+
+struct MarkdownReaderTypefaceChoice: Equatable, Identifiable {
+    let id: String
+    let label: String
+    let family: String
+    let measure: Double?
+    let leading: Double?
+}
+
+struct MarkdownReaderOutlineSnapshot: Equatable {
+    var revision = ""
+    var isOpen = false
+    var isDocked = false
+    var choice: Bool? = nil
+}
+
+@MainActor
+final class MarkdownReaderReadoutState: ObservableObject {
+    @Published private(set) var value = MarkdownReaderReadout()
+    func update(_ value: MarkdownReaderReadout) { if self.value != value { self.value = value } }
+}
+
+@MainActor
+final class MarkdownReaderFindState: ObservableObject {
+    @Published private(set) var value: MarkdownReaderFindSnapshot?
+    func update(_ value: MarkdownReaderFindSnapshot?) { if self.value != value { self.value = value } }
+}
+
+@MainActor
+final class MarkdownReaderOutlineState: ObservableObject {
+    @Published private(set) var value = MarkdownReaderOutlineSnapshot()
+    func update(_ value: MarkdownReaderOutlineSnapshot) { if self.value != value { self.value = value } }
+}
+
 @MainActor
 final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     /// Shared process resources, separate controllers/handlers per document.
     private static let processPool = WKProcessPool()
     private static let dataStore = WKWebsiteDataStore.nonPersistent()
     let webView: MarkdownWKWebView
-    @Published private(set) var state: [String: Any] = [:]
+    private(set) var state: [String: Any] = [:]
+    @Published private(set) var themeChoices: [MarkdownReaderThemeChoice] = []
+    @Published private(set) var typefaceChoices: [MarkdownReaderTypefaceChoice] = []
+    let readerReadout = MarkdownReaderReadoutState()
+    let readerFind = MarkdownReaderFindState()
+    let readerOutline = MarkdownReaderOutlineState()
     @Published private(set) var failure: Bool = false {
         didSet { if failure { MarkdownRendererCache.shared.reconsider() } }
     }
@@ -304,8 +363,12 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                     else { self.finishRender(revision) }
                 }
             }
-            if position.findQuery.isEmpty { scroll() }
-            else { self.call("find", arguments: [position.findQuery]) { _ in scroll() } }
+            let restoreFindPopover = {
+                guard position.findOpen else { scroll(); return }
+                self.call("openFind", arguments: [self.webView.allowsPanelFocus]) { _ in scroll() }
+            }
+            if position.findQuery.isEmpty { restoreFindPopover() }
+            else { self.call("find", arguments: [position.findQuery]) { _ in restoreFindPopover() } }
         }
     }
 
@@ -342,10 +405,11 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             guard (body["version"] as? Int) == 1 else { failure = true; return }
             ready = true
             failure = false
+            loadRegistryChoices()
             synchronize()
             MarkdownRendererCache.shared.reconsider()
         case "state":
-            if let value = body["state"] as? [String: Any] { state = value }
+            if let value = body["state"] as? [String: Any] { updateReaderState(value) }
         case "error":
             if body["code"] as? String == "render_failed" { failure = true }
         case "rendered":
@@ -385,7 +449,70 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             guard let text = body["text"] as? String, text.utf8.count <= 1024 * 1024 else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        case "outlineDismiss":
+            panel?.setOutlineOpen(false)
+        case "escapeUnhandled":
+            _ = panel?.dismissReaderOverlay(pageConsumedEscape: false)
         default: break
+        }
+    }
+
+    private func updateReaderState(_ value: [String: Any]) {
+        state = value
+        readerReadout.update(MarkdownReaderReadout(
+            headingPath: value["heading_path"] as? [String] ?? [],
+            progress: min(max(value["progress"] as? Double ?? 0, 0), 1),
+            minutesLeft: max(0, value["minutes_left"] as? Int ?? 0),
+            mode: value["mode"] as? String ?? "read"
+        ))
+
+        let find = value["find"] as? [String: Any]
+        let query = find?["query"] as? String ?? ""
+        let findOpen = find?["open"] as? Bool ?? !query.isEmpty
+        readerFind.update((findOpen || !query.isEmpty) ? MarkdownReaderFindSnapshot(
+            isOpen: findOpen,
+            query: query,
+            matches: max(0, find?["matches"] as? Int ?? 0),
+            current: max(0, find?["current"] as? Int ?? 0)
+        ) : nil)
+
+        let outline = value["outline"] as? [String: Any] ?? [:]
+        let revision = value["revision"].map { String(describing: $0) } ?? ""
+        readerOutline.update(MarkdownReaderOutlineSnapshot(
+            revision: revision,
+            isOpen: outline["open"] as? Bool ?? false,
+            isDocked: outline["docked"] as? Bool ?? false,
+            choice: outline["choice"] as? Bool
+        ))
+    }
+
+    private func loadRegistryChoices() {
+        call("themes") { [weak self] result in
+            guard case .success(let value) = result,
+                  let entries = value as? [[String: Any]] else { return }
+            self?.themeChoices = entries.compactMap { entry in
+                guard let id = entry["id"] as? String, let label = entry["label"] as? String else { return nil }
+                return MarkdownReaderThemeChoice(
+                    id: id,
+                    label: label,
+                    scheme: entry["scheme"] as? String ?? "system",
+                    defaultTypeface: entry["defaultTypeface"] as? String ?? "serif"
+                )
+            }
+        }
+        call("typefaces") { [weak self] result in
+            guard case .success(let value) = result,
+                  let entries = value as? [[String: Any]] else { return }
+            self?.typefaceChoices = entries.compactMap { entry in
+                guard let id = entry["id"] as? String, let label = entry["label"] as? String else { return nil }
+                return MarkdownReaderTypefaceChoice(
+                    id: id,
+                    label: label,
+                    family: entry["family"] as? String ?? "",
+                    measure: entry["measure"] as? Double,
+                    leading: entry["leading"] as? Double
+                )
+            }
         }
     }
 
@@ -453,6 +580,31 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         "notes": String(localized: "markdown.reader.notes", defaultValue: "Notes"),
         "back": String(localized: "markdown.reader.back", defaultValue: "Back"),
         "source": String(localized: "markdown.reader.source", defaultValue: "Source"),
-        "frontmatter": String(localized: "markdown.reader.frontmatter", defaultValue: "Frontmatter")
+        "frontmatter": String(localized: "markdown.reader.frontmatter", defaultValue: "Frontmatter"),
+        "outlineTitle": String(localized: "markdown.reader.outline.title", defaultValue: "Outline"),
+        "outlineFilter": String(localized: "markdown.reader.outline.filter", defaultValue: "Filter outline"),
+        "outlineEmpty": String(localized: "markdown.reader.outline.empty", defaultValue: "No headings"),
+        "outlineNoMatches": String(localized: "markdown.reader.outline.noMatches", defaultValue: "No headings match"),
+        "outlineClearFilter": String(localized: "markdown.reader.outline.clearFilter", defaultValue: "Clear filter"),
+        "outlineSummary": String(localized: "markdown.reader.outline.summary", defaultValue: "%d min · %d words · %d lines"),
+        "outlineTaskCount": String(localized: "markdown.reader.outline.taskCount", defaultValue: "%d of %d tasks complete"),
+        "findOpen": String(localized: "markdown.reader.find.open", defaultValue: "Find (⌘F)"),
+        "findPlaceholder": String(localized: "markdown.reader.find.placeholder", defaultValue: "Find in document"),
+        "findPrevious": String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"),
+        "findNext": String(localized: "markdown.reader.find.next", defaultValue: "Next match"),
+        "findClose": String(localized: "markdown.reader.find.close", defaultValue: "Close find"),
+        "findCount": String(localized: "markdown.reader.find.count", defaultValue: "%d / %d")
     ] }
+}
+
+extension MarkdownWebRenderer: MarkdownPanelReaderCommanding {
+    var readerOutlineIsOpen: Bool { readerOutline.value.isOpen }
+
+    func call(_ method: String) {
+        call(method, arguments: [])
+    }
+
+    func openFind(focusAllowed: Bool) {
+        call("openFind", arguments: [focusAllowed])
+    }
 }

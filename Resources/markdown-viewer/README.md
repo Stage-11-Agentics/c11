@@ -2,8 +2,8 @@
 
 `index.html` is the complete offline page hosted by the native markdown panel.
 The host API, message shapes, source-line units and security contract are in
-[BRIDGE.md](BRIDGE.md). Native owns toolbar/outline controls, persisted settings,
-file access and navigation. The page owns content and position.
+[BRIDGE.md](BRIDGE.md). Native owns the toolbar toggle, persisted settings, file
+access and navigation. The page renders and owns the outline, content and position.
 
 `themes.js` carries the round-4 prototype's light/dark token sets and the three
 metric-tuned typefaces. `viewer.css` ports its content rules. `viewer.js` parses
@@ -37,7 +37,10 @@ npm --prefix scripts/markdown-viewer test -- --screenshots
 The harness loads all seven repository fixtures/documents at 560/820/1200 px in
 both themes. It exercises content, line/outline/progress queries, find, source,
 unchanged DOM and selection, async diagram and settings anchoring, hostile input,
-link interception, and zero network/console errors. `--screenshots` also renders
+link interception, and zero network/console errors. R3 also covers the adjacent-
+width dock threshold, filtered ancestor/task rows, click-to-jump while open,
+Escape dismissal, and anchor stability in both docked and overlay modes.
+`--screenshots` also renders
 the committed reader prototype offline and produces four side-by-side comparisons.
 Results go under the OS temporary directory (`c11-md-358-evidence`), or
 `C11_MD_EVIDENCE`. An existing Chromium executable can be selected with

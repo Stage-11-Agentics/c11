@@ -376,18 +376,6 @@ enum MarkdownNavigationPolicy {
     }
 
     private static func documentRoot(for filePath: String) -> URL? {
-        let manager = FileManager.default
-        let source = URL(fileURLWithPath: filePath).resolvingSymlinksInPath().standardizedFileURL
-        var directory = source.deletingLastPathComponent()
-        let documentDirectory = directory
-        while true {
-            if manager.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
-                return directory
-            }
-            let parent = directory.deletingLastPathComponent()
-            guard parent.path != directory.path else { break }
-            directory = parent
-        }
-        return documentDirectory
+        MarkdownDocumentRoot.corpusRoot(for: URL(fileURLWithPath: filePath))
     }
 }

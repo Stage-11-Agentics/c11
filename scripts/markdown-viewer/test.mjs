@@ -179,7 +179,8 @@ try {
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='outlineDismiss')?.type),'outlineDismiss','Escape did not request persistence of the closed choice');
   scenario('page outline filters with ancestor/task context, jumps without closing, and Esc reports the explicit closed choice');
 
-  const corpusDoc='/synthetic/reader.md', corpusSource='# Reader\n\n## Setup\n\nA local reference and ticket C11-123; C11-999 has no board match.\n';
+  const corpusDoc='/synthetic/reader.md', corpusSource='# Reader\n\n## Setup\n\nA local reference and ticket C11-123; C11-999 has no board match.\n\n'+
+    Array.from({length:20},(_,index)=>`Corpus tail ${index} keeps section navigation scrollable.\n\n`).join('');
   await page.setViewportSize({width:900,height:720});await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:true});
   await load(corpusSource,corpusDoc,1);
   const corpusFixture={

@@ -302,24 +302,27 @@ final class MailboxDispatcher {
         }
 
         let textRecorded = EventEmitter.shared.keepText
+        let hasSenderPrivacyMarker = envelope.ext?["c11_activity_text_recorded"] != nil
         if !textRecorded {
             envelope = envelope.suppressActivityHistoryText()
-            // Preserve the opt-out on local delivery and quarantine files. No
-            // tenant files are changed; this is c11's own processing envelope.
+        } else if hasSenderPrivacyMarker {
+            // The reserved marker records c11's acceptance decision, not a
+            // sender's preference. Preserve every other extension field.
+            var object = envelope.raw
+            var extensionFields = envelope.ext ?? [:]
+            extensionFields.removeValue(forKey: "c11_activity_text_recorded")
+            object["ext"] = extensionFields
             do {
-                // The processing file already exists. MailboxIO.atomicWrite is
-                // create-only; Foundation's atomic data write replaces it.
-                try replaceProcessingEnvelope(envelope.encode(), processingURL)
+                envelope = try MailboxEnvelope.validate(data: JSONSerialization.data(withJSONObject: object))
             } catch {
-                // Acceptance requires a durable privacy decision. Retain the
-                // original body for manual recovery, without delivery or an
-                // automatic retry. Messages hides all processing bodies.
-                log.append(.rejected(
-                    id: envelope.id,
-                    reason: "activity history privacy marker could not be saved; undelivered envelope retained in _processing for manual recovery"
-                ))
+                holdForPrivacyRecovery(id: envelope.id)
                 return
             }
+        }
+        // Preserve c11's policy on delivery and quarantine files. No tenant
+        // files are changed; this is c11's own processing envelope.
+        if !textRecorded || hasSenderPrivacyMarker {
+            guard persistPrivacyDecision(envelope, at: processingURL) else { return }
         }
 
         log.append(
@@ -331,7 +334,7 @@ final class MailboxDispatcher {
             )
         )
         // C11-163: mailbox envelope accepted → events stream.
-        EventEmitter.shared.emitMailboxAccepted(
+        let acceptedTextRecorded = EventEmitter.shared.emitMailboxAccepted(
             workspace: workspaceId,
             id: envelope.id,
             from: envelope.from,
@@ -344,6 +347,12 @@ final class MailboxDispatcher {
             urgent: envelope.urgent,
             textRecorded: textRecorded
         )
+        // The operator may turn text off after the initial snapshot. The
+        // emitter's decision is authoritative and must outlive its event.
+        if textRecorded && !acceptedTextRecorded {
+            envelope = envelope.suppressActivityHistoryText()
+            guard persistPrivacyDecision(envelope, at: processingURL) else { return }
+        }
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
         let recipients = resolveRecipients(envelope: envelope)
@@ -383,6 +392,28 @@ final class MailboxDispatcher {
         // Step 6: cleanup.
         try? FileManager.default.removeItem(at: processingURL)
         log.append(.cleaned(id: envelope.id))
+    }
+
+    private func persistPrivacyDecision(_ envelope: MailboxEnvelope, at processingURL: URL) -> Bool {
+        do {
+            // The processing file already exists. MailboxIO.atomicWrite is
+            // create-only; Foundation's atomic data write replaces it.
+            try replaceProcessingEnvelope(envelope.encode(), processingURL)
+            return true
+        } catch {
+            holdForPrivacyRecovery(id: envelope.id)
+            return false
+        }
+    }
+
+    private func holdForPrivacyRecovery(id: String) {
+        // Retain the original body for manual recovery, without delivery or
+        // an automatic retry. Messages hides all processing bodies. Error
+        // descriptions may contain text, so report only fixed metadata here.
+        log.append(.rejected(
+            id: id,
+            reason: "activity history privacy marker could not be saved; undelivered envelope retained in _processing for manual recovery"
+        ))
     }
 
     // MARK: - Recipient resolution

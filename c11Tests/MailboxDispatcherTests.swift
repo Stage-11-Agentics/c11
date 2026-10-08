@@ -230,6 +230,71 @@ final class MailboxDispatcherTests: XCTestCase {
         }
     }
 
+    func testLateTextOptOutPersistsBeforeDeliveryOrHoldsIfSecondWriteFails() throws {
+        let instance = "privacy-late-policy"
+        let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)
+        EventEmitter.shared.startForTesting(log: eventLog, instance: instance)
+        defer { EventEmitter.shared.resetForTesting() }
+        let recipient = seedSurface(name: "privacy-recipient")
+        let resolver = MailboxPanelResolver(workspaceId: workspaceId, livePanels: { [recipient] })
+        var envelopes: [MailboxEnvelope] = []
+        for secondWriteFails in [false, true] {
+            EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: true))
+            let envelope = try MailboxEnvelope.build(
+                from: "sender", to: "privacy-recipient", body: "PRIVATE_LATE_POLICY_BODY",
+                ext: ["c11_activity_text_recorded": false]
+            )
+            var writes = 0
+            let dispatcher = MailboxDispatcher(
+                workspaceId: workspaceId, stateURL: tempState, resolver: resolver,
+                replaceProcessingEnvelope: { data, url in
+                    writes += 1
+                    if writes == 2 && secondWriteFails { throw CocoaError(.fileWriteOutOfSpace) }
+                    try data.write(to: url, options: .atomic)
+                    if writes == 1 {
+                        EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: false))
+                    }
+                }
+            )
+            self.dispatcher = dispatcher
+            try writeEnvelope(envelope)
+            let filename = MailboxLayout.envelopeFilename(id: envelope.id)
+            dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+                .appendingPathComponent(filename))
+            dispatcher.log.flush()
+            eventLog.flush()
+            XCTAssertEqual(writes, 2)
+            let processing = MailboxLayout.processingURL(state: tempState, workspaceId: workspaceId)
+                .appendingPathComponent(filename)
+            XCTAssertEqual(FileManager.default.fileExists(atPath: processing.path), secondWriteFails)
+            if secondWriteFails {
+                XCTAssertNil(try? readInboxFile(panel: recipient, id: envelope.id))
+                let held = try MailboxEnvelope.validate(data: Data(contentsOf: processing))
+                XCTAssertEqual(held.body, envelope.body)
+            } else {
+                let delivery = try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: envelope.id))
+                XCTAssertEqual(delivery.body, envelope.body)
+                XCTAssertEqual(delivery.ext?["c11_activity_text_recorded"] as? Bool, false)
+            }
+            let accepted = try XCTUnwrap(MessagesPageSource.load(stateURL: tempState).events.first {
+                $0.type == "mailbox.accepted" && $0.payload["id"] as? String == envelope.id
+            })
+            XCTAssertEqual(accepted.payload["text_recorded"] as? Bool, false)
+            XCTAssertNil(accepted.payload["body"])
+            envelopes.append(envelope)
+        }
+        try FileManager.default.removeItem(at: eventLog.url)
+        EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: true))
+        let source = MessagesPageSource.load(stateURL: tempState)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        for envelope in envelopes {
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+            XCTAssertFalse(message.textRecorded)
+            XCTAssertTrue(message.body.isEmpty)
+            XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
+        }
+    }
+
     func testTextOptOutPersistenceFailureHoldsUnresolvedEnvelopeWithoutQuarantine() throws {
         try assertTextOptOutPersistenceFailure(recipientExists: false)
     }

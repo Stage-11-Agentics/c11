@@ -614,7 +614,8 @@ final class MarkdownPanel: Panel, ObservableObject {
         workspaceId: UUID,
         filePath: String? = nil,
         fragment: String? = nil,
-        initialNavigationOrigin: MarkdownNavigationOrigin = .agentCLI
+        initialNavigationOrigin: MarkdownNavigationOrigin = .agentCLI,
+        initialNavigationScopeRootPath: String? = nil
     ) {
         self.id = id ?? UUID()
         self.createdAt = createdAt
@@ -625,7 +626,8 @@ final class MarkdownPanel: Panel, ObservableObject {
         self.presentation = MarkdownPresentation.lastUsed()
         navigationHistory.reset(
             to: filePath.map { MarkdownNavigationTarget(fileURL: URL(fileURLWithPath: $0), fragment: fragment) },
-            origin: initialNavigationOrigin
+            origin: initialNavigationOrigin,
+            scopeRootPath: initialNavigationScopeRootPath
         )
 
         if filePath != nil {

@@ -308,24 +308,42 @@ final class MarkdownWebRendererTests: XCTestCase {
         let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-document-link-origin-\(UUID().uuidString)")
         let repository = root.appendingPathComponent("repo")
-        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent("docs"), withIntermediateDirectories: true)
+        let outsideDirectory = root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
         defer {
             workspace.teardownAllPanels()
             try? FileManager.default.removeItem(at: root)
         }
-        let target = repository.appendingPathComponent("target.md")
+        let target = repository.appendingPathComponent("docs/target.md")
+        let outside = outsideDirectory.appendingPathComponent("x.md")
         try "# Target\n\n## Details\n".write(to: target, atomically: true, encoding: .utf8)
+        try "# Outside\n".write(to: outside, atomically: true, encoding: .utf8)
         let openedPanel = try XCTUnwrap(
             workspace.newMarkdownPanel(
                 inPane: pane,
                 filePath: target.path,
                 fragment: "details",
                 focus: false,
-                initialNavigationOrigin: .documentLink
+                initialNavigationOrigin: .documentLink,
+                initialNavigationScopeRootPath: repository.resolvingSymlinksInPath().standardizedFileURL.path
             )
         )
         XCTAssertEqual(openedPanel.navigationHistory.current?.origin, .documentLink)
+        XCTAssertEqual(
+            openedPanel.navigationHistory.current?.scopeRootPath,
+            repository.resolvingSymlinksInPath().standardizedFileURL.path
+        )
+
+        let away = await openedPanel.navigate(to: outside, fragment: nil, origin: .agentCLI)
+        XCTAssertEqual(away, .navigated)
+        let back = await openedPanel.navigateBack()
+        XCTAssertEqual(back, .navigated, "Back must replay the document-link root under its captured repository scope")
+        XCTAssertEqual(
+            openedPanel.filePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path },
+            target.resolvingSymlinksInPath().path
+        )
     }
 
     func testScrollToHeadingPrefersExactAndReportsAmbiguousBroaderMatches() async throws {
@@ -1736,5 +1754,39 @@ extension MarkdownWebRendererTests {
             MarkdownBreadcrumbText.compact(filePath: "/repo/docs/reader.md", displayTitle: "reader.md", headingPath: [], compact: true),
             "reader.md"
         )
+    }
+}
+
+extension MarkdownWebRendererTests {
+    func testReviewProbeDocumentLinkRootSurvivesBackAfterAgentLeavesScope() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rv362-n13-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        let outsideDir = root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = repository.appendingPathComponent("a.md")
+        let outside = outsideDir.appendingPathComponent("x.md")
+        try "# A\n".write(to: source, atomically: true, encoding: .utf8)
+        try "# X\n".write(to: outside, atomically: true, encoding: .utf8)
+        let resolvedSource = source.resolvingSymlinksInPath().path
+        let scopeRootPath = repository.resolvingSymlinksInPath().standardizedFileURL.path
+        for origin in [MarkdownNavigationOrigin.agentCLI, .documentLink] {
+            let initialScopeRoot = origin.rawValue == MarkdownNavigationOrigin.documentLink.rawValue ? scopeRootPath : nil
+            let panel = MarkdownPanel(
+                workspaceId: UUID(),
+                filePath: source.path,
+                initialNavigationOrigin: origin,
+                initialNavigationScopeRootPath: initialScopeRoot
+            )
+            defer { panel.close() }
+            let away = await panel.navigate(to: outside, fragment: nil, origin: .agentCLI)
+            XCTAssertEqual(away, .navigated, "root origin \(origin)")
+            let back = await panel.navigateBack()
+            let path = panel.filePath ?? "nil"
+            print("RV362V root=\(origin) back=\(back) path=\(path)")
+            XCTAssertEqual(back, .navigated, "Back to a \(origin)-origin root after an agent left its scope")
+            XCTAssertEqual(panel.filePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }, resolvedSource)
+        }
     }
 }

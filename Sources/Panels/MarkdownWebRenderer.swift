@@ -786,7 +786,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     ) -> Task<Void, Never> {
         Task { @MainActor [weak panel] in
             guard let panel,
-                  case .ready(let path, _, _, _) = await panel.prepareDocumentLink(target),
+                  case .ready(let path, _, _, let scopeRootPath) = await panel.prepareDocumentLink(target),
                   panel.isCurrentNavigation(navigationToken),
                   let workspace = AppDelegate.shared?.workspaceContainingPanel(
                     panelId: panel.id,
@@ -798,7 +798,8 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                 filePath: path,
                 fragment: fragment,
                 focus: true,
-                initialNavigationOrigin: .documentLink
+                initialNavigationOrigin: .documentLink,
+                initialNavigationScopeRootPath: scopeRootPath
             )
         }
     }

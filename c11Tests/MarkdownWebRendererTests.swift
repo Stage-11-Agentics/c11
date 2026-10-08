@@ -54,12 +54,17 @@ final class MarkdownWebRendererTests: XCTestCase {
         _ = try await call(renderer, "scrollToHeading", arguments: ["Section 40"])
         let before = try await call(renderer, "visible") as? [String: Any]
         let firstLine = (before?["lines"] as? [String: Int])?["first"]
-        // A real file-watcher reload, not a direct page load call.
-        try (text + "\nAppended paragraph.\n").write(to: path, atomically: true, encoding: .utf8)
+        XCTAssertGreaterThan(firstLine ?? 0, 1, "The witness must be scrolled away from the top")
+        let beforeY = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top") as? Double
+        // A real file-watcher reload that changes layout above the viewport.
+        let changed = text.replacingOccurrences(of: "Paragraph 1.", with: String(repeating: "Expanded introduction. ", count: 100)) + "\nAppended paragraph.\n"
+        try changed.write(to: path, atomically: true, encoding: .utf8)
         await rendered(renderer, revision: 2)
         let after = try await call(renderer, "visible") as? [String: Any]
         XCTAssertEqual((after?["lines"] as? [String: Int])?["first"], firstLine)
-        XCTAssertEqual(panel.content, text + "\nAppended paragraph.\n")
+        let afterY = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top") as? Double
+        XCTAssertEqual(try XCTUnwrap(afterY), try XCTUnwrap(beforeY), accuracy: 1)
+        XCTAssertEqual(panel.content, changed)
         panel.zoomIn()
         let scaled = try await call(renderer, "visible") as? [String: Any]
         XCTAssertEqual(scaled?["font_scale"] as? Double, 1.4)

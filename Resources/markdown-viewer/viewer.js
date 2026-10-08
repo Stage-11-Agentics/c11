@@ -80,10 +80,11 @@ const ICONS = {
   caution: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5.4 1.9h5.2l3.5 3.5v5.2l-3.5 3.5H5.4l-3.5-3.5V5.4z"/><path d="M8 5v3.6M8 10.8v.1" stroke-linecap="round"/></svg>',
 };
 const R=md.renderer.rules;
+const isMermaidInfo=info=>String(info||'').trim().split(/\s+/,1)[0].toLowerCase()==='mermaid';
 R.blockquote_open=(T,i,o,e,self) => self.renderToken(T,i,o)+(T[i].meta?.callout ? `<div class="callout-title">${ICONS[T[i].meta.callout]}${esc(T[i].meta.callout)}</div>`:'');
 R.fence=(T,i) => {
   const t=T[i], lang=t.info.trim().split(/\s+/)[0].toLowerCase();
-  if(lang==='mermaid') return `<figure class="diagram"><div class="diagram-stage"></div><figcaption><span class="cap"></span><button class="expand">${esc(S.strings.expand)}</button></figcaption></figure>`;
+  if(isMermaidInfo(t.info)) return `<figure class="diagram"><div class="diagram-stage"></div><figcaption><span class="cap"></span><button class="expand">${esc(S.strings.expand)}</button></figcaption></figure>`;
   let html=esc(t.content);
   if(lang && hljs.getLanguage(lang)) {try {html=hljs.highlight(t.content,{language:lang,ignoreIllegals:true}).value;}catch{/* escaped fallback */}}
   return `<div class="code"><div class="code-head"><span>${esc(lang||'text')}</span><button class="copy">${esc(S.strings.copy)}</button></div><pre><code class="hljs">${html.replace(/\n$/,'')}</code></pre></div>`;
@@ -119,12 +120,15 @@ function linkInfo(href) {
   try {
     if(/[\u0000-\u0020]/.test(href)) return {kind:'blocked',resolvedURL:null};
     const url=new URL(href,S.baseURL||new URL(S.file,'file:///').href);
+    if(url.protocol==='file:'&&url.host)return {kind:'blocked',resolvedURL:null};
     return {kind: url.protocol==='file:' ? 'local' : ['http:','https:','mailto:'].includes(url.protocol) ? 'external':'blocked', resolvedURL:['file:','http:','https:','mailto:'].includes(url.protocol)?url.href:null};
   } catch {return {kind:'blocked',resolvedURL:null};}
 }
 function prep(markdown) {
   const m=markdown.match(/^---\n([\s\S]*?)\n(?:---|\.\.\.)(?:\n|$)/);
-  return m ? {body:'\n'.repeat(m[0].split('\n').length-1)+markdown.slice(m[0].length),fm:m} : {body:markdown,fm:null};
+  const first=m?.[1].split('\n').find(line=>line.trim()&&!line.trim().startsWith('#'))?.trim();
+  const yamlLike=first&&/^[A-Za-z_][\w.-]*\s*:\s*.*$/.test(first);
+  return m&&yamlLike ? {body:'\n'.repeat(m[0].split('\n').length-1)+markdown.slice(m[0].length),fm:m} : {body:markdown,fm:null};
 }
 function signature(tokens) {
   return JSON.stringify(tokens, (k,v)=>['map','level','block'].includes(k)?undefined:v);
@@ -142,7 +146,7 @@ function groups(tokens) {
 function sanitize(html) {
   return DOMPurify.sanitize(html, {ADD_ATTR:['data-fn','data-label'],ADD_URI_SAFE_ATTR:['data-fn'],
     FORBID_TAGS:['script','style','iframe','object','embed','form','video','audio','source'],
-    ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11md-asset):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i});
+    ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11md-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i});
 }
 function prepareBlock(node,tokens) {
   const headingTokens=tokens.filter(t=>t.type==='heading_open');
@@ -162,9 +166,9 @@ function prepareBlock(node,tokens) {
   }
   const fences=tokens.filter(t=>t.type==='fence'||t.type==='code_block');
   const diagrams=$$('figure.diagram',node);if(node.matches('figure.diagram'))diagrams.unshift(node);
-  fences.filter(t=>t.info.trim()==='mermaid').forEach((t,i)=>{if(diagrams[i])diagrams[i]._mermaid=t.content;});
+  fences.filter(t=>isMermaidInfo(t.info)).forEach((t,i)=>{if(diagrams[i])diagrams[i]._mermaid=t.content;});
   const codes=$$('.code',node);if(node.matches('.code'))codes.unshift(node);
-  fences.filter(t=>t.info.trim()!=='mermaid').forEach((t,i)=>{if(codes[i])codes[i]._code=t.content;});
+  fences.filter(t=>!isMermaidInfo(t.info)).forEach((t,i)=>{if(codes[i])codes[i]._code=t.content;});
   return node;
 }
 
@@ -328,7 +332,8 @@ function placeNotes() {
   for(const li of $$('.footnotes li[data-fn]',article)) {
     const ref=$(`.fn-ref a[data-fn="${li.dataset.fn}"]`,article);if(!ref)continue;
     const note=document.createElement('div');note.className='sidenote';note.dataset.fn=li.dataset.fn;
-    note.innerHTML=`<span class="sn">${esc(li.dataset.fn)}</span>`+li.innerHTML;$$('.fn-back',note).forEach(x=>x.remove());
+    const body=li.cloneNode(true);$$('.fn-back',body).forEach(x=>x.remove());
+    note.innerHTML=`<span class="sn">${esc(li.dataset.fn)}</span>`+body.innerHTML.replace(/^\s*<p>|<\/p>\s*$/g,'');
     aside.append(note);const y=Math.max(bottom,ref.getBoundingClientRect().top-col.getBoundingClientRect().top);note.style.top=y+'px';bottom=y+note.offsetHeight+18;
   }
 }
@@ -359,8 +364,10 @@ function diagramSource(raw) {
   const decoded=raw.replace(/&(?:lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,m=>{
     const el=document.createElement('textarea');el.innerHTML=m;return el.value;
   });
-  // Config directives/frontmatter and HTML styling are deliberately outside this input language.
-  if(/%%\s*\{|^\s*---|<\s*(?:script|style|iframe|img|image|foreignObject)\b|@import|url\s*\(/im.test(decoded)) throw new Error('Unsupported diagram directive');
+  const initDirective=/^\s*%%\s*\{\s*init\s*:/im.test(decoded);
+  const frontmatter=/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(decoded);
+  const configFrontmatter=!!frontmatter&&/^\s*config\s*:/im.test(frontmatter[1]);
+  if(initDirective||configFrontmatter)throw new Error('Unsupported diagram directive');
   return raw.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>name.startsWith('#x')?'#'+parseInt(name.slice(2),16)+';':name.startsWith('#')?name+';':'#'+name+';');
 }
 function cleanSVG(svg) {
@@ -380,7 +387,7 @@ async function diagrams(generation) {
     n++;fig.dataset.n=n;$('.cap',fig).textContent=S.strings.diagram+' '+n;
     if(fig._theme===S.resolved)continue;
     if(generation!==S.generation)return;
-    const id='c11md-'+generation+'-'+n;
+    const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
     try {
       const {svg}=await mermaid.render(id,diagramSource(fig._mermaid));
       if(generation!==S.generation)return;
@@ -393,6 +400,7 @@ async function diagrams(generation) {
     } finally {document.getElementById('d'+id)?.remove();}
   }
 }
+let diagramRenderId=0;
 
 function findState() {return {query:S.find.query,matches:S.find.hits.length,current:S.find.index<0?0:S.find.index+1};}
 function clearMarks() {
@@ -553,11 +561,12 @@ function closeDiagram() {S.diagram=null;$('#diagramOverlay').hidden=true;$('#dia
 function handleClick(e) {
   if(e.type==='auxclick'&&e.button!==1)return;
   const target=e.target instanceof Element?e.target:null;if(!target)return;
+  const a=target.closest('a');if(a)e.preventDefault();
   const copy=target.closest('.copy');if(copy){const b=copy.closest('.code');post({type:'copy',kind:'code',text:b._code||b.querySelector('code')?.textContent||''});copy.textContent=S.strings.copied;return;}
   const heading=target.closest('.h-anchor');if(heading){post({type:'copy',kind:'heading',text:(S.baseURL||S.file).split('#')[0]+'#'+heading.dataset.slug});return;}
   const expand=target.closest('.expand,.diagram-stage');if(expand){expandDiagram(+expand.closest('figure').dataset.n);return;}
-  const a=target.closest('a');if(!a)return;
-  e.preventDefault();const href=a.getAttribute('href')||'',info=linkInfo(href);
+  if(!a)return;
+  const href=a.getAttribute('href')||'',info=linkInfo(href);
   post({type:'link',href,...info,modifiers:{meta:e.metaKey,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey}});
   if(info.kind!=='anchor')return;
   let id;try{id=decodeURIComponent(href.slice(1));}catch{return;}

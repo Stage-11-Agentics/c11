@@ -26,6 +26,10 @@ const scenario=(name,details={})=>{report.scenarios.push({name,...details});cons
 try {
   await page.goto(pathToFileURL(path.join(bundle,'index.html')).href);
   await page.waitForFunction(()=>window.testMessages.some(m=>m.type==='ready'));
+  const policy=await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+  assert.ok(policy.includes("default-src 'none'")&&policy.includes("img-src c11md-asset:")&&policy.includes("connect-src 'none'")&&policy.includes("object-src 'none'"));
+  assert.equal(/\bfile:/.test(policy),false,'the app CSP must leave file: access to the native handler');
+  scenario('served CSP limits assets to the private image scheme and excludes file access');
   for(const theme of ['light','dark'])for(const width of [560,820,1200]) {
     await page.setViewportSize({width,height:820});await settings({theme,scale:1,typeface:'serif',outlineOpen:'auto'});
     for(const file of files) {
@@ -44,6 +48,7 @@ try {
   assert.equal(await page.locator('.katex').count(),2);assert.ok(await page.locator('.hljs-keyword').count()>0);assert.equal(await page.locator('.frontmatter').count(),1);
   assert.equal(await page.evaluate(()=>c11md.outline()[0].children[0].tasks),2);
   assert.equal(await page.locator('.sidenote').count(),1);
+  assert.equal(await page.locator('.sidenote').evaluate(x=>x.firstElementChild.classList.contains('sn')&&x.firstElementChild.nextSibling?.nodeType===Node.TEXT_NODE),true,'margin-note number is not inline with its text');
   await page.setViewportSize({width:560,height:820});await settings({scale:1});
   assert.equal(await page.locator('.table-wrap.reflow').count(),1);
   await page.locator('.fn-ref a').click();assert.equal(await page.locator('#note').isVisible(),true);
@@ -53,6 +58,37 @@ try {
   await page.locator('[data-zoom="1"]').click();assert.ok(await page.locator('#diagramZoom').evaluate(x=>x.style.transform.includes('1.25')));
   await page.locator('#diagramClose').click();assert.equal(await page.locator('#diagramOverlay').isVisible(),false);
   scenario('callouts, tasks/tree counts, math, highlighting/copy, frontmatter, responsive tables, margin/popover notes, diagram expansion');
+  const iconKinds=['NOTE','TIP','IMPORTANT','WARNING','CAUTION'];
+  const iconCorpus='# Sanitizer URI paths\n\n[design](c11-x.md)\n\n$\\sqrt{2}$\n\n'+iconKinds.map(kind=>`> [!${kind}]\n> Safe callout.`).join('\n\n');
+  await load(iconCorpus,'/synthetic/uri-paths.md');
+  assert.equal(await page.locator('a[href="c11-x.md"]').count(),1,'sanitizer removed a relative href');
+  await page.locator('a[href="c11-x.md"]').click();
+  assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').href),'c11-x.md');
+  assert.ok(await page.locator('.katex svg path[d]').count()>0,'KaTeX radical path was stripped');
+  for(const kind of iconKinds)assert.ok(await page.locator(`.callout-${kind.toLowerCase()} .callout-title svg path[d]`).count()>0,`${kind} icon path was stripped`);
+  scenario('relative c11-x link, KaTeX radical path and every callout icon path survive DOMPurify');
+  await load(specimen);
+  const infoCorpus='## Info strings\n\n```Mermaid\nflowchart LR\n  A --> B\n```\n\n```mermaid title=sample\nflowchart LR\n  C --> D\n```\n\n- mixed fences\n  ```mermaid title\n  flowchart LR\n    E --> F\n  ```\n  ```js\n  const mixed = 42;\n  ```\n';
+  await load(infoCorpus,'/synthetic/info-strings.md');
+  assert.equal(await page.locator('.diagram svg').count(),3);assert.equal(await page.locator('.diagram-err').count(),0);
+  await page.locator('.code .copy').click();
+  assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='copy').text),'const mixed = 42;\n');
+  scenario('case-insensitive Mermaid first-word metadata renders diagrams and preserves neighboring code-copy source');
+  const diagramURL=page.url(),anchorAllowed=await page.evaluate(()=>{
+    const stage=document.querySelector('.diagram-stage'),a=document.createElement('a');a.href='#info-strings';a.textContent='injected link';stage.append(a);
+    return a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
+  });
+  assert.equal(anchorAllowed,false,'diagram-stage anchor click was not prevented');assert.equal(page.url(),diagramURL);
+  scenario('anchor clicks inside diagram stages prevent browser navigation before diagram handling');
+  await load(specimen);
+  const thematicBreak='---\n\nHorizontal rules stay visible.\n\n---\n\nBody after the rules.\n';
+  await load(thematicBreak,'/synthetic/thematic-break.md');
+  assert.equal(await page.locator('.frontmatter').count(),0);assert.equal(await page.locator('#article hr').count(),2);
+  assert.ok((await page.locator('#article').innerText()).includes('Body after the rules.'));
+  await load('---\ntitle: YAML frontmatter\n---\n\nBody after metadata.\n','/synthetic/frontmatter.md');
+  assert.equal(await page.locator('.frontmatter').count(),1);assert.ok((await page.locator('#article').innerText()).includes('Body after metadata.'));
+  scenario('YAML-like opening frontmatter is removed while leading thematic breaks remain content');
+  await load(specimen);
   assert.equal(await page.evaluate(()=>c11md.find('keep the reader’s place').matches),1);
   assert.equal(await page.evaluate(()=>c11md.findNext().current),1);assert.equal(await page.evaluate(()=>c11md.findPrevious().current),1);await page.evaluate(()=>c11md.findClose());
   await load('# Find\n\nalpha **beta** gamma alpha beta gamma\n');
@@ -95,6 +131,64 @@ try {
   const restored=await page.evaluate(({line,offset})=>c11md.scrollToLine(line,offset).lines,{line:captured.line,offset:captured.state.lines.offset});
   assert.equal(restored.first,captured.line);assert.ok(Math.abs(restored.offset-captured.state.lines.offset)<=1,`restore offset ${captured.state.lines.offset} -> ${restored.offset}`);
   scenario('eviction restore after fresh page reload preserves first visible source line and signed CSS-pixel offset');
+  const diagramAbove='```mermaid\nflowchart TD\n  A[Input] --> B[Output]\n```\n\n'+long;
+  await settings({theme:'system',osAppearance:'dark',typeface:'serif',scale:1});await load(diagramAbove,'/synthetic/diagram-theme.md',1);
+  await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
+  const diagramWitness=()=>page.locator('#c11md-h-section-30').evaluate(x=>{const r=document.createRange();r.selectNodeContents(x.lastChild);return r.getBoundingClientRect().top;});
+  const themeStart=await diagramWitness();await settings({theme:'light'});
+  assert.ok(Math.abs(themeStart-await diagramWitness())<1,'theme change moved reader below diagram');
+  await settings({theme:'system',osAppearance:'light'});const appearanceStart=await diagramWitness();
+  await settings({osAppearance:'dark'});
+  assert.ok(Math.abs(appearanceStart-await diagramWitness())<1,'OS appearance flip moved reader below diagram');
+  scenario('diagram theme changes and OS appearance flips preserve reader position');
+  const literalDiagrams=[
+    'flowchart LR\n  A["literal <img src=x onerror=alert(1)> label"] --> B',
+    'flowchart LR\n  A["literal <image> label"] --> B',
+    'flowchart LR\n  A["literal url(https://example.invalid/) and @import label"] --> B',
+    'flowchart LR\n  A["first line\n---\nlast line"] --> B',
+  ];
+  await load(literalDiagrams.map(x=>['```mermaid',x,'```'].join('\n')).join('\n\n'),'/synthetic/diagram-literals.md');
+  assert.equal(await page.locator('.diagram svg').count(),literalDiagrams.length);
+  assert.equal(await page.locator('.diagram-err').count(),0,'ordinary label text was refused as a directive');
+  scenario('Mermaid labels may document HTML, CSS and thematic-rule text without activating it');
+  const hostileMermaid=[
+    '%%{init: {"securityLevel":"loose","htmlLabels":true}}%%\nflowchart LR\n  A --> B',
+    '---\nconfig:\n  securityLevel: loose\n---\nflowchart LR\n  A --> B',
+    'flowchart LR\n  A[Alpha] --> B[Beta]\n  click A href "javascript:alert(1)" "unsafe"',
+    'sequenceDiagram\n  participant Alice\n  participant Bob\n  link Alice: "javascript:alert(1)" "unsafe"\n  Alice->>Bob: hello',
+    'classDiagram\n  class Alpha\n  link Alpha "javascript:alert(1)" "unsafe"',
+    'flowchart LR\n  A["<img src=x onerror=alert(1)>"] --> B',
+    'flowchart LR\n  A[alpha] --> B[beta]\n  style A fill:url(https://example.invalid/evil)',
+  ];
+  const hostileMarkdown=hostileMermaid.map(x=>['```mermaid',x,'```'].join('\n')).join('\n\n');
+  await load(hostileMarkdown,'/synthetic/hostile-mermaid.md');
+  assert.equal(await page.locator('.diagram').count(),hostileMermaid.length);
+  const directiveFallbacks=await page.locator('.diagram-err pre').allTextContents();
+  assert.equal(directiveFallbacks.length>=2,true,'Mermaid init and frontmatter config directives were not refused');
+  assert.ok(directiveFallbacks.some(x=>x.includes('%%{init:')));assert.ok(directiveFallbacks.some(x=>x.includes('securityLevel')));
+  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),2);
+  assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().securityLevel),'strict');
+  assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().htmlLabels),false);
+  const activeDiagramFindings=await page.evaluate(()=>{
+    const findings=[];
+    for(const stage of document.querySelectorAll('.diagram-stage'))for(const node of stage.querySelectorAll('*')) {
+      if(['IMG','SCRIPT','FOREIGNOBJECT','A'].includes(node.tagName.toUpperCase()))findings.push({tag:node.tagName});
+      for(const attr of node.attributes)if(!/^xmlns(?::|$)/i.test(attr.name)&&(/^on|^(?:xlink:)?href$|^src$/i.test(attr.name)||/(?:javascript:|data:|file:|https?:\/\/|url\s*\(\s*['"]?(?:https?:|\/\/|javascript:|data:|file:))/i.test(attr.value)))findings.push({tag:node.tagName,attr:attr.name,value:attr.value});
+    }
+    for(const style of document.querySelectorAll('.diagram-stage svg style'))if(/https?:\/\//i.test(style.textContent))findings.push({tag:'style',text:style.textContent});
+    return findings;
+  });
+  assert.deepEqual(activeDiagramFindings,[],'hostile Mermaid output contains an active element or external reference');
+  assert.equal(await page.evaluate(()=>window.__owned),undefined);
+  scenario('hostile Mermaid directives, links, labels and styles remain inert under strict mode');
+  const unsafeSvg='<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><img src="https://example.invalid/x" onerror="window.__owned=1"></foreignObject><image href="https://example.invalid/x"/><a href="javascript:window.__owned=2"><text>bad</text></a><script>window.__owned=3</script><path d="M0 0" onload="window.__owned=4"/></svg>';
+  await page.evaluate(svg=>{window.originalMermaidRender=mermaid.render;mermaid.render=async()=>({svg});},unsafeSvg);
+  await load('```mermaid\nflowchart LR\n  A --> B\n```\n','/synthetic/svg-sanitizer.md');
+  await page.evaluate(()=>{mermaid.render=window.originalMermaidRender;delete window.originalMermaidRender;});
+  assert.equal(await page.locator('.diagram-stage svg').count(),1);
+  assert.equal(await page.locator('.diagram-stage foreignObject,.diagram-stage image,.diagram-stage a,.diagram-stage script,.diagram-stage img,.diagram-stage [onerror],.diagram-stage [onload],.diagram-stage [href]').count(),0);
+  assert.equal(await page.evaluate(()=>window.__owned),undefined);
+  scenario('SVG sanitizer removes injected active elements, handlers, and external references');
   // Async diagram replacement above an unchanged lower section holds its position.
   const graph='```mermaid\nflowchart TD\n A --> B\n```\n\n', above='# Async\n\n'+graph+long;
   await settings({scale:1,typeface:'serif'});await load(above,'/synthetic/async.md');await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
@@ -137,6 +231,13 @@ try {
   assert.deepEqual(await page.evaluate(()=>assetURLs),['c11md-asset://doc/images/synthetic.png','c11md-asset://doc/images/synthetic%20image.png','c11md-asset://doc/images/synthetic.png']);
   await page.evaluate(()=>assetObserver.disconnect());
   scenario('hostile HTML/URLs inert; authorized local image URL policy',{nativeBytes:'R2 WKURLSchemeHandler proof required'});
+  await load('# Host-bearing local URLs\n\n[file host](file://host/share/x.md) [protocol host](//host/share/x.md)\n');
+  for(const name of ['file host','protocol host']) {
+    await page.getByRole('link',{name,exact:true}).click();
+    const link=await page.evaluate(()=>testMessages.findLast(x=>x.type==='link'));
+    assert.equal(link.kind,'blocked',`${name} was treated as a local file`);assert.equal(link.resolvedURL,null);
+  }
+  scenario('file and protocol-relative links with a host are blocked');
   await load('# Links\n\n[remote](https://example.invalid/) [local](next.md) [jump](#target)\n\n'+('Text\n\n'.repeat(30))+'## Target\n');
   const url=page.url();await page.getByRole('link',{name:'remote',exact:true}).click();assert.equal(page.url(),url);
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='link').kind),'external');
@@ -150,7 +251,8 @@ try {
 
   await load('# Error\n\n```mermaid\ninvalid diagram text\n```\n');assert.equal(await page.locator('.diagram-err').count(),1);assert.ok((await page.locator('.diagram-err').innerText()).includes('invalid diagram text'));
   scenario('malformed Mermaid produces quiet escaped-source fallback');
-  const expected=await page.evaluate(()=>testMessages.filter(x=>x.type==='error'));assert.equal(expected.length,1);assert.equal(expected[0].code,'diagram_failed');
+  const expected=await page.evaluate(()=>testMessages.filter(x=>x.type==='error'));
+  assert.ok(expected.length>=3);assert.equal(expected.filter(x=>x.code!=='diagram_failed').length,0);
   assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
   scenario('zero console errors and zero network requests');
 

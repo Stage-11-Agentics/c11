@@ -191,7 +191,10 @@ responder only when C11-359's panel focus policy allows it.
 ## Agent Reading Controls
 
 These commands target an explicit markdown panel. They do not select its
-workspace or change c11's in-app focus:
+workspace or change c11's in-app focus. Discover the `markdown.agent_cli`
+feature, version 1, through `c11 capabilities` before relying on the socket
+methods. Use a stable `panel:<n>` reference or UUID; bare panel indices are
+rejected because they are scoped to the selected or caller workspace.
 
 ```bash
 c11 markdown scroll --panel panel:8 --heading "Installation"
@@ -207,12 +210,28 @@ c11 markdown open-external --panel panel:8
 
 `visible` reports the current heading path, visible source-line range, reading
 progress, theme, typeface, text scale, pane size, find state and bounded text
-selection. `visible --watch` emits one JSON object per line for the initial
-state and later changes. It follows renderer state events rather than polling;
-interrupting the command or closing its output pipe ends the subscription.
+selection. `scroll`, `visible`, and `visible --watch` create a hidden reader
+when needed and wait up to eight seconds for its first rendered state. A
+`not_ready` or `timeout` response means the reader did not become ready in that
+window; selecting the workspace is not an agent recovery path, so report the
+error instead. A scroll against a hidden panel takes effect in its reader; the
+gold flash appears when the panel is next shown.
+
+`visible --watch` emits one JSON object per line for the initial state and later
+changes. It follows renderer state events rather than polling, remains attached
+to the panel model while WebKit is evicted, streams presentation changes, and
+resumes rendered state when the reader is recreated or shown. It ends when the
+panel closes (for example, `c11 close-panel --panel panel:8`), the client
+disconnects, c11 stops the CLI listener, or the peer sends more bytes or
+half-closes its request side.
+`scroll --heading` prefers an exact slug or exact case-insensitive heading text.
+If only broader matches exist, it chooses a unique prefix before considering a
+unique substring; multiple matches at that tier return `ambiguous` with heading
+examples instead of silently scrolling to the first one.
 Theme and typeface names come from the panel's registered options. Font scale
 must be between 0.5 and 3.0 and is stored at the panel's 0.1-step precision.
-`open-external` opens the panel's bound file in the macOS default application.
+`open-external` opens the panel's bound file in the macOS default application
+behind c11.
 
 Local raster images are limited to the document directory and its subdirectories;
 symlinks outside that tree and remote images are blocked. Document HTML and

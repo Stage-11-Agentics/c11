@@ -38,8 +38,11 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   `findPrevious`, `findNext`, `findClose`, `findCount`. Native localizes these
   when constructing settings; content is never used as localization markup.
 - `scrollToHeading(textOrSlug)`: exact slug, exact case-insensitive text, then
-  prefix/substring text match. Returns `{ok:boolean, heading:Heading|null}`.
-  Switches to read mode and briefly highlights the target; no window focus.
+  a unique case-insensitive prefix, then a unique substring. Exact matches win
+  over broader matches. Multiple matches at the best available tier return
+  `{ok:false, heading:null, ambiguous:true, total:number, matches:[{text,slug,line}]}`
+  (up to 12 examples); no match returns `{ok:false, heading:null}`. A match
+  switches to read mode and briefly highlights the target; no window focus.
 - `scrollToLine(line, offset = 0)`: 1-based source line, clamped to the document;
   offset is a signed CSS-pixel distance from that line's origin to the viewport
   top (positive means the viewport has moved down into the line). Zero aligns the

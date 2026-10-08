@@ -53,6 +53,7 @@ final class MarkdownWKWebView: WKWebView {
     var allowsPanelFocus = false
     weak var renderer: MarkdownWebRenderer?
     var onShowPanelDetails: (() -> Void)?
+    var onViewportSizeChange: ((NSSize) -> Void)?
     private var pointerFocus = false
     private var retainedViewport: NSSize?
 
@@ -103,7 +104,9 @@ final class MarkdownWKWebView: WKWebView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(retainedViewport ?? newSize)
+        let size = retainedViewport ?? newSize
+        super.setFrameSize(size)
+        if retainedViewport == nil { onViewportSizeChange?(size) }
     }
 
     override var frame: NSRect {
@@ -112,6 +115,7 @@ final class MarkdownWKWebView: WKWebView {
             var rect = newValue
             if let retainedViewport { rect.size = retainedViewport }
             super.frame = rect
+            if retainedViewport == nil { onViewportSizeChange?(rect.size) }
         }
     }
 
@@ -234,11 +238,17 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     let readerFind = MarkdownReaderFindState()
     let readerOutline = MarkdownReaderOutlineState()
     @Published private(set) var failure: Bool = false {
-        didSet { if failure { MarkdownRendererCache.shared.reconsider() } }
+        didSet {
+            if failure {
+                resolveRenderWaiters(success: false)
+                MarkdownRendererCache.shared.reconsider()
+            }
+        }
     }
     @Published private(set) var renderedRevision: Int?
     private weak var panel: MarkdownPanel?
     private var stateObservers: [UUID: ([String: Any]?) -> Void] = [:]
+    private var renderWaiters: [UUID: (Bool) -> Void] = [:]
     private var ready = false
     private var entryNavigationAdmitted = false
     private var closed = false
@@ -270,9 +280,10 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         let scheme = MarkdownSchemeHandler(policy: policy)
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.viewerScheme)
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
-        webView = MarkdownWKWebView(frame: .zero, configuration: config)
+        webView = MarkdownWKWebView(frame: NSRect(origin: .zero, size: panel.lastKnownViewportSize), configuration: config)
         super.init()
         webView.renderer = self
+        webView.onViewportSizeChange = { [weak panel] size in panel?.rememberViewportSize(size) }
         webView.onShowPanelDetails = { [weak panel] in
             guard let panel else { return }
             PanelManifestViewerWindowController.show(
@@ -294,6 +305,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     func close() {
         guard !closed else { return }
         closed = true
+        resolveRenderWaiters(success: false)
         let observers = Array(stateObservers.values)
         stateObservers.removeAll()
         observers.forEach { $0(nil) }
@@ -305,22 +317,58 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         webView.uiDelegate = nil
     }
 
-    /// State observers power the markdown CLI's event-driven watch stream. A
-    /// subscription pins this renderer against retention eviction until its
-    /// owner removes the observer.
+    /// State observers do not retain a hidden reader. The panel-level watch
+    /// subscription survives cache eviction and attaches to a later renderer.
     func observeState(_ observer: @escaping ([String: Any]?) -> Void) -> (id: UUID, state: [String: Any])? {
-        guard ready, !closed, let panel else { return nil }
+        guard ready, !closed else { return nil }
         let id = UUID()
         stateObservers[id] = observer
-        activeQueries += 1
-        MarkdownRendererCache.shared.queryStarted(panel)
         return (id, state)
     }
 
     func removeStateObserver(_ id: UUID) {
-        guard stateObservers.removeValue(forKey: id) != nil else { return }
-        activeQueries = max(0, activeQueries - 1)
+        stateObservers.removeValue(forKey: id)
+    }
+
+    /// Hold the retention entry while a socket query waits for readiness or
+    /// runs JavaScript. Long-lived watches never keep this pin.
+    func beginAgentQuery() {
+        guard !closed else { return }
+        activeQueries += 1
+        if let panel { MarkdownRendererCache.shared.queryStarted(panel) }
+    }
+
+    func endAgentQuery() {
+        guard activeQueries > 0 else { return }
+        activeQueries -= 1
         if let panel { MarkdownRendererCache.shared.queryFinished(panel) }
+    }
+
+    /// Wait for both the page bridge and its first content revision. The token
+    /// lets a timed-out socket request remove its callback from the renderer.
+    @discardableResult
+    func whenReadyAndRendered(_ completion: @escaping (Bool) -> Void) -> UUID? {
+        guard !closed, !failure else {
+            completion(false)
+            return nil
+        }
+        if ready, renderedRevision != nil {
+            completion(true)
+            return nil
+        }
+        let id = UUID()
+        renderWaiters[id] = completion
+        return id
+    }
+
+    func cancelReadyAndRenderedWait(_ id: UUID) {
+        renderWaiters.removeValue(forKey: id)
+    }
+
+    private func resolveRenderWaiters(success: Bool) {
+        let waiters = Array(renderWaiters.values)
+        renderWaiters.removeAll()
+        waiters.forEach { $0(success) }
     }
 
     /// Updates the query cache and notifies watches from a native-initiated
@@ -330,6 +378,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         guard !closed else { return }
         state = value
         for observer in stateObservers.values { observer(value) }
+        panel?.publishRendererState(value)
     }
 
     /// Native callers use JSON arguments, never interpolate document text into JS.
@@ -369,6 +418,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private func finishRender(_ revision: Int) {
         guard !closed, revision == self.revision else { return }
         renderedRevision = revision
+        resolveRenderWaiters(success: true)
 #if DEBUG
         let elapsed = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
         dlog("markdown.renderer.ready panel=\(panel?.id.uuidString ?? "unknown") elapsedMs=\(String(format: "%.3f", elapsed))")

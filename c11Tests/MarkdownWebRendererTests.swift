@@ -74,6 +74,42 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
     }
 
+    func testScrollToHeadingPrefersExactAndReportsAmbiguousBroaderMatches() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-heading-match-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Guide\n\n## Install\n\nA.\n\n## Installation\n\nB.\n\n## Installing the App\n\nC.\n\n## Well Installed\n\nD.\n".write(to: path, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        defer { panel.close() }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let exactValue = try await call(renderer, "scrollToHeading", arguments: ["Install"])
+        let exact = try XCTUnwrap(exactValue as? [String: Any])
+        XCTAssertEqual(exact["ok"] as? Bool, true)
+        XCTAssertEqual((exact["heading"] as? [String: Any])?["text"] as? String, "Install", "exact heading text wins over its longer prefix matches")
+
+        let prefixValue = try await call(renderer, "scrollToHeading", arguments: ["Inst"])
+        let prefix = try XCTUnwrap(prefixValue as? [String: Any])
+        XCTAssertEqual(prefix["ok"] as? Bool, false)
+        XCTAssertEqual(prefix["ambiguous"] as? Bool, true)
+        XCTAssertEqual(prefix["total"] as? Int, 3)
+        XCTAssertEqual((prefix["matches"] as? [[String: Any]])?.compactMap { $0["text"] as? String }, ["Install", "Installation", "Installing the App"])
+
+        let substringValue = try await call(renderer, "scrollToHeading", arguments: ["stall"])
+        let substring = try XCTUnwrap(substringValue as? [String: Any])
+        XCTAssertEqual(substring["ok"] as? Bool, false)
+        XCTAssertEqual(substring["ambiguous"] as? Bool, true)
+        XCTAssertEqual(substring["total"] as? Int, 4)
+    }
+
     func testSourceModeEvictionRestoresPositionModeFindAndLatestContent() async throws {
         try await evictionRestoresReadingState(sourceMode: true)
     }
@@ -512,6 +548,296 @@ final class MarkdownWebRendererTests: XCTestCase {
             XCTAssertNil(panel.renderer)
         }
         XCTAssertNil(retained, "Closing must break WKUserContentController's message-handler cycle")
+    }
+
+    func testClosingRendererNotifiesItsStateObservers() async throws {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 720, height: 480)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let ended = expectation(description: "renderer close ends its state observer")
+        let subscription = try XCTUnwrap(renderer.observeState { state in
+            if state == nil { ended.fulfill() }
+        })
+        XCTAssertFalse(subscription.state.isEmpty)
+        renderer.close()
+        await fulfillment(of: [ended], timeout: 2)
+    }
+
+    func testVisibleWatchCreatesReaderForNeverMountedPanelOverSocket() async throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let selectedWorkspaceBefore = manager.selectedWorkspaceId
+        let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-watch-socket-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            workspace.teardownAllPanels()
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Socket reader\n\n## Installation\n\nA stable paragraph.\n".write(to: path, atomically: true, encoding: .utf8)
+        let panel = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: path.path, focus: false))
+        XCTAssertNil(panel.renderer, "the target panel has never had a native reader")
+
+        let controller = TerminalController.makeForTesting()
+        let priorManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = priorManager }
+
+        final class ControllerBox: @unchecked Sendable {
+            let value: TerminalController
+            init(_ value: TerminalController) { self.value = value }
+        }
+        let controllerBox = ControllerBox(controller)
+        final class ContinueFlag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var running = true
+            var shouldContinue: Bool {
+                lock.lock(); defer { lock.unlock() }
+                return running
+            }
+            func stop() {
+                lock.lock(); running = false; lock.unlock()
+            }
+        }
+        let continueFlag = ContinueFlag()
+        var sockets: [Int32] = [-1, -1]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
+        let client = sockets[0]
+        let server = sockets[1]
+        let serverTask = Task.detached {
+            TerminalController.serveCommandLines(
+                socket: server,
+                shouldContinue: { continueFlag.shouldContinue },
+                respond: { _ in "{\"ok\":false}\n" },
+                stream: { command, streamSocket, shouldContinue in
+                    guard let data = command.data(using: .utf8),
+                          let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let params = request["params"] as? [String: Any] else { return false }
+                    controllerBox.value.v2StreamMarkdownVisible(
+                        id: request["id"],
+                        params: params,
+                        socket: streamSocket,
+                        shouldContinue: shouldContinue
+                    )
+                    return true
+                }
+            )
+        }
+        let request: [String: Any] = [
+            "id": "watch-never-mounted",
+            "method": "markdown.visible",
+            "params": ["surface_id": panel.id.uuidString, "workspace_id": workspace.id.uuidString, "watch": true]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: request)
+        let requestBytes = data + Data([0x0A])
+        let written = requestBytes.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+        XCTAssertEqual(written, requestBytes.count)
+
+        let responseLine = await Task.detached { () -> String? in
+            var response: [UInt8] = []
+            var byte: UInt8 = 0
+            while read(client, &byte, 1) == 1 {
+                if byte == 0x0A { return String(decoding: response, as: UTF8.self) }
+                response.append(byte)
+            }
+            return nil
+        }.value
+        let responseData = try XCTUnwrap(responseLine?.data(using: .utf8))
+        let envelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        continueFlag.stop()
+        await serverTask.value
+        close(client)
+        close(server)
+        sockets = [-1, -1]
+
+        XCTAssertEqual(envelope["id"] as? String, "watch-never-mounted")
+        XCTAssertEqual(envelope["ok"] as? Bool, true, "socket watch should initialize an unmounted reader")
+        XCTAssertNotNil(panel.renderer)
+        XCTAssertFalse(panel.isRendererVisible, "an agent-created reader remains unmounted and hidden")
+        XCTAssertEqual(manager.selectedWorkspaceId, selectedWorkspaceBefore, "reader creation must not select a workspace")
+    }
+
+    func testMarkdownSocketRejectsUnresolvedPanelRefsWithoutFallingBack() async throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let keys = ["markdown.fontScale.lastUsed", "markdown.theme.lastUsed", "markdown.typeface.lastUsed"]
+        var savedDefaults: [String: Any] = [:]
+        for key in keys {
+            if let value = defaults.object(forKey: key) { savedDefaults[key] = value }
+        }
+        defer {
+            for key in keys {
+                if let value = savedDefaults[key] { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+        defaults.set(1.4, forKey: "markdown.fontScale.lastUsed")
+        defaults.set("dark", forKey: "markdown.theme.lastUsed")
+        defaults.set("serif", forKey: "markdown.typeface.lastUsed")
+
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let selectedWorkspaceBefore = manager.selectedWorkspaceId
+        let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-invalid-target-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            workspace.teardownAllPanels()
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Focused reader\n\n## Install\n\nA.\n\n## Installation\n\nB.\n\n## Installing the App\n\nC.\n".write(to: path, atomically: true, encoding: .utf8)
+        let panel = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: path.path, focus: true))
+        XCTAssertEqual(workspace.focusedPanelId, panel.id)
+        XCTAssertEqual(panel.theme, "dark")
+        XCTAssertEqual(panel.typeface, "serif")
+        XCTAssertEqual(panel.fontScale, 1.4)
+        XCTAssertNil(panel.renderer)
+        let panelCountBefore = workspace.panels.count
+
+        let controller = TerminalController.makeForTesting()
+        let priorManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = priorManager }
+
+        final class ControllerBox: @unchecked Sendable {
+            let value: TerminalController
+            init(_ value: TerminalController) { self.value = value }
+        }
+        final class ContinueFlag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var running = true
+            var shouldContinue: Bool {
+                lock.lock(); defer { lock.unlock() }
+                return running
+            }
+            func stop() {
+                lock.lock(); running = false; lock.unlock()
+            }
+        }
+        let controllerBox = ControllerBox(controller)
+
+        func send(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+            let continueFlag = ContinueFlag()
+            var sockets: [Int32] = [-1, -1]
+            XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
+            let client = sockets[0]
+            let server = sockets[1]
+            let serverTask = Task.detached {
+                TerminalController.serveCommandLines(
+                    socket: server,
+                    shouldContinue: { continueFlag.shouldContinue },
+                    respond: { command in
+                        guard let data = command.data(using: .utf8),
+                              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let method = request["method"] as? String,
+                              let params = request["params"] as? [String: Any] else { return "{\"ok\":false}" }
+                        let id = request["id"]
+                        if method == "markdown.open" || method == "markdown.get_content" {
+                            return DispatchQueue.main.sync {
+                                MainActor.assumeIsolated {
+                                    controllerBox.value.v2DispatchMarkdownFeedback(method, id: id, params: params)
+                                }
+                            }
+                        }
+                        return controllerBox.value.v2Result(
+                            id: id,
+                            controllerBox.value.v2DispatchMarkdownWorker(method, params: params)
+                        )
+                    },
+                    stream: { command, streamSocket, shouldContinue in
+                        guard let data = command.data(using: .utf8),
+                              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let method = request["method"] as? String,
+                              method == "markdown.visible",
+                              let params = request["params"] as? [String: Any],
+                              params["watch"] as? Bool == true else { return false }
+                        controllerBox.value.v2StreamMarkdownVisible(
+                            id: request["id"], params: params, socket: streamSocket,
+                            shouldContinue: shouldContinue
+                        )
+                        return true
+                    }
+                )
+            }
+            let request: [String: Any] = ["id": UUID().uuidString, "method": method, "params": params]
+            let data = try JSONSerialization.data(withJSONObject: request)
+            let bytes = data + Data([0x0A])
+            let written = bytes.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+            XCTAssertEqual(written, bytes.count)
+            _ = shutdown(client, SHUT_WR)
+            let responseLine = await Task.detached { () -> String? in
+                var response: [UInt8] = []
+                var byte: UInt8 = 0
+                while read(client, &byte, 1) == 1 {
+                    if byte == 0x0A { return String(decoding: response, as: UTF8.self) }
+                    response.append(byte)
+                }
+                return response.isEmpty ? nil : String(decoding: response, as: UTF8.self)
+            }.value
+            let responseData = try XCTUnwrap(responseLine?.data(using: .utf8))
+            let envelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+            continueFlag.stop()
+            await serverTask.value
+            close(client)
+            close(server)
+            sockets = [-1, -1]
+            return envelope
+        }
+
+        func scoped(_ panelRef: String) -> [String: Any] {
+            ["surface_id": panelRef, "workspace_id": workspace.id.uuidString]
+        }
+        func assertNotFound(_ envelope: [String: Any], file: StaticString = #filePath, line: UInt = #line) {
+            XCTAssertEqual(envelope["ok"] as? Bool, false, file: file, line: line)
+            XCTAssertEqual((envelope["error"] as? [String: Any])?["code"] as? String, "not_found", file: file, line: line)
+        }
+
+        let stalePanelRef = "panel:99999"
+        assertNotFound(try await send("markdown.theme", params: scoped(stalePanelRef).merging(["action": "set", "name": "light"]) { _, new in new }))
+        assertNotFound(try await send("markdown.typeface", params: scoped(stalePanelRef).merging(["action": "set", "name": "sans"]) { _, new in new }))
+        assertNotFound(try await send("markdown.font", params: scoped(stalePanelRef).merging(["scale": 2.2]) { _, new in new }))
+        assertNotFound(try await send("markdown.scroll", params: scoped(stalePanelRef).merging(["heading": "Installation"]) { _, new in new }))
+        assertNotFound(try await send("markdown.visible", params: scoped(stalePanelRef)))
+        assertNotFound(try await send("markdown.visible", params: scoped(stalePanelRef).merging(["watch": true]) { _, new in new }))
+        assertNotFound(try await send("markdown.theme", params: scoped(UUID().uuidString).merging(["action": "set", "name": "light"]) { _, new in new }))
+        assertNotFound(try await send("markdown.theme", params: scoped(pane.id.uuidString).merging(["action": "set", "name": "light"]) { _, new in new }))
+        let unsupportedTheme = try await send(
+            "markdown.theme",
+            params: scoped(panel.id.uuidString).merging(["action": "set", "name": "sepia"]) { _, new in new }
+        )
+        XCTAssertEqual(unsupportedTheme["ok"] as? Bool, false)
+        XCTAssertEqual((unsupportedTheme["error"] as? [String: Any])?["code"] as? String, "invalid_params")
+        assertNotFound(try await send("markdown.open", params: scoped(stalePanelRef).merging(["path": path.path]) { _, new in new }))
+        assertNotFound(try await send("markdown.get_content", params: scoped(stalePanelRef)))
+
+        XCTAssertNil(panel.renderer, "unresolved refs must return before creating a hidden reader")
+        let ambiguousHeading = try await send(
+            "markdown.scroll",
+            params: scoped(panel.id.uuidString).merging(["heading": "Inst"]) { _, new in new }
+        )
+        XCTAssertEqual(ambiguousHeading["ok"] as? Bool, false)
+        XCTAssertEqual((ambiguousHeading["error"] as? [String: Any])?["code"] as? String, "ambiguous")
+        XCTAssertEqual(((ambiguousHeading["error"] as? [String: Any])?["data"] as? [String: Any])?["total"] as? Int, 3)
+
+        XCTAssertEqual(panel.theme, "dark")
+        XCTAssertEqual(panel.typeface, "serif")
+        XCTAssertEqual(panel.fontScale, 1.4)
+        XCTAssertEqual(defaults.string(forKey: "markdown.theme.lastUsed"), "dark")
+        XCTAssertEqual(defaults.string(forKey: "markdown.typeface.lastUsed"), "serif")
+        XCTAssertEqual(defaults.double(forKey: "markdown.fontScale.lastUsed"), 1.4)
+        XCTAssertNotNil(panel.renderer, "the valid ambiguous scroll creates a hidden reader")
+        XCTAssertEqual(workspace.panels.count, panelCountBefore, "markdown.open must not split from the focused panel")
+        XCTAssertEqual(manager.selectedWorkspaceId, selectedWorkspaceBefore)
     }
 
     /// PM-359-f probe (round 3): record every stage of a chrome appearance flip.

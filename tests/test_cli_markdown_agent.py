@@ -164,13 +164,17 @@ def main() -> None:
             for args in [
                 ["markdown", "scroll", "--heading", "Installation"],
                 ["markdown", "visible", "--panel", panel],
+                ["markdown", "visible", "--panel", "1", "--json"],
                 ["markdown", "font", "--panel", panel, "--scale", "3.1"],
                 ["markdown", "font", "--panel", panel, "--scale", "nan"],
+                ["markdown", "font", "--panel", panel, "--scale", "0x1p0"],
             ]:
                 start = len(requests)
                 result = run(*args)
                 assert result.returncode != 0, (args, result.stdout)
                 assert not [item for item in requests[start:] if item.get("method", "").startswith("markdown.")], args
+                if "--panel" in args and args[args.index("--panel") + 1] == "1":
+                    assert not [item for item in requests[start:] if item.get("method") == "panel.list"], args
 
             for args, expected_method in [
                 (["--json", "markdown", "theme", "--panel", panel, "--set", "unknown"], "markdown.theme"),

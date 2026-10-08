@@ -5621,6 +5621,9 @@ struct CMUXCLI {
         guard let panelRaw, !panelRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CLIError(message: "markdown \(subcommand) requires --panel <id|ref>")
         }
+        if Int(panelRaw.trimmingCharacters(in: .whitespacesAndNewlines)) != nil {
+            throw CLIError(message: "markdown \(subcommand) does not accept an unscoped panel index; use a stable ref such as panel:1")
+        }
         guard let panelID = try normalizeSurfaceHandle(panelRaw, client: client) else {
             throw CLIError(message: "markdown \(subcommand): invalid panel handle")
         }
@@ -5686,7 +5689,9 @@ struct CMUXCLI {
 
         case "font":
             let (scales, remaining) = parseRepeatedOption(arguments, name: "--scale")
+            let decimalScale = #"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$"#
             guard scales.count == 1, remaining.isEmpty,
+                  scales[0].range(of: decimalScale, options: .regularExpression) != nil,
                   let scale = Double(scales[0]), scale.isFinite, (0.5...3.0).contains(scale) else {
                 throw CLIError(message: "Usage: c11 markdown font --panel <id|ref> --scale <0.5..3.0>")
             }

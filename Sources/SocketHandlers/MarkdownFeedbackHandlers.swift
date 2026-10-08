@@ -7,12 +7,24 @@ import Bonsplit
 import WebKit
 
 final class MarkdownVisibleStateBuffer: @unchecked Sendable {
+    enum InitialWaitResult {
+        case ready
+        case timedOut
+        case finished
+    }
+
     private let condition = NSCondition()
     private var pending: [[String: Any]] = []
     private var lastState: [String: Any]?
     private var initialized = false
     private var initialPending = false
     private var finished = false
+
+    var isFinished: Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return finished
+    }
 
     func begin(with state: [String: Any]) {
         let snapshot = Self.snapshot(state)
@@ -45,10 +57,59 @@ final class MarkdownVisibleStateBuffer: @unchecked Sendable {
         condition.signal()
     }
 
-    func next() -> [String: Any]? {
+    /// A re-created reader supplies a fresh snapshot. Before the first snapshot
+    /// it initializes the stream; afterward it is an ordinary state change.
+    func beginOrPublish(_ state: [String: Any]) {
+        let snapshot = Self.snapshot(state)
         condition.lock()
         defer { condition.unlock() }
-        while pending.isEmpty && !finished { condition.wait() }
+        guard !finished else { return }
+        if !initialized {
+            pending.removeAll(keepingCapacity: true)
+            lastState = snapshot
+            initialized = true
+            initialPending = true
+            pending.append(snapshot)
+            condition.broadcast()
+            return
+        }
+        guard let lastState, !NSDictionary(dictionary: lastState).isEqual(to: snapshot) else { return }
+        self.lastState = snapshot
+        if pending.isEmpty {
+            pending.append(snapshot)
+        } else if initialPending {
+            if pending.count == 1 { pending.append(snapshot) }
+            else { pending[1] = snapshot }
+        } else {
+            pending[0] = snapshot
+        }
+        condition.signal()
+    }
+
+    func waitForInitialState(timeout: TimeInterval, shouldContinue: () -> Bool) -> InitialWaitResult {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        condition.lock()
+        defer { condition.unlock() }
+        while !initialized && !finished {
+            guard shouldContinue() else { return .finished }
+            let nextCheck = min(deadline, Date(timeIntervalSinceNow: 0.5))
+            if !condition.wait(until: nextCheck), !initialized && !finished, Date() >= deadline { return .timedOut }
+        }
+        return initialized ? .ready : .finished
+    }
+
+    func next(timeout: TimeInterval? = nil, onWaiting: (() -> Void)? = nil) -> [String: Any]? {
+        let deadline = timeout.map { Date(timeIntervalSinceNow: $0) }
+        condition.lock()
+        defer { condition.unlock() }
+        while pending.isEmpty && !finished {
+            if let deadline {
+                if !condition.wait(until: deadline), pending.isEmpty && !finished { return nil }
+            } else {
+                onWaiting?()
+                condition.wait()
+            }
+        }
         guard !pending.isEmpty else { return nil }
         let next = pending.removeFirst()
         if initialPending { initialPending = false }
@@ -99,6 +160,7 @@ private final class MarkdownWebCallGate {
     private let lock = NSLock()
     private var cancelled = false
     private var completed = false
+    private var readinessWaiter: UUID?
 
     func begin() -> Bool {
         lock.lock()
@@ -111,13 +173,102 @@ private final class MarkdownWebCallGate {
         defer { lock.unlock() }
         guard !cancelled, !completed else { return false }
         completed = true
+        readinessWaiter = nil
         return true
     }
 
-    func cancel() {
+    func installReadinessWaiter(_ id: UUID) -> Bool {
         lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled, !completed else { return false }
+        readinessWaiter = id
+        return true
+    }
+
+    func cancel() -> UUID? {
+        lock.lock()
+        defer { lock.unlock() }
         cancelled = true
-        lock.unlock()
+        defer { readinessWaiter = nil }
+        return readinessWaiter
+    }
+}
+
+@MainActor
+private final class MarkdownVisibleWatch {
+    private weak var panel: MarkdownPanel?
+    private let buffer: MarkdownVisibleStateBuffer
+    private var observationID: UUID?
+    private var activeRenderer: MarkdownWebRenderer?
+    private var pinnedRenderer: MarkdownWebRenderer?
+    private var readinessWaiter: UUID?
+
+    init(panel: MarkdownPanel, buffer: MarkdownVisibleStateBuffer) {
+        self.panel = panel
+        self.buffer = buffer
+    }
+
+    func start() {
+        guard let panel else { buffer.finish(); return }
+        observationID = panel.observeReaderEvents { [weak self] event in self?.receive(event) }
+        if !panel.isClosed { _ = panel.ensureRenderer() }
+    }
+
+    func stop() {
+        if let observationID { panel?.removeReaderObserver(observationID) }
+        observationID = nil
+        if let renderer = activeRenderer { cancelPendingQuery(on: renderer) }
+        activeRenderer = nil
+    }
+
+    private func receive(_ event: MarkdownPanelReaderEvent) {
+        switch event {
+        case .rendererAvailable(let renderer): attach(to: renderer)
+        case .rendererEvicted(let renderer):
+            guard activeRenderer === renderer else { return }
+            cancelPendingQuery(on: renderer)
+            activeRenderer = nil
+        case .state(let state): buffer.publish(state)
+        case .closed: buffer.finish()
+        }
+    }
+
+    private func attach(to renderer: MarkdownWebRenderer) {
+        guard activeRenderer !== renderer else { return }
+        if let activeRenderer { cancelPendingQuery(on: activeRenderer) }
+        activeRenderer = renderer
+        renderer.beginAgentQuery()
+        pinnedRenderer = renderer
+        readinessWaiter = renderer.whenReadyAndRendered { [weak self, weak renderer] ready in
+            guard let self, let renderer, self.activeRenderer === renderer else { return }
+            self.readinessWaiter = nil
+            guard ready else {
+                self.releasePin(on: renderer)
+                return
+            }
+            renderer.call("visible") { [weak self, weak renderer] result in
+                guard let self, let renderer else { return }
+                if self.activeRenderer === renderer,
+                   case .success(let value) = result,
+                   let state = value as? [String: Any] {
+                    self.buffer.beginOrPublish(state)
+                    renderer.publishObservedState(state)
+                }
+                self.releasePin(on: renderer)
+            }
+        }
+    }
+
+    private func cancelPendingQuery(on renderer: MarkdownWebRenderer) {
+        if let readinessWaiter { renderer.cancelReadyAndRenderedWait(readinessWaiter) }
+        readinessWaiter = nil
+        releasePin(on: renderer)
+    }
+
+    private func releasePin(on renderer: MarkdownWebRenderer) {
+        guard pinnedRenderer === renderer else { return }
+        pinnedRenderer = nil
+        renderer.endAgentQuery()
     }
 }
 
@@ -172,6 +323,12 @@ extension TerminalController {
 
         guard let resolved = v2BrowserMainHop({ () -> (target: MarkdownPanelTarget?, error: V2CallResult?) in
             self.v2RefreshKnownRefs()
+            if let rejection = self.v2RejectUnresolvedTargetRefs(
+                params,
+                fallbackWorkspaceManager: self.v2ResolveWorkspaceManager(params: params)
+            ) {
+                return (target: nil, error: rejection)
+            }
             guard let (workspace, surfaceId) = self.v2ResolveWorkspaceSurface(params: params) else {
                 return (target: nil, error: V2CallResult.err(
                     code: "not_found", message: "Panel not found", data: ["panel_id": panelRef]
@@ -200,21 +357,40 @@ extension TerminalController {
         arguments: [Any] = [],
         timeout: TimeInterval = 8
     ) -> Result<Any, Error>? {
-        guard let resolvedRenderer = v2BrowserMainHop({ () -> MarkdownWebRenderer? in
-            guard let renderer = target.panel.renderer, renderer.isReadyForQueries else { return nil }
+        guard let renderer = v2BrowserMainHop({ () -> MarkdownWebRenderer in
+            let renderer = target.panel.ensureRenderer()
+            renderer.beginAgentQuery()
             return renderer
-        }), let renderer = resolvedRenderer else { return nil }
+        }) else { return nil }
+        defer { _ = v2BrowserMainHop { renderer.endAgentQuery() } }
         let gate = MarkdownWebCallGate()
         let result: Result<Any, Error>? = v2AwaitCallback(timeout: timeout) { finish in
             Task { @MainActor in
                 guard gate.begin() else { return }
-                renderer.call(method, arguments: arguments) { value in
-                    guard gate.complete() else { return }
-                    finish(value)
+                let waiter = renderer.whenReadyAndRendered { ready in
+                    guard gate.begin() else { return }
+                    guard ready else {
+                        guard gate.complete() else { return }
+                        finish(.failure(URLError(.resourceUnavailable)))
+                        return
+                    }
+                    renderer.call(method, arguments: arguments) { value in
+                        if method == "visible", case .success(let visible) = value,
+                           let state = visible as? [String: Any] {
+                            renderer.publishObservedState(state)
+                        }
+                        guard gate.complete() else { return }
+                        finish(value)
+                    }
+                }
+                if let waiter, !gate.installReadinessWaiter(waiter) {
+                    renderer.cancelReadyAndRenderedWait(waiter)
                 }
             }
         }
-        if case .none = result { gate.cancel() }
+        if case .none = result, let waiter = gate.cancel() {
+            _ = v2BrowserMainHop { renderer.cancelReadyAndRenderedWait(waiter) }
+        }
         return result
     }
 
@@ -224,10 +400,13 @@ extension TerminalController {
     private nonisolated func v2MarkdownPublishVisibleState(target: MarkdownPanelTarget) {
         _ = v2BrowserMainHop {
             guard let renderer = target.panel.renderer, renderer.isReadyForQueries else { return }
+            renderer.beginAgentQuery()
             renderer.call("visible") { result in
-                guard case .success(let value) = result,
-                      let state = value as? [String: Any] else { return }
-                renderer.publishObservedState(state)
+                if case .success(let value) = result,
+                   let state = value as? [String: Any] {
+                    renderer.publishObservedState(state)
+                }
+                renderer.endAgentQuery()
             }
         }
     }
@@ -252,6 +431,17 @@ extension TerminalController {
                 return .err(code: "internal_error", message: "Markdown renderer returned an invalid scroll result", data: nil)
             }
             guard response["ok"] as? Bool == true else {
+                if response["ambiguous"] as? Bool == true {
+                    return .err(
+                        code: "ambiguous",
+                        message: "Markdown heading match is ambiguous",
+                        data: [
+                            "heading": heading,
+                            "matches": response["matches"] ?? [],
+                            "total": response["total"] ?? 0
+                        ]
+                    )
+                }
                 return .err(code: "not_found", message: "Markdown heading not found", data: ["heading": heading])
             }
             v2MarkdownPublishVisibleState(target: target)
@@ -341,27 +531,57 @@ extension TerminalController {
     private nonisolated func v2MarkdownOpenExternal(params: [String: Any]) -> V2CallResult {
         let resolved = v2MarkdownPanelTarget(params: params)
         guard let target = resolved.target else { return resolved.error ?? .err(code: "not_found", message: "Panel not found", data: nil) }
-        guard let result = v2BrowserMainHop({ () -> V2CallResult in
+        enum FileCheck {
+            case unbound
+            case unavailable(String)
+            case ready(String)
+        }
+        guard let file = v2BrowserMainHop({ () -> FileCheck in
             guard let path = target.panel.filePath else {
-                return .err(code: "unavailable", message: "Markdown panel has no bound file", data: ["panel_id": target.surfaceId.uuidString])
+                return .unbound
             }
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue,
-                  FileManager.default.isReadableFile(atPath: path) else {
-                return .err(code: "unavailable", message: "Markdown file is unavailable or unreadable", data: ["path": path])
-            }
-            guard NSWorkspace.shared.open(URL(fileURLWithPath: path)) else {
-                return .err(code: "request_failed", message: "Could not open markdown file externally", data: ["path": path])
-            }
-            return .ok(["panel_id": target.surfaceId.uuidString, "path": path, "opened": true])
+                  FileManager.default.isReadableFile(atPath: path) else { return .unavailable(path) }
+            return .ready(path)
         }) else { return v2BrowserMainHopTimeoutResult() }
-        return result
+        let path: String
+        switch file {
+        case .unbound:
+            return .err(code: "unavailable", message: "Markdown panel has no bound file", data: ["panel_id": target.surfaceId.uuidString])
+        case .unavailable(let unavailablePath):
+            return .err(code: "unavailable", message: "Markdown file is unavailable or unreadable", data: ["path": unavailablePath])
+        case .ready(let readyPath):
+            path = readyPath
+        }
+
+        let opened: V2CallResult? = v2AwaitCallback(timeout: 8) { finish in
+            Task { @MainActor in
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = false
+                NSWorkspace.shared.open(URL(fileURLWithPath: path), configuration: configuration) { _, error in
+                    if let error {
+                        finish(.err(code: "request_failed", message: error.localizedDescription, data: ["path": path]))
+                    } else {
+                        finish(.ok(["panel_id": target.surfaceId.uuidString, "path": path, "opened": true]))
+                    }
+                }
+            }
+        }
+        return opened ?? .err(code: "timeout", message: "Timed out opening markdown file externally", data: ["path": path])
     }
 
     /// The socket connection owns each streamed write. The read dispatch
     /// source only watches for peer closure; it never performs WebKit work.
-    nonisolated func v2StreamMarkdownVisible(id: Any?, params: [String: Any], socket: Int32) {
+    nonisolated func v2StreamMarkdownVisible(
+        id: Any?,
+        params: [String: Any],
+        socket: Int32,
+        shouldContinue: () -> Bool
+    ) {
         let buffer = MarkdownVisibleStateBuffer()
+        var watch: MarkdownVisibleWatch?
+        let cancelled = DispatchSemaphore(value: 0)
         let disconnect = DispatchSource.makeReadSource(
             fileDescriptor: socket,
             queue: DispatchQueue(label: "com.stage11.c11.markdown-visible-watch-disconnect")
@@ -373,8 +593,14 @@ extension TerminalController {
                 buffer.finish()
             }
         }
+        disconnect.setCancelHandler { cancelled.signal() }
         disconnect.resume()
-        defer { disconnect.cancel(); buffer.finish() }
+        defer {
+            disconnect.cancel()
+            cancelled.wait()
+            buffer.finish()
+            if let watch { _ = v2BrowserMainHop { watch.stop() } }
+        }
 
         guard CapabilityFeatures.current.supports(.markdownAgentCLI) else {
             _ = Self.writeSocketResponse(v2Result(id: id, .err(
@@ -390,36 +616,40 @@ extension TerminalController {
             return
         }
 
-        let setup = v2BrowserMainHop { () -> (MarkdownWebRenderer, UUID)? in
-            guard let renderer = target.panel.renderer,
-                  let subscription = renderer.observeState({ state in
-                      if let state { buffer.publish(state) } else { buffer.finish() }
-                  }) else { return nil }
-            renderer.call("visible") { result in
-                switch result {
-                case .success(let value):
-                    if let state = value as? [String: Any] {
-                        // The cached state includes any coalesced state messages
-                        // delivered while the visible query was in flight.
-                        buffer.begin(with: renderer.state.isEmpty ? state : renderer.state)
-                    } else { buffer.finish() }
-                case .failure:
-                    buffer.finish()
-                }
-            }
-            return (renderer, subscription.id)
-        }
-        guard let setup, let (renderer, observerID) = setup else {
-            _ = Self.writeSocketResponse(v2Result(id: id, .err(
-                code: "not_ready", message: "Markdown renderer is not ready", data: ["panel_id": target.surfaceId.uuidString]
-            )), to: socket)
+        guard let subscription = v2BrowserMainHop({ () -> MarkdownVisibleWatch in
+            let subscription = MarkdownVisibleWatch(panel: target.panel, buffer: buffer)
+            subscription.start()
+            return subscription
+        }) else {
+            _ = Self.writeSocketResponse(v2Result(id: id, v2BrowserMainHopTimeoutResult()), to: socket)
             return
         }
-        defer {
-            Task { @MainActor in renderer.removeStateObserver(observerID) }
+        watch = subscription
+
+        switch buffer.waitForInitialState(timeout: 8, shouldContinue: shouldContinue) {
+        case .ready:
+            break
+        case .timedOut:
+            _ = Self.writeSocketResponse(v2Result(id: id, .err(
+                code: "timeout", message: "Timed out waiting for the markdown reader's initial state",
+                data: ["panel_id": target.surfaceId.uuidString]
+            )), to: socket)
+            return
+        case .finished:
+            if shouldContinue() {
+                _ = Self.writeSocketResponse(v2Result(id: id, .err(
+                    code: "not_ready", message: "Markdown panel closed before its reader became ready",
+                    data: ["panel_id": target.surfaceId.uuidString]
+                )), to: socket)
+            }
+            return
         }
 
-        while let state = buffer.next() {
+        while shouldContinue() {
+            guard let state = buffer.next(timeout: 0.5) else {
+                if buffer.isFinished { return }
+                continue
+            }
             let wrote = autoreleasepool {
                 Self.writeSocketResponse(v2Result(id: id, .ok(state)), to: socket)
             }
@@ -513,6 +743,14 @@ extension TerminalController {
     }
 
     private func v2MarkdownOpen(params: [String: Any]) -> V2CallResult {
+        let rejection: V2CallResult? = v2MainSync {
+            v2RefreshKnownRefs()
+            return v2RejectUnresolvedTargetRefs(
+                params,
+                fallbackWorkspaceManager: v2ResolveWorkspaceManager(params: params)
+            )
+        }
+        if let rejection { return rejection }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -653,6 +891,14 @@ extension TerminalController {
     }
 
     private func v2MarkdownGetContent(params: [String: Any]) -> V2CallResult {
+        let rejection: V2CallResult? = v2MainSync {
+            v2RefreshKnownRefs()
+            return v2RejectUnresolvedTargetRefs(
+                params,
+                fallbackWorkspaceManager: v2ResolveWorkspaceManager(params: params)
+            )
+        }
+        if let rejection { return rejection }
         guard let resolved = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "Panel not found", data: nil)
         }

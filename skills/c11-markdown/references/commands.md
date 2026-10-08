@@ -61,7 +61,10 @@ Markdown panels are saved and restored across sessions. On restore, the panel re
 ## Agent Reading Commands
 
 All reading commands require an explicit panel. They never fall back to the
-focused panel, select a workspace, or change c11's in-app focus.
+focused panel, select a workspace, or change c11's in-app focus. Discover the
+`markdown.agent_cli` feature, version 1, through `c11 capabilities` before
+depending on the socket methods. Use a stable `panel:<n>` reference or UUID;
+these commands reject bare panel indices because they are workspace-scoped.
 
 ```bash
 c11 markdown scroll --panel <id|ref> --heading "Installation"
@@ -77,14 +80,29 @@ c11 markdown open-external --panel <id|ref>
 
 `visible` returns JSON containing the heading path, visible 1-based source-line
 range, reading progress, theme and typeface, font scale, pane size, find state,
-and bounded selected text. `visible --watch` prints the initial state and each
-coalesced change as newline-delimited JSON. It uses renderer state events, not
-polling, and ends when the panel closes or the client disconnects.
+and bounded selected text. `scroll`, `visible`, and `visible --watch` create a
+hidden reader when needed and wait up to eight seconds for its first rendered
+state. `not_ready` or `timeout` means the reader did not become ready in that
+window; agents cannot select a workspace to initialize it, so report the error.
+A hidden-panel scroll takes effect in its reader, and the gold flash appears
+when the panel is next shown.
+
+`visible --watch` prints the initial state and each coalesced change as
+newline-delimited JSON. It uses renderer state events, not polling, stays
+attached to the panel model while WebKit is evicted, streams presentation
+changes, and resumes rendered state when the reader is recreated or shown. It
+ends when the panel closes (for example, `c11 close-panel --panel panel:8`),
+the client disconnects, c11 stops the CLI listener, or the peer sends more
+bytes or half-closes its request side.
+`scroll --heading` prefers an exact slug or exact case-insensitive heading text.
+If only broader matches exist, it chooses a unique prefix before considering a
+unique substring; multiple matches at that tier return `ambiguous` with heading
+examples instead of silently scrolling to the first one.
 
 Theme and typeface `--list` return the names registered by the markdown viewer;
 `--set` rejects any other name. Font scale accepts finite values from 0.5 to
 3.0 and is saved with the panel's 0.1-step precision. `open-external` asks
-macOS to open the panel's bound file in its default application.
+macOS to open the panel's bound file in its default application behind c11.
 
 ## Help
 

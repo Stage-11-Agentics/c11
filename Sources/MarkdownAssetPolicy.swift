@@ -58,15 +58,16 @@ final class MarkdownAssetRoot: @unchecked Sendable {
 enum MarkdownDocumentRoot {
     static func corpusRoot(for fileURL: URL) -> URL {
         let source = fileURL.resolvingSymlinksInPath().standardizedFileURL
-        var directory = source.deletingLastPathComponent()
-        let fallback = directory
-        while true {
-            if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
-                return directory.resolvingSymlinksInPath().standardizedFileURL
+        let fallback = source.deletingLastPathComponent()
+        let components = fallback.pathComponents
+        if !components.isEmpty {
+            for count in stride(from: components.count, through: 1, by: -1) {
+                let path = NSString.path(withComponents: Array(components.prefix(count)))
+                let directory = URL(fileURLWithPath: path, isDirectory: true)
+                if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
+                    return directory.resolvingSymlinksInPath().standardizedFileURL
+                }
             }
-            let parent = directory.deletingLastPathComponent()
-            guard parent.path != directory.path else { break }
-            directory = parent
         }
         return fallback.resolvingSymlinksInPath().standardizedFileURL
     }

@@ -1384,7 +1384,9 @@ class WorkspaceManager: ObservableObject {
     }
 
     var isFindVisible: Bool {
-        selectedTerminalPanel?.searchState != nil || focusedBrowserPanel?.searchState != nil
+        selectedTerminalPanel?.searchState != nil
+            || focusedBrowserPanel?.searchState != nil
+            || focusedMarkdownPanel?.isFindVisible == true
     }
 
     var canUseSelectionForFind: Bool {
@@ -1416,6 +1418,10 @@ class WorkspaceManager: ObservableObject {
             return
         }
 
+        if let panel = focusedMarkdownPanel {
+            panel.requestFind()
+            return
+        }
         focusedBrowserPanel?.startFind()
     }
 
@@ -1435,12 +1441,22 @@ class WorkspaceManager: ObservableObject {
             return
         }
 
+        if let panel = focusedMarkdownPanel {
+            panel.findNext()
+            return
+        }
+
         focusedBrowserPanel?.findNext()
     }
 
     func findPrevious() {
         if let panel = selectedTerminalPanel {
             _ = panel.performBindingAction("search:previous")
+            return
+        }
+
+        if let panel = focusedMarkdownPanel {
+            panel.findPrevious()
             return
         }
 
@@ -1456,6 +1472,11 @@ class WorkspaceManager: ObservableObject {
     func hideFind() {
         if let panel = selectedTerminalPanel {
             panel.searchState = nil
+            return
+        }
+
+        if let panel = focusedMarkdownPanel {
+            panel.closeFind()
             return
         }
 

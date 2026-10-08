@@ -37,6 +37,13 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     @Published private(set) var presentation: MarkdownPresentation
     private(set) var renderer: MarkdownWebRenderer?
+    @Published private(set) var isFindPresented = false
+    @Published private(set) var isFindDismissed = false
+    @Published private(set) var findQuery = ""
+    @Published private(set) var findFocusRequestToken = 0
+    private var cachedExternalAppPath: String?
+    private var cachedExternalAppName: String?
+    private var pendingFindUpdate: DispatchWorkItem?
     var fontScale: Double { presentation.fontScale }
     var theme: String { presentation.theme }
     var typeface: String { presentation.typeface }
@@ -85,6 +92,102 @@ final class MarkdownPanel: Panel, ObservableObject {
         presentation.outlineOpen = value
         presentation.saveLastUsed(fields: [.outlineOpen])
         renderer?.synchronize()
+    }
+
+    func toggleOutline() {
+        let bridgeOpen = renderer?.readerOutline.value.isOpen
+        setOutlineOpen(!(presentation.outlineOpen ?? bridgeOpen ?? false))
+    }
+
+    func requestFind() {
+        isFindDismissed = false
+        isFindPresented = true
+        findFocusRequestToken &+= 1
+    }
+
+    func setFindQuery(_ query: String) {
+        isFindDismissed = false
+        findQuery = query
+        pendingFindUpdate?.cancel()
+        pendingFindUpdate = nil
+        guard !query.isEmpty else {
+            renderer?.call("findClose")
+            return
+        }
+        let update = DispatchWorkItem { [weak self] in
+            self?.renderer?.call("find", arguments: [query])
+        }
+        pendingFindUpdate = update
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: update)
+    }
+
+    func findNext() {
+        applyPendingFindUpdate()
+        renderer?.call("findNext")
+    }
+
+    func findPrevious() {
+        applyPendingFindUpdate()
+        renderer?.call("findPrevious")
+    }
+
+    private func applyPendingFindUpdate() {
+        guard let pendingFindUpdate else { return }
+        pendingFindUpdate.cancel()
+        self.pendingFindUpdate = nil
+        if !findQuery.isEmpty { renderer?.call("find", arguments: [findQuery]) }
+    }
+
+    func closeFind() {
+        guard isFindVisible else { return }
+        isFindDismissed = true
+        isFindPresented = false
+        findQuery = ""
+        pendingFindUpdate?.cancel()
+        pendingFindUpdate = nil
+        renderer?.call("findClose")
+    }
+
+    var isFindVisible: Bool {
+        isFindPresented || !findQuery.isEmpty || (!isFindDismissed && renderer?.readerFind.value != nil)
+    }
+
+    @discardableResult
+    func dismissReaderOverlay() -> Bool {
+        if renderer?.state["diagram_open"] is Int {
+            renderer?.call("closeDiagram")
+            return true
+        }
+        if isFindVisible {
+            closeFind()
+            return true
+        }
+        let bridgeOpen = renderer?.readerOutline.value.isOpen
+        guard presentation.outlineOpen ?? bridgeOpen ?? false else { return false }
+        setOutlineOpen(false)
+        return true
+    }
+
+    var defaultExternalAppName: String {
+        guard let filePath else { return String(localized: "markdown.reader.defaultApp", defaultValue: "default app") }
+        if cachedExternalAppPath == filePath, let cachedExternalAppName { return cachedExternalAppName }
+        let fileURL = URL(fileURLWithPath: filePath)
+        let appURL = NSWorkspace.shared.urlForApplication(toOpen: fileURL)
+        let appBundle = appURL.flatMap { Bundle(url: $0) }
+        let name = (appBundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (appBundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? appURL?.deletingPathExtension().lastPathComponent
+            ?? String(localized: "markdown.reader.defaultApp", defaultValue: "default app")
+        cachedExternalAppPath = filePath
+        cachedExternalAppName = name
+        return name
+    }
+
+    @discardableResult
+    func openExternally() -> Bool {
+        guard let filePath else { return false }
+        let fileURL = URL(fileURLWithPath: filePath)
+        return NSWorkspace.shared.open(fileURL)
     }
 
     func applyRestoredFontScale(_ value: Double) {

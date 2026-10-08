@@ -75,29 +75,14 @@ struct MarkdownPanelView: View {
     // MARK: - Content
 
     private var markdownContentView: some View {
-        VStack(spacing: 0) {
-            filePathHeader.padding(.horizontal, 16).padding(.vertical, 8)
-            Divider()
+        Group {
             if isVisibleInUI {
                 MarkdownWebContent(panel: panel, isFocused: isFocused)
             } else {
                 Color.clear
             }
         }
-    }
-
-    private var filePathHeader: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "doc.richtext")
-                .foregroundColor(.secondary)
-                .font(.system(size: 12))
-            Text(panel.filePath ?? "")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var fileUnavailableView: some View {
@@ -281,7 +266,12 @@ struct MarkdownWebContent: NSViewRepresentable {
         panel.setRendererVisible(true, hostID: context.coordinator.id)
         let renderer = panel.ensureRenderer()
         renderer.webView.allowsPanelFocus = isFocused
-        let host = NSHostingView(rootView: MarkdownRendererContent(renderer: renderer))
+        let host = NSHostingView(rootView: MarkdownRendererContent(
+            panel: panel,
+            renderer: renderer,
+            readerOutline: renderer.readerOutline,
+            readerFind: renderer.readerFind
+        ))
         return host
     }
 
@@ -301,20 +291,415 @@ struct MarkdownWebContent: NSViewRepresentable {
 }
 
 private struct MarkdownRendererContent: View {
+    @ObservedObject var panel: MarkdownPanel
     @ObservedObject var renderer: MarkdownWebRenderer
+    @ObservedObject var readerOutline: MarkdownReaderOutlineState
+    @ObservedObject var readerFind: MarkdownReaderFindState
+    @FocusState private var findFieldFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var findPresented: Bool { panel.isFindVisible }
+    private var palette: MarkdownReaderPalette { MarkdownReaderPalette(theme: panel.theme, colorScheme: colorScheme) }
 
     var body: some View {
-        if renderer.failure {
-            VStack(spacing: 12) {
-                Text(String(localized: "markdown.rendererUnavailable.title", defaultValue: "Renderer unavailable"))
-                    .font(.headline)
-                Text(String(localized: "markdown.rendererUnavailable.message", defaultValue: "The bundled markdown renderer could not be loaded."))
-                    .foregroundColor(.secondary)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            MarkdownWebViewHost(webView: renderer.webView)
-                .opacity(renderer.renderedRevision == nil ? 0 : 1)
+        VStack(spacing: 0) {
+            MarkdownReaderToolbar(
+                panel: panel,
+                renderer: renderer,
+                readout: renderer.readerReadout,
+                readerOutline: readerOutline
+            )
+            ZStack(alignment: .topTrailing) {
+                if renderer.failure {
+                    VStack(spacing: 12) {
+                        Text(String(localized: "markdown.rendererUnavailable.title", defaultValue: "Renderer unavailable"))
+                            .font(.headline)
+                        Text(String(localized: "markdown.rendererUnavailable.message", defaultValue: "The bundled markdown renderer could not be loaded."))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    MarkdownWebViewHost(webView: renderer.webView)
+                        .opacity(renderer.renderedRevision == nil ? 0 : 1)
+                }
+                if findPresented {
+                    findBar
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .transition(.opacity)
+                        .zIndex(2)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.12), value: findPresented)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: panel.findFocusRequestToken) { _ in
+            findFieldFocused = true
+        }
+        .onChange(of: panel.isFindVisible) { visible in
+            if !visible { findFieldFocused = false }
+        }
+        .onExitCommand {
+            _ = panel.dismissReaderOverlay()
+        }
+    }
+
+    private var findBar: some View {
+        HStack(spacing: 5) {
+            TextField(
+                String(localized: "markdown.reader.find.placeholder", defaultValue: "Find in document"),
+                text: Binding(
+                    get: { panel.findQuery.isEmpty ? (readerFind.value?.query ?? "") : panel.findQuery },
+                    set: panel.setFindQuery
+                )
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, design: .monospaced))
+            .frame(minWidth: 90, idealWidth: 164, maxWidth: 220)
+            .focused($findFieldFocused)
+            .onSubmit {
+                if NSEvent.modifierFlags.contains(.shift) { panel.findPrevious() }
+                else { panel.findNext() }
+            }
+            .accessibilityIdentifier("MarkdownFindField")
+
+            Text(findCountLabel)
+                .font(.system(size: 10, design: .monospaced).monospacedDigit())
+                .foregroundStyle(palette.secondary)
+                .frame(width: 54, alignment: .trailing)
+                .lineLimit(1)
+                .accessibilityIdentifier("MarkdownFindCount")
+
+            Button { panel.findPrevious() } label: {
+                Image(systemName: "chevron.up")
+                    .frame(width: 24, height: 26)
+            }
+            .buttonStyle(MarkdownChromeButtonStyle())
+            .safeHelp(String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"))
+            .accessibilityLabel(String(localized: "markdown.reader.find.previous", defaultValue: "Previous match"))
+
+            Button { panel.findNext() } label: {
+                Image(systemName: "chevron.down")
+                    .frame(width: 24, height: 26)
+            }
+            .buttonStyle(MarkdownChromeButtonStyle())
+            .safeHelp(String(localized: "markdown.reader.find.next", defaultValue: "Next match"))
+            .accessibilityLabel(String(localized: "markdown.reader.find.next", defaultValue: "Next match"))
+
+            Button { panel.closeFind() } label: {
+                Image(systemName: "xmark")
+                    .frame(width: 24, height: 26)
+            }
+            .buttonStyle(MarkdownChromeButtonStyle())
+            .safeHelp(String(localized: "markdown.reader.find.close", defaultValue: "Close find"))
+            .accessibilityLabel(String(localized: "markdown.reader.find.close", defaultValue: "Close find"))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(.ultraThinMaterial)
+        .background(palette.paper.opacity(0.82))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(palette.rule, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .shadow(color: .black.opacity(0.16), radius: 12, y: 4)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var findCountLabel: String {
+        let matches = readerFind.value?.matches ?? 0
+        let current = readerFind.value?.current ?? 0
+        return String(format: String(localized: "markdown.reader.find.count", defaultValue: "%d / %d"), current, matches)
+    }
+}
+
+private struct MarkdownReaderToolbar: View {
+    @ObservedObject var panel: MarkdownPanel
+    @ObservedObject var renderer: MarkdownWebRenderer
+    @ObservedObject var readout: MarkdownReaderReadoutState
+    @ObservedObject var readerOutline: MarkdownReaderOutlineState
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: MarkdownReaderPalette { MarkdownReaderPalette(theme: panel.theme, colorScheme: colorScheme) }
+    private var outlineOpen: Bool {
+        readerOutline.value.revision.isEmpty ? (panel.outlineOpen ?? false) : readerOutline.value.isOpen
+    }
+    private var sourceMode: Bool { readout.value.mode == "source" }
+    private var scale: Double { panel.fontScale }
+    private var progress: Double { min(max(readout.value.progress, 0), 1) }
+    private var progressLabel: String {
+        let percent = Int((progress * 100).rounded())
+        let minutes = max(0, readout.value.minutesLeft)
+        return String(format: String(localized: "markdown.reader.progress.format", defaultValue: "%d%% · %d min left"), percent, minutes)
+    }
+    private var breadcrumb: String {
+        let path = readout.value.headingPath.filter { !$0.isEmpty }
+        return ([panel.displayTitle] + path).filter { !$0.isEmpty }.joined(separator: "  ›  ")
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    outlineButton(showLabel: geometry.size.width >= 700)
+                    if geometry.size.width >= 430 {
+                        Text(breadcrumb)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(palette.ink)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .help(breadcrumb)
+                            .accessibilityIdentifier("MarkdownBreadcrumb")
+                    }
+
+                    if geometry.size.width >= 430 {
+                        Text(progressLabel)
+                            .font(.system(size: 10, design: .monospaced).monospacedDigit())
+                            .foregroundStyle(palette.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                            .frame(width: 116, alignment: .trailing)
+                            .accessibilityIdentifier("MarkdownProgressLabel")
+                    }
+
+                    controls
+                }
+                .padding(.horizontal, geometry.size.width < 360 ? 4 : 8)
+                .frame(height: 35)
+
+                GeometryReader { line in
+                    ZStack(alignment: .leading) {
+                        palette.rule.opacity(0.34)
+                        palette.gold.frame(width: line.size.width * progress)
+                    }
+                }
+                .frame(height: 1)
+                .accessibilityHidden(true)
+            }
+            .background(palette.chrome)
+        }
+        .frame(height: 36)
+    }
+
+    private func outlineButton(showLabel: Bool) -> some View {
+        Button { panel.toggleOutline() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 13, weight: .medium))
+                if showLabel {
+                    Text(String(localized: "markdown.reader.outline.title", defaultValue: "Outline"))
+                        .font(.system(size: 11, design: .monospaced))
+                }
+            }
+            .frame(width: showLabel ? 84 : 32, height: 28)
+        }
+        .buttonStyle(MarkdownChromeButtonStyle(active: outlineOpen))
+        .safeHelp(String(localized: "markdown.reader.outline.toggle", defaultValue: "Toggle outline (⇧⌘O)"))
+        .accessibilityLabel(String(localized: "markdown.reader.outline.title", defaultValue: "Outline"))
+        .accessibilityAddTraits(outlineOpen ? .isSelected : [])
+        .accessibilityValue(outlineOpen
+            ? String(localized: "markdown.reader.outline.state.shown", defaultValue: "Shown")
+            : String(localized: "markdown.reader.outline.state.hidden", defaultValue: "Hidden")
+        )
+        .accessibilityIdentifier("MarkdownOutlineToggle")
+    }
+
+    private var controls: some View {
+        HStack(spacing: 3) {
+            Button { panel.requestFind() } label: {
+                Image(systemName: "magnifyingglass")
+                    .frame(width: 30, height: 28)
+            }
+            .buttonStyle(MarkdownChromeButtonStyle())
+            .safeHelp(String(localized: "markdown.reader.find.open", defaultValue: "Find (⌘F)"))
+            .accessibilityLabel(String(localized: "markdown.reader.find.open", defaultValue: "Find (⌘F)"))
+            .accessibilityIdentifier("MarkdownFindButton")
+
+            Button {
+                renderer.call("setSourceMode", arguments: [!sourceMode])
+            } label: {
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 30, height: 28)
+            }
+            .buttonStyle(MarkdownChromeButtonStyle(active: sourceMode))
+            .safeHelp(String(localized: "markdown.reader.source.toggle", defaultValue: "Toggle source view"))
+            .accessibilityLabel(String(localized: "markdown.reader.source.toggle", defaultValue: "Toggle source view"))
+            .accessibilityAddTraits(sourceMode ? .isSelected : [])
+            .accessibilityIdentifier("MarkdownSourceToggle")
+
+            HStack(spacing: 2) {
+                Button { panel.zoomOut() } label: {
+                    Text("−").font(.system(size: 14, weight: .regular)).frame(width: 26, height: 28)
+                }
+                .buttonStyle(MarkdownChromeButtonStyle())
+                .disabled(scale <= MarkdownPanel.fontScaleRange.lowerBound)
+                .safeHelp(String(localized: "markdown.reader.size.decrease", defaultValue: "Decrease text size"))
+                .accessibilityLabel(String(localized: "markdown.reader.size.decrease", defaultValue: "Decrease text size"))
+
+                Button { panel.resetZoom() } label: {
+                    Text("\(Int((scale * 100).rounded()))%")
+                        .font(.system(size: 10, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(palette.ink)
+                        .frame(width: 42, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .safeHelp(String(localized: "markdown.reader.size.reset", defaultValue: "Reset text size"))
+                .accessibilityLabel(String(localized: "markdown.reader.size.reset", defaultValue: "Reset text size"))
+                .accessibilityValue("\(Int((scale * 100).rounded()))%")
+                .accessibilityIdentifier("MarkdownTextScale")
+
+                Button { panel.zoomIn() } label: {
+                    Text("+").font(.system(size: 14, weight: .regular)).frame(width: 26, height: 28)
+                }
+                .buttonStyle(MarkdownChromeButtonStyle())
+                .disabled(scale >= MarkdownPanel.fontScaleRange.upperBound)
+                .safeHelp(String(localized: "markdown.reader.size.increase", defaultValue: "Increase text size"))
+                .accessibilityLabel(String(localized: "markdown.reader.size.increase", defaultValue: "Increase text size"))
+            }
+            .padding(.horizontal, 2)
+            .fixedSize()
+            .background(palette.control.opacity(0.75), in: RoundedRectangle(cornerRadius: 5))
+
+            themeMenu
+
+            Button { panel.openExternally() } label: {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 30, height: 28)
+            }
+            .buttonStyle(MarkdownChromeButtonStyle())
+            .safeHelp(String(
+                format: String(localized: "markdown.reader.openExternal.help", defaultValue: "Open in %@"),
+                panel.defaultExternalAppName
+            ))
+            .accessibilityLabel(String(
+                format: String(localized: "markdown.reader.openExternal.help", defaultValue: "Open in %@"),
+                panel.defaultExternalAppName
+            ))
+            .accessibilityIdentifier("MarkdownOpenExternalButton")
+        }
+        .fixedSize()
+    }
+
+    private var themeMenu: some View {
+        Menu {
+            Section(String(localized: "markdown.reader.theme.section", defaultValue: "Theme")) {
+                if renderer.themeChoices.isEmpty {
+                    themeChoice("system", label: String(localized: "markdown.reader.theme.system", defaultValue: "System"))
+                    themeChoice("light", label: String(localized: "markdown.reader.theme.light", defaultValue: "Light"))
+                    themeChoice("dark", label: String(localized: "markdown.reader.theme.dark", defaultValue: "Dark"))
+                } else {
+                    ForEach(renderer.themeChoices) { choice in themeChoice(choice) }
+                }
+            }
+            Section(String(localized: "markdown.reader.typeface.section", defaultValue: "Typeface")) {
+                if renderer.typefaceChoices.isEmpty {
+                    typefaceChoice("theme", label: String(localized: "markdown.reader.typeface.theme", defaultValue: "Theme default"))
+                    typefaceChoice("serif", label: String(localized: "markdown.reader.typeface.serif", defaultValue: "Serif"))
+                    typefaceChoice("sans", label: String(localized: "markdown.reader.typeface.sans", defaultValue: "Sans"))
+                    typefaceChoice("mono", label: String(localized: "markdown.reader.typeface.mono", defaultValue: "Mono"))
+                } else {
+                    ForEach(renderer.typefaceChoices) { choice in typefaceChoice(choice) }
+                }
+            }
+        } label: {
+            Image(systemName: themeIcon)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 30, height: 28)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 30, height: 28)
+        .background(palette.control.opacity(0.75), in: RoundedRectangle(cornerRadius: 5))
+        .safeHelp(String(localized: "markdown.reader.theme.open", defaultValue: "Theme and typeface"))
+        .accessibilityLabel(String(localized: "markdown.reader.theme.open", defaultValue: "Theme and typeface"))
+        .accessibilityIdentifier("MarkdownThemeMenu")
+    }
+
+    private var themeIcon: String {
+        switch panel.theme {
+        case "light": "sun.max"
+        case "dark": "moon"
+        default: "circle.lefthalf.filled"
+        }
+    }
+
+    private func themeChoice(_ value: String, label: String) -> some View {
+        Button {
+            panel.setTheme(value)
+        } label: {
+            if panel.theme == value { Label(label, systemImage: "checkmark") }
+            else { Text(label) }
+        }
+    }
+
+    private func themeChoice(_ choice: MarkdownReaderThemeChoice) -> some View {
+        themeChoice(choice.id, label: localizedThemeLabel(choice))
+    }
+
+    private func typefaceChoice(_ value: String, label: String) -> some View {
+        Button {
+            panel.setTypeface(value)
+        } label: {
+            if panel.typeface == value { Label(label, systemImage: "checkmark") }
+            else { Text(label) }
+        }
+    }
+
+    private func typefaceChoice(_ choice: MarkdownReaderTypefaceChoice) -> some View {
+        typefaceChoice(choice.id, label: localizedTypefaceLabel(choice))
+    }
+
+    private func localizedThemeLabel(_ choice: MarkdownReaderThemeChoice) -> String {
+        switch choice.id {
+        case "system": String(localized: "markdown.reader.theme.system", defaultValue: "System")
+        case "light": String(localized: "markdown.reader.theme.light", defaultValue: "Light")
+        case "dark": String(localized: "markdown.reader.theme.dark", defaultValue: "Dark")
+        default: choice.label
+        }
+    }
+
+    private func localizedTypefaceLabel(_ choice: MarkdownReaderTypefaceChoice) -> String {
+        switch choice.id {
+        case "theme": String(localized: "markdown.reader.typeface.theme", defaultValue: "Theme default")
+        case "serif": String(localized: "markdown.reader.typeface.serif", defaultValue: "Serif")
+        case "sans": String(localized: "markdown.reader.typeface.sans", defaultValue: "Sans")
+        case "mono": String(localized: "markdown.reader.typeface.mono", defaultValue: "Mono")
+        default: choice.label
+        }
+    }
+}
+
+private struct MarkdownReaderPalette {
+    let isDark: Bool
+    var paper: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.06 : 0.985, alpha: 1)) }
+    var chrome: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.055 : 0.93, alpha: 1)) }
+    var ink: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.94 : 0.08, alpha: 1)) }
+    var secondary: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.64 : 0.38, alpha: 1)) }
+    var rule: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.35 : 0.7, alpha: 1)) }
+    var control: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.22 : 0.84, alpha: 1)) }
+    var selected: Color { Color(nsColor: NSColor(calibratedWhite: isDark ? 0.22 : 0.89, alpha: 1)) }
+    var gold: Color { Color(red: 0.79, green: 0.66, blue: 0.30) }
+
+    init(theme: String, colorScheme: ColorScheme) {
+        isDark = theme == "dark" || (theme == "system" && colorScheme == .dark)
+    }
+
+}
+
+private struct MarkdownChromeButtonStyle: ButtonStyle {
+    var active = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(active ? Color.primary : Color.secondary)
+            .background(
+                configuration.isPressed ? Color.primary.opacity(0.14) : (active ? Color.primary.opacity(0.08) : Color.clear),
+                in: RoundedRectangle(cornerRadius: 5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 5))
     }
 }
 

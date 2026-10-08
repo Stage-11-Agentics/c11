@@ -31,9 +31,9 @@ input { font: inherit; color: inherit; }
 .surface[data-size="narrow"] .layout { --pad: 22px; }
 .surface[data-size="wide"] .layout { --pad: 32px; }
 
-/* ═══ outline: an overlay at every width, so toggling it never moves the text ═══ */
+/* ═══ page-owned outline: a docked column when space permits, otherwise overlay ═══ */
 .opanel {
-  position: absolute; top: 37px; left: 0; bottom: 0; z-index: 38; width: min(calc(272px * var(--scale)), 86%);
+  position: absolute; top: 0; left: 0; bottom: 0; z-index: 38; width: min(calc(272px * var(--scale)), 86%);
   display: flex; flex-direction: column;
   background: color-mix(in srgb, var(--paper) 74%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.15); backdrop-filter: blur(16px) saturate(1.15);
@@ -47,6 +47,9 @@ input { font: inherit; color: inherit; }
 .ohead { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; height: 38px; border-bottom: 1px solid var(--rule-soft); flex: none; }
 .ohead input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: calc(12px * var(--scale)); color: var(--c-text); height: 30px; }
 .ohead input::placeholder { color: var(--c-faint); }
+.ohead input::-webkit-search-cancel-button { display: none; }
+.ohead .oclear { flex: none; width: 20px; height: 24px; color: var(--c-faint); font-size: 16px; line-height: 1; }
+.ohead .oclear:hover { color: var(--c-text); }
 .ohead .oc { font-size: 10.5px; color: var(--c-faint); flex: none; width: 3ch; text-align: right; }
 .opanel .olist { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 6px 8px 0; scrollbar-width: thin; }
 .olist a {
@@ -67,7 +70,7 @@ input { font: inherit; color: inherit; }
 .opanel:not(.filtering) .olist a.l3.show, .opanel:not(.filtering) .olist a.l4.show { display: flex; }
 .opanel .olist a.kb { background: var(--wash-2); color: var(--ink-strong); }
 .opanel .empty { padding: 14px; color: var(--c-faint); font-size: 11.5px; }
-.ofoot { flex: none; font-size: calc(10.5px * var(--scale)); color: var(--c-faint); padding: 9px 12px 10px; border-top: 1px solid var(--rule-soft); line-height: 1.6; }
+.ofoot { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10.5px * var(--scale)); color: var(--c-faint); padding: 9px 12px 10px; border-top: 1px solid var(--rule-soft); line-height: 1.6; }
 
 /* ═══ prose ══════════════════════════════════════════════════════════ */
 .col { position: relative; max-width: var(--measure); width: 100%; margin: 0 auto; padding: 34px 0 calc(var(--scroll-h, 600px) * 0.55); }
@@ -292,6 +295,7 @@ mark.hit.cur { background: var(--hit-cur); color: var(--hit-cur-ink); box-shadow
 .backpill.open { display: flex; }
 .backpill:hover { color: var(--c-text); }
 .backpill span { overflow: hidden; text-overflow: ellipsis; }
+.surface[data-outline-docked="1"] .backpill { left: calc((272px + 28px) * var(--scale) + 12px); }
 
 
 /* The native host owns the reader toolbar and outline controls. */

@@ -11937,6 +11937,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return false
         }
 
+        // Reader chrome shortcuts are panel-scoped and deliberately avoid the
+        // app-wide customizable shortcut registry. Cmd+F remains the browser's
+        // native find when a browser panel is focused.
+        if matchShortcut(
+            event: event,
+            shortcut: StoredShortcut(key: "f", command: true, shift: false, option: false, control: false)
+        ), let markdownPanel = workspaceManager?.focusedMarkdownPanel {
+            markdownPanel.requestFind()
+            return true
+        }
+        if matchShortcut(
+            event: event,
+            shortcut: StoredShortcut(key: "o", command: true, shift: true, option: false, control: false)
+        ), let markdownPanel = workspaceManager?.focusedMarkdownPanel {
+            markdownPanel.toggleOutline()
+            return true
+        }
+
         // Chrome-like omnibar navigation while holding Cmd+N / Ctrl+N / Cmd+P / Ctrl+P.
         if let delta = commandOmnibarSelectionDelta(flags: flags, chars: chars) {
             dispatchBrowserOmnibarSelectionMove(delta: delta)

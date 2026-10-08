@@ -181,8 +181,10 @@ changes. Explicit title writes are unaffected. Pending state is bounded to
 Rotation keeps numbered generations (`.1` newest, then `.2`, `.3`, ...), using
 plain renames. Retention prunes by modification age and a 64 MiB total budget
 across recognized event files in the history directory. It runs at open,
-rotation, policy changes and health samples. It never unlinks another live
-instance's current file; when live files exhaust the budget, new writes are
+rotation, policy changes and health samples. Surviving writes refresh and
+reserve space under a shared advisory lock, keeping concurrent writers within
+the same directory budget. Suppressed spinner frames never take that lock.
+Retention never unlinks another live instance's current file; when live files exhaust the budget, new writes are
 shed instead of growing it. A record larger than the entire budget is shed.
 
 Policy defaults: analytics on, text on, retention 14 days. The cached keys are

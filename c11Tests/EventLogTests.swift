@@ -913,3 +913,35 @@ extension EventLogTests {
         XCTAssertLessThanOrEqual(try files.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }, 1800)
     }
 }
+
+
+extension EventLogTests {
+    func testTwoWritersShareOneHistoryDirectoryBudget() throws {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let firstURL = logURL("events-first-\(pid).ndjson")
+        let secondURL = logURL("events-second-\(pid).ndjson")
+        let budget = 2400
+        let first = EventLog(url: firstURL, instance: "first", sizeCap: 500, totalSizeCap: budget)
+        let second = EventLog(url: secondURL, instance: "second", sizeCap: 500, totalSizeCap: budget)
+        first.open(); second.open()
+        first.flush(); second.flush() // both writers know the initial small total
+        let producers = DispatchGroup()
+        for log in [first, second] {
+            producers.enter()
+            DispatchQueue.global().async {
+                for index in 0..<100 {
+                    log.append(EventEnvelope(type: .surfaceCreated, instance: "writer", ts: Date(),
+                        payload: ["n": index, "title": String(repeating: "x", count: 100)]))
+                }
+                log.flush()
+                producers.leave()
+            }
+        }
+        XCTAssertEqual(producers.wait(timeout: .now() + 10), .success)
+        let files = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.fileSizeKey])
+            .filter { EventLogLayout.isLogFileName($0.lastPathComponent) }
+        XCTAssertLessThanOrEqual(try files.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }, budget)
+        XCTAssertFalse(readLines(firstURL).isEmpty)
+        XCTAssertFalse(readLines(secondURL).isEmpty)
+    }
+}

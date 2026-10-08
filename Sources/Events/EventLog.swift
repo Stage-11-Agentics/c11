@@ -40,6 +40,7 @@ final class EventLog {
     private var nextTitleExpiry = Date.distantFuture
     private var knownHistoryBytes = 0
     private var historyInitialized = false
+    private var historyLockFD: Int32 = -1
     private var sampleTimer: DispatchSourceTimer?
     private var sampleProvider: (() -> EventEnvelope?)?
     private var samplingAsleep = false
@@ -95,6 +96,7 @@ final class EventLog {
 
     deinit {
         sampleTimer?.cancel()
+        if historyLockFD >= 0 { Darwin.close(historyLockFD) }
         try? fileHandle?.close()
     }
 
@@ -338,15 +340,15 @@ final class EventLog {
                 // A single record larger than the whole configured budget
                 // cannot be retained while honoring that budget.
                 guard data.count <= totalSizeCap else { return }
-                if knownHistoryBytes + data.count > totalSizeCap {
-                    pruneHistory(reserving: data.count)
-                    // Several concurrently live instances may consume the
-                    // whole shared budget. Stop growing instead of unlinking
-                    // another live writer's open file.
+                try withHistoryLock {
+                    // Writers in separate c11 processes share this directory.
+                    // Reconcile the budget under the same advisory lock as the
+                    // append, so two fresh cached totals cannot both spend it.
+                    pruneHistoryLocked(reserving: data.count)
                     guard knownHistoryBytes + data.count <= totalSizeCap else { return }
+                    try fileHandle?.write(contentsOf: data)
+                    knownHistoryBytes += data.count
                 }
-                try fileHandle?.write(contentsOf: data)
-                knownHistoryBytes += data.count
             }
         } catch {
             // Best-effort: drop the handle so the next call reopens from scratch.
@@ -434,7 +436,25 @@ final class EventLog {
         }
     }
 
+    /// Shared-directory coordination is confined to the writer queue and only
+    /// surviving records take the lock. Suppressed spinner frames do no I/O.
+    /// No ledger, polling, or new timer is needed for the cross-process budget.
+    private func withHistoryLock(_ body: () throws -> Void) rethrows {
+        if historyLockFD < 0 {
+            let directory = url.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            historyLockFD = Darwin.open(directory.appendingPathComponent(".activity-history.lock").path, O_CREAT | O_RDWR, 0o600)
+        }
+        guard historyLockFD >= 0, flock(historyLockFD, LOCK_EX) == 0 else { return }
+        defer { flock(historyLockFD, LOCK_UN) }
+        try body()
+    }
+
     private func pruneHistory(reserving bytes: Int = 0) {
+        withHistoryLock { pruneHistoryLocked(reserving: bytes) }
+    }
+
+    private func pruneHistoryLocked(reserving bytes: Int = 0) {
         let fm = FileManager.default
         let cutoff = now().addingTimeInterval(-Double(retentionDays) * 86_400)
         var entries = historyFiles().compactMap { item -> (URL, Date, Int)? in

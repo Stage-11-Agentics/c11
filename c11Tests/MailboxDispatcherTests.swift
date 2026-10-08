@@ -156,6 +156,33 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
     }
 
+    func testTextOptOutSurvivesUnresolvedRecipientQuarantineAndLogRetention() throws {
+        let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: "privacy-rejected"), instance: "privacy-rejected")
+        EventEmitter.shared.startForTesting(log: eventLog, instance: "privacy-rejected")
+        EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: false))
+        defer { EventEmitter.shared.resetForTesting() }
+        let dispatcher = makeDispatcher(surfaces: [])
+        let envelope = try MailboxEnvelope.build(from: "sender", to: "absent-recipient", body: "PRIVATE_REJECTED_TEXT", id: "01K3A2B7X8PQRTVWYZ0123456K")
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        dispatcher.log.flush()
+        eventLog.flush()
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id))
+        let retained = try MailboxEnvelope.validate(data: Data(contentsOf: rejected))
+        XCTAssertEqual(retained.body, envelope.body)
+        XCTAssertEqual(retained.ext?["c11_activity_text_recorded"] as? Bool, false)
+        try FileManager.default.removeItem(at: eventLog.url)
+        EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: true))
+        let source = MessagesPageSource.load(stateURL: tempState)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+        XCTAssertFalse(message.textRecorded)
+        XCTAssertTrue(message.body.isEmpty)
+        XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
+    }
+
     func testDispatchesToNamedRecipient() throws {
         let watcher = seedSurface(name: "watcher", delivery: "silent")
         let dispatcher = makeDispatcher(surfaces: [watcher])

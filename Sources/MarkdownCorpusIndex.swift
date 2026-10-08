@@ -430,7 +430,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 signature: Signature(
                     size: size,
                     modified: values.contentModificationDate?.timeIntervalSince1970 ?? 0,
-                    resourceIdentifier: String(describing: values.fileResourceIdentifier ?? "")
+                    resourceIdentifier: values.fileResourceIdentifier.map { String(describing: $0) } ?? ""
                 )
             ))
         }
@@ -568,7 +568,7 @@ actor MarkdownCorpusIndexRegistry {
     }
 }
 
-private enum MarkdownCorpusParser {
+enum MarkdownCorpusParser {
     private struct RawLink {
         let line: Int
         let text: String
@@ -576,7 +576,7 @@ private enum MarkdownCorpusParser {
         let section: MarkdownCorpusHeading?
     }
 
-    private struct Parsed {
+    struct Parsed {
         let document: MarkdownCorpusDocument
         let linkSlotsUsed: Int
         let headingsTruncated: Bool

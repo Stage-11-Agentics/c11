@@ -43,6 +43,7 @@ final class EventLog {
     private var historyInitialized = false
     private var historyLockFD: Int32 = -1
     private var retentionDegraded = false
+    private var reportedRetentionDegraded = false
     private var sampleTimer: DispatchSourceTimer?
     private var nextSampleAt = Date.distantFuture
     private var sampleProvider: (() -> EventEnvelope?)?
@@ -60,6 +61,8 @@ final class EventLog {
     /// `append` stays non-blocking + drops rather than growing (EVT-3). nil in
     /// production.
     var onQueueBeforeWrite: (() -> Void)?
+    /// Observes actual directory reconciliations for runtime cost tests.
+    var onHistoryReconcile: (() -> Void)?
 
     /// Assigned and read only on `queue`.
     private var nextSeq: UInt64 = 0
@@ -144,7 +147,7 @@ final class EventLog {
         )
         queue.async { [weak self] in
             self?.pruneHistory()
-            self?.writeAssigningSeq(env)
+            if self?.recordingEnabled == true { self?.writeAssigningSeq(env) }
         }
     }
 
@@ -164,7 +167,7 @@ final class EventLog {
             self.recordingEnabled = policy.enabled
             self.analyticsEnabled = policy.analyticsEnabled
             self.retentionDays = policy.retentionDays
-            if policy.enabled { self.pruneHistory() }
+            self.pruneHistory()
             self.nextSampleAt = policy.enabled && policy.analyticsEnabled
                 ? self.now().addingTimeInterval(600) : .distantFuture
             self.scheduleSampling()
@@ -223,7 +226,7 @@ final class EventLog {
             self.sampleProvider = nil
             self.flushTitles()
             if self.recordingEnabled, self.analyticsEnabled, let event = provider() { self.writeAssigningSeq(event) }
-            if self.recordingEnabled { self.pruneHistory() }
+            self.pruneHistory()
         }
     }
 
@@ -346,15 +349,17 @@ final class EventLog {
         scheduleSampling()
     }
 
+    private static let asciiSpinnerValues: Set<UInt32> = [0x2F, 0x2D, 0x5C, 0x7C]
+
     private static func titleWithoutStatusGlyphs(_ title: String) -> String {
         var scalars = title.unicodeScalars[...]
         while let first = scalars.first {
             let category = first.properties.generalCategory
-            let spinnerValues: Set<UInt32> = [0x2F, 0x2D, 0x5C, 0x7C]
-            let asciiSpinner = spinnerValues.contains(first.value)
+            let asciiSpinner = asciiSpinnerValues.contains(first.value)
                 && (scalars.dropFirst().first.map {
-                    CharacterSet.whitespaces.contains($0) || spinnerValues.contains($0.value)
+                    CharacterSet.whitespaces.contains($0) || asciiSpinnerValues.contains($0.value)
                         || $0.properties.generalCategory == .otherSymbol || (0x2800...0x28FF).contains($0.value)
+                        || $0.value == 0xFE0F || $0.value == 0x200D
                 } ?? true)
             let glyph = category == .otherSymbol || asciiSpinner
                 || first.value == 0xFE0F || first.value == 0x200D
@@ -541,18 +546,21 @@ final class EventLog {
     }
 
     private func pruneHistory() {
+        onHistoryReconcile?()
         let failure = acquireHistoryLock()
         // Contention degrades the shared target to a bounded own-instance
         // namespace. It must never stall or shed activity records.
         pruneHistoryFiles(ownInstanceOnly: failure != nil)
         if failure == nil { flock(historyLockFD, LOCK_UN) }
         historyInitialized = true
-        if let failure, !retentionDegraded {
-            retentionDegraded = true
+        retentionDegraded = failure != nil
+        guard recordingEnabled else { return }
+        if let failure, !reportedRetentionDegraded {
+            reportedRetentionDegraded = true
             writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
                 payload: ["state": "degraded", "reason": failure]), rotate: false)
-        } else if failure == nil, retentionDegraded {
-            retentionDegraded = false
+        } else if failure == nil, reportedRetentionDegraded {
+            reportedRetentionDegraded = false
             writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
                 payload: ["state": "recovered"]), rotate: false)
         }

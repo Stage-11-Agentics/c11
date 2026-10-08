@@ -858,7 +858,7 @@ extension EventLogTests {
     func testRotationRetainsSeveralGenerationsWithinDirectoryBudgetAndAge() throws {
         let date = Date()
         let url = logURL("events-budget.ndjson")
-        let stale = logURL("events-old.ndjson.2")
+        let stale = URL(fileURLWithPath: url.path + ".7")
         let unrelated = logURL("other-data.ndjson")
         try Data(repeating: 120, count: 500).write(to: stale)
         try FileManager.default.setAttributes([.modificationDate: date.addingTimeInterval(-15 * 86_400)], ofItemAtPath: stale.path)
@@ -918,8 +918,8 @@ extension EventLogTests {
 extension EventLogTests {
     func testTwoWritersShareOneHistoryDirectoryBudget() throws {
         let pid = ProcessInfo.processInfo.processIdentifier
-        let firstURL = logURL("events-first-\(pid).ndjson")
-        let secondURL = logURL("events-second-\(pid).ndjson")
+        let firstURL = logURL("events-shared-\(pid).ndjson")
+        let secondURL = logURL("events-shared-\(pid + 1).ndjson")
         let budget = 2400
         let first = EventLog(url: firstURL, instance: "first", sizeCap: 500, totalSizeCap: budget)
         let second = EventLog(url: secondURL, instance: "second", sizeCap: 500, totalSizeCap: budget)
@@ -938,6 +938,10 @@ extension EventLogTests {
             }
         }
         XCTAssertEqual(producers.wait(timeout: .now() + 10), .success)
+        // Coordination is nonblocking. Reconciliation after the concurrent
+        // burst restores the shared build target when the lock is available.
+        first.sampleForTesting()
+        second.sampleForTesting()
         let files = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.fileSizeKey])
             .filter { EventLogLayout.isLogFileName($0.lastPathComponent) }
         XCTAssertLessThanOrEqual(try files.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }, budget)
@@ -1074,5 +1078,322 @@ extension EventLogTests {
         XCTAssertLessThanOrEqual(sampled, upper + 0.001)
         XCTAssertGreaterThan(payload?["rss_mb"] as? Double ?? 0, 0)
         XCTAssertGreaterThan(payload?["threads"] as? Int ?? 0, 0)
+    }
+}
+
+extension EventLogTests {
+    private func appendOSCTitle(_ value: String, prior: String? = nil, panel: String = "panel", to log: EventLog) {
+        var payload: [String: Any] = ["key": "title", "value": value, "source": "osc", "scope": "panel"]
+        if let prior { payload["prior"] = prior }
+        log.append(EventEnvelope(type: .metadataChanged, instance: "titles", ts: Date(), surface: panel, payload: payload))
+    }
+
+    func testCombinedDeadlineFlushesIdleTitleWithAnalyticsOffWithoutHealthQuery() {
+        var clock = Date()
+        var healthCalls = 0
+        let log = EventLog(url: logURL(), instance: "idle-title", now: { clock })
+        log.updatePolicy(ActivityHistoryPolicy(analyticsEnabled: false))
+        log.startSampling { healthCalls += 1; return nil }
+        appendOSCTitle("First", to: log)
+        appendOSCTitle("Last", prior: "First", to: log)
+        log.flush()
+        XCTAssertEqual(readLines(logURL()).count, 1)
+        clock.addTimeInterval(59)
+        log.fireDeadlineForTesting()
+        XCTAssertEqual(readLines(logURL()).count, 1)
+        clock.addTimeInterval(1)
+        log.fireDeadlineForTesting()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 2)
+        XCTAssertEqual((events.last?["payload"] as? [String: Any])?["value"] as? String, "Last")
+        XCTAssertEqual((events.last?["payload"] as? [String: Any])?["title_change_count"] as? Int, 2)
+        XCTAssertEqual(healthCalls, 0)
+    }
+
+    func testNonOSCTitleDescriptionAndStatusFollowPendingTitleTailInSequence() {
+        let log = EventLog(url: logURL(), instance: "causality")
+        for key in ["title", "description", "status"] {
+            appendOSCTitle("First-\(key)", to: log)
+            appendOSCTitle("Last-\(key)", prior: "First-\(key)", to: log)
+            log.append(EventEnvelope(type: .metadataChanged, instance: "causality", ts: Date(), surface: "panel",
+                payload: ["key": key, "value": "Declared-\(key)", "source": "explicit"]))
+        }
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 9)
+        for (index, key) in ["title", "description", "status"].enumerated() {
+            let values = events.dropFirst(index * 3).prefix(3).map { ($0["payload"] as? [String: Any])?["value"] as? String }
+            XCTAssertEqual(values, ["First-\(key)", "Last-\(key)", "Declared-\(key)"])
+        }
+        XCTAssertEqual(events.compactMap { $0["seq"] as? Int }, Array(1...9))
+    }
+
+    func testPolicyBoundariesFlushPendingTitleBeforeMarkerIncludingFullDisable() {
+        let policies = [ActivityHistoryPolicy(keepText: false), ActivityHistoryPolicy(analyticsEnabled: false), ActivityHistoryPolicy(enabled: false)]
+        for (index, policy) in policies.enumerated() {
+            let url = logURL("policy-\(index).ndjson")
+            let log = EventLog(url: url, instance: "policy")
+            EventEmitter.shared.startForTesting(log: log, instance: "policy")
+            appendOSCTitle("First", to: log)
+            appendOSCTitle("Last", prior: "First", to: log)
+            EventEmitter.shared.updatePolicy(policy)
+            log.flush()
+            let events = readLines(url).map(parse)
+            XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["metadata.changed", "metadata.changed", "log.policy"])
+            XCTAssertEqual((events[1]["payload"] as? [String: Any])?["value"] as? String, "Last")
+            EventEmitter.shared.resetForTesting()
+        }
+    }
+
+    func testWorkspaceCloseFlushesTitleWithoutRequiringPanelCloseAndSleepSuspendsDeadline() {
+        var clock = Date()
+        let log = EventLog(url: logURL(), instance: "sleep-title", now: { clock })
+        appendOSCTitle("First", to: log)
+        appendOSCTitle("Last", prior: "First", to: log)
+        log.setSamplingAsleep(true)
+        log.flush()
+        clock.addTimeInterval(61)
+        log.fireDeadlineForTesting()
+        XCTAssertEqual(readLines(logURL()).count, 1)
+        log.setSamplingAsleep(false)
+        log.append(EventEnvelope(type: .workspaceClosed, instance: "sleep-title", ts: clock, workspace: "workspace"))
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["metadata.changed", "metadata.changed", "workspace.closed"])
+    }
+
+    func testSpinnerPrefixesPreservePathsAndTildeWhileDroppingOnlyStatusFrames() {
+        let log = EventLog(url: logURL(), instance: "glyphs")
+        let fixtures = [
+            ("/src", "~/src", true), ("~/src", "/src", true),
+            ("/ task", "- task", false), ("- task", "\\ task", false),
+            ("\\ task", "| task", false), ("⠋ task", "⠙ task", false),
+            ("✓ /src", "⠋ ~/src", true), ("/src", "\\src", true),
+        ]
+        for (index, fixture) in fixtures.enumerated() {
+            appendOSCTitle(fixture.1, prior: fixture.0, panel: "panel-\(index)", to: log)
+        }
+        log.finishSampling { nil }
+        let values = readLines(logURL()).map(parse).compactMap { ($0["payload"] as? [String: Any])?["value"] as? String }
+        XCTAssertEqual(values, fixtures.filter { $0.2 }.map { $0.1 })
+    }
+
+    func testFailedOversizedWriteConsumesNoSequenceNotificationOrDeliveryAcknowledgment() {
+        let log = EventLog(url: logURL(), instance: "write-results", sizeCap: 1024, totalSizeCap: 4096)
+        var notifications = 0
+        let token = NotificationCenter.default.addObserver(forName: EventLog.eventWrittenNotification, object: nil, queue: nil) { _ in
+            notifications += 1
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        log.append(EventEnvelope(type: .mailboxDelivered, instance: "write-results", ts: Date(), payload: [
+            "id": "lost", "via": "drain", "extra": String(repeating: "x", count: 5000),
+        ]))
+        log.append(EventEnvelope(type: .mailboxDelivered, instance: "write-results", ts: Date(), payload: ["id": "kept", "via": "drain"]))
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["log.dropped", "mailbox.delivered"])
+        XCTAssertEqual(events.compactMap { $0["seq"] as? Int }, [1, 2])
+        XCTAssertEqual((events.first?["payload"] as? [String: Any])?["count"] as? Int, 1)
+        XCTAssertEqual(notifications, 2)
+        XCTAssertEqual(log.confirmedDrainDeliveryIDs(["lost", "kept"]), ["kept"])
+    }
+
+    func testShutdownBarrierIsBoundedWhenWriterIsStalled() {
+        let gate = DispatchSemaphore(value: 0), entered = DispatchSemaphore(value: 0)
+        let log = EventLog(url: logURL(), instance: "stalled-shutdown")
+        log.onQueueBeforeWrite = { entered.signal(); gate.wait() }
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "stalled-shutdown", ts: Date()))
+        XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+        let began = Date()
+        log.finishSampling { nil }
+        XCTAssertLessThan(Date().timeIntervalSince(began), 3)
+        gate.signal()
+        log.flush()
+    }
+
+    func testFeedAnswerAndSuppliedMailboxTrueCannotOverrideCurrentTextOptOut() {
+        let log = EventLog(url: logURL(), instance: "central-privacy")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "central-privacy")
+        emitter.updatePolicy(ActivityHistoryPolicy(keepText: false))
+        emitter.emitFlagLowered(workspace: UUID(), surface: UUID(), by: .operator, answer: "PRIVATE_ANSWER")
+        XCTAssertFalse(emitter.emitMailboxAccepted(workspace: UUID(), id: "mail", from: "sender", to: "recipient",
+            body: "PRIVATE_BODY", topic: nil, textRecorded: true))
+        emitter.flush()
+        let events = readLines(logURL()).map(parse).filter { $0["type"] as? String != "log.policy" }
+        XCTAssertEqual(events.count, 2)
+        let answer = events[0]["payload"] as? [String: Any]
+        XCTAssertNil(answer?["answer"])
+        XCTAssertEqual(answer?["answer_bytes"] as? Int, "PRIVATE_ANSWER".utf8.count)
+        XCTAssertEqual(answer?["text_recorded"] as? Bool, false)
+        let mailbox = events[1]["payload"] as? [String: Any]
+        XCTAssertNil(mailbox?["body"])
+        XCTAssertEqual(mailbox?["text_recorded"] as? Bool, false)
+    }
+
+    func testFirstEnableAfterDisabledLaunchOpensExactlyOnce() {
+        let log = EventLog(url: logURL(), instance: "first-enable")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "first-enable", policy: ActivityHistoryPolicy(enabled: false), opened: false)
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        emitter.flush()
+        XCTAssertEqual(readLines(logURL()).map(parse).filter { $0["type"] as? String == "log.opened" }.count, 1)
+    }
+
+    func testNormalAppendsDoNotReconcileHistoryDirectory() {
+        let log = EventLog(url: logURL(), instance: "cached-budget")
+        var reconciliations = 0
+        log.onHistoryReconcile = { reconciliations += 1 }
+        log.open()
+        log.flush()
+        XCTAssertEqual(reconciliations, 1)
+        for _ in 0..<100 {
+            log.append(EventEnvelope(type: .surfaceCreated, instance: "cached-budget", ts: Date()))
+        }
+        log.flush()
+        XCTAssertEqual(reconciliations, 1)
+        XCTAssertEqual(readLines(logURL()).count, 101)
+    }
+
+    func testOffPolicyAndShutdownPruneHistoryWithoutWritingActivity() throws {
+        let url = logURL("events-off-7001.ndjson")
+        let stale = logURL("events-off-7000.ndjson.1")
+        func seedStale() throws {
+            try Data("old history".utf8).write(to: stale)
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-15 * 86_400)], ofItemAtPath: stale.path)
+        }
+        try seedStale()
+        let log = EventLog(url: url, instance: "off-7001")
+        log.updatePolicy(ActivityHistoryPolicy(enabled: false))
+        log.flush()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        try seedStale()
+        log.finishSampling { XCTFail("Disabled shutdown must not sample"); return nil }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    /// A real second process owns the exact descriptor flock. Pipes publish
+    /// acquisition and release; timeout cleanup always terminates the child.
+    private func withExternalFileLocks(at urls: [URL], exclusive: Bool, _ body: () throws -> Void) throws {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        child.arguments = ["-c", """
+        import fcntl, os, sys
+        handles = [open(path, 'a+b') for path in sys.argv[2:]]
+        for handle in handles:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX if sys.argv[1] == 'exclusive' else fcntl.LOCK_SH)
+        os.write(1, b'ready\\n')
+        if os.read(0, 1) != b'q':
+            sys.exit(2)
+        os.write(1, b'released\\n')
+        """, exclusive ? "exclusive" : "shared"] + urls.map(\.path)
+        let input = Pipe(), output = Pipe(), errors = Pipe()
+        child.standardInput = input
+        child.standardOutput = output
+        child.standardError = errors
+        try child.run()
+        defer {
+            try? input.fileHandleForWriting.close()
+            if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+            child.waitUntilExit()
+        }
+        func expect(_ expected: String) throws {
+            let done = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            var result = Data()
+            DispatchQueue.global().async {
+                let data = output.fileHandleForReading.readData(ofLength: expected.utf8.count)
+                lock.lock(); result = data; lock.unlock()
+                done.signal()
+            }
+            guard done.wait(timeout: .now() + 5) == .success else {
+                XCTFail("External flock handshake timed out")
+                throw CocoaError(.fileReadUnknown)
+            }
+            lock.lock(); let received = result; lock.unlock()
+            XCTAssertEqual(String(decoding: received, as: UTF8.self), expected)
+            guard received == Data(expected.utf8) else { throw CocoaError(.fileReadUnknown) }
+        }
+        try expect("ready\n")
+        try body()
+        try input.fileHandleForWriting.write(contentsOf: Data("q".utf8))
+        try expect("released\n")
+        child.waitUntilExit()
+        XCTAssertEqual(child.terminationStatus, 0)
+    }
+
+    func testExternalRetentionLockNeverBlocksOrDropsWritesAndPublishesOneEpisode() throws {
+        let lockURL = tempDir.appendingPathComponent(".activity-history.lock")
+        let log = EventLog(url: logURL("events-contention-7001.ndjson"), instance: "contention-7001")
+        try withExternalFileLocks(at: [lockURL], exclusive: true) {
+            let completed = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                log.open()
+                log.append(EventEnvelope(type: .surfaceCreated, instance: "contention-7001", ts: Date()))
+                log.flush()
+                completed.signal()
+            }
+            XCTAssertEqual(completed.wait(timeout: .now() + 1), .success, "A foreign lock must not stall the writer")
+            log.sampleForTesting()
+            log.sampleForTesting()
+            let events = readLines(log.url).map(parse)
+            XCTAssertTrue(events.contains { $0["type"] as? String == "panel.created" })
+            XCTAssertFalse(events.contains { $0["type"] as? String == "log.dropped" })
+            let markers = events.filter { $0["type"] as? String == "log.retention" }
+            XCTAssertEqual(markers.count, 1)
+            XCTAssertEqual((markers.first?["payload"] as? [String: Any])?["state"] as? String, "degraded")
+            XCTAssertEqual((markers.first?["payload"] as? [String: Any])?["reason"] as? String, "lock_busy")
+        }
+        log.sampleForTesting()
+        let markers = readLines(log.url).map(parse).filter { $0["type"] as? String == "log.retention" }
+        XCTAssertEqual(markers.count, 2)
+        XCTAssertEqual((markers.last?["payload"] as? [String: Any])?["state"] as? String, "recovered")
+    }
+
+    func testUnavailableRetentionLockKeepsWritingWithExplicitDegradedMarker() throws {
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent(".activity-history.lock"), withIntermediateDirectories: true)
+        let log = EventLog(url: logURL(), instance: "unavailable")
+        log.open()
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "unavailable", ts: Date()))
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertTrue(events.contains { $0["type"] as? String == "panel.created" })
+        let marker = events.first { $0["type"] as? String == "log.retention" }
+        XCTAssertEqual((marker?["payload"] as? [String: Any])?["reason"] as? String, "lock_unavailable")
+        XCTAssertFalse(events.contains { $0["type"] as? String == "log.dropped" })
+    }
+
+    func testRetentionUsesBuildLabelAndKernelWriterLivenessWithoutTouchingForeignProduction() throws {
+        let label = "com.stage11.c11.debug.c11.349"
+        let url = logURL("events-\(label)-7001.ndjson")
+        let staleOwn = logURL("events-\(label)-7000.ndjson.2")
+        let liveOwn = logURL("events-\(label)-7002.ndjson")
+        let staleDebug = logURL("events-com.stage11.c11.debug.other-7000.ndjson")
+        let youngDebug = logURL("events-com.stage11.c11.debug.young-7000.ndjson")
+        let production = logURL("events-com.stage11.c11-7000.ndjson.2")
+        let nightly = logURL("events-com.stage11.c11.nightly-7000.ndjson.2")
+        for file in [staleOwn, liveOwn, staleDebug, youngDebug, production, nightly] {
+            try Data("preserved bytes".utf8).write(to: file)
+            let age = file == youngDebug ? 8 : 30
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-Double(age) * 86_400)], ofItemAtPath: file.path)
+        }
+        let log = EventLog(url: url, instance: "\(label)-7001", retentionDays: 7)
+        try withExternalFileLocks(at: [liveOwn, staleDebug], exclusive: false) {
+            log.open()
+            log.flush()
+            XCTAssertFalse(FileManager.default.fileExists(atPath: staleOwn.path))
+            for file in [liveOwn, staleDebug, youngDebug, production, nightly] {
+                XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), file.lastPathComponent)
+            }
+        }
+        log.sampleForTesting()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: liveOwn.path), "Kernel releases the writer lock at child exit")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staleDebug.path), "Dead foreign debug history has a fixed14-day TTL")
+        for file in [youngDebug, production, nightly] {
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "preserved bytes")
+        }
     }
 }

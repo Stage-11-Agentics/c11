@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src c11md-asset:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>c11 markdown</title>
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="viewer.css">
+<style id="themeStyle"></style>
+<script defer src="vendor/markdown.js"></script>
+<script defer src="vendor/highlight.min.js"></script>
+<script defer src="vendor/katex/katex.min.js"></script>
+<script defer src="vendor/purify.min.js"></script>
+<script defer src="vendor/mermaid.min.js"></script>
+<script defer src="themes.js"></script>
+<script defer src="viewer.js"></script>
+</head>
+<body>
+<main class="surface" id="surface" data-mode="read" data-size="wide">
+  <div class="scroller" id="scroller"><div class="layout" id="layout"><div class="col" id="col"><article class="prose" id="article"></article><aside class="sidenotes" id="sidenotes"></aside></div></div></div>
+  <div class="scroller" id="srcScroller"><div class="source" id="source"></div></div>
+  <button class="backpill" id="back" hidden></button>
+  <aside class="fnpop" id="note" hidden></aside>
+  <section id="diagramOverlay" hidden role="dialog" aria-modal="true"><div class="diagram-tools"><button data-zoom="-1" aria-label="−">−</button><button data-zoom="0" aria-label="100%">100%</button><button data-zoom="1" aria-label="+">+</button><button id="diagramClose"></button></div><div class="diagram-pan" id="diagramPan"><div class="diagram-zoom" id="diagramZoom"></div></div></section>
+</main>
+</body>
+</html>

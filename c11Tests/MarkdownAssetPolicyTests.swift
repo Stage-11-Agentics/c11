@@ -45,6 +45,22 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         }
     }
 
+    func testDoubleEncodedTraversalIsOnlyALiteralFilename() throws {
+        try fixture { root, policy in
+            try Self.image.write(to: root.appendingPathComponent("outside.png"))
+            let request = URL(string: "c11md-asset://doc/%252e%252e/outside.png")!
+            // A second decode would turn this component into '..'. It must
+            // neither serve the outside image nor reject a valid literal name.
+            XCTAssertThrowsError(try policy.resource(for: request))
+            let literal = root.appendingPathComponent("doc/%2e%2e")
+            try FileManager.default.createDirectory(at: literal, withIntermediateDirectories: true)
+            let localImage = Self.image + Data([0])
+            try localImage.write(to: literal.appendingPathComponent("outside.png"))
+            XCTAssertEqual(try policy.resource(for: request).data, localImage)
+            XCTAssertThrowsError(try policy.resource(for: URL(string: "c11md-asset://doc/%2e%2e/outside.png")!))
+        }
+    }
+
     func testOnlyBundleCanServeCodeAndEntryReceivesCSP() throws {
         try fixture { root, policy in
             try Data("<!doctype html><html><head></head><body></body></html>".utf8).write(to: root.appendingPathComponent("bundle/index.html"))

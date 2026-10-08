@@ -78,6 +78,8 @@ struct MarkdownAssetPolicy: Sendable {
     }
 
     func resource(for url: URL) throws -> (data: Data, mime: String) {
+        // The bridge encodes each path component once. Decode once here;
+        // remaining percent sequences name literal files, never traversal.
         guard url.user == nil, url.password == nil, url.port == nil,
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let decoded = components.percentEncodedPath.removingPercentEncoding,

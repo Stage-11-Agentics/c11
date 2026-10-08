@@ -54,7 +54,6 @@ final class MarkdownRendererCache {
     func queryStarted(_ panel: MarkdownPanel) {
         guard let entry = entries[panel.id] else { return }
         entry.epoch += 1
-        policy.touch(panel.id)
         policy.setPinned(panel.id, true)
     }
 

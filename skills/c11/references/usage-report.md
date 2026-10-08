@@ -56,6 +56,14 @@ UTC midnight, so days without events retain their observed exposure, concurrency
 peaks, agent-hours and foreground lower bounds. Hang rates reproduce open-panel
 load buckets (under40, 40–79, 80+) with exposure hours and precursor counts.
 Working-panel buckets (0–9, 10–24, 25–49, 50+) are also included.
+Truncated initial history, a sequence gap, dropped events or a full log kill
+makes the instance's load unknown permanently for the retained replay. Presence
+snapshots and later panel edges are not a full panel census. Subsequent edges
+can establish observed lower-bound peaks/agent-hours, but never definite load
+bucket exposure or hang attribution. `load_unknown_hours` and
+`hangs_with_unknown_load` preserve those intervals and hangs; both load tables
+include an `unknown` row with a null rate. Daily concurrency/agent-hour values
+remain observed lower bounds, independent of exact bucket knowledge.
 `kinds_created` counts observed creations by panel kind. `peak_open_kinds` is the
 kind composition at the first overall per-instance peak; `peak_open_by_kind`
 tracks each kind's independent maximum. Gapped replay makes the exact peak maps

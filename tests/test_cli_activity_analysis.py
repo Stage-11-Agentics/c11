@@ -365,6 +365,52 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['hang_causes']['unknown'], 1)
         self.assertIn('hang_durations_unknown', result['coverage_gaps'])
 
+    def test_load_stays_unknown_after_gap_instead_of_becoming_zero(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        # Lose one or more events before the 30-minute hang, then observe another
+        # hang 90 minutes later. No census ever establishes the missing panels.
+        rows[4]['seq'] += 1
+        rows[5] = {'v': 2, 'instance': 'synthetic', 'seq': 7, 'ts': '2026-01-02T02:00:00Z',
+                   'type': 'hang.precursor', 'payload': {'cause': 'synthetic'}}
+        rows[6]['seq'] = 8
+        rows[6]['ts'] = '2026-01-02T02:00:00Z'
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['hang_rate_by_open_load'][0]['observed_hours'], 0)
+        self.assertEqual(result['load_unknown_hours'], 2)
+        self.assertEqual(result['hangs_with_unknown_load'], 2)
+        self.assertEqual(result['hang_rate_by_open_load'][0]['hangs'], 0)
+        self.assertEqual(result['hang_rate_by_working_load'][0]['observed_hours'], 0)
+        self.assertEqual(result['hang_rate_by_working_load'][0]['hangs'], 0)
+        unknown = result['hang_rate_by_open_load'][-1]
+        self.assertEqual(unknown['open_panels'], 'unknown')
+        self.assertEqual(unknown['hangs'], 2)
+        self.assertIsNone(unknown['hangs_per_hour'])
+
+    def test_truncated_first_event_and_full_kill_never_restore_definite_load(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        for row in rows: row['seq'] += 100
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['hang_rate_by_open_load'][0]['hangs'], 0)
+        self.assertEqual(result['load_unknown_hours'], 1)
+        self.assertEqual(result['hangs_with_unknown_load'], 1)
+        self.events()
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        # A history restart plus presence snapshots is not a panel census.
+        rows[3]['type'] = 'log.policy'; rows[3]['payload'] = {'enabled': False}
+        rows[4]['type'] = 'log.policy'; rows[4]['payload'] = {'enabled': True}
+        rows[5]['type'] = 'hang.precursor'
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['load_unknown_hours'], 1)
+        self.assertEqual(result['hangs_with_unknown_load'], 1)
+        self.assertEqual(result['hang_rate_by_open_load'][0]['hangs'], 0)
+
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)
         self.run_cli('usage', '--since', 'garbage', ok=False)

@@ -36,7 +36,9 @@
     "workspace_selection_unknown_hours",
     "workspace_agent_hours_unattributed",
     "waiting_entered_unattributed",
-    "hang_durations_ms"
+    "hang_durations_ms",
+    "load_unknown_hours",
+    "hangs_with_unknown_load"
   ],
   "properties": {
     "schema_version": {
@@ -328,6 +330,14 @@
           "minimum": 0
         }
       }
+    },
+    "load_unknown_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "hangs_with_unknown_load": {
+      "type": "integer",
+      "minimum": 0
     }
   }
 }

@@ -347,6 +347,7 @@ enum ActivityAnalysisCommand {
         var lifetime: [Double] = [], censored = 0, openAtEnd = 0
         var loadSeconds: [String: Double] = [:], loadHangs: [String: Int] = [:]
         var openLoadSeconds: [String: Double] = [:], openLoadHangs: [String: Int] = [:]
+        var unknownLoadSeconds = 0.0, unknownLoadHangs = 0
         let dayFormatter = DateFormatter(); dayFormatter.dateFormat = "yyyy-MM-dd"; dayFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         let hourFormatter = DateFormatter(); hourFormatter.dateFormat = "HH"; hourFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         func bucket(_ n: Int) -> String { n < 10 ? "0-9" : n < 25 ? "10-24" : n < 50 ? "25-49" : "50+" }
@@ -399,6 +400,9 @@ enum ActivityAnalysisCommand {
             var open = Set<String>(), working = Set<String>(), births: [String: Date] = [:]
             var panelKinds: [String: String] = [:], panelWorkspaces: [String: String] = [:]
             var selectedWorkspace: String?
+            // Edges can rebuild a lower bound after a gap, but cannot establish a full
+            // census. No event currently restores exact load knowledge in this format.
+            var loadKnown = first.seq == 1 && !malformedEnvelope
             var active: Bool?, locked: Bool?, asleep: Bool?
             var analyticsEnabled = true, historyEnabled = true
             var previous = first.ts, previousSeq = first.seq - 1
@@ -407,7 +411,7 @@ enum ActivityAnalysisCommand {
                 let duration = max(0, min(end, now).timeIntervalSince(max(start, previous)))
                 let sequenceGap = event.seq != previousSeq + 1 || event.type == "log.dropped"
                 if sequenceGap {
-                    gaps.insert("event_sequence_gap"); replayIncomplete = true
+                    gaps.insert("event_sequence_gap"); replayIncomplete = true; loadKnown = false
                     active = nil; locked = nil; asleep = nil; selectedWorkspace = nil
                     open.removeAll(); working.removeAll(); censored += births.count; births.removeAll()
                 }
@@ -415,9 +419,11 @@ enum ActivityAnalysisCommand {
                 if !sequenceGap && historyEnabled {
                     if duration > 0 { updatePeaks(open, working, panelKinds) }
                     agentSeconds += duration * Double(working.count)
+                }
+                if !sequenceGap && historyEnabled && loadKnown {
                     loadSeconds[bucket(working.count), default: 0] += duration
                     openLoadSeconds[openBucket(open.count), default: 0] += duration
-                }
+                } else { unknownLoadSeconds += duration }
                 if duration > 0 {
                     if !sequenceGap && historyEnabled, let selected = selectedWorkspace {
                         var ws = workspaceRow(selected)
@@ -498,8 +504,11 @@ enum ActivityAnalysisCommand {
                     active = payload["app_active"] as? Bool; locked = payload["screen_locked"] as? Bool; asleep = payload["system_asleep"] as? Bool
                 case "hang.precursor":
                     if inRange {
-                        hangCount += 1; loadHangs[bucket(working.count), default: 0] += 1
-                        openLoadHangs[openBucket(open.count), default: 0] += 1
+                        hangCount += 1
+                        if loadKnown && historyEnabled {
+                            loadHangs[bucket(working.count), default: 0] += 1
+                            openLoadHangs[openBucket(open.count), default: 0] += 1
+                        } else { unknownLoadHangs += 1 }
                         hangCauses[text(payload["cause"]) ?? "unknown", default: 0] += 1
                         let durations = (payload["durations_ms"] as? [NSNumber] ?? []).map(\.doubleValue)
                         let valid = durations.filter { $0.isFinite && $0 >= 0 }
@@ -514,7 +523,7 @@ enum ActivityAnalysisCommand {
                     historyEnabled = payload["enabled"] as? Bool != false
                     analyticsEnabled = historyEnabled && payload["analytics_enabled"] as? Bool != false
                     if !analyticsEnabled { active = nil; locked = nil; asleep = nil; gaps.insert("analytics_disabled_span") }
-                    if payload["enabled"] as? Bool == false { replayIncomplete = true; selectedWorkspace = nil; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
+                    if payload["enabled"] as? Bool == false { replayIncomplete = true; loadKnown = false; selectedWorkspace = nil; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
                 case "log.dropped": gaps.insert("event_log_dropped_events")
                 default: break
                 }
@@ -533,18 +542,23 @@ enum ActivityAnalysisCommand {
         }
         if starts.isEmpty { gaps.insert("event_history_unavailable") }
         if foregroundUnknown > 0 { gaps.insert("presence_state_unknown") }
+        if unknownLoadSeconds > 0 || unknownLoadHangs > 0 { gaps.insert("load_state_unknown") }
         gaps.insert("restored_panel_births_and_liveness_before_retention_unknown")
         lifetime.sort()
         func percentile(_ p: Double) -> Any { lifetime.isEmpty ? null : lifetime[min(lifetime.count - 1, Int(Double(lifetime.count - 1) * p))] / 60 }
-        let buckets: [Object] = ["0-9", "10-24", "25-49", "50+"].map { key in
+        var buckets: [Object] = ["0-9", "10-24", "25-49", "50+"].map { key in
             let hours = (loadSeconds[key] ?? 0) / 3600
             return ["working_panels": key, "observed_hours": hours, "hangs": loadHangs[key] ?? 0, "hangs_per_hour": hours > 0 ? Double(loadHangs[key] ?? 0) / hours as Any : null]
         }
-        let openBuckets: [Object] = ["under40", "40-79", "80+"].map { key in
+        var openBuckets: [Object] = ["under40", "40-79", "80+"].map { key in
             let hours = (openLoadSeconds[key] ?? 0) / 3600
             return ["open_panels": key, "observed_hours": hours, "hangs": openLoadHangs[key] ?? 0,
                     "hangs_per_hour": hours > 0 ? Double(openLoadHangs[key] ?? 0) / hours as Any : null]
         }
+        buckets.append(["working_panels": "unknown", "observed_hours": unknownLoadSeconds / 3600,
+                        "hangs": unknownLoadHangs, "hangs_per_hour": null])
+        openBuckets.append(["open_panels": "unknown", "observed_hours": unknownLoadSeconds / 3600,
+                            "hangs": unknownLoadHangs, "hangs_per_hour": null])
         var usageOptions = options
         if let start = starts.min() { usageOptions.since = start }
         let tokens = try usageResult(usageOptions, gaps: &gaps, until: ends.max())
@@ -567,6 +581,7 @@ enum ActivityAnalysisCommand {
                 "mailbox_accepted": starts.isEmpty ? null : mailboxAccepted as Any,
                 "mailbox_delivered": starts.isEmpty ? null : mailboxDelivered as Any,
                 "mail_from": starts.isEmpty ? null : mailFrom as Any, "flag_events": starts.isEmpty ? null : flagCounts as Any,
+                "load_unknown_hours": unknownLoadSeconds / 3600, "hangs_with_unknown_load": unknownLoadHangs,
                 "hour_of_day_utc_events": rhythm, "hang_precursors": hangCount, "hang_causes": starts.isEmpty ? null : hangCauses as Any,
                 "hang_durations_ms": ["samples": hangDurationSamples, "unknown_precursors": hangDurationUnknown,
                                       "total": hangDurationUnknown > 0 || starts.isEmpty || replayIncomplete ? null : hangDurationTotal as Any,

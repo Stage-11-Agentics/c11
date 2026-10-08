@@ -1,0 +1,37 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:claude-panel-rename",
+  "branch_links": [],
+  "comment_count": 3,
+  "complexity": "high",
+  "created_at": "2026-10-06T09:49:53Z",
+  "created_by": "agent:claude-panel-rename",
+  "custom_fields": {},
+  "description": "Atin decision 2026-10-06: drop 'tab' as a concept; hierarchy is window > workspace > area > panel. Every tab/surface spelling that reached main stays a silent alias (commands, flags, refs, socket methods, params, env vars). 1.0 emits panel_* + tab_* JSON keys, stops emitting surface_*/pane_*, accepts all forever. Event schema v2 (panel.*), readers accept v1. No on-disk key renamed; documented defaults keys get copy-on-read. UI chrome: panel bar, panel sheet, Panel Layout: Strip | Rail, 'Panel 171', 'many panels. one workspace.' Internal Swift Tab->Panel (R8) lands before signoff-1-2. Installed-skill sync waits for Atin's 1.0 install. Plan: c11-worktrees/signoff-feedback/panel-rename-plan.md (tickets R1 wire+CLI+env, R2 data contracts, R3 UI English, R4 consumers, R5 translations, R6 skills+docs, R7 Bonsplit strings after #596, R8 internal Swift). Orchestrator: Panel Rename (tab:1098); gate and merge: 1.0 Driver (tab:966).",
+  "done_at": "2026-10-06T17:07:58Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M492ZD1HQGXYB2X405WBR91R",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M489X85RZ0J7RE1SZA807NDQ",
+  "last_event_id": "ev_01M492ZD3NQP6K79E3WFYECFNK",
+  "last_status_changed_at": "2026-10-06T17:07:58Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-337",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "vocabulary"
+  ],
+  "title": "Panel rename: tab/surface \u2192 panel across c11 before 1.0 (window > workspace > area > panel)",
+  "type": "task",
+  "updated_at": "2026-10-06T17:07:58Z",
+  "urgency": null
+}

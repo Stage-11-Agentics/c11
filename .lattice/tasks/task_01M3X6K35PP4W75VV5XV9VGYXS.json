@@ -1,0 +1,521 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-311main",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-311-cookie-state",
+      "linked_at": "2026-10-02T14:51:38Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-window-retain",
+      "linked_at": "2026-10-02T17:56:11Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-window-close-retain",
+      "linked_at": "2026-10-02T17:59:45Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B064",
+      "linked_at": "2026-10-02T18:35:10Z",
+      "linked_by": "agent:luna-311d",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B083",
+      "linked_at": "2026-10-02T18:37:28Z",
+      "linked_by": "agent:luna-311c",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B069",
+      "linked_at": "2026-10-02T18:38:09Z",
+      "linked_by": "agent:luna-311b",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B137",
+      "linked_at": "2026-10-02T18:48:29Z",
+      "linked_by": "agent:luna-311d",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B006",
+      "linked_at": "2026-10-02T18:54:08Z",
+      "linked_by": "agent:sol-311a",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B075",
+      "linked_at": "2026-10-02T18:54:08Z",
+      "linked_by": "agent:sol-311a",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B114",
+      "linked_at": "2026-10-02T19:02:08Z",
+      "linked_by": "agent:luna-311c",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B193",
+      "linked_at": "2026-10-02T19:22:06Z",
+      "linked_by": "agent:luna-311b",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B247",
+      "linked_at": "2026-10-02T19:33:00Z",
+      "linked_by": "agent:luna-311b",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B248",
+      "linked_at": "2026-10-02T19:45:09Z",
+      "linked_by": "agent:luna-311b",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-pty-fixture-timing",
+      "linked_at": "2026-10-02T20:25:27Z",
+      "linked_by": "agent:sol-311a",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-311-B046",
+      "linked_at": "2026-10-03T00:29:30Z",
+      "linked_by": "agent:luna-311main",
+      "repo": "Stage-11-Agentics/c11"
+    },
+    {
+      "branch": "c11-1.0/C11-311-B050",
+      "linked_at": "2026-10-03T02:15:46Z",
+      "linked_by": "agent:luna-311main",
+      "repo": null
+    }
+  ],
+  "comment_count": 129,
+  "complexity": "medium",
+  "created_at": "2026-10-02T02:20:16Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nThese tier-2 bugs are real and they do not share a file with a tier-1 ticket, so they did not ride along. They are 1.0 work only if the tier-1 bugs are already in review and the run is ahead. The release does not wait on this ticket. Backlog: the tier-2 rows named below.\n\n## Evidence\nEach row is from `upstream-triage/c11-1.0/05-bug-reconciled.md` tier 2, with the mechanism in `05-bug-sweep-data/LEDGER.md` and the corrections in `audit-fable.md` and `audit-astra.md`. origin/main is `0ff8887e5e`. Re-find every line. Ledger lines from before C11-248 are stale. Probable rows need the trigger established or an explicit disproof. A missing reproducer is not a fix.\n\n## Scope\nOne PR per group. Do not land all of these in one diff. Skip a group that the run does not reach.\n\nSocket waits:\n- B006. `v2AwaitCallback` pumps the main run loop when the caller is on main (`BrowserHandlers`, the `CFRunLoopRunInMode` path). C11-209 is the 2026-08-12 incident. Do not port upstream's fast-fail that returns nil and drops the work. Cap the timeout and refuse a WebView that never loaded.\n\nWindow and restore lifetime:\n- B018. A closed main window retains its SwiftUI content through a strong window reference (`ContentView` holding the window).\n- B069, probable. Closing a window drops routing refs without retiring the manager, so a late callback can still create a PTY.\n- B046. Session history already keeps 10 copies (#467). What is left is holding back a poorer autosave and a way to restore from that history.\n- B075, probable. Restore swaps in a new workspace graph without tearing down the old one. Do this after the Ghostty mailbox ticket so teardown can abort. `PortScanner`'s callback is already on main.\n- B193. Resigning active snapshots every session on main (`AppDelegate` `applicationWillResignActive`).\n- B050. Quit waits synchronously for telemetry that can wait for main (`PostHogAnalytics` flush). Skip the wait. Telemetry is best-effort on quit.\n- B247, probable. Resume does not check that a live process already owns the session writer.\n- B248, probable. Resume starts in the terminal's drifted directory instead of the session directory.\n\nFocus:\n- B032. The synchronous focus post is still in `Workspace`. Fable: the re-entering observer is gone on this SHA (`ContentView` no longer calls `focusTab` from it). Defer and coalesce the post. Do not rebuild focus. There is no 426-second cycle left to fix.\n- B093. AppKit and Ghostty focus can disagree, so typed input sits in a terminal that does not have Ghostty focus. Reassert when this view is first responder.\n- B114. `vendor/bonsplit` `SplitViewController` sets `focusedPaneId` to the sibling on every close, and `Workspace` applies it. Closing an unfocused pane steals focus. Push the bonsplit commit to its remote `main` before the parent pointer. Do not commit a detached submodule.\n\nPortal:\n- B049. Terminal portal `bind` runs `layoutSubtreeIfNeeded` inside a SwiftUI layout turn (`TerminalWindowPortal.swift`). Defer it. Do not add a display link.\n- B160. Pane ownership lookup reads every tab model and subscribes portal views to title changes. Identity lookup should not subscribe to titles. The spinner filter is a different ticket. Do not depend on it.\n\nBrowser automation, not C11-287:\n- B078. `browser cookies clear --url` ignores the filter and clears the shared profile (`BrowserQueryHandlers`). Honor the url or path, or require an explicit scope.\n- B080. `browser state load` writes storage into the document that is still committed, then reports loaded. Wait for the navigation to commit, and keep the origin.\n- Do not edit `replaceWebViewPreservingState`. C11-287 owns that function (B074, B014) and its ride-alongs B113, B120, and B162.\n\nTheme:\n- B083. `NSColor.darken` calls `getHue` without converting to sRGB, so a catalog or grayscale divider color raises (`GhosttyConfig.swift` near 644). Convert first.\n\nRouting and input leftovers:\n- B137. `GHOSTTY_ACTION_PWD` writes the directory through the key window's manager (`GhosttyTerminalView`, the case under set-title). Use the tab's own workspace, the way the notification path below it already does.\n- B148. Keys that arrive before the Ghostty runtime exists are passed to `super`, so AppKit beeps or inserts them into the wrong view (`keyDown` near 5602). Consume them.\n\nShell wrapper:\n- B064. Two copies of `Resources/bin/claude` on `PATH` can exec each other (`:49` skips only its own directory). Add a reentry guard. Check the Codex wrapper for the same finder shape and fix it if the loop is the same. Wrappers stay in the bundle. No writes to `~/.claude` or `~/.codex`.\n\nOut:\n- Every tier-1 bug. Those have their own tickets.\n- Tier-2 rows that already ride a tier-1 ticket: B001, B004, B014, B015, B020, B021, B025, B029, B033, B034, B036, B037, B042, B043, B045, B060, B066, B067, B068, B089, B113, B120, B162, B166, B175, B180, B188, B189, B257, B266, B355. Do not take them.\n- Tier 3, all parked: B008, B017, B026, B038, B039, B040, B041, B048, B051, B052, B053, B054, B055, B057, B063, B073, B081, B098, B112, B115, B118, B119, B121, B139, B143, B153, B171, B184, B197, B203, B295, B305, B309, B324. B051, B073, and B081 are already fixed on this SHA. Do not reopen them.\n- Journal notification restore (B044). Commented on C11-231.\n\n## Approach\nLeave this ticket in the backlog until the P0 tickets in ws:bugs are in review. Then take the group with the worst operator moment that the run still has time for. Browser automation (B078, B080) is the one that breaks the `c11-browser` skill. Resume cwd and the double-writer (B247, B248) are next if agents are resuming into the wrong directory. The rest are S repairs.\n\nEach PR names the ledger ids it closes and the ones it disproved. Update this ticket's comment with that list. Do not widen a group into a subsystem rewrite.\n\n## Acceptance criteria\n1. The release can ship with this ticket still open. Nothing in ws:bugs P0 or P1 depends on it.\n2. For each group that is attempted: the operator-visible failure in that group's bullet no longer happens on a tagged build, or the PR records a disproof. Examples that count: a url-scoped cookie clear leaves other cookies, a state load lands on the new origin, closing a background pane leaves focus where it was, quit does not wait on telemetry.\n3. Groups that are not attempted stay listed here, not silently dropped.\n\n## Validation\nThe check matches the group: a logic test where the decision is pure, `tests_v2` for socket and browser commands, computer use where focus or a window is the bug. Builds on Atlas after C11-216. No soak unless a group touches a typing path (B032, B049, B160), in which case a short before/after sample is enough and the C11-270 soak is the real gate. No source-grep test. No Hyperion build.\n\n## Dependencies\nOrdering note, not a link: start after the Ghostty patch set and the app-half ticket are in review, because B075's teardown and B049's portal code sit next to that work. Cross-workstream: F1 is C11-216, F2 is C11-270. C11-287 owns the browser host crash. The lead links across workstreams.\n\n## Risks\nA sweep PR that collides with a tier-1 owner in `GhosttyTerminalView`, `SurfaceHandlers`, `ContentView`, or `BrowserTab`. Read those tickets' ride-alongs before editing. Bonsplit and Ghostty submodule pointers follow the push-first rule. Doctrine: no tenant config writes. New UI strings use `String(localized:)` and the translation ticket. Public repo: name the bug and the outcome. No trigger recipes, no crash payloads.\n\nSize: M. Tier: P2. Doctrine check: holding list. One group per PR. No tenant config.\n",
+  "done_at": "2026-10-03T10:48:01Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YPS1SWTKM7Q1NV9E211K13",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YQ27A5JS34AK3JXDCWF6YB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YTM8H5B2FRFHNY9A0AY7Q3",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YV15TYAB0NWX2M520Y8QDV",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YVHYVT3H1Q72R6BZTW3FP7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YVN3XPBM3N5M3DV8PGR2PC",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YWN31K3K0Z6A4B9ZN8G1CN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YXQ20XEPKY8X1W0Q2RCY60",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YXZQ1GPMNGWEYVVERFZFKZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YZ1FRYYHDW9XXV4E0H281D",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YZ9Y6VMW5A4DD30RF9WCSZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YZQCSD8VRB3FEQ9ZGYW2CN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z04G830C83Q657354R28SP",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z0N0ZW04BXC3VYSGHFR37G",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z0T8JR24XH89MZXNGJDZ5A",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z0YT8KXYF6KCARDX2M2A9S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1204AAXN8KRDZMY52ZDER",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z15S6NK72044ANTZWPG6AZ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1J4GC52T4FMK9HHGHPQ4M",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1SBQ2KG7G0W1BJ15VJXQ3",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1SBSHY361D63Y7J34TKD3",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z283TK68738ZFXRWBB1AGR",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z2HV42RAAWZJ1G4STH85JZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z468JT7S96851NDE8G1CHX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z4WATCD7ZKNANBR4NV0CKV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z52CF7264VNTYSDRWBKB5C",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z54YA2529MX71M4VHMJS08",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z58YMM6NGA3679GSSKV867",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z5ABNH1YY6VH60VZFP3EXC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z5PF0ZFV0YHCMVMSWCW1GZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z6EKCS9T7JTSSB6WZ42797",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z6JNDA3P8RB2V4P643S1XD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z6N5KWQQ1MNVK5YBGMNH7S",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z6SR9WCDBW9Q5B6PS2H8D9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z77HTC1W3BN6779Y8WNP0J",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z8367DMTA5WGR6PCTH1V7J",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZA1RX3G2X8D9SBG48TXKRV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZB9T6ESJZ9PQHEQFECPA4W",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZBW2XENV2V8V378WB4S2VQ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZCP8KAM74QWPC2WYQZX48D",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZD4BM7DS2BXMT9FT6VSSDW",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZDKYT32YD5FTVRX70CKRMF",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZDPVVKW7XRK782Y64JHS2S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZEA73B5179355MPXH5TF43",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZJHNG3KESCHFW5ZAQ0ZF49",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZJNF76W7PQEWXBV90N5BQK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZJWT8K0ZPDRDQ7FMQMXBZB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZJWTC9XR0ZX69A8FMZ2GKJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZK1PRCRDQVT4XN73Q6NYXZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZK1Q65D2PQWATY69GW7J4D",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZKDGKHRKVC8D51KWBPQZY4",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZKDTE5P7GBW5F98W1S6456",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZKWVQY6M21S6TYAFAESX1S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZM7HTRAG03V2P1EMPPKPTC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZM9ZH273ATG301762RM095",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZMCT2FEFXGN16QHNPSVTTA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZMJDFQ1K49J370NJD7XBQQ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZNBM0TDED9B3JEQEVK46GF",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZNR7JG9BXKKG9GZ9F8ADRD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZNV0Q4723RR4YSTZCRDM71",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZNW0Z1MPZ6WQ2WHN4NMRTT",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPBNK75CEFJYWG9G89FDKV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPC31WJQN0BA5SZAG23HCT",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPF1VPBV5Z48V293B3ZN66",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPFNCEMGFABTDE365Y2DM9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPRZXQETGAXTBJZX389SVV",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPTW4WB6B4MCNYKPWMX2BT",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZQ8AP2HWFDDRBS8PNAVGZ6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZQF15EBEDQXSHS9N1891V2",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZR0A4CF6T7T6J4VE1NK7R0",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZRQJS1HSBM982K0BAVXMDD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZS28T3DWHC9K3MABA29P1W",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZSCMVW22SGPR5MCNEMYQKH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40P1H9FVKBP3B0MEEW0K0JM",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M40P1H8R16G8Q935CEDC27DK",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K35PP4W75VV5XV9VGYXS",
+  "last_event_id": "ev_01M40P1H9FVKBP3B0MEEW0K0JP",
+  "last_status_changed_at": "2026-10-03T10:48:01Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 3,
+  "schema_version": 1,
+  "short_id": "C11-311",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p2"
+  ],
+  "title": "Tier-2 bug sweep",
+  "type": "task",
+  "updated_at": "2026-10-03T10:48:01Z",
+  "urgency": null
+}

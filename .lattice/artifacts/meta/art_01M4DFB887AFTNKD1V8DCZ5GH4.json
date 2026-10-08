@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:01:07Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DFB887AFTNKD1V8DCZ5GH4",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4DFB887AFTNKD1V8DCZ5GH4.json",
+    "size_bytes": 220
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged hostile fixture observations",
+  "token_usage": null,
+  "type": "file"
+}

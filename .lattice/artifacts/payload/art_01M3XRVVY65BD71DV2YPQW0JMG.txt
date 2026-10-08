@@ -1,0 +1,57 @@
+{
+  "invocation": "8849b60ca5ee498294825cef2c7cb894",
+  "head": "8ebd72af464f3606cf9135bfa63a44549b344e29",
+  "parent_head": "ac1f8260eb4f36bda585c01b357779c0adcf65f0",
+  "branch": "c11-1.0/C11-297-startup-readiness",
+  "submodules": {
+    "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-297-startup",
+  "slug": "c11-297-startup",
+  "mode": "test",
+  "extra": [
+    "-only-testing:c11LogicTests/SocketStartupReadinessTests",
+    "-only-testing:c11Tests/StartupBundledReportsTests",
+    "-only-testing:c11Tests/TerminalControllerRefLifecycleTests",
+    "-only-testing:c11Tests/FinderServicePathResolverTests"
+  ],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "ok",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": true
+}
+
+Test Suite 'Selected tests' started at 2026-10-02 03:38:40.376.
+Test Suite 'c11Tests.xctest' started at 2026-10-02 03:38:40.377.
+Test Suite 'FinderServicePathResolverTests' started at 2026-10-02 03:38:40.377.
+Test Suite 'FinderServicePathResolverTests' passed at 2026-10-02 03:38:40.388.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.010 (0.011) seconds
+Test Suite 'StartupBundledReportsTests' started at 2026-10-02 03:38:40.388.
+Test Case '-[c11Tests.StartupBundledReportsTests testBundledBashAndZshOneShotReportsSurvivePendingRestoreWithoutRetry]' started.
+Test Case '-[c11Tests.StartupBundledReportsTests testBundledBashAndZshOneShotReportsSurvivePendingRestoreWithoutRetry]' passed (0.153 seconds).
+Test Suite 'StartupBundledReportsTests' passed at 2026-10-02 03:38:40.542.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.153 (0.153) seconds
+Test Suite 'TerminalControllerRefLifecycleTests' started at 2026-10-02 03:38:40.542.
+Test Suite 'TerminalControllerRefLifecycleTests' passed at 2026-10-02 03:38:40.805.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.262 (0.263) seconds
+Test Suite 'c11Tests.xctest' passed at 2026-10-02 03:38:40.805.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.425 (0.428) seconds
+Test Suite 'Selected tests' passed at 2026-10-02 03:38:40.805.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.425 (0.429) seconds
+Test Suite 'Selected tests' started at 2026-10-02 03:38:41.590.
+Test Suite 'c11LogicTests.xctest' started at 2026-10-02 03:38:41.590.
+Test Suite 'SocketStartupReadinessTests' started at 2026-10-02 03:38:41.590.
+Test Suite 'SocketStartupReadinessTests' passed at 2026-10-02 03:38:41.595.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds
+Test Suite 'c11LogicTests.xctest' passed at 2026-10-02 03:38:41.595.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds
+Test Suite 'Selected tests' passed at 2026-10-02 03:38:41.596.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.004 (0.006) seconds
+** TEST SUCCEEDED **

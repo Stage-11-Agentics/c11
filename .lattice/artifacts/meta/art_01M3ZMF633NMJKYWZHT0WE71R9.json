@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T01:01:17Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZMF633NMJKYWZHT0WE71R9",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZMF633NMJKYWZHT0WE71R9.json",
+    "size_bytes": 2455
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged probe PASS 6.0 s (build 43a7fe72 at e148fe1ebe, exec 06a1084a, guest PID 654): socket Return refused, operator Return switches",
+  "token_usage": null,
+  "type": "file"
+}

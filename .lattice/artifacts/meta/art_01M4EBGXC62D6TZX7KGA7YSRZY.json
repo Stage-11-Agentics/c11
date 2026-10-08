@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T18:13:33Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4EBGXC62D6TZX7KGA7YSRZY",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4EBGXC62D6TZX7KGA7YSRZY.json",
+    "size_bytes": 1257
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Atlas Debug build for aeb3e8d715 plus exactly the two repair-file overlays; compile=ok, tests=na. App hash is recorded in the manifest.",
+  "tags": [],
+  "title": "Atlas md-360 tagged build result",
+  "token_usage": null,
+  "type": "file"
+}

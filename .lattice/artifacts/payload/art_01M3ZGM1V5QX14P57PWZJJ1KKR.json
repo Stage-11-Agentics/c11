@@ -1,0 +1,29 @@
+{
+  "invocation": "058be32d2fc04d64b41b0b416c68c39c",
+  "head": "95cf799009f41b422c4e79a55b04b3e2a8b82749",
+  "parent_head": "63bc24163276ddd0cbd45afc828e415625cb7b86",
+  "branch": "c11-1.0/C11-266-quick-view",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "bb8a38dac71f946860e2a740ed7b0cfde9ec390a"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-266",
+  "slug": "c11-266",
+  "mode": "test",
+  "extra": [
+    "-only-testing:c11Tests/FeedQuickViewTests",
+    "-only-testing:c11LogicTests/FeedQuickViewSelectionTests",
+    "-resultBundlePath",
+    "c11-266-focus2.xcresult"
+  ],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "ok",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": true
+}

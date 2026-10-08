@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:43:56Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2A3TNCMMY6MQ5B3XF8RBE",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z2A3TNCMMY6MQ5B3XF8RBE.md",
+    "size_bytes": 16898
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Binding g60 protocol with external quiet holder and raw per-sample load",
+  "token_usage": null,
+  "type": "file"
+}

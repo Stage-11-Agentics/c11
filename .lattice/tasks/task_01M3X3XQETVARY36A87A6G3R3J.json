@@ -1,0 +1,113 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-278",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-278-hooks-docs",
+      "linked_at": "2026-10-02T23:40:58Z",
+      "linked_by": "agent:luna-278",
+      "repo": null
+    }
+  ],
+  "comment_count": 9,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:33:39Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nAn agent should learn the shipped journal verbs and their limits from the installed skill, without reopening the approved hook doctrine or relying on stale persistence documentation. Backlog item: J8.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `CLAUDE.md:80` limits the wrapper exception to session resume while `PHILOSOPHY.md:11` says observe from outside; D5 needs a bounded exception in both. `skills/c11/references/metadata.md:18` says in-memory only and `:40`, `:72` and `:283` exclude derived activity from persistence, but `Sources/PersistedMetadata.swift:136` and `:166` preserve activity. `skills/c11/references/events.md:21` says sequence resets to 0; `Sources/Events/EventLog.swift:115` increments before first write (first emitted seq is 1).\n- Research: BACKLOG.md J8/D5; report 01 Doc drift; Astra \u00a76 D5; c11-1.0.html D5. Upstream `CLI/CMUXCLI+ClaudeHookSettings.swift:85` is the blocking bridge to explicitly exclude, not a doctrine precedent.\n- `CLAUDE.md:41`\u2013`:53` requires scripts/sync-installed-skills.sh after any installable skill edit.\n\n## Scope\nIn: bounded D5 wording in CLAUDE.md and PHILOSOPHY.md; operating-skill examples for shipped append/agents/lifecycle/stats-or-query/export verbs; activity and first-seq corrections; installed-copy sync. Out: blanket hooks permission, tenant setup/install commands, arbitrary tool/prompt bodies or answers, trust broadening, unrelated documentation rewrite and changing the events transport.\n\n## Approach\nLand the doctrine/drift clarification early, then finish the same ticket\u2019s command examples against J2/J6/J7\u2019s actual CLI. Explain optional nonblocking observations, no dependence on cooperation for baseline terminal use, visible source/capability loss and the Codex fallback gate. Distinguish the durable journal sequence from the per-instance best-effort events sequence. Keep examples targeted to explicit tabs and use current vocabulary. Update source, sync installed c11 skill through the mandated script, and verify the loaded copy.\n\n## Acceptance criteria\n1. A reviewer can find the same bounded optional/nonblocking observation rule in both doctrine files, including no tool/prompt bodies, no answers and no trust broadening; neither document authorizes a blocking bridge or tenant writes.\n2. The installed skill teaches the actual J2/J6/J7 commands and observable outputs for the F3 blocked/completed/restart workflow and J7 analytics questions, including advisory/degraded/unconfirmed evidence and the J4 trust-probe fallback.\n3. Metadata documentation states activity persists despite the general derived-field exclusion; events documentation states the first emitted seq is 1 and remains per-instance, not the durable journal\u2019s sequence.\n4. Execute the documented command examples against an Atlas-built tagged app and compare output with the documented schema. Record scripts/sync-installed-skills.sh c11 plus byte/content-hash verification of the installed copy after the source edit.\n\n## Validation\nEditorial review plus real command-example smoke checks suffices; do not add grep/AST tests that assert documentation wording. Use observed persistence and events output from J2/J6 validation to substantiate the drift fixes. No new soak is needed for prose; underlying runtime validations and any builds stay with their tickets on Atlas. Verify installed copies, not only committed source.\n\n## Dependencies\nFinal command-example completion depends on J2, J6 / C11-231 and J7. Doctrine/drift edits can start immediately. Coordinate producer capability wording with J3\u2013J5; the same ticket owns completion, avoiding a second docs ticket.\nWithin-workstream prerequisites: J2 (C11-273), J6 (C11-231), J7 (C11-277).\n\n## Risks\nPrimary risk is documenting intended commands as shipped or leaving the installed skill stale. Preserve unknown/degraded caveats and per-instance versus durable sequence distinction. No new product strings expected; localize any introduced. Public examples must use fictional identifiers and paths. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: S. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": "2026-10-03T01:02:31Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3ZK8RHB362TT3E7ZSMB4KDS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZM1D1YJC0CCQMQ9S8QEM6Y",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZMHE90VC9BNKYWTWFPDCVA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZMHEDPBPQEDQCZNPR04ASG",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3ZMHEDKM4Z285PXKF507AFX",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3ZMHT73YX1J290NXXQX9XQS",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X3XQETVARY36A87A6G3R3J",
+  "last_event_id": "ev_01M3ZMHT73YX1J290NXXQX9XQS",
+  "last_status_changed_at": "2026-10-03T01:02:31Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:34:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M387A7G59B9BCVHC3DG6F7P1",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:34:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XQC3KVBT6T1PRE7RR4F0",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:46Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPRNFH2Y3DG9T9GZDM3T",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:46Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPVNN0J7YKHNTMD4BA3Q",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:46Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPYC058FD9J2WZESMDF7",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-278",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Document bounded lifecycle hooks and sync the journal operating skill",
+  "type": "chore",
+  "updated_at": "2026-10-03T01:02:43Z",
+  "urgency": null
+}

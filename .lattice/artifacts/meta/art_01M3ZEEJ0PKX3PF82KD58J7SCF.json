@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEJ0PKX3PF82KD58J7SCF",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZEEJ0PKX3PF82KD58J7SCF.png",
+    "size_bytes": 778105
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: Down moves selection, no tab activated",
+  "token_usage": null,
+  "type": "file"
+}

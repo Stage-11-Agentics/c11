@@ -1,0 +1,22 @@
+C11-288 validation: existing runtime proof mapped to acceptance criteria (batch fast rule)
+
+Merged: PR #558, squash ea24ef5876480f991e632a79f5e277b2781e9fa4, landing head 5eb1813f7b264d9cfdad5872cc39156b87f0aef1. Merge Captain receipt ev_01M3ZAT2WQ8T5GGP41NMGACS32 (exact-head full logic run a2ba2d7713684752a5f773521164aaf4: 2,448 tests, 3 skips, 0 failures; all 17 BrowserImportMappingTests pass, including the new Safari history test). Review: cycle-1 PASS ev_01M3ZAEB5MW4A8ZQ44ENEAVCG3, with an independent red/green mutation check of the Safari query on the build worker (fixed: 1 test, 0 failures; old column: 1 failure, `no such column: history_items.title`). Owner validation ev_01M3ZA0DSF9QGZWER4DK4ZXF2D; smoke note docs/smoke/c11-288-browser-import.md. No new runs were made for this comment. All observations used synthetic loopback data in disposable guests; no real browser profile was read.
+
+Criterion -> evidence -> result
+1. Chrome history imports into a fresh profile; Keychain prompt appears before Chrome cookies are read; Cancel imports no cookies and reports the cancel -> native Chrome 154 visit imported 1 entry with title into a fresh profile, source hash unchanged (ev_01M3ZA0DSF9QGZWER4DK4ZXF2D, art_01M3YKDZXBN3E7J5ENDE680MK3, art_01M3YM74EBBWJMFQYYX8F98D6T); real synthetic Keychain request observed first (art_01M3YKDZTW8BEG59RPRK57J6YH); Cancel: 0 cookies imported, 1 encrypted cookie skipped, history imported, Safe Storage warning (art_01M3YKB72VDW19XYFVF78FSQJA), inspected by the reviewer -> PASS on the packaged Release build a70bcae308 (art_01M3YW66RCQ0NNDQRVHJA71V3S). The importer's Chrome path is unchanged by this PR. A repeat on the merged build is routed to sign-off.
+2. Arc history, or a written blocker naming the detector path -> Arc not installed in the guest; written blocker with detector root `Library/Application Support/Arc`; generated Arc schema imported 1 history entry, 0 cookies, no warning (art_01M3YKB77YGBR8W9A5FHP59N1R; smoke note Limits) -> PASS via the criterion's written-blocker alternative. Native Arc is unverified and routed to sign-off.
+3. Safari history imports or shows a specific warning; Safari cookies show the Cookies.binarycookies warning without a crash -> pre-fix native Safari 26.6.2 history returned 0 entries with the specific warning `no such column: history_items.title` (schema artifact art_01M3Z8T3H66JY64E44MXG87D92); fixed in readWebKitHistoryRows to read history_visits.title; behavioral regression test red on the old query and green on the fix (owner, reviewer mutation check, Captain gate); Safari cookie warning with no crash (art_01M3YKB7ACD89KTH6WVBRKG8G5) -> PASS. The packaged wizard has not been re-run on the fixed build (smoke steps 5-6): routed to sign-off.
+4. Destination profile cookies are not visible in another c11 profile; the same URL is signed in in the destination and signed out elsewhere -> profile-picker screenshots show the loopback URL SIGNED IN in the Chrome destination (art_01M3Z2P8WK7AD2A6DN5561BVN5) and SIGNED OUT in a separate profile (art_01M3Z2P90BECYKR979F54BPJJ3), boolean-only server log (art_01M3Z2TFDF6NEEPJJE2H1CYYDK) -> PASS on the historical packaged build a70bcae308, not the merged head. A repeat on the merged build is routed to sign-off.
+5. PR attaches the smoke note; a fixed failure names the browser version and the changed function -> PR #558 carries docs/smoke/c11-288-browser-import.md naming Safari 26.6.2, the failing column and BrowserDataImporter.readWebKitHistoryRows; the Captain's public-text scan found no home paths, account names or emails -> PASS.
+
+Residuals stated plainly: successful decryption of a modern encrypted Chromium cookie is not demonstrated and not claimed. Native Arc compatibility is unverified. The fixed Safari path is proven by the behavioral test against the natively observed schema, not yet by the packaged wizard.
+
+Routed to C11-292 sign-off (concrete steps in signoff-additions.md)
+- Packaged wizard re-run on the fixed merged build: Chrome and Safari history into fresh profiles (smoke steps 4-6), Safari cookie warning (step 7), menu quit (step 8).
+- Keychain prompt before Chrome cookies are read, and Cancel imports no cookies with a warning, on the merged build.
+- Cross-profile cookie isolation on the merged build.
+- Native Arc import, if Arc can be installed in a disposable guest; otherwise the written blocker stands.
+
+No check contradicts a criterion.
+
+Verdict: COMPLETE with the deferred runtime steps routed to C11-292.

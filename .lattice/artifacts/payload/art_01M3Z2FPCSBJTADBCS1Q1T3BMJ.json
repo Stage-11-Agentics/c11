@@ -1,0 +1,65 @@
+{
+  "run_id": "c11-266-base",
+  "pid": 1138,
+  "checks": [
+    "Tagged PID matches exact bundle executable",
+    "Explicit socket listener belongs to tagged PID",
+    "Socket reports the exact tagged bundle identity",
+    "Guest starts with zero routine history",
+    "Guest starts with zero flags",
+    "Exactly one guest display enumerated",
+    "Exactly one visible tagged main window enumerated",
+    "Tagged window is on the verified single guest display",
+    "Exact tagged PID is frontmost",
+    "Exact tagged PID foreground before terminal click",
+    "benchmark-typed-echo screenshots captured"
+  ],
+  "screenshots": [
+    "/Volumes/My Shared Files/out/benchmark-base/benchmark-typed-echo-display.png",
+    "/Volumes/My Shared Files/out/benchmark-base/benchmark-typed-echo-window.png"
+  ],
+  "guest_model": "VirtualMac2,1",
+  "display_enumeration": {
+    "displays": [
+      {
+        "id": 1,
+        "x": 0,
+        "y": 0,
+        "width": 1024,
+        "height": 768
+      }
+    ],
+    "windows": [
+      {
+        "kCGWindowName": "Workspace 1",
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowSharingState": 1,
+        "kCGWindowOwnerPID": 1138,
+        "kCGWindowOwnerName": "c11 DEV c11-266",
+        "kCGWindowNumber": 44,
+        "kCGWindowStoreType": 1,
+        "kCGWindowBounds": {
+          "X": 0,
+          "Height": 680,
+          "Y": 30,
+          "Width": 1024
+        },
+        "kCGWindowAlpha": 1
+      }
+    ]
+  },
+  "benchmark": {
+    "updates": 40,
+    "update_plus_main_query_median_ms": 34.106,
+    "update_plus_main_query_p95_ms": 44.857,
+    "update_plus_main_query_max_ms": 59.787,
+    "typing_burst_to_observed_echo_ms": 354.398,
+    "load": "19:39  up 1 min, 7 users, load averages: 98.00 33.75 12.95",
+    "scope": "Small synthetic churn; main-query and typing-echo proxies, not fleet soak or keystroke-only latency"
+  },
+  "result": "PASS",
+  "cleanup_errors": [],
+  "elapsed_seconds": 5.734
+}

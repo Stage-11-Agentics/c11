@@ -1,0 +1,12 @@
+time=Thu Oct  8 21:56:27 UTC 2026
+21:56  up 3 mins, 3 users, load averages: 12.58 16.01 7.67
+app_pid=662
+webcontent_pids=695
+740
+2237
+webcontent_count=3
+    0 B        0 B          0 B          2    __CTF
+    0 B        0 B          0 B         71    guard
+    0 B        0 B          0 B       1730    __AUTH_CONST
+    ---        ---          ---        ---    ---
+ 196 MB      63 MB        96 MB      14813    TOTAL

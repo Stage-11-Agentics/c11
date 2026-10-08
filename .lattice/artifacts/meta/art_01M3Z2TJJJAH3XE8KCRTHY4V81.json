@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:52:56Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2TJJJAH3XE8KCRTHY4V81",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z2TJJJAH3XE8KCRTHY4V81.md",
+    "size_bytes": 20006
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "No measured samples in attempt004; native tag override needs explicit supported C11_ALLOW_SOCKET_OVERRIDE equally for both roles, observe socket readiness. Same frozen artifact pair.",
+  "tags": [],
+  "title": "Interleaved protocol 007 bootstrap guard correction",
+  "token_usage": null,
+  "type": "file"
+}

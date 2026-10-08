@@ -1,0 +1,296 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-md-r3",
+  "branch_links": [
+    {
+      "branch": "md-viewer/C11-360-reader-chrome",
+      "linked_at": "2026-10-08T13:29:53Z",
+      "linked_by": "agent:codex-md-r3",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "high",
+  "created_at": "2026-10-08T08:54:42Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "description": "Child of C11-336. Depends on R1 and R2 merged. Contract: docs/markdown-viewer-design.md sections Toolbar, Outline, Themes, Typeface, Text size, Open externally; visual contract reader/index.html round 4.\n\nScope: the reader chrome.\n- Toolbar row under the panel bar (counterpart of the browser's address row, c11 void language): far left the outline toggle (SF Symbol sidebar.left, full-contrast ink, pressed state while open, \"outline\" label when room; fixed button width); then file name \u203a current heading path (truncates with ellipsis), then reading progress (`42% \u00b7 9 min left`); gold progress hairline under the row (the surface's one gold accent). Right: fixed-width, always fully visible cluster: find, source, text size (\u2212 readout +, tabular numerals, reserved width), theme menu (mirrors browserThemeModeButton: themes from the registry + Typeface section), open externally (arrow.up.right.square styled exactly like openInExternalBrowserButton, opens the file with the default .md app, tooltip names the app). Controls never jump or clip.\n- Outline: open by default when the effective width fits panel + full column (serif threshold 962 px effective: 272 panel, 28 gap, 630 column, 32 right pad; mono ~866; +222 with margin footnotes), docked so it covers nothing and closing leaves the text where it is; otherwise hidden by default and opens as an overlay. Translucent (backdrop blur), ~120 ms crossfade, no slide; scrollspy position, current section's subheadings, task counts (2/4), type to filter, click jumps and keeps it open, Esc or the toggle closes. \u21e7\u2318O toggles (check KeyboardShortcutSettings for conflicts). The operator's explicit open/hide persists via R2's state model.\n- Find (\u2318F): a quiet bar with match count and next/previous. Source: read-only toggle keeping place.\n- All strings localized (String(localized:defaultValue:)); six-locale translation pass done in this PR.\n\nProof: tagged Atlas build computer-use pass, screenshots at ~560 px and wide, side by side with the prototype; keyboard and toolbar paths for size, theme, typeface, outline, find, source; open-externally.",
+  "done_at": "2026-10-08T18:55:17Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M4DVP6YHKP53BXBFAWZX0VD1",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z2164ZSP8QDFQKCKYCJV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z24PKSJT5TWV5VSNJQXB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z287KRJD32YMDP5CB9E2",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z2BT7D6DV9KRXFXQJN09",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z2FE5WYTCWKDR2YH54B8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z2K6WXBGSS50BJEKMDFK",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E0Z2PV9P53ZGYDRQ8P72WN",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E11WXDXNT7H4P9GN1427CG",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E11X121H9F3HB2BKH6MCB5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4E12KCZ2YCBHJSM88K381DJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4E2PJ97HRCAM9XG160KZAAC",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4E4WWYWG357ZPQFSB9S3WXA",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4E8BANY9Z06FBFX76RHZJ91",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DS5FT094F63PCBXFWZMK",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DS90PT99FJAEPW1Y63AS",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DSCNF8SZV1PSYKVGA8DE",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DSGANCRABDHZ2JHN5GE8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DSKXQY4ER1RC0MKM67D8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DSQH2D60QVFXAZ34SFNX",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DSVABGWX9MPG6SSGVSQR",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DSYYHKFPD251AW174ABG",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DT2JMZQM2ZPPV96VDWAG",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DT64HB1CKY4VQKFJ8HY9",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DT9STTQQWC0G13JT8JPQ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DTDE3D4C4YEP99W2CFH1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8DTH3J00SZMY8CQBY9XWD",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8JN4WAN77HWVRF4P0GQWD",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8JN8HCSYFS1969B8AV10S",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8JNC1PD99B18S46S154N1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8JNFP8G9A0HP9YEA7BQET",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8WQE1DNGA17JQNYADFYB9",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8WQHSRG4MV9RPK1D7NR59",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8WQNJHPQH5BHKVB1C678N",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E8WQSEH63193TPY4B8VTNE",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E990SZSJ4F0EA45CSNGQRA",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E990XNDED35MWF6N14YFSM",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E9911C28WKEQ8R086K7M1A",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4E9XD140XX35HK52FSJJV48",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EAC5HKEQSNXMW89QEPRF2J",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4EBFPY1K9Z3F1QA1SG3ME5C",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EBG36AQX9834BAMA3E5HJT",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EBGXC62D6TZX7KGA7YSRZY",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4EBHVFEZASN4TFZ1BW3NSDE",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4ECGYK50X2VCY81PHF656JQ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EDXB6GZ9Y3XSW06FQB7NPF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4EDXB69SBZHNZQYXS5AQN2H",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M4DBHMF1X3CA14TZQC4XXDQ5",
+  "last_event_id": "ev_01M4EED002X7C26YZ7PJNQFBN0",
+  "last_status_changed_at": "2026-10-08T18:55:17Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T08:54:48Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "subtask_of"
+    },
+    {
+      "created_at": "2026-10-08T08:54:49Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4DBHM6NH7Q7K8PZRRH4RZSS",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-08T08:54:49Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4DBHMBXGSPCA6RAXJKF5YTQ",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-360",
+  "status": "done",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer R3: reader chrome (toolbar, outline, find, source, theme/typeface/size, open externally)",
+  "type": "task",
+  "updated_at": "2026-10-08T19:03:50Z",
+  "urgency": null
+}

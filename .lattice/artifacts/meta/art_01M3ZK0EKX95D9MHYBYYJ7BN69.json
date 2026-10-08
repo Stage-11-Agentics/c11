@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:35:45Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZK0EKX95D9MHYBYYJ7BN69",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZK0EKX95D9MHYBYYJ7BN69.json",
+    "size_bytes": 2207
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged cross-workspace Return probe PASS 6.0 s (build a6e64936 at 45a35870af, exec 42224a71, guest PID 604)",
+  "token_usage": null,
+  "type": "file"
+}

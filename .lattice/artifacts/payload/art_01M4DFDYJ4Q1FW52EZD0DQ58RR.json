@@ -1,0 +1,1033 @@
+{
+  "brand": {
+    "font_family": "JetBrains Mono",
+    "accent_hex": "#c9a84c",
+    "bundle": {
+      "build": "132",
+      "display_name": "c11 DEV md-359-baseline",
+      "identifier": "com.stage11.c11.debug.md.359.baseline",
+      "name": "c11 DEV md-359-baseline",
+      "short_version": "1.0.0",
+      "icon_name": "AppIcon-Debug"
+    },
+    "palette": {
+      "rule": "#333333",
+      "paper_fill": "#E8E2D0",
+      "dim": "#555555",
+      "gold": "#c9a84c",
+      "gold_faint": "#c9a84c33",
+      "surface": "#0a0a0a",
+      "black": "#000000",
+      "white": "#e8e8e8"
+    },
+    "channel": "dev"
+  },
+  "document": "/tmp/c11-359-messaging.md",
+  "panels": 20,
+  "socket": "/tmp/c11-sandbox-md359-baseline-footprint.sock",
+  "app_pid": 621,
+  "metric": "both",
+  "metric_definition": "sum of per-process auxiliary.phys_footprint bytes from footprint JSON for exact c11 listener and its responsible WebKit processes; RSS retained only as a separate optional metric",
+  "host_context": {
+    "hostname": "Atins-Mac-Studio.local",
+    "load_average": [
+      3.34619140625,
+      4.99072265625,
+      6.1962890625
+    ]
+  },
+  "raw_reports_directory": "/Volumes/My Shared Files/out/baseline-physical-memory-raw",
+  "uptime": "9:47  up 3 mins, 3 users, load averages: 13.85 18.71 9.08",
+  "before": {
+    "guest_load_average": [
+      13.8466796875,
+      18.7099609375,
+      9.083984375
+    ],
+    "guest_uptime": "9:47  up 3 mins, 3 users, load averages: 13.85 18.71 9.08",
+    "processes": [
+      {
+        "pid": 621,
+        "ppid": 1,
+        "rss_kib": 244576,
+        "command": "/Users/admin/c11-sandbox/apps/md359-baseline-footprint/c11 DEV md-359-baseline.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 123293184,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-621.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-621.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 136711552,
+          "phys_footprint": 123293184
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 652,
+        "ppid": 1,
+        "rss_kib": 92480,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12994752,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-652.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-652.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 31721408,
+          "phys_footprint": 12994752
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 654,
+        "ppid": 1,
+        "rss_kib": 38672,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 11814784,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-654.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-654.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 17713024,
+          "phys_footprint": 11814784
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 655,
+        "ppid": 1,
+        "rss_kib": 135328,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 94538304,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-655.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-655.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 105368128,
+          "phys_footprint": 94538304
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [
+      {
+        "pid": 2097,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "responsible_pid": 281,
+        "procinfo_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-2097.procinfo.txt"
+      },
+      {
+        "pid": 2105,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "responsible_pid": 554,
+        "procinfo_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-2105.procinfo.txt"
+      },
+      {
+        "pid": 2106,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "responsible_pid": 554,
+        "procinfo_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-2106.procinfo.txt"
+      },
+      {
+        "pid": 2107,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "responsible_pid": 554,
+        "procinfo_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/before-2107.procinfo.txt"
+      }
+    ],
+    "measurement_seconds": 0.325292834,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 242641024,
+    "total_rss_kib": 511056
+  },
+  "create_twenty_seconds": 33.803956500000005,
+  "never_shown": {
+    "guest_load_average": [
+      8.48974609375,
+      16.8291015625,
+      8.78564453125
+    ],
+    "guest_uptime": "9:48  up 4 mins, 3 users, load averages: 8.49 16.83 8.79",
+    "processes": [
+      {
+        "pid": 621,
+        "ppid": 1,
+        "rss_kib": 1466000,
+        "command": "/Users/admin/c11-sandbox/apps/md359-baseline-footprint/c11 DEV md-359-baseline.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 1400477568,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-621.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-621.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 1400903616,
+          "phys_footprint": 1400477568
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 652,
+        "ppid": 1,
+        "rss_kib": 97024,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 13748480,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-652.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-652.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 31721408,
+          "phys_footprint": 13748480
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 654,
+        "ppid": 1,
+        "rss_kib": 28336,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12109696,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-654.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-654.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 17713024,
+          "phys_footprint": 12109696
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 655,
+        "ppid": 1,
+        "rss_kib": 109328,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 109709888,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-655.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-655.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 119507520,
+          "phys_footprint": 109709888
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [
+      {
+        "pid": 2097,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "responsible_pid": 281,
+        "procinfo_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-2097.procinfo.txt"
+      },
+      {
+        "pid": 2105,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "responsible_pid": 554,
+        "procinfo_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/never-shown-2105.procinfo.txt"
+      }
+    ],
+    "measurement_seconds": 0.38969183300000054,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 1536045632,
+    "total_rss_kib": 1700688
+  },
+  "visit_twenty_seconds": 28.02349675,
+  "after_visit": {
+    "guest_load_average": [
+      6.00927734375,
+      15.4267578125,
+      8.55517578125
+    ],
+    "guest_uptime": "9:48  up 4 mins, 3 users, load averages: 6.01 15.43 8.56",
+    "processes": [
+      {
+        "pid": 621,
+        "ppid": 1,
+        "rss_kib": 1540656,
+        "command": "/Users/admin/c11-sandbox/apps/md359-baseline-footprint/c11 DEV md-359-baseline.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 1475713024,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-621.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-621.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 1479284736,
+          "phys_footprint": 1475713024
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 652,
+        "ppid": 1,
+        "rss_kib": 89328,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 13453504,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-652.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-652.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 31721408,
+          "phys_footprint": 13453504
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 654,
+        "ppid": 1,
+        "rss_kib": 28336,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12109696,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-654.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-654.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 17713024,
+          "phys_footprint": 12109696
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 655,
+        "ppid": 1,
+        "rss_kib": 109104,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 88148544,
+        "footprint_json_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-655.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/baseline-physical-memory-raw/after-visit-655.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 119507520,
+          "phys_footprint": 88148544
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [],
+    "measurement_seconds": 0.3415452500000029,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 1589424768,
+    "total_rss_kib": 1767424
+  },
+  "tree": {
+    "windows": [
+      {
+        "key": false,
+        "workspace_count": 1,
+        "workspace_groups": [],
+        "selected_workspace_ref": "workspace:2",
+        "ref": "window:1",
+        "selected_workspace_id": "98B85FA5-6874-4A00-8F18-BA484F7F4977",
+        "id": "331FE936-D400-4331-A74D-89104A98EFAA",
+        "workspaces": [
+          {
+            "content_area": {
+              "pixels": {
+                "height": 757,
+                "width": 920
+              }
+            },
+            "ref": "workspace:2",
+            "index": 0,
+            "areas": [
+              {
+                "selected_panel_id": "E66846AD-B497-4C77-A246-FFF3CBCADA92",
+                "index": 0,
+                "selected_panel_ref": "panel:25",
+                "panel_count": 21,
+                "panels": [
+                  {
+                    "id": "01FF259C-34BD-463D-A35F-B3DEC8CD2C58",
+                    "selected": false,
+                    "last_seen_at": null,
+                    "index_in_area": 0,
+                    "url": null,
+                    "selected_in_area": false,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "ref": "panel:2",
+                    "tty": "ttys000",
+                    "area_ref": "area:2",
+                    "title": "~",
+                    "focused": false,
+                    "prompt_cache": null,
+                    "type": "terminal",
+                    "index": 0,
+                    "being_seen": false
+                  },
+                  {
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "prompt_cache": null,
+                    "ref": "panel:25",
+                    "type": "markdown",
+                    "index": 1,
+                    "index_in_area": 1,
+                    "last_seen_at": null,
+                    "being_seen": false,
+                    "url": null,
+                    "selected_in_area": true,
+                    "id": "E66846AD-B497-4C77-A246-FFF3CBCADA92",
+                    "selected": true,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "area_ref": "area:2",
+                    "focused": true,
+                    "tty": null,
+                    "title": "c11-359-messaging.md"
+                  },
+                  {
+                    "url": null,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "index_in_area": 2,
+                    "being_seen": false,
+                    "id": "82E967F5-1D74-4321-98DE-0D105EEAF33D",
+                    "prompt_cache": null,
+                    "selected": false,
+                    "focused": false,
+                    "last_seen_at": null,
+                    "area_ref": "area:2",
+                    "title": "c11-359-messaging.md",
+                    "index": 2,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "selected_in_area": false,
+                    "type": "markdown",
+                    "ref": "panel:24",
+                    "tty": null
+                  },
+                  {
+                    "id": "6C3D1938-DE33-453F-83CC-E609F8D0EA2B",
+                    "index": 3,
+                    "area_ref": "area:2",
+                    "being_seen": false,
+                    "selected": false,
+                    "selected_in_area": false,
+                    "ref": "panel:23",
+                    "type": "markdown",
+                    "index_in_area": 3,
+                    "prompt_cache": null,
+                    "focused": false,
+                    "tty": null,
+                    "last_seen_at": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "url": null,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "title": "c11-359-messaging.md"
+                  },
+                  {
+                    "index": 4,
+                    "url": null,
+                    "title": "c11-359-messaging.md",
+                    "selected_in_area": false,
+                    "selected": false,
+                    "id": "C14F53E2-420E-4695-9477-AE1BEFBE80AE",
+                    "type": "markdown",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "tty": null,
+                    "being_seen": false,
+                    "ref": "panel:22",
+                    "prompt_cache": null,
+                    "area_ref": "area:2",
+                    "index_in_area": 4,
+                    "last_seen_at": null,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "focused": false
+                  },
+                  {
+                    "ref": "panel:21",
+                    "being_seen": false,
+                    "tty": null,
+                    "prompt_cache": null,
+                    "area_ref": "area:2",
+                    "index": 5,
+                    "index_in_area": 5,
+                    "last_seen_at": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "title": "c11-359-messaging.md",
+                    "focused": false,
+                    "type": "markdown",
+                    "id": "4F28FC1B-997D-42D9-A284-12FB0D0DF388",
+                    "url": null,
+                    "selected": false,
+                    "selected_in_area": false
+                  },
+                  {
+                    "title": "c11-359-messaging.md",
+                    "index_in_area": 6,
+                    "area_ref": "area:2",
+                    "url": null,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "ref": "panel:20",
+                    "prompt_cache": null,
+                    "type": "markdown",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "index": 6,
+                    "id": "8CD514FA-B3EA-4523-8025-C800C2D0842D",
+                    "being_seen": false,
+                    "selected_in_area": false,
+                    "selected": false,
+                    "focused": false,
+                    "tty": null,
+                    "last_seen_at": null
+                  },
+                  {
+                    "index": 7,
+                    "focused": false,
+                    "selected": false,
+                    "type": "markdown",
+                    "selected_in_area": false,
+                    "url": null,
+                    "title": "c11-359-messaging.md",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "area_ref": "area:2",
+                    "being_seen": false,
+                    "prompt_cache": null,
+                    "last_seen_at": null,
+                    "index_in_area": 7,
+                    "ref": "panel:19",
+                    "id": "45B760D8-D33A-49F7-9870-6FB8D36F3653",
+                    "tty": null,
+                    "file_path": "/tmp/c11-359-messaging.md"
+                  },
+                  {
+                    "url": null,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "index": 8,
+                    "id": "A12A38D1-D5A7-4AEB-AAFD-F19BAFF75EFF",
+                    "type": "markdown",
+                    "tty": null,
+                    "focused": false,
+                    "selected": false,
+                    "last_seen_at": null,
+                    "ref": "panel:18",
+                    "prompt_cache": null,
+                    "area_ref": "area:2",
+                    "index_in_area": 8,
+                    "being_seen": false,
+                    "title": "c11-359-messaging.md",
+                    "selected_in_area": false
+                  },
+                  {
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_ref": "area:2",
+                    "title": "c11-359-messaging.md",
+                    "id": "1ABC8474-FF86-4497-9EF0-16A6F2289E12",
+                    "tty": null,
+                    "index": 9,
+                    "type": "markdown",
+                    "prompt_cache": null,
+                    "last_seen_at": null,
+                    "selected": false,
+                    "url": null,
+                    "selected_in_area": false,
+                    "focused": false,
+                    "being_seen": false,
+                    "ref": "panel:17",
+                    "index_in_area": 9
+                  },
+                  {
+                    "type": "markdown",
+                    "ref": "panel:16",
+                    "tty": null,
+                    "id": "EC560EEE-891D-478B-B4A5-195137556D75",
+                    "title": "c11-359-messaging.md",
+                    "index": 10,
+                    "area_ref": "area:2",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "prompt_cache": null,
+                    "index_in_area": 10,
+                    "last_seen_at": null,
+                    "selected_in_area": false,
+                    "selected": false,
+                    "focused": false,
+                    "url": null,
+                    "being_seen": false
+                  },
+                  {
+                    "selected": false,
+                    "last_seen_at": null,
+                    "selected_in_area": false,
+                    "title": "c11-359-messaging.md",
+                    "tty": null,
+                    "area_ref": "area:2",
+                    "url": null,
+                    "prompt_cache": null,
+                    "type": "markdown",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "id": "BE21D734-0638-4063-A781-0AB4AFBE1919",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "index_in_area": 11,
+                    "index": 11,
+                    "being_seen": false,
+                    "focused": false,
+                    "ref": "panel:15"
+                  },
+                  {
+                    "url": null,
+                    "area_ref": "area:2",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "index_in_area": 12,
+                    "focused": false,
+                    "last_seen_at": null,
+                    "index": 12,
+                    "type": "markdown",
+                    "tty": null,
+                    "selected_in_area": false,
+                    "id": "D6A88384-4338-48F0-AD99-F116066D6B49",
+                    "prompt_cache": null,
+                    "being_seen": false,
+                    "selected": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "ref": "panel:14",
+                    "title": "c11-359-messaging.md"
+                  },
+                  {
+                    "prompt_cache": null,
+                    "being_seen": false,
+                    "index_in_area": 13,
+                    "area_ref": "area:2",
+                    "index": 13,
+                    "type": "markdown",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "selected_in_area": false,
+                    "focused": false,
+                    "id": "7BBED23F-4305-41EB-9FC3-8CFD53D17311",
+                    "last_seen_at": null,
+                    "tty": null,
+                    "selected": false,
+                    "ref": "panel:13",
+                    "url": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "title": "c11-359-messaging.md"
+                  },
+                  {
+                    "focused": false,
+                    "being_seen": false,
+                    "id": "743377AB-670E-45C7-AB72-A19E39D4FF66",
+                    "ref": "panel:12",
+                    "tty": null,
+                    "index_in_area": 14,
+                    "type": "markdown",
+                    "area_ref": "area:2",
+                    "title": "c11-359-messaging.md",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "url": null,
+                    "selected": false,
+                    "selected_in_area": false,
+                    "index": 14,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "prompt_cache": null,
+                    "last_seen_at": null
+                  },
+                  {
+                    "tty": null,
+                    "type": "markdown",
+                    "selected": false,
+                    "ref": "panel:11",
+                    "last_seen_at": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_ref": "area:2",
+                    "title": "c11-359-messaging.md",
+                    "prompt_cache": null,
+                    "url": null,
+                    "index_in_area": 15,
+                    "being_seen": false,
+                    "id": "9B094DEF-8F43-4DA9-840D-987746E80391",
+                    "selected_in_area": false,
+                    "index": 15,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "focused": false
+                  },
+                  {
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "ref": "panel:10",
+                    "tty": null,
+                    "selected_in_area": false,
+                    "prompt_cache": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "last_seen_at": null,
+                    "type": "markdown",
+                    "area_ref": "area:2",
+                    "title": "c11-359-messaging.md",
+                    "being_seen": false,
+                    "focused": false,
+                    "id": "42B85CE3-71DC-4CB3-A897-F15A5A0160AB",
+                    "index_in_area": 16,
+                    "url": null,
+                    "index": 16,
+                    "selected": false
+                  },
+                  {
+                    "index": 17,
+                    "index_in_area": 17,
+                    "selected_in_area": false,
+                    "area_ref": "area:2",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "being_seen": false,
+                    "url": null,
+                    "last_seen_at": null,
+                    "focused": false,
+                    "selected": false,
+                    "id": "34EB71F2-6E41-4CA9-979E-EC32C0971086",
+                    "tty": null,
+                    "ref": "panel:9",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "title": "c11-359-messaging.md",
+                    "prompt_cache": null,
+                    "type": "markdown"
+                  },
+                  {
+                    "area_ref": "area:2",
+                    "selected_in_area": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "url": null,
+                    "index": 18,
+                    "type": "markdown",
+                    "focused": false,
+                    "prompt_cache": null,
+                    "id": "43AD1F41-5320-4033-A8AF-0A04AFE63527",
+                    "ref": "panel:8",
+                    "tty": null,
+                    "being_seen": false,
+                    "index_in_area": 18,
+                    "title": "c11-359-messaging.md",
+                    "selected": false,
+                    "last_seen_at": null
+                  },
+                  {
+                    "title": "c11-359-messaging.md",
+                    "prompt_cache": null,
+                    "url": null,
+                    "area_ref": "area:2",
+                    "index": 19,
+                    "focused": false,
+                    "being_seen": false,
+                    "ref": "panel:7",
+                    "last_seen_at": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "selected": false,
+                    "id": "B6026B5B-AB3B-4BDE-9FFF-7F3F34A5DB23",
+                    "tty": null,
+                    "index_in_area": 19,
+                    "selected_in_area": false,
+                    "type": "markdown"
+                  },
+                  {
+                    "ref": "panel:6",
+                    "being_seen": false,
+                    "type": "markdown",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "tty": null,
+                    "selected": false,
+                    "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                    "index": 20,
+                    "id": "F227BD25-C33F-4428-B9ED-9F3AAFF70B71",
+                    "index_in_area": 20,
+                    "selected_in_area": false,
+                    "area_ref": "area:2",
+                    "prompt_cache": null,
+                    "focused": false,
+                    "title": "c11-359-messaging.md",
+                    "url": null,
+                    "last_seen_at": null
+                  }
+                ],
+                "id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+                "ref": "area:2",
+                "focused": true,
+                "panel_refs": [
+                  "panel:2",
+                  "panel:25",
+                  "panel:24",
+                  "panel:23",
+                  "panel:22",
+                  "panel:21",
+                  "panel:20",
+                  "panel:19",
+                  "panel:18",
+                  "panel:17",
+                  "panel:16",
+                  "panel:15",
+                  "panel:14",
+                  "panel:13",
+                  "panel:12",
+                  "panel:11",
+                  "panel:10",
+                  "panel:9",
+                  "panel:8",
+                  "panel:7",
+                  "panel:6"
+                ],
+                "panel_ids": [
+                  "01FF259C-34BD-463D-A35F-B3DEC8CD2C58",
+                  "E66846AD-B497-4C77-A246-FFF3CBCADA92",
+                  "82E967F5-1D74-4321-98DE-0D105EEAF33D",
+                  "6C3D1938-DE33-453F-83CC-E609F8D0EA2B",
+                  "C14F53E2-420E-4695-9477-AE1BEFBE80AE",
+                  "4F28FC1B-997D-42D9-A284-12FB0D0DF388",
+                  "8CD514FA-B3EA-4523-8025-C800C2D0842D",
+                  "45B760D8-D33A-49F7-9870-6FB8D36F3653",
+                  "A12A38D1-D5A7-4AEB-AAFD-F19BAFF75EFF",
+                  "1ABC8474-FF86-4497-9EF0-16A6F2289E12",
+                  "EC560EEE-891D-478B-B4A5-195137556D75",
+                  "BE21D734-0638-4063-A781-0AB4AFBE1919",
+                  "D6A88384-4338-48F0-AD99-F116066D6B49",
+                  "7BBED23F-4305-41EB-9FC3-8CFD53D17311",
+                  "743377AB-670E-45C7-AB72-A19E39D4FF66",
+                  "9B094DEF-8F43-4DA9-840D-987746E80391",
+                  "42B85CE3-71DC-4CB3-A897-F15A5A0160AB",
+                  "34EB71F2-6E41-4CA9-979E-EC32C0971086",
+                  "43AD1F41-5320-4033-A8AF-0A04AFE63527",
+                  "B6026B5B-AB3B-4BDE-9FFF-7F3F34A5DB23",
+                  "F227BD25-C33F-4428-B9ED-9F3AAFF70B71"
+                ],
+                "layout": {
+                  "percent": {
+                    "V": [
+                      0,
+                      0.5
+                    ],
+                    "H": [
+                      0,
+                      0.5
+                    ]
+                  },
+                  "pixels": {
+                    "V": [
+                      0,
+                      379
+                    ],
+                    "H": [
+                      0,
+                      460
+                    ]
+                  },
+                  "split_path": [
+                    "H:left",
+                    "V:top"
+                  ]
+                }
+              },
+              {
+                "focused": false,
+                "ref": "area:5",
+                "panels": [
+                  {
+                    "selected": true,
+                    "being_seen": false,
+                    "id": "3E92FD1E-F9B3-4102-882D-72903F2775A4",
+                    "index": 21,
+                    "prompt_cache": null,
+                    "focused": false,
+                    "ref": "panel:5",
+                    "selected_in_area": true,
+                    "title": "welcome.md",
+                    "type": "markdown",
+                    "area_id": "EF1E9B87-E506-4081-8A94-7AE723A1E510",
+                    "file_path": "/Users/admin/c11-sandbox/apps/md359-baseline-footprint/c11 DEV md-359-baseline.app/Contents/Resources/welcome.md",
+                    "url": null,
+                    "tty": null,
+                    "last_seen_at": null,
+                    "area_ref": "area:5",
+                    "index_in_area": 0
+                  }
+                ],
+                "panel_refs": [
+                  "panel:5"
+                ],
+                "selected_panel_id": "3E92FD1E-F9B3-4102-882D-72903F2775A4",
+                "panel_ids": [
+                  "3E92FD1E-F9B3-4102-882D-72903F2775A4"
+                ],
+                "selected_panel_ref": "panel:5",
+                "layout": {
+                  "percent": {
+                    "V": [
+                      0.5,
+                      1
+                    ],
+                    "H": [
+                      0,
+                      0.5
+                    ]
+                  },
+                  "split_path": [
+                    "H:left",
+                    "V:bottom"
+                  ],
+                  "pixels": {
+                    "H": [
+                      0,
+                      460
+                    ],
+                    "V": [
+                      379,
+                      757
+                    ]
+                  }
+                },
+                "id": "EF1E9B87-E506-4081-8A94-7AE723A1E510",
+                "index": 1,
+                "panel_count": 1
+              },
+              {
+                "panel_count": 1,
+                "index": 2,
+                "id": "AEF45030-8C22-4D76-94EA-40D1D1E0B4BE",
+                "panels": [
+                  {
+                    "selected_in_area": true,
+                    "being_seen": false,
+                    "title": "Stage 11 Agentics",
+                    "area_id": "AEF45030-8C22-4D76-94EA-40D1D1E0B4BE",
+                    "index": 22,
+                    "url": "https://www.stage11.ai/",
+                    "id": "01FA0CA5-097E-45BD-9CAA-B92F849F87F8",
+                    "last_seen_at": null,
+                    "focused": false,
+                    "tty": null,
+                    "prompt_cache": null,
+                    "area_ref": "area:3",
+                    "selected": true,
+                    "index_in_area": 0,
+                    "type": "browser",
+                    "ref": "panel:3"
+                  }
+                ],
+                "selected_panel_ref": "panel:3",
+                "ref": "area:3",
+                "selected_panel_id": "01FA0CA5-097E-45BD-9CAA-B92F849F87F8",
+                "focused": false,
+                "panel_ids": [
+                  "01FA0CA5-097E-45BD-9CAA-B92F849F87F8"
+                ],
+                "layout": {
+                  "split_path": [
+                    "H:right",
+                    "V:top"
+                  ],
+                  "pixels": {
+                    "V": [
+                      0,
+                      379
+                    ],
+                    "H": [
+                      460,
+                      920
+                    ]
+                  },
+                  "percent": {
+                    "V": [
+                      0,
+                      0.5
+                    ],
+                    "H": [
+                      0.5,
+                      1
+                    ]
+                  }
+                },
+                "panel_refs": [
+                  "panel:3"
+                ]
+              },
+              {
+                "id": "50634249-9249-4FDD-A216-DF2492DFFF22",
+                "selected_panel_id": "9D5EEB5B-2269-459E-8DF6-6798D22A8C76",
+                "panel_refs": [
+                  "panel:4"
+                ],
+                "selected_panel_ref": "panel:4",
+                "panel_count": 1,
+                "index": 3,
+                "layout": {
+                  "split_path": [
+                    "H:right",
+                    "V:bottom"
+                  ],
+                  "pixels": {
+                    "H": [
+                      460,
+                      920
+                    ],
+                    "V": [
+                      379,
+                      757
+                    ]
+                  },
+                  "percent": {
+                    "H": [
+                      0.5,
+                      1
+                    ],
+                    "V": [
+                      0.5,
+                      1
+                    ]
+                  }
+                },
+                "panels": [
+                  {
+                    "ref": "panel:4",
+                    "area_ref": "area:4",
+                    "id": "9D5EEB5B-2269-459E-8DF6-6798D22A8C76",
+                    "being_seen": false,
+                    "focused": false,
+                    "selected_in_area": true,
+                    "last_seen_at": null,
+                    "url": null,
+                    "index_in_area": 0,
+                    "area_id": "50634249-9249-4FDD-A216-DF2492DFFF22",
+                    "prompt_cache": null,
+                    "index": 23,
+                    "type": "terminal",
+                    "tty": "ttys001",
+                    "selected": true,
+                    "title": "~"
+                  }
+                ],
+                "panel_ids": [
+                  "9D5EEB5B-2269-459E-8DF6-6798D22A8C76"
+                ],
+                "ref": "area:4",
+                "focused": false
+              }
+            ],
+            "pinned": false,
+            "id": "98B85FA5-6874-4A00-8F18-BA484F7F4977",
+            "root_directory": null,
+            "group_id": null,
+            "selected": true,
+            "title": "Workspace 1"
+          }
+        ],
+        "visible": true,
+        "index": 0
+      }
+    ],
+    "caller": null,
+    "scope": "workspace",
+    "active": {
+      "window_ref": "window:1",
+      "workspace_ref": "workspace:2",
+      "is_browser_panel": false,
+      "panel_type": "markdown",
+      "window_id": "331FE936-D400-4331-A74D-89104A98EFAA",
+      "panel_id": "E66846AD-B497-4C77-A246-FFF3CBCADA92",
+      "workspace_id": "98B85FA5-6874-4A00-8F18-BA484F7F4977",
+      "area_id": "8479CCF4-C742-43C4-9F47-FC6F2EF36D5B",
+      "root_directory": null,
+      "panel_ref": "panel:25",
+      "area_ref": "area:2"
+    }
+  }
+}

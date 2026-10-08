@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T20:39:44Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "id": "art_01M4EKWJN6TB7JHMH8Q7FJDN99",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M4EKWJN6TB7JHMH8Q7FJDN99.md",
+    "size_bytes": 639
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Two fresh-context Opus code reviews. Commit 1: nothing blocking; 5 findings, 4 fixed in the review commit (route clock evidence and commit-time cap, stillHolds for superseded edges, wording, mismatche",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

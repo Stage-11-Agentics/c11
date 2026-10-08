@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEJ5RHRXD2Z8G6689P0H1",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZEEJ5RHRXD2Z8G6689P0H1.png",
+    "size_bytes": 726764
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: Tab switches to Turns, fixed frames, nothing opened",
+  "token_usage": null,
+  "type": "file"
+}

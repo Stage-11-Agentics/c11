@@ -1,0 +1,20 @@
+C11-283 validation summary (batch validation, existing runtime evidence)
+
+Merged: PR #525 (squash 234c31bb8c, landing head 6bc28658e5). Evidence is the owner's pre-merge tagged native run (35 checks at implementation head 15df94ff), the 128 packaged CLI cases at the merged head, the reviewer chain, the Merge Captain exact-head gate, and the parked validator's batch-4 checks at main 12d4f21a.
+
+Acceptance criteria -> evidence -> result
+1. Two windows, A key: `c11 --window <B> read-screen --tab <tab in B>` returns B's screen and A stays key -> ev_01M3Y05PD1W9W2G6MMG3F20RDJ / art_01M3Y03KE1M5KKEQ3RZKF3D3T7 (35 real tagged-app checks: PID-scoped raise established key A, reads addressed B and returned B's sentinel, A stayed key; legacy drag/default launch changed only B), ev_01M3XYDAGFZH2D14W8DAAC6H7B / art_01M3XYA44QJ6XHH9GDPZ9410BH (first 25 native checks), ev_01M3YT3XM5678PWDXATJ5KG3VN / art_01M3YT3XH48F27F2ZMMAENYCBD (11 actual packaged routing rows PASS at main 12d4f21a) -> PASS (pre-merge native; merged-head key flags see sign-off)
+2. `--window not-a-window read-screen` exits non-zero, names the bad id, key window unchanged -> ev_01M3Y05PD1W9W2G6MMG3F20RDJ (invalid, empty and stale closed-window tokens rejected without focus change), ev_01M3Y19PC8AEJR8TSB5VAAX25R / art_01M3Y17PFRY2QMKVQ6ZPP55HYV (128 packaged CLI cases at the merged head), ev_01M3YT3XM5678PWDXATJ5KG3VN (stale/foreign rejection rows) -> PASS
+3. `--window <B> send --tab <tab in A>` does not deliver, errors not_found, A unchanged -> ev_01M3XYDAGFZH2D14W8DAAC6H7B (foreign-tab send returned not_found, sentinel appeared in neither terminal; ambient caller tab could not admit send/send-key), ev_01M3Y19PC8AEJR8TSB5VAAX25R (send-tab, paste and send --raw cases: caller-A admission rejected under B scope, foreign A refs rejected without mutation), ev_01M3YT3XM5678PWDXATJ5KG3VN (exact raw byte receipts) -> PASS
+4. `focus-window --window <B>` still focuses B; `--window <B> workspace select` may change selection and is not needed for criterion 1 -> ev_01M3Y1KEVX0M193G56K4CJSAPZ (review: focus-window remains the focus command, scope stamped as `window_id` on the command's own call), ev_01M3Y05PD1W9W2G6MMG3F20RDJ (scenario step 7; focus-window selects the requested active manager, observable via current-window), ev_01M3YT3XM5678PWDXATJ5KG3VN -> PASS
+5. `window.focus` is sent only from `focus-window` and documented focus commands -> ev_01M3XYQPF1QM1AJQYZ36MYV1P6 (review: global window.focus prelude removed), ev_01M3Y0A9KEM1RN7MRVCG3MJQCB (delta PASS after legacy routes repaired), ev_01M3Y1KEVX0M193G56K4CJSAPZ (merge review), plus fixtures asserting no `window.focus` request on non-focus commands in ev_01M3Y05PD1W9W2G6MMG3F20RDJ and ev_01M3Y19PC8AEJR8TSB5VAAX25R -> PASS
+
+Supporting gates
+- Reviewer chain: ev_01M3XYQPF1QM1AJQYZ36MYV1P6 (FAIL, three findings), ev_01M3Y0A9KEM1RN7MRVCG3MJQCB (PASS, all repaired), ev_01M3Y1KEVX0M193G56K4CJSAPZ (PASS on the send merge). Orchestrator attestation ev_01M3Y0QBD3XV5V12GCB5FBSF91.
+- Merge Captain exact-head gate: ev_01M3Y271HF0PJJ909AJ2049A8V (all hosted checks SUCCESS).
+- The batch-4 note "native key flags=[] while active manager A" (ev_01M3YT3XM5678PWDXATJ5KG3VN) is a guest/harness limitation on key-window reporting, not a failing check; no result on the ticket shows A losing key or a foreign delivery.
+
+Routed to C11-292 sign-off
+- Native key-window preservation on the merged build with two real windows: A key before and after a B-scoped read-screen, a rejected foreign send, and focus-window B still raising B (visible key state at the merged head was not re-driven; the pre-merge native run covered it at the implementation head).
+
+Verdict: COMPLETE+SIGNOFF. All five criteria are covered by existing runtime and fixture evidence; one native key-window gap is routed to C11-292.

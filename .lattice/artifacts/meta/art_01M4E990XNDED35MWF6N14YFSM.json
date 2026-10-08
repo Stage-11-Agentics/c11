@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:34:17Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E990XNDED35MWF6N14YFSM",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4E990XNDED35MWF6N14YFSM.json",
+    "size_bytes": 3572
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MarkdownReaderInteractionTests exact invocation; four of four tests passed.",
+  "tags": [],
+  "title": "Atlas native logic test result",
+  "token_usage": null,
+  "type": "file"
+}

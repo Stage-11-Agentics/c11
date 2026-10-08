@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T18:04:02Z",
+  "created_by": "agent:astra-review-303",
+  "custom_fields": {},
+  "id": "art_01M3YWK5VYMKCG610MVBK6BZM2",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3YWK5VYMKCG610MVBK6BZM2.zip",
+    "size_bytes": 4866
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Round 2 independent Atlas mutation and clean control evidence",
+  "token_usage": null,
+  "type": "file"
+}

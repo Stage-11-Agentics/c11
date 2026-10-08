@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:22:04Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8JNFP8G9A0HP9YEA7BQET",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8JNFP8G9A0HP9YEA7BQET.png",
+    "size_bytes": 912261
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "The tagged app View > Appearance menu visibly marks Light as selected.",
+  "tags": [],
+  "title": "c11 Light appearance selection",
+  "token_usage": null,
+  "type": "file"
+}

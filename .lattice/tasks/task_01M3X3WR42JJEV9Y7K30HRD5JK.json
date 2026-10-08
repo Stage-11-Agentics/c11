@@ -1,0 +1,100 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-264",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-264-feed-asks",
+      "linked_at": "2026-10-02T14:42:17Z",
+      "linked_by": "agent:grok-feed",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:07Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator and Overwatch need one readable cross-workspace list explaining which tab needs attention, with a reliable jump to that tab. Backlog item: A2.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `Sources/TerminalNotificationStore.swift:636-670` has untyped text/read fields; `:972-979` replaces the latest notification for a tab. `Sources/AttentionModel.swift:375-429` keeps flags independently. `Sources/Events/EventEmitter.swift:138-165` has waiting edges and flags but no ask payload.\n- `Sources/AppDelegate.swift:10829-10845` already resolves flag/notification jumps; reuse the target resolution rather than infer the focused tab.\n- Upstream: cmux #3057, #15170; `Sources/Feed/FeedCoordinator.swift:251` and `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/Workstream/WorkstreamItem.swift` illustrate typed items and retirement. The blocking waiter machinery is explicitly not the proposed port.\n- Research: report 03 \u201cData: an ask on each surface\u201d; Fable \u00a72 Feed F1; Astra \u00a72 Feed F1 (flags coexist with asks; latest notification need not be latest unresolved ask). BACKLOG A2, D5/D6 and revised HTML Feed rows take precedence over report 03\u2019s broader answer/classifier proposal.\n\n## Scope\nIn: ask fields kind, prompt, options, source, opened_at, state; c11 feed list [--json], open <tab>, watch; ask.opened / ask.closed on the existing event stream. Represent question, plan, permission, turn_end and generic input distinctly; join explicit flags as a separate attention fact.\nOut: automatic answering, feed answer (A6), quick view (A4), new producer adapters (J3/J4/J5), blocking request waiters, screen classification, menu-key answering, banners and durable request-consensus machinery.\n\n## Approach\nUse one projection from J2\u2019s lifecycle fold plus bounded attention payloads on the notification/ask seam. Keep human-facing question text/options distinct from tool bodies; do not copy prompts/tool payloads into J2\u2019s privacy-limited journal. Define which same-tab lifecycle events close an ask, and retain an unresolved ask when an unrelated telemetry notice arrives. A flag and an ask may coexist without either overwriting the other. Keep suppression semantics and source confidence visible. Feed open is explicit in-app focus intent; list/watch and event ingestion are not. For watch, start from a snapshot and refresh after detected restart/gap rather than claiming a durable event cursor. Do not duplicate J6\u2019s lifecycle reason vocabulary.\n\n## Acceptance criteria\n1. Fixtures for question, plan, permission, generic input and turn completion produce typed JSON with target UUIDs, source, opened_at and state; unknown options/source remain explicit, without fabricated choices.\n2. A flag plus a question on the same tab remains representable; a subsequent unrelated telemetry notification does not silently erase the unresolved question. Same-tab response/moved-on fixtures retire it; a sibling tool start does not.\n3. Each tested open/close transition emits ask.opened/ask.closed with the correct target and documented bounded payload. Replaying a duplicate J2 event does not create a second open row.\n4. feed list and watch agree after opening/closing asks, suppression changes and an app restart/reconnect; watch surfaces any unavailable continuity and refreshes. Suppressed routine asks stay out of the attention projection while flags remain visible.\n5. feed open targets the selected row\u2019s actual tab across workspaces. A closed tab returns an explicit unavailable result; no other tab receives input or is substituted. list/watch never move focus and no feed command in this ticket sends an answer.\n\n## Validation\nUse pure projection/lifecycle fixtures plus CLI/socket integration tests for list/open/watch and actual event emission. Drive a real tagged build with two workspaces and a flag-plus-ask tab; compare JSON, event output and visible target after open. Exercise mixed-agent updates in a bounded Atlas soak and compare main-thread/typing measurements with F2.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nDepends on A1 and J2. BACKLOG permits an earlier notification-record implementation, but this ticket\u2019s chosen path uses J2; do not create a second independent store. Coordinate field names with J6 / C11-231 and bounded observation rules with J8. A3/A4/A6 consume this projection; cross-workstream links are for the lead.\n\n## Risks\nAsk text can contain private material. Keep journal analytics body-free, bound event payloads and document disclosure/retention for the ask surface. Preserve the C11-188 three-review-cycle limit and fixture-based correctness boundary. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: M. Tier: P1. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": "2026-10-02T21:23:27Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YRG3Q30YW8N75NDWH69CTK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YRT6K6T5XG99K618WS5JYM",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YV1VX1MKNXAAAM6BNRS3BZ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YVP3HNG5DR392AAZDAF27Q",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YW8PSHREV9V6J92XC03HK0",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YZ7AMJKG7S7JZTYRSERT6S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z80ADHQMPBQ062GD92XR9N",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z80AJ5P3CMDZHHENBGWNG9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Z80AJ3CTWH3DG24RWAFJQH",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
+  "last_event_id": "ev_01M3Z80AJ60NRVNVMAVDE6801X",
+  "last_status_changed_at": "2026-10-02T21:23:27Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:33:07Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WR1DQPZP82V13DV9KR34",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:33Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-264",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p1"
+  ],
+  "title": "Feed: typed per-tab asks with list, open, watch and ask events",
+  "type": "task",
+  "updated_at": "2026-10-02T21:23:27Z",
+  "urgency": null
+}

@@ -1,0 +1,23 @@
+{
+  "base_name": "C11-322-Owner",
+  "framework": "claude-code",
+  "last_active": "2026-10-02T23:22:53Z",
+  "model": "claude-opus-5-5",
+  "name": "C11-322-Owner-1",
+  "origin": {
+    "op": "session.start",
+    "op_id": "op_01M3Z6Z0669KKXSZSV89YWWQ15",
+    "reported": {
+      "branch": "c11-322-sandbox-agents",
+      "client_version": "0.2.1",
+      "host": "Hyperion",
+      "os_user": "atin",
+      "worktree": "/Users/atin/Projects/Stage11/code/c11-worktrees/c11-322"
+    }
+  },
+  "parent": "agent:C11-257-Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M3Z6Z068EVZ3J69CR5704JMY",
+  "started_at": "2026-10-02T21:05:15Z",
+  "status": "active"
+}

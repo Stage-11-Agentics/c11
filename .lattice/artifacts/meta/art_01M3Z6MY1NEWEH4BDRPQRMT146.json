@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:59:45Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z6MY1NEWEH4BDRPQRMT146",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z6MY1NEWEH4BDRPQRMT146.md",
+    "size_bytes": 9709
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Only missing churn-scroll and quiescence; per-role locks; same frozen pair; ABBA10 symmetric headroom; raw pooling only for churn-scroll with historical 2165/2400 dose disclosed. No samples collected.",
+  "tags": [],
+  "title": "Final authorized top-up preregistration \u2014 16 minutes",
+  "token_usage": null,
+  "type": "file"
+}

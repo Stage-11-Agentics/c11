@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:09:02Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E0Z2164ZSP8QDFQKCKYCJV",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4E0Z2164ZSP8QDFQKCKYCJV.json",
+    "size_bytes": 14085
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "34 scenario results from the latest markdown viewer harness run.",
+  "tags": [],
+  "title": "Browser harness results",
+  "token_usage": null,
+  "type": "file"
+}

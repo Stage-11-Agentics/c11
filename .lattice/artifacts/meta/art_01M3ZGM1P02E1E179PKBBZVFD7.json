@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:54:02Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZGM1P02E1E179PKBBZVFD7",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZGM1P02E1E179PKBBZVFD7.png",
+    "size_bytes": 849015
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1: Tab -> Turns, ring on Turns",
+  "token_usage": null,
+  "type": "file"
+}

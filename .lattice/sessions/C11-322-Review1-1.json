@@ -1,0 +1,22 @@
+{
+  "base_name": "C11-322-Review1",
+  "framework": "codex-cli",
+  "last_active": "2026-10-02T23:23:50Z",
+  "model": "gpt-6-astra",
+  "name": "C11-322-Review1-1",
+  "origin": {
+    "op": "session.start",
+    "op_id": "op_01M3ZC7S6H8G7X4FRZRD2KG8T9",
+    "reported": {
+      "client_version": "0.2.1",
+      "host": "Hyperion",
+      "os_user": "atin",
+      "worktree": "/Users/atin/Projects/Stage11/code/c11-worktrees/c11-322-review"
+    }
+  },
+  "parent": "agent:C11-257-Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M3ZC7S6KNJX4JDHDM1CHZR57",
+  "started_at": "2026-10-02T22:37:26Z",
+  "status": "active"
+}

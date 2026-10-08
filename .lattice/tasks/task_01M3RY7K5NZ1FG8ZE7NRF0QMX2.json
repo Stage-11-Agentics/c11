@@ -1,0 +1,48 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:c11-246-grok",
+  "branch_links": [
+    {
+      "branch": "c11-246-argv0-detect",
+      "linked_at": "2026-10-01T05:17:50Z",
+      "linked_by": "agent:c11-246-grok",
+      "repo": null
+    }
+  ],
+  "comment_count": 5,
+  "complexity": "low",
+  "created_at": "2026-09-30T10:37:13Z",
+  "created_by": "agent:cairn-tab-bar",
+  "custom_fields": {},
+  "description": "Found while building tab-agent-signals (PR #463): a stand-in claude binary at a long path (/private/tmp/claude-501/.../claude) was classified as 'unknown', while the same binary at /tmp/fb/claude classified as claude-code. Likely cause: ps comm truncation with a long argv0 defeats AgentDetector's argv0 rule. Real-world impact: agents launched via long absolute paths (worktree-local binaries, nix/homebrew cellar paths, version-manager shims) may lose harness detection, and with it the agent tag and model detection. Fix: resolve the executable from the full argv[0] or proc_pidpath rather than the truncated comm, then add a test with a >16-char basename and a long directory path.",
+  "done_at": "2026-10-01T06:08:21Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3V180JCVDNT40EF88QK6QFF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3V180JAFTDQ769TM66J9KEC",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3RY7K5NZ1FG8ZE7NRF0QMX2",
+  "last_event_id": "ev_01M3V180JCVDNT40EF88QK6QFH",
+  "last_status_changed_at": "2026-10-01T06:08:21Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-246",
+  "status": "done",
+  "tags": [
+    "agent-detection"
+  ],
+  "title": "AgentDetector misses agents launched through a long argv0 path",
+  "type": "bug",
+  "updated_at": "2026-10-01T06:08:21Z",
+  "urgency": null
+}

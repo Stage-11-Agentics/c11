@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:25Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DSKXQY4ER1RC0MKM67D8",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DSKXQY4ER1RC0MKM67D8.png",
+    "size_bytes": 868755
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged md-360 build; Cmd-F opens the page field and shows 1 of 8 panel matches.",
+  "tags": [],
+  "title": "In-page find with eight matches",
+  "token_usage": null,
+  "type": "file"
+}

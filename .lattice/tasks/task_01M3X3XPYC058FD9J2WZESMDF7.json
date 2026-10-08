@@ -1,0 +1,89 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-276",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-276-transcript-edges",
+      "linked_at": "2026-10-02T14:50:05Z",
+      "linked_by": "agent:luna-276",
+      "repo": null
+    }
+  ],
+  "comment_count": 10,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:38Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nAn agent with no trusted hook should not appear working for its entire TUI lifetime when its transcript contains a supported turn boundary. Missing transcript evidence must remain visible. Backlog item: J5.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Sources/AgentModelDetection.swift:88` has only prompt/agent/tool-result events; `:399` maps Codex task_started and `:400` maps task_complete as generic output. `:167` reads Grok summary.json rather than turn edges; `:641` shows only model/last_active_at. `:273` skips to the final 4 MiB on a large backlog.\n- Upstream: report 01 identifies open classifier PR #15276 as research, not shipped hookless parity. No upstream producer is assumed reusable.\n- Research: BACKLOG.md J5/D4; report 01 Transcript reading; Fable J5; Astra \u00a74 transcript counterexample and \u00a76 D4.\n\n## Scope\nIn: reuse the AgentModelDetection observation lane for Codex/Grok turn.started, turn.completed and turn.interrupted at transcript confidence; gap/freshness reporting and hook dedupe. Out: blocked-state inference, screen classifiers, Kimi/Copilot/Gemini parity, changing provider files, or treating Grok last_active_at as a completed turn.\n\n## Approach\nExtend the incremental parser only from versioned F3 evidence. Locate a real Grok turn/event source rather than invent edges from summary timestamps; if a version lacks an edge, report that capability as unavailable. Preserve bounded reads, partial-line buffering, rotation/truncation and per-conversation reset. Send structural events to J2 with stable identities/source rank; skip gaps degrade coverage rather than creating imagined transitions. Source confidence and evidence age must reach consumers.\n\n## Acceptance criteria\n1. Supported Codex and Grok start/completion/interruption records in F3 emit their semantic edge exactly once on repeated polls. Absent native edge types are declared unavailable, with no fabricated completion or interrupt.\n2. The Esc incident uses a recorded interrupt marker where available; an assistant/tool output record alone does not claim completion and a quiet transcript never claims blocked.\n3. A poll backlog larger than 4 MiB reports a coverage gap/degraded freshness. Partial final lines, truncate/replace and session change do not replay old-session edges into the new tab lifecycle.\n4. Where a hook and transcript report the same turn, J2\u2019s source/confidence policy avoids duplicate turns and a lower-confidence late observation does not overturn the fixture\u2019s newer authoritative state.\n5. The roster/consumer data exposes transcript provenance and advisory status; polling remains bounded/off-main and no transcript bodies survive into the durable journal or diagnostics.\n\n## Validation\nUse executable parser/tailer fixtures with temp files for append, split line, rotation, >4 MiB gaps and session changes; replay through J2. Compare actual Codex/Grok UI turn completion and interruption on an Atlas-built tagged app, using a verified display, timer and dismissal. Measure the existing polling lane under F2\u2019s fleet workload on Atlas.\n\n## Dependencies\nDepends on J2; F3 is the captured oracle. J4 hooks are optional stronger evidence, not a prerequisite. Coordinate provenance/freshness fields with J6 and interval gaps with J7; J8 documents the limits.\nWithin-workstream prerequisites: J2 (C11-273).\n\n## Risks\nKeep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: M. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": "2026-10-02T21:23:52Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YRX187DNHGGYG8AG8DYG0F",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YS5G9P3X8J7QJPNWKZ0QKZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YVT9XZW6X3S13V1A6JHB38",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YWC127K73HYRWGHASCAN7E",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YY6S98ZDWV3QK7MW6QCYWK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z8133KWMT0SM7QV2GG3GEJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z8138AJD76QMVT89YQZ7BT",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Z81388Q9T9ZSSJ9J3HHM84",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3XPYC058FD9J2WZESMDF7",
+  "last_event_id": "ev_01M3Z8138BA2JB8ZC089H3182Q",
+  "last_status_changed_at": "2026-10-02T21:23:52Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-276",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Emit advisory Codex and Grok turn edges from transcript observation",
+  "type": "task",
+  "updated_at": "2026-10-02T21:23:52Z",
+  "urgency": null
+}

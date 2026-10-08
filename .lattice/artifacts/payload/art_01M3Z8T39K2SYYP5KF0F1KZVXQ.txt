@@ -1,0 +1,7 @@
+Browser data import complete, Browser: Google Chrome
+Source profiles: Your Chrome
+Destination profile: c11-288-chrome-live
+Scope: History only
+Imported cookies: 0
+Imported history entries: 1
+Domain filter: 127.0.0.1

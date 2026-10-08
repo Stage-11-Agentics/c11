@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:12Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z7ZVHFE0FVNX10Z5VS8Y94",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z7ZVHFE0FVNX10Z5VS8Y94.md",
+    "size_bytes": 3976
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-297 validation: pre-merge and parked-Validator runtime proof mapped to acceptance criteria\n\nMerged head 1572e20ee8d5958c2a920ddab35c70e377fe81ef (squash e7322a2ad0, PR #516). Evidence reviewed: ow",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

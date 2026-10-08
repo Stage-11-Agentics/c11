@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:25Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DSGANCRABDHZ2JHN5GE8",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DSGANCRABDHZ2JHN5GE8.png",
+    "size_bytes": 864544
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "At 560 px, a second Escape closes the outline at the resulting reading position.",
+  "tags": [],
+  "title": "Second Escape closes outline",
+  "token_usage": null,
+  "type": "file"
+}

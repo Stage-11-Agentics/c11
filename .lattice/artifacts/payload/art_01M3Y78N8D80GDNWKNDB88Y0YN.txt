@@ -1,0 +1,13 @@
+C11-273 final integration validation
+Head: cc9aeafa27067e5ae5ccdaee67045bfed0fec0c0
+Merged main: 04458a8b0ad72933d01a4fbedd9f02838f21c325
+Targeted test invocation: cd8160a6af97414b97efa276821ebbcf
+47 tests passed, zero failures (10 reducer, 5 spool, 11 store, 21 liveness).
+Clean tagged Debug invocation: 842863525faf4ddd8bbadd50356cdda0
+Build-host executable SHA256: 0f3346612cf95d31dfeef795501bb720465a84f1e33eb455ee98e89fe8ff2db8
+Both build inputs had empty overlays.
+Restart guest: one script passed, zero failed; guest deleted.
+
+PASS force-kill/resume restores asks unconfirmed; old running is not live
+PASS startup spool drains once, dedupes committed retry, rejects stale owner and truncated tail
+PASS repeated restart adds no events; fresh native submission reconciles prior ask

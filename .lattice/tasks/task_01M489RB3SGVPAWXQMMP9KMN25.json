@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 6,
+  "complexity": "high",
+  "created_at": "2026-10-06T09:47:12Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "description": "Atin (2026-10-06): a non-1.0 feature. Make the markdown viewer significantly better. Scope not yet pinned down; this ticket holds the intent until it is.\n\nCurrent state (as of main d63b937f65):\n- Native SwiftUI rendering via MarkdownUI (Sources/Panels/MarkdownPanelView.swift, MarkdownPanel.swift).\n- Fenced blocks such as mermaid go through FencedCodeRenderer, which shells out to external CLI tools and inlines the result as an image. A missing tool shows a hint instead of the diagram.\n- Live reload on file change, font scale, drop-to-open, a file-path header.\n- Text selection is per segment; you cannot select across blocks.\n- No find-in-document, no outline/TOC, no syntax-highlighted code, no verified anchor or relative-link navigation.\n- The dark theme is weak (C11-127 covers making the theme configurable).\n\nCandidate directions:\n1. Reading quality: typography, spacing, a strong dark theme, syntax-highlighted code, wide tables.\n2. Navigation: outline sidebar, find (Cmd+F), heading anchors, relative links that open in a c11 markdown tab, scroll position kept across reloads.\n3. Fidelity: full GFM (task lists, footnotes, callouts), frontmatter, math, local images, Mermaid without an external tool.\n4. Agent-native: CLI to scroll to a heading, read the visible section, highlight a passage, report what the operator is looking at.\n\nDecided (Atin, 2026-10-06):\n- Renderer: move to a WKWebView renderer (markdown-it or similar with bundled Mermaid, KaTeX and highlight.js; cross-block selection and find come free). Replaces MarkdownUI.\n- Scope: directions 1-4 above, plus a read-only source-view toggle.\n- Editing is handled by an \"open in external markdown app\" button in the markdown toolbar, styled like the browser's open-in-default-browser button (arrow.up.right.square, BrowserPanelView.openInExternalBrowserButton); it opens the file with the default .md app. No in-app editor (C11-344 cancelled).\n- Theming (round 2 feedback): light and dark at minimum, built as a theme registry so further themes drop in later. Absorbs C11-127.\n- Font size: first-class, with Cmd+ / Cmd- / Cmd0, a visible control with a fixed-width readout, reading position kept across reflow, persisted like today's markdown.fontScale.lastUsed.\n- Zoom keys stay the app-wide ones: Cmd= / Cmd- / Cmd0 already route through AppDelegate's zoom shortcut handler to TabManager.zoomInFocusedMarkdown / zoomOutFocusedMarkdown / resetZoomFocusedMarkdown. The WKWebView rewrite keeps that path and drives the markdown font scale; WKWebView's own page zoom must not intercept the keys.\n- Typeface (round 3): font families are theme tokens, so a theme can carry its own type, plus an operator typeface choice (reading serif / sans / mono) that overrides the theme's default, per tab, last-used as the default.\n- No diff or change-tracking UI. Live reload keeps the reader's scroll position silently.\n- Prototype first: clickable HTML mockups on a real repo plan file, iterated with Atin before any plan.\n\nRelated: C11-127 (markdown light/dark theme) folds into or sits under this ticket.\n\nNext step: prototype discovery (tone-prototype), then plan.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+  "last_event_id": "ev_01M4EG5AYCGG1K0CQ8E9SRA30B",
+  "last_status_changed_at": "2026-10-06T09:47:12Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-336",
+  "status": "backlog",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer: a significantly better reading surface (post-1.0)",
+  "type": "task",
+  "updated_at": "2026-10-08T19:34:36Z",
+  "urgency": null
+}

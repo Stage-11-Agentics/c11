@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:26Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DT9STTQQWC0G13JT8JPQ",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DT9STTQQWC0G13JT8JPQ.png",
+    "size_bytes": 862666
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Command-equals increased reader scale from 100% to 110%.",
+  "tags": [],
+  "title": "Keyboard text scale",
+  "token_usage": null,
+  "type": "file"
+}

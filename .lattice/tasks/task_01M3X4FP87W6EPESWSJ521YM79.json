@@ -1,0 +1,402 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-292",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-292-signoff",
+      "linked_at": "2026-10-03T04:00:58Z",
+      "linked_by": "agent:luna-292",
+      "repo": null
+    }
+  ],
+  "comment_count": 8,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\n1.0 is a reliability release for an operator running many agents. Green tests are not that release. Atin needs one tagged build and one numbered script, and his pass over that script is the merge approval. Backlog item: X2.\n\n## Evidence\n- c11: the release workflow in `skills/release/SKILL.md` on origin/main (0ff8887e5e) starts at pre-flight and ends at a published tag. This ticket stops before publish. X3 cuts the release after this pass.\n- c11: groups already have their own numbered sign-off script on C11-261 (backlog W3): 50 or more workspaces, drag-and-drop, restore, and a computer-use pass. This ticket does not rewrite that script. It points at it as the groups chapter.\n- c11: F2 is the fleet soak (40 mixed agents, 72 hours, a 16 GB run, budgets registered before candidates are measured). It is another workstream. This script consumes F2's baseline. It does not invent a second soak.\n- Research: Fable's week 5 is \"Atin sign-off pass 1.\" Astra's week 6 is a fix-only candidate and Atin's named sign-off, and says to cut scope or move the date if a core gate fails. `c11-1.0.html` says the same. D25: his approval is required for what ships.\n\n## Scope\nIn: one integrated tagged build that contains the P1 work landed for 1.0, and one numbered script Atin can run. The script names the build tag, the expected result of each step, and where to stop and mark a failure. Chapters cover the operator workflows this release claims: a misspelled routing key does not hit the focused tab (C1), `--command` on a new tab (C2), `send --raw` and the three delivery words (C3), `read-selection` (C4), `--window` does not steal focus (C5), `c11 guide` matches the build (C6), browser crash recovery leaves terminals up (B1), Chrome or Arc import smoke (B2), and `c11 ssh atlas` shell, proxy, and refusal (R1). The groups chapter is \"run C11-261's script.\" Feed, journal, and restore chapters are added by the lead from those workstreams' tickets. The script lives in-repo under `upstream-triage/c11-1.0/` or `docs/`, as a markdown file with checkboxes.\nOut: publishing the release (X3). Deciding which P2 items (C7 rpc, C7 resize, B3) are in the build. The lead admits those by the week-3 rule. If they are out, the script does not mention them. Rewriting C11-261. Running the 72-hour soak inside this ticket. Approving the merge. That is Atin's.\n\n## Approach\nAfter P1 tickets have PRs, cut one tag with `./scripts/reload.sh --tag` replaced by the Atlas build path once F1 (C11-216) has landed. Launch with `C11_QA_LAUNCH=fresh` via `scripts/launch-tagged-automation.sh <tag> --qa fresh`. Walk the script once yourself and attach the notes (what you saw, tag, time). Hand Atin the tag and the script. Failures become fix PRs on the same tag's branch, then a new tag. Do not open feature work from a sign-off failure. A failure that is a missing P2 item is a cut, not a fix, unless he says otherwise.\n\n## Acceptance criteria\n1. A tagged build identifier is written at the top of the script, and `c11 doctor` or the about box on that build matches it.\n2. The script has numbered steps. Each step says what Atin does and what he should see. Steps that are another ticket's script are a single step that names that ticket (C11-261 for groups).\n3. You have executed the script once on that build. The PR or the Lattice comment records pass or fail per step, with a screenshot or `read-screen` quote for the CLI steps and a screenshot for the browser and focus steps.\n4. A failed step names the ticket that owns the fix. The script is not edited to skip a failed P1 step.\n5. The build was not published, and no git tag was pushed to the release remote as part of this ticket.\n\n## Validation\nThe one rehearsal is the validation. Computer use for the focus, browser, and import steps. CLI output for the socket steps. F2's soak result is an input, cited by its ticket, not re-run here. Builds run on Atlas once C11-216 lands.\n\n## Dependencies\nDepends on F1 (C11-216) and F2 for the build and the budgets. Depends on this workstream's P1 tickets landing or being explicitly cut: C1, C2, C3, C4, C5, C6, B1, B2, R1, and X1 for the strings the script looks at. C7 and B3 are in the script only if they were admitted. W3 is C11-261. Other workstreams (journal, feed, restore) contribute chapters. The lead links those tickets. X3 depends on this ticket.\n\n## Risks\nTyping latency: the script includes one step that types in a terminal while other agents are running, and records whether the keystrokes land. It does not add instrumentation on the hit-test path. Main thread: observation only. Doctrine: the script does not install skills into tenant config, and it does not turn the ssh relay back on. Localization: the script is English. The X1 chapter checks one translated string. Public repo: the script can live in the repo. It must not contain account names, cookies, or ssh private material. Use \"the remote host\" and a public page.\n\nSize: M. Tier: P1. Doctrine check: the sign-off build is the product. The script is how Atin sees it. His pass is the approval.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M40D1V3KDG0VF4CGGYS75DFX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40WM4XT9NJW74XR3A8XYA5N",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40X4AX3017YMZBCZCD72XT3",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40ZJMW5GEST1JBY8FKVFJP8",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M410N7BDQ5NK9QP7Z354BCT4",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FP87W6EPESWSJ521YM79",
+  "last_event_id": "ev_01M410PXWTVX7NPCS1BWFC3X9H",
+  "last_status_changed_at": "2026-10-03T12:43:08Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FMY3B6JS82RYR1NZHCQ4",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FN1AH08NPPRGGTT47V0T",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FN4MAW3RB7T9VGFJGS70",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FN7XJ0NSFPD9Y8KF8ASV",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNB4XWY9HNMGFQEEAHWX",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNR43RVWK5EDEGFBRQYF",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNVHGZM65ZAT15QJTF12",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FP1W7C1SERYV9M5B8T45",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FP52HXJRCN87FS7AXTPZ",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:35Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:35Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:35Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3Q75BT66X4APD71Q6GACE",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:53Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M387A7G59B9BCVHC3DG6F7P1",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:53Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X2WGW838AF1ECHJ06NTTB8",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:53Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3Q706AHNBFJT4AW4F07NE",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:53Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3Q72SRQC6X52RE70A9ZFK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:53Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3Q77XW34TPSW9G838036D",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:53Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3WR1DQPZP82V13DV9KR34",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3WR6Q7MVRNE3TVGEZJQWW",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3WR99P21HZ6G3S4Z485X7",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3WRXD0V83MKS46ZCJ4QM0",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPG2TP2AJC066BS6RT4Y",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPJSSY6XSPBYGP6VCSRR",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:54Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:55Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPRNFH2Y3DG9T9GZDM3T",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:55Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPVNN0J7YKHNTMD4BA3Q",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:55Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPYC058FD9J2WZESMDF7",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:55Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XQC3KVBT6T1PRE7RR4F0",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:55Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XQETVARY36A87A6G3R3J",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:56Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K1QPK3S6ZW46E38NG432",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K1TD65AVT5VC3RGS1855",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K1X04S08YS80HNASRCMN",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K1ZKDPMCYX74N8DZ31GM",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K228G0SQRN4835T7RA14",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K24XNY2WNJD2515MNN5E",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K27F339MM9F9WPCCZEEA",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2A53E4THPWD9W0M9ARP",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2CT1AVKMSEE82ARBNRD",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:57Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2FGXRQEB8C1JDPQT4YQ",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:58Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2J58A33757GFVV35204",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:58Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2MVM6SVXP7QQGCN26ZC",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:58Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2RKR2RNP2273KYB1ATA",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:58Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2V81RAAX9WWJCSVSDJ0",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:58Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K2XWATMJZRNVYHRV8J0D",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:58Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X6K30JKYBMR9TXY28CHZ12",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:32:23Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3XAPVSTQ5H68S9K7J8N6NMY",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-292",
+  "status": "review",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "One sign-off build and a numbered script for Atin",
+  "type": "task",
+  "updated_at": "2026-10-03T13:54:28Z",
+  "urgency": null
+}

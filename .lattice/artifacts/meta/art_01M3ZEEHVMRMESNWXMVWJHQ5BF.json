@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEHVMRMESNWXMVWJHQ5BF",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZEEHVMRMESNWXMVWJHQ5BF.json",
+    "size_bytes": 7174
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged keyboard proof PASS (b4cd7e22b4 product, exec 3ef8b70e, guest PID 721): report.json, 30.8 s, all checks",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:46:11Z",
+  "created_by": "agent:codex-history",
+  "custom_fields": {},
+  "id": "art_01M3Y03KE1M5KKEQ3RZKF3D3T7",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Y03KE1M5KKEQ3RZKF3D3T7.json",
+    "size_bytes": 3933
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "119 packaged CLI cases and 35 native tagged checks passed; owned app exited.",
+  "tags": [],
+  "title": "Round 1 exact-head CLI and native scope proof",
+  "token_usage": null,
+  "type": "file"
+}

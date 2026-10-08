@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:31:06Z",
+  "created_by": "agent:sol-feed",
+  "custom_fields": {},
+  "id": "art_01M3Z50FJ44FE3YA2109C21YYF",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z50FJ44FE3YA2109C21YYF.json",
+    "size_bytes": 1381
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Second-guest preflight stopped before GUI scenarios; guest deleted, no runtime verdict",
+  "token_usage": null,
+  "type": "file"
+}

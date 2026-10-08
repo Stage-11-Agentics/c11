@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:00:32Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3ZGZYZ3EKHPQDJPW48M58K0",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZGZYZ3EKHPQDJPW48M58K0.md",
+    "size_bytes": 3486
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-251 validation: existing runtime proof mapped to the ask (batch fast rule)\n\nMerged: PR #563, squash 4994d7fce3bf22f1227d6fe62139a4abff59acd0, landing head 0fef7a9ff1bbe9cc689aca3110588f9ae1ff6a37.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

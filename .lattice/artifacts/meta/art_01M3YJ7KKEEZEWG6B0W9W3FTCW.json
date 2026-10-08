@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:02:57Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YJ7KKEEZEWG6B0W9W3FTCW",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YJ7KKEEZEWG6B0W9W3FTCW.html",
+    "size_bytes": 643107
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact candidate and pre-change builds; candidate peak two mounts; UUID/layout/input checks passed; native dismissal and cleanup proven.",
+  "tags": [],
+  "title": "Native retained 60-workspace cycle and restore comparison",
+  "token_usage": null,
+  "type": "file"
+}

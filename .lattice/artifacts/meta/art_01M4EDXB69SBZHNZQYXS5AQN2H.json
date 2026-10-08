@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T18:55:17Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "id": "art_01M4EDXB69SBZHNZQYXS5AQN2H",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M4EDXB69SBZHNZQYXS5AQN2H.md",
+    "size_bytes": 652
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-360 completion (Orchestrator). PR #623 merged bdb91b1e12 at reviewed head 3aabd3b2ac.\nReviews:\n- Opus Review 1 FAIL (B1-B4) and Grok Review 2 FAIL (B5).\n- Repair aeb3e8d715: Grok PASS; Opus verify",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

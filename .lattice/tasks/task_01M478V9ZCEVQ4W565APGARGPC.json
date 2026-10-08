@@ -1,0 +1,42 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:cairn-retro",
+  "branch_links": [],
+  "comment_count": 7,
+  "complexity": "medium",
+  "created_at": "2026-10-06T00:12:07Z",
+  "created_by": "agent:cairn-retro",
+  "custom_fields": {},
+  "description": "## Why\nGitHub bills only the macOS XLarge runners on this public repo ($0.102/min); standard macOS and Linux runners are free. The hourly native CI (`ci-hourly.yml`, from C11-315) ran a ~10-minute XLarge build every hour whether or not main changed: about $25/day. October hit the spending limit in five days ($350). Atin approved (2026-10-05): stop paying for idle runs; Atlas stays the per-PR exact-head gate and the place for any self-hosted compute, no rented machines.\n\n## Done when\n- The native backstop runs when main changes, not on a clock: `push` to `main` plus `workflow_dispatch`, with a concurrency group that never cancels the running job, so a burst of merges (say 20 in three hours) collapses to one run at a time, each testing the newest main.\n- A run skips at once when its commit was already tested green (absorbs C11-321).\n- It runs on the free standard runner (`macos-15`), with a job timeout that fits that runner's slower build. The compat workflow already builds the app there.\n- Release, signing and nightly stay on XLarge (rare, and the nightly already skips unchanged main).\n- The c11 `CLAUDE.md` and skills that mention hourly CI describe the new trigger.\n- Proof: one dispatched run on the PR branch green on `macos-15`, and its wall time recorded.\n\nLands after 1.0 releases; main is frozen.",
+  "done_at": "2026-10-06T21:53:31Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M49KA8JK9S1KJ1B4XVK0KNJZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M49KA8JH7JF7JFJA07Y372KZ",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M478V9ZCEVQ4W565APGARGPC",
+  "last_event_id": "ev_01M49KA8JK9S1KJ1B4XVK0KNK1",
+  "last_status_changed_at": "2026-10-06T21:53:31Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-335",
+  "status": "done",
+  "tags": [
+    "c11-1.0-followup",
+    "ci"
+  ],
+  "title": "macOS CI backstop runs once per batch of main changes, on the free runner",
+  "type": "chore",
+  "updated_at": "2026-10-06T21:53:31Z",
+  "urgency": null
+}

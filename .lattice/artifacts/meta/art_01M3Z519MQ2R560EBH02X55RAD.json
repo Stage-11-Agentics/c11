@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:31:33Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z519MQ2R560EBH02X55RAD",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z519MQ2R560EBH02X55RAD.json",
+    "size_bytes": 6731
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "All helpers/protocol/spec/actual GUI,dylib,CLI hashes; seal016 unused preparation only; no new samples.",
+  "tags": [],
+  "title": "ABBA binding premeasurement seal017 same frozen artifact pair",
+  "token_usage": null,
+  "type": "file"
+}

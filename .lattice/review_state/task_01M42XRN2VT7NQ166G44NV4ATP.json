@@ -1,0 +1,26 @@
+{
+  "task_id": "task_01M42XRN2VT7NQ166G44NV4ATP",
+  "mode": "single",
+  "review_type": "plan-review",
+  "started_at": "2026-10-05T18:48:21.913486+00:00",
+  "started_by_pid": 58219,
+  "auto_fired": true,
+  "agents": [
+    {
+      "name": "claude",
+      "status": "failed",
+      "started_at": "2026-10-05T18:48:21.913486+00:00",
+      "artifact_id": null,
+      "finished_at": "2026-10-05T18:58:21.992661+00:00"
+    }
+  ],
+  "status": "failed",
+  "error": "timed out after 600s",
+  "finished_at": "2026-10-05T18:58:21.992661+00:00",
+  "detail": {
+    "returncode": null,
+    "duration_seconds": 600.0,
+    "stderr_tail": ""
+  },
+  "claim": "603a5dcd10c2137d"
+}

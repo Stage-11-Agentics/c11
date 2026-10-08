@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:57:37Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZM8FG3N1MJ1118DV3RY71Y",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZM8FG3N1MJ1118DV3RY71Y.json",
+    "size_bytes": 1376
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Exact-head e148fe1ebe Atlas native: full c11LogicTests + FeedQuickView + AgentWorkspaceSelection + Cmd-I and quick-view routing, 0 failures",
+  "token_usage": null,
+  "type": "file"
+}

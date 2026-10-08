@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEHY5TDG107D3JPY6SRS0",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZEEHY5TDG107D3JPY6SRS0.png",
+    "size_bytes": 777552
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: populated Asks, first row selected, hint names Tab",
+  "token_usage": null,
+  "type": "file"
+}

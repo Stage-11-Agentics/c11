@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T18:12:53Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4EBFPY1K9Z3F1QA1SG3ME5C",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4EBFPY1K9Z3F1QA1SG3ME5C.png",
+    "size_bytes": 259172
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact tagged Atlas build after B6 fix; 1200 pt Markdown panel shows the progress readout immediately before the trailing controls cluster.",
+  "tags": [],
+  "title": "B6 wide toolbar progress adjacency",
+  "token_usage": null,
+  "type": "file"
+}

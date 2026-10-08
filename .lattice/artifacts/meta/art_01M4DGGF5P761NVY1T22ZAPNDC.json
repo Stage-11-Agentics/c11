@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:21:27Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DGGF5P761NVY1T22ZAPNDC",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": "art_01M4DGGF5P761NVY1T22ZAPNDC.log",
+    "size_bytes": 38809
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final native renderer geometry and eviction log",
+  "token_usage": null,
+  "type": "file"
+}

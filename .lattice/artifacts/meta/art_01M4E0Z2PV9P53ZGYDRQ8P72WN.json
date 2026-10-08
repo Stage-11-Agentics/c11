@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:09:03Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E0Z2PV9P53ZGYDRQ8P72WN",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E0Z2PV9P53ZGYDRQ8P72WN.png",
+    "size_bytes": 885748
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact md-360 build: Escape closes the page outline while retaining the reader position.",
+  "tags": [],
+  "title": "Outline Escape dismissal on exact final build",
+  "token_usage": null,
+  "type": "file"
+}

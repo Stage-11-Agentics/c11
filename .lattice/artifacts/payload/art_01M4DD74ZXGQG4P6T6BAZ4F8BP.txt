@@ -1,0 +1,14 @@
+PASS 7 fixtures at 560/820/1200 px in light/dark
+PASS messaging document: all 7 diagrams, including entity-bearing sequences
+PASS callouts, tasks/tree counts, math, highlighting/copy, frontmatter, responsive tables, margin/popover notes, diagram expansion
+PASS literal find spans inline formatting, next/previous wrap, close clears marks
+PASS reload preserves anchor, unchanged node/selection; theme/typeface/scale/outline/source preserve position at all widths
+PASS async Mermaid resize above viewport and unchanged diagram identity across reload
+PASS effective-width scale, invalid-setting defaults, system appearance
+PASS load/settings ordering and superseded load completion
+PASS hostile HTML/URLs inert; authorized local image URL policy
+PASS link interception/native classification and in-document return pill
+PASS heading slugs cannot collide with host DOM IDs; duplicate headings remain addressable
+PASS malformed Mermaid produces quiet escaped-source fallback
+PASS zero console errors and zero network requests
+PASS 13 scenarios; evidence: /tmp/c11-358-mutation-evidence

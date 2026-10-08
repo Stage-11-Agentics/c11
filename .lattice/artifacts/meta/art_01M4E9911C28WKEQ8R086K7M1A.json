@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:34:17Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E9911C28WKEQ8R086K7M1A",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4E9911C28WKEQ8R086K7M1A.json",
+    "size_bytes": 3724
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "md-360 tagged build; native and renderer code matches pushed head, later change was test-only.",
+  "tags": [],
+  "title": "Atlas tagged Debug build result",
+  "token_usage": null,
+  "type": "file"
+}

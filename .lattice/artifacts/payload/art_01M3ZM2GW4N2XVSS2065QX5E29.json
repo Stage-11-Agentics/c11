@@ -1,0 +1,43 @@
+{
+  "invocation": "86bdce442d884e269542754659dd7c76",
+  "head": "d2440e7785a4143efb15b2ab8f43dc15a0f218d5",
+  "parent_head": "8a8e5e72e6bb7f88c39b32a7b8e4c7c1f5693479",
+  "branch": "c11-1.0/C11-266-quick-view",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "d769def2ea028d62264093b0c9c9228fa0354010"
+  },
+  "overlay": [
+    {
+      "path": "Sources/Feed/FeedQuickView.swift",
+      "kind": "file",
+      "sha256": "67bb815beaca7345752800051d6809d3412db00609a5a518e210b5859e57a8a4",
+      "mode": 420
+    },
+    {
+      "path": "c11Tests/AppDelegateShortcutRoutingTests.swift",
+      "kind": "file",
+      "sha256": "0c8b048a1177b513f366aff9bb71d798dcc6f979bdf07abc0c397147e75e7221",
+      "mode": 420
+    }
+  ],
+  "dirty": true,
+  "tag": "c11-266",
+  "slug": "c11-266",
+  "mode": "test",
+  "extra": [
+    "-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testSocketSimulatedReturnInQuickViewIsRefusedAndAttributed",
+    "-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testOperatorReturnInQuickViewSwitchesToTheTabsWorkspace",
+    "-resultBundlePath",
+    "c11-266-red3.xcresult"
+  ],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "failed",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": false,
+  "error": "Command '[PosixPath('/Users/atinwoodard/c11-builds/c11-266/source/scripts/test-unit-local.sh'), 'test', '-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testSocketSimulatedReturnInQuickViewIsRefusedAndAttributed', '-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testOperatorReturnInQuickViewSwitchesToTheTabsWorkspace', '-resultBundlePath', 'c11-266-red3.xcresult']' returned non-zero exit status 65."
+}

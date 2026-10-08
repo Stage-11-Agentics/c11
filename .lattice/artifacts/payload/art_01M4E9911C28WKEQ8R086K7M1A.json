@@ -1,0 +1,118 @@
+{
+  "invocation": "dfae2db0728f491ebe6859dbaf905cd8",
+  "head": "a020849f9ff0ddf880ea9432739b7d7535ab7dd2",
+  "bundles": {},
+  "branch": "md-viewer/C11-360-reader-chrome",
+  "submodules": {
+    "ghostty": "e6999ae7adc7c584d6bbda415aa59a6a8c3a2470",
+    "vendor/bonsplit": "4ead59529af12405b03fd14e8943a473350dd97c"
+  },
+  "overlay": [
+    {
+      "path": "Resources/Localizable.xcstrings",
+      "kind": "file",
+      "sha256": "3c8a7dff9046652206497321fa3325d0a72dcee918589273fe2ebffa599336e8",
+      "mode": 420
+    },
+    {
+      "path": "Resources/markdown-viewer/BRIDGE.md",
+      "kind": "file",
+      "sha256": "8851c8f8b2a06022c23c142f35aca77dfc30622cb36726de1242445b679b3a52",
+      "mode": 420
+    },
+    {
+      "path": "Resources/markdown-viewer/index.html",
+      "kind": "file",
+      "sha256": "a9e353ee8fb75bc4bc8c65d619c88afb1ad565deefa85d0764b605f530493194",
+      "mode": 420
+    },
+    {
+      "path": "Resources/markdown-viewer/viewer.css",
+      "kind": "file",
+      "sha256": "f5c1ce22da23cfe2ba191e6282870d7de9fbb4f0bef79f0455b1ae01c0a02308",
+      "mode": 420
+    },
+    {
+      "path": "Resources/markdown-viewer/viewer.js",
+      "kind": "file",
+      "sha256": "cc0bb1e53cbfc7e050a1ecaf59e43293c4fdceabec33488976d0c2ddc84c18dc",
+      "mode": 420
+    },
+    {
+      "path": "Sources/AppDelegate.swift",
+      "kind": "file",
+      "sha256": "698c065a3bcc7cc34eeb09dfb0826cbab337357411a1f10068eff237566d2948",
+      "mode": 420
+    },
+    {
+      "path": "Sources/KeyboardShortcutSettings.swift",
+      "kind": "file",
+      "sha256": "8c13fafeaa5fc6de18d1d4aff2aa66b0beff936b5a6d263e1bb7745429061614",
+      "mode": 420
+    },
+    {
+      "path": "Sources/Panels/MarkdownPanel.swift",
+      "kind": "file",
+      "sha256": "afa796c637afc507c5e2f9571e2d48689dbfc1fc5d10fef9ab4748552d3ff86c",
+      "mode": 420
+    },
+    {
+      "path": "Sources/Panels/MarkdownPanelView.swift",
+      "kind": "file",
+      "sha256": "58a98e0e3cddaf12c1cb79e9a7a1251b9e1397f97682ddd545afe9b9fdd99f84",
+      "mode": 420
+    },
+    {
+      "path": "Sources/Panels/MarkdownRendererCache.swift",
+      "kind": "file",
+      "sha256": "ea2205882c71f95f64bb0eb1f373c849928c908755a3606c32065a7765ebd758",
+      "mode": 420
+    },
+    {
+      "path": "Sources/Panels/MarkdownWebRenderer.swift",
+      "kind": "file",
+      "sha256": "72229a6b0bb535cf3ddeeacf5b57f5339e2c1bd3856a3e4932e08bbb62f4b893",
+      "mode": 420
+    },
+    {
+      "path": "c11Tests/MarkdownPanelFontScaleTests.swift",
+      "kind": "file",
+      "sha256": "0e4d8b73e630b9119176c79333e3fb53e670ff1948e9b52558de207f64124702",
+      "mode": 420
+    },
+    {
+      "path": "docs/markdown-viewer-design.md",
+      "kind": "file",
+      "sha256": "a17a0881f34275b4daa75cc172f386ac2e3c228bf5b1f866c4b3f0a95616ca2b",
+      "mode": 420
+    },
+    {
+      "path": "scripts/markdown-viewer/test.mjs",
+      "kind": "file",
+      "sha256": "d741f87399227b5342b21706924a122d57122a2572a98403f2b77f58e3fd2b47",
+      "mode": 420
+    },
+    {
+      "path": "skills/c11-markdown/SKILL.md",
+      "kind": "file",
+      "sha256": "f1c1a875ef82e181a2921f17e95256f8f6c7ecffc9f73ff93e3d242cbffa86c5",
+      "mode": 420
+    }
+  ],
+  "dirty": true,
+  "tag": "md-360",
+  "slug": "md-360",
+  "mode": "debug",
+  "extra": [],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "na",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "app": "c11 DEV md-360.app",
+  "executable_sha256": "125fc2234591f5d41f116a328ed168312ce299499122eac1492876918db268e4",
+  "ok": true,
+  "local_executable_sha256": "7550672d760a330ae48bab100f60401bafc54c6b0b2e087f1e1498daa5dfa7d5"
+}

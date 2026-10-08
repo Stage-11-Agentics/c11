@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:27:34Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8WQE1DNGA17JQNYADFYB9",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8WQE1DNGA17JQNYADFYB9.png",
+    "size_bytes": 882277
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Manual typeface check in the Atlas md-360 packaged app.",
+  "tags": [],
+  "title": "Serif typeface in tagged build",
+  "token_usage": null,
+  "type": "file"
+}

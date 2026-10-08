@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:54:02Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZGM1V5QX14P57PWZJJ1KKR",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZGM1V5QX14P57PWZJJ1KKR.json",
+    "size_bytes": 867
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1: Atlas FeedQuickViewTests 6 + selection 2 pass at 95cf799009 incl focus assertion",
+  "token_usage": null,
+  "type": "file"
+}

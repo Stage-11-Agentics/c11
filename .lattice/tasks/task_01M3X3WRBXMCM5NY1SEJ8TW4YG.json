@@ -1,0 +1,89 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:sonnet-267",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-267-send-guard",
+      "linked_at": "2026-10-02T18:19:13Z",
+      "linked_by": "agent:luna-267",
+      "repo": null
+    }
+  ],
+  "comment_count": 10,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:07Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nAn agent sending to a tab must be able to detect the operator\u2019s half-written draft without mistaking Claude\u2019s faint suggestion for user input. Backlog item: A5.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `Sources/TerminalController.swift:6703-6727` pastes then schedules Return with no draft inspection. Its text/submit rules are at `:6662-6697`.\n- Upstream: cmux #15302 (`8216c54b52`), `Sources/TerminalController+SurfaceInputState.swift:7-104` reads active-screen styled spans and preserves faint attributes; `cmuxCLITests/CLISendDraftGuardTests.swift:40-150` exercises draft/dialog refusal, empty prompts and unsupported-server behavior.\n- Research: Fable \u201cItems the plan bundles\u201d X2; Astra \u201cMissing or hidden work\u201d M1 and \u00a77 item 2; report 03 \u201cAnswering: verify, then type\u201d; HTML draft-guard row. BACKLOG A5 admits this only as P2.\n\n## Scope\nIn: an on-demand bounded input-state primitive (empty, draft, dialog, unknown, with source/freshness) and a send guard that clearly refuses detected drafts/dialogs. Detect faint auto-suggest separately from typed text for fixture-covered prompts.\nOut: periodic screen classification, universal TUI recognition, menu-key answering, automatic approvals, blocking hook bridge, changing arbitrary send-key semantics and a claim that an observation guarantees a later keypress is safe.\n\n## Approach\nPort the upstream idea, not its mobile-render-grid dependency wholesale. Use an active-screen snapshot with attributes, independent of scrollback viewport; return draft length rather than draft contents. Isolate parsing as a pure bounded function and keep collection to the minimum UI-bound work. Check the resolved target immediately before dispatch where feasible; expose unknown/unavailable honestly. For ordinary send, document the explicit unknown/older-server compatibility policy instead of silently reporting safe. A6 will require a confirmed acceptable state and refuse unknown. Any override must be explicit and documented, not automatic. Ship independently of A6; admission is required by week 3.\n\n## Acceptance criteria\n1. Recorded fixtures distinguish an actual unsent draft, an empty prompt, a faint Claude suggestion, a dialog and unrecognized content. Faint suggestions alone are not classified as a human draft; draft contents are absent from the response.\n2. A send targeting a detected draft or dialog refuses before any payload or submit reaches the PTY, with a machine-readable reason. A supported empty-prompt fixture accepts the existing send semantics.\n3. Inspection uses the active screen even when the operator has scrolled upward. Cold/unattached tabs and unsupported prompt versions return unknown/unavailable rather than empty.\n4. A controlled target close/replacement between inspection and dispatch does not send to another tab. A concurrent human-input fixture records the check-to-use limitation; CLI/help makes no atomic-safe-to-type claim.\n5. An older server lacking the inspection verb produces the documented compatibility outcome, visibly distinguishing unguarded delivery from checked delivery. No continuous polling or input capture is introduced.\n\n## Validation\nUse recorded styled-screen parser fixtures, CLI tests with a fake socket that records whether a write occurred, and tests_v2 against a tagged app for actual draft/empty/dialog/cold-tab behavior. A computer-use pass types a real unsent draft and invokes send from another tab. Run an on-demand inspection/typing-latency soak on Atlas against F2. Do not test only source snippets.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nNo mandatory in-workstream predecessor. Coordinate send response/error semantics with C3 and cold-tab inspection with H-D / C11-235; unknown is an allowed result, not an excuse to target a different tab. F1 / C11-216 supplies builds and F2 the measurement baseline. A6 depends on this. P2: individually releasable and admitted by week 3.\n\n## Risks\nUpstream\u2019s styled grid is richer than plain read-screen; the delegator must confirm a viable c11 seam before promising broad provider support. Check-to-use races remain. Keep the S-to-M backlog estimate at M and escalate scope rather than building a generic classifier. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: M. Tier: P2. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": "2026-10-03T00:30:28Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3ZAJRT4X43D68W5VY263SFZ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZDJVGC3RN0ZDE5484NY7YK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZE1W0AW13BVDPD4DD12NHX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZENZDJNV3WT55H45XH7M47",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZHN68P9FJ1VYFSY6N95WSA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZHYHRY5CB442N3AA7CD3KD",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZJPRNXZEGMWQ36KWQSZS8D",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3ZJPRNT8EXHQKK0VR8TTYRG",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3WRBXMCM5NY1SEJ8TW4YG",
+  "last_event_id": "ev_01M3ZJPRNXZEGMWQ36KWQSZS8F",
+  "last_status_changed_at": "2026-10-03T00:30:28Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T03:17:46Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3WPMYYQBP8VJN6X48RTV1TD",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-267",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p2"
+  ],
+  "title": "Send: inspect styled prompt input and guard against overwriting operator drafts",
+  "type": "task",
+  "updated_at": "2026-10-03T00:30:28Z",
+  "urgency": null
+}

@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "pid": 6045,
+  "nodes": 2001,
+  "execution_marker_exists": false,
+  "limits": "No script dialog or execution marker; unsafe javascript link absent. Remote egress not independently instrumented."
+}

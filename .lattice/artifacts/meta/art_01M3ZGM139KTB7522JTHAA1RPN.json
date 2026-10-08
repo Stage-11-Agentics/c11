@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:54:01Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZGM139KTB7522JTHAA1RPN",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZGM139KTB7522JTHAA1RPN.json",
+    "size_bytes": 8075
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1 packaged keyboard proof PASS, 32.8 s, 30 screenshots (head 95cf799009 product, exec 37baf80e, guest PID 608)",
+  "token_usage": null,
+  "type": "file"
+}

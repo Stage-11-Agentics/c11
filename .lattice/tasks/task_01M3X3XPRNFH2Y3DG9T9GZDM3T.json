@@ -1,0 +1,113 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-274",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-274-claude-hooks",
+      "linked_at": "2026-10-02T14:42:06Z",
+      "linked_by": "agent:grok-producers",
+      "repo": null
+    }
+  ],
+  "comment_count": 17,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:38Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nClaude\u2019s bypass-mode question/plan prompts and error stops must produce the correct reason instead of relying on a notification that may never arrive. Backlog item: J3.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Resources/bin/claude:207` supplies six hooks, including async PreToolUse, through the temp settings file at `:226`; `CLI/c11.swift:17006` caches a question and `:17036` relies on Notification rather than a blocked event.\n- Upstream: #15232 StopFailure; #15666/#15887 child/background-work handling; #6606 bypass questions. `CLI/CMUXCLI+ClaudeHookSettings.swift:16` includes StopFailure and `:85` shows the blocking PermissionRequest bridge that c11 must not import.\n- Research: BACKLOG.md J3; report 01 producer table; report 03 The gap; Fable event-journal table and Astra \u00a75 observation-before-storage.\n\n## Scope\nIn: StopFailure, observe-only PermissionRequest, async PostToolUse, SubagentStart/Stop, PreCompact, and bypass AskUserQuestion/ExitPlanMode mapping through the existing per-process --settings file. Out: blocking PermissionRequest bridge, answers/tool bodies in storage, automatic menu typing, other providers, C11-257 message delivery and duplicating A1 fixes.\n\n## Approach\nExtend the existing hook settings and CLI mapper into J2 append. Extract only event kind, structural reason, IDs and timing; the PermissionRequest observer must return promptly without emitting a decision. Preserve async PreToolUse, add async PostToolUse, scope child events to the child, and preserve operator settings merge and wrapper pass-through. Reuse any A1 bypass/scoped-clear repair already landed; one owner for the blocked reason.\n\n## Acceptance criteria\n1. Replay and observe F3 normal versus bypass Claude captures: PreToolUse AskUserQuestion and ExitPlanMode open the appropriate blocked reasons even without PermissionRequest/Notification; Stop is a completion rather than a blocked ask.\n2. StopFailure produces error evidence; child spawn/stop records do not finish or unblock the root. PreCompact is a bounded observation with the reviewed mapping, not a fabricated completion.\n3. The late async PreToolUse/PostToolUse fixture after Stop leaves the completed result intact; a tool beginning in tab B does not clear tab A\u2019s wait.\n4. The normal-mode PermissionRequest observer neither answers nor waits for an operator response through c11. New hooks remain bounded when the socket is unavailable, and Claude continues through its own native permission flow.\n5. Wrapper behavioral checks preserve operator settings and outside-c11 pass-through, and the resulting journal/spool contains no prompt/tool bodies or answer content.\n\n## Validation\nUse F3 mapper/replay tests plus executable wrapper tests with a controlled fake CLI and temp settings; then observe real Claude normal/bypass flows on an Atlas-built tagged app/socket. Record supported Claude versions. Run the registered lifecycle-burst soak on Atlas; UI proof requires actual prompt/mark observation, a verified display, timer and dismissal.\n\n## Dependencies\nDepends on J2. Coordinate A1 (bypass question and sibling clears) without filing duplicate work. J8 documents D5 and adapter coverage; C11-257 remains a separate message-delivery scope.\nWithin-workstream prerequisites: J2 (C11-273).\n\n## Risks\nKeep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: M. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": "2026-10-02T21:23:51Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YJN7YXJCKY83MHMH1H70MS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YK2KMJ34KEDS2511TG1RB6",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YRGNBREP3Z0FCQJNAA5GTD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YRRY2XN1N841MPCK5E1K97",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YS7NTCMS78BHR4PP1J996T",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YSCAYERRC08D89F2WN3ZNK",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YT4ZDDQN38MDQNJHW40QAC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YXSZYT4A4B2M1SN4DYCMV7",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YXV73EMY2VZ3QBQHQ55KQW",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z811ZKNERYGTTEKSP39S30",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z812467091MM2MGTH64765",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Z81243SK8CX7NK5QNCVPJG",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Z8369ZTJGQDNZRF8AY2HHN",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X3XPRNFH2Y3DG9T9GZDM3T",
+  "last_event_id": "ev_01M3Z8369ZTJGQDNZRF8AY2HHN",
+  "last_status_changed_at": "2026-10-02T21:23:51Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:07Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 4,
+  "schema_version": 1,
+  "short_id": "C11-274",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Widen Claude lifecycle observations through per-process hooks",
+  "type": "task",
+  "updated_at": "2026-10-02T21:25:01Z",
+  "urgency": null
+}

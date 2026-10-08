@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:54:27Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z6B7VH6NACN4NT0AB08EV2",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Z6B7VH6NACN4NT0AB08EV2.gz",
+    "size_bytes": 8625925
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Verified SHA256 455c0629b9eb1a6418cf7c17b63eb980a35d7872bc47e11df25e65c511365302; all raw ABBA attempts, failure records, role logs and immutable seal. No perf PASS.",
+  "tags": [],
+  "title": "Window 2 full raw evidence \u2014 INCOMPLETE",
+  "token_usage": null,
+  "type": "file"
+}

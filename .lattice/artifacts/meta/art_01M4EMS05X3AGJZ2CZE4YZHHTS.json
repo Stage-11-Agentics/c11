@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T20:55:15Z",
+  "created_by": "agent:codex-md-n1",
+  "custom_fields": {},
+  "id": "art_01M4EMS05X3AGJZ2CZE4YZHHTS",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4EMS05X3AGJZ2CZE4YZHHTS.png",
+    "size_bytes": 256027
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "The misspelled fragment instalation suggests Installation and nearby headings.",
+  "tags": [],
+  "title": "Atlas UI: broken anchor suggestions",
+  "token_usage": null,
+  "type": "file"
+}

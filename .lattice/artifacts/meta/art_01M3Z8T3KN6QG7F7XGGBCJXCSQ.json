@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:37:32Z",
+  "created_by": "agent:sonnet-288",
+  "custom_fields": {},
+  "id": "art_01M3Z8T3KN6QG7F7XGGBCJXCSQ",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z8T3KN6QG7F7XGGBCJXCSQ.json",
+    "size_bytes": 200
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Chrome destination history and source-unchanged check",
+  "token_usage": null,
+  "type": "file"
+}

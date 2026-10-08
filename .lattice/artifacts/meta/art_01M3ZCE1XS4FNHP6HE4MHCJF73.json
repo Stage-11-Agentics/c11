@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T22:40:51Z",
+  "created_by": "agent:sonnet-323",
+  "custom_fields": {},
+  "id": "art_01M3ZCE1XS4FNHP6HE4MHCJF73",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZCE1XS4FNHP6HE4MHCJF73.png",
+    "size_bytes": 914143
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "07-after-close.png",
+  "token_usage": null,
+  "type": "file"
+}

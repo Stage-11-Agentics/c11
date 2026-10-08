@@ -1,0 +1,5099 @@
+{
+  "schema": "c11-261-interleaved-comparison-v1",
+  "status": "INCOMPLETE",
+  "candidate_sha": "a2e448b74d9ecdfdf356498cfb431036de9e5c95",
+  "control_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+  "identity_file": "/tmp/c11-261-perf/identity-015.json",
+  "protocol": "Orchestrator interleaving ruling, seal015: 60s warmup, fixed130s phases,105/42/42 perrole,1300churn each role at10Hz",
+  "errors": [
+    "no-churn/typing/control: attempted 74/105, valid 74/100",
+    "no-churn/typing/candidate: attempted 74/105, valid 74/100",
+    "no-churn/switch/control: attempted 28/42, valid 28/40",
+    "no-churn/switch/candidate: attempted 28/42, valid 28/40",
+    "no-churn/scroll/control: attempted 28/42, valid 28/40",
+    "no-churn/scroll/candidate: attempted 28/42, valid 28/40",
+    "churn/typing/control: attempted 0/105, valid 0/100",
+    "churn/typing/candidate: attempted 0/105, valid 0/100",
+    "churn/switch/control: attempted 0/42, valid 0/40",
+    "churn/switch/candidate: attempted 0/42, valid 0/40",
+    "churn/scroll/control: attempted 0/42, valid 0/40",
+    "churn/scroll/candidate: attempted 0/42, valid 0/40",
+    "quiescence/typing/control: attempted 0/105, valid 0/100",
+    "quiescence/typing/candidate: attempted 0/105, valid 0/100",
+    "quiescence/switch/control: attempted 0/42, valid 0/40",
+    "quiescence/switch/candidate: attempted 0/42, valid 0/40",
+    "quiescence/scroll/control: attempted 0/42, valid 0/40",
+    "quiescence/scroll/candidate: attempted 0/42, valid 0/40",
+    "full collection completion marker absent; no phase extension or retry"
+  ],
+  "budgets": [
+    {
+      "phase": "no-churn",
+      "metric": "typing",
+      "percentile": 95,
+      "control_ms": 52.211875,
+      "candidate_ms": 55.803167,
+      "limit_ms": 62.65425,
+      "pass": true
+    },
+    {
+      "phase": "no-churn",
+      "metric": "typing",
+      "percentile": 99,
+      "control_ms": 56.545583,
+      "candidate_ms": 63.08525,
+      "limit_ms": 71.545583,
+      "pass": true
+    },
+    {
+      "phase": "no-churn",
+      "metric": "switch",
+      "percentile": 95,
+      "control_ms": 196.366875,
+      "candidate_ms": 185.747625,
+      "limit_ms": 235.64024999999998,
+      "pass": true
+    },
+    {
+      "phase": "no-churn",
+      "metric": "switch",
+      "percentile": 99,
+      "control_ms": 197.56675,
+      "candidate_ms": 215.506417,
+      "limit_ms": 246.9584375,
+      "pass": true
+    },
+    {
+      "phase": "no-churn",
+      "metric": "scroll",
+      "percentile": 95,
+      "control_ms": 62.971958,
+      "candidate_ms": 60.437542,
+      "limit_ms": 75.5663496,
+      "pass": true
+    },
+    {
+      "phase": "no-churn",
+      "metric": "scroll",
+      "percentile": 99,
+      "control_ms": 67.269333,
+      "candidate_ms": 61.309792,
+      "limit_ms": 84.08666625000001,
+      "pass": true
+    },
+    {
+      "phase": "churn",
+      "metric": "typing",
+      "percentile": 95,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "churn",
+      "metric": "typing",
+      "percentile": 99,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "churn",
+      "metric": "switch",
+      "percentile": 95,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "churn",
+      "metric": "switch",
+      "percentile": 99,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "churn",
+      "metric": "scroll",
+      "percentile": 95,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "churn",
+      "metric": "scroll",
+      "percentile": 99,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "quiescence",
+      "metric": "typing",
+      "percentile": 95,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "quiescence",
+      "metric": "typing",
+      "percentile": 99,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "quiescence",
+      "metric": "switch",
+      "percentile": 95,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "quiescence",
+      "metric": "switch",
+      "percentile": 99,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "quiescence",
+      "metric": "scroll",
+      "percentile": 95,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    },
+    {
+      "phase": "quiescence",
+      "metric": "scroll",
+      "percentile": 99,
+      "control_ms": null,
+      "candidate_ms": null,
+      "limit_ms": null,
+      "pass": null
+    }
+  ],
+  "phases": {
+    "no-churn": {
+      "typing": {
+        "roles": {
+          "control": {
+            "attempted": 74,
+            "valid": 74,
+            "invalid": 0,
+            "latency": {
+              "count": 74,
+              "mean_ms": 41.030389121621624,
+              "p50_ms": 42.287333,
+              "p95_ms": 52.211875,
+              "p99_ms": 56.545583,
+              "max_ms": 56.545583
+            },
+            "setup_noise": {
+              "count": 74,
+              "mean_ms": 160.0439481891892,
+              "p50_ms": 159.346125,
+              "p95_ms": 167.430417,
+              "p99_ms": 199.863792,
+              "max_ms": 199.863792
+            },
+            "activation_noise": {
+              "count": 74,
+              "mean_ms": 221.97596856756758,
+              "p50_ms": 221.171291,
+              "p95_ms": 227.083625,
+              "p99_ms": 297.490334,
+              "max_ms": 297.490334
+            },
+            "pre_capture_noise": {
+              "count": 74,
+              "mean_ms": 15.770935824324322,
+              "p50_ms": 15.584334,
+              "p95_ms": 19.913666,
+              "p99_ms": 26.49775,
+              "max_ms": 26.49775
+            },
+            "frame_capture_noise": {
+              "count": 239,
+              "mean_ms": 12.680839443514644,
+              "p50_ms": 11.848375,
+              "p95_ms": 16.523459,
+              "p99_ms": 17.130042,
+              "max_ms": 19.842333
+            }
+          },
+          "candidate": {
+            "attempted": 74,
+            "valid": 74,
+            "invalid": 0,
+            "latency": {
+              "count": 74,
+              "mean_ms": 40.75906752702703,
+              "p50_ms": 40.572875,
+              "p95_ms": 55.803167,
+              "p99_ms": 63.08525,
+              "max_ms": 63.08525
+            },
+            "setup_noise": {
+              "count": 74,
+              "mean_ms": 159.00260582432432,
+              "p50_ms": 158.763916,
+              "p95_ms": 167.245875,
+              "p99_ms": 170.681917,
+              "max_ms": 170.681917
+            },
+            "activation_noise": {
+              "count": 74,
+              "mean_ms": 220.92240544594597,
+              "p50_ms": 221.374417,
+              "p95_ms": 226.355208,
+              "p99_ms": 231.983875,
+              "max_ms": 231.983875
+            },
+            "pre_capture_noise": {
+              "count": 74,
+              "mean_ms": 15.361618189189189,
+              "p50_ms": 15.804083,
+              "p95_ms": 19.572709,
+              "p99_ms": 23.102417,
+              "max_ms": 23.102417
+            },
+            "frame_capture_noise": {
+              "count": 229,
+              "mean_ms": 13.146676519650654,
+              "p50_ms": 12.643167,
+              "p95_ms": 17.019917,
+              "p99_ms": 20.099667,
+              "max_ms": 35.6435
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 74,
+          "mean_ms": -0.2713215945945946,
+          "p50_ms": 1.2348329999999947,
+          "p95_ms": 18.389623999999998,
+          "p99_ms": 30.299041000000003,
+          "max_ms": 30.299041000000003
+        },
+        "absolute_pair_noise": {
+          "count": 74,
+          "mean_ms": 9.940043297297297,
+          "p50_ms": 8.004125000000002,
+          "p95_ms": 22.940208,
+          "p99_ms": 30.299041000000003,
+          "max_ms": 30.299041000000003
+        }
+      },
+      "switch": {
+        "roles": {
+          "control": {
+            "attempted": 28,
+            "valid": 28,
+            "invalid": 0,
+            "latency": {
+              "count": 28,
+              "mean_ms": 173.9262067857143,
+              "p50_ms": 173.855833,
+              "p95_ms": 196.366875,
+              "p99_ms": 197.56675,
+              "max_ms": 197.56675
+            },
+            "setup_noise": {
+              "count": 28,
+              "mean_ms": 16.108293035714286,
+              "p50_ms": 15.454416,
+              "p95_ms": 21.078084,
+              "p99_ms": 24.105042,
+              "max_ms": 24.105042
+            },
+            "activation_noise": {
+              "count": 28,
+              "mean_ms": 221.31868025,
+              "p50_ms": 221.178417,
+              "p95_ms": 227.639584,
+              "p99_ms": 235.015334,
+              "max_ms": 235.015334
+            },
+            "pre_capture_noise": {
+              "count": 28,
+              "mean_ms": 13.286567107142858,
+              "p50_ms": 13.144375,
+              "p95_ms": 17.434209,
+              "p99_ms": 19.012875,
+              "max_ms": 19.012875
+            },
+            "frame_capture_noise": {
+              "count": 374,
+              "mean_ms": 12.990251879679144,
+              "p50_ms": 12.528708,
+              "p95_ms": 17.631417,
+              "p99_ms": 19.47225,
+              "max_ms": 22.902292
+            }
+          },
+          "candidate": {
+            "attempted": 28,
+            "valid": 28,
+            "invalid": 0,
+            "latency": {
+              "count": 28,
+              "mean_ms": 170.40722471428572,
+              "p50_ms": 169.253166,
+              "p95_ms": 185.747625,
+              "p99_ms": 215.506417,
+              "max_ms": 215.506417
+            },
+            "setup_noise": {
+              "count": 28,
+              "mean_ms": 16.20056417857143,
+              "p50_ms": 15.301375,
+              "p95_ms": 23.104541,
+              "p99_ms": 24.682958,
+              "max_ms": 24.682958
+            },
+            "activation_noise": {
+              "count": 28,
+              "mean_ms": 221.01632882142857,
+              "p50_ms": 221.064541,
+              "p95_ms": 227.135625,
+              "p99_ms": 231.762084,
+              "max_ms": 231.762084
+            },
+            "pre_capture_noise": {
+              "count": 28,
+              "mean_ms": 13.428168178571427,
+              "p50_ms": 13.634166,
+              "p95_ms": 16.360666,
+              "p99_ms": 17.567292,
+              "max_ms": 17.567292
+            },
+            "frame_capture_noise": {
+              "count": 357,
+              "mean_ms": 13.333639613445378,
+              "p50_ms": 12.859042,
+              "p95_ms": 17.356625,
+              "p99_ms": 20.862834,
+              "max_ms": 23.400417
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 28,
+          "mean_ms": -3.5189820714285722,
+          "p50_ms": -2.6481660000000034,
+          "p95_ms": 26.814166999999998,
+          "p99_ms": 28.347166000000016,
+          "max_ms": 28.347166000000016
+        },
+        "absolute_pair_noise": {
+          "count": 28,
+          "mean_ms": 12.717220357142853,
+          "p50_ms": 10.305124000000006,
+          "p95_ms": 28.349083000000007,
+          "p99_ms": 48.19245799999999,
+          "max_ms": 48.19245799999999
+        }
+      },
+      "scroll": {
+        "roles": {
+          "control": {
+            "attempted": 28,
+            "valid": 28,
+            "invalid": 0,
+            "latency": {
+              "count": 28,
+              "mean_ms": 44.38567857142857,
+              "p50_ms": 43.130042,
+              "p95_ms": 62.971958,
+              "p99_ms": 67.269333,
+              "max_ms": 67.269333
+            },
+            "setup_noise": {
+              "count": 28,
+              "mean_ms": 253.86914578571427,
+              "p50_ms": 253.953083,
+              "p95_ms": 260.9105,
+              "p99_ms": 264.504709,
+              "max_ms": 264.504709
+            },
+            "activation_noise": {
+              "count": 28,
+              "mean_ms": 222.28710714285714,
+              "p50_ms": 218.769125,
+              "p95_ms": 227.524542,
+              "p99_ms": 278.935209,
+              "max_ms": 278.935209
+            },
+            "pre_capture_noise": {
+              "count": 28,
+              "mean_ms": 28.988775357142856,
+              "p50_ms": 28.691,
+              "p95_ms": 34.659167,
+              "p99_ms": 37.6385,
+              "max_ms": 37.6385
+            },
+            "frame_capture_noise": {
+              "count": 89,
+              "mean_ms": 13.940794011235955,
+              "p50_ms": 13.306625,
+              "p95_ms": 20.220125,
+              "p99_ms": 26.03225,
+              "max_ms": 26.03225
+            }
+          },
+          "candidate": {
+            "attempted": 28,
+            "valid": 28,
+            "invalid": 0,
+            "latency": {
+              "count": 28,
+              "mean_ms": 41.16562939285715,
+              "p50_ms": 40.588083,
+              "p95_ms": 60.437542,
+              "p99_ms": 61.309792,
+              "max_ms": 61.309792
+            },
+            "setup_noise": {
+              "count": 28,
+              "mean_ms": 252.8740714642857,
+              "p50_ms": 253.559542,
+              "p95_ms": 256.991708,
+              "p99_ms": 260.250708,
+              "max_ms": 260.250708
+            },
+            "activation_noise": {
+              "count": 28,
+              "mean_ms": 220.5900477142857,
+              "p50_ms": 220.53475,
+              "p95_ms": 227.038417,
+              "p99_ms": 227.608,
+              "max_ms": 227.608
+            },
+            "pre_capture_noise": {
+              "count": 28,
+              "mean_ms": 29.019941928571427,
+              "p50_ms": 28.537333,
+              "p95_ms": 32.51275,
+              "p99_ms": 33.487041,
+              "max_ms": 33.487041
+            },
+            "frame_capture_noise": {
+              "count": 82,
+              "mean_ms": 14.033730219512194,
+              "p50_ms": 13.186333,
+              "p95_ms": 20.795417,
+              "p99_ms": 22.939334,
+              "max_ms": 22.939334
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 28,
+          "mean_ms": -3.220049178571429,
+          "p50_ms": -1.1350420000000057,
+          "p95_ms": 18.17975,
+          "p99_ms": 21.477000000000004,
+          "max_ms": 21.477000000000004
+        },
+        "absolute_pair_noise": {
+          "count": 28,
+          "mean_ms": 9.993456892857143,
+          "p50_ms": 6.019082999999995,
+          "p95_ms": 28.150375,
+          "p99_ms": 30.961458,
+          "max_ms": 30.961458
+        }
+      }
+    },
+    "churn": {
+      "typing": {
+        "roles": {
+          "control": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          },
+          "candidate": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        },
+        "absolute_pair_noise": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        }
+      },
+      "switch": {
+        "roles": {
+          "control": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          },
+          "candidate": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        },
+        "absolute_pair_noise": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        }
+      },
+      "scroll": {
+        "roles": {
+          "control": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          },
+          "candidate": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        },
+        "absolute_pair_noise": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        }
+      }
+    },
+    "quiescence": {
+      "typing": {
+        "roles": {
+          "control": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          },
+          "candidate": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        },
+        "absolute_pair_noise": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        }
+      },
+      "switch": {
+        "roles": {
+          "control": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          },
+          "candidate": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        },
+        "absolute_pair_noise": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        }
+      },
+      "scroll": {
+        "roles": {
+          "control": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          },
+          "candidate": {
+            "attempted": 0,
+            "valid": 0,
+            "invalid": 0,
+            "latency": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "setup_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "activation_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "pre_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            },
+            "frame_capture_noise": {
+              "count": 0,
+              "mean_ms": null,
+              "p50_ms": null,
+              "p95_ms": null,
+              "p99_ms": null,
+              "max_ms": null
+            }
+          }
+        },
+        "paired_delta_candidate_minus_control": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        },
+        "absolute_pair_noise": {
+          "count": 0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null,
+          "max_ms": null
+        }
+      }
+    }
+  },
+  "samples": 260,
+  "paired_load_and_deltas": [
+    {
+      "phase": "no-churn",
+      "index": 0,
+      "metric": "typing",
+      "candidate_minus_control_ms": 0.7782920000000004,
+      "control_before_after_load": [
+        [
+          9.3828125,
+          11.08349609375,
+          13.38232421875
+        ],
+        [
+          9.3828125,
+          11.08349609375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.3828125,
+          11.08349609375,
+          13.38232421875
+        ],
+        [
+          9.3828125,
+          11.08349609375,
+          13.38232421875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 1,
+      "metric": "typing",
+      "candidate_minus_control_ms": 3.591292000000003,
+      "control_before_after_load": [
+        [
+          9.3828125,
+          11.08349609375,
+          13.38232421875
+        ],
+        [
+          9.3828125,
+          11.08349609375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 2,
+      "metric": "typing",
+      "candidate_minus_control_ms": 3.1970420000000033,
+      "control_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 3,
+      "metric": "typing",
+      "candidate_minus_control_ms": -11.570542000000003,
+      "control_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 4,
+      "metric": "typing",
+      "candidate_minus_control_ms": -11.263041999999999,
+      "control_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 5,
+      "metric": "switch",
+      "candidate_minus_control_ms": -13.716958000000005,
+      "control_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 6,
+      "metric": "switch",
+      "candidate_minus_control_ms": -6.153582999999998,
+      "control_before_after_load": [
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ],
+        [
+          9.19189453125,
+          11.015625,
+          13.3447265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 7,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -1.964291000000003,
+      "control_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 8,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -4.471584,
+      "control_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 9,
+      "metric": "typing",
+      "candidate_minus_control_ms": 1.2348329999999947,
+      "control_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 10,
+      "metric": "typing",
+      "candidate_minus_control_ms": -8.258707999999999,
+      "control_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 11,
+      "metric": "typing",
+      "candidate_minus_control_ms": 19.842166,
+      "control_before_after_load": [
+        [
+          9.17626953125,
+          10.98193359375,
+          13.31884765625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 12,
+      "metric": "typing",
+      "candidate_minus_control_ms": 1.701666000000003,
+      "control_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 13,
+      "metric": "typing",
+      "candidate_minus_control_ms": 9.103791999999999,
+      "control_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 14,
+      "metric": "switch",
+      "candidate_minus_control_ms": -10.305124000000006,
+      "control_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 15,
+      "metric": "switch",
+      "candidate_minus_control_ms": -6.818290999999988,
+      "control_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ],
+        [
+          9.2421875,
+          10.96533203125,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 16,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -28.150375,
+      "control_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 17,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 4.689,
+      "control_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 18,
+      "metric": "typing",
+      "candidate_minus_control_ms": 18.389623999999998,
+      "control_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 19,
+      "metric": "typing",
+      "candidate_minus_control_ms": -5.384582999999999,
+      "control_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 20,
+      "metric": "typing",
+      "candidate_minus_control_ms": -2.135333000000003,
+      "control_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ],
+        [
+          10.6640625,
+          11.2314453125,
+          13.37939453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 21,
+      "metric": "typing",
+      "candidate_minus_control_ms": -15.038542,
+      "control_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 22,
+      "metric": "typing",
+      "candidate_minus_control_ms": 8.004125000000002,
+      "control_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 23,
+      "metric": "switch",
+      "candidate_minus_control_ms": -1.4609170000000233,
+      "control_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 24,
+      "metric": "switch",
+      "candidate_minus_control_ms": -12.294416999999981,
+      "control_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 25,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 0.5692090000000007,
+      "control_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.77099609375,
+          11.244140625,
+          13.37109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 26,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 21.477000000000004,
+      "control_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 27,
+      "metric": "typing",
+      "candidate_minus_control_ms": 2.331125,
+      "control_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 28,
+      "metric": "typing",
+      "candidate_minus_control_ms": -5.160542999999997,
+      "control_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 29,
+      "metric": "typing",
+      "candidate_minus_control_ms": 6.857750000000003,
+      "control_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 30,
+      "metric": "typing",
+      "candidate_minus_control_ms": -13.745666999999997,
+      "control_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.109375,
+          11.30615234375,
+          13.38037109375
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 31,
+      "metric": "typing",
+      "candidate_minus_control_ms": 3.078792,
+      "control_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 32,
+      "metric": "switch",
+      "candidate_minus_control_ms": 0.499416999999994,
+      "control_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 33,
+      "metric": "switch",
+      "candidate_minus_control_ms": -13.328292000000005,
+      "control_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 34,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -0.40562500000000057,
+      "control_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 35,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -4.650082999999995,
+      "control_before_after_load": [
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ],
+        [
+          11.6611328125,
+          11.4169921875,
+          13.4072265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 36,
+      "metric": "typing",
+      "candidate_minus_control_ms": 11.695125000000004,
+      "control_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 37,
+      "metric": "typing",
+      "candidate_minus_control_ms": 12.409499999999994,
+      "control_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 38,
+      "metric": "typing",
+      "candidate_minus_control_ms": 10.638332999999996,
+      "control_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 39,
+      "metric": "typing",
+      "candidate_minus_control_ms": 15.252415999999997,
+      "control_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 40,
+      "metric": "typing",
+      "candidate_minus_control_ms": -17.871750999999996,
+      "control_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.84814453125,
+          11.45947265625,
+          13.41064453125
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 41,
+      "metric": "switch",
+      "candidate_minus_control_ms": -9.571459000000004,
+      "control_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 42,
+      "metric": "switch",
+      "candidate_minus_control_ms": 17.939666999999986,
+      "control_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 43,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 2.811958999999998,
+      "control_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 44,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 6.019082999999995,
+      "control_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 45,
+      "metric": "typing",
+      "candidate_minus_control_ms": -7.849542,
+      "control_before_after_load": [
+        [
+          11.61962890625,
+          11.41845703125,
+          13.384765625
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 46,
+      "metric": "typing",
+      "candidate_minus_control_ms": -21.74175,
+      "control_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 47,
+      "metric": "typing",
+      "candidate_minus_control_ms": -17.685,
+      "control_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 48,
+      "metric": "typing",
+      "candidate_minus_control_ms": -3.229416999999998,
+      "control_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 49,
+      "metric": "typing",
+      "candidate_minus_control_ms": -18.327873999999994,
+      "control_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 50,
+      "metric": "switch",
+      "candidate_minus_control_ms": -28.349083000000007,
+      "control_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.72998046875,
+          11.4443359375,
+          13.38232421875
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 51,
+      "metric": "switch",
+      "candidate_minus_control_ms": 3.6986659999999745,
+      "control_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 52,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -25.644333000000003,
+      "control_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 53,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -0.14833300000000094,
+      "control_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 54,
+      "metric": "typing",
+      "candidate_minus_control_ms": 17.182583,
+      "control_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 55,
+      "metric": "typing",
+      "candidate_minus_control_ms": 13.633125000000003,
+      "control_before_after_load": [
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ],
+        [
+          11.43115234375,
+          11.38671875,
+          13.3505859375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 56,
+      "metric": "typing",
+      "candidate_minus_control_ms": 4.238958000000004,
+      "control_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 57,
+      "metric": "typing",
+      "candidate_minus_control_ms": 1.5529159999999962,
+      "control_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 58,
+      "metric": "typing",
+      "candidate_minus_control_ms": 6.021749999999997,
+      "control_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 59,
+      "metric": "switch",
+      "candidate_minus_control_ms": -23.80854199999999,
+      "control_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 60,
+      "metric": "switch",
+      "candidate_minus_control_ms": -22.974334,
+      "control_before_after_load": [
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ],
+        [
+          10.916015625,
+          11.2802734375,
+          13.30126953125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 61,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -19.387876,
+      "control_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 62,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -1.587083000000007,
+      "control_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 63,
+      "metric": "typing",
+      "candidate_minus_control_ms": 0.09450100000000106,
+      "control_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 64,
+      "metric": "typing",
+      "candidate_minus_control_ms": 10.539458000000003,
+      "control_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 65,
+      "metric": "typing",
+      "candidate_minus_control_ms": -25.612250000000003,
+      "control_before_after_load": [
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ],
+        [
+          11.08251953125,
+          11.30859375,
+          13.29931640625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 66,
+      "metric": "typing",
+      "candidate_minus_control_ms": -10.730083,
+      "control_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 67,
+      "metric": "typing",
+      "candidate_minus_control_ms": 9.465624999999996,
+      "control_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 68,
+      "metric": "switch",
+      "candidate_minus_control_ms": -11.67070799999999,
+      "control_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 69,
+      "metric": "switch",
+      "candidate_minus_control_ms": -15.19108300000002,
+      "control_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 70,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 9.693041000000001,
+      "control_before_after_load": [
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ],
+        [
+          11.31591796875,
+          11.35302734375,
+          13.30322265625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 71,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 9.573167000000005,
+      "control_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 72,
+      "metric": "typing",
+      "candidate_minus_control_ms": 9.120375,
+      "control_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 73,
+      "metric": "typing",
+      "candidate_minus_control_ms": -2.3433760000000063,
+      "control_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 74,
+      "metric": "typing",
+      "candidate_minus_control_ms": -15.242790999999997,
+      "control_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 75,
+      "metric": "typing",
+      "candidate_minus_control_ms": -18.951125,
+      "control_before_after_load": [
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ],
+        [
+          11.13037109375,
+          11.3134765625,
+          13.27783203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 76,
+      "metric": "typing",
+      "candidate_minus_control_ms": -22.940208,
+      "control_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 77,
+      "metric": "switch",
+      "candidate_minus_control_ms": 7.251125999999999,
+      "control_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 78,
+      "metric": "switch",
+      "candidate_minus_control_ms": -2.6481660000000034,
+      "control_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 79,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -15.382791999999998,
+      "control_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 80,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 11.544498999999998,
+      "control_before_after_load": [
+        [
+          11.52001953125,
+          11.39111328125,
+          13.29345703125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 81,
+      "metric": "typing",
+      "candidate_minus_control_ms": -6.950666999999999,
+      "control_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 82,
+      "metric": "typing",
+      "candidate_minus_control_ms": -6.979707999999995,
+      "control_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 83,
+      "metric": "typing",
+      "candidate_minus_control_ms": -16.497125,
+      "control_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 84,
+      "metric": "typing",
+      "candidate_minus_control_ms": -20.440083,
+      "control_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 85,
+      "metric": "typing",
+      "candidate_minus_control_ms": 23.512082999999997,
+      "control_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.07763671875,
+          11.30126953125,
+          13.25048828125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 86,
+      "metric": "switch",
+      "candidate_minus_control_ms": -0.6400840000000017,
+      "control_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 87,
+      "metric": "switch",
+      "candidate_minus_control_ms": 26.814166999999998,
+      "control_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 88,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -1.1350420000000057,
+      "control_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 89,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 10.057416999999997,
+      "control_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 90,
+      "metric": "typing",
+      "candidate_minus_control_ms": 2.3101249999999993,
+      "control_before_after_load": [
+        [
+          10.9912109375,
+          11.279296875,
+          13.23095703125
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 91,
+      "metric": "typing",
+      "candidate_minus_control_ms": -3.989291999999999,
+      "control_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 92,
+      "metric": "typing",
+      "candidate_minus_control_ms": 4.853998999999995,
+      "control_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 93,
+      "metric": "typing",
+      "candidate_minus_control_ms": 6.660624999999996,
+      "control_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 94,
+      "metric": "typing",
+      "candidate_minus_control_ms": 7.358165999999997,
+      "control_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 95,
+      "metric": "switch",
+      "candidate_minus_control_ms": 2.065917000000013,
+      "control_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.91162109375,
+          11.2578125,
+          13.2119140625
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 96,
+      "metric": "switch",
+      "candidate_minus_control_ms": -48.19245799999999,
+      "control_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 97,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -23.111875000000005,
+      "control_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 98,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 0.21358299999999986,
+      "control_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 99,
+      "metric": "typing",
+      "candidate_minus_control_ms": 4.693124999999995,
+      "control_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 100,
+      "metric": "typing",
+      "candidate_minus_control_ms": -5.682207999999996,
+      "control_before_after_load": [
+        [
+          10.99853515625,
+          11.27001953125,
+          13.20458984375
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 101,
+      "metric": "typing",
+      "candidate_minus_control_ms": -11.877707999999998,
+      "control_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 102,
+      "metric": "typing",
+      "candidate_minus_control_ms": 30.299041000000003,
+      "control_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 103,
+      "metric": "typing",
+      "candidate_minus_control_ms": 7.419333000000002,
+      "control_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 104,
+      "metric": "switch",
+      "candidate_minus_control_ms": 14.126500000000021,
+      "control_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 105,
+      "metric": "switch",
+      "candidate_minus_control_ms": 1.2893759999999759,
+      "control_before_after_load": [
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ],
+        [
+          10.83837890625,
+          11.23193359375,
+          13.1796875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 106,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -30.961458,
+      "control_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 107,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -13.274416999999996,
+      "control_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 108,
+      "metric": "typing",
+      "candidate_minus_control_ms": -20.473083,
+      "control_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 109,
+      "metric": "typing",
+      "candidate_minus_control_ms": 0.5074170000000002,
+      "control_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 110,
+      "metric": "typing",
+      "candidate_minus_control_ms": 5.133834,
+      "control_before_after_load": [
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ],
+        [
+          11.49169921875,
+          11.36083984375,
+          13.21337890625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 111,
+      "metric": "typing",
+      "candidate_minus_control_ms": 6.725999999999999,
+      "control_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 112,
+      "metric": "typing",
+      "candidate_minus_control_ms": -6.274292000000003,
+      "control_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 113,
+      "metric": "switch",
+      "candidate_minus_control_ms": 26.743333999999976,
+      "control_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 114,
+      "metric": "switch",
+      "candidate_minus_control_ms": 28.347166000000016,
+      "control_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 115,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -3.8665010000000066,
+      "control_before_after_load": [
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ],
+        [
+          11.3720703125,
+          11.337890625,
+          13.1943359375
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 116,
+      "metric": "scroll",
+      "candidate_minus_control_ms": 18.17975,
+      "control_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 117,
+      "metric": "typing",
+      "candidate_minus_control_ms": -10.059291000000002,
+      "control_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 118,
+      "metric": "typing",
+      "candidate_minus_control_ms": 0.686083,
+      "control_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 119,
+      "metric": "typing",
+      "candidate_minus_control_ms": -4.804958999999997,
+      "control_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 120,
+      "metric": "typing",
+      "candidate_minus_control_ms": 10.502498999999993,
+      "control_before_after_load": [
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ],
+        [
+          11.421875,
+          11.3486328125,
+          13.18701171875
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 121,
+      "metric": "typing",
+      "candidate_minus_control_ms": 18.063499999999998,
+      "control_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 122,
+      "metric": "switch",
+      "candidate_minus_control_ms": -0.0423759999999902,
+      "control_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 123,
+      "metric": "switch",
+      "candidate_minus_control_ms": -0.14095899999998096,
+      "control_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 124,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -10.400292,
+      "control_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 125,
+      "metric": "scroll",
+      "candidate_minus_control_ms": -0.4471249999999998,
+      "control_before_after_load": [
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ],
+        [
+          11.7880859375,
+          11.42578125,
+          13.203125
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 126,
+      "metric": "typing",
+      "candidate_minus_control_ms": 6.8742909999999995,
+      "control_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 127,
+      "metric": "typing",
+      "candidate_minus_control_ms": 14.661459,
+      "control_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 128,
+      "metric": "typing",
+      "candidate_minus_control_ms": -8.709957999999993,
+      "control_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ]
+    },
+    {
+      "phase": "no-churn",
+      "index": 129,
+      "metric": "typing",
+      "candidate_minus_control_ms": 7.525959,
+      "control_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ],
+      "candidate_before_after_load": [
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ],
+        [
+          11.244140625,
+          11.31884765625,
+          13.15478515625
+        ]
+      ]
+    }
+  ],
+  "load1_min": 9.17626953125,
+  "load1_max": 11.84814453125,
+  "noise_subtracted": false,
+  "independent_review": "pending Astra; owner observations only",
+  "operator_approval": "blank"
+}

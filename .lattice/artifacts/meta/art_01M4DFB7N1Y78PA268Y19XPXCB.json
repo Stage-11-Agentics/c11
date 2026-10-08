@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:01:06Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DFB7N1Y78PA268Y19XPXCB",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4DFB7N1Y78PA268Y19XPXCB.png",
+    "size_bytes": 178015
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged reader native text scale 1.5",
+  "token_usage": null,
+  "type": "file"
+}

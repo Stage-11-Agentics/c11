@@ -1,0 +1,597 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>C11-306 Batch 2 runtime evidence</title><style>body{font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#17202a;margin:0}main{max-width:1080px;margin:auto;padding:40px 24px}h1{font-size:34px;line-height:1.2}h2{margin-top:36px}code,pre{font-family:ui-monospace,SFMono-Regular,monospace}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;background:#eef1f4;padding:18px;border-radius:8px}li{margin:12px 0}details{background:white;border:1px solid #ccd4dc;border-radius:8px;padding:14px;margin:12px 0}summary{font-weight:650;cursor:pointer}figure{margin:22px 0}img{max-width:100%;height:auto;border-radius:8px}figcaption{font-size:14px;color:#45515c}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #cbd4dd;padding:10px;text-align:left;overflow-wrap:anywhere}.pass{display:inline-block;background:#d9efdf;color:#15552b;padding:6px 13px;border-radius:20px;font-weight:700} .limit{background:#fff1ce;border-left:5px solid #b77700;padding:18px}a{color:#155fa4}</style></head><body><main><h1>C11-306 · Bounded Claude Stop transcript</h1><span class="pass">Runtime validation PASS</span><p>build host Validator Batch 2. Exact detached merged-main SHA b7849c703dc5db07b0d1aad2b6125afe15b3ec68. Evidence assembled from retained results; this report generation ran no builds or apps. Tagged runtime validation is separate from release or deployment approval.</p><h2>Build and test attribution</h2><table><tr><th>Artifact</th><th>Invocation</th><th>Observed result</th></tr><tr><td>Guest Debug build, tag val-2</td><td><code>e69124af37fe47c08447d711bc721d89</code></td><td>Compile PASS; runtime guest executable matches pre-staging SHA-256 65f4bfaa0359a6d9a5de02e925ce08d2f6187e6680fce5c3350831205f47df10.</td></tr><tr><td>Local smoke Debug build, tag val-2</td><td><code>ae272dc2b45c4ca0bc28594172692fd6</code></td><td>Compile PASS. Separate returned locally staged artifact; do not conflate its signing hash with the guest build.</td></tr><tr><td>Final common logic gate, tag val-2-t</td><td><code>397eb64ea259406f9a38c73bfe3cbd2e</code></td><td>PASS: 2,148 tests, 3 skipped, 0 failures.</td></tr><tr><td>Focused host tests, tag val-2-host</td><td><code>ddcf4bd29e7c4d108a771e4574de154e</code></td><td>PASS: 31 tests including both ColdTerminalReadTests.</td></tr><tr><td>Initial logic invocation</td><td><code>55c3fe07ccf14e8abfb1c0f5d665a3c5</code></td><td>FAILED: remote-connection timeout. Orchestrator classified the class as known flaky on main.</td></tr><tr><td>First retry with approved exclusions</td><td><code>6d74a8e27ad940b18f73ee0a055790fc</code></td><td>FAILED: MessagesPage steady-traffic test exceeded a 30 ms expectation and emitted three assertions. Same-head final retry passed this test; no MessagesPage exclusion.</td></tr></table><p>Approved class exclusions only: SocketControlPasswordStoreTests and WorkspaceRemoteConnectionTests. The failed invocations remain failed evidence. The three skips reported by XCTest are not a claim that the full unfiltered suite passed. No product source changed for the final retry.</p><details><summary>Final logic log excerpt</summary><pre>Test Case &#x27;-[c11LogicTests.MessagesPageTests testWriterMaxWaitRunsDuringSteadyTraffic]&#x27; passed (0.204 seconds).
+	 Executed 2148 tests, with 3 tests skipped and 0 failures (0 unexpected) in 54.103 (54.793) seconds
+Test Suite &#x27;Selected tests&#x27; passed at 2026-10-02 03:15:37.069.
+	 Executed 2148 tests, with 3 tests skipped and 0 failures (0 unexpected) in 54.103 (54.795) seconds
+</pre></details><details><summary>Known-flake ruling</summary><pre>Orchestrator ruling, 2026-10-02: the Batch 2 WorkspaceRemoteConnectionTests timeout is a known flaky class on main, not a regression. Controls are retained on C11-306 under ev_01M3XMWMYX81JK2SYQHXAXYYVS. The common gate is being rerun with both approved class exclusions, SocketControlPasswordStoreTests and WorkspaceRemoteConnectionTests. None of C11-306/C11-296/C11-287 changes remote-connection code. The initial failed invocation remains retained and is not relabeled green.
+</pre></details><details><summary>Guest build manifest</summary><pre>{
+  &quot;invocation&quot;: &quot;e69124af37fe47c08447d711bc721d89&quot;,
+  &quot;head&quot;: &quot;b7849c703dc5db07b0d1aad2b6125afe15b3ec68&quot;,
+  &quot;parent_head&quot;: &quot;14fd85a5a6e68878fca6e009619d953188eb2471&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;26c3e499ed8c4d65e3748248de7fd04c1e9a8103&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;val-2&quot;,
+  &quot;slug&quot;: &quot;val-2&quot;,
+  &quot;mode&quot;: &quot;debug&quot;,
+  &quot;extra&quot;: [],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;na&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;app&quot;: &quot;c11 DEV val-2.app&quot;,
+  &quot;executable_sha256&quot;: &quot;65f4bfaa0359a6d9a5de02e925ce08d2f6187e6680fce5c3350831205f47df10&quot;,
+  &quot;ok&quot;: true,
+  &quot;local_executable_sha256&quot;: &quot;dc3d2cd4e36614066ed14e299f7b810fd723d9b967609e04d033bdea5baafe7a&quot;
+}
+</pre></details><details><summary>Local smoke build manifest</summary><pre>{
+  &quot;invocation&quot;: &quot;ae272dc2b45c4ca0bc28594172692fd6&quot;,
+  &quot;head&quot;: &quot;b7849c703dc5db07b0d1aad2b6125afe15b3ec68&quot;,
+  &quot;parent_head&quot;: &quot;14fd85a5a6e68878fca6e009619d953188eb2471&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;26c3e499ed8c4d65e3748248de7fd04c1e9a8103&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;val-2&quot;,
+  &quot;slug&quot;: &quot;val-2&quot;,
+  &quot;mode&quot;: &quot;debug&quot;,
+  &quot;extra&quot;: [],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;na&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;app&quot;: &quot;c11 DEV val-2.app&quot;,
+  &quot;executable_sha256&quot;: &quot;b1059d02a56c17ca56882864c3fa994d12fa9c076b9294160dcd33f7e5727564&quot;,
+  &quot;ok&quot;: true,
+  &quot;local_executable_sha256&quot;: &quot;a9ef0250ca918b03ee1d75af824f8805ddfcaf4c319ed522832b8c883f9d320f&quot;
+}
+</pre></details><details><summary>Final logic manifest</summary><pre>{
+  &quot;invocation&quot;: &quot;397eb64ea259406f9a38c73bfe3cbd2e&quot;,
+  &quot;head&quot;: &quot;b7849c703dc5db07b0d1aad2b6125afe15b3ec68&quot;,
+  &quot;parent_head&quot;: &quot;14fd85a5a6e68878fca6e009619d953188eb2471&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;26c3e499ed8c4d65e3748248de7fd04c1e9a8103&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;val-2-t&quot;,
+  &quot;slug&quot;: &quot;val-2-t&quot;,
+  &quot;mode&quot;: &quot;test&quot;,
+  &quot;extra&quot;: [
+    &quot;-only-testing:c11LogicTests&quot;,
+    &quot;-skip-testing:c11LogicTests/SocketControlPasswordStoreTests&quot;,
+    &quot;-skip-testing:c11LogicTests/WorkspaceRemoteConnectionTests&quot;
+  ],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;ok&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;ok&quot;: true
+}
+</pre></details><details><summary>Focused host manifest</summary><pre>{
+  &quot;invocation&quot;: &quot;ddcf4bd29e7c4d108a771e4574de154e&quot;,
+  &quot;head&quot;: &quot;b7849c703dc5db07b0d1aad2b6125afe15b3ec68&quot;,
+  &quot;parent_head&quot;: &quot;14fd85a5a6e68878fca6e009619d953188eb2471&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;26c3e499ed8c4d65e3748248de7fd04c1e9a8103&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;val-2-host&quot;,
+  &quot;slug&quot;: &quot;val-2-host&quot;,
+  &quot;mode&quot;: &quot;test&quot;,
+  &quot;extra&quot;: [
+    &quot;-only-testing:c11Tests/ColdTerminalReadTests&quot;,
+    &quot;-only-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests/testReplacementRestoresDetachedInspectorWithoutConsumingProgrammaticClose&quot;,
+    &quot;-only-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests/testClosingReplacementBeforeInspectorAttachCancelsRestore&quot;,
+    &quot;-only-testing:c11Tests/BrowserLifecycleRegressionTests&quot;,
+    &quot;-only-testing:c11Tests/BrowserSessionHistoryRestoreTests&quot;,
+    &quot;-only-testing:c11Tests/CmuxWebViewLoadTrackingTests&quot;,
+    &quot;-only-testing:c11LogicTests/WebContentReplacementGateTests&quot;,
+    &quot;-only-testing:c11Tests/BrowserWindowPortalLifecycleTests/testPortalAnchorResizeDoesNotForceHostedWebViewPresentationRefresh&quot;,
+    &quot;-only-testing:c11Tests/BrowserWindowPortalLifecycleTests/testExternalSplitResizeDoesNotForceHostedWebViewPresentationRefresh&quot;,
+    &quot;-only-testing:c11Tests/BrowserWindowPortalLifecycleTests/testAnchorRebindKeepsWebViewInStablePortalSuperview&quot;
+  ],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;ok&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;ok&quot;: true
+}
+</pre></details><details><summary>Initial failed logic manifest</summary><pre>{
+  &quot;invocation&quot;: &quot;55c3fe07ccf14e8abfb1c0f5d665a3c5&quot;,
+  &quot;head&quot;: &quot;b7849c703dc5db07b0d1aad2b6125afe15b3ec68&quot;,
+  &quot;parent_head&quot;: &quot;14fd85a5a6e68878fca6e009619d953188eb2471&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;26c3e499ed8c4d65e3748248de7fd04c1e9a8103&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;val-2-t&quot;,
+  &quot;slug&quot;: &quot;val-2-t&quot;,
+  &quot;mode&quot;: &quot;test&quot;,
+  &quot;extra&quot;: [
+    &quot;-only-testing:c11LogicTests&quot;,
+    &quot;-skip-testing:c11LogicTests/SocketControlPasswordStoreTests&quot;
+  ],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;failed&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;ok&quot;: false,
+  &quot;error&quot;: &quot;Command &#x27;[PosixPath(&#x27;$HOME/c11-builds/val-2-t/source/scripts/test-unit-local.sh&#x27;), &#x27;test&#x27;, &#x27;-only-testing:c11LogicTests&#x27;, &#x27;-skip-testing:c11LogicTests/SocketControlPasswordStoreTests&#x27;]&#x27; returned non-zero exit status 65.&quot;
+}
+</pre></details><details><summary>Failed retry manifest</summary><pre>{
+  &quot;invocation&quot;: &quot;6d74a8e27ad940b18f73ee0a055790fc&quot;,
+  &quot;head&quot;: &quot;b7849c703dc5db07b0d1aad2b6125afe15b3ec68&quot;,
+  &quot;parent_head&quot;: &quot;14fd85a5a6e68878fca6e009619d953188eb2471&quot;,
+  &quot;branch&quot;: &quot;&quot;,
+  &quot;submodules&quot;: {
+    &quot;ghostty&quot;: &quot;26c3e499ed8c4d65e3748248de7fd04c1e9a8103&quot;,
+    &quot;vendor/bonsplit&quot;: &quot;c17c6f41cd71066bda9bec82c54465fe34821c75&quot;
+  },
+  &quot;overlay&quot;: [],
+  &quot;dirty&quot;: false,
+  &quot;tag&quot;: &quot;val-2-t&quot;,
+  &quot;slug&quot;: &quot;val-2-t&quot;,
+  &quot;mode&quot;: &quot;test&quot;,
+  &quot;extra&quot;: [
+    &quot;-only-testing:c11LogicTests&quot;,
+    &quot;-skip-testing:c11LogicTests/SocketControlPasswordStoreTests&quot;,
+    &quot;-skip-testing:c11LogicTests/WorkspaceRemoteConnectionTests&quot;
+  ],
+  &quot;release_options&quot;: [],
+  &quot;developer_dir&quot;: &quot;/Applications/Xcode-26.3.app/Contents/Developer&quot;,
+  &quot;zig_dir&quot;: &quot;&quot;,
+  &quot;compile&quot;: &quot;ok&quot;,
+  &quot;tests&quot;: &quot;failed&quot;,
+  &quot;xcode&quot;: &quot;Xcode 26.3\nBuild version 17C529&quot;,
+  &quot;zig&quot;: &quot;0.15.2&quot;,
+  &quot;ok&quot;: false,
+  &quot;error&quot;: &quot;Command &#x27;[PosixPath(&#x27;$HOME/c11-builds/val-2-t/source/scripts/test-unit-local.sh&#x27;), &#x27;test&#x27;, &#x27;-only-testing:c11LogicTests&#x27;, &#x27;-skip-testing:c11LogicTests/SocketControlPasswordStoreTests&#x27;, &#x27;-skip-testing:c11LogicTests/WorkspaceRemoteConnectionTests&#x27;]&#x27; returned non-zero exit status 65.&quot;
+}
+</pre></details><details><summary>Host outcomes from actual test action</summary><pre>	 Executed 2 tests, with 0 failures (0 unexpected) in 0.475 (0.477) seconds
+Test Suite &#x27;ColdTerminalReadTests&#x27; started at 2026-10-02 03:06:50.226.
+Test Case &#x27;-[c11Tests.ColdTerminalReadTests testReadRejectsWorkspaceRemovedWhileColdRuntimeBecomesReady]&#x27; started.
+Test Case &#x27;-[c11Tests.ColdTerminalReadTests testReadRejectsWorkspaceRemovedWhileColdRuntimeBecomesReady]&#x27; passed (0.287 seconds).
+Test Case &#x27;-[c11Tests.ColdTerminalReadTests testReadStartsNeverPresentedTerminalWithoutChangingSelection]&#x27; started.
+Test Case &#x27;-[c11Tests.ColdTerminalReadTests testReadStartsNeverPresentedTerminalWithoutChangingSelection]&#x27; passed (0.133 seconds).
+Test Suite &#x27;ColdTerminalReadTests&#x27; passed at 2026-10-02 03:06:50.647.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.420 (0.421) seconds
+** TEST SUCCEEDED **</pre></details><h2>Numbered ticket scenarios</h2><ol><li>Tagged candidate SHA and built CLI attribution verified. Guest main executable SHA-256 matches the e69124af37fe47c08447d711bc721d89 pre-staging manifest. CLI came from that guest bundle.</li><li>The raw host fixture FAILED: its fake server rejected an unexpected authentication request. A safe diagnostic printed only auth [value redacted]. This failure occurred before Stop summary assertions and is retained as an environment authentication mismatch, not a demonstrated Stop behavior regression. No real secret was copied to the guest or this evidence. The unchanged fixture then PASSED all five cases in owned build host guest val-2-cold; successful exit also executes fixture-server shutdown checks.</li><li>More than four MiB of user records followed by the assistant record produced subtitle Completed in synthetic-project and body Finished synthetic fixture, with identical saved session values.</li><li>The sole assistant older than the final 256 KiB produced subtitle Completed and the saved-session fallback: Claude session completed in synthetic-project. Last: saved body.</li><li>The 200,000-character assistant inside the cap preserved the existing 120-character truncation: 119 z characters plus an ellipsis.</li><li>The 300,000-character oversized record was discarded and used the same saved-session fallback.</li><li>Deleting the transcript did not fail Stop and used the same fallback. All five assertions concern synthetic transcript/state/socket fixtures. A real-session Stop was not run; this ticket requires no GUI or dedicated soak.</li></ol><details><summary>Runtime commands / recorded entry points</summary><pre># Initial host fixture entry point (FAILED before Stop assertions)
+# Literal host C11_CLI_BIN value is not retained in 306-runtime.log.
+# Reproduction shape only; successful actual guest binding is recorded below:
+C11_CLI_BIN=&#x27;&lt;build host built val-2 CLI&gt;&#x27; python3 tests/test_claude_stop_bounded_transcript.py
+# Successful owned guest commands passed through sandbox_guest_script val-2-cold:
+/usr/bin/ditto &#x27;/Volumes/My Shared Files/out/306-guest-src&#x27; &quot;$HOME/306-fixture&quot;
+C11_CLI_BIN=&quot;$SANDBOX_CLI&quot; /usr/bin/python3 &quot;$HOME/306-fixture/test_claude_stop_bounded_transcript.py&quot;
+# SANDBOX_CLI resolved to:
+# $HOME/c11-sandbox/apps/val-2-cold/c11 DEV val-2.app/Contents/Resources/bin/c11
+</pre></details><div class="limit">Raw host fixture failed on authentication; unmodified guest fixture passed all five Stop cases. No real-session Stop was performed.</div><details><summary>306-runtime.log</summary><pre>Traceback (most recent call last):
+  File &quot;$HOME/c11-builds/val-2/source/tests/test_claude_stop_bounded_transcript.py&quot;, line 119, in &lt;module&gt;
+    main()
+    ~~~~^^
+  File &quot;$HOME/c11-builds/val-2/source/tests/test_claude_stop_bounded_transcript.py&quot;, line 92, in main
+    stop(&quot;Completed in synthetic-project&quot;, &quot;Finished synthetic fixture&quot;)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;$HOME/c11-builds/val-2/source/tests/test_claude_stop_bounded_transcript.py&quot;, line 81, in stop
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (1, &#x27;&#x27;, &#x27;Error: ERROR: unexpected fixture command\n&#x27;)
+</pre></details><details><summary>306-auth-probe.log</summary><pre>FIXTURE_COMMAND_KIND auth [value redacted]
+Traceback (most recent call last):
+  File &quot;$HOME/c11-builds/val-2/source/../306_auth_probe.py&quot;, line 15, in &lt;module&gt;
+    runpy.run_path(&#x27;tests/test_claude_stop_bounded_transcript.py&#x27;,run_name=&#x27;__main__&#x27;)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;&lt;frozen runpy&gt;&quot;, line 294, in run_path
+  File &quot;&lt;frozen runpy&gt;&quot;, line 98, in _run_module_code
+  File &quot;&lt;frozen runpy&gt;&quot;, line 88, in _run_code
+  File &quot;tests/test_claude_stop_bounded_transcript.py&quot;, line 119, in &lt;module&gt;
+    main()
+    ~~~~^^
+  File &quot;tests/test_claude_stop_bounded_transcript.py&quot;, line 92, in main
+    stop(&quot;Completed in synthetic-project&quot;, &quot;Finished synthetic fixture&quot;)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;tests/test_claude_stop_bounded_transcript.py&quot;, line 81, in stop
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (1, &#x27;&#x27;, &#x27;Error: ERROR: unexpected fixture command\n&#x27;)
+</pre></details><details><summary>306-guest-runtime.log</summary><pre>PASS: multi-megabyte transcript preserves Stop notification and saved summary
+PASS: assistant older than the cap uses the session-record fallback
+PASS: long assistant inside the cap preserves 120-character truncation
+PASS: oversized assistant uses the existing fallback
+PASS: missing transcript does not fail Stop
+</pre></details><details><summary>296-guest-environment.log</summary><pre>{&quot;loggedIn&quot;:true,&quot;screenLocked&quot;:false,&quot;display&quot;:{&quot;origin&quot;:{&quot;x&quot;:0,&quot;y&quot;:0},&quot;size&quot;:{&quot;width&quot;:1024,&quot;height&quot;:768}}}
+build host guest load:  7:14  up 5 mins, 5 users, load averages: 3.13 10.50 6.45
+socket=/tmp/c11-sandbox-val-2-cold.sock
+cli=$HOME/c11-sandbox/apps/val-2-cold/c11 DEV val-2.app/Contents/Resources/bin/c11
+65f4bfaa0359a6d9a5de02e925ce08d2f6187e6680fce5c3350831205f47df10  $HOME/c11-sandbox/apps/val-2-cold/c11 DEV val-2.app/Contents/MacOS/c11
+</pre></details><p>Unmodified guest source copy test_claude_stop_bounded_transcript.py is byte-equal to checkout; SHA-256 18e29647cb594a34bd0aa59f5070cf32424c8b6fc77a4f846b649ba05ad51d4a.</p><details><summary>test_claude_stop_bounded_transcript.py source</summary><pre>#!/usr/bin/env python3
+&quot;&quot;&quot;B028: exercise the built CLI Stop route with an isolated socket and state.
+
+Run on build host with C11_CLI_BIN naming the CLI built from this checkout. No app,
+real conversation, or operator socket is used. Swift logic tests measure the
+read cap; this fixture proves that the executable uses that reader and fallback.
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import socketserver
+import subprocess
+import tempfile
+import threading
+import time
+
+from fake_server_env import fake_server_env
+
+WORKSPACE = &quot;11111111-1111-4111-8111-111111111111&quot;
+TAB = &quot;22222222-2222-4222-8222-222222222222&quot;
+SESSION = &quot;synthetic-stop-session&quot;
+
+
+def record(text: str, role: str = &quot;assistant&quot;) -&gt; bytes:
+    return (json.dumps({&quot;message&quot;: {&quot;role&quot;: role, &quot;content&quot;: text}}) + &quot;\n&quot;).encode()
+
+
+def main() -&gt; None:
+    cli = os.environ.get(&quot;C11_CLI_BIN&quot;)
+    assert cli and Path(cli).is_file() and os.access(cli, os.X_OK), &quot;Set C11_CLI_BIN to the current built CLI&quot;
+    cli = str(Path(cli).resolve())
+    commands: list[str] = []
+
+    class Handler(socketserver.StreamRequestHandler):
+        def handle(self) -&gt; None:
+            for raw in self.rfile:
+                command = raw.decode().strip()
+                commands.append(command)
+                if command.startswith((&quot;report_agent_activity &quot;, &quot;notify_target &quot;, &quot;set_status &quot;)):
+                    self.wfile.write(b&quot;OK\n&quot;)
+                else:
+                    self.wfile.write(b&quot;ERROR: unexpected fixture command\n&quot;)
+                self.wfile.flush()
+
+    with tempfile.TemporaryDirectory(prefix=&quot;c11-stop-&quot;, dir=&quot;/tmp&quot;) as temporary:
+        root = Path(temporary)
+        socket_path = str(root / &quot;app.sock&quot;)
+        state_path = root / &quot;sessions.json&quot;
+        transcript = root / &quot;synthetic.jsonl&quot;
+        # Remove inherited c11 options as well as all live identity/socket refs.
+        base_env = {key: value for key, value in os.environ.items()
+                    if not key.startswith((&quot;C11_&quot;, &quot;CMUX_&quot;))}
+        env = fake_server_env(socket_path, base=base_env)
+        env.update({
+            &quot;CMUX_CLAUDE_HOOK_STATE_PATH&quot;: str(state_path),
+            &quot;CMUX_CLI_SENTRY_DISABLED&quot;: &quot;1&quot;,
+            &quot;CMUX_CLAUDE_HOOK_SENTRY_DISABLED&quot;: &quot;1&quot;,
+        })
+        server = socketserver.ThreadingUnixStreamServer(socket_path, Handler)
+        server.daemon_threads = True
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            def stop(expected_subtitle: str, expected_body: str) -&gt; None:
+                now = time.time()
+                state_path.write_text(json.dumps({&quot;version&quot;: 1, &quot;sessions&quot;: {SESSION: {
+                    &quot;sessionId&quot;: SESSION, &quot;workspaceId&quot;: WORKSPACE, &quot;surfaceId&quot;: TAB,
+                    &quot;cwd&quot;: &quot;/tmp/synthetic-project&quot;, &quot;lastSubtitle&quot;: &quot;saved subtitle&quot;,
+                    &quot;lastBody&quot;: &quot;saved body&quot;, &quot;startedAt&quot;: now, &quot;updatedAt&quot;: now,
+                }}}))
+                before = len(commands)
+                result = subprocess.run(
+                    [cli, &quot;--socket&quot;, socket_path, &quot;claude-hook&quot;, &quot;stop&quot;,
+                     &quot;--workspace&quot;, WORKSPACE, &quot;--tab&quot;, TAB],
+                    input=json.dumps({&quot;session_id&quot;: SESSION, &quot;transcript_path&quot;: str(transcript)}),
+                    cwd=root, env=env, text=True, capture_output=True, timeout=10,
+                )
+                assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+                assert result.stdout.strip() == &quot;OK&quot;, result.stdout
+                expected = f&quot;notify_target {WORKSPACE} {TAB} Claude Code|{expected_subtitle}|{expected_body}&quot;
+                notifications = [command for command in commands[before:] if command.startswith(&quot;notify_target &quot;)]
+                assert notifications == [expected], notifications
+                saved = json.loads(state_path.read_text())[&quot;sessions&quot;][SESSION]
+                assert saved[&quot;lastSubtitle&quot;] == expected_subtitle, saved
+                assert saved[&quot;lastBody&quot;] == expected_body, saved
+
+            filler = record(&quot;x&quot; * 1024, role=&quot;user&quot;) * 4096
+            transcript.write_bytes(filler + record(&quot; Finished\n\t synthetic   fixture &quot;))
+            stop(&quot;Completed in synthetic-project&quot;, &quot;Finished synthetic fixture&quot;)
+            print(&quot;PASS: multi-megabyte transcript preserves Stop notification and saved summary&quot;)
+
+            transcript.write_bytes(record(&quot;outside the tail&quot;) + filler)
+            fallback = &quot;Claude session completed in synthetic-project. Last: saved body&quot;
+            stop(&quot;Completed&quot;, fallback)
+            print(&quot;PASS: assistant older than the cap uses the session-record fallback&quot;)
+
+            transcript.write_bytes(filler + record(&quot;z&quot; * 200_000))
+            stop(&quot;Completed in synthetic-project&quot;, &quot;z&quot; * 119 + &quot;…&quot;)
+            print(&quot;PASS: long assistant inside the cap preserves 120-character truncation&quot;)
+
+            transcript.write_bytes(record(&quot;z&quot; * 300_000))
+            stop(&quot;Completed&quot;, fallback)
+            print(&quot;PASS: oversized assistant uses the existing fallback&quot;)
+
+            transcript.unlink()
+            stop(&quot;Completed&quot;, fallback)
+            print(&quot;PASS: missing transcript does not fail Stop&quot;)
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=5)
+            assert not worker.is_alive(), &quot;fixture server did not stop&quot;
+
+
+if __name__ == &quot;__main__&quot;:
+    main()
+</pre></details><p>Unmodified guest source copy fake_server_env.py is byte-equal to checkout; SHA-256 ea606fb8b29885c5861e2c89eb7a01c7994f695d0a2e155b0e14b18990d5da7a.</p><details><summary>fake_server_env.py source</summary><pre>#!/usr/bin/env python3
+&quot;&quot;&quot;Environment guard for tests that point the CLI at a fake socket server.
+
+The CLI resolves its socket from C11_SOCKET, C11_SOCKET_PATH, CMUX_SOCKET_PATH and
+CMUX_SOCKET (in that order of precedence) and its caller identity from the
+C11_/CMUX_ TAB/SURFACE/PANEL/WORKSPACE ids. A test that sets only some of them can,
+when run from inside c11, reach the live app and act on the operator&#x27;s workspace.
+Build the child environment with `fake_server_env` so that cannot happen.
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import os
+from typing import Mapping, Optional
+
+SOCKET_ENV_KEYS = (&quot;C11_SOCKET&quot;, &quot;C11_SOCKET_PATH&quot;, &quot;CMUX_SOCKET_PATH&quot;, &quot;CMUX_SOCKET&quot;)
+
+IDENTITY_ENV_KEYS = (
+    &quot;C11_TAB_ID&quot;, &quot;C11_SURFACE_ID&quot;, &quot;C11_PANEL_ID&quot;, &quot;C11_WORKSPACE_ID&quot;,
+    &quot;CMUX_TAB_ID&quot;, &quot;CMUX_SURFACE_ID&quot;, &quot;CMUX_PANEL_ID&quot;, &quot;CMUX_WORKSPACE_ID&quot;,
+    &quot;C11_TAB_NUM&quot;, &quot;C11_SURFACE_NUM&quot;, &quot;CMUX_SURFACE_NUM&quot;,
+    &quot;TMUX&quot;, &quot;TMUX_PANE&quot;,
+)
+
+
+def fake_server_env(
+    socket_path: Optional[str],
+    base: Optional[Mapping[str, str]] = None,
+    *,
+    scrub_identity: bool = True,
+) -&gt; dict[str, str]:
+    &quot;&quot;&quot;A copy of `base` (default: os.environ) whose every socket variable names `socket_path`.
+
+    With `socket_path=None` the socket variables are removed instead (for tests that
+    exercise discovery and set their own). Caller identity is scrubbed unless the test
+    supplies its own afterwards.
+    &quot;&quot;&quot;
+    env = dict(os.environ if base is None else base)
+    for key in SOCKET_ENV_KEYS:
+        env.pop(key, None)
+        if socket_path is not None:
+            env[key] = socket_path
+    if scrub_identity:
+        for key in IDENTITY_ENV_KEYS:
+            env.pop(key, None)
+    return env
+</pre></details><h2>Shared six-step runtime smoke</h2><ol><li>Created the owned Batch 2 smoke workspace and terminal areas/tabs.</li><li>Sent echo ok and read the real terminal marker.</li><li>Loaded a real local file HTML page and observed C11_BATCH_2_RESTORE through the browser DOM.</li><li>Opened the local markdown fixture and captured the pre-restore workspace; synthesized App-menu Quit.</li><li>Resumed the saved session and compared area split topology and workspace/tab UUIDs. Ephemeral area/window UUIDs were not treated as persistent identities.</li><li>Observed the restored local file HTML URL and marker, inspected the workspace tree, and captured the visible restored app window. Final smoke result: PASS, steps 1–6.</li></ol><div class="limit">The initial missing-window report was a harness title filter: the restored CG window had an empty title while Accessibility reported one window. A corrected PID/bounds selection produced smoke-after.png and proves the restored UI was visible. The Orchestrator canceled the proposed bisect. Empty title remains recorded for judgment and is not classified here as a product defect.</div><p>Smoke is shared product evidence; C11-306 itself requires no GUI scenario. These screenshots were already captured during the owned tagged validation run. No new UI activity occurred while writing this report.</p><p>Historical runtime screenshot withdrawn from public evidence under the disclosure rule. No replacement image is presented as runtime proof.</p><p>Historical runtime screenshot withdrawn from public evidence under the disclosure rule. No replacement image is presented as runtime proof.</p><details><summary>Smoke result and preserved identity/topology</summary><pre>{
+  &quot;workspace&quot;: &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;,
+  &quot;browser&quot;: &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+  &quot;url&quot;: &quot;file://$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.html&quot;,
+  &quot;before&quot;: {
+    &quot;workspace&quot;: &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;,
+    &quot;areas&quot;: [
+      {
+        &quot;tabs&quot;: [
+          [
+            &quot;0F7AA8C8-6AE6-4C63-AE7B-44A81F6D2C0B&quot;,
+            &quot;terminal&quot;
+          ]
+        ],
+        &quot;selected&quot;: &quot;0F7AA8C8-6AE6-4C63-AE7B-44A81F6D2C0B&quot;,
+        &quot;split_path&quot;: [
+          &quot;H:left&quot;
+        ]
+      },
+      {
+        &quot;tabs&quot;: [
+          [
+            &quot;619495ED-A744-4893-9381-6980A997305D&quot;,
+            &quot;terminal&quot;
+          ]
+        ],
+        &quot;selected&quot;: &quot;619495ED-A744-4893-9381-6980A997305D&quot;,
+        &quot;split_path&quot;: [
+          &quot;H:right&quot;,
+          &quot;V:top&quot;
+        ]
+      },
+      {
+        &quot;tabs&quot;: [
+          [
+            &quot;F7425562-AFCE-4080-ABA4-D2D5A09CC277&quot;,
+            &quot;terminal&quot;
+          ],
+          [
+            &quot;7F0CABD4-AC7B-4C88-9CAE-1FB029AB4546&quot;,
+            &quot;terminal&quot;
+          ],
+          [
+            &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+            &quot;browser&quot;
+          ],
+          [
+            &quot;5F548835-CE9E-44D1-A184-555F950B98A1&quot;,
+            &quot;markdown&quot;
+          ]
+        ],
+        &quot;selected&quot;: &quot;5F548835-CE9E-44D1-A184-555F950B98A1&quot;,
+        &quot;split_path&quot;: [
+          &quot;H:right&quot;,
+          &quot;V:bottom&quot;
+        ]
+      }
+    ]
+  },
+  &quot;before_dom&quot;: {
+    &quot;surface_id&quot;: &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+    &quot;ready_state&quot;: &quot;complete&quot;,
+    &quot;snapshot&quot;: &quot;- document \&quot;Batch 2 restore fixture\&quot;\n- text \&quot;C11_BATCH_2_RESTORE  Synthetic local page.\&quot;&quot;,
+    &quot;url&quot;: &quot;file://$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.html&quot;,
+    &quot;tab_id&quot;: &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+    &quot;page&quot;: {
+      &quot;text&quot;: &quot;C11_BATCH_2_RESTORE\n\nSynthetic local page.&quot;,
+      &quot;html&quot;: &quot;&lt;html&gt;&lt;head&gt;&lt;title&gt;Batch 2 restore fixture&lt;/title&gt;&lt;/head&gt;&lt;body&gt;&lt;h1 id=\&quot;proof\&quot;&gt;C11_BATCH_2_RESTORE&lt;/h1&gt;&lt;p&gt;Synthetic local page.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;&quot;,
+      &quot;url&quot;: &quot;file://$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.html&quot;,
+      &quot;ready_state&quot;: &quot;complete&quot;,
+      &quot;title&quot;: &quot;Batch 2 restore fixture&quot;
+    },
+    &quot;workspace_id&quot;: &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;,
+    &quot;title&quot;: &quot;Batch 2 restore fixture&quot;
+  },
+  &quot;after&quot;: {
+    &quot;workspace&quot;: &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;,
+    &quot;areas&quot;: [
+      {
+        &quot;tabs&quot;: [
+          [
+            &quot;0F7AA8C8-6AE6-4C63-AE7B-44A81F6D2C0B&quot;,
+            &quot;terminal&quot;
+          ]
+        ],
+        &quot;split_path&quot;: [
+          &quot;H:left&quot;
+        ]
+      },
+      {
+        &quot;tabs&quot;: [
+          [
+            &quot;619495ED-A744-4893-9381-6980A997305D&quot;,
+            &quot;terminal&quot;
+          ]
+        ],
+        &quot;split_path&quot;: [
+          &quot;H:right&quot;,
+          &quot;V:top&quot;
+        ]
+      },
+      {
+        &quot;tabs&quot;: [
+          [
+            &quot;F7425562-AFCE-4080-ABA4-D2D5A09CC277&quot;,
+            &quot;terminal&quot;
+          ],
+          [
+            &quot;7F0CABD4-AC7B-4C88-9CAE-1FB029AB4546&quot;,
+            &quot;terminal&quot;
+          ],
+          [
+            &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+            &quot;browser&quot;
+          ],
+          [
+            &quot;5F548835-CE9E-44D1-A184-555F950B98A1&quot;,
+            &quot;markdown&quot;
+          ]
+        ],
+        &quot;split_path&quot;: [
+          &quot;H:right&quot;,
+          &quot;V:bottom&quot;
+        ]
+      }
+    ]
+  },
+  &quot;after_dom&quot;: {
+    &quot;title&quot;: &quot;Batch 2 restore fixture&quot;,
+    &quot;tab_id&quot;: &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+    &quot;surface_id&quot;: &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;,
+    &quot;snapshot&quot;: &quot;- document \&quot;Batch 2 restore fixture\&quot;\n- text \&quot;C11_BATCH_2_RESTORE  Synthetic local page.\&quot;&quot;,
+    &quot;workspace_id&quot;: &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;,
+    &quot;ready_state&quot;: &quot;complete&quot;,
+    &quot;page&quot;: {
+      &quot;title&quot;: &quot;Batch 2 restore fixture&quot;,
+      &quot;text&quot;: &quot;C11_BATCH_2_RESTORE\n\nSynthetic local page.&quot;,
+      &quot;html&quot;: &quot;&lt;html&gt;&lt;head&gt;&lt;title&gt;Batch 2 restore fixture&lt;/title&gt;&lt;/head&gt;&lt;body&gt;&lt;h1 id=\&quot;proof\&quot;&gt;C11_BATCH_2_RESTORE&lt;/h1&gt;&lt;p&gt;Synthetic local page.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;&quot;,
+      &quot;url&quot;: &quot;file://$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.html&quot;,
+      &quot;ready_state&quot;: &quot;complete&quot;
+    },
+    &quot;url&quot;: &quot;file://$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.html&quot;
+  },
+  &quot;result&quot;: &quot;PASS&quot;,
+  &quot;steps&quot;: [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  &quot;browser_fixture&quot;: &quot;real local file HTML&quot;,
+  &quot;ephemeral_window_area_UUIDs&quot;: &quot;topology compared; workspace and tab UUIDs unchanged&quot;
+}</pre></details><details><summary>Recorded synthesized dismissal</summary><pre>Synthesized App menu Quit; PID 34231 confirmed absent
+Synthesized App menu Quit; PID 17590 confirmed absent
+Synthesized App menu Quit; PID 33007 confirmed absent
+</pre></details><details><summary>Recorded smoke CLI argv excerpts</summary><pre>[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;new-area&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--direction&quot;, &quot;right&quot;, &quot;--type&quot;, &quot;terminal&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;new-area&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--direction&quot;, &quot;down&quot;, &quot;--type&quot;, &quot;terminal&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;new-tab&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--area&quot;, &quot;B55DBE13-AAE4-483A-B20D-E2B6FD27C170&quot;, &quot;--type&quot;, &quot;terminal&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;send&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--tab&quot;, &quot;7F0CABD4-AC7B-4C88-9CAE-1FB029AB4546&quot;, &quot;echo ok\n&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;read-screen&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--tab&quot;, &quot;7F0CABD4-AC7B-4C88-9CAE-1FB029AB4546&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;new-tab&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--area&quot;, &quot;B55DBE13-AAE4-483A-B20D-E2B6FD27C170&quot;, &quot;--type&quot;, &quot;browser&quot;, &quot;--url&quot;, &quot;file://$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.html&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;browser&quot;, &quot;58895CA6-B3D2-4CC5-AE28-C81903051A84&quot;, &quot;snapshot&quot;, &quot;--interactive&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;new-tab&quot;, &quot;--workspace&quot;, &quot;37A336E7-D108-4EC6-9847-2A8E64A4A06B&quot;, &quot;--area&quot;, &quot;B55DBE13-AAE4-483A-B20D-E2B6FD27C170&quot;, &quot;--type&quot;, &quot;markdown&quot;, &quot;--file&quot;, &quot;$HOME/Projects/Stage11/code/c11-worktrees/c11-1.0-validator/build-remote/batch-2/smoke-local.md&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;tree&quot;, &quot;--all&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;tree&quot;, &quot;--all&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;tree&quot;, &quot;--no-layout&quot;]
+[&quot;$HOME/Library/Developer/Xcode/DerivedData/c11-val-2/Build/Products/Debug/c11 DEV val-2.app/Contents/Resources/bin/c11&quot;, &quot;--socket&quot;, &quot;/tmp/c11-debug-val-2.sock&quot;, &quot;--json&quot;, &quot;--id-format&quot;, &quot;uuids&quot;, &quot;tree&quot;, &quot;--all&quot;]</pre></details><details><summary>Smoke driver entry point (source)</summary><pre>import ui_helper as h,json,time,pathlib
+h.confine();h.ROOT.joinpath(&#x27;smoke-identify.json&#x27;).write_text(json.dumps(h.cli(&#x27;identify&#x27;),indent=2))
+ws=h.rpc(&#x27;workspace.create&#x27;)[&#x27;workspace_id&#x27;];h.rpc(&#x27;workspace.select&#x27;,{&#x27;workspace_id&#x27;:ws});h.cli(&#x27;rename-workspace&#x27;,&#x27;--workspace&#x27;,ws,&#x27;Batch 2 smoke&#x27;)
+tabs=h.rpc(&#x27;tab.list&#x27;,{&#x27;workspace_id&#x27;:ws})[&#x27;tabs&#x27;];base=tabs[0][&#x27;id&#x27;]
+for t in tabs[1:]:h.cli(&#x27;close-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,t[&#x27;id&#x27;])
+h.cli(&#x27;focus-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,base)
+a=h.cli(&#x27;new-area&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--direction&#x27;,&#x27;right&#x27;,&#x27;--type&#x27;,&#x27;terminal&#x27;);h.cli(&#x27;focus-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,a[&#x27;tab_id&#x27;])
+b=h.cli(&#x27;new-area&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--direction&#x27;,&#x27;down&#x27;,&#x27;--type&#x27;,&#x27;terminal&#x27;)
+nt=h.cli(&#x27;new-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--area&#x27;,b[&#x27;area_id&#x27;],&#x27;--type&#x27;,&#x27;terminal&#x27;);h.cli(&#x27;focus-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,nt[&#x27;tab_id&#x27;]);h.cli(&#x27;send&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,nt[&#x27;tab_id&#x27;],&#x27;echo ok\n&#x27;)
+for _ in range(40):
+ if &#x27;ok&#x27; in h.cli(&#x27;read-screen&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,nt[&#x27;tab_id&#x27;],j=False).splitlines():break
+ time.sleep(.1)
+else:raise AssertionError(&#x27;smoke terminal marker missing&#x27;)
+html=h.ROOT/&#x27;smoke-local.html&#x27;;html.write_text(&#x27;&lt;!doctype html&gt;&lt;title&gt;Batch 2 restore fixture&lt;/title&gt;&lt;h1 id=&quot;proof&quot;&gt;C11_BATCH_2_RESTORE&lt;/h1&gt;&lt;p&gt;Synthetic local page.&lt;/p&gt;&#x27;)
+md=h.ROOT/&#x27;smoke-local.md&#x27;;md.write_text(&#x27;# Batch 2 smoke\n\nSynthetic local markdown fixture.\n&#x27;)
+br=h.cli(&#x27;new-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--area&#x27;,b[&#x27;area_id&#x27;],&#x27;--type&#x27;,&#x27;browser&#x27;,&#x27;--url&#x27;,html.resolve().as_uri());h.cli(&#x27;focus-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,br[&#x27;tab_id&#x27;]);h.cli(&#x27;browser&#x27;,br[&#x27;tab_id&#x27;],&#x27;wait&#x27;,&#x27;--load-state&#x27;,&#x27;complete&#x27;,&#x27;--timeout-ms&#x27;,&#x27;10000&#x27;);before_dom=h.cli(&#x27;browser&#x27;,br[&#x27;tab_id&#x27;],&#x27;snapshot&#x27;,&#x27;--interactive&#x27;);assert &#x27;C11_BATCH_2_RESTORE&#x27; in before_dom[&#x27;page&#x27;][&#x27;text&#x27;]
+m=h.cli(&#x27;new-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--area&#x27;,b[&#x27;area_id&#x27;],&#x27;--type&#x27;,&#x27;markdown&#x27;,&#x27;--file&#x27;,str(md.resolve()));h.cli(&#x27;focus-tab&#x27;,&#x27;--workspace&#x27;,ws,&#x27;--tab&#x27;,m[&#x27;tab_id&#x27;]);time.sleep(.4);h.shot(&#x27;smoke-before&#x27;)
+# Remove the fresh launch workspace so restored fixture is the one visible.
+tr=h.cli(&#x27;tree&#x27;,&#x27;--all&#x27;);currentwin=next(w for w in tr[&#x27;windows&#x27;] if any(s[&#x27;id&#x27;]==ws for s in w[&#x27;workspaces&#x27;]))
+for s in currentwin[&#x27;workspaces&#x27;]:
+ if s[&#x27;id&#x27;]!=ws:h.rpc(&#x27;workspace.close&#x27;,{&#x27;workspace_id&#x27;:s[&#x27;id&#x27;]})
+def state():
+ tr=h.cli(&#x27;tree&#x27;,&#x27;--all&#x27;);s=next(s for w in tr[&#x27;windows&#x27;] for s in w[&#x27;workspaces&#x27;] if s[&#x27;id&#x27;]==ws)
+ return {&#x27;workspace&#x27;:s[&#x27;id&#x27;],&#x27;areas&#x27;:[{&#x27;tabs&#x27;:[(t[&#x27;id&#x27;],t[&#x27;type&#x27;]) for t in a[&#x27;tabs&#x27;]],&#x27;selected&#x27;:a[&#x27;selected_tab_id&#x27;],&#x27;split_path&#x27;:a[&#x27;layout&#x27;][&#x27;split_path&#x27;]} for a in s[&#x27;areas&#x27;]]}
+r={&#x27;workspace&#x27;:ws,&#x27;browser&#x27;:br[&#x27;tab_id&#x27;],&#x27;url&#x27;:html.resolve().as_uri(),&#x27;before&#x27;:state(),&#x27;before_dom&#x27;:before_dom};(h.ROOT/&#x27;smoke-restore.json&#x27;).write_text(json.dumps(r,indent=2));(h.ROOT/&#x27;smoke-before-tree.txt&#x27;).write_text(h.cli(&#x27;tree&#x27;,&#x27;--no-layout&#x27;,j=False));h.quit();print(&#x27;SMOKE steps 1-4 passed; synthesized Quit complete; ready QA resume&#x27;)
+</pre></details><details><summary>Restore driver entry point (source)</summary><pre>import ui_helper as h,json,time
+r=json.loads((h.ROOT/&#x27;smoke-restore.json&#x27;).read_text());tr=h.cli(&#x27;tree&#x27;,&#x27;--all&#x27;);s=next(s for w in tr[&#x27;windows&#x27;] for s in w[&#x27;workspaces&#x27;] if s[&#x27;id&#x27;]==r[&#x27;workspace&#x27;]);after={&#x27;workspace&#x27;:s[&#x27;id&#x27;],&#x27;areas&#x27;:[{&#x27;tabs&#x27;:[(t[&#x27;id&#x27;],t[&#x27;type&#x27;]) for t in a[&#x27;tabs&#x27;]],&#x27;split_path&#x27;:a[&#x27;layout&#x27;][&#x27;split_path&#x27;]} for a in s[&#x27;areas&#x27;]]};expected=json.loads(json.dumps(r[&#x27;before&#x27;]));[a.pop(&#x27;selected&#x27;,None) for a in expected[&#x27;areas&#x27;]];assert json.loads(json.dumps(after))==expected,(after,r[&#x27;before&#x27;])
+h.cli(&#x27;focus-tab&#x27;,&#x27;--workspace&#x27;,r[&#x27;workspace&#x27;],&#x27;--tab&#x27;,r[&#x27;browser&#x27;]);h.cli(&#x27;browser&#x27;,r[&#x27;browser&#x27;],&#x27;wait&#x27;,&#x27;--load-state&#x27;,&#x27;complete&#x27;,&#x27;--timeout-ms&#x27;,&#x27;10000&#x27;);dom=h.cli(&#x27;browser&#x27;,r[&#x27;browser&#x27;],&#x27;snapshot&#x27;,&#x27;--interactive&#x27;);assert dom[&#x27;url&#x27;]==r[&#x27;url&#x27;] and &#x27;C11_BATCH_2_RESTORE&#x27; in dom[&#x27;page&#x27;][&#x27;text&#x27;];h.activate();h.shot(&#x27;smoke-after&#x27;);tree=h.cli(&#x27;tree&#x27;,&#x27;--no-layout&#x27;,j=False);(h.ROOT/&#x27;smoke-after-tree.txt&#x27;).write_text(tree);r.update({&#x27;after&#x27;:after,&#x27;after_dom&#x27;:dom,&#x27;result&#x27;:&#x27;PASS&#x27;,&#x27;steps&#x27;:[1,2,3,4,5,6],&#x27;browser_fixture&#x27;:&#x27;real local file HTML&#x27;,&#x27;ephemeral_window_area_UUIDs&#x27;:&#x27;topology compared; workspace and tab UUIDs unchanged&#x27;});(h.ROOT/&#x27;smoke-result.json&#x27;).write_text(json.dumps(r,indent=2));print(tree);print(&#x27;SMOKE PASS&#x27;)
+</pre></details><h2>Scope and handoff</h2><p>Ticket runtime scenarios and common gates are recorded as passed with the limits above. Completion posting and ticket state transitions remain the parent Validator’s responsibility. This report makes no new CI, merge, release, deployment, or production-state claim. Evidence files only; no source changes.</p></main></body></html>

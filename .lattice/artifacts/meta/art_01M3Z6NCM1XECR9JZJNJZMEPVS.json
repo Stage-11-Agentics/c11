@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:00:00Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z6NCM1XECR9JZJNJZMEPVS",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Z6NCM1XECR9JZJNJZMEPVS.gz",
+    "size_bytes": 82933
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Prepared corrected per-role locks, raw delta auditor, ABBA10 headroom schedules, seal018, preregistration. All30 pure checks passed locally and Atlas; no native workload or sample before grant.",
+  "tags": [],
+  "title": "Final top-up prepared source and behavioral tests",
+  "token_usage": null,
+  "type": "file"
+}

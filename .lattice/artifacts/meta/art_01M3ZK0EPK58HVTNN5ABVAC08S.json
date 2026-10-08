@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:35:46Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZK0EPK58HVTNN5ABVAC08S",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZK0EPK58HVTNN5ABVAC08S.png",
+    "size_bytes": 1113455
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: workspace 1 selected, quick view row 'Workspace 2' flag, before Return",
+  "token_usage": null,
+  "type": "file"
+}

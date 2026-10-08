@@ -1,0 +1,23 @@
+C11-276 validation: criteria mapped to existing pre-merge and merged-head evidence
+
+Merged head: squash 43c1d51901c7c9048d9f5c5a97319c26bf445f6a (PR #542, landing head 01169bce94ef2fcc8bf40967469fbaa5d186ef52, receipt ev_01M3YX75965T3N8QZXKP092J2B). Evidence is the owner's exact-head Atlas logic gate, the reviewer's round-2 PASS with an executed mutation proof, the Merge Captain's independent read of the retained gate, and the parked Validator's later full-logic gate on a newer main build (AgentModelDetectionTests 48, 0 failures). No new run was made for this summary.
+
+Criterion -> evidence -> result
+
+1. Supported Codex and Grok start/completion/interruption records emit their edge exactly once on repeated polls; absent native edge types are declared unavailable, no fabricated completion or interrupt -> ev_01M3YVT9XZW6X3S13V1A6JHB38 (Atlas gate a44fa42a: 2,397 tests, 0 failures, 3 skips; AgentModelDetectionTests 48/48; Grok mismatched/non-primary start cannot pair an end; no Grok interrupt inferred), ev_01M3YWC127K73HYRWGHASCAN7E (reviewer PASS, source and test read), ev_01M3YX75965T3N8QZXKP092J2B (Captain re-read of the retained gate) -> PASS.
+2. Esc incident uses a recorded interrupt marker where available; assistant/tool output alone is not completion; a quiet transcript never claims blocked -> ev_01M3YVT9XZW6X3S13V1A6JHB38 (scenario 3 and 7 fixtures: one agent.turn.interrupted row from the turn_aborted marker, no blocked kind or reason on any transcript edge), ev_01M3YWC127K73HYRWGHASCAN7E -> PASS at parser/fold level. Real Codex Escape in the live UI: routed.
+3. Backlog larger than 4 MiB reports a coverage gap/degraded freshness; partial final lines, truncate/replace and session change do not replay old-session edges -> ev_01M3YVT9XZW6X3S13V1A6JHB38 (testCodexLargeRolloutVerifiesSessionMetaOutsideTailWindow, testCodexIncrementalBacklogGapDoesNotCompleteASkippedTurn, testPartialTrailingLineIsNotConsumedUntilComplete, testTruncatedOrReplacedFileRestartsScan, testPlaceholderRefDropsThePreviousSessionsState, adapter_gap with health=degraded and no phase change), ev_01M3YWC127K73HYRWGHASCAN7E (mutation run 7f90351b: both guards killed by assertion failure; restored run d17bb52b: pass) -> PASS.
+4. Hook and transcript report the same turn: no duplicate turns; a lower-confidence late observation does not overturn newer authoritative state -> ev_01M3YVT9XZW6X3S13V1A6JHB38 (testTranscriptRescanUsesProductionAppendPathAndPreservesNotifyBarrier through parser, coordinator, SQLite and reducer: stale/stale/stale/duplicate, hook rank 60 retained), ev_01M3YWC127K73HYRWGHASCAN7E (mutation disabling the stale-timestamp guard fails the test) -> PASS.
+5. Roster/consumer data exposes transcript provenance and advisory status; polling bounded and off-main; no transcript bodies in the durable journal or diagnostics -> ev_01M3YVT9XZW6X3S13V1A6JHB38 (provenance fields codex-rollout-clock-v1 / grok-events-clock-v1, rank 40; synthetic-sentinel privacy test for last_agent_message, abort reason and Grok chat content: none reach canonical drafts or stored data), ev_01M3YWC127K73HYRWGHASCAN7E, parked Validator C3 privacy fixture -> PASS for provenance, bounded reads and privacy. Polling measurement under the fleet workload: deferred to C11-270 F2 by Orchestrator decision ev_01M3YY6S98ZDWV3QK7MW6QCYWK (step 8); not relabeled as measured here.
+Validation section: executable parser/tailer fixtures and J2 replay -> PASS; actual Codex/Grok UI completion and interruption comparison on a tagged app with display, timer and dismissal -> routed; F2 polling measurement -> deferred to C11-270 F2 (accepted).
+
+Routed to C11-292 sign-off
+- Real Codex turns A then B, and one real Escape, on a tagged build: edges and idle/completed or idle/interrupted projection match the transcript structure (criteria 1, 2 native side).
+- Real Grok primary turn: one paired start and completion, no interruption or blocked state inferred (criteria 1, 2 native side).
+- Stored-byte privacy check on the live journal after those runs, and window dismissal (criterion 5 native side).
+
+Deferred, not routed: scenario step 8 (polling under the F2 fleet workload) belongs to C11-270 F2 per ev_01M3YY6S98ZDWV3QK7MW6QCYWK.
+
+No check contradicts a criterion. Version/PATH inventory alone was not taken as launch or lifecycle proof.
+
+Verdict: COMPLETE with sign-off routing; all five criteria are met by owner, reviewer, Captain and Validator logic-level evidence, the live Codex/Grok runs go to the C11-292 sign-off script, and F2 polling measurement is deferred to C11-270.

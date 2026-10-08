@@ -1,0 +1,43 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:cairn-retro",
+  "branch_links": [],
+  "comment_count": 4,
+  "complexity": "medium",
+  "created_at": "2026-10-04T07:41:27Z",
+  "created_by": "agent:cairn-retro",
+  "custom_fields": {},
+  "description": "## Why\nIn the c11 1.0 run, staging to Atlas was slow all day and caused real stalls. `scripts/remote_build.py` caches bundles by SHA, but every new head creates `parent-<head>.bundle` from `git bundle create ... HEAD`, which carries the full history (about 170 MB). The Hyperion to Atlas link measured about 160 KB/s (2026-10-02 15:51). With ten seats staging at once, seats hit their 900 s command cap (15:00), Atlas load reached 54, and a captain gate waited behind uploads (12:20). The workaround was to build and run guests on Atlas and never ship built apps across the link.\n\n## Done when\n- A remote build for a new head uploads only the objects Atlas does not have: an incremental bundle against a base the host already holds, or a `git fetch` on Atlas from the forge.\n- Staging a head whose parent Atlas already has takes seconds, not minutes, measured over the Hyperion link.\n- `tests/test_remote_build_routing.py` (or a sibling test) covers the incremental path and the fallback to a full bundle when no shared base exists.\n\nSource: c11 1.0 run retro, `.lattice/orchestration/c11-1.0/run-state.md` entries 12:20, 15:00 and 15:51 on 2026-10-02.",
+  "done_at": "2026-10-06T20:42:32Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M49F890RZ96N1KPK30Q33FDP",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M49F890Q90MHDWTARSG0RWSZ",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M42XRMZX32JVTMA3G2Z5G1VH",
+  "last_event_id": "ev_01M49F890SE4RK8E12NZR6QBGG",
+  "last_status_changed_at": "2026-10-06T20:42:32Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-331",
+  "status": "done",
+  "tags": [
+    "c11-1.0-followup",
+    "atlas",
+    "build"
+  ],
+  "title": "Remote builds upload only what Atlas lacks, not a full-history bundle per head",
+  "type": "chore",
+  "updated_at": "2026-10-06T20:42:32Z",
+  "urgency": null
+}

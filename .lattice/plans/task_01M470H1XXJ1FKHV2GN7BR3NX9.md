@@ -1,0 +1,3 @@
+# C11-334: CLI accepts unknown flags and ignores an invalid --workspace on focus-tab
+
+Found by the 1.0 exploratory test on signoff-1-1 (cde01d1571); evidence ~/Projects/Stage11/code/c11-worktrees/explore-1-0/38-cli-*.txt. (1) A tab-creation command given --not-a-real-flag exits 0 and creates the tab; unknown flags should fail nonzero and mutate nothing. (2) focus-tab --workspace workspace:9999 --tab tab:8 exits 0 and focuses tab 8 in its real workspace (OK tab:8 workspace:3); an invalid explicit workspace scope should fail with not_found, as read-screen and close-tab already do. Fail-closed CLI ergonomics, same family as the C11-251 strict-ref lesson. Not a 1.0 blocker.

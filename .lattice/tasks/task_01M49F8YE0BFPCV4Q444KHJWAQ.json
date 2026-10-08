@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:claude-panel-rename",
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-10-06T20:42:54Z",
+  "created_by": "agent:claude-panel-rename",
+  "custom_fields": {},
+  "description": "Atin 2026-10-06: fold C11-338, 339, 340, 341, 342 (+343) into one fast PR. (338) stop emitting tab_* result keys, flag_caller_tab_id writes and the tabs/ref_tabs twins; every spelling stays accepted on input. (339) localize Bonsplit command.copySurfaceRef.prefix in 7 locales (Bonsplit fork branch + pointer bump). (340) browser type/fill stops joining flag tokens into the text. (341) delete tests_v2 scripts that die at workspace.select (workspace_switch_blocked can never pass). (342/343) delete the flaky and order-dependent host tests from the C11-337 attribution. Gate: Atlas c11-logic + full c11-unit with every failure inside the 31 quarantined tests; one fresh-context review; HANDOFF to the 1.0 Driver, who decides whether it lands before or after the signoff-1-2 cut.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M49F8YE0BFPCV4Q444KHJWAQ",
+  "last_event_id": "ev_01M49F8YEJ0EXZ7TW9A7Z8K8PY",
+  "last_status_changed_at": "2026-10-06T20:42:54Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-345",
+  "status": "in_progress",
+  "tags": [
+    "vocabulary",
+    "tests"
+  ],
+  "title": "Post-rename cleanup in one PR: stop tab_* output, Bonsplit Copy prefix, browser fill flags, delete setup-failing and flaky tests",
+  "type": "chore",
+  "updated_at": "2026-10-06T20:42:54Z",
+  "urgency": null
+}

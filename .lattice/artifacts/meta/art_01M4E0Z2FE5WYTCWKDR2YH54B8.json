@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:09:02Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E0Z2FE5WYTCWKDR2YH54B8",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E0Z2FE5WYTCWKDR2YH54B8.png",
+    "size_bytes": 871084
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact md-360 build: close button dismissed the native find bar.",
+  "tags": [],
+  "title": "Find closed on exact final build",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": "agent:claude",
   "branch_links": [],
   "comment_count": 0,
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KRY53NKN577ZWD5R2NTCCRAC",
-  "last_event_id": "ev_01KT9WX9NV201SPCGE8RET9F4R",
-  "last_status_changed_at": "2026-06-03T19:41:50Z",
+  "last_event_id": "ev_01M3YXZ4W6PX11TS6CYK8WS3ZP",
+  "last_status_changed_at": "2026-10-02T18:28:03Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [
@@ -26,10 +27,10 @@
   "reopened_count": 1,
   "schema_version": 1,
   "short_id": "C11-28",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": null,
   "title": "Lattice repo: finish the c11 rename (modules, identifiers, env vars)",
   "type": "chore",
-  "updated_at": "2026-06-04T18:04:14Z",
+  "updated_at": "2026-10-02T18:28:03Z",
   "urgency": null
 }

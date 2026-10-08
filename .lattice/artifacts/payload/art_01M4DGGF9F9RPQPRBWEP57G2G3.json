@@ -1,0 +1,75 @@
+{
+  "eviction": {
+    "heading": {
+      "crop": [
+        348,
+        545,
+        560,
+        570
+      ],
+      "changed_bounds": null
+    },
+    "tabletext": {
+      "crop": [
+        252,
+        635,
+        955,
+        780
+      ],
+      "changed_bounds": null
+    },
+    "whole_document": {
+      "crop": [
+        225,
+        95,
+        1090,
+        788
+      ],
+      "changed_bounds": [
+        564,
+        153,
+        565,
+        154
+      ]
+    }
+  },
+  "reload": {
+    "heading": {
+      "crop": [
+        348,
+        545,
+        560,
+        570
+      ],
+      "changed_bounds": null
+    },
+    "tabletext": {
+      "crop": [
+        252,
+        635,
+        955,
+        780
+      ],
+      "changed_bounds": [
+        0,
+        6,
+        683,
+        126
+      ]
+    },
+    "whole_document": {
+      "crop": [
+        225,
+        95,
+        1090,
+        788
+      ],
+      "changed_bounds": [
+        27,
+        8,
+        735,
+        666
+      ]
+    }
+  }
+}

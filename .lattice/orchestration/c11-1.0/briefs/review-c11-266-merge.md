@@ -1,0 +1,9 @@
+# Review: C11-266 merge with C11-323 (Swift delta only)
+
+Follow `reviewer-common.md` in this directory (mailbox tab:210). Title `C11-266 Merge Review`. Actor `agent:astra-review-266m`.
+
+- PR https://github.com/Stage-11-Agentics/c11/pull/566, head `8a8e5e72e6bb7f88c39b32a7b8e4c7c1f5693479`. The quick view itself passed review at 76eb529935 (ev_01M3ZGY899X8Y3QR8GRS8ZV8VG). This head merges main 32bb08b8 (C11-323, agents never change the visible workspace) and resolves Swift conflicts. Review ONLY the merge resolution: `git show --remerge-diff 45a35870af` plus the one probe commit after it.
+- Owner's resolution: AppDelegate keeps C11-323's private `openAttentionTarget(cause:)` and gating verbatim and adds `operatorOpenAttentionTarget`, which wraps it in `SocketCommandContext.withContext(nil)` with cause "jump"; the quick view's open calls that wrapper; UpdateTitlebarAccessory keeps the quick view's removal of NotificationsPopoverView; xcstrings union; a new AgentWorkspaceSelectionTests case. Owner evidence: Atlas full c11LogicTests plus FeedQuickView and AgentWorkspaceSelection at 45a35870af, 2,479 tests, 0 failures; packaged guest: Command-I plus Return opens the flagged tab in another workspace.
+- **Key risk:** `withContext(nil)` around an operator wrapper is exactly the shape of C11-323's round-2 bypass (the palette's Jump to Latest Unread). Determine whether a socket-originated input can reach the quick view's Enter (for example a DEBUG simulate_shortcut of Command-I then Return, or any socket command that opens or submits the quick view) and so switch workspaces under a nil context. If yes, the quick view must carry its submitter's origin the way C11-323's palette session does. Genuine operator Command-I plus Enter must still switch.
+- Confirm the removal of NotificationsPopoverView does not drop C11-323's gated jump path or any notification affordance the operator had.
+- Reply `VERDICT C11-266 PASS|FAIL <head> <artifact>` to tab:210.

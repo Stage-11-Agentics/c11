@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:54:01Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZGM163T6QBPMRVP2YC8E48",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZGM163T6QBPMRVP2YC8E48.png",
+    "size_bytes": 899356
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1: open state, ring on Asks",
+  "token_usage": null,
+  "type": "file"
+}

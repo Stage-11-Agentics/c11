@@ -1,7 +1,8 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 1,
+  "comment_count": 2,
   "complexity": "high",
   "created_at": "2026-07-30T18:59:58Z",
   "created_by": "human:atin",
@@ -10,7 +11,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KYT6BKGZV318PWFJ2E5D1K88",
-  "last_event_id": "ev_01KYT79W29SH8TTEDT7YA0R5M9",
+  "last_event_id": "ev_01M4A0740NVA6ZJ5SEJC9Z2QC3",
   "last_status_changed_at": "2026-07-30T18:59:58Z",
   "linked_files": [],
   "priority": "high",
@@ -28,6 +29,6 @@
   ],
   "title": "Make main-thread hangs survivable: async surface attach, out-of-process hang reporting, recovery manifest, detachable sessions",
   "type": "bug",
-  "updated_at": "2026-07-30T19:16:30Z",
+  "updated_at": "2026-10-07T01:39:00Z",
   "urgency": null
 }

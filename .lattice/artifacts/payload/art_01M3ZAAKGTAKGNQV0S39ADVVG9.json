@@ -1,0 +1,33 @@
+{
+  "invocation": "dbe9dcd90b324612b420cc2eec4a3178",
+  "head": "b4cd7e22b4610cab6007253494d5dfcc8be69628",
+  "parent_head": "b2fa45673918e0268bc50eab72d1c0d0b236040b",
+  "branch": "c11-1.0/C11-266-quick-view",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-266",
+  "slug": "c11-266",
+  "mode": "test",
+  "extra": [
+    "-only-testing:c11LogicTests/FeedQuickViewSelectionTests",
+    "-only-testing:c11LogicTests/AttentionOrderTests",
+    "-only-testing:c11LogicTests/FeedProjectorTests",
+    "-only-testing:c11Tests/FeedQuickViewTests",
+    "-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testCmdIStillTriggersShowNotificationsShortcut",
+    "-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testCmdPhysicalIWithDvorakCharactersDoesNotTriggerShowNotifications",
+    "-resultBundlePath",
+    "c11-266-tab-filter.xcresult"
+  ],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "ok",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": true
+}

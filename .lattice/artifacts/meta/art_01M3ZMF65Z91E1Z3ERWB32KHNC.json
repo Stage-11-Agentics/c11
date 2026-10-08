@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T01:01:17Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZMF65Z91E1Z3ERWB32KHNC",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZMF65Z91E1Z3ERWB32KHNC.png",
+    "size_bytes": 1032811
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: socket simulate_shortcut cmd+i opens the quick view",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "scales": {
+    "zoom-in": 1.5,
+    "zoom-out": 1.4,
+    "zoom-reset": 1
+  }
+}

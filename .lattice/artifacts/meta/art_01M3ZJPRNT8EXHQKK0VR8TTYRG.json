@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:30:28Z",
+  "created_by": "agent:sonnet-captain",
+  "custom_fields": {},
+  "id": "art_01M3ZJPRNT8EXHQKK0VR8TTYRG",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZJPRNT8EXHQKK0VR8TTYRG.md",
+    "size_bytes": 3535
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED; reviewed runtime/validation evidence accepted\nC11-267 / PR #565: https://github.com/Stage-11-Agentics/c11/pull/565\nLanding head: d9a6566f6c67ceb73b7b0860737eb238dedab32d\nSquash merge: 82d74f33",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

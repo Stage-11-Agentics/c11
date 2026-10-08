@@ -1,0 +1,5 @@
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.132 (0.136) seconds
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.132 (0.137) seconds
+** TEST SUCCEEDED **
+Test Case '-[c11LogicTests.BrowserImportMappingTests testSafariHistoryReadsLatestVisitTitleFromRealSchemaAndLeavesSourceUntouched]' passed (0.006 seconds).
+Test Case '-[c11LogicTests.BrowserImportMappingTests testSafariHistoryReadsLatestVisitTitleFromRealSchemaAndLeavesSourceUntouched]' started.

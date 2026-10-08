@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:26Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DTDE3D4C4YEP99W2CFH1",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DTDE3D4C4YEP99W2CFH1.png",
+    "size_bytes": 859541
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Toolbar plus increased reader scale from 110% to 120%.",
+  "tags": [],
+  "title": "Toolbar text scale button",
+  "token_usage": null,
+  "type": "file"
+}

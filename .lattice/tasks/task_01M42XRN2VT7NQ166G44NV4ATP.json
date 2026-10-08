@@ -1,0 +1,48 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:opus-c11-332",
+  "branch_links": [],
+  "comment_count": 5,
+  "complexity": "medium",
+  "created_at": "2026-10-04T07:41:28Z",
+  "created_by": "agent:cairn-retro",
+  "custom_fields": {},
+  "description": "## Why\nThe hourly CI host gate skips a quarantine list (`.github/workflows/ci-hourly.yml`, `HOST_TEST_QUARANTINE`). During the c11 1.0 run, fixes landed whose regression tests sit in quarantined classes, so CI never runs them:\n- `c11Tests/GhosttyConfigTests` holds the regression test for C11-311 B083.\n- The close-guard class quarantined by C11-253 holds the test for C11-250's close fix.\n- `c11Tests/AppDelegateShortcutRoutingTests` had 17 failures on main as a baseline (confirmed 2026-10-02 18:20), so it is quarantined rather than fixed.\n\n## Done when\n- Each class above is either back in the host gate and green, or its new-fix tests move to `c11LogicTests` where they run.\n- The 17 baseline failures in `AppDelegateShortcutRoutingTests` are fixed or each one is deleted with a reason.\n- The quarantine list carries a comment naming why each remaining class is there.\n\nSource: c11 1.0 run retro, run-state entries 16:03, 16:30 and 18:20 on 2026-10-02.",
+  "done_at": "2026-10-06T21:14:52Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M49H3FGC9XBP4TB2NM4F63MJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M49H3FGBEJZVSK7KZ1QE692D",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M42XRN2VT7NQ166G44NV4ATP",
+  "last_event_id": "ev_01M49H3FGC9XBP4TB2NM4F63MM",
+  "last_status_changed_at": "2026-10-06T21:14:52Z",
+  "linked_files": [],
+  "needs_human": {
+    "flagged_by": "agent:lattice-auto-review",
+    "reason": "Auto-fired plan-review failed (Agent 'claude' timed out after 600s. Configured limits: review_timeout_seconds=600, review_max_diff_lines=5000, review_max_diff_chars=120000. Narrow the review diff, or explicitly raise review_timeout_seconds, review_max_diff_lines, or review_max_diff_chars in .lattice/config.json before retrying.) \u2014 task is unreviewed.",
+    "since": "2026-10-05T18:58:22Z"
+  },
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-332",
+  "status": "done",
+  "tags": [
+    "c11-1.0-followup",
+    "ci",
+    "tests"
+  ],
+  "title": "Un-quarantine the host test classes that now guard 1.0 fixes",
+  "type": "chore",
+  "updated_at": "2026-10-06T21:14:52Z",
+  "urgency": null
+}

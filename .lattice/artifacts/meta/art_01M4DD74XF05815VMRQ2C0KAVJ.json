@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T09:23:55Z",
+  "created_by": "agent:codex-md-r1",
+  "custom_fields": {},
+  "id": "art_01M4DD74XF05815VMRQ2C0KAVJ",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01M4DD74XF05815VMRQ2C0KAVJ.txt",
+    "size_bytes": 741
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Anchor mutation RED",
+  "token_usage": null,
+  "type": "file"
+}

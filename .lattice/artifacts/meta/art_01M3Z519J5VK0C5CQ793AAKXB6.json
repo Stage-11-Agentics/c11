@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:31:33Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z519J5VK0C5CQ793AAKXB6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z519J5VK0C5CQ793AAKXB6.md",
+    "size_bytes": 12969
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "New cohort; 120/40/40 attempted per role per phase; valid minima100/40/40; 2400 churn ops each; prior130pairs retained INCOMPLETE.",
+  "tags": [],
+  "title": "PREREGISTRATION revised ABBA-10 240s phases / 25-minute window",
+  "token_usage": null,
+  "type": "file"
+}

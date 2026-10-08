@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:24Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DS5FT094F63PCBXFWZMK",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DS5FT094F63PCBXFWZMK.png",
+    "size_bytes": 872804
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged md-360 build; source line numbers and text start sit clear of the docked outline.",
+  "tags": [],
+  "title": "Wide source mode with docked outline",
+  "token_usage": null,
+  "type": "file"
+}

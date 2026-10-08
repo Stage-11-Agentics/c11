@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:28Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z80BP2W9ZG9SBCRCAGYQD1",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z80BP2W9ZG9SBCRCAGYQD1.md",
+    "size_bytes": 2984
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "# C11-269 validation: claude-teams SIGPIPE reset and no persistent OpenCode plugin\n\nBasis: owner exact-head runs, parked validator's packaged passes, review and Merge Captain gates. No new native run ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

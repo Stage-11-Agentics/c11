@@ -1,0 +1,1396 @@
+[test-unit-local] C11_TAG=xctest-atinwoodard-44767
+[test-unit-local] C11_SOCKET_PATH=/tmp/c11-test-atinwoodard-44767.sock
+[test-unit-local] derivedDataPath=/Users/atinwoodard/c11-builds/c11-261/derived-test
+GhosttyKit.xcframework matches ghostty 5830d1976eecca0d7dee202aef8fb2338d99ed6d
+Command line invocation:
+    /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug -destination platform=macOS -derivedDataPath /Users/atinwoodard/c11-builds/c11-261/derived-test test "-only-testing:c11Tests/WorkspaceManagerSessionSnapshotTests" "-only-testing:c11LogicTests/WorkspaceGroupSidebarProjectionTests" "-only-testing:c11Tests/SidebarBranchOrderingTests" "-only-testing:c11Tests/SidebarDragAutoScrollPlannerTests" "-only-testing:c11LogicTests/SidebarBranchOrderingTests" "-only-testing:c11LogicTests/SidebarDragAutoScrollPlannerTests"
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  cmark-gfm: https://github.com/swiftlang/swift-cmark @ 0.7.1
+  swift-markdown-ui: https://github.com/gonzalezreal/swift-markdown-ui @ 2.4.1
+  PostHog: https://github.com/PostHog/posthog-ios.git @ 3.41.0
+  Bonsplit: /Users/atinwoodard/c11-builds/c11-261/source/vendor/bonsplit @ local
+  Sentry: https://github.com/getsentry/sentry-cocoa.git @ 9.3.0
+  Sparkle: https://github.com/sparkle-project/Sparkle @ 2.9.3
+  NetworkImage: https://github.com/gonzalezreal/NetworkImage @ 6.0.1
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006022-000A61980A20A01E, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006022-000A61980A20A01E, name:My Mac }
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (22 targets)
+    Target 'c11LogicTests' in project 'GhosttyTabs'
+        ➜ Explicit dependency on target 'c11' in project 'GhosttyTabs'
+    Target 'c11Tests' in project 'GhosttyTabs'
+        ➜ Explicit dependency on target 'c11' in project 'GhosttyTabs'
+    Target 'c11' in project 'GhosttyTabs'
+        ➜ Explicit dependency on target 'c11-cli' in project 'GhosttyTabs'
+        ➜ Explicit dependency on target 'Bonsplit' in project 'Bonsplit'
+        ➜ Explicit dependency on target 'Sparkle' in project 'Sparkle'
+        ➜ Explicit dependency on target 'Sentry' in project 'Sentry'
+        ➜ Explicit dependency on target 'PostHog' in project 'PostHog'
+        ➜ Explicit dependency on target 'MarkdownUI' in project 'swift-markdown-ui'
+    Target 'MarkdownUI' in project 'swift-markdown-ui'
+        ➜ Explicit dependency on target 'MarkdownUI' in project 'swift-markdown-ui'
+        ➜ Explicit dependency on target 'cmark-gfm' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'cmark-gfm-extensions' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'NetworkImage' in project 'NetworkImage'
+    Target 'MarkdownUI' in project 'swift-markdown-ui'
+        ➜ Explicit dependency on target 'cmark-gfm' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'cmark-gfm-extensions' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'NetworkImage' in project 'NetworkImage'
+    Target 'NetworkImage' in project 'NetworkImage'
+        ➜ Explicit dependency on target 'NetworkImage' in project 'NetworkImage'
+    Target 'NetworkImage' in project 'NetworkImage' (no dependencies)
+    Target 'cmark-gfm-extensions' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'cmark-gfm-extensions' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'cmark-gfm' in project 'cmark-gfm'
+    Target 'cmark-gfm-extensions' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'cmark-gfm' in project 'cmark-gfm'
+    Target 'cmark-gfm' in project 'cmark-gfm'
+        ➜ Explicit dependency on target 'cmark-gfm' in project 'cmark-gfm'
+    Target 'cmark-gfm' in project 'cmark-gfm' (no dependencies)
+    Target 'PostHog' in project 'PostHog'
+        ➜ Explicit dependency on target 'PostHog' in project 'PostHog'
+        ➜ Explicit dependency on target 'PostHog_PostHog' in project 'PostHog'
+        ➜ Explicit dependency on target 'phlibwebp' in project 'PostHog'
+    Target 'PostHog' in project 'PostHog'
+        ➜ Explicit dependency on target 'PostHog_PostHog' in project 'PostHog'
+        ➜ Explicit dependency on target 'phlibwebp' in project 'PostHog'
+    Target 'phlibwebp' in project 'PostHog' (no dependencies)
+    Target 'PostHog_PostHog' in project 'PostHog' (no dependencies)
+    Target 'Sparkle' in project 'Sparkle' (no dependencies)
+    Target 'Bonsplit' in project 'Bonsplit'
+        ➜ Explicit dependency on target 'Bonsplit' in project 'Bonsplit'
+        ➜ Explicit dependency on target 'Bonsplit_Bonsplit' in project 'Bonsplit'
+    Target 'Bonsplit' in project 'Bonsplit'
+        ➜ Explicit dependency on target 'Bonsplit_Bonsplit' in project 'Bonsplit'
+    Target 'Bonsplit_Bonsplit' in project 'Bonsplit' (no dependencies)
+    Target 'c11-cli' in project 'GhosttyTabs'
+        ➜ Explicit dependency on target 'Sentry' in project 'Sentry'
+    Target 'Sentry' in project 'Sentry'
+        ➜ Explicit dependency on target 'SentryCppHelper' in project 'Sentry'
+    Target 'SentryCppHelper' in project 'Sentry' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch arm64 -isysroot /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcstringstool compile --dry-run --output-directory /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build /Users/atinwoodard/c11-builds/c11-261/source/Resources/Localizable.xcstrings
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+ReadFileContents /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/share/docc/features.json
+
+ExecuteExternalTool /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcstringstool compile --dry-run --output-directory /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build /Users/atinwoodard/c11-builds/c11-261/source/Resources/InfoPlist.xcstrings
+
+Build description signature: c341449524395de2e89f9d86b142bc77
+Build description path: /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/XCBuildData/c341449524395de2e89f9d86b142bc77.xcbuilddata
+ClangStatCache /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk /Users/atinwoodard/c11-builds/c11-261/derived-test/SDKStatCaches.noindex/macosx26.2-25C58-dc75598d0054f22ec865fa860f139d725e5b9710553747fc98890f176c6152b9.sdkstatcache
+    cd /Users/atinwoodard/c11-builds/c11-261/source/GhosttyTabs.xcodeproj
+    /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -o /Users/atinwoodard/c11-builds/c11-261/derived-test/SDKStatCaches.noindex/macosx26.2-25C58-dc75598d0054f22ec865fa860f139d725e5b9710553747fc98890f176c6152b9.sdkstatcache
+
+ProcessInfoPlistFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/Bonsplit_Bonsplit.bundle/Contents/Info.plist /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/Bonsplit.build/Debug/Bonsplit_Bonsplit.build/empty-Bonsplit_Bonsplit.plist (in target 'Bonsplit_Bonsplit' from project 'Bonsplit')
+    cd /Users/atinwoodard/c11-builds/c11-261/source/vendor/bonsplit
+    builtin-infoPlistUtility /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/Bonsplit.build/Debug/Bonsplit_Bonsplit.build/empty-Bonsplit_Bonsplit.plist -producttype com.apple.product-type.bundle -expandbuildsettings -platform macosx -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/Bonsplit_Bonsplit.bundle/Contents/Info.plist
+
+ProcessProductPackaging "" /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent (in target 'c11-cli' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    
+    Entitlements:
+    
+    {
+    "com.apple.application-identifier" = "";
+    "com.apple.security.get-task-allow" = 1;
+}
+    
+    builtin-productPackagingUtility -entitlements -format xml -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent
+
+ProcessProductPackagingDER /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent.der (in target 'c11-cli' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    /usr/bin/derq query -f xml -i /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent.der --raw
+
+warning: Run script build phase 'Run Script' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'c11' from project 'GhosttyTabs')
+ProcessProductPackaging "" /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    
+    Entitlements:
+    
+    {
+    "com.apple.security.get-task-allow" = 1;
+}
+    
+    builtin-productPackagingUtility -entitlements -format xml -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent
+
+ProcessProductPackagingDER /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent.der (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    /usr/bin/derq query -f xml -i /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent.der --raw
+
+ProcessInfoPlistFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PostHog_PostHog.bundle/Contents/Info.plist /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/PostHog.build/Debug/PostHog_PostHog.build/empty-PostHog_PostHog.plist (in target 'PostHog_PostHog' from project 'PostHog')
+    cd /Users/atinwoodard/c11-builds/c11-261/derived-test/SourcePackages/checkouts/posthog-ios
+    builtin-infoPlistUtility /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/PostHog.build/Debug/PostHog_PostHog.build/empty-PostHog_PostHog.plist -producttype com.apple.product-type.bundle -expandbuildsettings -platform macosx -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PostHog_PostHog.bundle/Contents/Info.plist
+
+CodeSign /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 (in target 'c11-cli' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --entitlements /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11-cli.build/c11.xcent --timestamp\=none --generate-entitlement-der /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11: replacing existing signature
+
+CompileXCStrings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ /Users/atinwoodard/c11-builds/c11-261/source/Resources/Localizable.xcstrings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcstringstool compile --output-directory /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build /Users/atinwoodard/c11-builds/c11-261/source/Resources/Localizable.xcstrings
+
+CompileXCStrings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ /Users/atinwoodard/c11-builds/c11-261/source/Resources/InfoPlist.xcstrings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcstringstool compile --output-directory /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build /Users/atinwoodard/c11-builds/c11-261/source/Resources/InfoPlist.xcstrings
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hant.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hant.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hant.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hant.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hant.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ja.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ja.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ja.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ja.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ja.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/uk.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/uk.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/uk.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/uk.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/uk.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hans.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hans.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hans.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hans.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ko.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ko.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ko.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ko.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ko.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/en.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/en.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/en.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/en.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/en.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ru.lproj/InfoPlist.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ru.lproj/InfoPlist.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename InfoPlist.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ru.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ru.lproj/InfoPlist.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ru.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/uk.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/uk.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/uk.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/uk.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/uk.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hans.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hans.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hans.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hans.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hans.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ru.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ru.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ru.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ru.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ru.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/en.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/en.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/en.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/en.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/en.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hant.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hant.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/zh-Hant.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hant.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/zh-Hant.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ja.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ja.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ja.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ja.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ja.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+CopyStringsFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ko.lproj/Localizable.strings /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ko.lproj/Localizable.strings (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/ko.lproj -- /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ko.lproj/Localizable.strings
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ko.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'c11' from project 'GhosttyTabs')
+
+PhaseScriptExecution Run\ Script /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Script-A5001300A1B2C3D4E5F60719.sh (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    export ACTION\=build
+    export AD_HOC_CODE_SIGNING_ALLOWED\=YES
+    export AGGREGATE_TRACKED_DOMAINS\=YES
+    export ALLOW_BUILD_REQUEST_OVERRIDES\=NO
+    export ALLOW_TARGET_PLATFORM_SPECIALIZATION\=NO
+    export ALTERNATE_GROUP\=staff
+    export ALTERNATE_MODE\=u+w,go-w,a+rX
+    export ALTERNATE_OWNER\=atinwoodard
+    export ALTERNATIVE_DISTRIBUTION_WEB\=NO
+    export ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES\=NO
+    export ALWAYS_SEARCH_USER_PATHS\=NO
+    export ALWAYS_USE_SEPARATE_HEADERMAPS\=NO
+    export APPLICATION_EXTENSION_API_ONLY\=NO
+    export APPLY_RULES_IN_COPY_FILES\=NO
+    export APPLY_RULES_IN_COPY_HEADERS\=NO
+    export APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING\=YES
+    export ARCHS\=arm64
+    export ARCHS_STANDARD\=arm64\ x86_64
+    export ARCHS_STANDARD_32_64_BIT\=arm64\ x86_64\ i386
+    export ARCHS_STANDARD_32_BIT\=i386
+    export ARCHS_STANDARD_64_BIT\=arm64\ x86_64
+    export ARCHS_STANDARD_INCLUDING_64_BIT\=arm64\ x86_64
+    export ASSETCATALOG_COMPILER_APPICON_NAME\=AppIcon-Debug
+    export AUTOMATICALLY_MERGE_DEPENDENCIES\=NO
+    export AUTOMATION_APPLE_EVENTS\=NO
+    export AVAILABLE_PLATFORMS\=android\ appletvos\ appletvsimulator\ driverkit\ iphoneos\ iphonesimulator\ macosx\ qnx\ watchos\ watchsimulator\ webassembly\ xros\ xrsimulator
+    export BUILD_ACTIVE_RESOURCES_ONLY\=NO
+    export BUILD_COMPONENTS\=headers\ build
+    export BUILD_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products
+    export BUILD_LIBRARY_FOR_DISTRIBUTION\=NO
+    export BUILD_ROOT\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products
+    export BUILD_STYLE\=
+    export BUILD_VARIANTS\=normal
+    export BUILT_PRODUCTS_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug
+    export BUNDLE_CONTENTS_FOLDER_PATH\=Contents/
+    export BUNDLE_CONTENTS_FOLDER_PATH_deep\=Contents/
+    export BUNDLE_EXECUTABLE_FOLDER_NAME_deep\=MacOS
+    export BUNDLE_EXECUTABLE_FOLDER_PATH\=Contents/MacOS
+    export BUNDLE_EXTENSIONS_FOLDER_PATH\=Contents/Extensions
+    export BUNDLE_FORMAT\=deep
+    export BUNDLE_FRAMEWORKS_FOLDER_PATH\=Contents/Frameworks
+    export BUNDLE_PLUGINS_FOLDER_PATH\=Contents/PlugIns
+    export BUNDLE_PRIVATE_HEADERS_FOLDER_PATH\=Contents/PrivateHeaders
+    export BUNDLE_PUBLIC_HEADERS_FOLDER_PATH\=Contents/Headers
+    export CACHE_ROOT\=/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/C/com.apple.DeveloperTools/26.3-17C529/Xcode
+    export CCHROOT\=/var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/C/com.apple.DeveloperTools/26.3-17C529/Xcode
+    export CHMOD\=/bin/chmod
+    export CHOWN\=/usr/sbin/chown
+    export CLANG_ANALYZER_NONNULL\=YES
+    export CLANG_CACHE_FINE_GRAINED_OUTPUTS\=YES
+    export CLANG_ENABLE_EXPLICIT_MODULES\=YES
+    export CLANG_ENABLE_MODULES\=YES
+    export CLANG_ENABLE_OBJC_ARC\=YES
+    export CLANG_MODULES_BUILD_SESSION_FILE\=/Users/atinwoodard/c11-builds/c11-261/derived-test/ModuleCache.noindex/Session.modulevalidation
+    export CLASS_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/JavaClasses
+    export CLEAN_PRECOMPS\=YES
+    export CLONE_HEADERS\=NO
+    export CODESIGNING_FOLDER_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app
+    export CODE_SIGNING_ALLOWED\=YES
+    export CODE_SIGNING_REQUIRED\=YES
+    export CODE_SIGN_IDENTITY\=-
+    export CODE_SIGN_IDENTITY_NO\=Apple\ Development
+    export CODE_SIGN_IDENTITY_YES\=-
+    export CODE_SIGN_INJECT_BASE_ENTITLEMENTS\=YES
+    export CODE_SIGN_STYLE\=Automatic
+    export COLOR_DIAGNOSTICS\=NO
+    export COMBINE_HIDPI_IMAGES\=YES
+    export COMPILATION_CACHE_CAS_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/CompilationCache.noindex
+    export COMPILATION_CACHE_KEEP_CAS_DIRECTORY\=YES
+    export COMPILER_INDEX_STORE_ENABLE\=Default
+    export COMPOSITE_SDK_DIRS\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/CompositeSDKs
+    export COMPRESS_PNG_FILES\=NO
+    export CONFIGURATION\=Debug
+    export CONFIGURATION_BUILD_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug
+    export CONFIGURATION_TEMP_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug
+    export CONTENTS_FOLDER_PATH\=c11\ DEV.app/Contents
+    export CONTENTS_FOLDER_PATH_SHALLOW_BUNDLE_NO\=c11\ DEV.app/Contents
+    export CONTENTS_FOLDER_PATH_SHALLOW_BUNDLE_YES\=c11\ DEV.app
+    export COPYING_PRESERVES_HFS_DATA\=NO
+    export COPY_HEADERS_RUN_UNIFDEF\=NO
+    export COPY_PHASE_STRIP\=NO
+    export CP\=/bin/cp
+    export CREATE_INFOPLIST_SECTION_IN_BINARY\=NO
+    export CURRENT_ARCH\=undefined_arch
+    export CURRENT_PROJECT_VERSION\=131
+    export CURRENT_VARIANT\=normal
+    export DEAD_CODE_STRIPPING\=NO
+    export DEBUGGING_SYMBOLS\=YES
+    export DEBUG_INFORMATION_FORMAT\=dwarf
+    export DEBUG_INFORMATION_VERSION\=compiler-default
+    export DEFAULT_COMPILER\=com.apple.compilers.llvm.clang.1_0
+    export DEFAULT_DEXT_INSTALL_PATH\=/System/Library/DriverExtensions
+    export DEFAULT_KEXT_INSTALL_PATH\=/System/Library/Extensions
+    export DEFINES_MODULE\=NO
+    export DEPLOYMENT_LOCATION\=NO
+    export DEPLOYMENT_POSTPROCESSING\=NO
+    export DEPLOYMENT_TARGET_SETTING_NAME\=MACOSX_DEPLOYMENT_TARGET
+    export DEPLOYMENT_TARGET_SUGGESTED_VALUES\=10.13\ 10.14\ 10.15\ 11.0\ 11.1\ 11.2\ 11.3\ 11.4\ 11.5\ 12.0\ 12.2\ 12.3\ 12.4\ 13.0\ 13.1\ 13.2\ 13.3\ 13.4\ 13.5\ 14.0\ 14.1\ 14.2\ 14.3\ 14.4\ 14.5\ 14.6\ 15.0\ 15.1\ 15.2\ 15.3\ 15.4\ 15.5\ 15.6\ 26.0\ 26.1\ 26.2
+    export DERIVED_FILES_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/DerivedSources
+    export DERIVED_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/DerivedSources
+    export DERIVED_SOURCES_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/DerivedSources
+    export DEVELOPER_APPLICATIONS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications
+    export DEVELOPER_BIN_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/usr/bin
+    export DEVELOPER_DIR\=/Applications/Xcode-26.3.app/Contents/Developer
+    export DEVELOPER_FRAMEWORKS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Library/Frameworks
+    export DEVELOPER_FRAMEWORKS_DIR_QUOTED\=/Applications/Xcode-26.3.app/Contents/Developer/Library/Frameworks
+    export DEVELOPER_LIBRARY_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Library
+    export DEVELOPER_SDK_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs
+    export DEVELOPER_TOOLS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Tools
+    export DEVELOPER_USR_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/usr
+    export DEVELOPMENT_LANGUAGE\=en
+    export DIAGNOSE_MISSING_TARGET_DEPENDENCIES\=YES
+    export DIFF\=/usr/bin/diff
+    export DOCUMENTATION_FOLDER_PATH\=c11\ DEV.app/Contents/Resources/en.lproj/Documentation
+    export DONT_GENERATE_INFOPLIST_FILE\=NO
+    export DSTROOT\=/tmp/GhosttyTabs.dst
+    export DT_TOOLCHAIN_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain
+    export DWARF_DSYM_FILE_NAME\=c11\ DEV.app.dSYM
+    export DWARF_DSYM_FILE_SHOULD_ACCOMPANY_PRODUCT\=NO
+    export DWARF_DSYM_FOLDER_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug
+    export DYNAMIC_LIBRARY_EXTENSION\=dylib
+    export EAGER_COMPILATION_ALLOW_SCRIPTS\=NO
+    export EAGER_LINKING\=NO
+    export EMBEDDED_CONTENT_CONTAINS_SWIFT\=NO
+    export EMBEDDED_PROFILE_NAME\=embedded.provisionprofile
+    export EMBED_ASSET_PACKS_IN_PRODUCT_BUNDLE\=NO
+    export EMBED_PACKAGE_RESOURCE_BUNDLE_NAMES\=\ PostHog_PostHog\ Bonsplit_Bonsplit
+    export ENABLE_APP_SANDBOX\=NO
+    export ENABLE_CODE_COVERAGE\=YES
+    export ENABLE_CPLUSPLUS_BOUNDS_SAFE_BUFFERS\=NO
+    export ENABLE_C_BOUNDS_SAFETY\=NO
+    export ENABLE_DEBUG_DYLIB\=YES
+    export ENABLE_DEFAULT_HEADER_SEARCH_PATHS\=YES
+    export ENABLE_DEFAULT_SEARCH_PATHS\=YES
+    export ENABLE_ENHANCED_SECURITY\=NO
+    export ENABLE_HARDENED_RUNTIME\=NO
+    export ENABLE_HEADER_DEPENDENCIES\=YES
+    export ENABLE_INCOMING_NETWORK_CONNECTIONS\=NO
+    export ENABLE_ON_DEMAND_RESOURCES\=NO
+    export ENABLE_OUTGOING_NETWORK_CONNECTIONS\=NO
+    export ENABLE_POINTER_AUTHENTICATION\=NO
+    export ENABLE_PREVIEWS\=NO
+    export ENABLE_RESOURCE_ACCESS_AUDIO_INPUT\=NO
+    export ENABLE_RESOURCE_ACCESS_BLUETOOTH\=NO
+    export ENABLE_RESOURCE_ACCESS_CALENDARS\=NO
+    export ENABLE_RESOURCE_ACCESS_CAMERA\=NO
+    export ENABLE_RESOURCE_ACCESS_CONTACTS\=NO
+    export ENABLE_RESOURCE_ACCESS_LOCATION\=NO
+    export ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY\=NO
+    export ENABLE_RESOURCE_ACCESS_PRINTING\=NO
+    export ENABLE_RESOURCE_ACCESS_USB\=NO
+    export ENABLE_SDK_IMPORTS\=NO
+    export ENABLE_SECURITY_COMPILER_WARNINGS\=NO
+    export ENABLE_STRICT_OBJC_MSGSEND\=YES
+    export ENABLE_TESTABILITY\=YES
+    export ENABLE_TESTING_SEARCH_PATHS\=NO
+    export ENABLE_USER_SCRIPT_SANDBOXING\=NO
+    export ENABLE_XOJIT_PREVIEWS\=YES
+    export ENFORCE_VALID_ARCHS\=YES
+    export ENTITLEMENTS_ALLOWED\=YES
+    export ENTITLEMENTS_DESTINATION\=Signature
+    export ENTITLEMENTS_REQUIRED\=NO
+    export EXCLUDED_INSTALLSRC_SUBDIRECTORY_PATTERNS\=.DS_Store\ .svn\ .git\ .hg\ CVS
+    export EXCLUDED_RECURSIVE_SEARCH_PATH_SUBDIRECTORIES\=\*.nib\ \*.lproj\ \*.framework\ \*.gch\ \*.xcode\*\ \*.xcassets\ \*.icon\ \(\*\)\ .DS_Store\ CVS\ .svn\ .git\ .hg\ \*.pbproj\ \*.pbxproj
+    export EXECUTABLES_FOLDER_PATH\=c11\ DEV.app/Contents/Executables
+    export EXECUTABLE_BLANK_INJECTION_DYLIB_PATH\=c11\ DEV.app/Contents/MacOS/__preview.dylib
+    export EXECUTABLE_DEBUG_DYLIB_INSTALL_NAME\=@rpath/c11.debug.dylib
+    export EXECUTABLE_DEBUG_DYLIB_PATH\=c11\ DEV.app/Contents/MacOS/c11.debug.dylib
+    export EXECUTABLE_FOLDER_PATH\=c11\ DEV.app/Contents/MacOS
+    export EXECUTABLE_FOLDER_PATH_SHALLOW_BUNDLE_NO\=c11\ DEV.app/Contents/MacOS
+    export EXECUTABLE_FOLDER_PATH_SHALLOW_BUNDLE_YES\=c11\ DEV.app/Contents
+    export EXECUTABLE_NAME\=c11
+    export EXECUTABLE_PATH\=c11\ DEV.app/Contents/MacOS/c11
+    export EXPANDED_CODE_SIGN_IDENTITY\=-
+    export EXPANDED_CODE_SIGN_IDENTITY_NAME\=Sign\ to\ Run\ Locally
+    export EXTENSIONS_FOLDER_PATH\=c11\ DEV.app/Contents/Extensions
+    export FILE_LIST\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects/LinkFileList
+    export FIXED_FILES_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/FixedFiles
+    export FRAMEWORKS_FOLDER_PATH\=c11\ DEV.app/Contents/Frameworks
+    export FRAMEWORK_FLAG_PREFIX\=-framework
+    export FRAMEWORK_SEARCH_PATHS\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug\ 
+    export FRAMEWORK_VERSION\=A
+    export FULL_PRODUCT_NAME\=c11\ DEV.app
+    export FUSE_BUILD_PHASES\=YES
+    export FUSE_BUILD_SCRIPT_PHASES\=NO
+    export GCC3_VERSION\=3.3
+    export GCC_DYNAMIC_NO_PIC\=NO
+    export GCC_INLINES_ARE_PRIVATE_EXTERN\=YES
+    export GCC_NO_COMMON_BLOCKS\=YES
+    export GCC_OPTIMIZATION_LEVEL\=0
+    export GCC_PFE_FILE_C_DIALECTS\=c\ objective-c\ c++\ objective-c++
+    export GCC_PREPROCESSOR_DEFINITIONS\=DEBUG\=1\ 
+    export GCC_SYMBOLS_PRIVATE_EXTERN\=NO
+    export GCC_TREAT_WARNINGS_AS_ERRORS\=NO
+    export GCC_VERSION\=com.apple.compilers.llvm.clang.1_0
+    export GCC_VERSION_IDENTIFIER\=com_apple_compilers_llvm_clang_1_0
+    export GCC_WARN_64_TO_32_BIT_CONVERSION\=YES
+    export GCC_WARN_ABOUT_RETURN_TYPE\=YES_ERROR
+    export GCC_WARN_UNDECLARED_SELECTOR\=YES
+    export GCC_WARN_UNINITIALIZED_AUTOS\=YES_AGGRESSIVE
+    export GCC_WARN_UNUSED_FUNCTION\=YES
+    export GCC_WARN_UNUSED_VARIABLE\=YES
+    export GENERATED_MODULEMAP_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps
+    export GENERATE_INFOPLIST_FILE\=NO
+    export GENERATE_INTERMEDIATE_TEXT_BASED_STUBS\=YES
+    export GENERATE_PKGINFO_FILE\=YES
+    export GENERATE_PRELINK_OBJECT_FILE\=NO
+    export GENERATE_PROFILING_CODE\=NO
+    export GENERATE_TEXT_BASED_STUBS\=NO
+    export GID\=20
+    export GROUP\=staff
+    export HEADERMAP_INCLUDES_FLAT_ENTRIES_FOR_TARGET_BEING_BUILT\=YES
+    export HEADERMAP_INCLUDES_FRAMEWORK_ENTRIES_FOR_ALL_PRODUCT_TYPES\=YES
+    export HEADERMAP_INCLUDES_FRAMEWORK_ENTRIES_FOR_TARGETS_NOT_BEING_BUILT\=YES
+    export HEADERMAP_INCLUDES_NONPUBLIC_NONPRIVATE_HEADERS\=YES
+    export HEADERMAP_INCLUDES_PROJECT_HEADERS\=YES
+    export HEADERMAP_USES_FRAMEWORK_PREFIX_ENTRIES\=YES
+    export HEADERMAP_USES_VFS\=NO
+    export HEADER_SEARCH_PATHS\=/Users/atinwoodard/c11-builds/c11-261/derived-test/SourcePackages/checkouts/posthog-ios/vendor/libwebp/.\ /Users/atinwoodard/c11-builds/c11-261/derived-test/SourcePackages/checkouts/swift-cmark/src/include\ /Users/atinwoodard/c11-builds/c11-261/derived-test/SourcePackages/checkouts/swift-cmark/extensions/include\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/include\ 
+    export HOME\=/Users/atinwoodard
+    export HOST_ARCH\=arm64
+    export HOST_PLATFORM\=macosx
+    export ICONV\=/usr/bin/iconv
+    export IMPLICIT_DEPENDENCY_DOMAIN\=default
+    export INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE\=YES
+    export INFOPLIST_EXPAND_BUILD_SETTINGS\=YES
+    export INFOPLIST_FILE\=Resources/Info.plist
+    export INFOPLIST_OUTPUT_FORMAT\=same-as-input
+    export INFOPLIST_PATH\=c11\ DEV.app/Contents/Info.plist
+    export INFOPLIST_PREPROCESS\=NO
+    export INFOSTRINGS_PATH\=c11\ DEV.app/Contents/Resources/en.lproj/InfoPlist.strings
+    export INLINE_PRIVATE_FRAMEWORKS\=NO
+    export INSTALLAPI_IGNORE_SKIP_INSTALL\=YES
+    export INSTALLHDRS_COPY_PHASE\=NO
+    export INSTALLHDRS_SCRIPT_PHASE\=NO
+    export INSTALL_DIR\=/tmp/GhosttyTabs.dst/Applications
+    export INSTALL_GROUP\=staff
+    export INSTALL_MODE_FLAG\=u+w,go-w,a+rX
+    export INSTALL_OWNER\=atinwoodard
+    export INSTALL_PATH\=/Applications
+    export INSTALL_ROOT\=/tmp/GhosttyTabs.dst
+    export IOS_UNZIPPERED_TWIN_PREFIX_PATH\=/System/iOSSupport
+    export IS_MACCATALYST\=NO
+    export IS_UNOPTIMIZED_BUILD\=YES
+    export JAVAC_DEFAULT_FLAGS\=-J-Xms64m\ -J-XX:NewSize\=4M\ -J-Dfile.encoding\=UTF8
+    export JAVA_APP_STUB\=/System/Library/Frameworks/JavaVM.framework/Resources/MacOS/JavaApplicationStub
+    export JAVA_ARCHIVE_CLASSES\=YES
+    export JAVA_ARCHIVE_TYPE\=JAR
+    export JAVA_COMPILER\=/usr/bin/javac
+    export JAVA_FOLDER_PATH\=c11\ DEV.app/Contents/Resources/Java
+    export JAVA_FRAMEWORK_RESOURCES_DIRS\=Resources
+    export JAVA_JAR_FLAGS\=cv
+    export JAVA_SOURCE_SUBDIR\=.
+    export JAVA_USE_DEPENDENCIES\=YES
+    export JAVA_ZIP_FLAGS\=-urg
+    export JIKES_DEFAULT_FLAGS\=+E\ +OLDCSO
+    export KASAN_CFLAGS_CLASSIC\=-DKASAN\=1\ -DKASAN_CLASSIC\=1\ -fsanitize\=address\ -mllvm\ -asan-globals-live-support\ -mllvm\ -asan-force-dynamic-shadow
+    export KASAN_CFLAGS_TBI\=-DKASAN\=1\ -DKASAN_TBI\=1\ -fsanitize\=kernel-hwaddress\ -mllvm\ -hwasan-recover\=0\ -mllvm\ -hwasan-instrument-atomics\=0\ -mllvm\ -hwasan-instrument-stack\=1\ -mllvm\ -hwasan-generate-tags-with-calls\=1\ -mllvm\ -hwasan-instrument-with-calls\=1\ -mllvm\ -hwasan-use-short-granules\=0\ -mllvm\ -hwasan-memory-access-callback-prefix\=__asan_
+    export KASAN_DEFAULT_CFLAGS\=-DKASAN\=1\ -DKASAN_CLASSIC\=1\ -fsanitize\=address\ -mllvm\ -asan-globals-live-support\ -mllvm\ -asan-force-dynamic-shadow
+    export KEEP_PRIVATE_EXTERNS\=NO
+    export LD_DEPENDENCY_INFO_FILE\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/undefined_arch/c11\ DEV_dependency_info.dat
+    export LD_EXPORT_SYMBOLS\=YES
+    export LD_GENERATE_MAP_FILE\=NO
+    export LD_MAP_FILE_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV-LinkMap-normal-undefined_arch.txt
+    export LD_NO_PIE\=NO
+    export LD_QUOTE_LINKER_ARGUMENTS_FOR_COMPILER_DRIVER\=YES
+    export LD_RUNPATH_SEARCH_PATHS\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/PackageFrameworks\ \ @executable_path/../Frameworks
+    export LD_RUNPATH_SEARCH_PATHS_YES\=@loader_path/../Frameworks
+    export LD_SHARED_CACHE_ELIGIBLE\=Automatic
+    export LD_WARN_DUPLICATE_LIBRARIES\=NO
+    export LD_WARN_UNUSED_DYLIBS\=NO
+    export LEGACY_DEVELOPER_DIR\=/Applications/Xcode-26.3.app/Contents/PlugIns/Xcode3Core.ideplugin/Contents/SharedSupport/Developer
+    export LEX\=lex
+    export LIBRARY_DEXT_INSTALL_PATH\=/Library/DriverExtensions
+    export LIBRARY_FLAG_NOSPACE\=YES
+    export LIBRARY_FLAG_PREFIX\=-l
+    export LIBRARY_KEXT_INSTALL_PATH\=/Library/Extensions
+    export LIBRARY_SEARCH_PATHS\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug\ 
+    export LINKER_DISPLAYS_MANGLED_NAMES\=NO
+    export LINK_FILE_LIST_normal_arm64\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/arm64/c11\ DEV.LinkFileList
+    export LINK_OBJC_RUNTIME\=YES
+    export LINK_WITH_STANDARD_LIBRARIES\=YES
+    export LLVM_TARGET_TRIPLE_OS_VERSION\=macos14.0
+    export LLVM_TARGET_TRIPLE_OS_VERSION_NO\=macos14.0
+    export LLVM_TARGET_TRIPLE_OS_VERSION_YES\=macos26.2
+    export LLVM_TARGET_TRIPLE_VENDOR\=apple
+    export LM_AUX_CONST_METADATA_LIST_PATH_normal_arm64\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/arm64/c11\ DEV.SwiftConstValuesFileList
+    export LOCALIZATION_EXPORT_SUPPORTED\=YES
+    export LOCALIZATION_PREFERS_STRING_CATALOGS\=NO
+    export LOCALIZED_RESOURCES_FOLDER_PATH\=c11\ DEV.app/Contents/Resources/en.lproj
+    export LOCALIZED_STRING_MACRO_NAMES\=NSLocalizedString\ CFCopyLocalizedString
+    export LOCALIZED_STRING_SWIFTUI_SUPPORT\=YES
+    export LOCAL_ADMIN_APPS_DIR\=/Applications/Utilities
+    export LOCAL_APPS_DIR\=/Applications
+    export LOCAL_DEVELOPER_DIR\=/Library/Developer
+    export LOCAL_LIBRARY_DIR\=/Library
+    export LOCROOT\=/Users/atinwoodard/c11-builds/c11-261/source
+    export LOCSYMROOT\=/Users/atinwoodard/c11-builds/c11-261/source
+    export MACH_O_TYPE\=mh_execute
+    export MACOSX_DEPLOYMENT_TARGET\=14.0
+    export MAC_OS_X_PRODUCT_BUILD_VERSION\=25F84
+    export MAC_OS_X_VERSION_ACTUAL\=260502
+    export MAC_OS_X_VERSION_MAJOR\=260000
+    export MAC_OS_X_VERSION_MINOR\=260500
+    export MAKE_MERGEABLE\=NO
+    export MARKETING_VERSION\=0.67.0
+    export MERGEABLE_LIBRARY\=NO
+    export MERGED_BINARY_TYPE\=none
+    export MERGE_LINKED_LIBRARIES\=NO
+    export METAL_LIBRARY_FILE_BASE\=default
+    export METAL_LIBRARY_OUTPUT_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources
+    export MODULES_FOLDER_PATH\=c11\ DEV.app/Contents/Modules
+    export MODULE_CACHE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/ModuleCache.noindex
+    export MTL_ENABLE_DEBUG_INFO\=INCLUDE_SOURCE
+    export MTL_FAST_MATH\=YES
+    export NATIVE_ARCH\=arm64
+    export NATIVE_ARCH_32_BIT\=arm
+    export NATIVE_ARCH_64_BIT\=arm64
+    export NATIVE_ARCH_ACTUAL\=arm64
+    export NO_COMMON\=YES
+    export OBJECT_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects
+    export OBJECT_FILE_DIR_normal\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal
+    export OBJROOT\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex
+    export ONLY_ACTIVE_ARCH\=YES
+    export OS\=MACOS
+    export OSAC\=/usr/bin/osacompile
+    export OTHER_CFLAGS\=-fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/Bonsplit.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/SentryCppHelper.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/phlibwebp.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/PostHog.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/NetworkImage.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/MarkdownUI.modulemap\ 
+    export OTHER_CPLUSPLUSFLAGS\=-fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/Bonsplit.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/SentryCppHelper.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/phlibwebp.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/PostHog.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/NetworkImage.modulemap\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/MarkdownUI.modulemap\ 
+    export OTHER_LDFLAGS\=-Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -Wl,-no_warn_duplicate_libraries\ -lc++\ -framework\ Metal\ -framework\ QuartzCore\ -framework\ IOSurface\ -framework\ UniformTypeIdentifiers\ -framework\ Carbon\ -lc++
+    export OTHER_SWIFT_FLAGS\=-Xcc\ -fmodule-map-file\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GeneratedModuleMaps/phlibwebp.modulemap\ 
+    export PACKAGE_TYPE\=com.apple.package-type.wrapper.application
+    export PASCAL_STRINGS\=YES
+    export PATH\=/Applications/Xcode-26.3.app/Contents/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/PlugIns/SWBUniversalPlatformPlugin.bundle/Contents/Frameworks/SWBUniversalPlatform.framework/Resources:/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain/usr/bin:/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain/usr/local/bin:/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain/usr/libexec:/Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:/Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/local/bin:/Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/libexec:/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/usr/bin:/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/usr/local/bin:/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin:/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/local/bin:/Applications/Xcode-26.3.app/Contents/Developer/usr/bin:/Applications/Xcode-26.3.app/Contents/Developer/usr/local/bin:/Users/atinwoodard/zig-0.15.2:/opt/homebrew/bin:/usr/local/bin:/Users/atinwoodard/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    export PATH_PREFIXES_EXCLUDED_FROM_HEADER_DEPENDENCIES\=/usr/include\ /usr/local/include\ /System/Library/Frameworks\ /System/Library/PrivateFrameworks\ /Applications/Xcode-26.3.app/Contents/Developer/Headers\ /Applications/Xcode-26.3.app/Contents/Developer/SDKs\ /Applications/Xcode-26.3.app/Contents/Developer/Platforms
+    export PBDEVELOPMENTPLIST_PATH\=c11\ DEV.app/Contents/pbdevelopment.plist
+    export PER_ARCH_MODULE_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/undefined_arch
+    export PER_ARCH_OBJECT_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/undefined_arch
+    export PER_VARIANT_OBJECT_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal
+    export PKGINFO_FILE_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/PkgInfo
+    export PKGINFO_PATH\=c11\ DEV.app/Contents/PkgInfo
+    export PLATFORM_DEVELOPER_APPLICATIONS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications
+    export PLATFORM_DEVELOPER_BIN_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/usr/bin
+    export PLATFORM_DEVELOPER_LIBRARY_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Library
+    export PLATFORM_DEVELOPER_SDK_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs
+    export PLATFORM_DEVELOPER_TOOLS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Tools
+    export PLATFORM_DEVELOPER_USR_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/usr
+    export PLATFORM_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform
+    export PLATFORM_DISPLAY_NAME\=macOS
+    export PLATFORM_FAMILY_NAME\=macOS
+    export PLATFORM_NAME\=macosx
+    export PLATFORM_PREFERRED_ARCH\=x86_64
+    export PLATFORM_PRODUCT_BUILD_VERSION\=25C58
+    export PLATFORM_REQUIRES_SWIFT_AUTOLINK_EXTRACT\=NO
+    export PLATFORM_REQUIRES_SWIFT_MODULEWRAP\=NO
+    export PLIST_FILE_OUTPUT_FORMAT\=same-as-input
+    export PLUGINS_FOLDER_PATH\=c11\ DEV.app/Contents/PlugIns
+    export PRECOMPS_INCLUDE_HEADERS_FROM_BUILT_PRODUCTS_DIR\=YES
+    export PRECOMP_DESTINATION_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/PrefixHeaders
+    export PRIVATE_HEADERS_FOLDER_PATH\=c11\ DEV.app/Contents/PrivateHeaders
+    export PROCESSED_INFOPLIST_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/undefined_arch/Processed-Info.plist
+    export PRODUCT_BUNDLE_IDENTIFIER\=com.stage11.c11.debug
+    export PRODUCT_BUNDLE_PACKAGE_TYPE\=APPL
+    export PRODUCT_MODULE_NAME\=c11
+    export PRODUCT_NAME\=c11\ DEV
+    export PRODUCT_SETTINGS_PATH\=/Users/atinwoodard/c11-builds/c11-261/source/Resources/Info.plist
+    export PRODUCT_TYPE\=com.apple.product-type.application
+    export PROFILING_CODE\=NO
+    export PROJECT\=GhosttyTabs
+    export PROJECT_DERIVED_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/DerivedSources
+    export PROJECT_DIR\=/Users/atinwoodard/c11-builds/c11-261/source
+    export PROJECT_FILE_PATH\=/Users/atinwoodard/c11-builds/c11-261/source/GhosttyTabs.xcodeproj
+    export PROJECT_GUID\=d4cd0c66113beab34c7e7dceba422638
+    export PROJECT_NAME\=GhosttyTabs
+    export PROJECT_TEMP_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build
+    export PROJECT_TEMP_ROOT\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex
+    export PROVISIONING_PROFILE_REQUIRED\=NO
+    export PROVISIONING_PROFILE_REQUIRED_YES_YES\=YES
+    export PROVISIONING_PROFILE_SUPPORTED\=YES
+    export PUBLIC_HEADERS_FOLDER_PATH\=c11\ DEV.app/Contents/Headers
+    export RECOMMENDED_MACOSX_DEPLOYMENT_TARGET\=11.0
+    export RECURSIVE_SEARCH_PATHS_FOLLOW_SYMLINKS\=YES
+    export REMOVE_CVS_FROM_RESOURCES\=YES
+    export REMOVE_GIT_FROM_RESOURCES\=YES
+    export REMOVE_HEADERS_FROM_EMBEDDED_BUNDLES\=YES
+    export REMOVE_HG_FROM_RESOURCES\=YES
+    export REMOVE_STATIC_EXECUTABLES_FROM_EMBEDDED_BUNDLES\=YES
+    export REMOVE_SVN_FROM_RESOURCES\=YES
+    export RESCHEDULE_INDEPENDENT_HEADERS_PHASES\=YES
+    export REZ_COLLECTOR_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ResourceManagerResources
+    export REZ_OBJECTS_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/ResourceManagerResources/Objects
+    export REZ_SEARCH_PATHS\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug\ 
+    export RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES\=NO
+    export RUNTIME_EXCEPTION_ALLOW_JIT\=NO
+    export RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY\=NO
+    export RUNTIME_EXCEPTION_DEBUGGING_TOOL\=NO
+    export RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION\=NO
+    export RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION\=NO
+    export SCAN_ALL_SOURCE_FILES_FOR_INCLUDES\=NO
+    export SCRIPTS_FOLDER_PATH\=c11\ DEV.app/Contents/Resources/Scripts
+    export SCRIPT_INPUT_FILE_COUNT\=0
+    export SCRIPT_INPUT_FILE_LIST_COUNT\=0
+    export SCRIPT_OUTPUT_FILE_COUNT\=0
+    export SCRIPT_OUTPUT_FILE_LIST_COUNT\=0
+    export SDKROOT\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk
+    export SDK_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk
+    export SDK_DIR_macosx\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk
+    export SDK_DIR_macosx26_2\=/Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk
+    export SDK_NAME\=macosx26.2
+    export SDK_NAMES\=macosx26.2
+    export SDK_PRODUCT_BUILD_VERSION\=25C58
+    export SDK_STAT_CACHE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test
+    export SDK_STAT_CACHE_ENABLE\=YES
+    export SDK_STAT_CACHE_PATH\=/Users/atinwoodard/c11-builds/c11-261/derived-test/SDKStatCaches.noindex/macosx26.2-25C58-dc75598d0054f22ec865fa860f139d725e5b9710553747fc98890f176c6152b9.sdkstatcache
+    export SDK_VERSION\=26.2
+    export SDK_VERSION_ACTUAL\=260200
+    export SDK_VERSION_MAJOR\=260000
+    export SDK_VERSION_MINOR\=260200
+    export SED\=/usr/bin/sed
+    export SEPARATE_STRIP\=NO
+    export SEPARATE_SYMBOL_EDIT\=NO
+    export SET_DIR_MODE_OWNER_GROUP\=YES
+    export SET_FILE_MODE_OWNER_GROUP\=NO
+    export SHALLOW_BUNDLE\=NO
+    export SHALLOW_BUNDLE_PLATFORM\=NO
+    export SHALLOW_BUNDLE_TRIPLE\=macos
+    export SHALLOW_BUNDLE_ios_macabi\=NO
+    export SHALLOW_BUNDLE_macos\=NO
+    export SHARED_DERIVED_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/DerivedSources
+    export SHARED_FRAMEWORKS_FOLDER_PATH\=c11\ DEV.app/Contents/SharedFrameworks
+    export SHARED_PRECOMPS_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/PrecompiledHeaders
+    export SHARED_SUPPORT_FOLDER_PATH\=c11\ DEV.app/Contents/SharedSupport
+    export SKIP_INSTALL\=NO
+    export SOURCE_ROOT\=/Users/atinwoodard/c11-builds/c11-261/source
+    export SPARKLE_PUBLIC_KEY\=avjcgKibf1FTvhIjLBxhd+0HSpsXU4D0IGlVk8cgqRc\=
+    export SRCROOT\=/Users/atinwoodard/c11-builds/c11-261/source
+    export STRINGSDATA_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/undefined_arch
+    export STRINGSDATA_ROOT\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build
+    export STRINGS_FILE_INFOPLIST_RENAME\=YES
+    export STRINGS_FILE_OUTPUT_ENCODING\=UTF-16
+    export STRING_CATALOG_GENERATE_SYMBOLS\=NO
+    export STRIP_BITCODE_FROM_COPIED_FILES\=NO
+    export STRIP_INSTALLED_PRODUCT\=NO
+    export STRIP_PNG_TEXT\=NO
+    export STRIP_STYLE\=all
+    export STRIP_SWIFT_SYMBOLS\=YES
+    export SUPPORTED_PLATFORMS\=macosx
+    export SUPPORTS_MACCATALYST\=NO
+    export SUPPORTS_ON_DEMAND_RESOURCES\=NO
+    export SUPPORTS_TEXT_BASED_API\=NO
+    export SUPPRESS_WARNINGS\=NO
+    export SWIFT_ACTIVE_COMPILATION_CONDITIONS\=DEBUG
+    export SWIFT_EMIT_CONST_VALUE_PROTOCOLS\=AppIntent\ EntityQuery\ AppEntity\ TransientEntity\ AppEnum\ AppShortcutProviding\ AppShortcutsProvider\ AnyResolverProviding\ AppIntentsPackage\ DynamicOptionsProvider\ _IntentValueRepresentable\ _AssistantIntentsProvider\ _GenerativeFunctionExtractable\ IntentValueQuery\ Resolver\ AppExtension\ ExtensionPointDefining
+    export SWIFT_EMIT_LOC_STRINGS\=YES
+    export SWIFT_ENABLE_EXPLICIT_MODULES\=YES
+    export SWIFT_OBJC_BRIDGING_HEADER\=c11-Bridging-Header.h
+    export SWIFT_OPTIMIZATION_LEVEL\=-Onone
+    export SWIFT_PLATFORM_TARGET_PREFIX\=macos
+    export SWIFT_RESPONSE_FILE_PATH_normal_arm64\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Objects-normal/arm64/c11\ DEV.SwiftFileList
+    export SWIFT_VERSION\=5.0
+    export SYMROOT\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products
+    export SYSTEM_ADMIN_APPS_DIR\=/Applications/Utilities
+    export SYSTEM_APPS_DIR\=/Applications
+    export SYSTEM_CORE_SERVICES_DIR\=/System/Library/CoreServices
+    export SYSTEM_DEMOS_DIR\=/Applications/Extras
+    export SYSTEM_DEVELOPER_APPS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications
+    export SYSTEM_DEVELOPER_BIN_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/usr/bin
+    export SYSTEM_DEVELOPER_DEMOS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications/Utilities/Built\ Examples
+    export SYSTEM_DEVELOPER_DIR\=/Applications/Xcode-26.3.app/Contents/Developer
+    export SYSTEM_DEVELOPER_DOC_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/ADC\ Reference\ Library
+    export SYSTEM_DEVELOPER_GRAPHICS_TOOLS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications/Graphics\ Tools
+    export SYSTEM_DEVELOPER_JAVA_TOOLS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications/Java\ Tools
+    export SYSTEM_DEVELOPER_PERFORMANCE_TOOLS_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications/Performance\ Tools
+    export SYSTEM_DEVELOPER_RELEASENOTES_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/ADC\ Reference\ Library/releasenotes
+    export SYSTEM_DEVELOPER_TOOLS\=/Applications/Xcode-26.3.app/Contents/Developer/Tools
+    export SYSTEM_DEVELOPER_TOOLS_DOC_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/ADC\ Reference\ Library/documentation/DeveloperTools
+    export SYSTEM_DEVELOPER_TOOLS_RELEASENOTES_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/ADC\ Reference\ Library/releasenotes/DeveloperTools
+    export SYSTEM_DEVELOPER_USR_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/usr
+    export SYSTEM_DEVELOPER_UTILITIES_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Applications/Utilities
+    export SYSTEM_DEXT_INSTALL_PATH\=/System/Library/DriverExtensions
+    export SYSTEM_DOCUMENTATION_DIR\=/Library/Documentation
+    export SYSTEM_EXTENSIONS_FOLDER_PATH\=c11\ DEV.app/Contents/Library/SystemExtensions
+    export SYSTEM_EXTENSIONS_FOLDER_PATH_SHALLOW_BUNDLE_NO\=c11\ DEV.app/Contents/Library/SystemExtensions
+    export SYSTEM_EXTENSIONS_FOLDER_PATH_SHALLOW_BUNDLE_YES\=c11\ DEV.app/Contents/SystemExtensions
+    export SYSTEM_KEXT_INSTALL_PATH\=/System/Library/Extensions
+    export SYSTEM_LIBRARY_DIR\=/System/Library
+    export TAPI_DEMANGLE\=YES
+    export TAPI_ENABLE_PROJECT_HEADERS\=NO
+    export TAPI_LANGUAGE\=objective-c
+    export TAPI_LANGUAGE_STANDARD\=compiler-default
+    export TAPI_USE_SRCROOT\=YES
+    export TAPI_VERIFY_MODE\=Pedantic
+    export TARGETNAME\=c11
+    export TARGET_BUILD_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug
+    export TARGET_NAME\=c11
+    export TARGET_TEMP_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build
+    export TEMP_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build
+    export TEMP_FILES_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build
+    export TEMP_FILE_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build
+    export TEMP_ROOT\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex
+    export TEMP_SANDBOX_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/TemporaryTaskSandboxes
+    export TEST_FRAMEWORK_SEARCH_PATHS\=\ /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks
+    export TEST_LIBRARY_SEARCH_PATHS\=\ /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib
+    export TOOLCHAINS\=com.apple.dt.toolchain.Metal.32023.864\ com.apple.dt.toolchain.XcodeDefault
+    export TOOLCHAIN_DIR\=/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain
+    export TOOLCHAIN_VERSION\=32023.864
+    export TREAT_MISSING_BASELINES_AS_TEST_FAILURES\=NO
+    export TREAT_MISSING_SCRIPT_PHASE_OUTPUTS_AS_ERRORS\=NO
+    export UID\=501
+    export UNINSTALLED_PRODUCTS_DIR\=/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/UninstalledProducts
+    export UNLOCALIZED_RESOURCES_FOLDER_PATH\=c11\ DEV.app/Contents/Resources
+    export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_NO\=c11\ DEV.app/Contents/Resources
+    export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_YES\=c11\ DEV.app/Contents
+    export UNSTRIPPED_PRODUCT\=NO
+    export USER\=atinwoodard
+    export USER_APPS_DIR\=/Users/atinwoodard/Applications
+    export USER_LIBRARY_DIR\=/Users/atinwoodard/Library
+    export USE_DYNAMIC_NO_PIC\=YES
+    export USE_HEADERMAP\=YES
+    export USE_HEADER_SYMLINKS\=NO
+    export VALIDATE_DEVELOPMENT_ASSET_PATHS\=YES_ERROR
+    export VALIDATE_PRODUCT\=NO
+    export VALID_ARCHS\=arm64\ arm64e\ i386\ x86_64
+    export VERBOSE_PBXCP\=NO
+    export VERSIONPLIST_PATH\=c11\ DEV.app/Contents/version.plist
+    export VERSION_INFO_BUILDER\=atinwoodard
+    export VERSION_INFO_FILE\=c11\ DEV_vers.c
+    export VERSION_INFO_STRING\=\"@\(\#\)PROGRAM:c11\ DEV\ \ PROJECT:GhosttyTabs-131\"
+    export WORKSPACE_DIR\=/Users/atinwoodard/c11-builds/c11-261/source/GhosttyTabs.xcodeproj
+    export WRAPPER_EXTENSION\=app
+    export WRAPPER_NAME\=c11\ DEV.app
+    export WRAPPER_SUFFIX\=.app
+    export WRAP_ASSET_PACKS_IN_SEPARATE_DIRECTORIES\=NO
+    export XCODE_APP_SUPPORT_DIR\=/Applications/Xcode-26.3.app/Contents/Developer/Library/Xcode
+    export XCODE_PRODUCT_BUILD_VERSION\=17C529
+    export XCODE_VERSION_ACTUAL\=2630
+    export XCODE_VERSION_MAJOR\=2600
+    export XCODE_VERSION_MINOR\=2630
+    export XPCSERVICES_FOLDER_PATH\=c11\ DEV.app/Contents/XPCServices
+    export YACC\=yacc
+    export _BOOL_\=NO
+    export _BOOL_NO\=NO
+    export _BOOL_YES\=YES
+    export _DEVELOPMENT_TEAM_IS_EMPTY\=YES
+    export _DISCOVER_COMMAND_LINE_LINKER_INPUTS\=YES
+    export _DISCOVER_COMMAND_LINE_LINKER_INPUTS_INCLUDE_WL\=YES
+    export _IS_EMPTY_\=YES
+    export _LD_MULTIARCH\=YES
+    export _MACOSX_DEPLOYMENT_TARGET_IS_EMPTY\=NO
+    export _WRAPPER_CONTENTS_DIR\=/Contents
+    export _WRAPPER_CONTENTS_DIR_SHALLOW_BUNDLE_NO\=/Contents
+    export _WRAPPER_PARENT_PATH\=/..
+    export _WRAPPER_PARENT_PATH_SHALLOW_BUNDLE_NO\=/..
+    export _WRAPPER_RESOURCES_DIR\=/Resources
+    export _WRAPPER_RESOURCES_DIR_SHALLOW_BUNDLE_NO\=/Resources
+    export __DIAGNOSE_DEPRECATED_ARCHS\=YES
+    export __IS_NOT_MACOS\=NO
+    export __IS_NOT_MACOS_macosx\=NO
+    export __IS_NOT_SIMULATOR\=YES
+    export __IS_NOT_SIMULATOR_simulator\=NO
+    export arch\=undefined_arch
+    export variant\=normal
+    /bin/sh -c /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/Script-A5001300A1B2C3D4E5F60719.sh
+
+CopySwiftLibs /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/MacOS/c11.debug.dylib --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Frameworks --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Library/SystemExtensions --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Extensions --platform macosx --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain --toolchain /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+
+ProcessInfoPlistFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Info.plist /Users/atinwoodard/c11-builds/c11-261/source/Resources/Info.plist (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-infoPlistUtility /Users/atinwoodard/c11-builds/c11-261/source/Resources/Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PkgInfo -expandbuildsettings -platform macosx -additionalcontentfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/assetcatalog_generated_info.plist -scanforprivacyfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Frameworks/Sentry.framework -scanforprivacyfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Frameworks/Sparkle.framework -scanforprivacyfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/Bonsplit_Bonsplit.bundle -scanforprivacyfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Resources/PostHog_PostHog.bundle -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/Info.plist
+
+ProcessInfoPlistFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Info.plist /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11Tests.build/empty-c11Tests.plist (in target 'c11Tests' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-infoPlistUtility /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11Tests.build/empty-c11Tests.plist -producttype com.apple.product-type.bundle.unit-test -expandbuildsettings -platform macosx -scanforprivacyfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Resources/Bonsplit_Bonsplit.bundle -scanforprivacyfile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Resources/PostHog_PostHog.bundle -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Info.plist
+
+CopySwiftLibs /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest (in target 'c11Tests' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/MacOS/c11Tests --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Frameworks --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/PlugIns --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Library/SystemExtensions --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Extensions --platform macosx --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain --toolchain /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/PlugIns/c11Tests.xctest/Contents/Frameworks --strip-bitcode --scan-executable /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11Tests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+
+CodeSign /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/MacOS/c11.debug.dylib (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/MacOS/c11.debug.dylib
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/MacOS/c11.debug.dylib: replacing existing signature
+
+CodeSign /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/MacOS/__preview.dylib (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app/Contents/MacOS/__preview.dylib
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/MacOS/__preview.dylib: replacing existing signature
+
+CodeSign /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --entitlements /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11.build/c11\ DEV.app.xcent --timestamp\=none --generate-entitlement-der /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app
+/Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app: replacing existing signature
+
+Validate /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-validationUtility /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app -no-validate-extension -infoplist-subpath Contents/Info.plist
+
+RegisterWithLaunchServices /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app (in target 'c11' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister -f -R -trusted /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11\ DEV.app
+
+ProcessInfoPlistFile /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/Info.plist /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11LogicTests.build/empty-c11LogicTests.plist (in target 'c11LogicTests' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-infoPlistUtility /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11LogicTests.build/empty-c11LogicTests.plist -producttype com.apple.product-type.bundle.unit-test -expandbuildsettings -platform macosx -o /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/Info.plist
+
+CopySwiftLibs /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest (in target 'c11LogicTests' from project 'GhosttyTabs')
+    cd /Users/atinwoodard/c11-builds/c11-261/source
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/MacOS/c11LogicTests --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/Frameworks --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/PlugIns --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/Library/SystemExtensions --scan-folder /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/Extensions --scan-folder /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework --platform macosx --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.sHMGha/Metal.xctoolchain --toolchain /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11LogicTests.xctest/Contents/Frameworks --strip-bitcode --scan-executable /Applications/Xcode-26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode-26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Intermediates.noindex/GhosttyTabs.build/Debug/c11LogicTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+
+2026-10-02 16:18:36.467763-0400 c11[48220:124879745] Using your own bundle identifier as an NSUserDefaults suite name does not make sense and will not work. Break on _NSUserDefaults_Log_Nonsensical_Suites to find this
+2026-10-02 16:18:36.544804-0400 c11[48220:124879745] [SwiftUI] Accessing StateObject<WorkspaceManager>'s object without being installed on a View. This will create a new instance each time.
+2026-10-02 16:18:36.546824-0400 c11[48220:124880292] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.546874-0400 c11[48220:124880292] [Application] Error registering app with intents framework: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+[Sentry] [fatal] [1790972316.549634] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:36.550113-0400 c11[48220:124880293] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.550148-0400 c11[48220:124880293] [Connection] Unable to re-register with Process Instance Registry, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.553025-0400 c11[48220:124880406] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.553107-0400 c11[48220:124880406] [Connection] Unable to re-register with Process Instance Registry, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.554796-0400 c11[48220:124879745] [default] ghostty version=1.3.0-c11-294-r1+5830d1976
+2026-10-02 16:18:36.554837-0400 c11[48220:124879745] [default] ghostty build optimize=ReleaseFast
+2026-10-02 16:18:36.554842-0400 c11[48220:124879745] [default] runtime=.none
+2026-10-02 16:18:36.554846-0400 c11[48220:124879745] [default] font_backend=.coretext
+2026-10-02 16:18:36.554849-0400 c11[48220:124879745] [default] renderer=renderer.generic.Renderer(renderer.Metal)
+2026-10-02 16:18:36.554855-0400 c11[48220:124879745] [default] libxev default backend=kqueue
+2026-10-02 16:18:36.554987-0400 c11[48220:124879745] [os_locale] os_locale: detected system locale=en_US.UTF-8
+2026-10-02 16:18:36.555125-0400 c11[48220:124879745] [os_locale] os_locale: setlocale from env result=en_US.UTF-8
+2026-10-02 16:18:36.555937-0400 c11[48220:124880406] [Connection] Will NOT re-try to establish the connection
+2026-10-02 16:18:36.555979-0400 c11[48220:124880292] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.556001-0400 c11[48220:124880292] [Connection] Unable to re-register with Process Instance Registry, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-10-02 16:18:36.556104-0400 c11[48220:124879745] [default] error reading optional config file, not loading err=error.FileIsEmpty path=/Users/atinwoodard/Library/Application Support/com.mitchellh.ghostty/config.ghostty
+2026-10-02 16:18:36.562986-0400 c11[48220:124879745] [config] config: default shell src=passwd value=/bin/zsh
+2026-10-02 16:18:36.563005-0400 c11[48220:124879745] [config] config: default working directory src=passwd value=/Users/atinwoodard
+2026-10-02 16:18:36.569909-0400 c11[48220:124880475] [sentry] sentry: sentry envelope does not contain crash, discarding
+[Sentry] [fatal] [1790972316.689578] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:36.690288-0400 c11[48220:124879745] [SwiftUI] Accessing StateObject<TerminalNotificationStore>'s object without being installed on a View. This will create a new instance each time.
+2026-10-02 16:18:36.690692-0400 c11[48220:124879745] [SwiftUI] Accessing StateObject<SidebarState>'s object without being installed on a View. This will create a new instance each time.
+TerminalController: Listening on /tmp/c11-test-48220.sock
+[Sentry] [fatal] [1790972316.701097] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972316.701407] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972316.709834] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972316.715666] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:36.833721-0400 c11[48220:124879745] ApplePersistenceIgnoreState: Existing state will not be touched. New state will be written to /var/folders/4h/y5dkw4114clf__bf5qjm_r1r0000gn/T/com.stage11.c11.debug.savedState
+2026-10-02 16:18:36.990500-0400 c11[48220:124879745] [WarnOnce] It's not legal to call -layoutSubtreeIfNeeded on a view which is already being laid out.  If you are implementing the view's -layout method, you can call -[super layout] instead.  Break on void _NSDetectedLayoutRecursion(void) to debug.  This will be logged only once.  This may break in the future.
+2026-10-02 16:18:36.999691-0400 c11[48220:124879745] session.restore.ready
+2026-10-02 16:18:37.004112-0400 c11[48220:124879745] [Window] warning: adding an unknown subview: c11.FileDropOverlayView 0x71bf08500. Break on _didAddUnknownSubview: to debug.
+2026-10-02 16:18:37.028575-0400 c11[48220:124879745] [Window] Call stack:
+(
+	0   AppKit                              0x000000018c32e31c -[NSThemeFrame _didAddUnknownSubview:] + 164
+	1   AppKit                              0x000000018b6b8e80 -[NSThemeFrame addSubview:] + 100
+	2   AppKit                              0x000000018b6b89ac -[NSView addSubview:positioned:relativeTo:] + 276
+	3   AppKit                              0x000000018b6b8814 -[NSThemeFrame addSubview:positioned:relativeTo:] + 52
+	4   c11.debug.dylib                     0x0000000106f0c13c $s3c1122installFileDropOverlay2on16workspaceManagerySo8NSWindowC_AA09WorkspaceH0CtF + 804
+	5   c11.debug.dylib                     0x0000000106f50330 $s3c1111ContentViewV4bodyQrvgySo8NSWindowCcfU42_ + 3680
+	6   c11.debug.dylib                     0x000000010809bbb8 $s3c1114WindowAccessorV12updateNSView_7contextyAA0B13ObservingViewC_7SwiftUI0E20RepresentableContextVyACGtFySo8NSWindowCcfU_ + 532
+	7   c11.debug.dylib                     0x000000010809c994 $s3c1119WindowObservingViewC12viewWillMove02toB0ySo8NSWindowCSg_tF + 288
+	8   c11.debug.dylib                     0x000000010809ca14 $s3c1119WindowObservingViewC12viewWillMove02toB0ySo8NSWindowCSg_tFTo + 68
+	9   AppKit                              0x000000018b6ac0c8 -[NSView _setWindow:] + 332
+	10  AppKit                              0x000000018c3bcc4c __21-[NSView _setWindow:]_block_invoke.159 + 268
+	11  AppKit                              0x000000018b6ac6c8 -[NSView _setWindow:] + 1868
+	12  AppKit                              0x000000018b6b3344 -[NSView addSubview:] + 196
+	13  AppKit                              0x000000018b6b89ac -[NSView addSubview:positioned:relativeTo:] + 276
+	14  SwiftUI                             0x00000001bc782eb0 $s7SwiftUI13NSHostingViewC25swiftui_addManagedSubview_10positioned10relativeToySo6NSViewC_So20NSWindowOrderingModeVAHSgtF + 100
+	15  SwiftUI                             0x00000001bc782f4c $s7SwiftUI13NSHostingViewC25swiftui_addManagedSubview_10positioned10relativeToySo6NSViewC_So20NSWindowOrderingModeVAHSgtFTo + 92
+	16  SwiftUICore                         0x0000000233e73914 _AppKitAddSubview + 424
+	17  SwiftUICore                         0x0000000234565400 $s7SwiftUI11DisplayListV11ViewUpdaterC010updateItemE033_B86250B2E056EB47628ECF46032DFA4CLL9container4from10localStateyAE9ContainerAGLLVz_AC0H0VAE5ModelO0R0VztF + 232
+	18  SwiftUICore                         0x00000002345649a4 $s7SwiftUI11DisplayListV11ViewUpdaterC015updateInheritedE033_B86250B2E056EB47628ECF46032DFA4CLL9container4from11parentStateyAE9ContainerAGLLVz_AC4ItemVSPyAE5ModelO0R0VGtF + 2668
+	19  SwiftUICore                         0x000000023455c6c8 $s7SwiftUI11DisplayListV11ViewUpdaterC6render04rootE04from4time7version10maxVersion11environmentAA4TimeVyXl_AcnC0M0VApcAE0E8RendererC11EnvironmentVtF + 2244
+	20  SwiftUICore                         0x0000000234487448 $s7SwiftUI9ViewGraphC17renderDisplayList_14asynchronously4time8nextTime15targetTimestamp7version10maxVersionAA0K0VAA0fG0V_SbA3LSgAN0P0VAQtF0E12OnMainThreadL_ALyFALyXEfU_ + 256
+	21  SwiftUICore                         0x00000002344869e8 $s7SwiftUI23ViewGraphRenderDelegatePAAE014withMainThreadE08wasAsync_AA4TimeVSb_AGyXEtF + 28
+	22  SwiftUICore                         0x000000023448715c $s7SwiftUI9ViewGraphC17renderDisplayList_14asynchronously4time8nextTime15targetTimestamp7version10maxVersionAA0K0VAA0fG0V_SbA3LSgAN0P0VAQtF + 1768
+	23  SwiftUICore                         0x00000002344877cc $s7SwiftUI9ViewGraphCAA0cD10RenderHostA2aDP17renderDisplayList_14asynchronously4time8nextTime15targetTimestamp7version10maxVersionAA0M0VAA0hI0V_SbA3NSgAP0R0VAStFTW + 24
+	24  SwiftUICore                         0x0000000234b6346c $s7SwiftUI25ViewGraphRootValueUpdaterPAAE6render8interval17updateDisplayList15targetTimestampySd_SbAA4TimeVSgtFyyXEfU_ + 2648
+	25  SwiftUICore                         0x0000000234b60f7c $s7SwiftUI25ViewGraphRootValueUpdaterPAAE6render8interval17updateDisplayList15targetTimestampySd_SbAA4TimeVSgtF + 584
+	26  SwiftUI                             0x00000001bc77f938 $s7SwiftUI13NSHostingViewC6layoutyyFySo18NSAnimationContextCXEfU_ + 484
+	27  SwiftUI                             0x00000001bc79ab98 $sSo14NSItemProviderC7SwiftUIE32loadFileSystemItemAsynchronously33_0BC2519238CC4854E8BA774CC855AC9ALL3for_17completionHandleryxm_22UniformTypeIdentifiers6UTTypeVyAC13LoadingResultAELLCyxGctAC17PasteboardUtilityV0fgH0RzlFyAMcfU_AO0F0C_Tg5TA + 28
+	28  SwiftUI                             0x00000001bc779c50 $sSo13RBDisplayListCIegg_ABIyBy_TR + 44
+	29  AppKit                              0x000000018b6aef58 +[NSAnimationContext runAnimationGroup:] + 56
+	30  SwiftUI                             0x00000001bc77f6b0 $s7SwiftUI13NSHostingViewC6layoutyyF + 480
+	31  SwiftUI                             0x00000001bc77fc2c $s7SwiftUI13NSHostingViewC6layoutyyFTo + 28
+	32  AppKit                              0x000000018bbc3498 __getCGDisplayListGetHashSymbolLoc_block_invoke + 1516
+	33  AppKit                              0x000000018bbc34c0 __getCGDisplayListGetHashSymbolLoc_block_invoke + 1556
+	34  AppKit                              0x000000018bb8872c block_destroy_helper + 9428
+	35  AppKit                              0x000000018bb88d78 block_destroy_helper + 11040
+	36  AppKit                              0x000000018c3cbcd8 ___NSViewLayout_block_invoke + 624
+	37  AppKit                              0x000000018b6d92d8 NSPerformVisuallyAtomicChange + 128
+	38  AppKit                              0x000000018b6ddc10 _NSViewLayout + 96
+	39  AppKit                              0x000000018c3c19cc __36-[NSView _layoutSubtreeWithOldSize:]_block_invoke + 372
+	40  AppKit                              0x000000018b6d92d8 NSPerformVisuallyAtomicChange + 128
+	41  AppKit                              0x000000018b6ddba4 -[NSView _layoutSubtreeWithOldSize:] + 100
+	42  AppKit                              0x000000018c3c1b04 __36-[NSView _layoutSubtreeWithOldSize:]_block_invoke + 684
+	43  AppKit                              0x000000018b6d92d8 NSPerformVisuallyAtomicChange + 128
+	44  AppKit                              0x000000018b6ddba4 -[NSView _layoutSubtreeWithOldSize:] + 100
+	45  AppKit                              0x000000018c3c259c __56-[NSView _layoutSubtreeIfNeededAndAllowTemporaryEngine:]_block_invoke + 908
+	46  AppKit                              0x000000018b6d92d8 NSPerformVisuallyAtomicChange + 128
+	47  AppKit                              0x000000018b6dd780 -[NSView _layoutSubtreeIfNeededAndAllowTemporaryEngine:] + 100
+	48  AppKit                              0x000000018b6d92d8 NSPerformVisuallyAtomicChange + 128
+	49  AppKit                              0x000000018b6dd710 -[NSView layoutSubtreeIfNeeded] + 96
+	50  AppKit                              0x000000018c6a0560 -[NSWindow(NSConstraintBasedLayoutInternal) _layoutViewTree] + 120
+	51  AppKit                              0x000000018b6db3a8 -[NSWindow _oldPlaceWindow:fromServer:] + 620
+	52  AppKit                              0x000000018b6da868 -[NSWindow _setFrameCommon:display:fromServer:] + 1876
+	53  AppKit                              0x000000018b779bec -[NSWindow _setFrameFromString:overrideTopLeft:preferActiveDisplay:constrainFullFrame:force:] + 1068
+	54  AppKit                              0x000000018b7f8a44 -[NSWindow _setFrameAutosaveName:changeFrame:] + 388
+	55  SwiftUI                             0x00000001bc8c90e0 $s7SwiftUI22AppKitWindowControllerC012sizeAndPlaceE033_72F61A03E62F0A97E0761B990CF02152LLyyF + 4032
+	56  SwiftUI                             0x00000001bc8c7fdc $s7SwiftUI22AppKitWindowControllerC13windowDidLoadyyF + 352
+	57  SwiftUI                             0x00000001bc8c9704 $s7SwiftUI22AppKitWindowControllerC13windowDidLoadyyFTo + 28
+	58  AppKit                              0x000000018b7fa164 -[NSWindowController _windowDidLoad] + 620
+	59  AppKit                              0x000000018b7f6348 -[NSWindowController window] + 100
+	60  SwiftUI                             0x00000001bc8b306c $s7SwiftUI20AppWindowsControllerC14makeMainWindow9namespace4info20presentingSceneValueSo8NSWindowCAA0L4ListV9NamespaceO_AC0H4InfoVs11AnyHashableVSgtF + 400
+	61  SwiftUI                             0x00000001bc8b1254 $s7SwiftUI20AppWindowsControllerC011showInitialD0yyFyyXEfU_ + 1816
+	62  SwiftUI                             0x00000001bd0047a4 $s7SwiftUI20AppWindowsControllerC011showInitialD0yyFyyXEfU_TA + 20
+	63  SwiftUICore                         0x0000000234379108 $s7SwiftUI6UpdateO6ensureyxxyKXEKlFZxyKXEfU_ + 56
+	64  SwiftUICore                         0x00000002343779f0 $s7SwiftUI6UpdateO6ensureyxxyKXEKlFZ + 100
+	65  SwiftUI                             0x00000001bd004618 $s7SwiftUI11AppDelegateC27applicationOpenUntitledFileySbSo13NSApplicationCFTf4dn_n + 164
+	66  SwiftUI                             0x00000001bd000ba4 $s7SwiftUI11AppDelegateC27applicationOpenUntitledFileySbSo13NSApplicationCFTo + 52
+	67  AppKit                              0x000000018b806bcc -[NSApplication _doOpenUntitled] + 324
+	68  AppKit                              0x000000018b7b5aa8 __58-[NSApplication(NSAppleEventHandling) _handleAEOpenEvent:]_block_invoke + 248
+	69  AppKit                              0x000000018be7e82c __102-[NSApplication _reopenWindowsAsNecessaryIncludingRestorableState:withFullFidelity:completionHandler:]_block_invoke + 96
+	70  AppKit                              0x000000018b7b5518 __97-[NSDocumentController(NSInternal) _autoreopenDocumentsIgnoringExpendable:withCompletionHandler:]_block_invoke_3 + 176
+	71  AppKit                              0x000000018b7b4d58 -[NSDocumentController(NSInternal) _autoreopenDocumentsIgnoringExpendable:withCompletionHandler:] + 656
+	72  AppKit                              0x000000018be7e778 -[NSApplication _reopenWindowsAsNecessaryIncludingRestorableState:withFullFidelity:completionHandler:] + 508
+	73  AppKit                              0x000000018b69e9bc -[NSApplication(NSAppleEventHandling) _handleAEOpenEvent:] + 480
+	74  AppKit                              0x000000018b69e5d8 -[NSApplication(NSAppleEventHandling) _handleCoreEvent:withReplyEvent:] + 488
+	75  Foundation                          0x0000000188a8bfbc -[NSAppleEventManager dispatchRawAppleEvent:withRawReply:handlerRefCon:] + 316
+	76  Foundation                          0x0000000188a8bdb4 _NSAppleEventManagerGenericHandler + 80
+	77  AE                                  0x000000018f49bf34 _AppleEventsCheckInAppWithBlock + 13900
+	78  AE                                  0x000000018f49b88c _AppleEventsCheckInAppWithBlock + 12196
+	79  AE                                  0x000000018f494fb8 aeProcessAppleEvent + 484
+	80  HIToolbox                           0x0000000193fa8344 AEProcessAppleEvent + 68
+	81  AppKit                              0x000000018b698348 _DPSNextEvent + 1284
+	82  AppKit                              0x000000018c22d8b0 -[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:] + 688
+	83  AppKit                              0x000000018c22d5bc -[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:] + 72
+	84  AppKit                              0x000000018b68b13c -[NSApplication run] + 368
+	85  AppKit                              0x000000018b6637b0 NSApplicationMain + 880
+	86  SwiftUI                             0x00000001bc01547c $s7SwiftUI6runAppys5NeverOSo21NSApplicationDelegate_So11NSResponderCXcFTf4e_nAA07TestingdG0C_Tg5Tm + 140
+	87  SwiftUI                             0x00000001bc3cb4a4 $s7SwiftUI6runAppys5NeverOxAA0D0RzlF + 104
+	88  SwiftUI                             0x00000001bc697344 $s7SwiftUI3AppPAAE4mainyyFZ + 224
+	89  c11.debug.dylib                     0x0000000106d0b0d8 $s3c117cmuxAppV5$mainyyFZ + 40
+	90  c11.debug.dylib                     0x0000000106dd3d2c __debug_main_executable_dylib_entry_point + 12
+	91  dyld                                0x0000000186defe00 start + 6992
+)
+2026-10-02 16:18:37.035068-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.039366-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.197388-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.198127-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.198289-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.212955-0400 c11[48220:124879745] [io_exec] io_exec: found Ghostty resources dir: /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty
+2026-10-02 16:18:37.213047-0400 c11[48220:124879745] [shell_integration] shell_integration: unable to open /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty/shell-integration/zsh: error.FileNotFound
+2026-10-02 16:18:37.213053-0400 c11[48220:124879745] [io_exec] io_exec: shell could not be detected, no automatic shell integration will be injected
+2026-10-02 16:18:37.213515-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.219137-0400 c11[48220:124880762] [io_exec] io_exec: started subcommand path=/usr/bin/login pid=48411
+2026-10-02 16:18:37.222741-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.222828-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.222844-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.222861-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.222878-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.223003-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.223017-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.223031-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.223516-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.223538-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226412-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.226557-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226578-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226591-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226602-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226613-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226631-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226643-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226863-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226879-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.226891-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227072-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227084-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227094-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227104-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227114-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227131-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227142-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227269-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227282-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227293-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227676-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227689-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227700-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227714-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227727-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227742-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227753-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227764-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227774-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227784-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.227946-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228090-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228105-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228118-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228128-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228147-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228158-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228399-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228412-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.228428-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229644-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229664-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229680-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229695-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229709-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229778-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229793-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229812-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229825-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.229915-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230369-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230382-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230393-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230403-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230415-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230454-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230469-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230483-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230492-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230502-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230806-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230826-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230838-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230952-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230965-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230980-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.230991-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231001-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231011-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231021-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231298-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231316-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231327-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231337-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231349-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231363-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231416-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231428-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231439-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.231452-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232493-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232510-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232523-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232535-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232546-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232609-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232625-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232739-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232753-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.232872-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233296-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233313-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233324-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233335-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233346-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233363-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233374-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233384-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233396-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233552-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233804-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233816-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233826-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233839-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233849-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233985-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.233995-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234005-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234015-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234025-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234236-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234251-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234262-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234272-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234282-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234392-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234404-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234414-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234424-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234531-0400 c11[48220:124879745] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+2026-10-02 16:18:37.234794-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.234896-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.236612-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.238538-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.239938-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.240908-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.368865-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.369597-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.370931-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.378369-0400 c11[48220:124879745] [io_exec] io_exec: found Ghostty resources dir: /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty
+2026-10-02 16:18:37.378456-0400 c11[48220:124879745] [shell_integration] shell_integration: unable to open /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty/shell-integration/zsh: error.FileNotFound
+2026-10-02 16:18:37.378464-0400 c11[48220:124879745] [io_exec] io_exec: shell could not be detected, no automatic shell integration will be injected
+2026-10-02 16:18:37.378810-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.379209-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.384293-0400 c11[48220:124880912] [io_exec] io_exec: started subcommand path=/usr/bin/login pid=48461
+2026-10-02 16:18:37.386969-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.389939-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.391771-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.396882-0400 c11[48220:124879745] [io_exec] io_exec: found Ghostty resources dir: /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty
+2026-10-02 16:18:37.396974-0400 c11[48220:124879745] [shell_integration] shell_integration: unable to open /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty/shell-integration/zsh: error.FileNotFound
+2026-10-02 16:18:37.396983-0400 c11[48220:124879745] [io_exec] io_exec: shell could not be detected, no automatic shell integration will be injected
+2026-10-02 16:18:37.397205-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.397518-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.401910-0400 c11[48220:124880927] [io_exec] io_exec: started subcommand path=/usr/bin/login pid=48464
+2026-10-02 16:18:37.405234-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.407853-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.409600-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.412956-0400 c11[48220:124879745] [io_exec] io_exec: found Ghostty resources dir: /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty
+2026-10-02 16:18:37.413021-0400 c11[48220:124879745] [shell_integration] shell_integration: unable to open /Users/atinwoodard/c11-builds/c11-261/derived-test/Build/Products/Debug/c11 DEV.app/Contents/Resources/ghostty/shell-integration/zsh: error.FileNotFound
+2026-10-02 16:18:37.413028-0400 c11[48220:124879745] [io_exec] io_exec: shell could not be detected, no automatic shell integration will be injected
+2026-10-02 16:18:37.413211-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.413451-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.417579-0400 c11[48220:124880945] [io_exec] io_exec: started subcommand path=/usr/bin/login pid=48467
+2026-10-02 16:18:37.421153-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+2026-10-02 16:18:37.423565-0400 c11[48220:124879745] [Invalid Configuration] NSHostingView is being laid out reentrantly while rendering its SwiftUI content. This is not supported and the current layout pass will be skipped.
+[Sentry] [fatal] [1790972317.552058] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:37.552267-0400 c11[48220:124879745] notification.auth refresh status=notDetermined mapped=Not Requested
+[Sentry] [fatal] [1790972317.5535522] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972317.580163] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:37.582295-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.582433-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.582553-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.582684-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.612355-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.612515-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.612647-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.612781-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.615051-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.615190-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.615314-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.615456-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.632844-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.632989-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.633119-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.633261-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.635950-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.636093-0400 c11[48220:124880926] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.636209-0400 c11[48220:124880911] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.636321-0400 c11[48220:124880944] [generic_renderer] generic_renderer: updating display link display id=9
+[Sentry] [fatal] [1790972317.6924791] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:37.692528-0400 c11[48220:124879745] notification.auth app became active deferred=false
+2026-10-02 16:18:37.725200-0400 c11[48220:124880406] [Common] Unable to obtain a task name port right for pid 172: (os/kern) failure (0x5)
+2026-10-02 16:18:37.768077-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:37.772183-0400 c11[48220:124879745] notification.auth refresh status=notDetermined mapped=Not Requested
+[Sentry] [fatal] [1790972317.77234] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.073526-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+Test Suite 'Selected tests' started at 2026-10-02 16:18:38.098.
+Test Suite 'c11Tests.xctest' started at 2026-10-02 16:18:38.099.
+Test Suite 'SidebarBranchOrderingTests' started at 2026-10-02 16:18:38.099.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniqueBranchesDedupesByNameAndMergesDirtyState]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniqueBranchesDedupesByNameAndMergesDirtyState]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniqueBranchesUsesFallbackWhenNoPanelBranchesExist]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniqueBranchesUsesFallbackWhenNoPanelBranchesExist]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsFollowsTabOrderAcrossSplitsAndTabs]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsFollowsTabOrderAcrossSplitsAndTabs]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsPrefersEntryWithChecksWhenStatusesMatch]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsPrefersEntryWithChecksWhenStatusesMatch]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsTreatsSameNumberAndLabelDifferentUrlsAsDistinct]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsTreatsSameNumberAndLabelDifferentUrlsAsDistinct]' passed (0.002 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsTreatsSameNumberDifferentLabelsAsDistinct]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsTreatsSameNumberDifferentLabelsAsDistinct]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsUsesFallbackWhenNoTabPullRequestsExist]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testOrderedUniquePullRequestsUsesFallbackWhenNoTabPullRequestsExist]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testSidebarPullRequestsHideBranchMismatches]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testSidebarPullRequestsHideBranchMismatches]' passed (0.004 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testUpdateTabGitBranchClearsFocusedPullRequestWhenBranchChanges]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testUpdateTabGitBranchClearsFocusedPullRequestWhenBranchChanges]' passed (0.026 seconds).
+Test Case '-[c11Tests.SidebarBranchOrderingTests testUpdateTabPullRequestPreservesExistingChecksWhenUpdateOmitsThem]' started.
+Test Case '-[c11Tests.SidebarBranchOrderingTests testUpdateTabPullRequestPreservesExistingChecksWhenUpdateOmitsThem]' passed (0.003 seconds).
+Test Suite 'SidebarBranchOrderingTests' passed at 2026-10-02 16:18:38.141.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.039 (0.042) seconds
+Test Suite 'SidebarDragAutoScrollPlannerTests' started at 2026-10-02 16:18:38.141.
+Test Case '-[c11Tests.SidebarDragAutoScrollPlannerTests testAutoScrollPlanSpeedsUpCloserToEdge]' started.
+Test Case '-[c11Tests.SidebarDragAutoScrollPlannerTests testAutoScrollPlanSpeedsUpCloserToEdge]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarDragAutoScrollPlannerTests testAutoScrollPlanStillTriggersWhenPointerIsPastEdge]' started.
+Test Case '-[c11Tests.SidebarDragAutoScrollPlannerTests testAutoScrollPlanStillTriggersWhenPointerIsPastEdge]' passed (0.001 seconds).
+Test Case '-[c11Tests.SidebarDragAutoScrollPlannerTests testAutoScrollPlanTriggersNearTopAndBottomOnly]' started.
+Test Case '-[c11Tests.SidebarDragAutoScrollPlannerTests testAutoScrollPlanTriggersNearTopAndBottomOnly]' passed (0.000 seconds).
+Test Suite 'SidebarDragAutoScrollPlannerTests' passed at 2026-10-02 16:18:38.144.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Suite 'WorkspaceManagerSessionSnapshotTests' started at 2026-10-02 16:18:38.145.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testAutosaveFingerprintChangesOnMetadataValueEdit]' started.
+[Sentry] [fatal] [1790972318.145369] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.1493201] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testAutosaveFingerprintChangesOnMetadataValueEdit]' passed (0.005 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testBatchReorderPublishesOnceAndDryRunOrInvalidRequestsPublishNothing]' started.
+[Sentry] [fatal] [1790972318.150755] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.153953] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.1542659] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.157202] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testBatchReorderPublishesOnceAndDryRunOrInvalidRequestsPublishNothing]' passed (0.011 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testCollapsedGroupProductionAdapterExcludesSuppressedRoutineUnreadButRetainsFlags]' started.
+[Sentry] [fatal] [1790972318.1624599] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.165546] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.165897] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.168703] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testCollapsedGroupProductionAdapterExcludesSuppressedRoutineUnreadButRetainsFlags]' passed (0.014 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testEmptyMetadataIsOmittedFromSnapshot]' started.
+[Sentry] [fatal] [1790972318.176723] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.179762] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testEmptyMetadataIsOmittedFromSnapshot]' passed (0.004 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testEveryFolderPropertyAndMembershipChangeTriggersAutosaveFingerprint]' started.
+[Sentry] [fatal] [1790972318.18135] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.184372] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testEveryFolderPropertyAndMembershipChangeTriggersAutosaveFingerprint]' passed (0.005 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupAndMemberPinsAreIndependentAndDetachClearsMembership]' started.
+[Sentry] [fatal] [1790972318.185999] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.188515] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.188822] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.191436] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.191516] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.19409] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupAndMemberPinsAreIndependentAndDetachClearsMembership]' passed (0.010 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupFocusRetainsSelectedMemberAndEmptyGroupReturnsError]' started.
+[Sentry] [fatal] [1790972318.1958718] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.198587] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.198875] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.201952] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.202273] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupFocusRetainsSelectedMemberAndEmptyGroupReturnsError]' passed (0.007 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupSnapshotMigrationRetainsSelectionAndClearsOrphans]' started.
+[Sentry] [fatal] [1790972318.203155] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.216864] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.217226] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.2202349] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.221091] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.223789] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.226989-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=330C6240-36F0-461F-8605-A2393B718888 remainingPanels=1 remainingPanes=1
+2026-10-02 16:18:38.231838-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=D3EEBC05-EB43-4F0D-8EC1-8B2D1AD8FCD7 remainingPanels=1 remainingPanes=1
+2026-10-02 16:18:38.233708-0400 c11[48220:124879745] c11 session restore: cleared 1 orphan workspace group memberships
+[Sentry] [fatal] [1790972318.2337751] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.239070-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=A6CA8E14-F09F-4942-9B1C-48B224605F3C remainingPanels=1 remainingPanes=1
+2026-10-02 16:18:38.244942-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=DC0E5313-C54D-43AF-96F2-EE224908B1EB remainingPanels=1 remainingPanes=1
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupSnapshotMigrationRetainsSelectionAndClearsOrphans]' passed (0.047 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupValidationAndDeletionNeverCloseOrPartiallyMoveWorkspaces]' started.
+[Sentry] [fatal] [1790972318.2502298] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.2536101] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.2540178] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.257592] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testGroupValidationAndDeletionNeverCloseOrPartiallyMoveWorkspaces]' passed (0.024 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testRestoreSessionSnapshotWithNoWorkspacesKeepsSingleFallbackWorkspace]' started.
+[Sentry] [fatal] [1790972318.274235] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.285458] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.298336] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testRestoreSessionSnapshotWithNoWorkspacesKeepsSingleFallbackWorkspace]' passed (0.026 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSelectedSubsetResumePreservesWindowGroupsAndKeptMembership]' started.
+[Sentry] [fatal] [1790972318.300482] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.3035278] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.303841] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.306715] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.306936] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.310647] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.31399] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.317467-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=6603F0F4-B49E-4770-9BB0-8FD7BC36E899 remainingPanels=1 remainingPanes=1
+2026-10-02 16:18:38.336070-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=E864F813-7234-4B6F-83A8-F9CB1E6CC299 remainingPanels=1 remainingPanes=1
+[Sentry] [fatal] [1790972318.338688] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.342373-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=CB8F912C-B93C-47E1-AFCB-3F8DE3A9E732 remainingPanels=1 remainingPanes=1
+[Sentry] [fatal] [1790972318.344774] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSelectedSubsetResumePreservesWindowGroupsAndKeptMembership]' passed (0.047 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSessionSnapshotExcludesRemoteWorkspacesFromRestore]' started.
+[Sentry] [fatal] [1790972318.347413] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.350381] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.350686] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.364892] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSessionSnapshotExcludesRemoteWorkspacesFromRestore]' passed (0.166 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSessionSnapshotRoundtripsWorkspaceMetadata]' started.
+[Sentry] [fatal] [1790972318.51387] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.5183082] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.518917] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.521807] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.524811-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=8CF4009B-943D-4E13-99BF-ED9193BA36A3 remainingPanels=1 remainingPanes=1
+[Sentry] [fatal] [1790972318.526988] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSessionSnapshotRoundtripsWorkspaceMetadata]' passed (0.015 seconds).
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSessionSnapshotSerializesWorkspacesAndRestoreRebuildsSelection]' started.
+[Sentry] [fatal] [1790972318.529292] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.5327291] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.533235] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.536265] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.537009] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+[Sentry] [fatal] [1790972318.542543] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+2026-10-02 16:18:38.546377-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=773B9C6F-839B-41B1-A107-BA71DEDD5F32 remainingPanels=1 remainingPanes=1
+2026-10-02 16:18:38.551767-0400 c11[48220:124879745] [Workspace] didCloseTab panelId=E4DB461A-9FFE-4844-AA56-D8C2003194FD remainingPanels=1 remainingPanes=1
+[Sentry] [fatal] [1790972318.5540872] [SentrySDKInternal:445] The SDK is disabled, so addBreadcrumb doesn't work. Please ensure to start the SDK before adding breadcrumbs.
+Test Case '-[c11Tests.WorkspaceManagerSessionSnapshotTests testSessionSnapshotSerializesWorkspacesAndRestoreRebuildsSelection]' passed (0.027 seconds).
+Test Suite 'WorkspaceManagerSessionSnapshotTests' passed at 2026-10-02 16:18:38.556.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.407 (0.411) seconds
+Test Suite 'c11Tests.xctest' passed at 2026-10-02 16:18:38.556.
+	 Executed 27 tests, with 0 failures (0 unexpected) in 0.449 (0.457) seconds
+Test Suite 'Selected tests' passed at 2026-10-02 16:18:38.556.
+	 Executed 27 tests, with 0 failures (0 unexpected) in 0.449 (0.458) seconds
+2026-10-02 16:18:38.586832-0400 c11[48220:124880761] [generic_renderer] generic_renderer: updating display link display id=9
+2026-10-02 16:18:38.597458-0400 c11[48220:124880721] [Utility] AFIsDeviceGreymatterEligible Missing entitlements for os_eligibility lookup
+Test Suite 'Selected tests' started at 2026-10-02 16:18:39.866.
+Test Suite 'c11LogicTests.xctest' started at 2026-10-02 16:18:39.866.
+Test Suite 'WorkspaceGroupSidebarProjectionTests' started at 2026-10-02 16:18:39.866.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCollapsedSummaryIncludesEveryMemberAndNotificationDemandOnce]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCollapsedSummaryIncludesEveryMemberAndNotificationDemandOnce]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCollapseHidesOnlyMembersAndRetainsActiveHeaderAndCanonicalInput]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCollapseHidesOnlyMembersAndRetainsActiveHeaderAndCanonicalInput]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorCapturesPostPublishStateOnceAndDeduplicatesUnchangedAttention]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorCapturesPostPublishStateOnceAndDeduplicatesUnchangedAttention]' passed (0.003 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorDetachCancelsSubscriptionsAndQueuedWorkCannotPublishIntoNewWindow]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorDetachCancelsSubscriptionsAndQueuedWorkCannotPublishIntoNewWindow]' passed (0.002 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorMembershipTransferUpdatesBothHeadersAndSameUUIDReplacementRebinds]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorMembershipTransferUpdatesBothHeadersAndSameUUIDReplacementRebinds]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorNotificationInvalidationReadsUpdatedIndexesAndCoalescesWithMemberChange]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorNotificationInvalidationReadsUpdatedIndexesAndCoalescesWithMemberChange]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorRebindsStructureAndReusesAttentionForReorderAndSelection]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorRebindsStructureAndReusesAttentionForReorderAndSelection]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorWindowReplacementWithEmptySourceDropsOldRows]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testCoordinatorWindowReplacementWithEmptySourceDropsOldRows]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testDeletedOrUnknownGroupLeavesMemberReachableUngrouped]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testDeletedOrUnknownGroupLeavesMemberReachableUngrouped]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testDisplayedMoveNeighborsSkipInterleavedGroupsAndRespectMemberPins]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testDisplayedMoveNeighborsSkipInterleavedGroupsAndRespectMemberPins]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testEmptyFoldersAndNamespacedIdentitiesSurviveProjection]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testEmptyFoldersAndNamespacedIdentitiesSurviveProjection]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testFlagsIncludeSuppressedAndNonAgentTabsButWaitingHasNoUnreadFallback]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testFlagsIncludeSuppressedAndNonAgentTabsButWaitingHasNoUnreadFallback]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testMembershipTransferSubtractsOldHeaderAndAddsNewHeaderWithoutChangingRowIdentity]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testMembershipTransferSubtractsOldHeaderAndAddsNewHeaderWithoutChangingRowIdentity]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testRootSegmentsUseGroupPinAndCanonicalMemberIndexes]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testRootSegmentsUseGroupPinAndCanonicalMemberIndexes]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testSixtyCollapsedMembersStayObservableWithoutCreatingVisibleRows]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testSixtyCollapsedMembersStayObservableWithoutCreatingVisibleRows]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testStableSelectionAnchorAfterMenuReorderExcludesHiddenMembers]' started.
+Test Case '-[c11LogicTests.WorkspaceGroupSidebarProjectionTests testStableSelectionAnchorAfterMenuReorderExcludesHiddenMembers]' passed (0.001 seconds).
+Test Suite 'WorkspaceGroupSidebarProjectionTests' passed at 2026-10-02 16:18:39.890.
+	 Executed 16 tests, with 0 failures (0 unexpected) in 0.016 (0.023) seconds
+Test Suite 'c11LogicTests.xctest' passed at 2026-10-02 16:18:39.890.
+	 Executed 16 tests, with 0 failures (0 unexpected) in 0.016 (0.024) seconds
+Test Suite 'Selected tests' passed at 2026-10-02 16:18:39.893.
+	 Executed 16 tests, with 0 failures (0 unexpected) in 0.016 (0.027) seconds
+2026-10-02 16:18:40.201 xcodebuild[44767:124868189] [MT] IDETestOperationsObserverDebug: 7.657 elapsed -- Testing started completed.
+2026-10-02 16:18:40.201 xcodebuild[44767:124868189] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-02 16:18:40.201 xcodebuild[44767:124868189] [MT] IDETestOperationsObserverDebug: 7.657 sec, +7.657 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/atinwoodard/c11-builds/c11-261/derived-test/Logs/Test/Test-c11-unit-2026.10.02_16-18-12--0400.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

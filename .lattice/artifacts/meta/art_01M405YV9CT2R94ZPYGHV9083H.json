@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T06:06:56Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M405YV9CT2R94ZPYGHV9083H",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M405YV9CT2R94ZPYGHV9083H.md",
+    "size_bytes": 1701
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-291 validation: reopened two-key refresh (batch fast rule)\n\nMerged: PR #578, squash 9c9cf4ba444c05ba9d82a85ea9bcb3323487b920 (the sign-off build base), landing head ce30ead111732016f9b6e051e9662b1",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

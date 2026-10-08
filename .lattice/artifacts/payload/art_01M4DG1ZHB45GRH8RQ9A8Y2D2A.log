@@ -1,0 +1,4 @@
+10:10:39.533 markdown.renderer.hidden panel=28B461DA-962A-4022-B0D8-597240CF6758 line=77 offset=157.828125 width=920.0 height=695.0
+10:10:43.741 markdown.renderer.evicted panel=28B461DA-962A-4022-B0D8-597240CF6758 line=77 offset=6118.171875 source=0 width=0.0 height=0.0
+10:10:45.714 markdown.renderer.restored panel=28B461DA-962A-4022-B0D8-597240CF6758 line=270 offset=9.155208333333576 width=920.0 height=695.0
+10:10:45.715 markdown.renderer.ready panel=28B461DA-962A-4022-B0D8-597240CF6758 elapsedMs=1004.145

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:26Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DTH3J00SZMY8CQBY9XWD",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DTH3J00SZMY8CQBY9XWD.png",
+    "size_bytes": 914187
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged build opened welcome.md in the guest default Markdown app, TextEdit.",
+  "tags": [],
+  "title": "Open externally launches TextEdit",
+  "token_usage": null,
+  "type": "file"
+}

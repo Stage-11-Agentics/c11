@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:02:35Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DFDYJ4Q1FW52EZD0DQ58RR",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4DFDYJ4Q1FW52EZD0DQ58RR.json",
+    "size_bytes": 41501
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Origin main physical footprint: 20 markdown panels",
+  "token_usage": null,
+  "type": "file"
+}

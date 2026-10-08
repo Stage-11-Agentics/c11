@@ -1,0 +1,164 @@
+{
+  "result.json": {
+    "result": "PASS",
+    "incumbent_pid": 675,
+    "cancel_preserved_fleet": true,
+    "quit_clicked_at_ns": 1790928618622482000,
+    "owned_pid_exited": true,
+    "owned_windows_absent": true,
+    "socket_removed": true,
+    "pre_quit_session": {
+      "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+        "device": 16777230,
+        "inode": 539146,
+        "mtime_ns": 1790928618117702479,
+        "size": 6964,
+        "sha256": "8965622c3027e0821c11d21dbaf019b94969e60bb195ecc316e7b2db39b07f92"
+      }
+    },
+    "post_quit_session": {
+      "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+        "device": 16777230,
+        "inode": 539183,
+        "mtime_ns": 1790928619276187791,
+        "size": 8567,
+        "sha256": "88ef388df8c5d6a66bb96ecfb6310b144fddb7924364d0733381bd890261f2fb"
+      }
+    },
+    "session_workspace_id": "E3CA186F-99EF-4482-86CD-D636CEDFB334",
+    "scope": "Warn Before Quit enabled, Cancel survival and confirmed Quit save/exit only; no relaunch/update claim"
+  },
+  "cancel-survival.json": {
+    "result": "PASS",
+    "shell": {
+      "phase": "UI_CANCEL",
+      "shell_pid": 1480,
+      "child_pid": 1705,
+      "capture": "[omitted: raw shell capture contained identifying shell prompts; structured synthetic proof_line retained]",
+      "proof_line": "C11_YIELD_d1f467aee22d4a14b03899bb4b839bb5 1480 C11_bbe9a3e7735d4b919284742d1484dca8"
+    },
+    "heartbeat_before": 22,
+    "heartbeat_after": 35,
+    "socket_identity": [
+      16777230,
+      534464
+    ],
+    "incumbent_pid": 675
+  },
+  "dismissed-windows.json": {
+    "displays": [
+      {
+        "id": 1,
+        "x": 0,
+        "y": 0,
+        "width": 1024,
+        "height": 768
+      }
+    ],
+    "windows": []
+  },
+  "head": "c7351e3ff4f8b149cd7528c7287d6d9a60887d86",
+  "fixture": {
+    "app": {
+      "path": "$HOME/c11-sandbox/apps/c11-298-ui2/c11 DEV c11-298-instance.app",
+      "bundle_id": "com.stage11.c11.debug.c11.298.instance",
+      "executable": "$HOME/c11-sandbox/apps/c11-298-ui2/c11 DEV c11-298-instance.app/Contents/MacOS/c11",
+      "build": "131",
+      "sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9"
+    },
+    "copied_app": {
+      "path": "$HOME/c11-298-copy/c11 DEV c11-298-instance.app",
+      "bundle_id": "com.stage11.c11.debug.c11.298.instance",
+      "executable": "$HOME/c11-298-copy/c11 DEV c11-298-instance.app/Contents/MacOS/c11",
+      "build": "131",
+      "sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9"
+    },
+    "incumbent_pid": 675,
+    "socket": "/tmp/c11-sandbox-c11-298-ui2.sock",
+    "window_id": "CD06C827-4B19-4D38-8353-91671478045F",
+    "workspace_id": "E3CA186F-99EF-4482-86CD-D636CEDFB334",
+    "tab_id": "E101D82F-7050-4F21-A0D5-77FAC5C06A00",
+    "second_tab_id": "BFBAA669-A8DC-4850-A645-90852B34EABE",
+    "shell_pid": 1480,
+    "child_pid": 1705,
+    "marker": "C11_bbe9a3e7735d4b919284742d1484dca8",
+    "heartbeat_file": "/Volumes/My Shared Files/out/fixture/heartbeat.txt",
+    "child_seconds": 300,
+    "session_file": "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json",
+    "persistence_paths": [
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty",
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean"
+    ],
+    "settled_files": {
+      "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+        "device": 16777230,
+        "inode": 539115,
+        "mtime_ns": 1790928610353317188,
+        "size": 6806,
+        "sha256": "5f73662af299493dc8397a38d98cc955305441e1d40a43755d483cdb14bee574"
+      },
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty": {
+        "device": 16777230,
+        "inode": 534441,
+        "mtime_ns": 1790928553958178466,
+        "size": 19,
+        "sha256": "0acdf9360c356a4a16207c33d7dfc39932501032172388e4a42d95342787727d"
+      },
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean": null
+    }
+  },
+  "display_geometry": {
+    "displays": [
+      {
+        "id": 1,
+        "x": 0,
+        "y": 0,
+        "width": 1024,
+        "height": 768
+      }
+    ],
+    "windows": [
+      {
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowSharingState": 1,
+        "kCGWindowOwnerPID": 675,
+        "kCGWindowNumber": 52,
+        "kCGWindowOwnerName": "c11 DEV c11-298-instance",
+        "kCGWindowStoreType": 1,
+        "kCGWindowBounds": {
+          "X": 382,
+          "Height": 138,
+          "Y": 301,
+          "Width": 260
+        },
+        "kCGWindowAlpha": 1
+      },
+      {
+        "kCGWindowName": "C11-298 synthetic fleet",
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowSharingState": 1,
+        "kCGWindowOwnerPID": 675,
+        "kCGWindowOwnerName": "c11 DEV c11-298-instance",
+        "kCGWindowNumber": 34,
+        "kCGWindowStoreType": 1,
+        "kCGWindowBounds": {
+          "X": 0,
+          "Height": 680,
+          "Y": 30,
+          "Width": 1024
+        },
+        "kCGWindowAlpha": 1
+      }
+    ]
+  },
+  "_disclosure_sanitization": {
+    "note": "Sanitized copy. Literal $HOME replaces home directory prefixes in keys and values. Identifying raw shell captures omitted; structured fixture proof lines, synthetic graph UUIDs, hashes, numeric observations, results and scope limitations preserved.",
+    "omitted_fields": [
+      "/cancel-survival.json/shell/capture"
+    ]
+  }
+}

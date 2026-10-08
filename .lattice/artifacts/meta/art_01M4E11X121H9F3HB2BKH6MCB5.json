@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:10:35Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E11X121H9F3HB2BKH6MCB5",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E11X121H9F3HB2BKH6MCB5.png",
+    "size_bytes": 878741
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact md-360 build: Shift-Command-O opened the page outline when the Markdown panel was focused.",
+  "tags": [],
+  "title": "Outline shortcut on focused Markdown panel",
+  "token_usage": null,
+  "type": "file"
+}

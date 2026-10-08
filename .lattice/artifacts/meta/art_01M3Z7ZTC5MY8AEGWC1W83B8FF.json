@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:10Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z7ZTC5MY8AEGWC1W83B8FF",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z7ZTC5MY8AEGWC1W83B8FF.md",
+    "size_bytes": 3565
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-286 validation: pre-merge runtime proof mapped to acceptance criteria\n\nMerged head 5e24fb743f4836a04e274ef03d91ceec06dda383 (squash 64c26ccc48, PR #545). Evidence reviewed: owner validation, Astra",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

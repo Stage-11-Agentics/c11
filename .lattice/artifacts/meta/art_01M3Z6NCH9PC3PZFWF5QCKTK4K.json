@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:00:00Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z6NCH9PC3PZFWF5QCKTK4K",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z6NCH9PC3PZFWF5QCKTK4K.json",
+    "size_bytes": 7101
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Actual Atlas retained GUI/dylib/CLI hashes, source/build attestations, unchanged shared calibration, protocol and prepared helper hashes. No metric samples collected.",
+  "tags": [],
+  "title": "Final top-up frozen identity seal018",
+  "token_usage": null,
+  "type": "file"
+}

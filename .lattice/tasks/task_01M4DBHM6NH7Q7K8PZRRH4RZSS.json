@@ -1,0 +1,152 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-md-r1",
+  "branch_links": [
+    {
+      "branch": "md-viewer/C11-358-web-renderer",
+      "linked_at": "2026-10-08T09:00:22Z",
+      "linked_by": "agent:codex-md-r1",
+      "repo": null
+    }
+  ],
+  "comment_count": 14,
+  "complexity": "high",
+  "created_at": "2026-10-08T08:54:42Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "description": "Child of C11-336. Contract: docs/markdown-viewer-design.md (binding; on origin/main 7572ae9390). Visual contract: docs/design-prototypes/markdown-viewer/reader/index.html (round 4); where it disagrees with the doc, the doc wins.\n\nScope: the web side of the renderer, as bundled app resources (proposed home `Resources/markdown-viewer/`), with no Swift beyond adding the folder to the app bundle.\n\n- Vendor, pinned and offline: markdown-it + footnote, task-list, heading-anchor and GitHub-callout (`> [!NOTE]`) plugins; Mermaid; highlight.js; KaTeX (+ fonts); Literata (and any face the themes use). No CDN, no network. Licenses added to THIRD_PARTY_LICENSES.md. Record each version and source URL beside the files.\n- Render pipeline: block-level render with stable block identity so live reload re-renders only changed blocks (diagrams, highlighted code and the selection survive). Scroll anchoring in JS (invariant 1): reload, theme/typeface/size change, source toggle and outline open/close keep the same line in the same place, including when an async Mermaid render lands above the viewport.\n- Content per the doc's Content section: measured column per face (Literata 36em/1.62, SF Pro 35em/1.56, mono 30.5em/1.8), 17.5px \u2192 16.5px at 560px, hyphenation only narrow; tables (stacked records \u22653 cols below the narrow breakpoint, may extend past the column when wide, sticky-first-column scroll as last resort); Mermaid themed, column width, \u226485% pane height, expand \u2192 pan/zoom inside the pane, quiet parse-error message with source, entity references (`&lt;` etc.) converted before parsing (docs/c11-messaging-primitive-design.md must render); code highlighted with copy; footnotes as margin notes wide / popovers narrow, \"back to \u2026\" pill for in-doc links; heading anchors with copy-link; math via KaTeX; frontmatter handled gracefully.\n- Breakpoints use effective width (pane width \u00f7 scale).\n- Theme registry: named token sets (prose, chrome, code highlighting, callouts, Mermaid vars, font families); ships system/light/dark; system follows OS appearance; dark is first-class. Typeface override (theme default / Literata / SF Pro / mono) with tuned metrics.\n- Untrusted content: raw HTML disabled or sanitized (allowlist), never execute script from the document, no remote loads (images included) by default, javascript:/data: URLs neutralized. Links are not followed by the page; they are posted to native.\n- Engine features R3 will drive: outline data (headings tree, scrollspy, task counts), reading progress + minutes left, find (match count, next/prev, highlight) and read-only source view keeping place. R1 builds the engine + bridge calls; R3 builds the controls.\n- Bridge: a single JS API object and a native message channel, documented in `Resources/markdown-viewer/BRIDGE.md` and pushed as the FIRST commit so C11-336 R2 (native panel) can build against it in parallel. Changes to the bridge after that go through the Orchestrator.\n\nProof: a hermetic Playwright (headless) harness that loads the bundle from disk with the repo fixtures and asserts rendering, zero console errors, zero network requests, scroll-anchor stability across a reload with a changed block above the viewport, sanitization (script/onerror/javascript: in a fixture do nothing), at 560/820/1200 px in each theme; screenshots compared side by side with the prototype.",
+  "done_at": "2026-10-08T11:30:17Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M4DD68W9JGHJN8JA2YJ9WB5C",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DD74RY03ABHNZFY79P2KRV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD74V534348GZM32NEXX1H",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD74XF05815VMRQ2C0KAVJ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD74ZXGQG4P6T6BAZ4F8BP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD7529E2ZZDJQEWNNN5492",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD754M46MQ6GAVMT0RDD4S",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD7570C6NSJGDH5AS5DXH8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DD759BR7Q9PXASYZE9G9QV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DDBSAQRJJQ0NHWJ6XAVMZS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DDFY64FY7CVXAJQV6R0R0H",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DEH3AH5THYTNKRSAF6FS4M",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DEXY5CVNP671VXD5T150SQ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DG5AJ59C289TQXFQZX0WZK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DGSQBJS0RRMZ7DWE161GTG",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DJ9J9BDN56XPJ02TXM1DJ3",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DJCPQRVYDP3M3K36AJQAEY",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DK51S5FZVHTW4ZWQBW4HMD",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DK7XE05D4GKPG4M24XMZRA",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DMEGAY372Q8X60K8KAEHNF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DMEGAVRXGWYD9M2D6P3Q2H",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M4DBHM6NH7Q7K8PZRRH4RZSS",
+  "last_event_id": "ev_01M4DN15VDQEWE3FYK2642BA52",
+  "last_status_changed_at": "2026-10-08T11:30:17Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T08:54:48Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "subtask_of"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-358",
+  "status": "done",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer R1: bundled web renderer (markdown-it, Mermaid, KaTeX, highlight.js, themes, scroll anchoring)",
+  "type": "task",
+  "updated_at": "2026-10-08T11:40:28Z",
+  "urgency": null
+}

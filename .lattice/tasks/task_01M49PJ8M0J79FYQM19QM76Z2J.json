@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "low",
+  "created_at": "2026-10-06T22:50:19Z",
+  "created_by": "agent:claude-panel-rename",
+  "custom_fields": {},
+  "description": "Atin 2026-10-06: C11-345 (#609) deleted testPasswordModeRejectsUnauthenticatedCommands as flaky, so socket password mode has no host test today. Bring it back as a deterministic test: find why it flaked (it was on the C11-337 host-suite attribution's flaky list: c11-worktrees/signoff-feedback/panel-rename/evidence/host-suite-attribution.md), replace fixed waits with condition waits and isolate shared socket/settings state, prove it passes in 3 consecutive full c11-unit runs on Atlas, and keep it out of HOST_TEST_QUARANTINE. Security control coverage: unauthenticated commands must be rejected when password mode is on.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M49PJ8M0J79FYQM19QM76Z2J",
+  "last_event_id": "ev_01M49PJH3NMDT70KDCMRBZ0C2Y",
+  "last_status_changed_at": "2026-10-06T22:50:19Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-347",
+  "status": "backlog",
+  "tags": [
+    "tests",
+    "security"
+  ],
+  "title": "Restore a reliable host test for socket password mode (testPasswordModeRejectsUnauthenticatedCommands, deleted as flaky in C11-345)",
+  "type": "task",
+  "updated_at": "2026-10-06T22:50:28Z",
+  "urgency": null
+}

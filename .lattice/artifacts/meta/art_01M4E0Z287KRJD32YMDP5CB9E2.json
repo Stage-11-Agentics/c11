@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:09:02Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E0Z287KRJD32YMDP5CB9E2",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E0Z287KRJD32YMDP5CB9E2.png",
+    "size_bytes": 899635
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged guest screenshot showing outline filter and task rows in overlay mode.",
+  "tags": [],
+  "title": "Narrow reader with overlay outline",
+  "token_usage": null,
+  "type": "file"
+}

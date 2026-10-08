@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T09:32:32Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DDPXPE5ZPAFT6JXJC8TATC",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4DDPXPE5ZPAFT6JXJC8TATC.json",
+    "size_bytes": 3938
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-359 origin-main 20-panel baseline RSS and timing",
+  "token_usage": null,
+  "type": "file"
+}

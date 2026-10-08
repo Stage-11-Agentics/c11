@@ -1,0 +1,3 @@
+# C11-347: Restore a reliable host test for socket password mode (testPasswordModeRejectsUnauthenticatedCommands, deleted as flaky in C11-345)
+
+Atin 2026-10-06: C11-345 (#609) deleted testPasswordModeRejectsUnauthenticatedCommands as flaky, so socket password mode has no host test today. Bring it back as a deterministic test: find why it flaked (it was on the C11-337 host-suite attribution's flaky list: c11-worktrees/signoff-feedback/panel-rename/evidence/host-suite-attribution.md), replace fixed waits with condition waits and isolate shared socket/settings state, prove it passes in 3 consecutive full c11-unit runs on Atlas, and keep it out of HOST_TEST_QUARANTINE. Security control coverage: unauthenticated commands must be rejected when password mode is on.

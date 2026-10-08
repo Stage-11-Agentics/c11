@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T22:28:07Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3ZBPQ8EJC0ABYTWH9WA8JE9",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZBPQ8EJC0ABYTWH9WA8JE9.md",
+    "size_bytes": 2537
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-253 validation: CI is the proof (batch fast rule)\n\nMerged: PR #552 (shared with C11-256), squash 9cd41788261e3a02f32d46e81dd0e5aba18cd96e, landing head 6170a03a737830b8b99c45ec79cad321b181487f. Me",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

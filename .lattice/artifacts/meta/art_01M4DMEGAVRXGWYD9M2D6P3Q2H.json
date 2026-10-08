@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T11:30:17Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "id": "art_01M4DMEGAVRXGWYD9M2D6P3Q2H",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M4DMEGAVRXGWYD9M2D6P3Q2H.md",
+    "size_bytes": 939
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED c37ced9d784b1a3b36ac7f5100af629a2004cad3\n\nPR: #620 https://github.com/Stage-11-Agentics/c11/pull/620\nReviewed head: 8ad5469beff72dc937714906695ae8117a107767\nBase: main. Squash merge verified in",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

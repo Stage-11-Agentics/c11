@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:52:52Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3Z2TFDF6NEEPJJE2H1CYYDK",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": "art_01M3Z2TFDF6NEEPJJE2H1CYYDK.log",
+    "size_bytes": 159
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Loopback cookie oracle: boolean-only requests from isolated canonical Release pass",
+  "token_usage": null,
+  "type": "file"
+}

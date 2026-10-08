@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T22:58:46Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3ZDEV5CKE6DP20KSHMS0AYC",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZDEV5CKE6DP20KSHMS0AYC.md",
+    "size_bytes": 3590
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-249 validation: existing proof mapped to the four defects (batch fast rule)\n\nMerged: PR #559, squash dcbe3b261f2b8c8823cb5d28e05fc459903ebdef, landing head e5a09dfd296777cf5017e4235ed452defcba3263",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

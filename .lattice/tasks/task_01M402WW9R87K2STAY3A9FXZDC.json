@@ -1,0 +1,30 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-10-03T05:13:26Z",
+  "created_by": "agent:orchestrator",
+  "custom_fields": {},
+  "description": "## Why\nC11-268 ships `c11 feed answer` for single-line text only. On a real Codex 0.159.3 prompt, multiline answers paste but do not submit (`pasted_not_submitted`, the text left as an unsent draft) even with a 550 ms settle. Evidence: C11-268 validation ev_01M402VH3XEEGH6TWGH2PS0Z57. For 1.0, multiline is refused before paste.\n\n## Scope\nFind how Codex (and Claude) accept a multiline submission (bracketed paste then Return, a submit key, or a composer-specific sequence), implement it behind the same C11-267 guard, and prove it on real agents: one submission, nothing redirected, a draft still refused.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M402WW9R87K2STAY3A9FXZDC",
+  "last_event_id": "ev_01M402WWAAAHS7BRW1PA5YD6Z4",
+  "last_status_changed_at": "2026-10-03T05:13:26Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-328",
+  "status": "backlog",
+  "tags": [
+    "c11-1.0-followup"
+  ],
+  "title": "Feed answer: submit multiline text to Codex and Claude prompts",
+  "type": "task",
+  "updated_at": "2026-10-03T05:13:26Z",
+  "urgency": null
+}

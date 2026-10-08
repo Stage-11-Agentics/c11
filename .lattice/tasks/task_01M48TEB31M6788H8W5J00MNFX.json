@@ -1,0 +1,30 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-10-06T14:38:51Z",
+  "created_by": "agent:claude-panel-rename",
+  "custom_fields": {},
+  "description": "Found in the C11-337 R1 delta review. 37 of 77 tests_v2 failures die at client.select_workspace with workspace_switch_blocked (the agents-never-switch-workspace policy) on both the rename branch and main, before any assertion runs, so they hide coverage instead of testing it. These include rename-heavy scripts: test_tree_json_layout, test_cli_identify_ref_resolution, test_rename_tab_cli_parity, test_surface_list_custom_titles, test_tmux_compat_matrix, test_panel_id_stability, test_mailbox_parity, test_feed_open, test_send_text_non_focused_tab. Port them to the workspace.current / explicit workspace_id pattern used in the R1 repair (commit a30108cfdc on PR #603). Also: test_vocabulary_aliases drag-*-to-split equality passes when all three spellings fail the same way; assert success.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M48TEB31M6788H8W5J00MNFX",
+  "last_event_id": "ev_01M49F904GQJG6TQM6146PHM25",
+  "last_status_changed_at": "2026-10-06T20:42:56Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-341",
+  "status": "cancelled",
+  "tags": [
+    "tests"
+  ],
+  "title": "tests_v2: port scripts that die at workspace.select (workspace_switch_blocked) to workspace.current / explicit workspace_id",
+  "type": "chore",
+  "updated_at": "2026-10-06T20:42:56Z",
+  "urgency": null
+}

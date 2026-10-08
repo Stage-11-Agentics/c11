@@ -1,0 +1,108 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-hangs",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-296-cold-read",
+      "linked_at": "2026-10-02T05:59:18Z",
+      "linked_by": "agent:astra-hangs",
+      "repo": null
+    }
+  ],
+  "comment_count": 9,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAn agent that reads a terminal nobody has shown yet gets \"Failed to read terminal text\" or \"Terminal surface not found\", even when a send to that same tab would have started it. Backlog item: B087.\n\n## Evidence\norigin/main `0ff8887e5e`.\n\n- `send_text` already calls `requestBackgroundSurfaceStartIfNeeded` and waits off main (`Sources/GhosttyTerminalView.swift:4144`, send path in `SurfaceHandlers` and `TerminalController` near the 2 s wait).\n- `v2SurfaceReadText` in `Sources/SocketHandlers/SurfaceHandlers.swift` reads immediately. It does not start the surface and does not wait. The comment above it says the read matches clear-history and has no `waitForTerminalSurface`.\n- Upstream cmux #14673 (`bcf012219b`).\n- Research: Fable \u00a73 B087 and wave 1. Astra \u00a73. This is the read half of C11-130, C11-169, and C11-235. The stuck bootstrap window (B003) is a different ticket.\n\n## Scope\nIn: `read_text` and `read-screen` use the same start-and-wait helper `send_text` already uses, off the main actor, with the existing timeout. A never-shown terminal that can be started returns its text. A terminal that cannot be started returns the existing not-ready error after the wait, not immediately.\n\nOut:\n- Re-adopting a parked bootstrap window (B003). If the helper returns early because `headlessStartupWindow` is already set, this ticket still times out. That fix is the app ticket.\n- Moving scrollback formatting off main (B086). Land this first. The app ticket rebases onto it.\n- Failing closed on a stale explicit ref (B066). That rides the app ticket. Do not change the fallback in this PR, or the two PRs will collide. If you must touch the fallback line to call the helper, leave the fallback behavior as it is and say so.\n- `read-selection` (C11-282).\n\n## Approach\nCall `requestBackgroundSurfaceStartIfNeeded` and the existing off-main wait from the read handler before the main-actor format. Keep the format where it is. The app ticket moves it. Do not add a second waiter and do not pump the main run loop.\n\n## Acceptance criteria\n1. On a tagged build, `new-surface` a terminal and `read-screen` it before anyone focuses it. The call returns the shell's text, or the shell prompt, within the same budget `send` uses.\n2. `read-screen` on a tab that was just closed still fails. It does not hang past the wait.\n3. A focused terminal's `read-screen` still returns the screen it did before this change.\n\n## Validation\n`tests_v2` against a tagged socket. No computer-use pass required beyond confirming the new tab is not a sliver if you screenshot it. Builds on Atlas after C11-216. No soak. No source-grep test.\n\n## Dependencies\nNone inside this workstream. The app-half ticket depends on this one. Cross-workstream: F1 is C11-216 for the tagged build. The lead links it.\n\n## Risks\nMain thread: the wait stays off main, same as send. Do not wrap the wait in `v2MainSync`. Doctrine: no tenant config. No new strings. Public repo: a start-and-wait, not a hang recipe.\n\nSize: S. Tier: P1. Doctrine check: reuse the send-path helper. No new lifecycle.\n",
+  "done_at": "2026-10-02T07:40:09Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XKCYHGN95SVGK83TDDNPHE",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XKNKKGJRJT2C9VRK3WAA57",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XNAD27ANK3A00644W1PZH8",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XPYQZXRDP4J8RKFC8X62EN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XPZJ6HZ3F8JSY89JP5AZ6C",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XRWSYJSBXDY39GDZ3HGZZB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XRWT0Y170693EEGRB1ZTB6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XRWT3A7K8FXPGD7R7M71AE",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XRWT38DZN1NYDVA7QHKJ6A",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM79TJ0XS72JM2CKC0EM3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM7EKXH7H2KNBTKTA8KGG",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWPWRMDDJ11Q3M9XBJSKJ6",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X6K1X04S08YS80HNASRCMN",
+  "last_event_id": "ev_01M3XWWXC8PKJT2G2G1W2RKDS0",
+  "last_status_changed_at": "2026-10-02T07:40:09Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-296",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Start a cold terminal when an agent reads its screen",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:50:06Z",
+  "urgency": null
+}

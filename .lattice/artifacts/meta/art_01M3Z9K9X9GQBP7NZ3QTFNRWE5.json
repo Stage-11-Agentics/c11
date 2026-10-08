@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:51:17Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z9K9X9GQBP7NZ3QTFNRWE5",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z9K9X9GQBP7NZ3QTFNRWE5.md",
+    "size_bytes": 5400
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-261 validation: existing runtime proof mapped to acceptance criteria (batch fast rule)\n\nMerged: PR #549, squash 75aec1d34519d1f0bead44d5728b99d8e3b426e4, landing head b7d78d4714267c4abdb939428813d",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

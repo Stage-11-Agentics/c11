@@ -1,0 +1,1631 @@
+[2026-10-02T07:06:26.140Z] [com.stage11.c11.sparkle307:646] Ensured Sparkle installation cache at $HOME/Library/Caches/com.stage11.c11.sparkle307/org.sparkle-project.Sparkle/Installation
+[2026-10-02T07:06:26.141Z] [com.stage11.c11.sparkle307:646] update channel: stable
+[2026-10-02T07:06:26.141Z] [com.stage11.c11.sparkle307:646] feed url resolved: http://127.0.0.1:19307/proof/appcast.xml
+[2026-10-02T07:06:26.141Z] [com.stage11.c11.sparkle307:646] updater started (autoChecks=true, interval=3600s, autoDownloads=false)
+[2026-10-02T07:06:26.141Z] [com.stage11.c11.sparkle307:646] starting launch update probe
+[2026-10-02T07:06:28.072Z] [com.stage11.c11.sparkle307:646] update channel: stable
+[2026-10-02T07:06:28.073Z] [com.stage11.c11.sparkle307:646] update channel: stable
+[2026-10-02T07:06:28.360Z] [com.stage11.c11.sparkle307:646] next update check scheduled in 3600s
+[2026-10-02T07:16:28.177Z] [com.stage11.c11.sparkle307:646] checkForUpdates invoked (state=idle)
+[2026-10-02T07:16:28.177Z] [com.stage11.c11.sparkle307:646] checkForUpdatesWhenReady invoked (canCheck=true)
+[2026-10-02T07:16:28.243Z] [com.stage11.c11.sparkle307:646] update channel: stable
+[2026-10-02T07:16:28.243Z] [com.stage11.c11.sparkle307:646] update channel: stable
+[2026-10-02T07:16:28.243Z] [com.stage11.c11.sparkle307:646] show user-initiated update check
+[2026-10-02T07:16:28.244Z] [com.stage11.c11.sparkle307:646] state -> checking
+[2026-10-02T07:16:28.370Z] [com.stage11.c11.sparkle307:646] appcast loaded (items=1, first=0.67.0)
+[2026-10-02T07:16:28.370Z] [com.stage11.c11.sparkle307:646] valid update found: 0.67.0 (http://127.0.0.1:19307/proof/c11-macos.dmg)
+[2026-10-02T07:16:28.370Z] [com.stage11.c11.sparkle307:646] show update found: 0.67.0
+[2026-10-02T07:16:30.266Z] [com.stage11.c11.sparkle307:646] state -> updateAvailable(0.67.0)
+[2026-10-02T07:19:57.668Z] [com.stage11.c11.sparkle307:646] show download initiated
+[2026-10-02T07:19:57.668Z] [com.stage11.c11.sparkle307:646] state -> downloading
+[2026-10-02T07:19:57.735Z] [com.stage11.c11.sparkle307:646] download expected length: 50413131
+[2026-10-02T07:19:57.735Z] [com.stage11.c11.sparkle307:646] state -> downloading(0%)
+[2026-10-02T07:19:57.735Z] [com.stage11.c11.sparkle307:646] download received data: 327680
+[2026-10-02T07:19:57.736Z] [com.stage11.c11.sparkle307:646] state -> downloading(1%)
+[2026-10-02T07:19:57.794Z] [com.stage11.c11.sparkle307:646] download received data: 36966939
+[2026-10-02T07:19:57.794Z] [com.stage11.c11.sparkle307:646] state -> downloading(74%)
+[2026-10-02T07:19:57.805Z] [com.stage11.c11.sparkle307:646] download received data: 788287
+[2026-10-02T07:19:57.805Z] [com.stage11.c11.sparkle307:646] state -> downloading(76%)
+[2026-10-02T07:19:57.827Z] [com.stage11.c11.sparkle307:646] download received data: 12330225
+[2026-10-02T07:19:57.827Z] [com.stage11.c11.sparkle307:646] state -> downloading(100%)
+[2026-10-02T07:19:57.853Z] [com.stage11.c11.sparkle307:646] show extraction started
+[2026-10-02T07:19:57.853Z] [com.stage11.c11.sparkle307:646] state -> extracting(0%)
+[2026-10-02T07:19:58.274Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.10
+[2026-10-02T07:19:58.274Z] [com.stage11.c11.sparkle307:646] state -> extracting(10%)
+[2026-10-02T07:19:58.304Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.10
+[2026-10-02T07:19:58.304Z] [com.stage11.c11.sparkle307:646] state -> extracting(10%)
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.10
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] state -> extracting(10%)
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.10
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] state -> extracting(10%)
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.10
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] state -> extracting(10%)
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.328Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.538Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.539Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.556Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.11
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(11%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.12
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(12%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.13
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(13%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.557Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.575Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.575Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.575Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.575Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.575Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.575Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.594Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.14
+[2026-10-02T07:19:58.594Z] [com.stage11.c11.sparkle307:646] state -> extracting(14%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.15
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(15%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.16
+[2026-10-02T07:19:58.616Z] [com.stage11.c11.sparkle307:646] state -> extracting(16%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.17
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(17%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.18
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(18%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.19
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(19%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.617Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.20
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(20%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.21
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(21%)
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.618Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.22
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(22%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.23
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(23%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.627Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.24
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(24%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.628Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.25
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(25%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.646Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.26
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(26%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.27
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(27%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.28
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(28%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.647Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.29
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] state -> extracting(29%)
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.648Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.30
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(30%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.31
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(31%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.683Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.32
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(32%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.33
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(33%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.34
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(34%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.684Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.35
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(35%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.36
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(36%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.37
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(37%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.685Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.38
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(38%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.39
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(39%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.686Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.699Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.40
+[2026-10-02T07:19:58.699Z] [com.stage11.c11.sparkle307:646] state -> extracting(40%)
+[2026-10-02T07:19:58.699Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.41
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(41%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.42
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(42%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.43
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(43%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.44
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(44%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.700Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.723Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.45
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(45%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.46
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(46%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.47
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(47%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.48
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(48%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.49
+[2026-10-02T07:19:58.724Z] [com.stage11.c11.sparkle307:646] state -> extracting(49%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.50
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(50%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.51
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(51%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.52
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(52%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.740Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.741Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.53
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] state -> extracting(53%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.768Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.54
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(54%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.55
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(55%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.56
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(56%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.57
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(57%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.58
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(58%)
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.769Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.59
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(59%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.60
+[2026-10-02T07:19:58.770Z] [com.stage11.c11.sparkle307:646] state -> extracting(60%)
+[2026-10-02T07:19:58.780Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.780Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.780Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.780Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.780Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.61
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(61%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.62
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(62%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.63
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(63%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.781Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.64
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(64%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.65
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(65%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.804Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.66
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(66%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.67
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(67%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.805Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.68
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(68%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.69
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(69%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.70
+[2026-10-02T07:19:58.806Z] [com.stage11.c11.sparkle307:646] state -> extracting(70%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.71
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(71%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.818Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.72
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(72%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.73
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(73%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.74
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(74%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.819Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.842Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.842Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.842Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.842Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.842Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.842Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.75
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(75%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.76
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(76%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.77
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(77%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.78
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(78%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.79
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(79%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.843Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.80
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(80%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.81
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(81%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.82
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(82%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.844Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.83
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(83%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.869Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.84
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(84%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.85
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(85%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.86
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(86%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.87
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(87%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.88
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(88%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.870Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.89
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(89%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.90
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(90%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.871Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.91
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(91%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.92
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(92%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.93
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(93%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.881Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.882Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.94
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(94%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.95
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(95%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.904Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.96
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(96%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.97
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(97%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.98
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(98%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.99
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(99%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.99
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(99%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.99
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(99%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.99
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(99%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.99
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(99%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 0.99
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(99%)
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] show extraction progress: 1.00
+[2026-10-02T07:19:58.905Z] [com.stage11.c11.sparkle307:646] state -> extracting(100%)
+[2026-10-02T07:20:03.830Z] [com.stage11.c11.sparkle307:646] show ready to install
+[2026-10-02T07:20:04.919Z] [com.stage11.c11.sparkle307:2149] update channel: stable
+[2026-10-02T07:20:04.919Z] [com.stage11.c11.sparkle307:2149] feed url resolved: http://127.0.0.1:19307/proof/appcast.xml
+[2026-10-02T07:20:04.919Z] [com.stage11.c11.sparkle307:2149] updater started (autoChecks=true, interval=3600s, autoDownloads=false)
+[2026-10-02T07:20:04.919Z] [com.stage11.c11.sparkle307:2149] starting launch update probe
+[2026-10-02T07:20:05.602Z] [com.stage11.c11.sparkle307:2149] update channel: stable
+[2026-10-02T07:20:05.602Z] [com.stage11.c11.sparkle307:2149] update channel: stable
+[2026-10-02T07:20:05.717Z] [com.stage11.c11.sparkle307:2149] appcast loaded (items=1, first=0.67.0)
+[2026-10-02T07:20:05.718Z] [com.stage11.c11.sparkle307:2149] no update found (reason=onLatestVersion, userInitiated=false, latest=0.67.0)
+[2026-10-02T07:20:05.810Z] [com.stage11.c11.sparkle307:2149] next update check scheduled in 3600s
+[2026-10-02T07:22:28.353Z] [com.stage11.c11.sparkle307:2149] checkForUpdates invoked (state=idle)
+[2026-10-02T07:22:28.354Z] [com.stage11.c11.sparkle307:2149] checkForUpdatesWhenReady invoked (canCheck=true)
+[2026-10-02T07:22:28.395Z] [com.stage11.c11.sparkle307:2149] update channel: stable
+[2026-10-02T07:22:28.395Z] [com.stage11.c11.sparkle307:2149] update channel: stable
+[2026-10-02T07:22:28.395Z] [com.stage11.c11.sparkle307:2149] show user-initiated update check
+[2026-10-02T07:22:28.396Z] [com.stage11.c11.sparkle307:2149] state -> checking
+[2026-10-02T07:22:28.531Z] [com.stage11.c11.sparkle307:2149] appcast loaded (items=1, first=0.67.0)
+[2026-10-02T07:22:28.531Z] [com.stage11.c11.sparkle307:2149] no update found (reason=onLatestVersion, userInitiated=true, latest=0.67.0)
+[2026-10-02T07:22:28.531Z] [com.stage11.c11.sparkle307:2149] show update not found: SUSparkleErrorDomain(1001) | You’re up to date! | feed=http://127.0.0.1:19307/proof/appcast.xml
+[2026-10-02T07:22:30.405Z] [com.stage11.c11.sparkle307:2149] state -> notFound
+[2026-10-02T07:22:35.510Z] [com.stage11.c11.sparkle307:2149] dismiss update installation
+[2026-10-02T07:22:35.510Z] [com.stage11.c11.sparkle307:2149] state -> idle
+[2026-10-02T07:22:35.618Z] [com.stage11.c11.sparkle307:2149] next update check scheduled in 3600s

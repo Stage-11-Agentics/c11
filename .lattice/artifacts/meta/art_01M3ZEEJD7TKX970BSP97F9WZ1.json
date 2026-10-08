@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEJD7TKX970BSP97F9WZ1",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZEEJD7TKX970BSP97F9WZ1.json",
+    "size_bytes": 2018
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Candidate performance smoke run 1 (27.1/37.3/44.4 ms, typing 420 ms)",
+  "token_usage": null,
+  "type": "file"
+}

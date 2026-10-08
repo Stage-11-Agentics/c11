@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-06T20:42:32Z",
+  "created_by": "agent:cairn-retro",
+  "custom_fields": {},
+  "id": "art_01M49F890Q90MHDWTARSG0RWSZ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M49F890Q90MHDWTARSG0RWSZ.md",
+    "size_bytes": 140
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Astra review PASS r2 at bdea994aac; merged 4785de26f9 (#587); PR files identical in the merged tree; routing tests 13/13 at the merge state.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,10 @@
+Browser data import complete, Browser: Safari
+Source profiles: Default
+Destination profile: c11-288-safari-live
+Scope: History only
+Imported cookies: 0
+Imported history entries: 0
+Domain filter: 127.0.0.1
+
+Warnings:
+- Couldn't read Safari history at History.db: no such column: history_items.title

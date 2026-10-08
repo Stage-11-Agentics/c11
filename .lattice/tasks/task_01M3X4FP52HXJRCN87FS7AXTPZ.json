@@ -1,0 +1,248 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-291b",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-291-locales",
+      "linked_at": "2026-10-02T14:50:20Z",
+      "linked_by": "agent:luna-291",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-291-locale-refresh",
+      "linked_at": "2026-10-02T20:11:48Z",
+      "linked_by": "agent:luna-291",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-291-freeze",
+      "linked_at": "2026-10-03T04:02:51Z",
+      "linked_by": "agent:luna-291",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-291-twokeys",
+      "linked_at": "2026-10-03T05:50:36Z",
+      "linked_by": "agent:luna-291b",
+      "repo": null
+    }
+  ],
+  "comment_count": 31,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\n1.0 adds operator-visible strings across the CLI, the sidebar, and the browser. c11 ships English plus Japanese, Ukrainian, Korean, Simplified Chinese, Traditional Chinese, and Russian. A string that lands in English only crashes or reads as English in the other six. Backlog item: X1.\n\n## Evidence\n- c11: user-facing strings live in `Resources/Localizable.xcstrings`. `CLAUDE.md` (and `Agents.md`) say the English `defaultValue` in `String(localized:)` is the source of truth. `plutil -lint` on that file fails because it treats the JSON as a plist. `jq . Resources/Localizable.xcstrings` is the well-formedness check. Every interpolation token in the English value has to survive in all six translations.\n- c11: this workstream's likely new strings are CLI errors in C1, C2, C3, C5, C7, and B3, plus any crashed-page line from B1. The larger set is outside this workstream. W2 (sidebar groups, ticket C11-260) is called out in report 06 as about six strings per surface. Feed and quick-view copy sit on A2 and A4.\n- Research: Fable's week plan puts the locale pass in week 5, after the strings exist. Astra's week 4 is migration and locale, and optional work that misses the freeze is out of the release. `c11-1.0.html` does not cut localization. The backlog's X1 is the whole release, not one feature.\n\n## Scope\nIn: every `String(localized:)` added or changed by a 1.0 ticket, translated into ja, uk, ko, zh-Hans, zh-Hant, and ru. `jq` succeeds. Interpolation tokens match. A spot check that a tagged build shows a translated string in one non-English locale.\nOut: translating the skill markdown (`c11 guide` is English source). Rewriting strings a feature PR did not add. The marketing site's 19 locales (C11-254). Inventing product copy. Feature PRs write the English `defaultValue`. This ticket fills the six translations after those English strings exist.\n\n## Approach\nWait until the P1 feature PRs have merged their English strings, or take a freeze list from the release branch. Diff `Localizable.xcstrings` against the previous release tag and list keys whose English value is new or changed and whose other locales are missing or still equal to a stale English. Translate those. One pass can be one agent per locale. Do not hand-edit English. After writing, run `jq` and a token check (`%@`, `%lld`, and any other token in the English value). If a feature PR is still open after the freeze, its strings are not in 1.0 unless the release owner pulls that PR in.\n\n## Acceptance criteria\n1. For every xcstrings key whose English value changed since the previous release tag, all six locales have a value, and each token in the English value appears the same number of times in each translation.\n2. `jq . Resources/Localizable.xcstrings > /dev/null` exits 0.\n3. On a tagged build with the language set to one of the six, a new 1.0 string (a groups header from W2, or a CLI error if the CLI is localized) shows the translation, not the English default. Record which key and which language.\n4. The PR lists keys that were left in English on purpose (skill bodies, log lines, socket codes such as `invalid_params`) so a reviewer can see the boundary.\n5. No locale value is empty, and none still contain the translator's notes.\n\n## Validation\n`jq` and the token script are the gate. Criterion 3 is one computer-use or screenshot pass on a tagged build. No soak. This ticket does not change layout. If a translation is longer than the English and clips a control, file that on the feature ticket rather than shortening the translation in place. Note it in the PR.\n\n## Dependencies\nDepends on the tickets that add English strings. Inside this workstream that is C1, C2, C3, C5, B1, and B3 if they add `String(localized:)`. C7 is P2 and is in this pass only if it landed before the freeze. Outside this workstream: W2 (C11-260), A2, A4, and any other 1.0 ticket that adds a localized string. The lead links those. F1 (C11-216) for the tagged build used in criterion 3.\n\n## Risks\nTyping latency: none. Main thread: none. Doctrine: translations are catalog data. No tenant config. Localization: this ticket is the localization. Public repo: the catalog is public. Do not put incident hostnames or account names into a string.\n\nSize: M. Tier: P1. Doctrine check: English is the source. The other six locales follow it, tokens included.",
+  "done_at": "2026-10-03T06:06:56Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3Y2SNASSHA4H2JATBNWKCTN",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YK9V9NKDTH6PQ5W3EWDXZQ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YK9VC7HWV6F9A5F92DKB9X",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YK9VEN3TP9RYY5MPNY30S5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YKMHP2W9ENB0PKWH7PY376",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z3D5GT6X55SG287D86B1ET",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z3Q34RXKQ7FCXEHJ4DXH5G",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z421NKE2SPA2C8Y7VED5Q8",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z50M3EY4NMJYSFCXRJFDS7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z593W4JR22PHMR6FFZ0GEV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z80C3PXRG7Y7KWFA9E3S2H",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZDF2D2Q52497PAFA042ERB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4004F674A7F5EPFKXH1CKYC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M400F4DRRS6FKHCNXKCYNQ2D",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4019W787VSGJSASJKKXZHHP",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M401FSGNRE5SD2X0ZZ5X1V1K",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M401XGJ9BYG98YGEV3CJCSV8",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4021TWKEBWPGPWVQDJXYQ63",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M402JKW9T48R82AJRTKRJGXP",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M402JM10ZC9AS1W500V82KCJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M402JM0T6TZXPTNQ412V09Y0",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M405BWRESXQ1J23GZ4Y1FF6G",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M405YV4QD6AVAXHTR2M2C2E7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M405YV9KR0S0Z61DBRKEK9QY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M405YV9CT2R94ZPYGHV9083H",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FP52HXJRCN87FS7AXTPZ",
+  "last_event_id": "ev_01M405YV9KR0S0Z61DBRKEK9R1",
+  "last_status_changed_at": "2026-10-03T06:06:56Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FMY3B6JS82RYR1NZHCQ4",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FN1AH08NPPRGGTT47V0T",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FN4MAW3RB7T9VGFJGS70",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNB4XWY9HNMGFQEEAHWX",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:43:58Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNR43RVWK5EDEGFBRQYF",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:34Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:34Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3Q72SRQC6X52RE70A9ZFK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:34Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:34Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3WR99P21HZ6G3S4Z485X7",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 6,
+  "schema_version": 1,
+  "short_id": "C11-291",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Translate new 1.0 strings into the six locales",
+  "type": "chore",
+  "updated_at": "2026-10-03T06:06:56Z",
+  "urgency": null
+}

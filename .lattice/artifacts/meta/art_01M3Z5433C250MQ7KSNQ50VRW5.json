@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:33:05Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z5433C250MQ7KSNQ50VRW5",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Z5433C250MQ7KSNQ50VRW5.gz",
+    "size_bytes": 1087354
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Verified SHA256 77f6f9cc8fc7cb24217729c22f35449c49a9b896f827ad52ba6229abbf111b63; role logs include retained premeasurement setup; interpret offsets/timestamps.",
+  "tags": [],
+  "title": "Partial cohort resources, per-role mount logs and offline analyser",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+PASS 7 fixtures at 560/820/1200 px in light/dark
+PASS messaging document: all 7 diagrams, including entity-bearing sequences
+PASS callouts, tasks/tree counts, math, highlighting/copy, frontmatter, responsive tables, margin/popover notes, diagram expansion
+PASS literal find spans inline formatting, next/previous wrap, close clears marks
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: anchor drift 560: 17.96875 -> 59.859375
+    at file:///Users/atin/Projects/Stage11/code/c11-worktrees/md-r1-renderer/scripts/markdown-viewer/test.mjs:71:12 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v26.9.0

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:27:34Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8WQSEH63193TPY4B8VTNE",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8WQSEH63193TPY4B8VTNE.png",
+    "size_bytes": 858441
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Source line and text origins remain stable when the docked outline closes.",
+  "tags": [],
+  "title": "Wide source mode with dock gutter reserved closed",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,38 @@
+{
+  "home": "$HOME",
+  "app": "$HOME/c11-sandbox/apps/c11-288-native/c11 STAGING c11-288-import.app",
+  "bundleID": "com.stage11.c11.staging.c11.288.import",
+  "executableSHA256": "507eff52fa5eab7387ae71f10ae481a90d3a24654bfafbbe476d9845c3eaaeb7",
+  "appImportOverrideNames": [],
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "versions": {
+    "Safari": "26.6.2",
+    "Google Chrome": "not installed",
+    "Arc": "not installed"
+  },
+  "importFixtureVariables": {},
+  "fixtureManifest": {
+    "fixtureRoot": "/private/tmp/c11-288-fixtures",
+    "url": "http://127.0.0.1:19288/c11-288",
+    "profiles": {
+      "Google Chrome": {
+        "relativeProfile": "Library/Application Support/Google/Chrome/Default",
+        "historyRows": 1,
+        "plaintextCookieRows": 1,
+        "encryptedCookieRows": 1
+      },
+      "Arc": {
+        "relativeProfile": "Library/Application Support/Arc/Default",
+        "historyRows": 1,
+        "plaintextCookieRows": 1,
+        "encryptedCookieRows": 0
+      },
+      "Safari": {
+        "relativeProfile": "Library/Safari",
+        "historyRows": 1,
+        "cookieCoverage": "unsupported"
+      }
+    },
+    "coverage": "synthetic schemas; no actual Chromium installation or encrypted-cookie success"
+  }
+}

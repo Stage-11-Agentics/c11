@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:52Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z81388Q9T9ZSSJ9J3HHM84",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z81388Q9T9ZSSJ9J3HHM84.md",
+    "size_bytes": 4578
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-276 validation: criteria mapped to existing pre-merge and merged-head evidence\n\nMerged head: squash 43c1d51901c7c9048d9f5c5a97319c26bf445f6a (PR #542, landing head 01169bce94ef2fcc8bf40967469fbaa5",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T09:23:55Z",
+  "created_by": "agent:codex-md-r1",
+  "custom_fields": {},
+  "id": "art_01M4DD74RY03ABHNZFY79P2KRV",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M4DD74RY03ABHNZFY79P2KRV.md",
+    "size_bytes": 3943
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Web renderer validation",
+  "token_usage": null,
+  "type": "file"
+}

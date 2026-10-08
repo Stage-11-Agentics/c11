@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:22:24Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKB77YGBR8W9A5FHP59N1R",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YKB77YGBR8W9A5FHP59N1R.png",
+    "size_bytes": 151113
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Arc generated-schema history-only import; Arc application absent",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T09:23:56Z",
+  "created_by": "agent:codex-md-r1",
+  "custom_fields": {},
+  "id": "art_01M4DD74ZXGQG4P6T6BAZ4F8BP",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01M4DD74ZXGQG4P6T6BAZ4F8BP.txt",
+    "size_bytes": 1080
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Anchor restored GREEN",
+  "token_usage": null,
+  "type": "file"
+}

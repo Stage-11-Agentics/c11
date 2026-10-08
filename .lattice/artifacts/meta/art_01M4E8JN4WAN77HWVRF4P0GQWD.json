@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:22:04Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8JN4WAN77HWVRF4P0GQWD",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8JN4WAN77HWVRF4P0GQWD.png",
+    "size_bytes": 880002
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged md-360 app; both reader theme and c11 appearance are Dark.",
+  "tags": [],
+  "title": "Dark reader with dark c11 appearance",
+  "token_usage": null,
+  "type": "file"
+}

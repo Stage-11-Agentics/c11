@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T14:49:37Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YHF6J2T4FE7Z06VHD6AX5G",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YHF6J2T4FE7Z06VHD6AX5G.md",
+    "size_bytes": 702
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-305 scoped PASS at b6f239bd077164d2ff2e7aa18d5464d4e885fd35. Explicit Orchestrator ruling applied: the automatic branch-routing failure reproduces on approved pre-305 main 7bb785741750ddeb8ab12b4c",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

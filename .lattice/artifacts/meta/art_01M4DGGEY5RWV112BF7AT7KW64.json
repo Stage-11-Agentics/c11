@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:21:26Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DGGEY5RWV112BF7AT7KW64",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4DGGEY5RWV112BF7AT7KW64.png",
+    "size_bytes": 153518
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final packaged reader restored after eviction",
+  "token_usage": null,
+  "type": "file"
+}

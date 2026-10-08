@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:35:46Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZK0ES82MN3RZCNQ0AN4Y1X",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZK0ES82MN3RZCNQ0AN4Y1X.png",
+    "size_bytes": 875201
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: after Return, workspace 2 selected with the flagged tab (operator action switches)",
+  "token_usage": null,
+  "type": "file"
+}

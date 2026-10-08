@@ -1,0 +1,359 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-md-r2",
+  "branch_links": [
+    {
+      "branch": "md-viewer/C11-359-native-panel",
+      "linked_at": "2026-10-08T09:00:42Z",
+      "linked_by": "agent:codex-md-r2",
+      "repo": null
+    }
+  ],
+  "comment_count": 34,
+  "complexity": "high",
+  "created_at": "2026-10-08T08:54:42Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "description": "Child of C11-336. Contract: docs/markdown-viewer-design.md (binding). Builds against R1's bridge (Resources/markdown-viewer/BRIDGE.md) in parallel; lands after R1.\n\nScope: the native markdown panel on WKWebView, replacing MarkdownUI.\n\n- `MarkdownPanelView` hosts a WKWebView loading R1's bundle through a custom URL scheme handler (no file:// broad access); local images resolve only beside the open document (scoped read, no traversal outside what rendering needs); CSP blocks remote loads; JS from the document never runs; link clicks arrive over the bridge and route through c11 (http(s) \u2192 default browser or c11 browser per existing policy, relative .md \u2192 open in a markdown panel for now, anchors \u2192 in-page) and the web view's own navigation is cancelled. Record the panel's threat notes in docs/security-threat-model.md.\n- Weight: one shared WKProcessPool / configuration, lazy web view creation for panels never shown. Measure memory and creation time with 20 markdown panels in a tagged build (Atlas), compare with a tagged origin/main build, record both and the load average.\n- State model on MarkdownPanel: fontScale, theme, typeface, outlineOpen (explicit open/hide or nil = width default); per panel; last used in any panel becomes the new-panel default (extends markdown.fontScale.lastUsed); session snapshot carries theme, typeface and outline beside fontScale (SessionPersistence.swift, Workspace.swift restore); unknown/out-of-range/unreadable values fall back to the default for that field.\n- Existing paths keep working: `c11 markdown open`, live reload (file watch \u2192 push text, R1 re-renders changed blocks, scroll held), drop-to-open, session snapshot/restore, focus flash, pointer focus, the app-wide zoom keys through WorkspaceManager.zoomInFocusedMarkdown / zoomOutFocusedMarkdown / resetZoomFocusedMarkdown driving the markdown scale; WKWebView page zoom and magnification never intercept \u2318= / \u2318\u2212 / \u23180. Existing markdown tests stay green or get behavioural replacements. markdown.get_content keeps working.\n- Remove MarkdownUI (package dependency) and FencedCodeRenderer/MermaidRenderer's Mermaid path once nothing uses them.\n- Minimal interim chrome is fine (file name row); the full toolbar is R3.\n- No runModal on agent-reachable paths; socket threading and focus policy hold; dlog DEBUG-gated.\n\nProof: tagged Atlas build, markdown panel opens docs/c11-messaging-primitive-design.md offline with Mermaid; live reload mid-scroll without drift; restore after relaunch with non-default scale/theme/typeface; a malicious fixture (script tags, onerror, javascript: links, remote image) does nothing; the 20-panel numbers.",
+  "done_at": "2026-10-08T15:33:05Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M4DC8SP2YG51A8SH0WSQ8E78",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DDPXPE5ZPAFT6JXJC8TATC",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DDPXRVT58TPCTF23DVW15Y",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB7N1Y78PA268Y19XPXCB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB7RSAFTHSEKSZWFVEXCX",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB7WHP4F5S3VMPY5ZG0PA",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB80CXCCDC6E4AP29HGJP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB849TAEE5DSDB7N3CA1Z",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB887AFTNKD1V8DCZ5GH4",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFB8C1TKZW3QM0PRSMSDSB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DFCVYAN0XCY5A8A4BBRB9P",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DFDYJ4Q1FW52EZD0DQ58RR",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFDYNY0DFE8AA5M6QS10S5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DFEXG4V4R6F9Y2V0ZZNTNM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DFPF590WJQS80RVSJXT91F",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFPF7J9AB7TG8J6JNHFQS8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFPF9VK2XDCC7ZXPW0FCC1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DFPFCVQP5QDYXGZGA1XGQ7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DFSM8Z24NRFZ9GPAEX38HQ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFSMCZASBF8MFPMQ6WRD08",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFSMH0BETKKJA3QFGC083P",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFSMN1KH8C9Z0M601J1FFN",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFSMS5GRH97JCJF0764497",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DFSMX43WE5TWZ9FBEPV22Y",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DG1ZHB45GRH8RQ9A8Y2D2A",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DG4SK315CKG1PHJNGNNGBW",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DG9NY2DXAT21MVHAXH1J0E",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DG9P09V0BPBFN3ZNC33FN1",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DGGETDKVJFFK41HCMJ86QX",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGEY5RWV112BF7AT7KW64",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGF1YPEZSYFYYQQKFJ8PW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGF5P761NVY1T22ZAPNDC",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGF9F9RPQPRBWEP57G2G3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGFDBTZ50WB7E0XM1G6GQ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGFH8YTYQSFQYQ03V83SH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGGFN5JB1PTZHAYZC6XB82",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DGJN41YP82PKP0D0TFVC4B",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DGJN647KK12TKKY3T60D6B",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DGMBYCHJ1VY4NS4XVHDBMK",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DGMC0M28X7Y11E6S8HXBV9",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DGN3VT7G6XTF98YE222CYQ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DGNX01WS83FZFFG4PXSAJ5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DJ8DY74HX6M519347XE3T3",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DJBBB28RGZEDHGWBHWBNFE",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DKS7V92ZDR5VGYBMZ72CST",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DQ800M1HGCX19CKV5PCWK2",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DQ803SXR7PRWG7V0254EX2",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DQ807RH59GG3VJWEE2D1GV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DQ80BMY2ZSTXHT6XQKZ5SK",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DQ8CRCNTTHWBZ92VNHESAK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DRRZJ7R5NAPZ5141FJ57PY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4DSATTHG882MW6A0BZBXTSG",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4DSATXT12YH2YZ3NBQ57WRR",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4DSC3C78JYEJ0SXBHK959FX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DSYVRR4CJK9DMN4P521JXX",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DW4TAA5D5EYQFCJVS850AV",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DWF97Y4BQ4WE45A1EX99Q7",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4DXFZ616K1G0Q8G2VP81K9D",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4E15F0AMKFBGCS8D7116CWG",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4E2B39P9R5ZRHWC1A8KGQBB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4E2B39CGZYM2JQCFQS4ZZBV",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M4DBHMBXGSPCA6RAXJKF5YTQ",
+  "last_event_id": "ev_01M4E3ABSZNR2SE0VG661JXKYP",
+  "last_status_changed_at": "2026-10-08T15:33:05Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T08:54:48Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "subtask_of"
+    },
+    {
+      "created_at": "2026-10-08T08:54:48Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4DBHM6NH7Q7K8PZRRH4RZSS",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-359",
+  "status": "done",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer R2: native panel on WKWebView (scheme handler, security, state + persistence, existing paths)",
+  "type": "task",
+  "updated_at": "2026-10-08T15:50:09Z",
+  "urgency": null
+}

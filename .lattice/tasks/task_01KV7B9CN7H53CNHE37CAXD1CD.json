@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -10,18 +11,18 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KV7B9CN7H53CNHE37CAXD1CD",
-  "last_event_id": "ev_01KV7B9CN8V9K49ACX5E62DXW2",
-  "last_status_changed_at": "2026-06-16T04:33:29Z",
+  "last_event_id": "ev_01M3YXXZDQB5K1NB1HZADYCZ88",
+  "last_status_changed_at": "2026-10-02T18:27:24Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-147",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": null,
   "title": "Mailbox/shell-integration: report_shell_state dropped \u2014 CMUX_TAB_ID is surface UUID, scope resolver expects workspace UUID",
   "type": "bug",
-  "updated_at": "2026-06-16T04:33:29Z",
+  "updated_at": "2026-10-02T18:27:24Z",
   "urgency": null
 }

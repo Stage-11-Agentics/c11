@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T20:55:15Z",
+  "created_by": "agent:codex-md-n1",
+  "custom_fields": {},
+  "id": "art_01M4EMRZYMKJQ0HG9N8PJ1HVDV",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4EMRZYMKJQ0HG9N8PJ1HVDV.png",
+    "size_bytes": 229472
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Relative navigation opens navigation-target.md at Setup in the same Markdown panel.",
+  "tags": [],
+  "title": "Atlas UI: relative link in same panel",
+  "token_usage": null,
+  "type": "file"
+}

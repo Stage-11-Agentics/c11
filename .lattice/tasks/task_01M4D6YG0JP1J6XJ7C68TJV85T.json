@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "high",
+  "created_at": "2026-10-08T07:34:21Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "description": "Atin (2026-10-08): split out of C11-336 as its own ticket. Builds on C11-336's WKWebView markdown renderer.\n\nDesign reference: the navigator prototype, docs/design-prototypes/markdown-viewer/navigator/index.html (round 1, not yet iterated with Atin; iterate it before building).\n\nScope:\n- Relative links and in-doc anchors open in the same markdown tab, with per-tab back/forward history (Cmd[ / Cmd]) and a breadcrumb. Cmd-click opens in a new c11 tab; a toggle sets which is the default.\n- Hover peek: a link previews the target section's real content. Broken anchors suggest the closest heading.\n- Cmd+K jump palette over headings across docs plus file names.\n- Referenced-by backlinks for the current doc and section.\n- Ticket IDs (C11-123) auto-link to Lattice with a hover card.\n- Agent-native: `c11 markdown open --tab <t> <file>#<anchor>` moves an existing tab and pushes history instead of spawning a new one, without stealing focus; `c11 markdown history --json`; `c11 markdown links --broken --json`.\n\nOpen questions for the iteration round: the corpus boundary for Cmd+K and backlinks (the workspace root? the repo? open tabs only?), and whether Vimium-style link hints (`f`) belong.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M4D6YG0JP1J6XJ7C68TJV85T",
+  "last_event_id": "ev_01M4DBWBXBNKAGWEBNHRWZ48BR",
+  "last_status_changed_at": "2026-10-08T07:34:21Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T07:34:23Z",
+      "created_by": "agent:claude-opus-5-5",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-357",
+  "status": "backlog",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer: navigate linked docs in place (history, peek, jump palette, backlinks)",
+  "type": "task",
+  "updated_at": "2026-10-08T09:00:34Z",
+  "urgency": null
+}

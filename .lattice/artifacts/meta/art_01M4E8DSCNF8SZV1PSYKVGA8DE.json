@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:25Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DSCNF8SZV1PSYKVGA8DE",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DSCNF8SZV1PSYKVGA8DE.png",
+    "size_bytes": 875556
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "At 560 px, Escape clears the filter and leaves the outline open.",
+  "tags": [],
+  "title": "First Escape clears outline filter",
+  "token_usage": null,
+  "type": "file"
+}

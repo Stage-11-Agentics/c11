@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:27Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z80AJ3CTWH3DG24RWAFJQH",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z80AJ3CTWH3DG24RWAFJQH.md",
+    "size_bytes": 3835
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "# C11-264 validation: Feed typed asks (list, open, watch, ask events)\n\nBasis: existing pre-merge runtime proof plus exact-head gates. Merged head ee66573112 (squash bc915d0509). No new native run in t",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

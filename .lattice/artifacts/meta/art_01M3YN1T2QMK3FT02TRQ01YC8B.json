@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:52:13Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YN1T2QMK3FT02TRQ01YC8B",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YN1T2QMK3FT02TRQ01YC8B.md",
+    "size_bytes": 76
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Batch 4 runtime PASS (Validator); merged 531908b8d5; Astra PASS at eb806620.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

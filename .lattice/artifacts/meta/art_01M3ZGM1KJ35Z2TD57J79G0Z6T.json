@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:54:02Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZGM1KJ35Z2TD57J79G0Z6T",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZGM1KJ35Z2TD57J79G0Z6T.png",
+    "size_bytes": 897899
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1: Tab -> Asks, ring on Asks",
+  "token_usage": null,
+  "type": "file"
+}

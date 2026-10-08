@@ -1,0 +1,30 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "low",
+  "created_at": "2026-10-06T16:35:11Z",
+  "created_by": "agent:claude-panel-rename",
+  "custom_fields": {},
+  "description": "Found in the C11-337 host-suite attribution (evidence: c11-worktrees/signoff-feedback/panel-rename/evidence/host-suite-attribution.md). In full c11-unit runs on Atlas, MenuBarExtraAttentionTests.testLiveIndexRefreshesRaiseReasonChangeLowerAndCloseWithoutRoutineNotice (NotificationAndMenuBarTests.swift:1072-1075) and testLiveSuppressionHidesUnflaggedCompletionAndFlagOverridesIt (:1157) fail; both pass when the class runs alone at cde01d1571 (signoff-1-1), 2f6a4db8d7 and 1eaed8a68d. testFlagRowsUseExistingOrderAndExactTargetsAndRoutineActionsDoNotLowerFlags and testFeedAskRefreshAndShortcutPreservationWithoutRoutineNotice show the same order dependence. Cause: state leaks from earlier tests through a shared store (attention/notification/flag state not reset in setUp/tearDown). Present in signoff-1-1; ruled non-blocking for 1.0 by the 1.0 Driver. Not quarantined, so this is a likely source of red hourly host gates. Fix: isolate the shared stores per test (inject, or reset in setUp), then confirm the full suite passes twice. Sibling: C11-342 (GhosttySurfaceOverlay flag-banner fixed wait).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M4913BQ3PHGDQPZBS0RK9VJJ",
+  "last_event_id": "ev_01M49F91543NWGBZ21DFS099A4",
+  "last_status_changed_at": "2026-10-06T20:42:57Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-343",
+  "status": "cancelled",
+  "tags": [
+    "tests"
+  ],
+  "title": "Tests: MenuBarExtraAttentionTests leak state through a shared store (order-dependent failures in full c11-unit runs)",
+  "type": "chore",
+  "updated_at": "2026-10-06T20:42:57Z",
+  "urgency": null
+}

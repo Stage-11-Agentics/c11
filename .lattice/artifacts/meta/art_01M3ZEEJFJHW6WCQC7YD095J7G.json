@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEJFJHW6WCQC7YD095J7G",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZEEJFJHW6WCQC7YD095J7G.json",
+    "size_bytes": 2029
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Candidate performance smoke run 2",
+  "token_usage": null,
+  "type": "file"
+}

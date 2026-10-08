@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T01:02:31Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3ZMHEDKM4Z285PXKF507AFX",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZMHEDKM4Z285PXKF507AFX.md",
+    "size_bytes": 3547
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-278 validation: documentation ticket (batch fast rule)\n\nMerged: PR #573, squash a2418ebc64d8399a96b58f20abc617d9365339e6, landing head 9c924cb005d45dfab280dabe0760580aa49d3ece; six Markdown files,",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,18 @@
+{
+  "pid": 645,
+  "panel": "9955CDF4-C613-4CA2-91DA-E8760E3B5850",
+  "mutated_source_line": 3,
+  "added_characters": 1801,
+  "same_source_line_count": true,
+  "marker_observed_public_content": true,
+  "ready": {
+    "kind": "ready",
+    "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+    "raw": "10:03:16.681 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=184622.901",
+    "elapsedMs": "184622.901"
+  },
+  "screenshots": [
+    "bounded-before-reload.png",
+    "bounded-after-reload.png"
+  ]
+}

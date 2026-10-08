@@ -1,0 +1,22 @@
+# C11-323 implementation plan
+
+Incident: a background agent repeatedly selected its browser workspace, interrupting the operator. Hard rule: socket requests cannot change an existing window's selected workspace; no override. Background tab/area focus remains allowed.
+
+Current base 1199866cbc2c079de9198b9ed8773af3200d2821. Ticket citations predate the rename: selection is now WorkspaceManager.selectedWorkspaceId. C11-283 window scoping is present. CLI focus-area/focus-tab and hidden legacy aliases are already present; verify and preserve them. The shared focus stack is real: overlapping worker requests append/pop one global stack, so a main hop may observe another request's allowance.
+
+Implementation:
+- TerminalController and SocketDispatch: replace the global stack with thread-local request context, propagate it explicitly over synchronous/deadline main hops, and return workspace_switch_blocked when the selection setter records a denied request. Derive raw-socket caller attribution from the peer's controlling TTY; CLI supplies its calling tab as fallback. Resolve attribution only on denied selection, so telemetry connections gain no main hop. Operator UI entry points clear any reentrant browser request context. Suppression is scoped to that request, not unrelated operator callbacks.
+- WorkspaceManager: gate the public selection setter before publishing or side effects; retain a published backing value for existing subscribers. Refuse destructive socket close/detach of the selected workspace before teardown. Attribute selection using explicit causes at sidebar, shortcut, palette, notification, jump, menu, restore and create call sites. Close fallback uses actual seen history before index neighbour.
+- FocusHistoryStore and HistoryHandlers: roll back a refused cross-workspace history step so the operator cursor is unchanged.
+- Socket handlers: remove workspace.select activation/window raising and navigation raising. tab.focus/area.focus mutate their target workspace only; browser.focus_webview stops before responder changes when denied. Audit other indirect selectors for deferred selection/activation.
+- CLI: ssh no longer selects; tmux select-window uses the gate; previous-target resolution reads workspace.current.previous_workspace_id without navigating (the dwell-qualified seen history is not the tmux selection history). Preserve canonical focus command names. Make documented no-focus behavior truthful.
+- EventEmitter/EventEnvelope and spec/event-envelope.v1.schema.json: workspace.selected cause plus socket method/caller; workspace.switch_blocked target/method/caller. Serialized-event parity tests exercise the closed schema.
+- skills/c11/SKILL.md, references/api.md, references/events.md, orchestration/browser guidance and CLAUDE.md: remove workspace-selection initialization instructions; background work fully allowed. Do not sync installed copies (Merge Captain after merge).
+
+Validation mapping (all tied to the incident):
+1. Atlas logic tests: concurrent focus policy isolation and propagated main-hop context; denied setter preserves selection/publisher state; same-workspace focus succeeds; operator setter succeeds; close chooses most recently seen live workspace. No source-grep tests.
+2. Atlas tagged build c11-323: operator A, caller B, target C. CLI and raw v1/v2 selection/next/previous/last/browser focus/find-window/tmux selection leave A selected, no activation, denied response and caller event. Tab/area focus in C updates C without switching. Background send, browser eval/click/snapshot, creation, launch-agent, metadata succeed.
+3. Atlas sandbox computer use: before/after screenshot of denied select; sidebar, Cmd+number, palette, notification click, jump-to-unread, menu and restore still switch with correct cause; visible close returns to last-seen workspace. Guest lease capped at 30 minutes and deleted immediately; Validator has priority.
+4. Compare tagged-build selection/input timing with origin/main under same scenario and record load; no added keystroke work. Focus/selection remain main-actor; telemetry remains off-main. Cheap checks and exact-head Atlas gate before handoff.
+
+No settings, browser hidden-running fix, tenant config changes, release work, submodule changes, or C11-283 rewrite. No persistence migration. CLI/socket error text is protocol prose; new key socket.error.workspaceSwitchBlocked has English localization; six-locale translation pass remains C11-291. No open operator decisions.

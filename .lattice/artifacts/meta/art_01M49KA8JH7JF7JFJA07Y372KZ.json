@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-06T21:53:31Z",
+  "created_by": "agent:cairn-retro",
+  "custom_fields": {},
+  "id": "art_01M49KA8JH7JF7JFJA07Y372KZ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M49KA8JH7JF7JFJA07Y372KZ.md",
+    "size_bytes": 204
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Astra review PASS r3 at 38023d5c8b; rebase onto #588 attested at 86584a6d91; proof run 37534378879 on macos-15 green (1673 + 68 host tests); merged 1edebf8d27 (#589), files identical; workflow re-enab",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

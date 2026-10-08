@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:25Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DT64HB1CKY4VQKFJ8HY9",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DT64HB1CKY4VQKFJ8HY9.png",
+    "size_bytes": 861366
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Manual typeface check; mono rendering is visible in the reader body.",
+  "tags": [],
+  "title": "Mono typeface in tagged build",
+  "token_usage": null,
+  "type": "file"
+}

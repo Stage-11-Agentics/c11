@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:21:15Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z4EE81Q2DTFAYQX7Y66NZR",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z4EE81Q2DTFAYQX7Y66NZR.json",
+    "size_bytes": 112489
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "74/28/28 per role, no churn/quiescence; all six descriptive limits within budget; full gate unproven.",
+  "tags": [],
+  "title": "Repair r1 g60 partial comparison INCOMPLETE: 130 pairs",
+  "token_usage": null,
+  "type": "file"
+}

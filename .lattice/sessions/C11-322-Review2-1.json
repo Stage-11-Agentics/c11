@@ -1,0 +1,23 @@
+{
+  "base_name": "C11-322-Review2",
+  "framework": "claude-code",
+  "last_active": "2026-10-02T23:33:10Z",
+  "model": "claude-fable-5-1",
+  "name": "C11-322-Review2-1",
+  "origin": {
+    "op": "session.start",
+    "op_id": "op_01M3ZEFTVMX9BJ22YDWJXW4XT5",
+    "reported": {
+      "branch": "main",
+      "client_version": "0.2.1",
+      "host": "Hyperion",
+      "os_user": "atin",
+      "worktree": "/Users/atin/Projects/Stage11/code/c11"
+    }
+  },
+  "parent": "agent:C11-257-Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M3ZEFTVQ2T0F2088DRF757RP",
+  "started_at": "2026-10-02T23:16:47Z",
+  "status": "active"
+}

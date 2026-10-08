@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:30:19Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3ZF8MF35Z1WNEJ0VTHMYDWW",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZF8MF35Z1WNEJ0VTHMYDWW.md",
+    "size_bytes": 3385
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-250 validation: existing proof mapped to the selected #469 follow-ups (batch fast rule)\n\nMerged: PR #561, squash 8cfd73f8e4356c7f7c9af39b0f745373bed6e5a6, landing head e4c117f86aad9308a67cabd2160d",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

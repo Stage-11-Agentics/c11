@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:31:33Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z519Q9CAHDN2FYXBHBV2BK",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Z519Q9CAHDN2FYXBHBV2BK.gz",
+    "size_bytes": 76444
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "ABBA prepared helper source \u2014 22 pure behavioral checks passed",
+  "token_usage": null,
+  "type": "file"
+}

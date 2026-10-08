@@ -1,0 +1,154 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-283s",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-283-window-scope",
+      "linked_at": "2026-10-02T08:03:34Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-283-signoff-fix",
+      "linked_at": "2026-10-03T08:24:48Z",
+      "linked_by": "agent:luna-283s",
+      "repo": null
+    }
+  ],
+  "comment_count": 20,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:26Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\n`c11 --window <id> <command>` focuses that window before the command runs. Fleet commands then pull the operator's key window around while agents work. Backlog item: C5.\n\n## Evidence\n- c11: `CLI/c11.swift:1732-1736` on origin/main (0ff8887e5e) stores the global `--window` value. `:1951-1953` then sends `window.focus` before the command switch. The comment above it says the focus exists so commands route correctly.\n- c11: many commands already suppress the `CMUX_WORKSPACE_ID` fallback when `windowId != nil` (for example `new-split` at `:2253` and `identify` at `:1978`). They do not all resolve workspace and tab refs inside that window. `normalizeWindowHandle(...) ?? windowId` at `:1952` still forwards an unparsed value into `window.focus`.\n- c11: focus is a policy, not a side effect of routing. `Sources/TerminalController.swift:502-506` allows in-app focus mutation only for methods in `focusIntentV2Methods`. `window.focus` is one of those (`Sources/SocketHandlers/WindowHandlers.swift:21`). A command that is not a focus command must not call it.\n- Upstream: cmux #4211 (`dea2f64684`). `--window` becomes a `window_id` param. Other refs resolve inside that window. An unparsable `window_id` is rejected. The env workspace fallback is off when `--window` is set.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71g. Fable and Astra both mark it core. Astra raised it from S to M because deleting the focus call without threading scope still routes to the wrong window. The backlog label is S. Plan the full routing fix. The extra work is the ref scope, not a new feature.\n\n## Scope\nIn: stop sending `window.focus` from the global `--window` flag. Pass `window_id` on the command's own socket call. Resolve workspace, area, and tab refs inside that window. An unparsable or unknown window id is an error, and the key window does not change. When `--window` is set, do not fall back to `CMUX_WORKSPACE_ID` or the focused workspace.\nOut: changing which commands are focus-intent (`workspace.select`, `surface.focus`, `window.focus` itself, and the rest of the existing list). The focus-allowance stack race on C11-140 section A. `settings.open` activation, also on C11-140. Per-command `--window` help that already means \"this command focuses\" stays. `focus-window` still focuses.\n\n## Approach\nDelete the pre-dispatch `window.focus` at `:1951-1953`. Thread the parsed window id into the commands that already take a window override, and add `window_id` to the v2 params of the commands operators actually run from another window: `send`, `read-screen`, `tree`, `new-tab`, `new-split`, `new-area`, `list-workspaces`, and `workspace.select` only when that command is the one being invoked. `workspace.select` may focus because it is focus-intent. The others must not. Resolution of `workspace:N` and `tab:N` uses the window's own refs. If a ref is not in that window, return `not_found` rather than scanning other windows. Search skills and `tests_v2` for a caller that depends on the focus side effect, and update it to call `focus-window` or `window.focus` explicitly. Update the c11 skill's focus-policy paragraph.\n\n## Acceptance criteria\n1. With two windows open and window A key, `c11 --window <B> read-screen --tab <tab in B>` returns B's screen, and A is still key afterwards. Confirm with the frontmost-window id before and after.\n2. `c11 --window not-a-window read-screen` exits non-zero, names the bad id, and does not change the key window.\n3. `c11 --window <B> send --tab <tab in A>` does not deliver to A's tab. It errors `not_found` (or the equivalent), and A's screen is unchanged.\n4. `c11 focus-window --window <B>` still focuses B. `c11 --window <B> workspace select <ws in B>` may change in-app selection. It still must not be required for criterion 1.\n5. A grep of the CLI dispatch shows `window.focus` is sent only from `focus-window` and from other commands whose documented purpose is focus.\n\n## Validation\nA `tests_v2` script against a tagged build that opens or uses two windows if the harness can, otherwise a computer-use pass for criteria 1 through 3. Criterion 5 is review of the dispatch plus the test that calls a non-focus command. No soak. This removes a focus side effect. It must not add work to `WindowTerminalHostView.hitTest`.\n\n## Dependencies\nNone inside this workstream. Neighbor: C11-140 section A (focus-allowance stack, `settings.open`). Do not take that work on. C1's key check is a different seam. Land them so `CLI/c11.swift` conflicts are expected and small.\n\n## Risks\nTyping latency: none on the keystroke path. Main thread: `window.focus` today is a socket round trip before every `--window` command. Removing it is the point. Do not replace it with `NSApp.activate`. Doctrine: routing is not focus. Localization: the bad-id error uses `String(localized:)`. Six-locale fill is X1. Public repo: the skill should say `--window` scopes and does not raise. Callers who wanted the raise call `focus-window`.\n\nSize: S\u2013M. Tier: P1. Doctrine check: a routing flag does not steal the key window.",
+  "done_at": "2026-10-02T21:23:10Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XYA44QJ6XHH9GDPZ9410BH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XYDAGFZH2D14W8DAAC6H7B",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYHMXDGPB22JZ8T2KC928Q",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYQPF1QM1AJQYZ36MYV1P6",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y03KE1M5KKEQ3RZKF3D3T7",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y05PD1W9W2G6MMG3F20RDJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y0A9KEM1RN7MRVCG3MJQCB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y0P46DR5PZMTX3PHFMHVDC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y17PFRY2QMKVQ6ZPP55HYV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y19PC8AEJR8TSB5VAAX25R",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y1KEVX0M193G56K4CJSAPZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YT3XH48F27F2ZMMAENYCBD",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YT3XM5678PWDXATJ5KG3VN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z7ZSKWNJCGB60WMYY4TYSV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z7ZSRMYR77CZ402G617MNF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Z7ZSRHCGAY9VV3B1RFN490",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M40F7597H3ZBYMMRBP396CMP",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40GNKN8HMHFX2DD83FA09PS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40H36WC5HSD0XHB7Y90243Y",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40HGJSZHEZQEBFGEE58MKHC",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FNB4XWY9HNMGFQEEAHWX",
+  "last_event_id": "ev_01M40J0X2880M4YTCRFTMXA60G",
+  "last_status_changed_at": "2026-10-02T21:23:10Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-283",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Scope --window without focusing that window",
+  "type": "bug",
+  "updated_at": "2026-10-03T09:37:46Z",
+  "urgency": null
+}

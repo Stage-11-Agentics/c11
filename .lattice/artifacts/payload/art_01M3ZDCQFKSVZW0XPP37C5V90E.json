@@ -1,0 +1,53 @@
+{
+  "run_id": "c11-266-ui",
+  "pid": 631,
+  "checks": [
+    "Tagged PID matches exact bundle executable",
+    "Explicit socket listener belongs to tagged PID",
+    "Socket reports the exact tagged bundle identity",
+    "Guest starts with zero routine history",
+    "Guest starts with zero flags",
+    "Exactly one guest display enumerated",
+    "Exactly one visible tagged main window enumerated",
+    "Tagged window is on the verified single guest display"
+  ],
+  "screenshots": [],
+  "guest_model": "VirtualMac2,1",
+  "display_enumeration": {
+    "displays": [
+      {
+        "id": 1,
+        "x": 0,
+        "y": 0,
+        "width": 1024,
+        "height": 768
+      }
+    ],
+    "windows": [
+      {
+        "kCGWindowName": "Workspace 1",
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowSharingState": 1,
+        "kCGWindowOwnerPID": 631,
+        "kCGWindowOwnerName": "c11 DEV c11-266",
+        "kCGWindowNumber": 38,
+        "kCGWindowStoreType": 1,
+        "kCGWindowBounds": {
+          "X": 0,
+          "Height": 681,
+          "Y": 30,
+          "Width": 1024
+        },
+        "kCGWindowAlpha": 1
+      }
+    ]
+  },
+  "result": "FAIL",
+  "error": "Exact tagged PID is frontmost",
+  "cleanup_errors": [
+    "osascript exceeded the probe operation deadline"
+  ],
+  "elapsed_seconds": 3.891
+}

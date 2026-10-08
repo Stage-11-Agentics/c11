@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-10-08T20:28:43Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "description": "Small follow-ups left after C11-365 (#625, f440a14f0e). None blocks delivery.\n\n1. Buffered doorbells for mail already drained still log `evicted` at the 64-entry cap. In the MouthKeys run on 2026-10-08, 373 of 373 messages after 15:11Z reached the coordinator by `recv --drain`, but the dispatch log showed one `evicted` per message for four hours. When a drain claims an envelope, drop its buffered stdin entry (or log `drained`), so the dispatch log tells the truth.\n2. `JournalMailboxBoundary.stillHolds` ignores the connection state. An old idle edge can still reach the gate after SessionEnd marked the panel disconnected. The foreground-group and PID checks already stop any typing, so this is harmless, but requiring `current.connection == .live` is tighter.\n3. Tests cover the boundary's `verifiedNativeClock` parameter but not its wiring. Add one assertion that `JournalContext.forTranscriptAppend(draft:eligible:)` sets `verifiedNativeClock` for a real Codex and Grok `turn.completed` draft (as built by `JournalTranscriptProducer.makeDraft`).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M4EK8D9CAJ8VZF3KATE4AM5M",
+  "last_event_id": "ev_01M4EK8HMKS6GXC0THZCW0SZR2",
+  "last_status_changed_at": "2026-10-08T20:28:43Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T20:28:47Z",
+      "created_by": "agent:claude-opus-5-5",
+      "note": null,
+      "target_task_id": "task_01M4EEZ6R0QQZQHET1Z7FGBNQV",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-366",
+  "status": "backlog",
+  "tags": [
+    "mailbox",
+    "journal"
+  ],
+  "title": "Mailbox push follow-ups from C11-365: drained doorbells, stillHolds on disconnect, transcript route wiring test",
+  "type": "chore",
+  "updated_at": "2026-10-08T20:28:47Z",
+  "urgency": null
+}

@@ -1,0 +1,33 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-10-05T18:58:22Z",
+  "created_by": "agent:lattice-auto-review",
+  "custom_fields": {},
+  "description": "Agent: claude\nPersistent failure threshold: 2 failures.\nFailure count recorded: 2.\nRecent failures:\n\n- Task ID: task_01KZW386MPGCREEGAD6KPG7KAD\n  Title: Browser JS await on a never-loaded WKWebView freezes the socket control plane\n  Review type: plan-review\n  Failure: timed out after 600s\n  Return code: (not recorded)\n  Duration: 600.0 seconds\n  Prompt characters: 41367\n  Daemon log: /Users/atin/Projects/Stage11/code/c11/.lattice/.daemon/auto-plan-review-task_01KZW386MPGCREEGAD6KPG7KAD.log\n\n- Task ID: task_01M42XRN2VT7NQ166G44NV4ATP\n  Title: Un-quarantine the host test classes that now guard 1.0 fixes\n  Review type: plan-review\n  Failure: timed out after 600s\n  Return code: (not recorded)\n  Duration: 600.0 seconds\n  Prompt characters: 8205\n  Daemon log: /Users/atin/Projects/Stage11/code/c11/.lattice/.daemon/auto-plan-review-task_01M42XRN2VT7NQ166G44NV4ATP.log",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M46PWTJQYTBT4ECD3K5XVDA3",
+  "last_event_id": "ev_01M46PWTNPR21SBEV9GM44NXHF",
+  "last_status_changed_at": "2026-10-05T18:58:22Z",
+  "linked_files": [],
+  "needs_human": {
+    "flagged_by": "agent:lattice-auto-review",
+    "reason": "claude review agent failed 2 times \u2014 investigate",
+    "since": "2026-10-05T18:58:22Z"
+  },
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-333",
+  "status": "backlog",
+  "tags": null,
+  "title": "Investigate claude review failures \u2014 failed 2 times",
+  "type": "task",
+  "updated_at": "2026-10-05T18:58:22Z",
+  "urgency": null
+}

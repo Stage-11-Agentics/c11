@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T12:55:39Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DSATTHG882MW6A0BZBXTSG",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": "art_01M4DSATTHG882MW6A0BZBXTSG.log",
+    "size_bytes": 1491611
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Atlas description test log at c3d4 plus the four V1 probes: compile passed; all four probes failed on outer-item marker selection or loose-item grouping.",
+  "tags": [],
+  "title": "C11-359 V1 probes red on c3d4",
+  "token_usage": null,
+  "type": "file"
+}

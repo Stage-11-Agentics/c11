@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEJMG6TZPX4DRYT7BCP5W",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZEEJMG6TZPX4DRYT7BCP5W.png",
+    "size_bytes": 1055410
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Second guest after Setup Assistant dismissal (Get Started)",
+  "token_usage": null,
+  "type": "file"
+}

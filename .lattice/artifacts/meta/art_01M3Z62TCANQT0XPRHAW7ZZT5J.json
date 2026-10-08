@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:49:52Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z62TCANQT0XPRHAW7ZZT5J",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z62TCANQT0XPRHAW7ZZT5J.md",
+    "size_bytes": 7092
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Window2 INCOMPLETE numbers/noise and read-only harness diagnosis",
+  "token_usage": null,
+  "type": "file"
+}

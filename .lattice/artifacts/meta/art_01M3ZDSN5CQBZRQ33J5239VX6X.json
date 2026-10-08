@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:04:40Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZDSN5CQBZRQ33J5239VX6X",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZDSN5CQBZRQ33J5239VX6X.png",
+    "size_bytes": 626379
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Atlas-local guest, Setup Assistant dismissal: 01-before-dismiss",
+  "token_usage": null,
+  "type": "file"
+}

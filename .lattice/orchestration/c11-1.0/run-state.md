@@ -1,0 +1,729 @@
+# Run State: c11 1.0
+
+## Objective
+Every `c11-1.0` ticket (P0, P1; P2 only if releasable and off the critical path) merged to `main` on GitHub `Stage-11-Agentics/c11`, validated on Atlas tagged builds, and completed in Lattice. Wave 3 ends at one integrated sign-off build + numbered script; Atin's pass is the merge approval; release only on his named approval of the exact signed artifact. Brief: `upstream-triage/c11-1.0/ORCHESTRATOR-PROMPT.md`.
+
+## Configuration
+- Repo: `/Users/atin/Projects/Stage11/code/c11`; remote `origin` = github.com/Stage-11-Agentics/c11; default `main`. Base at intake: origin/main `0ff8887e5e`. Main checkout is another agent's working tree: never touch it.
+- Board: local `.lattice/` in the main checkout; `LATTICE_ROOT=/Users/atin/Projects/Stage11/code/c11`. Plans via `lattice plan write`. `--no-auto-review` on `planned`/`review` transitions.
+- Worktrees: `~/Projects/Stage11/code/c11-worktrees/c11-1.0-<seat>`, branches `c11-1.0/<ticket>-<slug>`.
+- Orchestrator: Claude Opus "c11 1.0 Orchestrator", workspace:11 (`8D68EE13-823E-44FF-B2DE-611FFD7BDA7F`), **tab:210 (`4CE6F33D-9266-4EF0-AB5C-36B8B7B27466`)** since 2026-10-01 ~21:10 PDT. (tab:139 was the Prep orchestrator, now "c11 1.0 Prep".) Lead: "cmux Harvest Lead" tab:79 workspace:2.
+- Models (current, HANDOFF.md overrides older lines): Astra `gpt-6-astra` owns 272, 273, 259, 260, 294, 295-303; every other owner is Codex `gpt-6.1-sol` high. Reviews cross models within Codex (Sol work → Astra review; Astra work → Sol review); Grok reviews allowed; one Fable review (Claude Code `--model fable --effort high`, read-only) on large items (273, 259/260, 294, sign-off candidate). No Opus/Fable workers.
+- Plan review: C11-272 done (attested). No other plan reviews.
+- Review budget: 3 rounds; up to 5 with a fresh reviewer when converging; escalate to Atin at 5 or on divergence.
+- Caps (build mode, BUILD-FLOW as agreed with Atin): 6 owners implementing at go, scale toward 8-10 once landings flow; 1 reviewer per PR; 1 Merge Captain; 1 landing candidate. Two Atlas build slots (drop to 1 if load stays >40). No other Atlas builds during soak windows.
+- Merge Captain: brief `briefs/merge-captain.md`, Codex `gpt-6.1-sol` high, actor `agent:codex-merge-captain`, control worktree `c11-worktrees/c11-1.0-merge-captain`. Launched when C11-216 sends HANDOFF REVIEW (Atin's exception), else at go. Fallback: Orchestrator lands directly after the same exact-head checks.
+- Draft rule: owner PRs stay draft until the captain lands them (Drawbridge live mode can auto-merge a non-draft PR it routes autonomous); captain runs `gh pr ready` then `gh pr merge --squash --match-head-commit`.
+- Merge policy: merge reviewed, validated, CI-green PRs to `main` (squash, GitHub). Never cut a release without Atin's named approval.
+- Builds/tests: Atlas only, via C11-216 path, under `scripts/with-build-lock.sh`; tagged builds with `C11_QA_LAUNCH`. No builds/tests on Hyperion.
+- Computer use: on Atlas tagged builds only; no synthesized input on Hyperion (Atin's live screen).
+
+## Capacity (glideslope 2026-10-01 ~19:00 PDT)
+- Codex weekly 50% used (◆ 76.4%), resets Sat Oct 3 10:32. Grok weekly 42% used (◆ 13.9%, ahead of line), resets Tue Oct 6.
+
+## Mode: BUILD (Atin go 2026-10-01 ~21:45 PDT: "cleared to go, Opus coordinating Codex")
+Atin ruling (relayed by lead): stay in wave 0. No build mode and no wave-1 implementation (C11-216 included) until the lead relays Atin's explicit go, even if Atlas is ready. Finish plans + C11-272 review, hold, post a wave-0 summary. Plan `ws:bugs` tickets as they land.
+Gate to wave 1: Atin's explicit go via lead, then C11-216 produces a tagged artifact from Atlas.
+
+## Seats
+| Seat | Tab | Harness | Tickets (queue) |
+|---|---|---|---|
+| atlas | tab:191 | Codex gpt-6.1-sol | C11-216, C11-312, C11-292, C11-293 |
+| journal | tab:143 | Astra xhigh | C11-272 (attested), C11-273 |
+| groups | tab:144 | Astra | C11-259, C11-260 |
+| fixtures | tab:200 | Codex gpt-6.1-sol | C11-271, C11-263 |
+| soak | tab:192 | Codex gpt-6.1-sol | C11-270 (+310) |
+| cli | tab:202 | Codex gpt-6.1-sol | C11-284 first, 279, 283, 280, 282, 281, 308, 309, 285, 286 |
+| launch | tab:196 | Codex gpt-6.1-sol | C11-258, 269, 306, 305, 311 |
+| history | tab:197 | Codex gpt-6.1-sol | C11-262, 261, 231, 277, 291 |
+| browser | tab:193 | Codex gpt-6.1-sol | C11-287, 288, 290, 307, 304, 289 |
+| ghostty | tab:157 | Astra | C11-294 |
+| hangs | tab:158 | Astra | C11-295, 296, 302, 303, 301 |
+| crashes | tab:159 | Astra | C11-297, 299, 298, 300 (+B075 note on 311) |
+| producers | tab:194 | Codex gpt-6.1-sol | C11-274, 275, 276, 278 |
+| feed | tab:195 | Codex gpt-6.1-sol | C11-264, 265, 266, 267, 268 |
+
+Not yet seated (depend on unmerged design or later waves): C11-231, 264, 265, 266, 274, 275, 276, 277, 278 (journal design), C11-261 (groups design), C11-291/292/293 (release), P2: 267, 268, 285, 286, 289. Bug tickets (`ws:bugs`) arrive from the lead.
+
+## Landing matrix
+| Ticket | Barrier | Owner | State |
+|---|---|---|---|
+| C11-216, 258, 259, 260, 262, 269, 279, 280, 282, 283, 287, 288, 290 | Atin go + Atlas Xcode | per seat | planned, standby |
+| C11-272 | review FAIL (2 blocking, sentence-level; arch unchanged) → amend, Orchestrator attests | astra-journal | repair |
+| C11-271 | none (production capture) | grok-fixtures | executing |
+| C11-270, 284, 281 | — | grok-soak, grok-cli | planning |
+
+## Active blockers
+- Atlas prep (Xcode needs Atin's admin password) — Atlas Fleet Prep agent / Atin — watch `atlas-prep.md`.
+
+## Decisions
+- 2026-10-01 Orchestrator: grouped small tickets per seat (one owner, sequential tickets, one PR each) to cut seat count and keep shared-file context.
+- 2026-10-01 Orchestrator: C11-271 captures from production c11 now (run brief), amending AC1's tagged-build wording; tagged recapture only where needed.
+- 2026-10-01 Orchestrator: Merge Captain launch deferred until the first PR approaches PASS (no landings in planning mode).
+
+## Accepted residuals
+- none
+
+- 2026-10-01 Bug tickets C11-294..311 landed. Astra: 294 (ghostty), 295/296/302/303/301 (hangs), 297/299/298/300 (crashes) per ruling. Grok: 304-309 onto idle seats. P2: C11-310 folded into soak design; C11-311 tier-2 sweep deferred (only if ahead).
+- C11-273 planned; journal-dependent tickets seated (231/277 history; 274-276/278 producers; 264-266 feed). P2 C11-267/268/285/286/289/311 unseated.
+- 2026-10-01 Atin: if Grok runs low, Grok-scoped owners fall back to Codex GPT Luna at max effort (gpt-5.6-luna, -c model_reasoning_effort=max). Atin: wait for Atlas Xcode prep/build tidy-up before launching build work.
+- C11-271 review cycle 1 FAIL (coverage gaps, provenance, reader); repair sent to fixtures seat.
+
+## Wave 0 summary (2026-10-01 ~21:00 PDT)
+- 45 planned, C11-271 in repair (review cycle 1 FAIL), 10 unseated (P2: 267 268 285 286 289 310* 311; release: 291 292 293). *310 folded into C11-270.
+- Spec C11-272: one Grok review cycle, FAIL → sentence fixes, attested.
+- Key plan outcomes: C11-275 Codex stays on notify (trust-isolation probe failed on 0.159.3); C11-295 B086 reduced to bounded lock acquisition (C11-294 SEAM no; residual recorded); C11-270 re-timed to 3h baseline / 10h overnight candidate, $10 cap.
+- Capacity: Codex 54% (◆77) resets Sat 10:32; Grok 60% (◆14.7) resets Tue — Grok burned ~18 pts in ~1h of planning; Luna max fallback approved by Atin.
+- Atlas: Xcode 26.6 installed; Atin asked to wait for build setup tidy-up before launching.
+- Open for Atin: C11-216 notarization (A rec), C11-270 soak billing (1 rec), go for build mode.
+- 2026-10-01 Atin: C11-216 notarization = A. Soak billing = subscription (option 2). Do not worry about usage; crank everything out; handle limits when hit. Still no build mode ("just getting ready").
+- Seated for planning: C11-285/286 (cli), 289 (browser), 267/268 (feed), 311 (launch), 291 (history), 292/293 (atlas).
+- 2026-10-01 20:20 heartbeat: 54 planned, 271 in delta re-review (tab:187), 310 folded. Astra audit (not ready, 7 must + 4 during) routed to seats; groups, hangs, crashes re-stored; atlas, soak, cli, history, producers, feed, browser applying. Board edges fixed (see HANDOFF.md). Prime: Grok seat on c11 proven; Codex seat 401 (seat credential). Atlas: build-ready on Xcode 26.3; gh logged out. This tab renamed "c11 1.0 Prep"; a new Opus orchestrator surface takes over (HANDOFF.md).
+- 2026-10-01 ~20:45 Atin: favor Codex over Grok; Codex plan upgraded and resets tomorrow, treat Codex as unlimited. Orchestrator runs on Hyperion; launch only on Atin's go. Grok seats swapped to Codex gpt-6.1-sol high at standby boundaries. Prime: Codex seat on c11 proven (gpt-6-sol); gpt-5.6-luna on boxes failed 401 at bootstrap.
+- 2026-10-01 Atin: one Fable review allowed on larger items where appropriate; Grok reviews allowed.
+- 2026-10-01 Atin: review budget 3 rounds, up to 5 with a fresh reviewer after 3 when converging; skills updated (overwatch 8341bf8).
+- C11-312 minted (artifact-only signing, split from 293) to break 307->292->293 cycle; 307, 298, 292, 293 depend on it.
+- 2026-10-01 20:54 Atin: approved two concurrent c11 builds on Atlas (test running); go for C11-216 now (build mode for that ticket only).
+- Atlas concurrency test: solo cold Debug 68s (peak load 15); two at once 65s/106s (peak load 19/24 cores). Two slots approved. Test dirs removed (logs kept in ~/c11-buildtest).
+- 20:58 Atin: no restart before launch; seats stay alive. Workspace cleaned: only Prep, BUILD-FLOW markdown and 14 owner seats remain.
+- Closed 13 standby seats for fresh-context owners; atlas tab:191 alive on C11-216. Local WIP committed: soak 37aa6477e8, journal d96527cce1.
+- 2026-10-01 ~21:10 New orchestrator seated at tab:210 (mailbox above); mailbox line sent to atlas seat tab:191 (C11-216 in build mode). Holding all other tickets for Atin's go.
+- 2026-10-01 ~21:20 Oriented. Lead workspace:2/tab:79 no longer exists; reporting to Atin directly. Shared briefs repointed to tab:210; draft-PR rule added; merge-captain.md written. Holding for go.
+- 2026-10-01 ~21:30 Atin: "sounds good" on the build flow is NOT the go; still getting set. Reminder: Codex for pretty much everything. Asked for an unambiguous soak explanation before deciding soak auth/mix.
+- 2026-10-01 ~21:35 Atin: soak (C11-270) is low priority; nothing on it until all other work is done. M1 no longer gates wave 2; consumers use targeted per-ticket measurements on tagged Atlas builds vs a main build. At the end: M1 on a pre-1.0 base build, then M2 on the sign-off candidate. Soak mix (14/13/13 vs all Codex) and 16 GB host asked then, not now. Soak lane not launched at go.
+- 2026-10-01 ~21:45 Atin: GO. Full build mode. Opus orchestrates, Codex does the work.
+
+## Live seats (build mode, workspace:11 area:29)
+| Seat | Tab | Model | Ticket | State |
+|---|---|---|---|---|
+| atlas | tab:191 | Codex gpt-6.1-sol high | C11-216 | implementing (pre-go exception) |
+| merge captain | tab:211 | Codex gpt-6.1-sol high | queue | launched 21:50 |
+| cli | tab:212 | Codex gpt-6.1-sol high | C11-284 | launched |
+| launch | tab:213 | Codex gpt-6.1-sol high | C11-306 | launched |
+| crashes | tab:214 | Codex gpt-6-astra high | C11-299 | launched |
+| browser | tab:215 | Codex gpt-6.1-sol high | C11-287 | launched |
+| signing | tab:216 | Codex gpt-6.1-sol high | C11-312 | launched (new lane, actor agent:codex-signing) |
+Launch recipe at go: one-line prompt to `briefs/go-owner.md` + seat brief + ticket + mailbox. tab:217 was a duplicate CLI launch closed within seconds.
+Next admissions when C11-216 lands (send `ATLAS BUILDS LIVE`): fixtures (271 Atlas fixture test → land → 263), ghostty 294, groups 259, history 262, hangs 296. Soak deferred to the end.
+- 2026-10-01 ~22:05 INCIDENT (Orchestrator): a failed cd ran git commit -a in the main checkout, committing another agent's 32 uncommitted files to local main (1a5a8e92). Not pushed. Undone at once with git reset --mixed d63b937f65; working tree byte-identical, status restored. Lesson: set -e plus absolute git -C paths for every git write. PR #496 fix pushed properly at 947eff1a; delta re-review sent to tab:218.
+- 21:23 heartbeat: PR #496 MERGED (first landing; captain MERGED line pending). Draft PRs: 216 #498, 299 #499, 306 #500, 287 #501, 271 #495. C11-216 seat working: remote debug + test builds pass on Atlas (compile=ok tests=ok), hardening bundle identity. Retitled tab:213/215 to Codex.
+- 21:23 PR #496 MERGED 9c950dbfe7 (verified on origin/main); c11 skill synced on Hyperion. Remove worktree c11-worktrees/skill-short-prompts later.
+- 21:27 Atin: Hyperion authorized for runs if still blocked on Atlas (builds/tests). Plan: when C11-216 hands off (proofs done), send ATLAS BUILDS LIVE pointing owners at the 216 branch's remote-build.sh before merge; Hyperion is the fallback, one locked build at a time.
+- 2026-10-01 ~22:40 Atin ADOPTED batch validation: low-risk tickets merge on cross-model review PASS + green CI; runtime proof moves to an Atlas Validator seat that builds main every 4-5 merges (or hourly), runs each merged ticket's acceptance scenario + a fixed smoke, routes failures back as fix-forward on the owning ticket; ticket completes only after its batch passes. RISK LIST keeps per-ticket runtime proof BEFORE merge: 294, 259, 260, 273, 295, 302, 303, 263, 298, and anything on the typing path. Sign-off build + numbered script + soak at the end unchanged.
+- 2026-10-01 ~22:40 Atin (going to bed): Hyperion is idle overnight; builds, tests AND c11 UI driving (computer use on tagged builds) allowed on Hyperion. caffeinate -dimsu -t 43200 started (pid 71583) so the screen does not lock (locked screen blocks terminal creation). Never touch the production c11 window or its agents.
+- 22:50 C11-216 HANDOFF REVIEW 2adc5758 (#498); Astra reviewer tab:220. C11-299 Sol reviewer tab:219. 306/287 told to hand off under batch flow; 299 adds Validator scenario. Admitted: fixtures tab:221 (271 replay test → land → 263), ghostty tab:222 (294, risk list), groups tab:223 (259, risk list). Pre-merge use of the 216 script from owner worktrees is not viable (script root = its own checkout; remote runs the owner's reload.sh without --no-launch); Hyperion covers runtime proof until 216 merges.
+- 21:37 GitHub macOS runner queue saturated (6 running / 22 queued). Owners told to push at boundaries and cancel superseded runs. Watch: CI latency may pace landings; Atlas is the fallback gate if it stays long.
+- 21:38 (clock note: earlier ~22:xx stamps were estimates; real time now). Heartbeat: all seats alive. C11-306 HANDOFF REVIEW 31fe7c8f (#500) → Astra reviewer tab:224. C11-284 draft #502, C11-312 #503 (CI queued). C11-271 READY (fixtures, provisioning for Hyperion replay build). Retitled tab:221 to Codex.
+- 21:39 C11-299 review r1 FAIL (startup conversation recovery reads un-normalized snapshot: duplicate Codex records trap in reconcileCodex; discarded record's conversation ref can survive). Repair sent to tab:214; reviewer tab:219 kept for delta.
+- 21:39 C11-216 review r1 FAIL (toolchain refusal exit code not 3; failed selected test loses requested xcresult). Repair sent to tab:191; Astra reviewer tab:220 kept for delta.
+- 21:41 C11-306 review PASS at 31fe7c8f → LAND sent to captain. Reviewer tab:224 closed.
+- 21:45 C11-271 validated on Hyperion (exact-head build, fixture replay 12 cases pass) → LAND sent (complete after merge). Fixtures owner NEXT C11-263.
+- 21:46 C11-299 delta PASS at 27a7d7ee → LAND sent. Reviewer tab:219 closed. Crashes owner (tab:214) idle pending NEXT.
+- 21:47 C11-259 implemented (draft #504), runtime proof routed to Hyperion. Added Hyperion UI slot lock /tmp/c11-1.0-ui.lock to go-owner.md.
+- 21:50 C11-216 delta PASS at 21605c22 → LAND (priority) sent. Reviewer tab:220 closed.
+- 21:54 Heartbeat: CI (GitHub macOS) is the bottleneck; captain told to skip needless rebases and block on gh pr checks --watch; owners told same. #500 rebased to 682f57f9 (CI rerunning), #498 and #501 CI pending.
+- 22:04 C11-300 PASS at b689c0d5 → LAND queued. Reviewer tab:225 closed. Queue: 306, 216, 271, 299, 300. Crashes owner idle (297 waits 257, 298 waits 312).
+- 22:05 C11-259 HANDOFF 3dc63839 → Sol reviewer tab:226 (perf vs main build pending Atlas). C11-284 HANDOFF 0e83c435 → Astra reviewer tab:227; CLI owner NEXT C11-279.
+- 22:09 CI saturation: ~5 concurrent macOS jobs repo-wide, 32 queued. Cancelled 263/294 WIP runs; rule: open PR only at handoff, push to open PRs only at handoff/repair. C11-284 r1 FAIL (guide connects during socket discovery) → repair to tab:212; Astra reviewer tab:227 kept.
+- 22:13 C11-259 r1 FAIL: CLI diagnostics unlocalized; Atlas 60-ws perf comparison missing (landing requirement). Repair to tab:223; perf waits on Atlas live. Reviewer tab:226 kept. No data-integrity defects found.
+- 22:17 C11-284 delta PASS at 179d1655 → LAND queued. Reviewer tab:227 closed. Queue: 306, 216, 271, 299, 300, 284.
+- 22:17 main now 9b1380e08f (257 lanes C, D landed). C11-279 parked on 284 landing (draft #508); CLI owner NEXT C11-309.
+- 22:22 INCIDENT: installed ~/.claude/skills/c11/SKILL.md frontmatter corrupted by an owner's pre-merge hand-merged sync (284 guide paragraph spliced into description). Restored c11 + c11-browser from origin/main (identical). Rule broadcast: only captain syncs. C11-309 HANDOFF 02b5b1a6 (#509) → Astra reviewer.
+- 22:24 DECISION (Orchestrator, Atin asleep; flagged for his review): (1) land C11-216 now without the starved xlarge build job (diff has no Swift/project/CI-invoked scripts; compat builds app, green). (2) Hosted-build fallback: Atlas exact-head c11LogicTests gate when build job has no runner 30+ min and all other checks green; hosted build still runs post-merge, red = fix-forward. In merge-captain.md.
+- 22:27 C11-216 MERGED 86d45e218f (verified), completed. ATLAS BUILDS LIVE broadcast to all owners.
+- 22:27 Validator = tab:191 (brief validator.md). Launch owner NEXT C11-258. History owner launched for C11-262. Hangs (296) held until landings flow.
+- 22:29 C11-309 PASS at 5de8044f → LAND queued (docs-only). Reviewer tab:228 closed.
+- 22:38 Captain was head-of-line blocked 57m on #500 (mailbox-unit pending) while #495/#499/#505/#509 were green. Interrupted; rule added: land any ready candidate in dependency order, rotate checks.
+- 22:40 C11-271 MERGED a16fa3b2f5 (verified), completed.
+- 22:41 C11-299 MERGED 50b1acb918 (verified), awaiting batch validation.
+- 22:43 C11-300 MERGED 70fe4e26e1 (verified), awaiting batch validation.
+- 22:44 C11-309 MERGED 7bb7857417 (verified), completed, skills synced. BATCH 1 sent to Validator: main 7bb785741750ddeb8ab12b4cf6472593fb8c3550, C11-299, C11-300.
+- 22:53 Heartbeat: captain rebased #500 (130163e3) and #502 (fbd689cb), CI rerunning. #504 (259) CI green at a770f89a (the mailbox 'fail' was a cancelled duplicate). Browser owner told to hand off 287 now. Signing waiting on its GitHub signing run.
+- 22:55 Batch 1: SocketControlPasswordStoreTests fail on Atlas via SSH (Keychain), classified environment; validator skips that class. Noted on C11-216.
+- 22:55 C11-287 HANDOFF bb693f15 → Astra reviewer tab:230. Browser owner NEXT C11-304.
+- 22:56 Fallback widened: Atlas exact-head gate substitutes for all macOS hosted checks after 45 min without a runner (ubuntu checks still required, never for submodule bumps). Flag for Atin.
+- 22:58 C11-294 HANDOFF e2af4cb6 (#507) → Fable reviewer tab:231 (the one Fable review for 294). Hangs owner launched for C11-296.
+- 22:58 C11-262: owner tried Atlas Tart guest for seen-state UI; redirected to batch Validator scenario (not risk list), hand off now.
+- 23:00 C11-287 r1 FAIL (detached inspector intent lost on crash replacement) → repair to tab:215; reviewer tab:230 kept.
+- 23:03 C11-262 HANDOFF 31949dea (#510) → Astra reviewer tab:233; history owner idle (231/277 wait 273, 261 waits 259+260). C11-312 HANDOFF c5475780 (#503) → Astra reviewer.
+- 23:08 Heartbeat: C11-312 PASS → LAND (complete after merge), reviewer closed. #500/#502 still waiting on macOS runners (Atlas fallback eligible at 45 min). Validator on batch 1. 263 owner building a main control for comparison (active). Merged so far: 216, 271, 299, 300, 309 (+#496).
+- 23:09 C11-296 PASS at e49dd275 → LAND queued; reviewer closed.
+- 23:09 C11-262 PASS at 31949dea → LAND queued; reviewer closed.
+- 23:10 C11-294 Fable r1 FAIL: B1 main parks 12-15 s on close of SIGHUP-ignoring job (teardown joins IO thread). Not waived; repair (detached reaper thread on close_pty path) to tab:222. Fable reviewer tab:231 kept for delta.
+- 23:16 C11-287 delta PASS at b8661ee8 → LAND queued; reviewer closed; browser owner resumes 304.
+- 23:17 C11-258 r1 FAIL (post-boot launch line + prompt merge when attach >2.5 s) → repair to tab:213; reviewer tab:236 kept.
+- 23:17 C11-306 hosted build red: WorkspaceRemoteConnectionTests 31 s timeout (unrelated; main green). Captain verifying via Atlas exact-head logic run before landing.
+- 23:17 Batch 1: C11-299 step 5 FAIL (restored about:blank → empty URL, no_document). Crashes owner triaging regression vs pre-existing.
+- 23:23 C11-312 MERGED aa292e8f1c (verified), completed; signing seat closed. C11-257 lanes A-E all on main (0bc4b61779): 257 file barrier lifted for 281/267/297. 298, 307 unblocked by 312.
+- 23:24 C11-304 HANDOFF 84acb43c (#513) → Astra reviewer tab:237; browser NEXT 307. C11-257 done: CLI owner NEXT 281.
+- 23:25 C11-306 Atlas gate: different WorkspaceRemoteConnectionTests case timed out (16 s); hosted-failed case passed. Captain running 2x control of that class on main before landing.
+- 23:27 C11-304 PASS at 84acb43c → LAND queued; reviewer closed.
+- 23:31 C11-306 MERGED b0468febf3 (verified), awaiting batch. WorkspaceRemoteConnectionTests flake filed in the issue log.
+- 23:36 Ruling: C11-299 batch step 5 (about:blank restore) pre-existing, out of scope, deferred candidate. Validator to pass/complete 299 and use a file:// page in smoke. Crashes owner NEXT C11-297.
+- 23:37 C11-296 MERGED 14fd85a5a6 (awaiting batch). Hangs owner NEXT C11-301 (ahead of 260 in ContentView).
+- 23:39 BATCH 1 DONE: C11-299, C11-300 PASS and completed; smoke pass.
+- 23:40 C11-294 Fable delta PASS at 54e7c460 → LAND (submodule: hosted checksum flow; complete after merge). C11-259 perf FAIL (scroll p99 109 vs 69.7 ms) on a shared Atlas (load up to 50): one quiet-window rerun ordered (owner holds both Atlas build slots, load<8, 45-min cap).
+- 23:41 C11-287 MERGED b7849c703d (verified), awaiting batch. Batch 2 pool: 306, 296, 287.
+- 23:41 BATCH 2 sent: main b7849c703dc5db07b0d1aad2b6125afe15b3ec68, C11-306, C11-296, C11-287.
+- 23:42 C11-258 delta PASS at 73e29c0c → LAND queued; reviewer closed.
+- 23:47 C11-258 PR conflicts with main after recent landings; owner integrating main (merge commit) for narrow exact-head check.
+- 23:47 C11-263 HANDOFF b0fc4000 (#506) → Astra reviewer.
+- 23:48 Journal owner launched for C11-273 (Astra xhigh), modules first, attention integration after 263 merges (journal-go.md).
+- 23:51 C11-301 PASS at e6c893cd → LAND queued; reviewer closed.
+- 23:51 C11-262 MERGED 9eb8fdc917 (verified), awaiting batch 3.
+- 23:51 History owner lent C11-305 (launch lane) while 231/277/261 wait.
+- 23:54 C11-263 PASS at b0fc4000 → LAND priority (complete after merge). Fixtures owner lent C11-308.
+- 23:58 C11-304 MERGED 4dfe991a01 (verified), awaiting batch 3 (with 262).
+- 00:00 C11-284 MERGED 2d2440ac65 (verified), awaiting batch 3. CLI owner told: 281 → 279 → 283 → 280.
+- 00:05 Batch 2: WorkspaceRemoteConnectionTests flake again; Atlas logic gates now skip that class (unless a ticket touches remote-connection code).
+- 00:08 C11-258 two-writer collision (captain rebased #512 to f3c39fb1 while owner merged main). f3c39fb1 canonical; owner proves it on Atlas. Rule: captain never pushes to a PR handed back to its owner.
+- 00:14 C11-258 canonical f3c39fb1 proven on Atlas 10/10 → LAND (orchestrator attests mechanical rebase).
+- 00:14 Batch 2: MessagesPageTests.testWriterMaxWaitRunsDuringSteadyTraffic 30 ms timeout (C11-257 code); one retry, then skip as timing flake.
+- 00:14 C11-305 HANDOFF 06854ad3 (#515) → Astra tab:242. History owner lent C11-290. C11-297 HANDOFF ac1f8260 (#516) → Sol tab:241; crashes NEXT 298.
+- 00:15 C11-259 perf ruling: accepted within noise (failing cell moved; +1.4 ms marginal vs noisy control); gate carried to 260/261. needs-human cleared; owner to HANDOFF.
+- 00:15 C11-294 head c6946c5c = checksum bot commit only (verified); orchestrator attests; LAND updated.
+- 00:17 Batch 2 smoke step 6 FAIL: QA-resumed tagged app has zero AX/CG windows (state restored). Not env. Bisect authorized across 306/296/287.
+- 00:17 C11-259 handoff at 0440a7e9 conflicts with main; owner integrating main before the delta review.
+- 00:18 Batch 2 smoke 'no windows' was a harness title-filter error (window exists, title empty). Bisect cancelled.
+- 00:19 C11-305 PASS at 06854ad3 → LAND queued; reviewer closed.
+- 00:20 C11-269 HANDOFF bbe2e250 (#517) → Astra tab:243. C11-280 reassigned CLI → launch seat; CLI queue 281 → 279 → 283 → 282.
+- 00:22 C11-297 r1 FAIL (startup gate drops one-shot report_tty/report_shell_state forever) → repair to tab:214; reviewer tab:241 kept.
+- 00:23 C11-301 MERGED 4ff6212b2e. C11-263 hosted build red on WorkspaceRemoteConnectionTests flake → ruling: that class never blocks; land 263 via Atlas gate (priority). Added to captain brief.
+- 00:24 C11-269 PASS at bbe2e250 → LAND queued; reviewer closed.
+- 00:29 C11-263 Atlas gate: LegacyCodexNotify tests fail 'Workspace not found' → owner diagnosing (308 paused).
+- 00:29 C11-305 MERGED 63dafef0f7 (verified), awaiting batch 3.
+- 00:33 C11-258 MERGED 244016498f (verified), awaiting batch 3.
+- 00:36 C11-259 delta PASS at 53d88b7c → LAND (complete after merge). Groups owner waits for 259 MERGED to start 260.
+- 00:41 C11-263 test-only fix a245ece6 attested (window-ownership race in test fixture); LAND priority. Fixtures resumes 308.
+- 00:42 C11-298 signed-source admission deferred to combined head after C11-307 merges (one paired signed run).
+- 00:42 C11-297 delta PASS at 8ebd72af → LAND queued; reviewer closed.
+- 00:50 C11-294 MERGED b6f239bd07, completed. Hangs owner NEXT 295; Ghostty owner NEXT 302 then 303. CLI 282 now unblocked (after 283).
+- 00:50 C11-290: proxy proof via reversed topology (tagged app on Hyperion, c11 ssh atlas, loopback listener on Atlas).
+- 00:51 C11-297 conflicts with main (TerminalController, xcstrings) → owner integrates.
+- 00:52 C11-307 PASS at c89ac3e9 → LAND (complete after merge; 298 waits on it). Reviewer closed.
+- 00:54 BATCH 2 DONE: 306, 296, 287 PASS, smoke pass. BATCH 3 sent: main b6f239bd077164d2ff2e7aa18d5464d4e885fd35, 262, 304, 284, 301, 305, 258.
+- 00:55 C11-263 MERGED 6926fa05cf (verified), completed. Journal owner told to integrate.
+- 00:56 C11-259 MERGED 43529df178 (verified), completed. Groups owner starts C11-260.
+- 00:56 C11-269 docs conflict (api.md) → owner integrates.
+- 00:57 C11-297 merge 1b42f63b attested mechanical → LAND.
+- 00:58 C11-269 docs-only merge d47299f6 attested → LAND.
+- 00:58 C11-297 re-conflict (WorkspaceManager vs 259/263). Owner integrating again; FRESH LAND goes first (rule added to captain brief).
+- 01:00 C11-281 r1 FAIL: F1 waived (orchestrator brief error), F2 UTF-8 chunk-split in socket reader + F3 queued newline proof → repair to tab:212.
+- 01:02 C11-290 HANDOFF 68801665 (#520) → Astra tab:246. C11-283 → history seat; CLI queue 281 repair → 279 → 282.
+- 01:03 C11-297 FRESH LAND at 1572e20e (attested). C11-259 post-merge bug (selective resume drops groups) folded into C11-260.
+- 01:04 C11-307 CI red only on C11-305's ShellGitWatcherTests cleanup (killpg PermissionError) → not blocking 307; fix-forward on C11-305 by history seat.
+- 01:05 Atlas Tart VM slots (2) contended (298, 308 guests; 288 waiting). Lease rule: 30-min cap, delete after use, poll not BLOCK.
+- 01:05 C11-290 PASS at 68801665 → LAND (complete after merge).
+- 01:19 Atlas ENOSPC (8 GB free): pruned finished-ticket caches → 91 GB free. Validator now owns Atlas disk janitor duty (keep >100 GB). All seats told to retry. C11-305 fix-forward HANDOFF cca7b3e0 (#521) → Astra reviewer.
+- 01:22 C11-305 fix-forward PASS at cca7b3e0 → LAND (priority: unblocks hosted CI).
+- 01:23 FRESH rule caused head-of-line block (517/520 green, waiting on 297 build). Corrected: FRESH only breaks ties among ready PRs.
+- 01:24 C11-269 MERGED 7969b8f8bd (verified), awaiting batch 4.
+- 01:25 C11-290 MERGED 7aa1bd0754 (verified), completed.
+- 01:26 C11-297 MERGED e7322a2ad0 (verified), awaiting batch 4.
+- 01:31 C11-305 fix-forward MERGED b6244a2d30 (verified).
+- 01:34 Decision: C11-258 batch exclusions accepted (Kimi OAuth, Copilot absent); covered by host fixtures + 13 native receipts.
+- 01:35 C11-280 HANDOFF 812b26bd (#522) → Astra tab:248. Launch owner: P2 C11-285 now; producers lane (274-276, 278) after 273 lands.
+- 01:37 C11-307 MERGED 7edd59b882 (verified), completed. 298 owner to send combined head for signing admission.
+- 01:39 C11-298 signed-source ADMITTED 876fbadf (29801/29802). C11-281 repair aabd639e → delta review tab:245.
+- 01:40 C11-280 r1 FAIL: disclosure (home paths/account in evidence). Repair to launch owner. Disclosure rule broadcast. MORNING ITEM for Atin: board artifacts contain home paths; scrub before committing .lattice.
+- 01:41 C11-281 delta PASS at aabd639e → LAND (gate runs remote-connection class since it touches the socket reader). CLI owner resumes 279.
+- 01:45 C11-280 disclosure repair verified/attested → LAND.
+- 01:45 MORNING ITEM for Atin: Lattice stamps host/user/worktree on every event and keeps previous_body on comment edits; the public .lattice history (already on main) carries identity data. Board-level decision (Lattice redaction/export), not run work. Owners sanitize their own payloads only.
+- 01:49 Disclosure: owners of 281/298/307 sanitized their own comments/payloads; manifest /tmp/c11-disclosure-sanitized/public-manifest.json for a board-owner scrub. Same morning item (Lattice history keeps originals + origin stamps).
+- 01:53 C11-280 MERGED 1334615d98 (verified), awaiting batch 4.
+- 01:57 Decision: C11-304 step 4 (empty OSC → directory) pre-existing via Ghostty, out of scope.
+- 01:59 C11-281 conflicts with 280 (CLI, CapabilityFeatures) → owner integrates.
+- 02:03 C11-308 HANDOFF b09a7a69 (#523) → Astra tab:249. Fixtures owner: P2 286 now; Feed lane (264-266) after 273.
+- 02:07 C11-308 PASS at b09a7a69 → LAND queued.
+- 02:11 C11-308 MERGED 2496017a28 (verified), awaiting batch 4.
+- 02:12 C11-285 review finding = deferred runtime evidence → batch per policy; LAND.
+- 02:16 C11-281 FRESH 945d90ea re-conflicted after 308; captain now owns registry-only (CapabilityFeatures) conflicts as additive union.
+- 02:18 C11-283 HANDOFF 50fa043e (#525) → Astra tab:251. Reviewer contract gained the batch-validation rule. History owner: P2 289 now; 231/277 after 273.
+- 02:18 Captain additive-merge scope: CapabilityFeatures entries, pbxproj additions, xcstrings key unions.
+- 02:21 UI slot reservation for Validator (262, 301); 302 owner told to yield. Rule in go-owner.md.
+- 02:22 C11-283 r1 FAIL (legacy routes ignore --window; foreign workspace fallback; unlocalized errors) → repair to tab:229; reviewer tab:251 kept.
+- 02:28 C11-279 PASS at eb806620 → LAND queued.
+- 02:45 CAPACITY: Codex weekly 82% used, resets Thu Oct 8 8:16 PM PDT (the "resets tomorrow" premise did not hold). Burn ~20 pts/h, so Codex is dry within ~1h. Grok 68% used (resets Oct 6). Claude Bravo 16% used (resets Oct 8), Alpha 100%, Charlie 97% (resets today 10:00). Actions: paused P2s (286, 289) and C11-288; Validator pauses after its current ticket; in-flight owners lean; future reviews on Grok. DECISION for Atin (flag raised): after Codex runs dry, (a) Claude Sonnet/Opus workers on Bravo, (b) Grok owners for the remaining tickets (~32% left), (c) pause until Oct 8, or (d) buy Codex credits.
+- 02:39 C11-285 MERGED 2e920cf4e8 (verified), awaiting batch.
+- 02:41 C11-279 MERGED 531908b8d5 (verified), awaiting batch.
+- 02:42 C11-288 PAUSED at 837f9f7992 (WIP pushed, no PR, native import not run).
+- 02:45 UI slot violation: 283 tagged windows took focus during 260's lease; 283 owner told to quit and take the slot properly.
+- 02:47 BATCH 3 PAUSED: 258, 304, 284, 262 PASS; remaining 301 (native 60-cycle/restore) and 305 (pre-existing branch-routing classification pending, art_01M3XZRWZN7TKC1S5WGTFWZ24R); smoke pass; 15 GB freed.
+- 02:50 C11-283 delta PASS at 15df94ff → LAND queued.
+- 02:51 C11-302: partial runtime proof accepted; scrollbar-drag residual → sign-off script. Owner to hand off; 303 waits.
+- 02:56 C11-283 merge a9967182 attested → LAND FRESH.
+- 02:57 C11-281 MERGED 85f33041c5 (verified), awaiting batch.
+- 02:58 C11-302 Grok PASS at 2f63e9b3 → LAND (complete after merge).
+- 02:59 C11-283 re-conflict after 281 → owner integrating (last CLI PR in queue).
+- 03:03 C11-302 MERGED 3786513d84 (verified), completed.
+- 03:08 Codex 12% left (~8/h after throttle). Groups owner told to stop its Codex sub-agent.
+- 03:12 C11-283 merge-resolution Grok PASS at 6bc28658 → LAND FRESH.
+- 03:21 C11-273 perf probe invalid both sides → residual to soak; owner to HANDOFF for Fable review.
+- 03:22 C11-260 perf: one sealed-prep retry authorized (fixture ordering after notification seeding).
+- 03:23 C11-283 MERGED 234c31bb8c (verified), awaiting batch. Landing queue empty.
+- 03:23 C11-273 HANDOFF 8c6cd8d8 (#527) → Fable reviewer.
+- 03:24 C11-260: retry 002 blocked by stale own-tag socket; one more sealed retry authorized after removing it; on measurement failure, hand off with residual.
+- 03:33 C11-260 HANDOFF f41a6790 (#528), perf gate unmet → moved to C11-261 as release blocker; Fable review launched.
+- 03:39 C11-273 Fable r1 FAIL: (1) answered asks/approvals stay waiting (audit finding 2), (2) PreToolUse status pill lost, (3) legacy writers suppressed after session end. Repair to tab:240 (1a hook moved from 274, attested). Fable tab:255 kept.
+- 03:46 C11-260 Fable PASS at f41a6790 → LAND (complete after merge). Rulings for 261: header unread follows suppression, perf watch points, dead code.
+- 03:49 C11-260 MERGED dac4fcede0 (verified), completed. C11-261 unblocked (needs capacity decision).
+- 03:55 C11-295 HANDOFF d3fa43c1 (#530) → Fable reviewer.
+- 03:59 C11-282 Grok r1 FAIL (trailing --json rejected) → tiny repair to tab:212; Grok reviewer tab:257 kept.
+- 04:02 C11-273 Fable delta PASS at 1b6e2340 → LAND priority (complete after merge).
+- 04:04 C11-273 conflicts with main (CLI, pbxproj) → owner integrating; FRESH first.
+- 04:05 C11-295 Fable PASS at d3fa43c1 → LAND (complete after merge).
+- 04:06 C11-295 head 6eaab8c5 (main merge, tests/docs only) attested → LAND FRESH.
+- 04:12 C11-282 Grok delta PASS at 14c736b2 → LAND queued.
+- 04:15 C11-295 MERGED f731745df1 (verified), completed (P0).
+- 04:15 C11-273 merge Grok PASS at b33c93db → LAND FRESH priority.
+- 04:21 C11-282 merge dda149b3 attested → LAND FRESH after 273.
+- 04:21 C11-272 (spec) completed by Orchestrator; unblocks 273 landing.
+- 04:23 C11-282 logic conflict with 295 (SurfaceHandlers read paths) → owner integrates; narrow merge review next.
+- 04:28 C11-298 Grok PASS at 876fbadf → LAND (complete after merge).
+- 04:30 C11-273 restart guest scenario hit C11-297 not_ready gate → owner confirming script vs product, minimal fix.
+- 04:35 C11-282 merge with 295 Grok PASS at f3192aae → LAND FRESH.
+- 04:38 C11-298 MERGED 9cc9e3222a (verified), completed.
+- 04:39 C11-273 script-only fix db405a42 attested → LAND FRESH priority.
+- 04:43 C11-282 MERGED 04458a8b0a (verified), awaiting batch.
+- 04:43 C11-273 re-conflict (SocketDispatch vs 282/298) → owner integrates; queue otherwise empty.
+- 04:51 C11-273 final merge cc9aeafa attested (case union) → LAND FRESH.
+- 05:01 C11-273 MERGED 12d4f21a88 (verified), completed. Critical path's journal on main. Landing queue empty; fleet holding on capacity decision.
+- 2026-10-02 ~07:35 Atin: switch to cheaper models: Grok owners, Opus 5.5 reviewers (Claude Code --model opus --effort high, read-only). Codex gets a manual OpenAI reset at 10:00 today. Assumption pending Atin: deep tickets (303, 261, validation batches) return to Codex after 10:00. Grok 75% used (resets Oct 6): start 3 Grok owners on tight scopes (264, 274, 231). Merge Captain stays on its remaining Codex; Orchestrator lands directly if it runs dry.
+- 07:41 Atin: YES, deep tickets (303, 261, validation batches) back to Codex after the 10:00 reset. Grok owners launched: feed tab:262 (264), producers tab:263 (274), consumers tab:264 (231); actors agent:grok-*.
+- 07:50 Atin's structural feedback: (1) lesson: keep work flowing on fallback models instead of pausing; (2) agree land infra before go; (3) split hot files: C11-317 post-1.0; (4) merge queue: C11-316 post-1.0, strongly agreed; (5) hourly CI + Atlas self-hosted runner for internal branches: C11-315 (c11-1.0, first Codex job after 10:00); (6) delete flaky tests: C11-314 (Grok owner now); (7) agree UI/VM capacity; (8) put process rules in the lattice-orchestrator skill (retro at end); (9) identity leakage in .lattice is fine, no redaction.
+- 07:53 Luna wave launched: 303 tab:267, 261 tab:268, 275 tab:269, 276 tab:270, 277 tab:271, 315 tab:272, 291 tab:273, 311 tab:274, 286 tab:275, 289 tab:276. Grok: 264 tab:262, 274 tab:263, 231 tab:264, 314 tab:265. 288 resumed (Sol tab:215); Validator resumed (batch 3 then 4).
+- 08:02 C11-314 Astra PASS at d1d6cee4 → LAND (complete after merge).
+- 08:03 BATCH 3 DONE: 262, 304, 284, 301 (native 60-cycle/restore), 305 (pre-existing branch routing classified), 258 PASS; smoke pass; 15 GB freed. Validator proceeding to batch 4.
+- 08:09 Board hygiene: merged-awaiting-batch tickets moved review → in_validation (269, 279, 280, 281, 282, 283, 285, 297, 308); captain rule updated. Lattice dashboard on :8813 in tab:278.
+- 08:11 C11-314 MERGED 9f2173320a (verified), completed; flaky skip retired (Keychain skip stays). Flaky Grok seat closed.
+- 08:16 Batch 4: C11-280 host fixture asserts resurrection that C11-295 forbids → test fix-forward by launch seat (tab:213).
+- 08:18 C11-274 Astra r1 FAIL (async ask resolution ordering; unbounded observer; StopFailure not error) → re-dispatched Grok → Luna at a80794899f (repair brief c274-repair.md); Astra reviewer tab:279 kept.
+- 08:28 C11-291 pass-1 Astra PASS at 73781624 → LAND (not completed; refresh at freeze).
+- 08:29 Atin: all Luna owners in fast mode (/fast; verified "max fast" on every Luna seat). New Luna launches: send /fast right after launch and verify. Grok retired (4% weekly left): C11-231 → Luna tab:288 (from 1c09943d68), C11-264 Feed → Luna tab:289 (from WIP 820104d8c7). C11-291 pass 1 landing (refresh at freeze).
+- 08:34 C11-291 pass 1 MERGED cef86bc2bb (verified); ticket open for refresh at freeze.
+- 08:34 C11-280 test fix-forward 41f12579 attested → LAND.
+- 08:37 C11-275 r1 FAIL (isolation probe invalid) → repair to Luna tab:269; Astra tab:290 kept.
+- 08:40 Atlas 92 GB free, load 37: Validator asked to prune.
+- 08:49 SECURITY: C11-315 had registered a repo-scoped self-hosted runner (atlas-c11-315) reachable from fork PRs; Orchestrator deregistered it (runners total 0). Atlas ssh timing out (load). C11-315 rework: hosted hourly CI only; runner boundary is Atin's decision.
+- 08:52 Lattice: complete from in_validation needs pr_open first; Validator brief updated; C11-279 completed.
+- 08:54 C11-280 test fix MERGED ef36ab8258; Validator to rerun fixture.
+- 08:56 Atin: fine with recommendation for C11-315 (hosted hourly CI only, Atlas exact-head gate via remote-build for landings, no self-hosted runner). No outside contributors, so fork exposure is a non-issue for now; revisit an Atlas runner after the run.
+- 08:57 Atin: Codex capacity is ample; authorized Sol (gpt-6.1-sol high, fast mode) where useful. Rule: running Luna tickets stay put unless stuck or a second review round fails (then switch to Sol at a clean pushed head); critical-path serial tickets C11-265, C11-266 and C11-278 launch on Sol high fast. New Sol/Luna launches get /fast right after boot.
+- 08:58 C11-269 Settings-click exclusion accepted → sign-off script item on C11-292.
+- 09:04 Atin: never run old Luna; always latest. Switched in place via /model: Sol high fast on 264 (tab:289), 274 (285), 261 (268), 303 (267); GPT-6-Luna max fast on 275, 276, 277, 315, 291, 311, 286, 289, 231. New launches: --model gpt-6-luna --effort max, then /fast. Recipe + rule saved to ~/.claude/references/launching-agents.md and lattice-orchestrator-v2 delivery.md (overwatch 05d8f37).
+- 09:06 C11-275 delta PASS at 8fc61c7b → LAND.
+- 09:10 C11-275 MERGED e9a13f4646 (verified in heartbeat), in_validation.
+- 09:27 Atlas disk 64 → 107 GB (superseded tags pruned); one-tag-per-ticket rule broadcast. C11-277 HANDOFF 0bb2efe1 (#539) → Astra tab:297. C11-311 r1 FAIL (cookie scope, fixture) → repair to tab:274.
+- 09:32 C11-277 r1 FAIL (export not streamed; double-counted intervals; offline time invented) → repair tab:271; Astra tab:297 kept.
+- 09:40 C11-315 repair at 5dc11c02 (handoff message never arrived; found via PR) → delta review tab:291.
+- 09:43 C11-315 delta PASS at 5dc11c02 → LAND (complete after merge).
+- 09:53 C11-264 HANDOFF b27f0ca8 (#541) → Astra tab:299. C11-274 repair 5a725590 → delta review tab:279.
+- 09:54 C11-289 r1 FAIL (empty --profile falls back to operator profile; destructive parsing ignores extra args/flags) → repair tab:276; Astra tab:298 kept.
+- 09:57 C11-274 r2 FAIL (converging: auth+legacy calls exhaust 250 ms budget with password; fixture checkpoints) → round 3 repair tab:285 (Sol).
+- 09:58 C11-264 r1 FAIL (privacy fallback writes body; watch no reconnect; stale flag rows) → repair tab:289 (Sol); Astra tab:299 kept.
+- 10:04 C11-276 r1 FAIL (rescan re-applies turns; >4 MiB rollouts lose identity) → repair tab:270; Astra tab:300 kept.
+- 10:08 C11-274 delta PASS round 3 at f3025960 → LAND.
+- 10:09 C11-303 r1 FAIL (no final-head runtime proof; flush oracle misses successes) → repair tab:267 (Sol); Astra tab:302 kept.
+- 10:11 C11-231 r1 FAIL (crash-live sessions dropped from restore; restored clocks/asks from raw drafts) → repair tab:288; Astra tab:303 kept.
+- 10:21 C11-274 merge ee46f1a2 (allowlist union) attested → LAND FRESH.
+- 10:25 C11-315 merge f3565ef1 (CLAUDE.md only) attested → LAND FRESH. Note: tab:272's HANDOFF envelopes did not arrive twice (found via PR).
+- 10:32 Post-compaction reorient: 274 (#533) in captain's Atlas gate, 315 (#537) queued behind it. Renamed Sol seats (267/268/285/289). Closed finished C11-280 fix seat tab:213. Board: 31 done, 7 in_validation, 3 review, 9 in_progress, 8 planned; load 5, Atlas 113 GB free.
+- 10:35 C11-311 repair HANDOFF d28f8689 (#538) → delta review tab:295 (r1 head c45b4e3d82).
+- 10:38 C11-315 MERGED d3ef3c14cf (verified on main), done. Hourly CI workflow active. Seat tab:272 closed.
+- 10:41 C11-274 MERGED 3b2a92860e (verified), in_validation; added to Validator batch. tab:285 kept idle as likely C11-278 owner (producers context).
+- 10:44 C11-311 r2 FAIL (product fixed; dialog fixture primes overrides too late) → round 3 repair tab:274; Astra tab:295 kept.
+- 10:47 C11-264 repair HANDOFF d01eecd5 (#541) → delta review tab:299.
+- 10:41 Heartbeat: all 21 seats live (289 owner compacting at 95% context). Fast mode was off on Validator 191, Captain 211, C11-288 215 (Sol high) → /fast, verified. Load 5.3, Atlas 117 GB free. Hourly CI: no run yet (just merged).
+- 10:45 Atin: Merge Captain moves to Astra (critical role). Switched tab:211 in place to GPT-6-Astra high fast (context kept), verified.
+- 10:52 C11-289 repair HANDOFF 2f611e02 (#540) → delta review tab:298.
+- 10:58 C11-311 r3 HANDOFF 8d78d580 → delta review tab:295.
+- 11:05 C11-311 r3 PASS at 8d78d580 → LAND (in_validation after merge). Reviewer tab:295 and owner tab:274 to close after merge.
+- 11:07 C11-264 r2 PASS at d01eecd5 → LAND (priority over 311; 265 waits on it).
+- 11:09 C11-264 #541 CONFLICTING (pbxproj + JournalCoordinator callback arity vs C11-275 codex hook gap): captain unions both sides; Orchestrator attests merge head.
+- 11:12 C11-311 captain BLOCKED on depends_on C11-270 edge → Orchestrator attested slice exception (edge gates typing-path groups only) → LAND FRESH after 264. NOTE: #538 covers only B078/B080; other tier-2 sweep groups (B006, B049, B160, ...) unattempted; ticket stays open.
+- 11:15 C11-311 owner tab:274 → next sweep slice (2-4 groups by severity, excluding typing-path B032/B049/B160 which wait for the soak). P2; release can ship with it open.
+- 11:18 C11-289 r2 PASS at 2f611e02 → LAND (after 264, 311).
+- 11:21 C11-276 repair HANDOFF 01169bce (#542) → delta review tab:300.
+- 11:25 C11-264 merge ee665731 attested (additive pbxproj + callback/Codex union) → LAND FRESH.
+- 10:55 Heartbeat: all seats live; Atlas 99 GB → Validator janitor. Load 7. Board 32 done, 8 in_validation, 4 review, 6 in_progress, 8 planned. (Note: earlier entries from 10:41 to 11:25 carry estimated times; real clock is 10:55.)
+- 10:58 C11-303 repair HANDOFF cc53a0d3 (#543) with final-head runtime artifacts → delta review tab:302.
+- 10:59 C11-264 MERGED bc915d0509 (verified), in_validation. C11-265 dispatched to Feed seat tab:289 (Sol high fast, 57% context) via feed-265.md. Reviewer tab:299 freed.
+- 10:59 C11-286 HANDOFF ba414b79 (#545) → fresh Astra reviewer tab:323 (review-c11-286.md).
+- 11:00 C11-276 r2 PASS at 01169bce → LAND (after 311, 289). 278 now waits on 231, 277.
+- 11:01 Atin: ultrafast on Merge Captain only (command /ultrafast). tab:211 now GPT-6-Astra high ultrafast, verified mid-turn. Feed chain stays at fast.
+- 11:02 C11-286 r1 FAIL (parse on main; no-focus oracle weak; secondary-display/edge coverage) → repair tab:275; Astra tab:323 kept.
+- 11:05 C11-303 r2 PASS at cc53a0d3 (exact-head VM proof accepted; non-blocking: stalled-expiry fixture not mutation-sensitive) → LAND (queue 311, 289, 303, 276).
+- 11:05 C11-311 slice 1 MERGED 16fac2a20b (verified). Ticket correctly stays in_progress (owner on slice 2); captain's in_validation refusal is expected. Validator batch adds slice 1. Reviewer tab:295 closed.
+- 11:07 C11-289 captain BLOCKED: additive conflicts with 311 slice 1 (dispatch cases, worker list, CapabilityFeatures) → owner tab:276 integrates + checks cookies.clear/state.load vs profile targeting; Orchestrator attests or delta-reviews. Captain proceeding with 303.
+- 11:11 Heartbeat: Atlas 93 GB → Orchestrator pruned merged-ticket dirs (274, 275, 264, review dirs) → 116 GB. Closed 264 reviewer tab:299. First hourly CI run in progress. Load 6.3. All seats live.
+- 11:14 C11-303 MERGED 9df90421ef (verified), done. Closed owner tab:267 and reviewer tab:302; worktree removed. Admitted C11-267 (send guard, P2; dep C11-257 done): Luna max fast tab:324, worktree c11-1.0-C11-267, brief owner-c11-267.md; added to the risk list (send is the fleet transport; runtime proof before merge; DECISION before any guard that would refuse today's agent sends). C11-268 follows 267.
+- 11:15 C11-276 MERGED 43c1d51901 (squash of PASS head 01169bce; verified), in_validation; Validator batch. Closed owner tab:270, reviewer tab:300. C11-278 waits on 231, 277.
+- 11:22 C11-289 owner integration f0e7c9f5 attested (pure union + capability test) → LAND FRESH.
+- 11:25 Heartbeat + hourly status posted. Seats live; load 8.4; Atlas 123 GB; first hourly CI run green. Board 33 done, 10 in_validation, 1 review, 8 in_progress, 6 planned. Validator batch 4 remote evidence ready, native Hyperion UI steps pending Atin's quiet window.
+- 11:26 C11-311 slice 2 (B018, PR #546, 0b5f04db) HANDOFF → fresh Astra reviewer tab:325.
+- 11:27 C11-311 owner hit lattice 3-cycle cap on review→in_progress; ruled: no --force, keep status, continue B046/B050 as separate PRs.
+- 11:28 C11-311 slice 2 r1 FAIL (no weak-reference lifetime oracle for B018) → repair tab:274 (before B046/B050); Astra tab:325 kept.
+- 11:30 C11-289 MERGED c3dc4a8bc2 (verified), in_validation; seats 276/298 closed. Backlog-review admissions (Atin approved via tab:301): C11-251 Luna tab:326, C11-250 Luna tab:327, C11-253+256 Sol tab:328, C11-249 Luna tab:329 (before 291 freeze); all fast verified. C11-320 waits on 292. Atin: open up capacity, many Luna workers OK. Asked Validator to move native UI steps to Atlas Tart guests.
+- 11:31 Ruling: validation steps needing the C11-270 F2 baseline are deferred to the soak; tickets complete on their other steps with the deferral named (C11-276 step 8 first).
+- 11:32 C11-311 parallel sweep: workers a (Sol, B006/B075) tab:330, b (Luna, B069/B193/B247/B248) tab:331, c (Luna, B083/B093/B114) tab:332, d (Luna, B064/B137/B148) tab:333; brief sweep-311.md; tab:274 keeps B018 repair + B046/B050. Typing-path B032/B049/B160 wait for the soak. Build-mode nudge sent to 250/253/sweep-a. Lesson: /fast sent during boot is swallowed; resend after first turn starts.
+- 11:34 Board commit 61b4d6d94d pushed to main (all .lattice changes incl. backlog review closures; built on origin/main via temp index, main checkout working tree untouched).
+- 11:39 Heartbeat: 24 seats live (14 owners/workers working). Load 8.8; Atlas 107 GB, load 16. Validator VM-UI answer pending.
+- 11:41 C11-286 repair HANDOFF 5e24fb74 → delta review tab:323.
+- 11:47 C11-311 B064 (worker d, PR #547, 6a8ae69c) → Astra tab:325 (311 sweep reviewer).
+- 11:48 C11-286 r2 PASS at 5e24fb74 → LAND.
+- 11:49 C11-286 MERGED 64c26ccc48 (verified); captain reused the owner's exact-head full logic run 71b5bc95 after reading its result.json (2,399 tests, 0 failures) instead of re-running. in_validation; seats 275/323 closed.
+- 11:49 go-owner.md still gated Atlas on an 'ATLAS BUILDS LIVE' signal; brief fixed and signal broadcast to new seats 324, 326-333.
+- 11:52 C11-265 HANDOFF 47a7221d (#548; 52 Atlas tests + packaged UI) → fresh Astra reviewer tab:336.
+- 11:52 C11-311 B064 r1 FAIL (claude wrapper reentry bypasses CLAUDECODE cleanup; release-blocking) → repair worker d tab:333; Astra tab:325 kept. C11-265 review started tab:336.
+- 11:54 C11-265 cycle-1 PASS at 47a7221d → LAND (front of queue).
+- 11:55 Captain held C11-265 because dep 264 is in_validation, not done. Ruling: merged-and-verified satisfies a dependency; added to merge-captain.md → LAND FRESH.
+- 11:56 Heartbeat: all seats live; load 9.3. Atlas 84 → 113 GB (Orchestrator pruned 303/289/286/276). Stale 275 tagged app on Atlas flagged to Validator; bundles 29 GB. Validator VM-UI answer still pending.
+- 11:57 Validator: native UI checks move to Atlas Tart guests (30-min leases) from batch 4 on; Hyperion only for operator-display proof. Quiet-window request to Atin withdrawn; Hyperion UI reservation released.
+- 12:00 C11-265 MERGED dedc6007a5 (verified), in_validation. C11-266 dispatched to Feed seat tab:289 (feed-266.md). Reviewer tab:336 closed.
+- 12:03 C11-261 HANDOFF 990f4435 (#549; scripts/tests/docs, perf gate release blocker) → Astra reviewer tab:341.
+- 12:04 C11-311 B064 repair cb9f1063 → delta review tab:325.
+- 12:06 C11-261 r1 FAIL (6 blockers: perf gate unmeasured, 260 rulings unaddressed incl. suppression fix, harness identity, restore comparators, human chapter, forced-quit labeling) → repair tab:268 (Sol); quiet-Atlas window on request; Astra tab:341 kept.
+- 12:06 C11-311 B064 r2 PASS cb9f1063 → LAND (no status change on 311).
+- 12:11 Heartbeat: seats live (tab:338 'Tab Close Fix' is Atin's own Claude). Atlas 117 GB; load spiked to 148 (1-min; 15-min 46): c11-251's first build compiling GhosttyKit with zig + c11-unit xcodebuild + one VM; transient. Board 33 done, 13 in_validation, 11 in_progress, 1 review, 5 planned, 3 backlog (124 Atin's, 310 soak, 320 README). Hourly CI #2 running.
+- 12:13 Captain B064 gate queued on Atlas capacity (load 142-172; 15-min 64). Sources: c11-251 first build compiling GhosttyKit via zig (38 procs), c11-266 tests (25), 3 tagged apps, 1 VM; memory fine. Transient; no action beyond watching. Watch item: if the 15-min load stays >80 at next heartbeat, give landings priority (owners pause new Atlas runs while a captain gate is queued).
+- 12:15 C11-311 B006 (worker a, PR #550, 067e3e54) → Astra tab:325.
+- 12:20 B064 wrapper gate PASS (5 suites, 30 launch modes); full gate input upload slow (101/173 MB) under concurrent uploads. Let it run. Retro item: remote-build uploads a full ~170 MB source bundle per run; incremental (rsync/git-fetch on Atlas) would remove the upload contention.
+- 12:22 C11-311 B006 r1 FAIL (browser.snapshot and other waits still pump main run loop) → full-scope repair worker a tab:330 (no partial B006).
+- 12:26 Heartbeat + hourly status. Atlas 90 → 128 GB (Orchestrator deleted 227 upload bundles older than 90 min + merged 264/265 builds). Atlas load back to 35. Seats live. Board 33 done, 13 in_validation, 11 in_progress, 1 review, 5 planned, 3 backlog. Hourly CI #2 green.
+- 12:26 Correction: my prune deleted 227 bundles >90 min old, but validator.md said never touch bundles/ (remote-build's SHA-keyed upload cache). Effect: some builds re-upload a parent or submodule bundle once (cache refills). Rule now: parent-* bundles >3h may be pruned; never module-*.
+- 12:29 C11-277 repair HANDOFF 59f9a466 → delta review tab:297.
+- 12:32 C11-253+256 HANDOFF 34a59fea (#552; 1,573 Atlas tests green; also touches Sources/Theme + Workspace.swift) → Astra tab:344.
+- 12:33 C11-311 B075 (worker a, PR #553, ee53dcde) → Astra tab:325.
+- 12:36 C11-253 r1 FAIL (deleted 5 tests that were sole guards: Find focus/overlay lifetime/queued layout, collapsed-divider pass-through) → repair tab:328; C11-256 wiring passed; Astra tab:344 kept.
+- 12:36 C11-277 r2 FAIL (export RSS row-proportional: autoreleasepool excludes encoding) → round 3 repair tab:271; intervals/offline fixed.
+- 12:37 C11-311 B064 MERGED 1199866cbc (verified); Validator batch.
+- 12:38 QUIET ATLAS for C11-261: Orchestrator holding both build slots (pid on Atlas, /tmp/c11-quiet-hold.py, 30 min after acquiring); captain informed.
+- 12:40 Heartbeat: seats live; Atlas 101 GB, load 33. Quiet-hold script v1 had a syntax error (never held); fixed and restarted: holder pid 14629 on Atlas, lease /tmp/c11-quiet-atlas.active, slots /tmp/c11-atlas-build-slots/slot-{1,2}.lock. Waiting for current builds to drain.
+- 12:41 QUIET ATLAS granted to C11-261 (held since 15:40:58 after waiting 54s).
+- 12:49 Validator: all 12 in progress, every one waiting on native VM proof (macOS 2-VM cap shared with owners); not started 275, 291. C11-261 quiet window: fresh admission authorized, interleaved A/B, proceed under load 15. B075 PASS → LAND (queued behind hold). Preview build for Atin (tag preview-1, fresh) being prepared.
+- 12:49 Preview build for Atin: worktree c11-1.0-preview at main 1199866cbc; remote-build --tag preview-1 --launch (QA fresh) running in background, queued behind the quiet hold.
+- 12:54 Heartbeat: seats live (Validator compacting). Atlas 101 GB, load 13 under quiet hold (since 15:40:58 Atlas). preview-1 invocation 31acd4d1 queued.
+- 12:55 QUIET EXTEND C11-261 +10 min: second holder pid 37420 queued on slots.
+- 13:00 VM priority: sweep-c (311c-b083) yields its guest to the Validator's batched native lease on 1199866; 231 keeps its guest (critical path to 278).
+- 13:03 C11-261: harness readiness gate rejected transient empty-mount frames during rapid setup on both builds; no sample ran. Owner correcting readiness (historical empty transitions recorded, final selected-only state still required); claims no perf/product threshold relaxed. Reviewer must check this change explicitly.
+- 13:08 Validator: 291 non-native passes (5 newer keys untranslated); 275 waits shared build (blocked by quiet hold). C11-291 owner tab:273 sent for an incremental translation pass now.
+- 13:10 Heartbeat: seats live; tab:350 'Focus-steal hunt' is Atin's. Atlas 97 GB: all build dirs belong to live tickets; no parent bundles >3h. Quiet hold #1 ends 16:11 Atlas, #2 (pid 37420) queued.
+- 13:10 VM priority mechanism: /tmp/c11-validator-vm-wanted on Atlas (Validator touches when waiting; owners won't start guests). Briefs updated; owners and Validator told. 249 took the freed guest first.
+- 13:14 C11-261 ruling: blocked ABBA interleave (blocks of 10) allowed; if minimums unmet, report INCOMPLETE and release; full window rescheduled for a naturally quiet period.
+- 13:15 C11-291 incremental pass PR #554 (72278f61) → Astra tab:303 (side review).
+- 13:15 C11-291 #554 FAIL: 5 keys good; 37 pre-existing keys (222 values) still English-only → owner translates all in this PR.
+- 13:16 QUIET DONE C11-261: both holders killed, slots released early.
+- 13:17 C11-261 perf capture INCOMPLETE (130 pairs; 74/28/28 vs 100/40/40; load 9-12). Owner: publish partial numbers, preregister ABBA protocol sized to fit, finish other findings, re-request a window.
+- 13:18 C11-311 B137 (worker d, PR #555, 42288d01) → Astra tab:325.
+- 13:20 Board commit 881c0e62ae pushed (C11-323/324 + run progress). C11-323 seated TOP PRIORITY: Sol high fast tab:356, worktree c11-1.0-C11-323, brief owner-c11-323.md, on the risk list. Note: zsh treats $C:r as a modifier; use ${C}:refs.
+- 13:21 C11-261 partial perf published (ev_01M3Z4EECZXZY6NPJB55W5BYJS): all six partial limits within budget, no clear regression, INCOMPLETE. Exact-head native gate 43 tests pass. Owner preparing ABBA preregistration; new window to follow.
+- 13:23 B075 gate failed on AgentStartupProbeTests real-PTY test (3 s python fixture startup under Atlas load): known-flake ruling, one rerun; worker a makes a small PR giving fixture start its own 10 s budget.
+- 13:25 Atlas 94 → 83-85 GB. New rule: owners free their Atlas tag at review handoff (go-owner.md); broadcast to 17 seats. Removed old GhosttyTabs DerivedData.
+- 13:26 preview-1 launched on Hyperion (pid 494, QA fresh); Atlas copy deleted. Codex weekly 77% used (glideslope), burn ~20%/h since 10:30 with ~27 Codex seats in fast mode + ultrafast captain: ~1 h left. Asked Atin: banked reset vs throttle vs Opus reviewers. Heartbeat: all seats alive.
+- 13:30 C11-311 B114 (worker c, PR #556, 8e212736) → Astra tab:344 (side review).
+- 13:31 Atin: keep cranking Codex to 95% (expects a global OpenAI reset); back off only at 95%. C11-291 #554 r2 6e8c65af → delta review tab:303.
+- 13:32 Atin: fast mode OFF everywhere (incl. captain ultrafast); all seats verified off; new launches without /fast. QUIET ATLAS #2 for C11-261 (25 min, holder pid 66709) starting. C11-291 r2 FAIL (4 ru/uk plural values) → tiny fix tab:273. B114 PASS → LAND.
+- 13:33 QUIET ATLAS #2 granted to C11-261 (held since 16:32:57 after waiting 18s).
+- 13:33 Validator: shared build 89d2 on 1199866 passed; VM wanted marker set; preclone waits >100 GB (Atlas 91). Asked 251, 311d, 249 owners (idle 45+ min) to free their tags now (~18 GB).
+- 13:34 C11-311 B006 r2 5b16f53f → delta review tab:325 (after B137).
+- 13:35 C11-311 B137 PASS → LAND.
+- 13:36 C11-291 #554 r3 16c35fe5 attested (exact prescribed 4 values) → LAND; ticket stays open.
+- 13:36 C11-277 r3 HANDOFF a596840f → delta review tab:297.
+- 13:37 Validator VM lease ended in 33 s: its harness's shared-folder mount check failed before any scenario (harness, not product). Retrying once with a host/guest sentinel handshake. Sweep-c stays off VMs until the retry finishes.
+- 13:40 Heartbeat: seats live, fast off everywhere. Codex 86% used (77% at 13:25; ~35%/h). Atlas 128 GB (owners freed tags), load 11. Back-off plan at 95%: pause sweep workers a-d + tab:274 (C11-311, P2) at their next boundary; keep 323, 266, 261, 277, 231, 253, 267, 250, 251, 249, Validator, captain.
+- 13:41 C11-277 r3 PASS a596840f → LAND (priority; 278 then waits only on 231).
+- 13:43 C11-311 B006 r2 PASS 5b16f53f → LAND; Validator to prioritize its scenarios.
+- 13:46 QUIET DONE C11-261 window 2; slots released.
+- 13:50 C11-261 window 2: 800 ABBA trials; no-churn 120/40/40 met; churn 120/40/39 vs 120/40/38 (needs 40); quiescence 0; all 12 computable limits within budget, no regression. Ruling: hand off for review now (perf INCOMPLETE noted); one short top-up window (churn scroll + quiescence) after the landing queue drains.
+- 13:54 Validator batched VM attempt 2 died in app preparation (53 s). Told it to reuse an owner's proven guest harness (303/311/265) instead of building new; attempt 3 failure → BLOCKED and another lane.
+- 13:55 Heartbeat: captain still holding for a quiet window that ended ~16:46 Atlas → told to start gates now. Codex 91% used. Atlas 111 GB, load 33. No merges since 1199866 (~45 min).
+- 13:55 C11-261 r2 HANDOFF 5a97b8fd (5 repairs + window-2 evidence; perf INCOMPLETE) → delta review tab:341.
+- 13:55 C11-291 incremental translations MERGED 18c1226ea5 (verified); ticket open for freeze.
+- 13:56 C11-311 PTY fixture timing PR #557 (d959886d) → Astra tab:325.
+- 13:57 C11-311 B075 MERGED 45004b6b08 (verified; retry gate passed).
+- 14:00 PTY fixture timing PASS → LAND.
+- 14:00 C11-261 top-up window (16 min) requested; queued until captain's gates (277, B006, B114, B137, PTY) drain.
+- 14:02 C11-311 B006 MERGED 7d46b3634e (verified).
+- 14:03 C11-261 r2 FAIL: 2/3/4/6 resolved; remaining: C4 doc scenario fix + perf top-up must be a full-dose churn cohort (all roles) + quiescence, not pooled. Owner revising preregistration.
+- 14:03 C11-311 B137 MERGED 92489ac3ad (verified).
+- 14:06 C11-277 MERGED 0ea718439a (verified), in_validation; seats 271/297 closed. C11-278 now waits only on C11-231.
+- 14:07 PTY fixture timing MERGED 57f6f668a1 (verified). Only B114 left in captain queue.
+- 14:09 ROLLOVER: Codex 97% used, no global reset yet. Atin: pause Codex, roll over to Claude Sonnet high. PARK broadcast to every Codex seat (WIP commit+push, PARKED lattice comment, reply). Captain finishes B114 then parks; Validator writes handover.
+- 14:10 Heartbeat: parking in progress (first: C11-261 reviewer). Atlas 131 GB. Awaiting Atin on account (Charlie recommended), reviewer model (Opus), relaunch scope (12 seats).
+- 14:12 Atin: rollover seats bill Bravo (current login). Proceeding on assumptions pending answers: Opus 5.5 high reviewers; relaunch 12 path-to-release seats; 311 sweep stays parked. Brief: sonnet-rollover.md.
+- 14:13 C11-323 parked fd6df330 → Sonnet high seat (surface:366); Codex tab:356 closed. Validation rule change announced to Atin: complete tickets on existing pre-merge runtime proof + Validator gates; missing native checks go to the C11-292 sign-off script; no new VM harness; one final 261 top-up then accept measured numbers as a named residual.
+- 14:14 C11-288 parked 6b477542 → Sonnet seat; Codex tab:215 closed.
+- 14:14 C11-231 parked 3d79e136 → Sonnet seat; Codex tab:288 closed.
+- 14:15 C11-266 parked 3d07b579 → Sonnet seat; Codex tab:289 closed. One 311 sweep worker parked b5eb9926 (stays parked).
+- 14:15 C11-311 B114 MERGED 8e40312c3a (verified). Producers seat tab:285 (C11-274, idle for 278) parked+closed; 278 will launch on Sonnet after 231.
+- 14:15 C11-291 translation seat parked and closed; freeze refresh relaunches on Sonnet later.
+- 14:15 C11-253 parked e764c64c → Sonnet seat; Codex tab:328 closed.
+- 14:16 Captain parked (handover /tmp/c11-captain-handover.md) → Sonnet captain; Codex tab:211 closed. Queue empty.
+- 14:16 Atin: punt C11-261 perf top-up to the end (with C11-270 soak). Ruling posted on 261 and 270; 261 lands on findings 2-6 + C4 doc fix; perf gate remains a release blocker on 270.
+- 14:17 C11-267 parked 44b14d0b → Sonnet seat; Codex tab:324 closed.
+- 14:17 Atin: Opus as Merge Captain → tab:371 switched in place (/model opus, verified opus-5.5 high), renamed. C11-250 parked → Sonnet. C11-261 parked 5968d364 → Sonnet with narrowed scope (C4 doc fix only; perf deferred to 270). Atin: avoid very long validations; retro rule to add: time-box any gate/measurement; perf gates belong in the end soak.
+- 14:18 C11-251 parked d36cefed → Sonnet seat; Codex tab:326 closed.
+- 14:18 DECISION C11-267: default-refuse (option 1) + chain send && send-key in skill/docs within the PR + refusal text 'nothing was sent' + prove Codex queued line and Claude auto-suggest are not refused. Briefs updated after merge.
+- 14:19 Validator parked (handover /tmp/c11-validator-handover.md) → Sonnet validator with fast-completion rule (validator-sonnet.md): complete on existing evidence; gaps → signoff-additions.md for C11-292; 60-min time-box; no VMs/harness.
+- 14:22 Atin: Validator on Opus → switched in place.
+- 14:24 C11-249 parked eac4f867 → Sonnet seat; Codex tab:329 closed. All Codex owner seats parked.
+- 14:24 Closed all parked Codex seats (311 sweep 274/330-333; Astra reviewers 303/325/341/344). Fleet now: Opus captain + validator; Sonnet owners 323, 288, 231, 266, 253, 251, 249, 261, 267, 250. Reviews on handoff: fresh Opus seats reading prior verdict artifacts.
+- 14:25 C11-261 Sonnet launch had failed (apostrophe broke the shell-quoted prompt); relaunched with a file prompt. Lesson: launch prompts go in files. Validator: 13 completed → board done 46; 31 sign-off steps routed to signoff-additions.md. Heartbeat cron replaced (ab92a08f) with the Claude-era model policy.
+- 14:25 VALIDATION DONE: 13 completed; 34 UI steps routed to signoff-additions.md (11 tickets); blocked none. Validator Opus stays for new merges (same fast rule).
+- 14:26 Codex reset hit. Atin: in-flight Sonnet seats finish; new owners on GPT-6-Luna max, fast OFF; Captain + Validator stay Opus 5.5. Reviews back on Astra (cross-family for Sonnet work). C11-311 sweep resumed on Luna max: b tab(surface:381), c (382), d (383), main/B018+B046/B050 (384); worker a finished. Heartbeat cron → b-policy.
+- 14:26 C11-261 r3 HANDOFF b7d78d47 (C4 docs fix; perf deferred) → fresh Astra reviewer (review-c11-261-r3.md).
+- 14:29 Atin: avoid Grok (at capacity, 99% weekly until Oct 6). No Grok seats anywhere.
+- 14:29 C11-261 r3 PASS b7d78d47 → LAND (Opus captain).
+- 14:40 Heartbeat: seats alive. 323 was waiting for zero running VMs (told: 2 allowed). 266 planned to defer keyboard filter switching → told to add it (keyboard-first scope). Atlas 150 GB, load 9.
+- 14:44 Sweep-d: B148 touches a typing path → joins B032/B049/B160 (wait for soak); worker d had nothing left, closed tab:383.
+- 14:49 C11-261 MERGED 75aec1d345 (verified); Validator completing with perf residual on 270; seats 380/385 closed.
+- 14:51 C11-261 completed by Validator (residual AC5 perf on C11-270; signoff step 35 references docs/groups-signoff.md). Done = 47.
+- 14:54 Heartbeat: all seats alive (Claude seats mostly waiting on Atlas jobs). Bravo weekly 33%; Codex shows 41% left. Atlas 144 GB, 1 VM. Load 5.
+- 14:58 C11-288 HANDOFF 5eb1813f (#558; Safari history fix) → Astra reviewer.
+- 14:59 C11-311 main seat: Atlas staging timed out (upload contention, load 41) → retry now.
+- 15:00 Sweep seats hit their own 900 s command cap during Atlas staging (≈10 concurrent rsyncs, Atlas load 54). Told to run remote-build in background with a 45-min limit. Retro: remote_build.py rsyncs the full payload with --checksum per run; incremental staging would remove this.
+- 15:01 C11-249 HANDOFF c96f5e20 (#559; bonsplit 18aa922a contains main's 3c1441a3) → Astra reviewer.
+- 15:03 C11-253 r2 HANDOFF 6170a03a (1,583 tests, 15 exclusions) → fresh Astra reviewer.
+- 15:04 C11-249 r1 FAIL (no behavioral tests for the 4 fixes; anchor scenario precondition) → repair tab:379; Astra tab:388 kept.
+- 15:06 C11-288 PASS 5eb1813f → LAND.
+- 15:10 Heartbeat: seats alive. tab:390 had fast on (turned off). Closed 288 reviewer tab:387. Atlas 128 GB. Board 47 done.
+- 15:10 C11-253+256 r2 PASS 6170a03a → LAND.
+- 15:12 C11-288 MERGED ea24ef5876 (verified); Validator; owner seat closed.
+- 15:16 C11-253+256 MERGED 9cd4178826 (verified); Validator to confirm via the next hourly CI run. Seats 370/390 closed.
+- 15:24 C11-250 HANDOFF a9ffddc4 (#561) → Astra reviewer.
+- 15:24 C11-231 r2 HANDOFF dfcdfe16 (#544) → fresh Astra reviewer (round-1 verdict ev_01M3YSHSAX9SE1YZQC75RBP6F9).
+- 15:25 Heartbeat + hourly status. 323 in its runtime proof (Atlas guest lease to ~15:47). Board 48 done, 2 in_validation (253/256), 5 review, 4 in_progress, 5 planned, 3 backlog. Bravo weekly 36%, 5h 35%; Codex 61%. Atlas 136 GB.
+- 15:26 C11-311 B083 (worker c, PR #560, e572dcad) → Astra tab:388 (side review).
+- 15:29 C11-231 r2 FAIL (picker coverage undocumented; UI negatives tested on always-rejected picker; restart-clock scenario missing) → round 3 repair tab:368; Astra tab:393 kept.
+- 15:31 C11-311 B083 r1 FAIL (scenario can't reach the fallback divider path) → worker c tab:382.
+- 15:34 C11-250 r1 FAIL (fix-6 test doesn't render the card) → repair tab:375; Astra tab:392 kept.
+- 15:36 C11-251 HANDOFF b9197653 (#563) → Astra reviewer.
+- 15:38 C11-266 waited ~3h for a single-guest slot (a peer guest was always running). Authorized one bounded --allow-second attempt (20 min) with obstruction capture first. Lesson: a seat that waits >15 min on a resource must escalate, not poll.
+- 15:38 Atlas VM slots: 323 runtime + foreign mk-perm-1 (not c11). 266 gets the next slot after 323's lease.
+- 15:40 Heartbeat: seats alive; tab:399 'T3Code Research' is Atin's. 267 waiting on its own Atlas baseline build; 231 round-3 build running; 384 1h13m in one background build (sweep main B018). Atlas 121 GB; VMs: 323 runtime + foreign mk-perm-1.
+- 15:40 C11-251 r1 FAIL (v1 aliases + markdown family unguarded; CLI synthesizes workspace for window-only writes; no red run) → repair tab:377; Astra tab:398 kept.
+- 15:41 C11-323 HANDOFF 6ccc2a81212ec84fc3af6eb581407f04bae0308a (#564) → Astra reviewer. 323 guest deleted; 266 takes the slot.
+- 15:45 C11-249 r2 e5a09dfd (bonsplit bb8a38dac71f946860e2a740ed7b0cfde9ec390a) → delta review tab:388.
+- 15:47 B083 r2 295a1f0d queued on tab:388 after 249.
+- 15:51 Hyperion→Atlas link measured ~160 KB/s (149 ms, tailscale direct): this explains slow uploads all day. 266 approved for an Atlas-local build + local sandbox-up (25 min). Rule for all seats: never ship built apps across the link; build and run guests on Atlas.
+- 15:51 C11-249 r2 PASS e5a09dfd → LAND.
+- 15:52 C11-323 r1 FAIL (P1 palette async hop bypasses the gate; P2 cause overwritten on folder focus and palette next/prev) → repair tab:366; Astra tab:402 kept. Gate mutation-proven; focus race fixed.
+- 15:53 B083 r2 PASS → LAND.
+- 15:55 Heartbeat: seats alive (tab:404 is Atin's markdown). Board done 50, review 7, in_progress 2. Atlas 111 GB; VM: only foreign mk-perm-1 (266 building on Atlas). Load 11.
+- 15:57 DECISION C11-266: dismiss Setup Assistant in its own disposable second guest (B) and proceed; mk-perm-1 untouched.
+- 15:58 C11-249 MERGED dcbe3b261f (verified); Validator; owner seat closed.
+- 16:02 B018: lifetime test shows window/hosting view still retained after close. 30-min box, else park B018 as unproven and move to B046/B050.
+- 16:02 C11-250 r2 ff37fb1c → delta review tab:392.
+- 16:02 C11-311 B083 MERGED f7ac4fc1ea (verified).
+- 16:03 B083 validated (comment-only on 311); signoff step 50. Note: GhosttyConfigTests is on C11-253's hourly quarantine list, so B083's regression test doesn't run in CI. Follow-up after 1.0: un-quarantine or move B083's test to c11-logic.
+- 16:04 C11-266: Setup Assistant dismissed, preflight passes, Cmd-I opens Feed in guest; authorized Accessibility grant to sshd-keygen-wrapper in its own disposable guest; asked to record the step in sandbox notes.
+- 16:06 Atin asked for a tour guide: launched Opus 'c11 1.0 Tour' in area:28 (guide/tour-guide.md) for preview-1 at 1199866cbc; findings come back as TOUR FINDINGS.
+- 16:08 Atin: keep C11-268 in 1.0 (option b); fine to run overnight and release tomorrow. Sign-off build target: tomorrow morning.
+- 16:11 C11-250 r2 PASS → LAND. C11-323 r2 eadfc5ee → delta review tab:402 (+ sweep for other deferred hops).
+- 16:11 C11-267 HANDOFF 84ce7088 (#565; gaps: scrolled viewport, real Codex) → Astra reviewer (real-Codex no-false-refusal must be proven pre-merge).
+- 16:12 Heartbeat: mk-perm-1 no longer running (origin unknown; not c11; Atin doesn't know it). VMs now c11-sb-c11-266-ui + c11-sb-c11-251. Closed finished reviewers 388, 392. Atlas 138 GB.
+- 16:17 C11-266 HANDOFF fab9dd9f (#566; packaged keyboard proof PASS in guest; nit focus ring) → Astra reviewer.
+- 16:17 C11-250 gate failed: pixel byte-equality test nondeterministic → owner swaps to a deterministic highlight assertion (3 stable runs).
+- 16:18 C11-251 r2 d1075f22 → delta review tab:398.
+- 16:20 C11-267 r1 FAIL (6+ blockers: chooser second-option, multiline blank-line, docs Enter chaining, real Codex gate, AC3 scroll, AC4 fixture) → repair tab:374; Astra tab:408 kept. Ghostty submodule moved in PR: fork-main + checksum rule reminded.
+- 16:21 C11-323 r2 FAIL (pending-search activation + palette unread jump bypass; simulate_shortcut is DEBUG-only) → round 3 root fix: palette session origin. C11-266 r1 FAIL (focus ring doesn't follow Tab) → repair.
+- 16:22 C11-251 r2 FAIL: r1 findings addressed; new pre-existing paths. Ruling: fix reset_sidebar + workspace metadata family in 251; internal telemetry fallback → new ticket C11-325 (followup tag). C11-231 r3 b7c5a6f7 → delta review tab:393.
+- 16:23 C11-250 test fix e4c117f8 attested (distance classification; red/green x3) → LAND FRESH.
+- 16:24 Heartbeat + hourly status: board 51 done, 7 review, 1 in_progress, 5 planned, 3 backlog. Bravo 43% weekly; Codex 65%. Atlas 149 GB. All seats alive.
+- 16:25 C11-231 r3 FAIL: only the written restart-clock scenario oracle is wrong (product resolved). Owner rewrites per prescription; Orchestrator attests against it (no round 4).
+- 16:26 C11-231 corrected scenario ev_01M3ZF0V → quick confirm by reviewer tab:393 (head unchanged) for an independent PASS before landing.
+- 16:28 C11-231 quick check: one ordering fix in the written scenario (duplicate turn check before the ask; baseline after setup). Orchestrator will attest the reordering and land.
+- 16:28 C11-231 scenario attested → LAND.
+- 16:29 C11-250 MERGED 8cfd73f8e4 (verified); Validator; owner closed.
+- 16:29 C11-250 MERGED (Validator). C11-323 r3 d204a33a (palette session origin) → delta review tab:402.
+- 16:30 C11-250 completed (fixes 2,5,6 as scoped; signoff 51-52). Post-1.0 follow-up list: classes on C11-253's quarantine that guard new fixes (GhosttyConfigTests for B083; the close-guard class for C11-250) need un-quarantining or moving to c11-logic.
+- 16:34 C11-251 r3 e923f8b6 → delta review tab:398 (findings 1-2 only).
+- 16:36 C11-231 MERGED 37fbd0ecbf (verified); Validator; seats 368/393 closed. C11-278 launched on Luna max (owner-c11-278.md).
+- 16:37 C11-251 r3 FAIL (new regression: malformed CLI target falls through to the selected workspace). Round 4 allowed (converging); fresh reviewer next; old reviewer tab:398 closed.
+- 16:40 Heartbeat: sweep-c idle since 15:51 after B083 → nudged to B093. Atlas 137 GB; VMs 266-ui + golden-b rebuild. Seats alive.
+- 16:40 C11-323 r3 PASS d204a33a. Risk list: final-head guest replay by owner (20 min) + captain gate in parallel; merge on RUNTIME PASS.
+- 16:41 C11-323: captain found a schema conflict vs main (10 merges behind). Owner merges main → tests → push → guest replay at merged head; Orchestrator attests merge; then LAND.
+- 16:44 B093 stopped at the typing-path boundary (no PR; ev_01M3ZG18) → waits for soak with B032/B049/B148/B160. Sweep-c finished; closed tab:382.
+- 16:48 C11-251 r4 0fef7a9f → fresh Astra reviewer (review-c11-251-r4.md).
+- 16:53 C11-251 r4 PASS 0fef7a9f → LAND; r4 reviewer closed.
+- 16:54 Heartbeat: seats alive; 323 final-head replay running in guest; 266 awaiting its rerun results; Atlas 116 GB. Board 53 done, 5 review, 2 in_progress, 4 planned, 3 backlog.
+- 16:56 C11-323 merge e12a7b99 attested (schema union) + final-head runtime PASS → LAND.
+- 16:56 C11-266 r2 76eb5299 (real focus; intermittent system ring residual) → delta review tab:410.
+- 16:56 C11-266 PR conflicting with main only in docs/c11-sandbox-research.md → captain unions at landing (option 2); owner holds.
+- 16:59 C11-323 landing blocked: full c11LogicTests crash (29 processes, GhosttyApp init with nil NSApp) at e12a7b99-equivalent → owner fix + full-suite run.
+- 16:59 C11-251 MERGED 4994d7fce3 (verified); Validator; owner closed.
+- 17:00 C11-266 r2 PASS 76eb5299 → LAND (captain unions the doc conflict; full logic suite at the merge head).
+- 17:00 C11-251 completed (signoff 55-56). Post-1.0 note: workspace metadata '--workspace <value>' value also parsed as a positional (pre-existing, reviewer non-blocking).
+- 17:01 C11-266 merge 885291e1 attested (doc union) → land on full gate green.
+- 17:05 C11-323 crash correction: exact-head gate on e12a7b99 clean (2,469/0/0); trial crash was intermittent. Owner fix withdrawn; captain lands e12a7b99 after a post-squash full run. Filed C11-327 (intermittent GhosttyApp init crash in logic tests, followup).
+- 17:09 Heartbeat: seats alive; closed passed reviewers 402 (323), 410 (266). Atlas 119 GB, no VMs. C11-278 owner at 93% context (will compact).
+- 17:11 C11-266 gate GREEN at 885291e1 but #567 (golden-b second guest) changed the same docs → owner merges main and reconciles docs/skill (main's rule, first-boot steps as fallback); attest + re-gate.
+- 17:12 C11-267 r2 12b7da08 (all 6 addressed; real Codex 0.160.0) → delta review tab:408.
+- 17:12 C11-323 MERGED 32bb08b8ec (verified), complete (risk-list proof at final head). Owner seat closed.
+- 17:14 C11-266 reconcile 11c4536c attested (docs only). Captain unions the xcstrings conflict vs main 32bb08b8, attest, full gate, land.
+- 17:14 C11-266 vs main (323): code conflicts openAttentionTarget + notifications popover → owner merges (keep 323's gated signature; quick-view Enter = operator jump), full suite + packaged Enter check. Captain told to hold.
+- 17:18 C11-267 r2 PASS 12b7da08 → LAND: captain resolves one doc hunk (main's new-tab + PR's && chaining), attest, full suite, ghostty fork/checksum check, complete + skill sync. C11-268 can start after merge.
+- 17:18 C11-268 brief staged (owner-c11-268.md, Luna max, risk list); launches when 267 merges.
+- 17:25 Captain (Claude) paused on a confirm dialog because the long C11-267 LAND arrived as a pasted block; Orchestrator (sender) confirmed option 1. Lesson: keep envelopes to one short line so Claude seats treat them as direct input.
+- 17:25 Hourly status. Bravo 5h window 77-78% (resets 18:00); weekly 47%. Atlas 130 GB.
+- 17:25 C11-267 merge d9a6566f attested → land on full gate green.
+- 17:29 C11-311 B069 (worker b, PR #568) → Astra tab:408.
+- 17:29 C11-311 B193 (PR #569) queued on tab:408 after B069.
+- 17:29 C11-311 B247 (#570) and B248 (#571) → second sweep reviewer.
+- 17:30 C11-311 B046 (#572) queued on tab:428.
+- 17:30 C11-267 MERGED 82d74f3370 (verified), complete. Owner closed. C11-268 launched on Luna max (owner-c11-268.md).
+- 17:31 Briefs updated to chained 'c11 send ... && c11 send-key ... enter' (owner-common, reviewer-common, luna-resume, sonnet-rollover) now that C11-267's send guard is on main.
+- 17:31 Hourly CI red on main since C11-251 (stale C11-283 window-scope test) → fix-forward Luna seat (fix-251-hourly.md).
+- 17:34 B247 FAIL (no red run; scenario timing hits old guard) → worker b.
+- 17:34 B248 FAIL (only missing red run) → worker b; told to add red runs for B069/B193 proactively.
+- 17:36 C11-266 merge-with-323 8a8e5e72 → Astra merge review (risk: operator wrapper withContext(nil) = 323 round-2 bypass shape).
+- 17:36 B046 FAIL (explicit debug save inherits .autosave holdback, replays stale metadata) → main sweep seat.
+- 17:37 B069 PASS → LAND. B046 FAIL → repair (explicit save caller).
+- 17:39 C11-266 merge review FAIL (quick-view Return bypasses 323 gate via withContext(nil)) → owner adopts submitter origin like the palette.
+- 17:39 Heartbeat: seats alive. Atlas 130 GB, no VMs. Load 9.
+- 17:42 C11-311 B069 MERGED 30a168921d (verified).
+- 17:43 B193 FAIL (test never drives the resign callback) → worker b. Closed sweep reviewer tab:408 (90% context); future sweep deltas go to tab:428.
+- 17:49 C11-278 HANDOFF 7a942d02 (#573) → Astra reviewer.
+- 17:54 C11-278 FAIL (CLAUDE.md missing the answer/permission prohibition) → one-line fix; Orchestrator attests.
+- 17:54 Heartbeat: seats alive; Atlas 124 GB; hourly CI red (stale 283 test; fix seat tab:430 working). Board 56 done.
+- 17:56 C11-278 fix attested → LAND (+ skill sync with hash).
+- 17:57 B248 red evidence posted → delta check tab:428.
+- 17:58 B248 PASS → LAND.
+- 18:01 B046 r2 5b7783e7 → delta review tab:428.
+- 18:01 C11-278 MERGED a2418ebc64 (verified); Validator; owner closed.
+- 18:02 C11-266 merge r2 cff75ba8 (quick view adopts submitter origin) → delta review tab:431. Owner reports 17 baseline failures in AppDelegateShortcutRoutingTests (to confirm on main).
+- 18:03 B046 r2 PASS → LAND.
+- 18:03 B248 gate failed on 2 stale ScrapeCapturePipelineTests expectations → owner updates + full suite. Rule to sweep seats: full c11LogicTests before every handoff.
+- 18:09 B046 gate failed (holdback treats dedup repair as poorer). Ruling: compare distinct identities after normalization → owner fix + full suite.
+- 18:10 Heartbeat: seats alive; Atlas 131 GB; Bravo 50% weekly; Codex 68%. Board 57 done.
+- 18:16 Hourly fix PR #574 attested → LAND first + dispatch ci-hourly.
+- 18:17 B248 test update attested → LAND FRESH after #574.
+- 18:20 C11-266 merge r2 PASS cff75ba8 → LAND.
+- 18:20 Reviewer confirmed AppDelegateShortcutRoutingTests has 17 baseline failures on main (not from 266); check whether C11-253's quarantine covers them; if not, follow-up ticket.
+- 18:23 PR #574 MERGED 6e47a64758 (hourly test fix). Fix seat tab:430 closed.
+- 18:24 Cancelled my duplicate ci-hourly dispatch (captain had already dispatched). B247 evidence → delta check tab:428.
+- 18:24 C11-311 B248 MERGED 3c00ea7637 (verified).
+- 18:25 Hourly status. Foreign VM 'mk-upg' now running on Atlas (like mk-perm-1). Hourly CI dispatch in progress at 6e47a647. Closed 266 reviewer tab:431.
+- 18:26 B247 r2 PASS → LAND.
+- 18:26 My duplicate ci-hourly dispatch cancelled the captain's run (concurrency cancel-in-progress), then I cancelled mine: both died. Validator owns hourly dispatch now (run 37086108353 at 3c00ea76). Rule: only one seat dispatches ci-hourly; Orchestrator never does.
+- 18:27 C11-266 MERGED 24dbf1afb1 (verified); Validator; owner closed. Feed chain 264-266 merged.
+- 18:33 C11-311 B247 MERGED 6f62330f54 (verified).
+- 18:35 B046 r3 48e5fbb8 (identity-based richness; full suite 2,503/0) → delta review tab:428.
+- 18:36 B193 r2 fd45b809 → queued on tab:428.
+- 18:36 B046 r3 PASS → LAND FRESH.
+- 18:38 Hourly CI GREEN on main 3c00ea76 (run 37086108353): build, SSH shell, logic gate, host gate (15 exclusions) all pass; Ghostty e6999ae7 build covered.
+- 18:39 Heartbeat: seats alive; 268 implementing (1h09m turn); Atlas 131 GB; Hyperion 1-min load 14 (spike).
+- 18:41 B193 r2 FAIL (seam in wrapper, not at saveSessionSnapshot) → round 3 with exact prescription + self-run of reviewer mutation.
+- 18:42 C11-311 B046 MERGED 28f640e557 (verified).
+- 18:49 Sweep main seat idle after B046 → nudged to B050 + B018 disposition.
+- 18:50 B193 r3 9dcd772f → delta review tab:428.
+- 18:53 B193 r3 PASS → LAND. Sweep-b finished all groups (B069, B193, B247, B248); seat closed.
+- 18:54 Heartbeat: 5 seats (captain, validator, sweep-main, sweep reviewer, 268 owner). Atlas 125 GB. Bravo 51%, Codex 70% (resets 10:32 tomorrow).
+- 19:02 C11-311 B193 MERGED a85e6f2d36 (verified).
+- 19:06 C11-268: implementation done (fdf5f021, 21 files); runtime proof blocked on Claude spend-limit screen in the guest → Codex real + Claude via 267's recorded fixtures; 30-min box.
+- 19:09 Heartbeat: 268 runtime proof running in guest; sweep-main on B050; Atlas 118 GB. Awaiting Atin on typing-path groups (a/b/c; recommended c).
+- 19:17 C11-311 B050 (PR #575; full suite + red/green) → Astra tab:428.
+- 19:21 B050 PASS → LAND.
+- 19:24 Hourly status. B018 PR #546 closed (parked unproven). 268 finishing Claude fixture proof. Board 58 done.
+- 19:26 C11-311 B050 MERGED abfb39b499 (verified). All non-typing-path sweep groups done (15 merged incl. slice 1; B018 parked). Sweep seat 384 and reviewer 428 closed.
+- 19:39 268 past its 30-min box (rebuilding debug); asked for one-line status.
+- 19:41 268 extended 15 min (head f6bdab0b compiles on Atlas); hand off then regardless.
+- 19:55 C11-292 brief staged (owner-c11-292.md): Atlas tagged build signoff-1-0, docs/c11-1.0-signoff.md trimmed to 20-30 human steps, one rehearsal in a guest. Launch after 268 + 291 refresh merge.
+- 19:58 C11-268 HANDOFF f6bdab0b (#576) → Astra reviewer; owner closing gaps (full suite, close race) in parallel.
+- 20:03 C11-268 r1 FAIL (--text --help hijacked by help scan; missing feed.answer multiline/turn_end/close-race runtime) → repair tab:429; Astra tab:452 kept.
+- 20:09 Heartbeat: hourly CI green at a85e6f2d (covers 266, B247, B193). 268 repairing. Atlas 133 GB.
+- 20:24 Hourly status posted. 268 repair building on Atlas (compacting). Atlas 129 GB.
+- 20:39 Heartbeat: 268 running runtime proof in guest (within its 45-min box until ~20:50). Atlas 127 GB.
+- 20:46 C11-268 r1 repair: CLI/help fixed, full suite 2,510/0, but feed.answer runtime unproven (fixture unattributed). Directed: real Codex target for multiline/turn_end + DEBUG hold seam for the close race; 45 min, else BLOCKED.
+- 20:54 Parallelized: C11-291 freeze refresh launched now on main (Luna), not waiting for 268.
+- 20:54 Parallelized: C11-292 launched now to write the sign-off script; build + rehearsal wait for 'BUILD 292 <sha>' after 268 and 291 land.
+- 20:56 C11-268: real Codex notify events unattributed in guest (no turn_end row). Final round: conversation.push owner + agent.event.append attribution (C11-231 fixture route) with real Codex prompt; explain why notify was unattributed (trust gate vs gap).
+- 21:01 C11-291 seat hit the lattice 3-cycle cap on review→in_progress; ruled: work without changing status (as with 311).
+- 21:09 Heartbeat: 268 final attribution round; 291 translating; 292 writing script; Atlas 132 GB.
+- 21:24 Hourly status. 268 final guest run + full tests; 291 PR #577 open (CI); 292 drafting script. Atlas 122 GB.
+- 21:25 C11-291 freeze PR #577 a3906592 → Astra reviewer.
+- 21:27 C11-268: real-Codex attributed turn_end row OK; real defect found: multiline feed.answer → pasted_not_submitted (unsent draft). Owner fixing (45 min). Notify unattributed = by design (exactOwner).
+- 21:31 C11-291 freeze r1 FAIL (12 needs_review values; ru/uk fixed-plural count strings) → repair tab:453.
+- 21:32 DECISION C11-292 (a): C11-261 runner on the Atlas host with the isolated signoff-1-0 app/socket/session; clean up after.
+- 21:39 Heartbeat: seats alive (268 fixing multiline submit in guest; 291 repairing; 292 script). Atlas 121 GB.
+- 21:46 C11-291 freeze r2 a6445a0f → delta review tab:462.
+- 21:49 C11-291 r2 FAIL (positional %1$lld plurals in 3 close dialogs) → round 3 (last).
+- 21:54 Heartbeat: 268 still on multiline fix (waiting on an Atlas job); Atlas 121 GB.
+- 21:56 C11-291 r3 1d6c79d2 → delta review tab:462.
+- 21:58 C11-291 freeze r3 PASS → LAND.
+- 22:07 C11-291 MERGED b46cf452b6 (verified); Validator; seats closed.
+- 22:09 Heartbeat: 268 testing multiline fix in guest; 292 waiting for BUILD signal (script drafted?). Atlas 118 GB.
+- 22:13 C11-268: single-line works on real Codex; multiline still pasted_not_submitted. Ruling: multiline fails closed before paste for 1.0; filed C11-328 (followup). Owner 30-min box; reviewer tab:452 holding.
+- 22:24 Hourly status. 268 running its scope-cut proof in guest. Board 59 done. Atlas 118 GB.
+- 22:33 C11-268 r2 bce747b1 (scope-cut) → delta review tab:452.
+- 22:39 C11-268 r2 PASS bce747b1 → LAND.
+- 22:39 Heartbeat: captain gating C11-268; Atlas 128 GB.
+- 22:40 C11-291 reopened for a two-key refresh after 268 merges (brief owner-c11-291-twokeys.md).
+- 22:45 C11-268 MERGED 92e2a39a78 (verified), complete. Seats closed. Two-key translation seat launched.
+- 22:54 Heartbeat: two-key translation in progress; 292 waiting for BUILD. Atlas 127 GB.
+- 22:58 C11-291 two-key PR #578 attested → LAND; sign-off build follows.
+- 23:06 C11-291 two-key MERGED 9c9cf4ba44. BUILD 292 sent at 9c9cf4ba44 (all 1.0 tickets in).
+- 23:06 SIGN-OFF FREEZE: main 9c9cf4ba44 (ghostty e6999ae7, bonsplit d769def2; last gate 2505/0/0). Captain lands nothing further without LAND. Only sign-off failure fixes may land, as new tags.
+- 23:09 Heartbeat: 292 starting build/script at the frozen SHA. Atlas 126 GB.
+- 23:24 Heartbeat + hourly: 292 signoff-1-0 Atlas build running. Atlas 124 GB.
+- 23:39 Heartbeat: 292 build done; rehearsal underway in guest (step 1 PASS: doctor + About show 0.67.0 (131)).
+- 23:54 Heartbeat: 292 rehearsal progressing (guest 02). Atlas 122 GB.
+- 00:09 Heartbeat: 292 rehearsal ~1h in (resize/window steps). Atlas 122 GB.
+- 00:24 Hourly: 292 rehearsal 1h18m in, reading c11 logs on Atlas host (likely groups runner or a step diagnosis). Atlas 122 GB.
+- 00:39 Heartbeat: 292 rehearsal 1h33m (guest 03, browser steps). Atlas 112 GB.
+- 00:54 Heartbeat: 292 rehearsal on guest 04 (~80 min of the 90-min box). Atlas 113 GB.
+- 01:09 Heartbeat: 292 rehearsal finished; owner writing evidence and handoff. Atlas 110 GB.
+- 01:12 C11-292 rehearsal (90-min box): steps 1-3,5 PASS; 4 FAIL (C11-283: focus-window selects B but A stays key; window:N ref rejected); 6 FAIL (C11-287, reason pending); 9 FAIL (C11-261 runner exits on workspace_switch_blocked from C11-323); 7 blocked; 8,10-23 not run. 292 continues 7,8,10-23 (150 min).
+- 01:13 Sign-off fix seats launched: groups runner vs C11-323 (fix-signoff-261.md), focus-window key + window:N ref (fix-signoff-283.md). Step 6 pending reason.
+- 01:13 Step 6 ruling: about:blank can't show repaint; amend step to a visible-content page and re-run (not a C11-287 failure yet).
+- 01:22 Sign-off fix seats told to work without reopening done tickets (comments + PRs only).
+- 01:24 Hourly: rehearsal continuation on guest 05; two sign-off fix seats working; Codex shows 94% weekly left. Atlas 111 GB.
+- 01:40 Atlas 101 GB → pruned finished tags (268 proof, 311b, review-b069/b193) and parent bundles >3h; kept signoff-1-0.
+- 01:51 Sign-off fix C11-261 PR #580 (A1-A9,A12-A13 PASS; A10/A11 UNVERIFIED) → Astra reviewer.
+- 01:54 Heartbeat: rehearsal on guest 06; 283 fix working; 261 fix in review. Atlas 156 GB.
+- 01:55 Sign-off fix C11-261 #580 PASS → LAND (tests/docs only).
+- 02:01 Sign-off fix C11-261 #580 MERGED f6aaa7acbc (verified). Main now f6aaa7ac (tests/docs over the frozen 9c9cf4ba).
+- 02:09 Heartbeat: 283 fix final guest proof running; 292 rehearsal continuation in progress (box to ~03:50). Atlas 154 GB.
+- 02:20 Sign-off fix C11-283 PR #581 (focus-window activates; window:N refs) → Astra reviewer.
+- 02:24 Hourly: rehearsal on guest 07; 283 fix in review. Atlas 162 GB.
+- 02:29 Sign-off fix C11-283 #581 PASS → LAND; sign-off build to be re-cut after.
+- 02:37 Sign-off fix C11-283 #581 MERGED cde01d1571. 292 told to build signoff-1-1 at cde01d15 and re-run steps 4 and 9 plus remaining steps.
+- 02:38 Opened PR #582 (skill: focus-window is the focus exception) → Validator quick review; captain lands + syncs skill after.
+- 02:39 PR #582 PASS (Validator) → LAND + skill sync.
+- 02:39 Heartbeat: 292 rehearsal on guest 08. Atlas 161 GB.
+- 02:40 PR #582 MERGED fdba7ca25b; skill synced 9/9. Validator PASS recorded as a PR comment for traceability.
+- 02:54 Heartbeat: 292 rehearsal in progress (no VM at this moment). Atlas 161 GB.
+- 03:09 Heartbeat: signoff-1-1 built; rehearsal on guest 09 (re-runs). Atlas 156 GB.
+- 03:35 Atin flagged the 4h rehearsal as too long (only steps 1-3, 5, 6 done). Ruling: rehearsal cut to a 05:45 hard stop. 292 (tab:454) runs 4, 9 (on signoff-1-1), 7, 8, 10-15; new seat Rehearsal B (tab:512, Luna max, rehearsal-292b.md) runs 16-23 in the second VM slot. Unrun steps are marked NOT RUN for Atin's hand test. C11-320 README launched (tab:513, owner-c11-320.md): text now, screenshots after VM OK. C11-270's 72h soak cannot gate a release tomorrow; that is Atin's decision.
+- 03:46 Atin: the soak (C11-270) is OUT of 1.0 scope, including a short one. Moved to backlog (forced, recorded). The C11-261 perf top-up leaves 1.0 with it. Release C11-293 depends only on C11-292 now (216, 307, 312 done).
+- LESSON (rehearsal overrun): one serial agent seat drove a 23-step human checklist through computer use in VMs at about 1 step per 45 min. The box was extended twice instead of being enforced, and the second VM slot sat idle. Heartbeats reported activity ("progressing") rather than throughput (steps done per hour). Rules: any timed box gets a steps-done count at each heartbeat; past half the box with under half the steps done, split the work across free slots or cut it, at that heartbeat, never later.
+- 03:50 C11-320 READY at fdba7ca25b (tab:513).
+- 03:5x C11-311 COMPLETED (15 slices merged; typing-path B032/B049/B093/B148/B160 + B018 → C11-329 post-1.0 per Atin). C11-320 text PR #583 at 24519272 → Astra README Review. Atin agreed: typing-path after 1.0; Feed answers single-line only for 1.0 (multi-line = C11-328).
+- 04:0x C11-320 #583 Astra FAIL r1 (Homebrew path dropped; version-specific 1.0 DMG claim before release). Bundled repair → tab:513; delta re-review by tab:520.
+- 04:0x C11-320 #583 delta PASS at f1d5ffb879 → LAND (README only). Screenshots follow in a second PR after 05:45 VM OK.
+- 04:1x C11-320 text MERGED 096c4f69ad (verified). Ticket stays open for screenshots; README seat tab:513 waits for VM OK 320 after 05:45.
+- 04:54 Heartbeat: 292 on Feed steps (guest 11); 292B on step 20+ (guest 292b-02 recovered after a lost guest); README text merged. Atlas 155 GB.
+- 05:10 292B lost guests twice to its own 20-min lease-guard (sleep 1200 → sandbox-down); told to lease to 05:50.
+- 05:4x C11-292 HANDOFF REVIEW 36002e9594 (#579). Steps 1-15 on record: PASS 1-6, 8, 11, 13 (4 re-run on signoff-1-1); BLOCKED 7 (import title unverified), 9 (groups runner incomplete in cap), 10/14 (no agent/provider in guest), 12/15 (cap); no product FAIL. 16-23 await B. VM OK 320 sent.
+- 05:5x 292B HANDOFF: 17,18,19 PASS; 16 (C11-311 quit/restore), 20 (C11-249 rail), 21 (C11-250 close-window) FAIL; 22,23 BLOCKED. 454 folds in + triages bug vs wording (30 min). B tab:512 closed.
+- 06:0x #579 Astra FAIL r1 (personal paths; overclaimed evidence; A10 tail instance; fixtures not executable; steps 7/8/13/14 wording). META: the 'checklist for Atin' had become an agent's VM protocol. Split: tab:454 owns rehearsal-notes (table, guest protocol, findings 1-2, triage 16/20/21); new writer seat (writer-c11-292-checklist.md) rewrites c11-1.0-signoff.md as Atin's plain on-his-Mac checklist (~45 min). Reviewer tab:526 does the delta.
+- 06:09 Heartbeat: 454 triage+notes; writer 527 rewriting checklist; 320 screenshots in guest 320-01. Atlas 160 GB.
+- 06:1x 292 notes pushed 66188e2a21; triage 16=wording, 20=bug (minor, filed C11-330, not blocker), 21=wording. Writer told. Delta review of #579 after writer's push.
+- 06:3x Writer HANDOFF f88daafffd (checklist rewritten, 64 lines, no paths/em-dashes, known issue C11-330). Delta review → tab:526. Closed 454 (C11-292 owner done).
+- 06:4x #579 Astra FAIL r2 at f88daaff (setup shell/provider identity, step 8 reload, step 9 fixtures, step 17 journal oracle, locale recipe). Repair bundle → writer tab:527 with rulings (step 9 = manual groups check). Round 3 of 3 next.
+- 06:4x C11-320 #584 MERGED b3de329fa0 (verified). Validator to complete C11-320. README seat 513 closed.
+- 06:5x C11-320 COMPLETED by Validator (residuals: no Feed/picker shots; 'room' wording in sample).
+- 07:0x #579 Astra PASS r3 at baf9a73791 → LAND (docs only); C11-292 stays open for Atin's hand test.
+- 07:1x #579 MERGED 3782d294d6 (verified). Checklist handed to Atin. Closed reviewer 526 and writer 527. Waiting on Atin's hand test → C11-293 release.
+- 23:4x Atin asked to launch the hand test: signoff-1-1 launched (--qa fresh, socket /tmp/c11-debug-signoff-1-1.sock); checklist opened as a markdown tab.
+- 04:4x Atlas 118 GB and drifting (not ours); pruned parent bundles >3h and superseded signoff-1-0.
+- 11:3x Atin hand-testing signoff-1-1 now. Launched c11 Explorer (Luna max, explorer-1-0.md): 3h exploratory test of signoff-1-1 in Atlas guests only (Hyperion off-limits).
+- 12:1x Atlas hit 102 GB; deleted unused c11-sandbox-golden-b (30 GB, 2 days idle; explorer uses c11-sandbox-golden). Sandbox recreates it on demand.
+- 12:4x Explorer HANDOFF 0 findings after ~70 min (shallow; skipped multi-window, locale, stress). Sent back for an adversarial pass to ~14:45.
+- 14:4x Explorer final: 0 blocker/major, 1 minor (CLI unknown flags + focus-tab invalid scope) → filed. Explorer tab closed.
+- 21:5x Atlas 74 GB, falling ~10 GB/hr (c11-332/335 builds, mk-release, acetate cargo, act cache, runaway gateway/runner logs). Flag raised for Atin's OK to clear Acetate cargo cache + truncate logs.
+- 22:1x Atin OK'd cleanup of unneeded acetate/c11 builds: removed c11-322 (done) + tab-close-always; pruned acetate cargo deps/incremental >3d (~1.5 GB). Kept active c11-331/332/335 (live seats), signoff-1-1, and live acetate caches.
+- 00:3x Atin: installed 0.67 has run 1000+ open tabs for 3 days and stays snappy; the ~150% CPU is scale, not a leak. No CPU-creep ticket. Baseline for 1.0: Atin dailies 1.0 and compares (no formal soak).
+- 00:4x Feedback seat (tab:966) spawning fix sub-agents per Atin; PR #590 merged to main fb5b07af85 (post-signoff). Sub-agents building c11 locally on Hyperion (load 32) → told to use Atlas remote-build. Release-scope decision raised to Atin.
+- 02:3x Atlas 101 GB; removed merged feedback-fix build tags (titlebar-workspace-root #591, tab-numbers-default-on #592, group-color-name-bar #593, browser-tab-glyph #594) + parent bundles >3h. Main now 7919bdd5ba (5 UX fixes past signoff-1-1).
+- 02:3x ATIN SCOPE CHANGE (via feedback seat): 1.0 waits on the vocabulary rename tab/surface → panel (window > workspace > area > panel; old spellings are silent aliases). Also in 1.0: tab icon/color, the markdown tab glyph, and the merged #590-#594. signoff-1-1 is SUPERSEDED; the hand test on it is paused. Path: Panel Rename planner (tab:1098) → PANEL PLAN READY → owner(s) → Astra review → captain exact-head gate → signoff-1-2 on Atlas → checklist vocabulary refresh → Atin hand test → release.

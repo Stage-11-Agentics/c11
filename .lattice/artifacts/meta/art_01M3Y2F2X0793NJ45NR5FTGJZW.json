@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:27:25Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3Y2F2X0793NJ45NR5FTGJZW",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Y2F2X0793NJ45NR5FTGJZW.md",
+    "size_bytes": 9363
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-260 functional evidence with exact build boundaries and remaining gaps",
+  "token_usage": null,
+  "type": "file"
+}

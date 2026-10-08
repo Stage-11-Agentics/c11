@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T09:23:56Z",
+  "created_by": "agent:codex-md-r1",
+  "custom_fields": {},
+  "id": "art_01M4DD7529E2ZZDJQEWNNN5492",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4DD7529E2ZZDJQEWNNN5492.png",
+    "size_bytes": 308271
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Prototype and bundle light 560px",
+  "token_usage": null,
+  "type": "file"
+}

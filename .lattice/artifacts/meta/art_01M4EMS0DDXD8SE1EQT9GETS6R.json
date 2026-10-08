@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T20:55:15Z",
+  "created_by": "agent:codex-md-n1",
+  "custom_fields": {},
+  "id": "art_01M4EMS0DDXD8SE1EQT9GETS6R",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4EMS0DDXD8SE1EQT9GETS6R.png",
+    "size_bytes": 256231
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "After selecting New panel as the default, an ordinary link creates panel 9.",
+  "tags": [],
+  "title": "Atlas UI: default destination toggle",
+  "token_usage": null,
+  "type": "file"
+}

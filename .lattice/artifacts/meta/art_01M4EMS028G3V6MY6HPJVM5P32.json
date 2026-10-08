@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T20:55:15Z",
+  "created_by": "agent:codex-md-n1",
+  "custom_fields": {},
+  "id": "art_01M4EMS028G3V6MY6HPJVM5P32",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4EMS028G3V6MY6HPJVM5P32.png",
+    "size_bytes": 241770
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Hover preview shows the target Setup heading and its real document content without navigation.",
+  "tags": [],
+  "title": "Atlas UI: relative link peek",
+  "token_usage": null,
+  "type": "file"
+}

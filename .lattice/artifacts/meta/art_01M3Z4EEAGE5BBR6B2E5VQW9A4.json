@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:21:15Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z4EEAGE5BBR6B2E5VQW9A4",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z4EEAGE5BBR6B2E5VQW9A4.md",
+    "size_bytes": 4799
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1 partial numbers and measured noise \u2014 INCOMPLETE",
+  "token_usage": null,
+  "type": "file"
+}

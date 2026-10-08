@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "before": {
+    "id": "4652F51D-5C97-4B06-AD69-70C88FA0339A",
+    "markdown": {
+      "filePath": "/Users/admin/c11-sandbox/md359-proof/c11-messaging-primitive-design.md",
+      "fontScale": 1.2,
+      "outlineOpen": false,
+      "theme": "dark",
+      "typeface": "mono"
+    }
+  },
+  "after": {
+    "id": "4652F51D-5C97-4B06-AD69-70C88FA0339A",
+    "markdown": {
+      "filePath": "/Users/admin/c11-sandbox/md359-proof/c11-messaging-primitive-design.md",
+      "fontScale": 1.2,
+      "outlineOpen": false,
+      "theme": "dark",
+      "typeface": "mono"
+    }
+  },
+  "limits": "Session persistence proved; inspect screenshots/AX for Mermaid and visible size. No JS/debug/R4 bridge used."
+}

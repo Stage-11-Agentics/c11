@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:32:21Z",
+  "created_by": "agent:codex-md-r4",
+  "custom_fields": {},
+  "id": "art_01M4E29RCRD7B8EPE5EV63J13K",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E29RCRD7B8EPE5EV63J13K.png",
+    "size_bytes": 936907
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged md-361 app in the Atlas sandbox, showing the Installation heading with the transient gold scroll highlight.",
+  "tags": [],
+  "title": "Atlas scroll flash visible",
+  "token_usage": null,
+  "type": "file"
+}

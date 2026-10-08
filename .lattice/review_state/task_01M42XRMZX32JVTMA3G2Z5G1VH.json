@@ -1,0 +1,17 @@
+{
+  "task_id": "task_01M42XRMZX32JVTMA3G2Z5G1VH",
+  "mode": "single",
+  "review_type": "plan-review",
+  "started_at": "2026-10-06T20:42:32.188557+00:00",
+  "started_by_pid": 91540,
+  "auto_fired": true,
+  "agents": [
+    {
+      "name": "claude",
+      "status": "running",
+      "started_at": "2026-10-06T20:42:32.188557+00:00",
+      "artifact_id": null
+    }
+  ],
+  "claim": "03483bd0d683cd95"
+}

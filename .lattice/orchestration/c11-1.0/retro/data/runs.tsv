@@ -1,0 +1,791 @@
+37032439580	Mailbox parity	push	c11-1.0/C11-286-resize-window-luna	6d3db3fa	completed	success	2026-10-02T16:13:18Z	2026-10-02T16:13:18Z	2026-10-02T16:17:26Z	1
+37032140125	CI	push	main	e9a13f46	in_progress		2026-10-02T16:10:42Z	2026-10-02T16:10:42Z	2026-10-02T16:10:50Z	1
+37032140536	macOS Compatibility	push	main	e9a13f46	in_progress		2026-10-02T16:10:42Z	2026-10-02T16:10:42Z	2026-10-02T16:10:57Z	1
+37032140286	Build GhosttyKit	push	main	e9a13f46	completed	success	2026-10-02T16:10:42Z	2026-10-02T16:10:42Z	2026-10-02T16:11:18Z	1
+37032140221	Mailbox parity	push	main	e9a13f46	completed	success	2026-10-02T16:10:42Z	2026-10-02T16:10:42Z	2026-10-02T16:15:18Z	1
+37032133291	Drawbridge	pull_request_target	c11-1.0/C11-275-codex-notify	8fc61c7b	completed	success	2026-10-02T16:10:38Z	2026-10-02T16:10:38Z	2026-10-02T16:10:55Z	1
+37030444991	CI	pull_request	c11-1.0/C11-315-hourly-ci	5dc11c02	completed	success	2026-10-02T15:56:06Z	2026-10-02T15:56:06Z	2026-10-02T15:56:55Z	1
+37030444946	Mailbox parity	pull_request	c11-1.0/C11-315-hourly-ci	5dc11c02	completed	success	2026-10-02T15:56:06Z	2026-10-02T15:56:06Z	2026-10-02T15:56:17Z	1
+37030441606	Drawbridge	pull_request_target	c11-1.0/C11-315-hourly-ci	5dc11c02	completed	skipped	2026-10-02T15:56:04Z	2026-10-02T15:56:04Z	2026-10-02T15:56:06Z	1
+37030441087	Mailbox parity	push	c11-1.0/C11-315-hourly-ci	5dc11c02	completed	success	2026-10-02T15:56:04Z	2026-10-02T15:56:04Z	2026-10-02T15:56:17Z	1
+37030439238	.github/workflows/ci-macos-compat.yml	push	c11-1.0/C11-315-hourly-ci	5dc11c02	completed	failure	2026-10-02T15:56:03Z	2026-10-02T15:56:03Z	2026-10-02T15:56:03Z	1
+37030272177	Build GhosttyKit	push	main	ef36ab82	completed	success	2026-10-02T15:54:38Z	2026-10-02T15:54:38Z	2026-10-02T15:55:10Z	1
+37030272058	CI	push	main	ef36ab82	completed	success	2026-10-02T15:54:37Z	2026-10-02T15:54:37Z	2026-10-02T16:04:21Z	1
+37030272130	macOS Compatibility	push	main	ef36ab82	completed	success	2026-10-02T15:54:37Z	2026-10-02T15:54:37Z	2026-10-02T16:05:22Z	1
+37030265997	Drawbridge	pull_request_target	c11-1.0/C11-280-test-fresh-object	41f12579	completed	success	2026-10-02T15:54:34Z	2026-10-02T15:54:34Z	2026-10-02T15:54:50Z	1
+37029574312	Mailbox parity	pull_request	c11-1.0/C11-275-codex-notify	8fc61c7b	completed	success	2026-10-02T15:48:34Z	2026-10-02T15:48:34Z	2026-10-02T15:54:52Z	1
+37029574325	macOS Compatibility	pull_request	c11-1.0/C11-275-codex-notify	8fc61c7b	completed	success	2026-10-02T15:48:34Z	2026-10-02T15:48:34Z	2026-10-02T15:58:44Z	1
+37029574331	CI	pull_request	c11-1.0/C11-275-codex-notify	8fc61c7b	completed	success	2026-10-02T15:48:34Z	2026-10-02T15:48:34Z	2026-10-02T16:00:28Z	1
+37029574794	Build GhosttyKit	pull_request	c11-1.0/C11-275-codex-notify	8fc61c7b	completed	success	2026-10-02T15:48:34Z	2026-10-02T15:48:34Z	2026-10-02T15:49:23Z	1
+37029569950	Drawbridge	pull_request_target	c11-1.0/C11-275-codex-notify	8fc61c7b	completed	skipped	2026-10-02T15:48:32Z	2026-10-02T15:48:32Z	2026-10-02T15:48:34Z	1
+37029543784	Build GhosttyKit	pull_request	c11-1.0/C11-275-codex-notify	980e0b84	completed	cancelled	2026-10-02T15:48:19Z	2026-10-02T15:48:19Z	2026-10-02T15:48:52Z	1
+37029543372	macOS Compatibility	pull_request	c11-1.0/C11-275-codex-notify	980e0b84	completed	cancelled	2026-10-02T15:48:18Z	2026-10-02T15:48:18Z	2026-10-02T15:49:51Z	1
+37029543199	CI	pull_request	c11-1.0/C11-275-codex-notify	980e0b84	completed	cancelled	2026-10-02T15:48:18Z	2026-10-02T15:48:18Z	2026-10-02T15:50:00Z	1
+37029543434	Mailbox parity	pull_request	c11-1.0/C11-275-codex-notify	980e0b84	completed	cancelled	2026-10-02T15:48:18Z	2026-10-02T15:48:18Z	2026-10-02T15:50:01Z	1
+37029539383	Drawbridge	pull_request_target	c11-1.0/C11-275-codex-notify	980e0b84	completed	skipped	2026-10-02T15:48:16Z	2026-10-02T15:48:16Z	2026-10-02T15:48:19Z	1
+37028712556	Drawbridge	pull_request_target	c11-1.0/C11-315-hourly-ci	129bc008	completed	skipped	2026-10-02T15:41:08Z	2026-10-02T15:41:08Z	2026-10-02T15:41:10Z	1
+37028713008	CI	pull_request	c11-1.0/C11-315-hourly-ci	129bc008	completed	success	2026-10-02T15:41:08Z	2026-10-02T15:41:08Z	2026-10-02T15:41:56Z	1
+37027981898	Drawbridge	issue_comment	main	cef86bc2	completed	skipped	2026-10-02T15:34:53Z	2026-10-02T15:34:53Z	2026-10-02T15:34:54Z	1
+37027906257	Drawbridge	pull_request_target	c11-1.0/C11-280-test-fresh-object	41f12579	completed	skipped	2026-10-02T15:34:15Z	2026-10-02T15:34:15Z	2026-10-02T15:34:17Z	1
+37027906532	Build GhosttyKit	pull_request	c11-1.0/C11-280-test-fresh-object	41f12579	completed	success	2026-10-02T15:34:15Z	2026-10-02T15:34:15Z	2026-10-02T15:43:18Z	1
+37027906029	CI	pull_request	c11-1.0/C11-280-test-fresh-object	41f12579	completed	success	2026-10-02T15:34:14Z	2026-10-02T15:34:14Z	2026-10-02T15:54:50Z	1
+37027905895	macOS Compatibility	pull_request	c11-1.0/C11-280-test-fresh-object	41f12579	completed	success	2026-10-02T15:34:14Z	2026-10-02T15:34:14Z	2026-10-02T15:46:37Z	1
+37027858867	Build GhosttyKit	push	main	cef86bc2	completed	success	2026-10-02T15:33:51Z	2026-10-02T15:33:51Z	2026-10-02T15:34:29Z	1
+37027859068	macOS Compatibility	push	main	cef86bc2	completed	success	2026-10-02T15:33:51Z	2026-10-02T15:33:51Z	2026-10-02T15:42:33Z	1
+37027858766	CI	push	main	cef86bc2	completed	success	2026-10-02T15:33:51Z	2026-10-02T15:33:51Z	2026-10-02T15:43:15Z	1
+37027851253	Drawbridge	pull_request_target	c11-1.0/C11-291-locales	73781624	completed	success	2026-10-02T15:33:47Z	2026-10-02T15:33:47Z	2026-10-02T15:34:01Z	1
+37027789915	Mailbox parity	pull_request	c11-1.0/C11-275-codex-notify	2cd018ef	completed	success	2026-10-02T15:33:17Z	2026-10-02T15:33:17Z	2026-10-02T15:37:32Z	1
+37027790225	Build GhosttyKit	pull_request	c11-1.0/C11-275-codex-notify	2cd018ef	completed	success	2026-10-02T15:33:17Z	2026-10-02T15:33:17Z	2026-10-02T15:33:46Z	1
+37027789659	CI	pull_request	c11-1.0/C11-275-codex-notify	2cd018ef	completed	success	2026-10-02T15:33:17Z	2026-10-02T15:33:17Z	2026-10-02T15:42:52Z	1
+37027790573	macOS Compatibility	pull_request	c11-1.0/C11-275-codex-notify	2cd018ef	completed	success	2026-10-02T15:33:17Z	2026-10-02T15:33:17Z	2026-10-02T15:44:19Z	1
+37027789433	Drawbridge	pull_request_target	c11-1.0/C11-275-codex-notify	2cd018ef	completed	skipped	2026-10-02T15:33:16Z	2026-10-02T15:33:16Z	2026-10-02T15:33:25Z	1
+37027168954	Mailbox parity	push	c11-1.0/C11-264-feed-asks	820104d8	completed	success	2026-10-02T15:28:03Z	2026-10-02T15:28:03Z	2026-10-02T15:32:22Z	1
+37026663115	.github/workflows/ci-macos-compat.yml	push	c11-1.0/C11-315-hourly-ci	129bc008	completed	failure	2026-10-02T15:23:41Z	2026-10-02T15:23:41Z	2026-10-02T15:23:41Z	1
+37026586517	Drawbridge	pull_request_target	c11-1.0/C11-291-locales	73781624	completed	skipped	2026-10-02T15:23:04Z	2026-10-02T15:23:04Z	2026-10-02T15:23:06Z	1
+37026586809	Build GhosttyKit	pull_request	c11-1.0/C11-291-locales	73781624	completed	success	2026-10-02T15:23:04Z	2026-10-02T15:23:04Z	2026-10-02T15:24:16Z	1
+37026586682	CI	pull_request	c11-1.0/C11-291-locales	73781624	completed	success	2026-10-02T15:23:04Z	2026-10-02T15:23:04Z	2026-10-02T15:32:15Z	1
+37026586303	macOS Compatibility	pull_request	c11-1.0/C11-291-locales	73781624	completed	success	2026-10-02T15:23:03Z	2026-10-02T15:23:03Z	2026-10-02T15:31:27Z	1
+37025411901	CI	pull_request	c11-1.0/C11-274-claude-hooks	a8079489	completed	success	2026-10-02T15:13:13Z	2026-10-02T15:13:13Z	2026-10-02T15:24:28Z	1
+37025410796	Build GhosttyKit	pull_request	c11-1.0/C11-274-claude-hooks	a8079489	completed	success	2026-10-02T15:13:12Z	2026-10-02T15:13:12Z	2026-10-02T15:15:10Z	1
+37025410723	Mailbox parity	pull_request	c11-1.0/C11-274-claude-hooks	a8079489	completed	success	2026-10-02T15:13:12Z	2026-10-02T15:13:12Z	2026-10-02T15:19:17Z	1
+37025410902	macOS Compatibility	pull_request	c11-1.0/C11-274-claude-hooks	a8079489	completed	success	2026-10-02T15:13:12Z	2026-10-02T15:13:12Z	2026-10-02T15:26:12Z	1
+37025405543	Drawbridge	pull_request_target	c11-1.0/C11-274-claude-hooks	a8079489	completed	skipped	2026-10-02T15:13:10Z	2026-10-02T15:13:10Z	2026-10-02T15:13:12Z	1
+37025137450	Build GhosttyKit	push	main	9f217332	completed	success	2026-10-02T15:10:52Z	2026-10-02T15:10:52Z	2026-10-02T15:14:58Z	1
+37025137372	macOS Compatibility	push	main	9f217332	completed	success	2026-10-02T15:10:52Z	2026-10-02T15:10:52Z	2026-10-02T15:22:15Z	1
+37025137240	CI	push	main	9f217332	completed	success	2026-10-02T15:10:52Z	2026-10-02T15:10:52Z	2026-10-02T15:23:46Z	1
+37025129901	Drawbridge	pull_request_target	c11-1.0/C11-314-delete-flaky-tests	d1d6cee4	completed	success	2026-10-02T15:10:48Z	2026-10-02T15:10:48Z	2026-10-02T15:11:03Z	1
+37025093569	Drawbridge	pull_request_target	c11-1.0/C11-274-claude-hooks	5393670a	completed	skipped	2026-10-02T15:10:30Z	2026-10-02T15:10:30Z	2026-10-02T15:10:32Z	1
+37025093421	Build GhosttyKit	pull_request	c11-1.0/C11-274-claude-hooks	5393670a	completed	success	2026-10-02T15:10:30Z	2026-10-02T15:10:30Z	2026-10-02T15:11:20Z	1
+37025094002	macOS Compatibility	pull_request	c11-1.0/C11-274-claude-hooks	5393670a	completed	cancelled	2026-10-02T15:10:30Z	2026-10-02T15:10:30Z	2026-10-02T15:14:23Z	1
+37025093907	CI	pull_request	c11-1.0/C11-274-claude-hooks	5393670a	completed	cancelled	2026-10-02T15:10:30Z	2026-10-02T15:10:30Z	2026-10-02T15:14:31Z	1
+37025093929	Mailbox parity	pull_request	c11-1.0/C11-274-claude-hooks	5393670a	completed	cancelled	2026-10-02T15:10:30Z	2026-10-02T15:10:30Z	2026-10-02T15:14:39Z	1
+37025055153	Mailbox parity	push	c11-1.0/C11-274-claude-hooks	5393670a	completed	success	2026-10-02T15:10:12Z	2026-10-02T15:10:12Z	2026-10-02T15:14:51Z	1
+37024766939	Mailbox parity	push	c11-1.0/C11-275-codex-notify	a604e07b	completed	success	2026-10-02T15:07:45Z	2026-10-02T15:07:45Z	2026-10-02T15:12:12Z	1
+37024499056	Mailbox parity	push	c11-1.0/C11-231-agents-json	e4f95fd5	completed	success	2026-10-02T15:05:30Z	2026-10-02T15:05:30Z	2026-10-02T15:10:23Z	1
+37023750558	macOS Compatibility	pull_request	c11-1.0/C11-314-delete-flaky-tests	d1d6cee4	completed	success	2026-10-02T14:59:23Z	2026-10-02T14:59:23Z	2026-10-02T15:09:51Z	1
+37023750545	CI	pull_request	c11-1.0/C11-314-delete-flaky-tests	d1d6cee4	completed	success	2026-10-02T14:59:23Z	2026-10-02T14:59:23Z	2026-10-02T15:09:14Z	1
+37023750681	Build GhosttyKit	pull_request	c11-1.0/C11-314-delete-flaky-tests	d1d6cee4	completed	success	2026-10-02T14:59:23Z	2026-10-02T14:59:23Z	2026-10-02T14:59:50Z	1
+37023750736	Drawbridge	pull_request_target	c11-1.0/C11-314-delete-flaky-tests	d1d6cee4	completed	skipped	2026-10-02T14:59:23Z	2026-10-02T14:59:23Z	2026-10-02T14:59:25Z	1
+37022935060	Mailbox parity	push	c11-1.0/C11-286-resize-window-luna	1100b4cc	completed	success	2026-10-02T14:52:28Z	2026-10-02T14:52:28Z	2026-10-02T14:57:14Z	1
+37019296288	Sentry quota watch	schedule	main	12d4f21a	completed	success	2026-10-02T14:21:30Z	2026-10-02T14:21:30Z	2026-10-02T14:21:43Z	1
+37004271361	CI	push	main	12d4f21a	completed	success	2026-10-02T12:01:33Z	2026-10-02T12:01:33Z	2026-10-02T12:13:30Z	1
+37004271348	Mailbox parity	push	main	12d4f21a	completed	success	2026-10-02T12:01:33Z	2026-10-02T12:01:33Z	2026-10-02T12:05:41Z	1
+37004271334	Build GhosttyKit	push	main	12d4f21a	completed	success	2026-10-02T12:01:33Z	2026-10-02T12:01:33Z	2026-10-02T12:01:58Z	1
+37004271419	macOS Compatibility	push	main	12d4f21a	completed	success	2026-10-02T12:01:33Z	2026-10-02T12:01:33Z	2026-10-02T12:12:43Z	1
+37004267260	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	cc9aeafa	completed	success	2026-10-02T12:01:30Z	2026-10-02T12:01:30Z	2026-10-02T12:01:43Z	1
+37003170791	Mailbox parity	pull_request	c11-1.0/C11-273-journal	cc9aeafa	completed	success	2026-10-02T11:49:53Z	2026-10-02T11:49:53Z	2026-10-02T11:54:03Z	1
+37003170816	Build GhosttyKit	pull_request	c11-1.0/C11-273-journal	cc9aeafa	completed	success	2026-10-02T11:49:53Z	2026-10-02T11:49:53Z	2026-10-02T11:54:28Z	1
+37003170813	CI	pull_request	c11-1.0/C11-273-journal	cc9aeafa	completed	success	2026-10-02T11:49:53Z	2026-10-02T11:49:53Z	2026-10-02T11:59:18Z	1
+37003170801	macOS Compatibility	pull_request	c11-1.0/C11-273-journal	cc9aeafa	completed	success	2026-10-02T11:49:53Z	2026-10-02T11:49:53Z	2026-10-02T12:00:47Z	1
+37003168858	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	cc9aeafa	completed	skipped	2026-10-02T11:49:52Z	2026-10-02T11:49:52Z	2026-10-02T11:49:54Z	1
+37003166184	Mailbox parity	push	c11-1.0/C11-273-journal	cc9aeafa	completed	success	2026-10-02T11:49:50Z	2026-10-02T11:49:50Z	2026-10-02T11:54:27Z	1
+37002544791	CI	push	main	04458a8b	completed	success	2026-10-02T11:43:09Z	2026-10-02T11:43:09Z	2026-10-02T12:03:55Z	1
+37002544789	Mailbox parity	push	main	04458a8b	completed	success	2026-10-02T11:43:09Z	2026-10-02T11:43:09Z	2026-10-02T11:47:54Z	1
+37002544831	Build GhosttyKit	push	main	04458a8b	completed	success	2026-10-02T11:43:09Z	2026-10-02T11:43:09Z	2026-10-02T11:48:17Z	1
+37002544820	macOS Compatibility	push	main	04458a8b	completed	success	2026-10-02T11:43:09Z	2026-10-02T11:43:09Z	2026-10-02T11:58:05Z	1
+37002540555	Drawbridge	pull_request_target	c11-1.0/C11-282-read-selection	f3192aae	completed	success	2026-10-02T11:43:06Z	2026-10-02T11:43:06Z	2026-10-02T11:43:22Z	1
+37002146391	Build GhosttyKit	push	main	9cc9e322	completed	success	2026-10-02T11:38:50Z	2026-10-02T11:38:50Z	2026-10-02T11:39:57Z	1
+37002146335	macOS Compatibility	push	main	9cc9e322	completed	success	2026-10-02T11:38:50Z	2026-10-02T11:38:50Z	2026-10-02T11:49:54Z	1
+37002146389	CI	push	main	9cc9e322	completed	success	2026-10-02T11:38:50Z	2026-10-02T11:38:50Z	2026-10-02T11:50:19Z	1
+37002141752	Drawbridge	pull_request_target	c11-1.0/C11-298-single-instance	876fbadf	completed	success	2026-10-02T11:38:47Z	2026-10-02T11:38:47Z	2026-10-02T11:39:03Z	1
+37002059644	Mailbox parity	pull_request	c11-1.0/C11-273-journal	db405a42	completed	success	2026-10-02T11:37:52Z	2026-10-02T11:37:52Z	2026-10-02T11:43:28Z	1
+37002059628	macOS Compatibility	pull_request	c11-1.0/C11-273-journal	db405a42	completed	success	2026-10-02T11:37:52Z	2026-10-02T11:37:52Z	2026-10-02T11:47:53Z	1
+37002059623	CI	pull_request	c11-1.0/C11-273-journal	db405a42	completed	success	2026-10-02T11:37:52Z	2026-10-02T11:37:52Z	2026-10-02T11:48:07Z	1
+37002059552	Build GhosttyKit	pull_request	c11-1.0/C11-273-journal	db405a42	completed	success	2026-10-02T11:37:52Z	2026-10-02T11:37:52Z	2026-10-02T11:38:20Z	1
+37002056389	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	db405a42	completed	skipped	2026-10-02T11:37:50Z	2026-10-02T11:37:50Z	2026-10-02T11:37:52Z	1
+37001454142	Mailbox parity	pull_request	c11-1.0/C11-282-read-selection	f3192aae	completed	success	2026-10-02T11:31:14Z	2026-10-02T11:31:14Z	2026-10-02T11:38:51Z	1
+37001454106	macOS Compatibility	pull_request	c11-1.0/C11-282-read-selection	f3192aae	completed	success	2026-10-02T11:31:14Z	2026-10-02T11:31:14Z	2026-10-02T11:39:32Z	1
+37001454182	CI	pull_request	c11-1.0/C11-282-read-selection	f3192aae	completed	success	2026-10-02T11:31:14Z	2026-10-02T11:31:14Z	2026-10-02T11:40:29Z	1
+37001454168	Build GhosttyKit	pull_request	c11-1.0/C11-282-read-selection	f3192aae	completed	success	2026-10-02T11:31:14Z	2026-10-02T11:31:14Z	2026-10-02T11:34:17Z	1
+37001451569	Drawbridge	pull_request_target	c11-1.0/C11-282-read-selection	f3192aae	completed	skipped	2026-10-02T11:31:12Z	2026-10-02T11:31:12Z	2026-10-02T11:31:14Z	1
+37000552726	Drawbridge	pull_request_target	c11-1.0/C11-298-single-instance	876fbadf	completed	skipped	2026-10-02T11:21:27Z	2026-10-02T11:21:27Z	2026-10-02T11:21:28Z	1
+37000552738	Build GhosttyKit	pull_request	c11-1.0/C11-298-single-instance	876fbadf	completed	success	2026-10-02T11:21:27Z	2026-10-02T11:21:27Z	2026-10-02T11:24:51Z	1
+37000552647	macOS Compatibility	pull_request	c11-1.0/C11-298-single-instance	876fbadf	completed	success	2026-10-02T11:21:27Z	2026-10-02T11:21:27Z	2026-10-02T11:33:43Z	1
+37000552776	CI	pull_request	c11-1.0/C11-298-single-instance	876fbadf	completed	success	2026-10-02T11:21:27Z	2026-10-02T11:21:27Z	2026-10-02T11:30:23Z	1
+37000459852	Drawbridge	pull_request_target	c11-1.0/C11-282-read-selection	dda149b3	completed	skipped	2026-10-02T11:20:26Z	2026-10-02T11:20:26Z	2026-10-02T11:20:28Z	1
+37000457919	Mailbox parity	push	c11-1.0/C11-282-read-selection	dda149b3	completed	success	2026-10-02T11:20:25Z	2026-10-02T11:20:25Z	2026-10-02T11:24:50Z	1
+37000013956	Build GhosttyKit	push	main	f731745d	completed	success	2026-10-02T11:15:31Z	2026-10-02T11:15:31Z	2026-10-02T11:16:04Z	1
+37000014007	macOS Compatibility	push	main	f731745d	completed	success	2026-10-02T11:15:31Z	2026-10-02T11:15:31Z	2026-10-02T11:24:23Z	1
+37000013972	CI	push	main	f731745d	completed	cancelled	2026-10-02T11:15:31Z	2026-10-02T11:15:31Z	2026-10-02T11:40:56Z	1
+37000008793	Drawbridge	pull_request_target	c11-1.0/C11-295-main-stalls	6eaab8c5	completed	success	2026-10-02T11:15:28Z	2026-10-02T11:15:28Z	2026-10-02T11:15:42Z	1
+36999557974	Build GhosttyKit	pull_request	c11-1.0/C11-273-journal	b33c93db	completed	success	2026-10-02T11:10:37Z	2026-10-02T11:10:37Z	2026-10-02T11:12:39Z	1
+36999557995	Mailbox parity	pull_request	c11-1.0/C11-273-journal	b33c93db	completed	success	2026-10-02T11:10:37Z	2026-10-02T11:10:37Z	2026-10-02T11:15:27Z	1
+36999557972	macOS Compatibility	pull_request	c11-1.0/C11-273-journal	b33c93db	completed	success	2026-10-02T11:10:37Z	2026-10-02T11:10:37Z	2026-10-02T11:20:00Z	1
+36999558012	CI	pull_request	c11-1.0/C11-273-journal	b33c93db	completed	cancelled	2026-10-02T11:10:37Z	2026-10-02T11:10:37Z	2026-10-02T11:36:04Z	1
+36999555877	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	b33c93db	completed	skipped	2026-10-02T11:10:35Z	2026-10-02T11:10:35Z	2026-10-02T11:10:37Z	1
+36999553040	Mailbox parity	push	c11-1.0/C11-273-journal	b33c93db	completed	success	2026-10-02T11:10:34Z	2026-10-02T11:10:34Z	2026-10-02T11:14:51Z	1
+36999323457	Drawbridge	pull_request_target	c11-1.0/C11-282-read-selection	14c736b2	completed	skipped	2026-10-02T11:08:04Z	2026-10-02T11:08:04Z	2026-10-02T11:08:06Z	1
+36999321327	Mailbox parity	push	c11-1.0/C11-282-read-selection	14c736b2	completed	success	2026-10-02T11:08:02Z	2026-10-02T11:08:02Z	2026-10-02T11:12:10Z	1
+36998558953	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	1b6e2340	completed	skipped	2026-10-02T10:59:56Z	2026-10-02T10:59:56Z	2026-10-02T10:59:58Z	1
+36998279647	CI	pull_request	c11-1.0/C11-295-main-stalls	6eaab8c5	completed	success	2026-10-02T10:56:44Z	2026-10-02T10:56:44Z	2026-10-02T11:06:42Z	1
+36998279651	macOS Compatibility	pull_request	c11-1.0/C11-295-main-stalls	6eaab8c5	completed	success	2026-10-02T10:56:44Z	2026-10-02T10:56:44Z	2026-10-02T11:07:22Z	1
+36998279625	Build GhosttyKit	pull_request	c11-1.0/C11-295-main-stalls	6eaab8c5	completed	success	2026-10-02T10:56:44Z	2026-10-02T10:56:44Z	2026-10-02T10:59:11Z	1
+36998276248	Drawbridge	pull_request_target	c11-1.0/C11-295-main-stalls	6eaab8c5	completed	skipped	2026-10-02T10:56:42Z	2026-10-02T10:56:42Z	2026-10-02T10:56:43Z	1
+36998274775	Mailbox parity	push	c11-1.0/C11-295-main-stalls	6eaab8c5	completed	success	2026-10-02T10:56:40Z	2026-10-02T10:56:40Z	2026-10-02T11:00:47Z	1
+36998078761	Drawbridge	pull_request_target	c11-1.0/C11-295-main-stalls	d3fa43c1	completed	skipped	2026-10-02T10:54:36Z	2026-10-02T10:54:36Z	2026-10-02T10:54:37Z	1
+36997597293	Build GhosttyKit	push	main	dac4fced	completed	success	2026-10-02T10:49:26Z	2026-10-02T10:49:26Z	2026-10-02T10:49:57Z	1
+36997597248	macOS Compatibility	push	main	dac4fced	completed	success	2026-10-02T10:49:26Z	2026-10-02T10:49:26Z	2026-10-02T11:01:49Z	1
+36997597307	CI	push	main	dac4fced	completed	success	2026-10-02T10:49:26Z	2026-10-02T10:49:26Z	2026-10-02T10:58:48Z	1
+36997592318	Drawbridge	pull_request_target	c11-1.0/C11-260-groups-sidebar	f41a6790	completed	success	2026-10-02T10:49:22Z	2026-10-02T10:49:22Z	2026-10-02T10:49:34Z	1
+36997434052	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	407e072f	completed	skipped	2026-10-02T10:47:38Z	2026-10-02T10:47:38Z	2026-10-02T10:47:40Z	1
+36997432003	Mailbox parity	push	c11-1.0/C11-273-journal	407e072f	completed	success	2026-10-02T10:47:37Z	2026-10-02T10:47:37Z	2026-10-02T10:52:08Z	1
+36997419335	Drawbridge	pull_request_target	c11-1.0/C11-282-read-selection	790c9845	completed	skipped	2026-10-02T10:47:28Z	2026-10-02T10:47:28Z	2026-10-02T10:47:30Z	1
+36995916054	CI	pull_request	c11-1.0/C11-260-groups-sidebar	f41a6790	completed	success	2026-10-02T10:31:12Z	2026-10-02T10:31:12Z	2026-10-02T10:40:22Z	1
+36995916108	Build GhosttyKit	pull_request	c11-1.0/C11-260-groups-sidebar	f41a6790	completed	success	2026-10-02T10:31:12Z	2026-10-02T10:31:12Z	2026-10-02T10:31:45Z	1
+36995915976	macOS Compatibility	pull_request	c11-1.0/C11-260-groups-sidebar	f41a6790	completed	success	2026-10-02T10:31:11Z	2026-10-02T10:31:11Z	2026-10-02T10:42:12Z	1
+36995915968	Drawbridge	pull_request_target	c11-1.0/C11-260-groups-sidebar	f41a6790	completed	skipped	2026-10-02T10:31:11Z	2026-10-02T10:31:11Z	2026-10-02T10:31:13Z	1
+36995160385	Mailbox parity	push	main	234c31bb	completed	success	2026-10-02T10:23:01Z	2026-10-02T10:23:01Z	2026-10-02T10:27:33Z	1
+36995160368	macOS Compatibility	push	main	234c31bb	completed	success	2026-10-02T10:23:01Z	2026-10-02T10:23:01Z	2026-10-02T10:31:56Z	1
+36995160360	CI	push	main	234c31bb	completed	success	2026-10-02T10:23:01Z	2026-10-02T10:23:01Z	2026-10-02T10:32:03Z	1
+36995160449	Build GhosttyKit	push	main	234c31bb	completed	success	2026-10-02T10:23:01Z	2026-10-02T10:23:01Z	2026-10-02T10:23:32Z	1
+36995155416	Drawbridge	pull_request_target	c11-1.0/C11-283-window-scope	6bc28658	completed	success	2026-10-02T10:22:58Z	2026-10-02T10:22:58Z	2026-10-02T10:23:11Z	1
+36995135870	Drawbridge	pull_request_target	c11-1.0/C11-273-journal	8c6cd8d8	completed	skipped	2026-10-02T10:22:45Z	2026-10-02T10:22:45Z	2026-10-02T10:22:47Z	1
+36995013005	Mailbox parity	push	c11-1.0/C11-282-read-selection	b30ce99a	completed	success	2026-10-02T10:21:25Z	2026-10-02T10:21:25Z	2026-10-02T10:26:01Z	1
+36993557379	Build GhosttyKit	pull_request	c11-1.0/C11-283-window-scope	6bc28658	completed	success	2026-10-02T10:05:47Z	2026-10-02T10:05:47Z	2026-10-02T10:07:08Z	1
+36993557272	Mailbox parity	pull_request	c11-1.0/C11-283-window-scope	6bc28658	completed	success	2026-10-02T10:05:47Z	2026-10-02T10:05:47Z	2026-10-02T10:15:41Z	1
+36993556955	CI	pull_request	c11-1.0/C11-283-window-scope	6bc28658	completed	success	2026-10-02T10:05:46Z	2026-10-02T10:05:46Z	2026-10-02T10:18:37Z	1
+36993556982	macOS Compatibility	pull_request	c11-1.0/C11-283-window-scope	6bc28658	completed	success	2026-10-02T10:05:46Z	2026-10-02T10:05:46Z	2026-10-02T10:22:18Z	1
+36993553060	Drawbridge	pull_request_target	c11-1.0/C11-283-window-scope	6bc28658	completed	skipped	2026-10-02T10:05:44Z	2026-10-02T10:05:44Z	2026-10-02T10:05:46Z	1
+36993550760	Mailbox parity	push	c11-1.0/C11-283-window-scope	6bc28658	completed	success	2026-10-02T10:05:43Z	2026-10-02T10:05:43Z	2026-10-02T10:11:31Z	1
+36993299033	Build GhosttyKit	push	main	3786513d	completed	success	2026-10-02T10:03:08Z	2026-10-02T10:03:08Z	2026-10-02T10:03:47Z	1
+36993298945	macOS Compatibility	push	main	3786513d	completed	success	2026-10-02T10:03:08Z	2026-10-02T10:03:08Z	2026-10-02T10:22:52Z	1
+36993299053	CI	push	main	3786513d	completed	success	2026-10-02T10:03:08Z	2026-10-02T10:03:08Z	2026-10-02T10:19:04Z	1
+36993291642	Drawbridge	pull_request_target	c11-1.0/C11-302-ghostty-wakeups	2f63e9b3	completed	success	2026-10-02T10:03:03Z	2026-10-02T10:03:03Z	2026-10-02T10:03:19Z	1
+36993152725	Nightly c11 macOS build	schedule	main	85f33041	completed	success	2026-10-02T10:01:38Z	2026-10-02T10:01:38Z	2026-10-02T10:11:49Z	1
+36992771848	Build GhosttyKit	push	main	85f33041	completed	success	2026-10-02T09:57:41Z	2026-10-02T09:57:41Z	2026-10-02T10:02:50Z	1
+36992771966	Mailbox parity	push	main	85f33041	completed	success	2026-10-02T09:57:41Z	2026-10-02T09:57:41Z	2026-10-02T10:10:49Z	1
+36992771888	macOS Compatibility	push	main	85f33041	completed	success	2026-10-02T09:57:41Z	2026-10-02T09:57:41Z	2026-10-02T10:14:04Z	1
+36992771923	CI	push	main	85f33041	completed	success	2026-10-02T09:57:41Z	2026-10-02T09:57:41Z	2026-10-02T10:09:32Z	1
+36992766601	Drawbridge	pull_request_target	c11-1.0/C11-281-send-contract	f3c92c99	completed	success	2026-10-02T09:57:37Z	2026-10-02T09:57:37Z	2026-10-02T09:57:54Z	1
+36992633874	Build GhosttyKit	pull_request	c11-1.0/C11-283-window-scope	a9967182	completed	success	2026-10-02T09:56:13Z	2026-10-02T09:56:13Z	2026-10-02T10:03:18Z	1
+36992633964	Mailbox parity	pull_request	c11-1.0/C11-283-window-scope	a9967182	completed	cancelled	2026-10-02T09:56:13Z	2026-10-02T09:56:13Z	2026-10-02T10:06:43Z	1
+36992633893	macOS Compatibility	pull_request	c11-1.0/C11-283-window-scope	a9967182	completed	cancelled	2026-10-02T09:56:13Z	2026-10-02T09:56:13Z	2026-10-02T10:06:08Z	1
+36992633894	CI	pull_request	c11-1.0/C11-283-window-scope	a9967182	completed	cancelled	2026-10-02T09:56:13Z	2026-10-02T09:56:13Z	2026-10-02T10:06:05Z	1
+36992629608	Drawbridge	pull_request_target	c11-1.0/C11-283-window-scope	a9967182	completed	skipped	2026-10-02T09:56:11Z	2026-10-02T09:56:11Z	2026-10-02T09:56:13Z	1
+36992627704	Mailbox parity	push	c11-1.0/C11-283-window-scope	a9967182	completed	success	2026-10-02T09:56:09Z	2026-10-02T09:56:09Z	2026-10-02T10:02:05Z	1
+36992274857	CI	pull_request	c11-1.0/C11-302-ghostty-wakeups	2f63e9b3	completed	success	2026-10-02T09:52:24Z	2026-10-02T09:52:24Z	2026-10-02T10:02:43Z	1
+36992274880	macOS Compatibility	pull_request	c11-1.0/C11-302-ghostty-wakeups	2f63e9b3	completed	success	2026-10-02T09:52:24Z	2026-10-02T09:52:24Z	2026-10-02T10:02:08Z	1
+36992274963	Drawbridge	pull_request_target	c11-1.0/C11-302-ghostty-wakeups	2f63e9b3	completed	skipped	2026-10-02T09:52:24Z	2026-10-02T09:52:24Z	2026-10-02T09:52:26Z	1
+36992275038	Build GhosttyKit	pull_request	c11-1.0/C11-302-ghostty-wakeups	2f63e9b3	completed	success	2026-10-02T09:52:24Z	2026-10-02T09:52:24Z	2026-10-02T09:55:49Z	1
+36991587510	Drawbridge	pull_request_target	c11-1.0/C11-283-window-scope	15df94ff	completed	skipped	2026-10-02T09:45:11Z	2026-10-02T09:45:11Z	2026-10-02T09:45:13Z	1
+36991585087	Mailbox parity	push	c11-1.0/C11-283-window-scope	15df94ff	completed	success	2026-10-02T09:45:10Z	2026-10-02T09:45:10Z	2026-10-02T09:53:25Z	1
+36991473424	Mailbox parity	pull_request	c11-1.0/C11-281-send-contract	f3c92c99	completed	success	2026-10-02T09:44:02Z	2026-10-02T09:44:02Z	2026-10-02T09:51:17Z	1
+36991473431	macOS Compatibility	pull_request	c11-1.0/C11-281-send-contract	f3c92c99	completed	success	2026-10-02T09:44:02Z	2026-10-02T09:44:02Z	2026-10-02T09:55:30Z	1
+36991473508	CI	pull_request	c11-1.0/C11-281-send-contract	f3c92c99	completed	success	2026-10-02T09:44:02Z	2026-10-02T09:44:02Z	2026-10-02T09:55:24Z	1
+36991473436	Build GhosttyKit	pull_request	c11-1.0/C11-281-send-contract	f3c92c99	completed	success	2026-10-02T09:44:02Z	2026-10-02T09:44:02Z	2026-10-02T09:50:11Z	1
+36991471115	Drawbridge	pull_request_target	c11-1.0/C11-281-send-contract	f3c92c99	completed	skipped	2026-10-02T09:44:00Z	2026-10-02T09:44:00Z	2026-10-02T09:44:02Z	1
+36991468374	Mailbox parity	push	c11-1.0/C11-281-send-contract	f3c92c99	completed	success	2026-10-02T09:43:58Z	2026-10-02T09:43:58Z	2026-10-02T09:48:45Z	1
+36991218979	Build GhosttyKit	push	main	531908b8	completed	success	2026-10-02T09:41:21Z	2026-10-02T09:41:21Z	2026-10-02T09:43:25Z	1
+36991219059	CI	push	main	531908b8	completed	success	2026-10-02T09:41:21Z	2026-10-02T09:41:21Z	2026-10-02T09:58:12Z	1
+36991218961	macOS Compatibility	push	main	531908b8	completed	success	2026-10-02T09:41:21Z	2026-10-02T09:41:21Z	2026-10-02T10:02:17Z	1
+36991214800	Drawbridge	pull_request_target	c11-1.0/C11-279-canonical-routing-keys	eb806620	completed	success	2026-10-02T09:41:18Z	2026-10-02T09:41:18Z	2026-10-02T09:41:32Z	1
+36991147697	Mailbox parity	push	c11-1.0/C11-282-read-selection	f5a9469b	completed	success	2026-10-02T09:40:35Z	2026-10-02T09:40:35Z	2026-10-02T09:46:45Z	1
+36991056392	Mailbox parity	push	c11-1.0/C11-260-groups-sidebar	19c7fd4e	completed	success	2026-10-02T09:39:39Z	2026-10-02T09:39:39Z	2026-10-02T09:45:59Z	1
+36990932768	Build GhosttyKit	push	main	2e920cf4	completed	success	2026-10-02T09:38:20Z	2026-10-02T09:38:20Z	2026-10-02T09:41:26Z	1
+36990932858	Mailbox parity	push	main	2e920cf4	completed	success	2026-10-02T09:38:20Z	2026-10-02T09:38:20Z	2026-10-02T09:43:02Z	1
+36990932778	CI	push	main	2e920cf4	completed	success	2026-10-02T09:38:20Z	2026-10-02T09:38:20Z	2026-10-02T09:47:18Z	1
+36990932850	macOS Compatibility	push	main	2e920cf4	completed	success	2026-10-02T09:38:20Z	2026-10-02T09:38:20Z	2026-10-02T09:49:40Z	1
+36990928124	Drawbridge	pull_request_target	c11-1.0/C11-285-rpc	c8bacdc0	completed	success	2026-10-02T09:38:17Z	2026-10-02T09:38:17Z	2026-10-02T09:38:33Z	1
+36990926037	Drawbridge	issue_comment	main	2496017a	completed	skipped	2026-10-02T09:38:16Z	2026-10-02T09:38:16Z	2026-10-02T09:38:18Z	1
+36990306503	Mailbox parity	push	c11-1.0/C11-286-resize-window	752460aa	completed	success	2026-10-02T09:31:50Z	2026-10-02T09:31:50Z	2026-10-02T09:41:43Z	1
+36989486021	Build GhosttyKit	pull_request	c11-1.0/C11-279-canonical-routing-keys	eb806620	completed	success	2026-10-02T09:23:22Z	2026-10-02T09:23:22Z	2026-10-02T09:26:35Z	1
+36989486126	CI	pull_request	c11-1.0/C11-279-canonical-routing-keys	eb806620	completed	success	2026-10-02T09:23:22Z	2026-10-02T09:23:22Z	2026-10-02T09:35:08Z	1
+36989486193	macOS Compatibility	pull_request	c11-1.0/C11-279-canonical-routing-keys	eb806620	completed	success	2026-10-02T09:23:22Z	2026-10-02T09:23:22Z	2026-10-02T09:40:57Z	1
+36989483825	Drawbridge	pull_request_target	c11-1.0/C11-279-canonical-routing-keys	eb806620	completed	skipped	2026-10-02T09:23:21Z	2026-10-02T09:23:21Z	2026-10-02T09:23:23Z	1
+36989481306	Mailbox parity	push	c11-1.0/C11-279-canonical-routing-keys	eb806620	completed	success	2026-10-02T09:23:19Z	2026-10-02T09:23:19Z	2026-10-02T09:31:23Z	1
+36989366865	Build GhosttyKit	pull_request	c11-1.0/C11-281-send-contract	58a9c117	completed	success	2026-10-02T09:22:06Z	2026-10-02T09:22:06Z	2026-10-02T09:25:12Z	1
+36989366908	CI	pull_request	c11-1.0/C11-281-send-contract	58a9c117	completed	success	2026-10-02T09:22:06Z	2026-10-02T09:22:06Z	2026-10-02T09:39:00Z	1
+36989366812	Mailbox parity	pull_request	c11-1.0/C11-281-send-contract	58a9c117	completed	success	2026-10-02T09:22:06Z	2026-10-02T09:22:06Z	2026-10-02T09:39:35Z	1
+36989366827	macOS Compatibility	pull_request	c11-1.0/C11-281-send-contract	58a9c117	completed	success	2026-10-02T09:22:06Z	2026-10-02T09:22:06Z	2026-10-02T09:40:55Z	1
+36989364051	Drawbridge	pull_request_target	c11-1.0/C11-281-send-contract	58a9c117	completed	skipped	2026-10-02T09:22:05Z	2026-10-02T09:22:05Z	2026-10-02T09:22:07Z	1
+36989361290	Mailbox parity	push	c11-1.0/C11-281-send-contract	58a9c117	completed	success	2026-10-02T09:22:03Z	2026-10-02T09:22:03Z	2026-10-02T09:30:08Z	1
+36989133131	Drawbridge	issue_comment	main	2496017a	completed	skipped	2026-10-02T09:19:40Z	2026-10-02T09:19:40Z	2026-10-02T09:19:42Z	1
+36988791558	Build GhosttyKit	pull_request	c11-1.0/C11-285-rpc	c8bacdc0	completed	success	2026-10-02T09:16:02Z	2026-10-02T09:16:02Z	2026-10-02T09:25:40Z	1
+36988791587	CI	pull_request	c11-1.0/C11-285-rpc	c8bacdc0	completed	success	2026-10-02T09:16:02Z	2026-10-02T09:16:02Z	2026-10-02T09:27:37Z	1
+36988791562	Mailbox parity	pull_request	c11-1.0/C11-285-rpc	c8bacdc0	completed	success	2026-10-02T09:16:02Z	2026-10-02T09:16:02Z	2026-10-02T09:31:13Z	1
+36988791615	macOS Compatibility	pull_request	c11-1.0/C11-285-rpc	c8bacdc0	completed	success	2026-10-02T09:16:02Z	2026-10-02T09:16:02Z	2026-10-02T09:36:56Z	1
+36988789427	Drawbridge	pull_request_target	c11-1.0/C11-285-rpc	c8bacdc0	completed	skipped	2026-10-02T09:16:01Z	2026-10-02T09:16:01Z	2026-10-02T09:16:02Z	1
+36988787298	Mailbox parity	push	c11-1.0/C11-285-rpc	c8bacdc0	completed	success	2026-10-02T09:15:59Z	2026-10-02T09:15:59Z	2026-10-02T09:25:36Z	1
+36988763371	CI	pull_request	c11-1.0/C11-283-window-scope	50fa043e	completed	success	2026-10-02T09:15:45Z	2026-10-02T09:15:45Z	2026-10-02T09:25:48Z	1
+36988763537	Drawbridge	pull_request_target	c11-1.0/C11-283-window-scope	50fa043e	completed	skipped	2026-10-02T09:15:45Z	2026-10-02T09:15:45Z	2026-10-02T09:15:46Z	1
+36988763223	macOS Compatibility	pull_request	c11-1.0/C11-283-window-scope	50fa043e	completed	success	2026-10-02T09:15:44Z	2026-10-02T09:15:44Z	2026-10-02T09:24:35Z	1
+36988763346	Mailbox parity	pull_request	c11-1.0/C11-283-window-scope	50fa043e	completed	success	2026-10-02T09:15:44Z	2026-10-02T09:15:44Z	2026-10-02T09:26:08Z	1
+36988763282	Build GhosttyKit	pull_request	c11-1.0/C11-283-window-scope	50fa043e	completed	success	2026-10-02T09:15:44Z	2026-10-02T09:15:44Z	2026-10-02T09:26:17Z	1
+36988726595	Drawbridge	pull_request_target	c11-1.0/C11-281-send-contract	945d90ea	completed	skipped	2026-10-02T09:15:23Z	2026-10-02T09:15:23Z	2026-10-02T09:15:25Z	1
+36988724501	Mailbox parity	push	c11-1.0/C11-281-send-contract	945d90ea	completed	success	2026-10-02T09:15:22Z	2026-10-02T09:15:22Z	2026-10-02T09:21:13Z	1
+36988305242	Mailbox parity	push	main	2496017a	completed	success	2026-10-02T09:11:01Z	2026-10-02T09:11:01Z	2026-10-02T09:15:53Z	1
+36988305042	macOS Compatibility	push	main	2496017a	completed	success	2026-10-02T09:11:01Z	2026-10-02T09:11:01Z	2026-10-02T09:19:58Z	1
+36988305184	CI	push	main	2496017a	completed	success	2026-10-02T09:11:01Z	2026-10-02T09:11:01Z	2026-10-02T09:21:28Z	1
+36988305033	Build GhosttyKit	push	main	2496017a	completed	success	2026-10-02T09:11:01Z	2026-10-02T09:11:01Z	2026-10-02T09:13:56Z	1
+36988300016	Drawbridge	pull_request_target	c11-1.0/C11-308-control-keys	b09a7a69	completed	success	2026-10-02T09:10:57Z	2026-10-02T09:10:57Z	2026-10-02T09:11:14Z	1
+36987997081	Drawbridge	issue_comment	main	1334615d	completed	skipped	2026-10-02T09:07:47Z	2026-10-02T09:07:47Z	2026-10-02T09:07:48Z	1
+36987911781	macOS Compatibility	pull_request	c11-1.0/C11-285-rpc	02b1fc3f	completed	cancelled	2026-10-02T09:06:53Z	2026-10-02T09:06:53Z	2026-10-02T09:16:37Z	1
+36987911726	CI	pull_request	c11-1.0/C11-285-rpc	02b1fc3f	completed	cancelled	2026-10-02T09:06:53Z	2026-10-02T09:06:53Z	2026-10-02T09:16:45Z	1
+36987911748	Build GhosttyKit	pull_request	c11-1.0/C11-285-rpc	02b1fc3f	completed	success	2026-10-02T09:06:53Z	2026-10-02T09:06:53Z	2026-10-02T09:09:57Z	1
+36987911762	Drawbridge	pull_request_target	c11-1.0/C11-285-rpc	02b1fc3f	completed	skipped	2026-10-02T09:06:53Z	2026-10-02T09:06:53Z	2026-10-02T09:06:55Z	1
+36987911759	Mailbox parity	pull_request	c11-1.0/C11-285-rpc	02b1fc3f	completed	success	2026-10-02T09:06:53Z	2026-10-02T09:06:53Z	2026-10-02T09:13:32Z	1
+36987475851	Drawbridge	pull_request_target	c11-1.0/C11-279-canonical-routing-keys	603a4d91	completed	skipped	2026-10-02T09:02:26Z	2026-10-02T09:02:26Z	2026-10-02T09:02:27Z	1
+36987474494	Mailbox parity	push	c11-1.0/C11-279-canonical-routing-keys	603a4d91	completed	success	2026-10-02T09:02:25Z	2026-10-02T09:02:25Z	2026-10-02T09:06:41Z	1
+36987426024	Mailbox parity	push	c11-1.0/C11-283-window-scope	50fa043e	completed	success	2026-10-02T09:01:54Z	2026-10-02T09:01:54Z	2026-10-02T09:11:32Z	1
+36987180126	Mailbox parity	push	c11-1.0/C11-285-rpc	02b1fc3f	completed	success	2026-10-02T08:59:23Z	2026-10-02T08:59:23Z	2026-10-02T09:09:24Z	1
+36987108707	Build GhosttyKit	pull_request	c11-1.0/C11-308-control-keys	b09a7a69	completed	success	2026-10-02T08:58:37Z	2026-10-02T08:58:37Z	2026-10-02T09:01:00Z	1
+36987108975	Drawbridge	pull_request_target	c11-1.0/C11-308-control-keys	b09a7a69	completed	skipped	2026-10-02T08:58:37Z	2026-10-02T08:58:37Z	2026-10-02T08:58:39Z	1
+36987108705	CI	pull_request	c11-1.0/C11-308-control-keys	b09a7a69	completed	success	2026-10-02T08:58:37Z	2026-10-02T08:58:37Z	2026-10-02T09:09:26Z	1
+36987108700	macOS Compatibility	pull_request	c11-1.0/C11-308-control-keys	b09a7a69	completed	success	2026-10-02T08:58:37Z	2026-10-02T08:58:37Z	2026-10-02T09:09:49Z	1
+36987108714	Mailbox parity	pull_request	c11-1.0/C11-308-control-keys	b09a7a69	completed	success	2026-10-02T08:58:37Z	2026-10-02T08:58:37Z	2026-10-02T09:08:37Z	1
+36986647279	Mailbox parity	push	main	1334615d	completed	success	2026-10-02T08:53:46Z	2026-10-02T08:53:46Z	2026-10-02T09:01:52Z	1
+36986647290	Build GhosttyKit	push	main	1334615d	completed	success	2026-10-02T08:53:46Z	2026-10-02T08:53:46Z	2026-10-02T08:57:38Z	1
+36986647200	macOS Compatibility	push	main	1334615d	completed	success	2026-10-02T08:53:45Z	2026-10-02T08:53:45Z	2026-10-02T09:04:29Z	1
+36986647181	CI	push	main	1334615d	completed	success	2026-10-02T08:53:45Z	2026-10-02T08:53:45Z	2026-10-02T09:05:15Z	1
+36986643439	Drawbridge	pull_request_target	c11-1.0/C11-280-initial-input	812b26bd	completed	success	2026-10-02T08:53:43Z	2026-10-02T08:53:43Z	2026-10-02T08:54:00Z	1
+36986469513	Mailbox parity	push	c11-1.0/C11-285-rpc	3e8c919e	completed	success	2026-10-02T08:51:51Z	2026-10-02T08:51:51Z	2026-10-02T09:00:30Z	1
+36986368555	Mailbox parity	push	c11-1.0/C11-283-window-scope	194e064b	completed	success	2026-10-02T08:50:45Z	2026-10-02T08:50:45Z	2026-10-02T08:57:12Z	1
+36985836393	Drawbridge	issue_comment	main	7edd59b8	completed	skipped	2026-10-02T08:45:13Z	2026-10-02T08:45:13Z	2026-10-02T08:45:15Z	1
+36985330895	Sign unpublished c11 artifact	workflow_dispatch	main	7edd59b8	completed	success	2026-10-02T08:39:58Z	2026-10-02T08:39:58Z	2026-10-02T09:02:42Z	1
+36985327649	Sign unpublished c11 artifact	workflow_dispatch	main	7edd59b8	completed	success	2026-10-02T08:39:55Z	2026-10-02T08:39:55Z	2026-10-02T08:57:02Z	1
+36985228043	Mailbox parity	push	c11-1.0/C11-298-single-instance	876fbadf	completed	success	2026-10-02T08:38:53Z	2026-10-02T08:38:53Z	2026-10-02T08:45:55Z	1
+36985059236	macOS Compatibility	push	main	7edd59b8	completed	success	2026-10-02T08:37:06Z	2026-10-02T08:37:06Z	2026-10-02T08:56:22Z	1
+36985059226	CI	push	main	7edd59b8	completed	success	2026-10-02T08:37:06Z	2026-10-02T08:37:06Z	2026-10-02T08:57:11Z	1
+36985059197	Build GhosttyKit	push	main	7edd59b8	completed	success	2026-10-02T08:37:06Z	2026-10-02T08:37:06Z	2026-10-02T08:43:22Z	1
+36985052863	Drawbridge	pull_request_target	c11-1.0/C11-307-sparkle-macos26	c89ac3e9	completed	success	2026-10-02T08:37:02Z	2026-10-02T08:37:02Z	2026-10-02T08:37:15Z	1
+36985036358	CI	pull_request	c11-1.0/C11-281-send-contract	aabd639e	completed	success	2026-10-02T08:36:51Z	2026-10-02T08:36:51Z	2026-10-02T08:52:16Z	1
+36985036127	Mailbox parity	pull_request	c11-1.0/C11-281-send-contract	aabd639e	completed	success	2026-10-02T08:36:51Z	2026-10-02T08:36:51Z	2026-10-02T08:50:13Z	1
+36985036346	Build GhosttyKit	pull_request	c11-1.0/C11-281-send-contract	aabd639e	completed	success	2026-10-02T08:36:51Z	2026-10-02T08:36:51Z	2026-10-02T08:50:48Z	1
+36985036211	macOS Compatibility	pull_request	c11-1.0/C11-281-send-contract	aabd639e	completed	success	2026-10-02T08:36:51Z	2026-10-02T08:36:51Z	2026-10-02T08:47:35Z	1
+36985033855	Drawbridge	pull_request_target	c11-1.0/C11-281-send-contract	aabd639e	completed	skipped	2026-10-02T08:36:49Z	2026-10-02T08:36:49Z	2026-10-02T08:36:51Z	1
+36984901580	Mailbox parity	push	c11-1.0/C11-273-journal	f14c281c	completed	success	2026-10-02T08:35:28Z	2026-10-02T08:35:28Z	2026-10-02T08:48:10Z	1
+36984892999	Drawbridge	issue_comment	main	b6244a2d	completed	skipped	2026-10-02T08:35:22Z	2026-10-02T08:35:22Z	2026-10-02T08:35:24Z	1
+36984881342	Mailbox parity	push	c11-1.0/C11-308-control-keys	b09a7a69	completed	success	2026-10-02T08:35:15Z	2026-10-02T08:35:15Z	2026-10-02T08:45:13Z	1
+36984670535	Mailbox parity	pull_request	c11-1.0/C11-280-initial-input	812b26bd	completed	success	2026-10-02T08:33:07Z	2026-10-02T08:33:07Z	2026-10-02T08:38:33Z	1
+36984670622	CI	pull_request	c11-1.0/C11-280-initial-input	812b26bd	completed	success	2026-10-02T08:33:07Z	2026-10-02T08:33:07Z	2026-10-02T08:40:30Z	1
+36984670695	Drawbridge	pull_request_target	c11-1.0/C11-280-initial-input	812b26bd	completed	skipped	2026-10-02T08:33:07Z	2026-10-02T08:33:07Z	2026-10-02T08:33:09Z	1
+36984670636	Build GhosttyKit	pull_request	c11-1.0/C11-280-initial-input	812b26bd	completed	success	2026-10-02T08:33:07Z	2026-10-02T08:33:07Z	2026-10-02T08:33:53Z	1
+36984670540	macOS Compatibility	pull_request	c11-1.0/C11-280-initial-input	812b26bd	completed	success	2026-10-02T08:33:07Z	2026-10-02T08:33:07Z	2026-10-02T08:43:47Z	1
+36984470597	CI	push	main	b6244a2d	completed	success	2026-10-02T08:31:02Z	2026-10-02T08:31:02Z	2026-10-02T08:41:27Z	1
+36984470594	Build GhosttyKit	push	main	b6244a2d	completed	success	2026-10-02T08:31:02Z	2026-10-02T08:31:02Z	2026-10-02T08:31:43Z	1
+36984470591	macOS Compatibility	push	main	b6244a2d	completed	success	2026-10-02T08:31:02Z	2026-10-02T08:31:02Z	2026-10-02T08:42:58Z	1
+36984465929	Drawbridge	pull_request_target	c11-1.0/C11-305-test-cleanup	cca7b3e0	completed	success	2026-10-02T08:30:59Z	2026-10-02T08:30:59Z	2026-10-02T08:31:15Z	1
+36984311393	Mailbox parity	push	c11-1.0/C11-273-journal	a05a3249	completed	success	2026-10-02T08:29:26Z	2026-10-02T08:29:26Z	2026-10-02T08:34:22Z	1
+36984285724	Mailbox parity	push	c11-1.0/C11-283-window-scope	b0d89d48	completed	success	2026-10-02T08:29:09Z	2026-10-02T08:29:09Z	2026-10-02T08:33:32Z	1
+36984056221	Build GhosttyKit	push	main	e7322a2a	completed	success	2026-10-02T08:26:40Z	2026-10-02T08:26:40Z	2026-10-02T08:27:12Z	1
+36984056114	CI	push	main	e7322a2a	completed	cancelled	2026-10-02T08:26:40Z	2026-10-02T08:26:40Z	2026-10-02T08:31:03Z	1
+36984056226	macOS Compatibility	push	main	e7322a2a	completed	cancelled	2026-10-02T08:26:40Z	2026-10-02T08:26:40Z	2026-10-02T08:31:03Z	1
+36984051291	Drawbridge	pull_request_target	c11-1.0/C11-297-startup-readiness	1572e20e	completed	success	2026-10-02T08:26:36Z	2026-10-02T08:26:36Z	2026-10-02T08:26:51Z	1
+36983955999	Drawbridge	pull_request_target	c11-1.0/C11-290-ssh-smoke	68801665	completed	success	2026-10-02T08:25:34Z	2026-10-02T08:25:34Z	2026-10-02T08:25:46Z	1
+36983871633	CI	push	main	7969b8f8	completed	success	2026-10-02T08:24:43Z	2026-10-02T08:24:43Z	2026-10-02T08:33:27Z	1
+36983871718	macOS Compatibility	push	main	7969b8f8	completed	success	2026-10-02T08:24:43Z	2026-10-02T08:24:43Z	2026-10-02T08:33:47Z	1
+36983871677	Mailbox parity	push	main	7969b8f8	completed	success	2026-10-02T08:24:43Z	2026-10-02T08:24:43Z	2026-10-02T08:29:01Z	1
+36983871694	Build GhosttyKit	push	main	7969b8f8	completed	success	2026-10-02T08:24:43Z	2026-10-02T08:24:43Z	2026-10-02T08:25:11Z	1
+36983867111	Drawbridge	pull_request_target	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	success	2026-10-02T08:24:40Z	2026-10-02T08:24:40Z	2026-10-02T08:24:55Z	1
+36983345394	Mailbox parity	push	c11-1.0/C11-273-journal	a04997d2	completed	success	2026-10-02T08:19:05Z	2026-10-02T08:19:05Z	2026-10-02T08:25:34Z	1
+36982914940	macOS Compatibility	pull_request	c11-1.0/C11-305-test-cleanup	cca7b3e0	completed	success	2026-10-02T08:14:24Z	2026-10-02T08:14:24Z	2026-10-02T08:30:35Z	1
+36982914848	CI	pull_request	c11-1.0/C11-305-test-cleanup	cca7b3e0	completed	success	2026-10-02T08:14:24Z	2026-10-02T08:14:24Z	2026-10-02T08:23:30Z	1
+36982914764	Drawbridge	pull_request_target	c11-1.0/C11-305-test-cleanup	cca7b3e0	completed	skipped	2026-10-02T08:14:24Z	2026-10-02T08:14:24Z	2026-10-02T08:14:26Z	1
+36982914862	Build GhosttyKit	pull_request	c11-1.0/C11-305-test-cleanup	cca7b3e0	completed	success	2026-10-02T08:14:24Z	2026-10-02T08:14:24Z	2026-10-02T08:20:45Z	1
+36981758490	Build GhosttyKit	pull_request	c11-1.0/C11-297-startup-readiness	1572e20e	completed	success	2026-10-02T08:02:05Z	2026-10-02T08:02:05Z	2026-10-02T08:12:18Z	1
+36981758334	macOS Compatibility	pull_request	c11-1.0/C11-297-startup-readiness	1572e20e	completed	success	2026-10-02T08:02:05Z	2026-10-02T08:02:05Z	2026-10-02T08:22:12Z	1
+36981758440	CI	pull_request	c11-1.0/C11-297-startup-readiness	1572e20e	completed	success	2026-10-02T08:02:05Z	2026-10-02T08:02:05Z	2026-10-02T08:24:07Z	1
+36981755970	Drawbridge	pull_request_target	c11-1.0/C11-297-startup-readiness	1572e20e	completed	skipped	2026-10-02T08:02:04Z	2026-10-02T08:02:04Z	2026-10-02T08:02:06Z	1
+36981752721	Mailbox parity	push	c11-1.0/C11-297-startup-readiness	1572e20e	completed	success	2026-10-02T08:02:02Z	2026-10-02T08:02:02Z	2026-10-02T08:12:33Z	1
+36981651777	Drawbridge	pull_request_target	c11-1.0/C11-290-ssh-smoke	68801665	completed	skipped	2026-10-02T08:00:58Z	2026-10-02T08:00:58Z	2026-10-02T08:00:59Z	1
+36981540462	Mailbox parity	push	c11-1.0/C11-280-initial-input	ed0e9a2f	completed	success	2026-10-02T07:59:51Z	2026-10-02T07:59:51Z	2026-10-02T08:23:28Z	1
+36981395590	Drawbridge	issue_comment	main	43529df1	completed	skipped	2026-10-02T07:58:12Z	2026-10-02T07:58:12Z	2026-10-02T07:58:14Z	1
+36981329885	Build GhosttyKit	pull_request	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	success	2026-10-02T07:57:29Z	2026-10-02T07:57:29Z	2026-10-02T07:59:07Z	1
+36981329848	CI	pull_request	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	success	2026-10-02T07:57:29Z	2026-10-02T07:57:29Z	2026-10-02T08:11:35Z	1
+36981329851	Mailbox parity	pull_request	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	success	2026-10-02T07:57:29Z	2026-10-02T07:57:29Z	2026-10-02T08:08:18Z	1
+36981329995	macOS Compatibility	pull_request	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	success	2026-10-02T07:57:29Z	2026-10-02T07:57:29Z	2026-10-02T08:15:52Z	1
+36981327871	Drawbridge	pull_request_target	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	skipped	2026-10-02T07:57:27Z	2026-10-02T07:57:27Z	2026-10-02T07:57:29Z	1
+36981326449	Mailbox parity	push	c11-1.0/C11-269-runtime-hygiene	d47299f6	completed	success	2026-10-02T07:57:26Z	2026-10-02T07:57:26Z	2026-10-02T08:04:03Z	1
+36981269025	Drawbridge	pull_request_target	c11-1.0/C11-297-startup-readiness	1b42f63b	completed	skipped	2026-10-02T07:56:47Z	2026-10-02T07:56:47Z	2026-10-02T07:56:49Z	1
+36981266805	Mailbox parity	push	c11-1.0/C11-297-startup-readiness	1b42f63b	completed	cancelled	2026-10-02T07:56:46Z	2026-10-02T07:56:46Z	2026-10-02T08:04:09Z	1
+36981218960	Mailbox parity	push	main	43529df1	completed	success	2026-10-02T07:56:13Z	2026-10-02T07:56:13Z	2026-10-02T08:09:28Z	1
+36981219014	Build GhosttyKit	push	main	43529df1	completed	success	2026-10-02T07:56:13Z	2026-10-02T07:56:13Z	2026-10-02T08:04:33Z	1
+36981218949	macOS Compatibility	push	main	43529df1	completed	success	2026-10-02T07:56:13Z	2026-10-02T07:56:13Z	2026-10-02T08:18:42Z	1
+36981219054	CI	push	main	43529df1	completed	success	2026-10-02T07:56:13Z	2026-10-02T07:56:13Z	2026-10-02T08:20:14Z	1
+36981214879	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	success	2026-10-02T07:56:10Z	2026-10-02T07:56:10Z	2026-10-02T07:56:23Z	1
+36981153002	macOS Compatibility	push	main	6926fa05	completed	cancelled	2026-10-02T07:55:30Z	2026-10-02T07:55:30Z	2026-10-02T07:56:14Z	1
+36981153001	Build GhosttyKit	push	main	6926fa05	completed	cancelled	2026-10-02T07:55:30Z	2026-10-02T07:55:30Z	2026-10-02T07:56:14Z	1
+36981152997	CI	push	main	6926fa05	completed	cancelled	2026-10-02T07:55:30Z	2026-10-02T07:55:30Z	2026-10-02T07:56:14Z	1
+36981153023	Mailbox parity	push	main	6926fa05	completed	success	2026-10-02T07:55:30Z	2026-10-02T07:55:30Z	2026-10-02T08:01:32Z	1
+36981148066	Drawbridge	pull_request_target	c11-1.0/C11-263-attention-batch	a245ece6	completed	success	2026-10-02T07:55:26Z	2026-10-02T07:55:26Z	2026-10-02T07:55:39Z	1
+36980892043	Build GhosttyKit	pull_request	c11-1.0/C11-281-send-contract	c8c04ea9	completed	success	2026-10-02T07:52:37Z	2026-10-02T07:52:37Z	2026-10-02T07:57:05Z	1
+36980892050	Drawbridge	pull_request_target	c11-1.0/C11-281-send-contract	c8c04ea9	completed	skipped	2026-10-02T07:52:37Z	2026-10-02T07:52:37Z	2026-10-02T07:52:40Z	1
+36980892022	CI	pull_request	c11-1.0/C11-281-send-contract	c8c04ea9	completed	success	2026-10-02T07:52:37Z	2026-10-02T07:52:37Z	2026-10-02T08:03:17Z	1
+36980892021	macOS Compatibility	pull_request	c11-1.0/C11-281-send-contract	c8c04ea9	completed	success	2026-10-02T07:52:37Z	2026-10-02T07:52:37Z	2026-10-02T08:03:32Z	1
+36980892018	Mailbox parity	pull_request	c11-1.0/C11-281-send-contract	c8c04ea9	completed	success	2026-10-02T07:52:37Z	2026-10-02T07:52:37Z	2026-10-02T08:16:44Z	1
+36980641744	macOS Compatibility	push	main	b6f239bd	completed	cancelled	2026-10-02T07:49:51Z	2026-10-02T07:49:51Z	2026-10-02T07:55:31Z	1
+36980641698	CI	push	main	b6f239bd	completed	cancelled	2026-10-02T07:49:51Z	2026-10-02T07:49:51Z	2026-10-02T07:55:31Z	1
+36980641696	Build GhosttyKit	push	main	b6f239bd	completed	success	2026-10-02T07:49:51Z	2026-10-02T07:49:51Z	2026-10-02T07:56:41Z	1
+36980636435	Drawbridge	pull_request_target	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	success	2026-10-02T07:49:47Z	2026-10-02T07:49:47Z	2026-10-02T07:49:59Z	1
+36980503488	Mailbox parity	push	c11-1.0/C11-280-initial-input	4740654b	completed	success	2026-10-02T07:48:16Z	2026-10-02T07:48:16Z	2026-10-02T08:07:20Z	1
+36980318135	Drawbridge	pull_request_target	c11-1.0/C11-307-sparkle-macos26	c89ac3e9	completed	skipped	2026-10-02T07:46:11Z	2026-10-02T07:46:11Z	2026-10-02T07:46:12Z	1
+36980318160	macOS Compatibility	pull_request	c11-1.0/C11-307-sparkle-macos26	c89ac3e9	completed	success	2026-10-02T07:46:11Z	2026-10-02T07:46:11Z	2026-10-02T08:11:47Z	1
+36980318149	Build GhosttyKit	pull_request	c11-1.0/C11-307-sparkle-macos26	c89ac3e9	completed	success	2026-10-02T07:46:11Z	2026-10-02T07:46:11Z	2026-10-02T08:01:59Z	1
+36980318254	CI	pull_request	c11-1.0/C11-307-sparkle-macos26	c89ac3e9	completed	failure	2026-10-02T07:46:11Z	2026-10-02T07:46:11Z	2026-10-02T08:02:54Z	1
+36979934435	Mailbox parity	push	c11-1.0/C11-298-single-instance	c7351e3f	completed	success	2026-10-02T07:41:53Z	2026-10-02T07:41:53Z	2026-10-02T07:50:51Z	1
+36979802309	Mailbox parity	push	c11-1.0/C11-280-initial-input	b325ea5d	completed	success	2026-10-02T07:40:25Z	2026-10-02T07:40:25Z	2026-10-02T07:47:53Z	1
+36979666992	Drawbridge	pull_request_target	c11-1.0/C11-297-startup-readiness	8ebd72af	completed	skipped	2026-10-02T07:38:55Z	2026-10-02T07:38:55Z	2026-10-02T07:38:57Z	1
+36979587914	macOS Compatibility	pull_request	c11-1.0/C11-263-attention-batch	a245ece6	completed	success	2026-10-02T07:38:00Z	2026-10-02T07:38:00Z	2026-10-02T07:54:26Z	1
+36979587882	Mailbox parity	pull_request	c11-1.0/C11-263-attention-batch	a245ece6	completed	success	2026-10-02T07:38:00Z	2026-10-02T07:38:00Z	2026-10-02T07:48:39Z	1
+36979587833	Build GhosttyKit	pull_request	c11-1.0/C11-263-attention-batch	a245ece6	completed	success	2026-10-02T07:38:00Z	2026-10-02T07:38:00Z	2026-10-02T07:49:08Z	1
+36979587856	CI	pull_request	c11-1.0/C11-263-attention-batch	a245ece6	completed	success	2026-10-02T07:38:00Z	2026-10-02T07:38:00Z	2026-10-02T07:56:14Z	1
+36979585492	Drawbridge	pull_request_target	c11-1.0/C11-263-attention-batch	a245ece6	completed	skipped	2026-10-02T07:37:58Z	2026-10-02T07:37:58Z	2026-10-02T07:38:00Z	1
+36979387390	Drawbridge	workflow_dispatch	main	24401649	completed	success	2026-10-02T07:35:43Z	2026-10-02T07:35:43Z	2026-10-02T07:37:17Z	1
+36979384071	Drawbridge	workflow_dispatch	main	24401649	completed	success	2026-10-02T07:35:41Z	2026-10-02T07:35:41Z	2026-10-02T07:36:59Z	1
+36979381174	Drawbridge	workflow_dispatch	main	24401649	completed	success	2026-10-02T07:35:39Z	2026-10-02T07:35:39Z	2026-10-02T07:36:58Z	1
+36979378043	Drawbridge	workflow_dispatch	main	24401649	completed	success	2026-10-02T07:35:37Z	2026-10-02T07:35:37Z	2026-10-02T07:36:56Z	1
+36979374526	Drawbridge	workflow_dispatch	main	24401649	completed	success	2026-10-02T07:35:35Z	2026-10-02T07:35:35Z	2026-10-02T07:37:01Z	1
+36979371654	Drawbridge	workflow_dispatch	main	24401649	completed	success	2026-10-02T07:35:33Z	2026-10-02T07:35:33Z	2026-10-02T07:36:54Z	1
+36979350480	Drawbridge Sweep	schedule	main	24401649	completed	success	2026-10-02T07:35:19Z	2026-10-02T07:35:19Z	2026-10-02T07:35:54Z	1
+36979204685	Build GhosttyKit	push	main	24401649	completed	success	2026-10-02T07:33:42Z	2026-10-02T07:33:42Z	2026-10-02T07:45:42Z	1
+36979204732	Mailbox parity	push	main	24401649	completed	success	2026-10-02T07:33:42Z	2026-10-02T07:33:42Z	2026-10-02T07:48:00Z	1
+36979204681	CI	push	main	24401649	completed	cancelled	2026-10-02T07:33:42Z	2026-10-02T07:33:42Z	2026-10-02T07:49:52Z	1
+36979204673	macOS Compatibility	push	main	24401649	completed	success	2026-10-02T07:33:42Z	2026-10-02T07:33:42Z	2026-10-02T07:58:40Z	1
+36979199947	Drawbridge	pull_request_target	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	success	2026-10-02T07:33:39Z	2026-10-02T07:33:39Z	2026-10-02T07:33:54Z	1
+36978855197	Build GhosttyKit	push	main	63dafef0	completed	cancelled	2026-10-02T07:29:48Z	2026-10-02T07:29:48Z	2026-10-02T07:33:43Z	1
+36978855235	macOS Compatibility	push	main	63dafef0	completed	cancelled	2026-10-02T07:29:48Z	2026-10-02T07:29:48Z	2026-10-02T07:33:43Z	1
+36978855212	CI	push	main	63dafef0	completed	cancelled	2026-10-02T07:29:48Z	2026-10-02T07:29:48Z	2026-10-02T07:33:43Z	1
+36978850458	Drawbridge	pull_request_target	c11-1.0/C11-305-shell-helpers	06854ad3	completed	success	2026-10-02T07:29:45Z	2026-10-02T07:29:45Z	2026-10-02T07:29:57Z	1
+36978642544	CI	pull_request	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	success	2026-10-02T07:27:22Z	2026-10-02T07:27:22Z	2026-10-02T07:55:32Z	1
+36978642501	macOS Compatibility	pull_request	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	success	2026-10-02T07:27:22Z	2026-10-02T07:27:22Z	2026-10-02T07:43:34Z	1
+36978642510	Mailbox parity	pull_request	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	success	2026-10-02T07:27:22Z	2026-10-02T07:27:22Z	2026-10-02T07:37:17Z	1
+36978642565	Build GhosttyKit	pull_request	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	success	2026-10-02T07:27:22Z	2026-10-02T07:27:22Z	2026-10-02T07:42:13Z	1
+36978640391	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	skipped	2026-10-02T07:27:20Z	2026-10-02T07:27:20Z	2026-10-02T07:27:22Z	1
+36978639017	Mailbox parity	push	c11-1.0/C11-259-workspace-groups	53d88b7c	completed	success	2026-10-02T07:27:19Z	2026-10-02T07:27:19Z	2026-10-02T07:44:00Z	1
+36978613031	Mailbox parity	push	c11-1.0/C11-273-journal	1652acb5	completed	success	2026-10-02T07:27:01Z	2026-10-02T07:27:01Z	2026-10-02T07:35:24Z	1
+36978278173	CI	push	main	4ff6212b	completed	success	2026-10-02T07:23:11Z	2026-10-02T07:23:11Z	2026-10-02T07:57:15Z	1
+36978278159	macOS Compatibility	push	main	4ff6212b	completed	success	2026-10-02T07:23:11Z	2026-10-02T07:23:11Z	2026-10-02T07:45:16Z	1
+36978278155	Build GhosttyKit	push	main	4ff6212b	completed	success	2026-10-02T07:23:11Z	2026-10-02T07:23:11Z	2026-10-02T07:42:45Z	1
+36978273836	Drawbridge	pull_request_target	c11-1.0/C11-301-mount-cap	e6c893cd	completed	success	2026-10-02T07:23:09Z	2026-10-02T07:23:09Z	2026-10-02T07:23:21Z	1
+36977976410	Drawbridge	issue_comment	main	2d2440ac	completed	skipped	2026-10-02T07:19:43Z	2026-10-02T07:19:43Z	2026-10-02T07:19:44Z	1
+36977797787	Build GhosttyKit	pull_request	c11-1.0/C11-269-runtime-hygiene	bbe2e250	completed	cancelled	2026-10-02T07:17:35Z	2026-10-02T07:17:35Z	2026-10-02T07:57:30Z	1
+36977797809	Drawbridge	pull_request_target	c11-1.0/C11-269-runtime-hygiene	bbe2e250	completed	skipped	2026-10-02T07:17:35Z	2026-10-02T07:17:35Z	2026-10-02T07:17:37Z	1
+36977797758	CI	pull_request	c11-1.0/C11-269-runtime-hygiene	bbe2e250	completed	success	2026-10-02T07:17:35Z	2026-10-02T07:17:35Z	2026-10-02T07:35:25Z	1
+36977797828	Mailbox parity	pull_request	c11-1.0/C11-269-runtime-hygiene	bbe2e250	completed	success	2026-10-02T07:17:35Z	2026-10-02T07:17:35Z	2026-10-02T07:32:33Z	1
+36977797676	macOS Compatibility	pull_request	c11-1.0/C11-269-runtime-hygiene	bbe2e250	completed	success	2026-10-02T07:17:35Z	2026-10-02T07:17:35Z	2026-10-02T07:39:46Z	1
+36977572924	Mailbox parity	push	c11-1.0/C11-269-runtime-hygiene	bbe2e250	completed	success	2026-10-02T07:15:00Z	2026-10-02T07:15:00Z	2026-10-02T07:21:17Z	1
+36977551732	Drawbridge	pull_request_target	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	skipped	2026-10-02T07:14:45Z	2026-10-02T07:14:45Z	2026-10-02T07:14:46Z	1
+36977551290	macOS Compatibility	pull_request	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	success	2026-10-02T07:14:44Z	2026-10-02T07:14:44Z	2026-10-02T07:45:07Z	1
+36977551264	Build GhosttyKit	pull_request	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	success	2026-10-02T07:14:44Z	2026-10-02T07:14:44Z	2026-10-02T07:18:17Z	1
+36977551311	CI	pull_request	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	success	2026-10-02T07:14:44Z	2026-10-02T07:14:44Z	2026-10-02T07:35:07Z	1
+36977461188	Drawbridge	issue_comment	main	2d2440ac	completed	skipped	2026-10-02T07:13:42Z	2026-10-02T07:13:42Z	2026-10-02T07:13:44Z	1
+36977414617	CI	pull_request	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	failure	2026-10-02T07:13:10Z	2026-10-02T07:13:10Z	2026-10-02T07:14:42Z	1
+36977414634	macOS Compatibility	pull_request	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	failure	2026-10-02T07:13:10Z	2026-10-02T07:13:10Z	2026-10-02T07:14:42Z	1
+36977414611	Build GhosttyKit	pull_request	c11-1.0/C11-294-ghostty-patchset	c6946c5c	completed	failure	2026-10-02T07:13:10Z	2026-10-02T07:13:10Z	2026-10-02T07:14:42Z	1
+36977372458	Drawbridge	pull_request_target	c11-1.0/C11-297-startup-readiness	ac1f8260	completed	skipped	2026-10-02T07:12:40Z	2026-10-02T07:12:40Z	2026-10-02T07:12:41Z	1
+36977288354	CI	pull_request	c11-1.0/C11-305-shell-helpers	06854ad3	completed	success	2026-10-02T07:11:42Z	2026-10-02T07:11:42Z	2026-10-02T07:26:17Z	1
+36977288341	macOS Compatibility	pull_request	c11-1.0/C11-305-shell-helpers	06854ad3	completed	success	2026-10-02T07:11:42Z	2026-10-02T07:11:42Z	2026-10-02T07:28:39Z	1
+36977288504	Drawbridge	pull_request_target	c11-1.0/C11-305-shell-helpers	06854ad3	completed	skipped	2026-10-02T07:11:42Z	2026-10-02T07:11:42Z	2026-10-02T07:11:44Z	1
+36977288391	Build GhosttyKit	pull_request	c11-1.0/C11-305-shell-helpers	06854ad3	completed	success	2026-10-02T07:11:42Z	2026-10-02T07:11:42Z	2026-10-02T07:13:09Z	1
+36977007234	Drawbridge	issue_comment	main	2d2440ac	completed	skipped	2026-10-02T07:08:23Z	2026-10-02T07:08:23Z	2026-10-02T07:08:25Z	1
+36976839142	Drawbridge	issue_comment	main	2d2440ac	completed	skipped	2026-10-02T07:06:23Z	2026-10-02T07:06:23Z	2026-10-02T07:06:25Z	1
+36976582162	Build GhosttyKit	pull_request	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	success	2026-10-02T07:03:30Z	2026-10-02T07:03:30Z	2026-10-02T07:26:45Z	1
+36976582133	CI	pull_request	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	success	2026-10-02T07:03:30Z	2026-10-02T07:03:30Z	2026-10-02T07:12:39Z	1
+36976582305	macOS Compatibility	pull_request	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	success	2026-10-02T07:03:30Z	2026-10-02T07:03:30Z	2026-10-02T07:17:07Z	1
+36976582188	Mailbox parity	pull_request	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	success	2026-10-02T07:03:30Z	2026-10-02T07:03:30Z	2026-10-02T07:31:09Z	1
+36976580180	Drawbridge	pull_request_target	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	skipped	2026-10-02T07:03:28Z	2026-10-02T07:03:28Z	2026-10-02T07:03:30Z	1
+36976577216	Mailbox parity	push	c11-1.0/C11-258-launch-runtime-file	f3c39fb1	completed	success	2026-10-02T07:03:26Z	2026-10-02T07:03:26Z	2026-10-02T07:16:35Z	1
+36976518801	Mailbox parity	push	c11-1.0/C11-281-send-contract	f7125375	completed	success	2026-10-02T07:02:45Z	2026-10-02T07:02:45Z	2026-10-02T07:41:40Z	1
+36976349447	Mailbox parity	push	c11-1.0/C11-281-send-contract	ee86dd2f	completed	cancelled	2026-10-02T07:00:47Z	2026-10-02T07:00:47Z	2026-10-02T07:02:46Z	1
+36976337160	CI	push	main	2d2440ac	completed	success	2026-10-02T07:00:39Z	2026-10-02T07:00:39Z	2026-10-02T07:26:30Z	1
+36976337152	macOS Compatibility	push	main	2d2440ac	completed	success	2026-10-02T07:00:39Z	2026-10-02T07:00:39Z	2026-10-02T07:27:08Z	1
+36976337175	Build GhosttyKit	push	main	2d2440ac	completed	success	2026-10-02T07:00:39Z	2026-10-02T07:00:39Z	2026-10-02T07:06:51Z	1
+36976337159	Mailbox parity	push	main	2d2440ac	completed	success	2026-10-02T07:00:39Z	2026-10-02T07:00:39Z	2026-10-02T07:31:30Z	1
+36976331193	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	bcbcf304	completed	success	2026-10-02T07:00:35Z	2026-10-02T07:00:35Z	2026-10-02T07:00:51Z	1
+36976125466	macOS Compatibility	push	main	4dfe991a	completed	cancelled	2026-10-02T06:58:08Z	2026-10-02T06:58:08Z	2026-10-02T07:00:40Z	1
+36976125416	CI	push	main	4dfe991a	completed	cancelled	2026-10-02T06:58:08Z	2026-10-02T06:58:08Z	2026-10-02T07:00:40Z	1
+36976125475	Build GhosttyKit	push	main	4dfe991a	completed	cancelled	2026-10-02T06:58:08Z	2026-10-02T06:58:08Z	2026-10-02T07:00:40Z	1
+36976121831	Drawbridge	pull_request_target	c11-1.0/C11-304-spinner-titles	84acb43c	completed	success	2026-10-02T06:58:05Z	2026-10-02T06:58:05Z	2026-10-02T06:58:18Z	1
+36975779527	Build GhosttyKit	pull_request	c11-1.0/C11-258-launch-runtime-file	19edf16c	completed	cancelled	2026-10-02T06:53:56Z	2026-10-02T06:53:56Z	2026-10-02T07:03:31Z	1
+36975779506	CI	pull_request	c11-1.0/C11-258-launch-runtime-file	19edf16c	completed	cancelled	2026-10-02T06:53:56Z	2026-10-02T06:53:56Z	2026-10-02T07:03:31Z	1
+36975779519	macOS Compatibility	pull_request	c11-1.0/C11-258-launch-runtime-file	19edf16c	completed	cancelled	2026-10-02T06:53:56Z	2026-10-02T06:53:56Z	2026-10-02T07:03:31Z	1
+36975779508	Drawbridge	pull_request_target	c11-1.0/C11-258-launch-runtime-file	19edf16c	completed	skipped	2026-10-02T06:53:56Z	2026-10-02T06:53:56Z	2026-10-02T06:53:57Z	1
+36975779543	Mailbox parity	pull_request	c11-1.0/C11-258-launch-runtime-file	19edf16c	completed	cancelled	2026-10-02T06:53:56Z	2026-10-02T06:53:56Z	2026-10-02T07:03:52Z	1
+36975777441	Mailbox parity	push	c11-1.0/C11-258-launch-runtime-file	19edf16c	completed	success	2026-10-02T06:53:54Z	2026-10-02T06:53:54Z	2026-10-02T07:08:14Z	1
+36975668010	Mailbox parity	push	c11-1.0/C11-281-send-contract	31f97024	completed	success	2026-10-02T06:52:33Z	2026-10-02T06:52:33Z	2026-10-02T07:17:58Z	1
+36975549441	macOS Compatibility	push	main	9eb8fdc9	completed	cancelled	2026-10-02T06:51:05Z	2026-10-02T06:51:05Z	2026-10-02T06:58:09Z	1
+36975549446	Build GhosttyKit	push	main	9eb8fdc9	completed	cancelled	2026-10-02T06:51:05Z	2026-10-02T06:51:05Z	2026-10-02T06:58:09Z	1
+36975549486	CI	push	main	9eb8fdc9	completed	cancelled	2026-10-02T06:51:05Z	2026-10-02T06:51:05Z	2026-10-02T06:58:09Z	1
+36975549432	Mailbox parity	push	main	9eb8fdc9	completed	cancelled	2026-10-02T06:51:05Z	2026-10-02T06:51:05Z	2026-10-02T07:00:40Z	1
+36975546059	Drawbridge	pull_request_target	c11-1.0/C11-262-focus-history	31949dea	completed	success	2026-10-02T06:51:02Z	2026-10-02T06:51:02Z	2026-10-02T06:51:19Z	1
+36975169641	CI	pull_request	c11-1.0/C11-263-attention-batch	b0fc4000	completed	failure	2026-10-02T06:46:21Z	2026-10-02T06:46:21Z	2026-10-02T07:19:23Z	1
+36975169640	macOS Compatibility	pull_request	c11-1.0/C11-263-attention-batch	b0fc4000	completed	success	2026-10-02T06:46:21Z	2026-10-02T06:46:21Z	2026-10-02T07:03:11Z	1
+36975169653	Build GhosttyKit	pull_request	c11-1.0/C11-263-attention-batch	b0fc4000	completed	success	2026-10-02T06:46:21Z	2026-10-02T06:46:21Z	2026-10-02T07:01:14Z	1
+36975169644	Mailbox parity	pull_request	c11-1.0/C11-263-attention-batch	b0fc4000	completed	success	2026-10-02T06:46:21Z	2026-10-02T06:46:21Z	2026-10-02T07:06:21Z	1
+36975166286	Drawbridge	pull_request_target	c11-1.0/C11-263-attention-batch	b0fc4000	completed	skipped	2026-10-02T06:46:18Z	2026-10-02T06:46:18Z	2026-10-02T06:46:20Z	1
+36975164071	Mailbox parity	push	c11-1.0/C11-263-attention-batch	b0fc4000	completed	success	2026-10-02T06:46:16Z	2026-10-02T06:46:16Z	2026-10-02T07:17:46Z	1
+36975004336	CI	pull_request	c11-1.0/C11-301-mount-cap	e6c893cd	completed	success	2026-10-02T06:44:20Z	2026-10-02T06:44:20Z	2026-10-02T07:27:57Z	1
+36975004649	Drawbridge	pull_request_target	c11-1.0/C11-301-mount-cap	e6c893cd	completed	skipped	2026-10-02T06:44:20Z	2026-10-02T06:44:20Z	2026-10-02T06:44:22Z	1
+36975004223	Build GhosttyKit	pull_request	c11-1.0/C11-301-mount-cap	e6c893cd	completed	success	2026-10-02T06:44:20Z	2026-10-02T06:44:20Z	2026-10-02T06:45:42Z	1
+36975004281	macOS Compatibility	pull_request	c11-1.0/C11-301-mount-cap	e6c893cd	completed	success	2026-10-02T06:44:20Z	2026-10-02T06:44:20Z	2026-10-02T06:54:26Z	1
+36974727563	Mailbox parity	push	c11-1.0/C11-269-runtime-hygiene	bbdb6e5b	completed	success	2026-10-02T06:40:54Z	2026-10-02T06:40:54Z	2026-10-02T06:50:08Z	1
+36974670434	CI	push	main	b7849c70	completed	success	2026-10-02T06:40:14Z	2026-10-02T06:40:14Z	2026-10-02T07:13:19Z	1
+36974670618	Build GhosttyKit	push	main	b7849c70	completed	cancelled	2026-10-02T06:40:14Z	2026-10-02T06:40:14Z	2026-10-02T06:51:06Z	1
+36974670487	macOS Compatibility	push	main	b7849c70	completed	success	2026-10-02T06:40:14Z	2026-10-02T06:40:14Z	2026-10-02T07:07:17Z	1
+36974665643	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	b8661ee8	completed	success	2026-10-02T06:40:11Z	2026-10-02T06:40:11Z	2026-10-02T06:40:23Z	1
+36974657391	Drawbridge	issue_comment	main	14fd85a5	completed	skipped	2026-10-02T06:40:05Z	2026-10-02T06:40:05Z	2026-10-02T06:40:06Z	1
+36974498395	Build GhosttyKit	pull_request	c11-1.0/C11-294-ghostty-patchset	54e7c460	completed	success	2026-10-02T06:38:08Z	2026-10-02T06:38:08Z	2026-10-02T07:13:10Z	1
+36974498397	CI	pull_request	c11-1.0/C11-294-ghostty-patchset	54e7c460	completed	failure	2026-10-02T06:38:08Z	2026-10-02T06:38:08Z	2026-10-02T06:46:02Z	1
+36974498484	macOS Compatibility	pull_request	c11-1.0/C11-294-ghostty-patchset	54e7c460	completed	failure	2026-10-02T06:38:08Z	2026-10-02T06:38:08Z	2026-10-02T06:50:46Z	1
+36974496201	Drawbridge	pull_request_target	c11-1.0/C11-294-ghostty-patchset	54e7c460	completed	skipped	2026-10-02T06:38:07Z	2026-10-02T06:38:07Z	2026-10-02T06:38:09Z	1
+36974454860	Drawbridge	pull_request_target	c11-1.0/C11-258-launch-runtime-file	73e29c0c	completed	skipped	2026-10-02T06:37:35Z	2026-10-02T06:37:35Z	2026-10-02T06:37:37Z	1
+36974405088	macOS Compatibility	push	main	14fd85a5	completed	cancelled	2026-10-02T06:36:58Z	2026-10-02T06:36:58Z	2026-10-02T06:40:15Z	1
+36974405128	CI	push	main	14fd85a5	completed	cancelled	2026-10-02T06:36:58Z	2026-10-02T06:36:58Z	2026-10-02T06:40:15Z	1
+36974405096	Build GhosttyKit	push	main	14fd85a5	completed	cancelled	2026-10-02T06:36:58Z	2026-10-02T06:36:58Z	2026-10-02T06:40:15Z	1
+36974400773	Drawbridge	pull_request_target	c11-1.0/C11-296-cold-read	e49dd275	completed	success	2026-10-02T06:36:55Z	2026-10-02T06:36:55Z	2026-10-02T06:37:14Z	1
+36974148187	Build GhosttyKit	pull_request	c11-1.0/C11-284-guide-features	bcbcf304	completed	success	2026-10-02T06:33:49Z	2026-10-02T06:33:49Z	2026-10-02T06:45:13Z	1
+36974148268	CI	pull_request	c11-1.0/C11-284-guide-features	bcbcf304	completed	success	2026-10-02T06:33:49Z	2026-10-02T06:33:49Z	2026-10-02T06:46:47Z	1
+36974148284	Mailbox parity	pull_request	c11-1.0/C11-284-guide-features	bcbcf304	completed	success	2026-10-02T06:33:49Z	2026-10-02T06:33:49Z	2026-10-02T06:50:47Z	1
+36974148194	macOS Compatibility	pull_request	c11-1.0/C11-284-guide-features	bcbcf304	completed	success	2026-10-02T06:33:49Z	2026-10-02T06:33:49Z	2026-10-02T06:59:35Z	1
+36974144079	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	bcbcf304	completed	skipped	2026-10-02T06:33:46Z	2026-10-02T06:33:46Z	2026-10-02T06:33:48Z	1
+36974141060	Mailbox parity	push	c11-1.0/C11-284-guide-features	bcbcf304	completed	success	2026-10-02T06:33:44Z	2026-10-02T06:33:44Z	2026-10-02T06:40:01Z	1
+36974066125	Mailbox parity	push	c11-1.0/C11-281-send-contract	ba5824df	completed	success	2026-10-02T06:32:48Z	2026-10-02T06:32:48Z	2026-10-02T06:50:06Z	1
+36974033244	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	0440a7e9	completed	skipped	2026-10-02T06:32:24Z	2026-10-02T06:32:24Z	2026-10-02T06:32:26Z	1
+36974032058	Mailbox parity	push	c11-1.0/C11-259-workspace-groups	0440a7e9	completed	success	2026-10-02T06:32:23Z	2026-10-02T06:32:23Z	2026-10-02T06:44:46Z	1
+36973918731	Sign unpublished c11 artifact	workflow_dispatch	main	b0468feb	completed	success	2026-10-02T06:30:58Z	2026-10-02T06:30:58Z	2026-10-02T07:05:17Z	1
+36973915736	Sign unpublished c11 artifact	workflow_dispatch	main	b0468feb	completed	success	2026-10-02T06:30:56Z	2026-10-02T06:30:56Z	2026-10-02T07:00:16Z	1
+36973902146	Mailbox parity	push	main	b0468feb	completed	success	2026-10-02T06:30:46Z	2026-10-02T06:30:46Z	2026-10-02T07:11:52Z	1
+36973902112	CI	push	main	b0468feb	completed	success	2026-10-02T06:30:46Z	2026-10-02T06:30:46Z	2026-10-02T06:44:45Z	1
+36973902092	macOS Compatibility	push	main	b0468feb	completed	success	2026-10-02T06:30:46Z	2026-10-02T06:30:46Z	2026-10-02T06:45:22Z	1
+36973902108	Build GhosttyKit	push	main	b0468feb	completed	success	2026-10-02T06:30:46Z	2026-10-02T06:30:46Z	2026-10-02T07:00:42Z	1
+36973897152	Drawbridge	pull_request_target	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	success	2026-10-02T06:30:42Z	2026-10-02T06:30:42Z	2026-10-02T06:30:58Z	1
+36973840182	Sign unpublished c11 artifact	workflow_dispatch	main	aa292e8f	completed	cancelled	2026-10-02T06:30:05Z	2026-10-02T06:30:05Z	2026-10-02T06:30:55Z	1
+36973264094	Drawbridge	pull_request_target	c11-1.0/C11-304-spinner-titles	84acb43c	completed	skipped	2026-10-02T06:22:52Z	2026-10-02T06:22:52Z	2026-10-02T06:22:54Z	1
+36973263960	Build GhosttyKit	pull_request	c11-1.0/C11-304-spinner-titles	84acb43c	completed	success	2026-10-02T06:22:52Z	2026-10-02T06:22:52Z	2026-10-02T06:23:29Z	1
+36973263933	CI	pull_request	c11-1.0/C11-304-spinner-titles	84acb43c	completed	success	2026-10-02T06:22:52Z	2026-10-02T06:22:52Z	2026-10-02T06:33:45Z	1
+36973264040	macOS Compatibility	pull_request	c11-1.0/C11-304-spinner-titles	84acb43c	completed	success	2026-10-02T06:22:52Z	2026-10-02T06:22:52Z	2026-10-02T06:55:29Z	1
+36973224916	Build GhosttyKit	push	main	aa292e8f	completed	success	2026-10-02T06:22:20Z	2026-10-02T06:22:20Z	2026-10-02T06:24:25Z	1
+36973224860	CI	push	main	aa292e8f	completed	cancelled	2026-10-02T06:22:20Z	2026-10-02T06:22:20Z	2026-10-02T06:30:47Z	1
+36973224877	macOS Compatibility	push	main	aa292e8f	completed	success	2026-10-02T06:22:20Z	2026-10-02T06:22:20Z	2026-10-02T06:35:32Z	1
+36973221162	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	c5475780	completed	success	2026-10-02T06:22:17Z	2026-10-02T06:22:17Z	2026-10-02T06:22:31Z	1
+36972472939	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	b8661ee8	completed	success	2026-10-02T06:12:48Z	2026-10-02T06:12:48Z	2026-10-02T06:14:08Z	1
+36972472936	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	b8661ee8	completed	success	2026-10-02T06:12:48Z	2026-10-02T06:12:48Z	2026-10-02T06:29:46Z	1
+36972472932	CI	pull_request	c11-1.0/C11-287-webview-crash	b8661ee8	completed	success	2026-10-02T06:12:48Z	2026-10-02T06:12:48Z	2026-10-02T06:38:43Z	1
+36972470264	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	b8661ee8	completed	skipped	2026-10-02T06:12:46Z	2026-10-02T06:12:46Z	2026-10-02T06:12:47Z	1
+36972407120	macOS Compatibility	push	main	0bc4b617	completed	cancelled	2026-10-02T06:11:58Z	2026-10-02T06:11:58Z	2026-10-02T06:22:22Z	1
+36972407132	Build GhosttyKit	push	main	0bc4b617	completed	cancelled	2026-10-02T06:11:58Z	2026-10-02T06:11:58Z	2026-10-02T06:22:21Z	1
+36972407064	Mailbox parity	push	main	0bc4b617	completed	success	2026-10-02T06:11:58Z	2026-10-02T06:11:58Z	2026-10-02T06:40:15Z	1
+36972407150	CI	push	main	0bc4b617	completed	success	2026-10-02T06:11:58Z	2026-10-02T06:11:58Z	2026-10-02T06:35:51Z	1
+36972211928	macOS Compatibility	pull_request	c11-1.0/C11-258-launch-runtime-file	0541d26b	completed	success	2026-10-02T06:09:29Z	2026-10-02T06:09:29Z	2026-10-02T06:21:08Z	1
+36972211876	Build GhosttyKit	pull_request	c11-1.0/C11-258-launch-runtime-file	0541d26b	completed	success	2026-10-02T06:09:29Z	2026-10-02T06:09:29Z	2026-10-02T06:23:56Z	1
+36972211874	Mailbox parity	pull_request	c11-1.0/C11-258-launch-runtime-file	0541d26b	completed	success	2026-10-02T06:09:29Z	2026-10-02T06:09:29Z	2026-10-02T06:28:59Z	1
+36972211937	CI	pull_request	c11-1.0/C11-258-launch-runtime-file	0541d26b	completed	cancelled	2026-10-02T06:09:29Z	2026-10-02T06:09:29Z	2026-10-02T06:37:51Z	1
+36972211677	Drawbridge	pull_request_target	c11-1.0/C11-258-launch-runtime-file	0541d26b	completed	skipped	2026-10-02T06:09:28Z	2026-10-02T06:09:28Z	2026-10-02T06:09:30Z	1
+36971736713	Drawbridge	pull_request_target	c11-1.0/C11-296-cold-read	e49dd275	completed	skipped	2026-10-02T06:03:30Z	2026-10-02T06:03:30Z	2026-10-02T06:03:32Z	1
+36971736682	Build GhosttyKit	pull_request	c11-1.0/C11-296-cold-read	e49dd275	completed	success	2026-10-02T06:03:30Z	2026-10-02T06:03:30Z	2026-10-02T06:04:53Z	1
+36971736685	macOS Compatibility	pull_request	c11-1.0/C11-296-cold-read	e49dd275	completed	success	2026-10-02T06:03:30Z	2026-10-02T06:03:30Z	2026-10-02T06:26:33Z	1
+36971736704	CI	pull_request	c11-1.0/C11-296-cold-read	e49dd275	completed	success	2026-10-02T06:03:30Z	2026-10-02T06:03:30Z	2026-10-02T06:35:08Z	1
+36971571830	Drawbridge	pull_request_target	c11-1.0/C11-262-focus-history	31949dea	completed	skipped	2026-10-02T06:01:23Z	2026-10-02T06:01:23Z	2026-10-02T06:01:25Z	1
+36971571831	Build GhosttyKit	pull_request	c11-1.0/C11-262-focus-history	31949dea	completed	success	2026-10-02T06:01:23Z	2026-10-02T06:01:23Z	2026-10-02T06:07:05Z	1
+36971571807	macOS Compatibility	pull_request	c11-1.0/C11-262-focus-history	31949dea	completed	success	2026-10-02T06:01:23Z	2026-10-02T06:01:23Z	2026-10-02T06:21:51Z	1
+36971571827	Mailbox parity	pull_request	c11-1.0/C11-262-focus-history	31949dea	completed	success	2026-10-02T06:01:23Z	2026-10-02T06:01:23Z	2026-10-02T06:38:20Z	1
+36971571849	CI	pull_request	c11-1.0/C11-262-focus-history	31949dea	completed	success	2026-10-02T06:01:23Z	2026-10-02T06:01:23Z	2026-10-02T06:45:41Z	1
+36971263315	macOS Compatibility	pull_request	c11-1.0/C11-294-ghostty-patchset	e2af4cb6	completed	failure	2026-10-02T05:57:22Z	2026-10-02T05:57:22Z	2026-10-02T05:59:23Z	1
+36971263258	CI	pull_request	c11-1.0/C11-294-ghostty-patchset	e2af4cb6	completed	cancelled	2026-10-02T05:57:22Z	2026-10-02T05:57:22Z	2026-10-02T06:11:50Z	1
+36971263136	Build GhosttyKit	pull_request	c11-1.0/C11-294-ghostty-patchset	e2af4cb6	completed	cancelled	2026-10-02T05:57:21Z	2026-10-02T05:57:21Z	2026-10-02T06:11:49Z	1
+36971261736	Drawbridge	pull_request_target	c11-1.0/C11-294-ghostty-patchset	e2af4cb6	completed	skipped	2026-10-02T05:57:20Z	2026-10-02T05:57:20Z	2026-10-02T05:57:22Z	1
+36971260396	Mailbox parity	push	c11-1.0/C11-294-ghostty-patchset	e2af4cb6	completed	cancelled	2026-10-02T05:57:19Z	2026-10-02T05:57:19Z	2026-10-02T06:11:51Z	1
+36970725620	Build GhosttyKit	pull_request	c11-1.0/C11-284-guide-features	fbd689cb	completed	success	2026-10-02T05:50:15Z	2026-10-02T05:50:15Z	2026-10-02T06:06:33Z	1
+36970725574	macOS Compatibility	pull_request	c11-1.0/C11-284-guide-features	fbd689cb	completed	success	2026-10-02T05:50:15Z	2026-10-02T05:50:15Z	2026-10-02T06:06:42Z	1
+36970725569	Mailbox parity	pull_request	c11-1.0/C11-284-guide-features	fbd689cb	completed	success	2026-10-02T05:50:15Z	2026-10-02T05:50:15Z	2026-10-02T06:26:01Z	1
+36970725580	CI	pull_request	c11-1.0/C11-284-guide-features	fbd689cb	completed	success	2026-10-02T05:50:15Z	2026-10-02T05:50:15Z	2026-10-02T06:32:21Z	1
+36970722922	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	fbd689cb	completed	skipped	2026-10-02T05:50:13Z	2026-10-02T05:50:13Z	2026-10-02T05:50:14Z	1
+36970721119	Mailbox parity	push	c11-1.0/C11-284-guide-features	fbd689cb	completed	success	2026-10-02T05:50:11Z	2026-10-02T05:50:11Z	2026-10-02T06:13:41Z	1
+36970712480	Mailbox parity	push	c11-1.0/C11-258-launch-runtime-file	f002e474	completed	success	2026-10-02T05:50:05Z	2026-10-02T05:50:05Z	2026-10-02T06:11:42Z	1
+36970664703	Build GhosttyKit	pull_request	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	success	2026-10-02T05:49:26Z	2026-10-02T05:49:26Z	2026-10-02T05:59:51Z	1
+36970664653	Mailbox parity	pull_request	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	success	2026-10-02T05:49:26Z	2026-10-02T05:49:26Z	2026-10-02T06:09:21Z	1
+36970664722	CI	pull_request	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	failure	2026-10-02T05:49:26Z	2026-10-02T05:49:26Z	2026-10-02T06:15:23Z	1
+36970664630	macOS Compatibility	pull_request	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	success	2026-10-02T05:49:26Z	2026-10-02T05:49:26Z	2026-10-02T06:26:24Z	1
+36970661926	Drawbridge	pull_request_target	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	skipped	2026-10-02T05:49:24Z	2026-10-02T05:49:24Z	2026-10-02T05:49:25Z	1
+36970659561	Mailbox parity	push	c11-1.0/C11-306-bounded-stop-transcript	130163e3	completed	success	2026-10-02T05:49:22Z	2026-10-02T05:49:22Z	2026-10-02T06:16:29Z	1
+36970604097	CI	pull_request	c11-1.0/C11-312-artifact-signing	c5475780	completed	success	2026-10-02T05:48:36Z	2026-10-02T05:48:36Z	2026-10-02T05:56:32Z	1
+36970604320	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	c5475780	completed	success	2026-10-02T05:48:36Z	2026-10-02T05:48:36Z	2026-10-02T06:05:47Z	1
+36970604138	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	c5475780	completed	success	2026-10-02T05:48:36Z	2026-10-02T05:48:36Z	2026-10-02T06:21:39Z	1
+36970601154	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	c5475780	completed	skipped	2026-10-02T05:48:34Z	2026-10-02T05:48:34Z	2026-10-02T05:48:35Z	1
+36970562398	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	bb693f15	completed	success	2026-10-02T05:48:03Z	2026-10-02T05:48:03Z	2026-10-02T06:04:05Z	1
+36970562289	CI	pull_request	c11-1.0/C11-287-webview-crash	bb693f15	completed	success	2026-10-02T05:48:03Z	2026-10-02T05:48:03Z	2026-10-02T06:05:57Z	1
+36970562570	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	bb693f15	completed	success	2026-10-02T05:48:03Z	2026-10-02T05:48:03Z	2026-10-02T05:49:55Z	1
+36970559875	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	bb693f15	completed	skipped	2026-10-02T05:48:01Z	2026-10-02T05:48:01Z	2026-10-02T05:48:10Z	1
+36970234168	Drawbridge	pull_request_target	c11-1.0/C11-309-tab-ref-restart	5de8044f	completed	success	2026-10-02T05:43:39Z	2026-10-02T05:43:39Z	2026-10-02T05:43:52Z	1
+36970135842	CI	push	main	70fe4e26	completed	success	2026-10-02T05:42:22Z	2026-10-02T05:42:22Z	2026-10-02T06:12:35Z	1
+36970135852	macOS Compatibility	push	main	70fe4e26	completed	success	2026-10-02T05:42:22Z	2026-10-02T05:42:22Z	2026-10-02T06:22:31Z	1
+36970135841	Build GhosttyKit	push	main	70fe4e26	completed	success	2026-10-02T05:42:22Z	2026-10-02T05:42:22Z	2026-10-02T06:22:59Z	1
+36970128830	Drawbridge	pull_request_target	c11-1.0/C11-300-close-ownership	b689c0d5	completed	success	2026-10-02T05:42:16Z	2026-10-02T05:42:16Z	2026-10-02T05:42:28Z	1
+36970033827	macOS Compatibility	push	main	50b1acb9	completed	cancelled	2026-10-02T05:41:00Z	2026-10-02T05:41:00Z	2026-10-02T05:42:23Z	1
+36970033799	Build GhosttyKit	push	main	50b1acb9	completed	cancelled	2026-10-02T05:41:00Z	2026-10-02T05:41:00Z	2026-10-02T05:42:23Z	1
+36970033834	CI	push	main	50b1acb9	completed	cancelled	2026-10-02T05:41:00Z	2026-10-02T05:41:00Z	2026-10-02T05:42:23Z	1
+36970029307	Drawbridge	pull_request_target	c11-1.0/C11-299-duplicate-restore	27a7d7ee	completed	success	2026-10-02T05:40:57Z	2026-10-02T05:40:57Z	2026-10-02T05:41:10Z	1
+36969942462	CI	push	main	a16fa3b2	completed	cancelled	2026-10-02T05:39:50Z	2026-10-02T05:39:50Z	2026-10-02T05:41:02Z	1
+36969942520	macOS Compatibility	push	main	a16fa3b2	completed	cancelled	2026-10-02T05:39:50Z	2026-10-02T05:39:50Z	2026-10-02T05:41:02Z	1
+36969942495	Build GhosttyKit	push	main	a16fa3b2	completed	cancelled	2026-10-02T05:39:50Z	2026-10-02T05:39:50Z	2026-10-02T05:41:02Z	1
+36969939141	Drawbridge	pull_request_target	c11-1.0/C11-271-lifecycle-fixtures	27ebd596	completed	success	2026-10-02T05:39:47Z	2026-10-02T05:39:47Z	2026-10-02T05:40:00Z	1
+36969705777	Mailbox parity	push	c11-1.0/C11-262-focus-history	c8b4c3e8	completed	failure	2026-10-02T05:36:37Z	2026-10-02T05:36:37Z	2026-10-02T06:09:03Z	1
+36969565798	CI	pull_request	c11-1.0/C11-287-webview-crash	fe290da7	completed	success	2026-10-02T05:34:46Z	2026-10-02T05:34:46Z	2026-10-02T05:46:06Z	1
+36969565752	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	fe290da7	completed	success	2026-10-02T05:34:46Z	2026-10-02T05:34:46Z	2026-10-02T05:46:36Z	1
+36969565804	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	fe290da7	completed	cancelled	2026-10-02T05:34:46Z	2026-10-02T05:34:46Z	2026-10-02T05:48:26Z	1
+36969563554	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	fe290da7	completed	skipped	2026-10-02T05:34:44Z	2026-10-02T05:34:44Z	2026-10-02T05:34:45Z	1
+36969561963	Mailbox parity	push	c11-1.0/C11-287-webview-crash	fe290da7	completed	cancelled	2026-10-02T05:34:42Z	2026-10-02T05:34:42Z	2026-10-02T05:48:03Z	1
+36969535365	CI	pull_request	c11-1.0/C11-312-artifact-signing	8529f38c	completed	cancelled	2026-10-02T05:34:19Z	2026-10-02T05:34:19Z	2026-10-02T05:48:37Z	1
+36969535369	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	8529f38c	completed	cancelled	2026-10-02T05:34:19Z	2026-10-02T05:34:19Z	2026-10-02T05:48:37Z	1
+36969535328	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	8529f38c	completed	cancelled	2026-10-02T05:34:19Z	2026-10-02T05:34:19Z	2026-10-02T05:48:58Z	1
+36969532362	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	8529f38c	completed	skipped	2026-10-02T05:34:17Z	2026-10-02T05:34:17Z	2026-10-02T05:34:19Z	1
+36969530633	Sign unpublished c11 artifact	push	c11-1.0/C11-312-artifact-signing	8529f38c	completed	success	2026-10-02T05:34:16Z	2026-10-02T05:34:16Z	2026-10-02T05:59:09Z	1
+36969028605	Drawbridge	pull_request_target	c11-1.0/C11-309-tab-ref-restart	5de8044f	completed	skipped	2026-10-02T05:27:40Z	2026-10-02T05:27:40Z	2026-10-02T05:27:42Z	1
+36968888521	CI	push	main	86d45e21	completed	cancelled	2026-10-02T05:25:47Z	2026-10-02T05:25:47Z	2026-10-02T05:39:51Z	1
+36968888476	Build GhosttyKit	push	main	86d45e21	completed	cancelled	2026-10-02T05:25:47Z	2026-10-02T05:25:47Z	2026-10-02T05:39:51Z	1
+36968888472	macOS Compatibility	push	main	86d45e21	completed	cancelled	2026-10-02T05:25:47Z	2026-10-02T05:25:47Z	2026-10-02T05:39:51Z	1
+36968885319	Drawbridge	pull_request_target	c11-1.0/C11-216-atlas-builds	21605c22	completed	success	2026-10-02T05:25:45Z	2026-10-02T05:25:45Z	2026-10-02T05:25:57Z	1
+36968550492	Drawbridge	pull_request_target	c11-1.0/C11-309-tab-ref-restart	02b5b1a6	completed	skipped	2026-10-02T05:21:14Z	2026-10-02T05:21:14Z	2026-10-02T05:21:16Z	1
+36968224602	macOS Compatibility	pull_request	c11-257-e	94cad3e3	completed	success	2026-10-02T05:16:50Z	2026-10-02T05:16:50Z	2026-10-02T05:58:44Z	1
+36968224577	CI	pull_request	c11-257-e	94cad3e3	completed	success	2026-10-02T05:16:50Z	2026-10-02T05:16:50Z	2026-10-02T06:11:04Z	1
+36968224559	Mailbox parity	pull_request	c11-257-e	94cad3e3	completed	success	2026-10-02T05:16:50Z	2026-10-02T05:16:50Z	2026-10-02T05:32:07Z	1
+36968224575	Build GhosttyKit	pull_request	c11-257-e	94cad3e3	completed	success	2026-10-02T05:16:50Z	2026-10-02T05:16:50Z	2026-10-02T05:47:07Z	1
+36968223485	Drawbridge	pull_request_target	c11-257-e	94cad3e3	completed	success	2026-10-02T05:16:49Z	2026-10-02T05:16:49Z	2026-10-02T05:18:25Z	1
+36968221494	Mailbox parity	push	c11-257-e	94cad3e3	completed	success	2026-10-02T05:16:47Z	2026-10-02T05:16:47Z	2026-10-02T06:04:21Z	1
+36968191084	Mailbox parity	push	main	9b1380e0	completed	success	2026-10-02T05:16:21Z	2026-10-02T05:16:21Z	2026-10-02T05:54:47Z	1
+36968191066	Build GhosttyKit	push	main	9b1380e0	completed	cancelled	2026-10-02T05:16:21Z	2026-10-02T05:16:21Z	2026-10-02T05:25:49Z	1
+36968191061	macOS Compatibility	push	main	9b1380e0	completed	cancelled	2026-10-02T05:16:21Z	2026-10-02T05:16:21Z	2026-10-02T05:25:49Z	1
+36968191058	CI	push	main	9b1380e0	completed	success	2026-10-02T05:16:21Z	2026-10-02T05:16:21Z	2026-10-02T05:49:23Z	1
+36968155903	Mailbox parity	push	main	2b3c67ed	completed	cancelled	2026-10-02T05:15:52Z	2026-10-02T05:15:52Z	2026-10-02T05:16:22Z	1
+36968155866	CI	push	main	2b3c67ed	completed	cancelled	2026-10-02T05:15:52Z	2026-10-02T05:15:52Z	2026-10-02T05:16:22Z	1
+36968155897	macOS Compatibility	push	main	2b3c67ed	completed	cancelled	2026-10-02T05:15:52Z	2026-10-02T05:15:52Z	2026-10-02T05:16:22Z	1
+36968155857	Build GhosttyKit	push	main	2b3c67ed	completed	success	2026-10-02T05:15:52Z	2026-10-02T05:15:52Z	2026-10-02T06:07:38Z	1
+36968103471	Mailbox parity	pull_request	c11-1.0/C11-259-workspace-groups	a770f89a	completed	success	2026-10-02T05:15:12Z	2026-10-02T05:15:12Z	2026-10-02T05:32:47Z	1
+36968103467	CI	pull_request	c11-1.0/C11-259-workspace-groups	a770f89a	completed	success	2026-10-02T05:15:12Z	2026-10-02T05:15:12Z	2026-10-02T05:39:02Z	1
+36968103650	macOS Compatibility	pull_request	c11-1.0/C11-259-workspace-groups	a770f89a	completed	success	2026-10-02T05:15:12Z	2026-10-02T05:15:12Z	2026-10-02T05:49:08Z	1
+36968103579	Build GhosttyKit	pull_request	c11-1.0/C11-259-workspace-groups	a770f89a	completed	success	2026-10-02T05:15:12Z	2026-10-02T05:15:12Z	2026-10-02T05:49:33Z	1
+36968100803	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	a770f89a	completed	skipped	2026-10-02T05:15:10Z	2026-10-02T05:15:10Z	2026-10-02T05:15:12Z	1
+36968098967	Mailbox parity	push	c11-1.0/C11-259-workspace-groups	a770f89a	completed	cancelled	2026-10-02T05:15:08Z	2026-10-02T05:15:08Z	2026-10-02T05:38:23Z	1
+36968087751	Mailbox parity	pull_request	c11-1.0/C11-284-guide-features	179d1655	completed	success	2026-10-02T05:15:00Z	2026-10-02T05:15:00Z	2026-10-02T05:20:21Z	1
+36968087567	Build GhosttyKit	pull_request	c11-1.0/C11-284-guide-features	179d1655	completed	success	2026-10-02T05:15:00Z	2026-10-02T05:15:00Z	2026-10-02T05:27:31Z	1
+36968087570	CI	pull_request	c11-1.0/C11-284-guide-features	179d1655	completed	success	2026-10-02T05:15:00Z	2026-10-02T05:15:00Z	2026-10-02T05:28:50Z	1
+36968087572	macOS Compatibility	pull_request	c11-1.0/C11-284-guide-features	179d1655	completed	cancelled	2026-10-02T05:15:00Z	2026-10-02T05:15:00Z	2026-10-02T05:50:30Z	1
+36968086066	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	179d1655	completed	skipped	2026-10-02T05:14:59Z	2026-10-02T05:14:59Z	2026-10-02T05:15:01Z	1
+36968083976	Mailbox parity	push	c11-1.0/C11-284-guide-features	179d1655	completed	success	2026-10-02T05:14:57Z	2026-10-02T05:14:57Z	2026-10-02T05:32:41Z	1
+36967770423	macOS Compatibility	pull_request	c11-1.0/C11-279-canonical-routing-keys	66bf1927	completed	success	2026-10-02T05:10:40Z	2026-10-02T05:10:40Z	2026-10-02T05:57:45Z	1
+36967770439	CI	pull_request	c11-1.0/C11-279-canonical-routing-keys	66bf1927	completed	success	2026-10-02T05:10:40Z	2026-10-02T05:10:40Z	2026-10-02T05:22:10Z	1
+36967770432	Build GhosttyKit	pull_request	c11-1.0/C11-279-canonical-routing-keys	66bf1927	completed	success	2026-10-02T05:10:40Z	2026-10-02T05:10:40Z	2026-10-02T05:38:06Z	1
+36967768389	Drawbridge	pull_request_target	c11-1.0/C11-279-canonical-routing-keys	66bf1927	completed	skipped	2026-10-02T05:10:38Z	2026-10-02T05:10:38Z	2026-10-02T05:10:40Z	1
+36967650487	Drawbridge	pull_request_target	c11-1.0/C11-279-canonical-routing-keys	94115bbb	completed	skipped	2026-10-02T05:09:03Z	2026-10-02T05:09:03Z	2026-10-02T05:09:10Z	1
+36967650424	Build GhosttyKit	pull_request	c11-1.0/C11-279-canonical-routing-keys	94115bbb	completed	cancelled	2026-10-02T05:09:03Z	2026-10-02T05:09:03Z	2026-10-02T05:10:41Z	1
+36967650423	CI	pull_request	c11-1.0/C11-279-canonical-routing-keys	94115bbb	completed	cancelled	2026-10-02T05:09:03Z	2026-10-02T05:09:03Z	2026-10-02T05:10:41Z	1
+36967650452	macOS Compatibility	pull_request	c11-1.0/C11-279-canonical-routing-keys	94115bbb	completed	cancelled	2026-10-02T05:09:03Z	2026-10-02T05:09:03Z	2026-10-02T05:10:42Z	1
+36967519450	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	50dfe3ed	completed	success	2026-10-02T05:07:18Z	2026-10-02T05:07:18Z	2026-10-02T05:16:04Z	1
+36967519412	CI	pull_request	c11-1.0/C11-312-artifact-signing	50dfe3ed	completed	success	2026-10-02T05:07:18Z	2026-10-02T05:07:18Z	2026-10-02T05:33:04Z	1
+36967519434	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	50dfe3ed	completed	cancelled	2026-10-02T05:07:18Z	2026-10-02T05:07:18Z	2026-10-02T05:34:21Z	1
+36967517525	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	50dfe3ed	completed	skipped	2026-10-02T05:07:16Z	2026-10-02T05:07:16Z	2026-10-02T05:07:18Z	1
+36967499486	Build GhosttyKit	pull_request	c11-1.0/C11-294-ghostty-patchset	26f50f02	completed	cancelled	2026-10-02T05:07:01Z	2026-10-02T05:07:01Z	2026-10-02T05:09:16Z	1
+36967499551	CI	pull_request	c11-1.0/C11-294-ghostty-patchset	26f50f02	completed	cancelled	2026-10-02T05:07:01Z	2026-10-02T05:07:01Z	2026-10-02T05:09:17Z	1
+36967499472	macOS Compatibility	pull_request	c11-1.0/C11-294-ghostty-patchset	26f50f02	completed	cancelled	2026-10-02T05:07:01Z	2026-10-02T05:07:01Z	2026-10-02T05:09:19Z	1
+36967497664	Drawbridge	pull_request_target	c11-1.0/C11-294-ghostty-patchset	26f50f02	completed	skipped	2026-10-02T05:07:00Z	2026-10-02T05:07:00Z	2026-10-02T05:07:02Z	1
+36967282598	CI	pull_request	c11-1.0/C11-287-webview-crash	9df173f8	completed	cancelled	2026-10-02T05:04:05Z	2026-10-02T05:04:05Z	2026-10-02T05:34:43Z	1
+36967282627	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	9df173f8	completed	success	2026-10-02T05:04:05Z	2026-10-02T05:04:05Z	2026-10-02T05:20:48Z	1
+36967282559	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	9df173f8	completed	success	2026-10-02T05:04:05Z	2026-10-02T05:04:05Z	2026-10-02T05:27:28Z	1
+36967280763	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	9df173f8	completed	skipped	2026-10-02T05:04:03Z	2026-10-02T05:04:03Z	2026-10-02T05:04:05Z	1
+36967278874	macOS Compatibility	pull_request	c11-1.0/C11-263-attention-batch	7190c9a3	completed	cancelled	2026-10-02T05:04:02Z	2026-10-02T05:04:02Z	2026-10-02T05:09:10Z	1
+36967278835	Build GhosttyKit	pull_request	c11-1.0/C11-263-attention-batch	7190c9a3	completed	success	2026-10-02T05:04:01Z	2026-10-02T05:04:01Z	2026-10-02T05:04:40Z	1
+36967278838	CI	pull_request	c11-1.0/C11-263-attention-batch	7190c9a3	completed	cancelled	2026-10-02T05:04:01Z	2026-10-02T05:04:01Z	2026-10-02T05:09:11Z	1
+36967278841	Mailbox parity	pull_request	c11-1.0/C11-263-attention-batch	7190c9a3	completed	cancelled	2026-10-02T05:04:01Z	2026-10-02T05:04:01Z	2026-10-02T05:09:29Z	1
+36967275708	Drawbridge	pull_request_target	c11-1.0/C11-263-attention-batch	7190c9a3	completed	skipped	2026-10-02T05:03:59Z	2026-10-02T05:03:59Z	2026-10-02T05:04:00Z	1
+36967274513	Mailbox parity	push	c11-1.0/C11-263-attention-batch	7190c9a3	completed	cancelled	2026-10-02T05:03:58Z	2026-10-02T05:03:58Z	2026-10-02T05:05:55Z	1
+36967210887	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	78ee1f8a	completed	cancelled	2026-10-02T05:03:04Z	2026-10-02T05:03:04Z	2026-10-02T05:04:06Z	1
+36967210650	CI	pull_request	c11-1.0/C11-287-webview-crash	78ee1f8a	completed	cancelled	2026-10-02T05:03:04Z	2026-10-02T05:03:04Z	2026-10-02T05:04:06Z	1
+36967210743	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	78ee1f8a	completed	cancelled	2026-10-02T05:03:04Z	2026-10-02T05:03:04Z	2026-10-02T05:04:06Z	1
+36967208362	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	78ee1f8a	completed	skipped	2026-10-02T05:03:02Z	2026-10-02T05:03:02Z	2026-10-02T05:03:04Z	1
+36967038728	CI	pull_request	c11-1.0/C11-287-webview-crash	c4e3f0e4	completed	cancelled	2026-10-02T05:00:43Z	2026-10-02T05:00:43Z	2026-10-02T05:03:05Z	1
+36967038727	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	c4e3f0e4	completed	cancelled	2026-10-02T05:00:43Z	2026-10-02T05:00:43Z	2026-10-02T05:03:05Z	1
+36967038746	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	c4e3f0e4	completed	cancelled	2026-10-02T05:00:43Z	2026-10-02T05:00:43Z	2026-10-02T05:03:06Z	1
+36967036370	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	c4e3f0e4	completed	skipped	2026-10-02T05:00:41Z	2026-10-02T05:00:41Z	2026-10-02T05:00:43Z	1
+36966930433	CI	pull_request	c11-1.0/C11-259-workspace-groups	3dc63839	completed	cancelled	2026-10-02T04:59:16Z	2026-10-02T04:59:16Z	2026-10-02T05:15:13Z	1
+36966930435	Mailbox parity	pull_request	c11-1.0/C11-259-workspace-groups	3dc63839	completed	cancelled	2026-10-02T04:59:16Z	2026-10-02T04:59:16Z	2026-10-02T05:15:13Z	1
+36966930451	Build GhosttyKit	pull_request	c11-1.0/C11-259-workspace-groups	3dc63839	completed	cancelled	2026-10-02T04:59:16Z	2026-10-02T04:59:16Z	2026-10-02T05:15:14Z	1
+36966930467	macOS Compatibility	pull_request	c11-1.0/C11-259-workspace-groups	3dc63839	completed	cancelled	2026-10-02T04:59:16Z	2026-10-02T04:59:16Z	2026-10-02T05:15:37Z	1
+36966928855	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	3dc63839	completed	skipped	2026-10-02T04:59:14Z	2026-10-02T04:59:14Z	2026-10-02T04:59:16Z	1
+36966904512	CI	pull_request	c11-1.0/C11-263-attention-batch	01f38d28	completed	cancelled	2026-10-02T04:58:53Z	2026-10-02T04:58:53Z	2026-10-02T05:04:05Z	1
+36966904520	Mailbox parity	pull_request	c11-1.0/C11-263-attention-batch	01f38d28	completed	cancelled	2026-10-02T04:58:53Z	2026-10-02T04:58:53Z	2026-10-02T05:04:12Z	1
+36966904595	Build GhosttyKit	pull_request	c11-1.0/C11-263-attention-batch	01f38d28	completed	cancelled	2026-10-02T04:58:53Z	2026-10-02T04:58:53Z	2026-10-02T05:04:03Z	1
+36966904407	macOS Compatibility	pull_request	c11-1.0/C11-263-attention-batch	01f38d28	completed	cancelled	2026-10-02T04:58:52Z	2026-10-02T04:58:52Z	2026-10-02T05:04:03Z	1
+36966902172	Drawbridge	pull_request_target	c11-1.0/C11-263-attention-batch	01f38d28	completed	skipped	2026-10-02T04:58:50Z	2026-10-02T04:58:50Z	2026-10-02T04:59:01Z	1
+36966898611	Mailbox parity	push	c11-1.0/C11-263-attention-batch	01f38d28	completed	cancelled	2026-10-02T04:58:47Z	2026-10-02T04:58:47Z	2026-10-02T04:59:49Z	1
+36966649604	Build GhosttyKit	pull_request	c11-1.0/C11-294-ghostty-patchset	f5e0a4ce	completed	success	2026-10-02T04:55:16Z	2026-10-02T04:55:16Z	2026-10-02T04:59:07Z	1
+36966649639	CI	pull_request	c11-1.0/C11-294-ghostty-patchset	f5e0a4ce	completed	cancelled	2026-10-02T04:55:16Z	2026-10-02T04:55:16Z	2026-10-02T05:07:03Z	1
+36966649852	Drawbridge	pull_request_target	c11-1.0/C11-294-ghostty-patchset	f5e0a4ce	completed	skipped	2026-10-02T04:55:16Z	2026-10-02T04:55:16Z	2026-10-02T04:55:18Z	1
+36966649777	macOS Compatibility	pull_request	c11-1.0/C11-294-ghostty-patchset	f5e0a4ce	completed	cancelled	2026-10-02T04:55:16Z	2026-10-02T04:55:16Z	2026-10-02T05:07:27Z	1
+36966582823	CI	pull_request	c11-1.0/C11-263-attention-batch	d26a500d	completed	cancelled	2026-10-02T04:54:21Z	2026-10-02T04:54:21Z	2026-10-02T04:58:54Z	1
+36966582299	Build GhosttyKit	pull_request	c11-1.0/C11-263-attention-batch	d26a500d	completed	success	2026-10-02T04:54:20Z	2026-10-02T04:54:20Z	2026-10-02T04:58:42Z	1
+36966582274	macOS Compatibility	pull_request	c11-1.0/C11-263-attention-batch	d26a500d	completed	cancelled	2026-10-02T04:54:20Z	2026-10-02T04:54:20Z	2026-10-02T04:58:54Z	1
+36966582319	Drawbridge	pull_request_target	c11-1.0/C11-263-attention-batch	d26a500d	completed	skipped	2026-10-02T04:54:20Z	2026-10-02T04:54:20Z	2026-10-02T04:54:22Z	1
+36966386730	Drawbridge	pull_request_target	c11-1.0/C11-300-close-ownership	b689c0d5	completed	skipped	2026-10-02T04:51:39Z	2026-10-02T04:51:39Z	2026-10-02T04:51:41Z	1
+36966386515	CI	pull_request	c11-1.0/C11-300-close-ownership	b689c0d5	completed	success	2026-10-02T04:51:39Z	2026-10-02T04:51:39Z	2026-10-02T04:57:59Z	1
+36966386666	Build GhosttyKit	pull_request	c11-1.0/C11-300-close-ownership	b689c0d5	completed	success	2026-10-02T04:51:39Z	2026-10-02T04:51:39Z	2026-10-02T05:20:44Z	1
+36966386660	macOS Compatibility	pull_request	c11-1.0/C11-300-close-ownership	b689c0d5	completed	success	2026-10-02T04:51:39Z	2026-10-02T04:51:39Z	2026-10-02T05:28:48Z	1
+36966183536	Build GhosttyKit	pull_request	c11-1.0/C11-284-guide-features	0e83c435	completed	success	2026-10-02T04:48:52Z	2026-10-02T04:48:52Z	2026-10-02T04:52:51Z	1
+36966183380	CI	pull_request	c11-1.0/C11-284-guide-features	0e83c435	completed	success	2026-10-02T04:48:52Z	2026-10-02T04:48:52Z	2026-10-02T05:11:08Z	1
+36966183372	Mailbox parity	pull_request	c11-1.0/C11-284-guide-features	0e83c435	completed	cancelled	2026-10-02T04:48:52Z	2026-10-02T04:48:52Z	2026-10-02T05:15:02Z	1
+36966183390	macOS Compatibility	pull_request	c11-1.0/C11-284-guide-features	0e83c435	completed	cancelled	2026-10-02T04:48:52Z	2026-10-02T04:48:52Z	2026-10-02T05:15:27Z	1
+36966182055	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	0e83c435	completed	skipped	2026-10-02T04:48:50Z	2026-10-02T04:48:50Z	2026-10-02T04:48:52Z	1
+36966047702	macOS Compatibility	pull_request	c11-1.0/C11-259-workspace-groups	2ce544de	completed	cancelled	2026-10-02T04:46:55Z	2026-10-02T04:46:55Z	2026-10-02T04:59:17Z	1
+36966047619	Build GhosttyKit	pull_request	c11-1.0/C11-259-workspace-groups	2ce544de	completed	cancelled	2026-10-02T04:46:55Z	2026-10-02T04:46:55Z	2026-10-02T04:59:17Z	1
+36966047601	Mailbox parity	pull_request	c11-1.0/C11-259-workspace-groups	2ce544de	completed	cancelled	2026-10-02T04:46:55Z	2026-10-02T04:46:55Z	2026-10-02T04:59:17Z	1
+36966047643	CI	pull_request	c11-1.0/C11-259-workspace-groups	2ce544de	completed	cancelled	2026-10-02T04:46:55Z	2026-10-02T04:46:55Z	2026-10-02T04:59:36Z	1
+36966046081	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	2ce544de	completed	skipped	2026-10-02T04:46:53Z	2026-10-02T04:46:53Z	2026-10-02T04:46:55Z	1
+36966003762	macOS Compatibility	pull_request	c11-1.0/C11-216-atlas-builds	21605c22	completed	success	2026-10-02T04:46:17Z	2026-10-02T04:46:17Z	2026-10-02T05:06:44Z	1
+36966002774	Drawbridge	pull_request_target	c11-1.0/C11-216-atlas-builds	21605c22	completed	skipped	2026-10-02T04:46:17Z	2026-10-02T04:46:17Z	2026-10-02T04:46:24Z	1
+36966003789	Build GhosttyKit	pull_request	c11-1.0/C11-216-atlas-builds	21605c22	completed	success	2026-10-02T04:46:17Z	2026-10-02T04:46:17Z	2026-10-02T04:58:22Z	1
+36966003706	CI	pull_request	c11-1.0/C11-216-atlas-builds	21605c22	completed	success	2026-10-02T04:46:17Z	2026-10-02T04:46:17Z	2026-10-02T05:38:22Z	1
+36965936067	Drawbridge	pull_request_target	c11-1.0/C11-259-workspace-groups	3162148c	completed	skipped	2026-10-02T04:45:22Z	2026-10-02T04:45:22Z	2026-10-02T04:45:24Z	1
+36965936138	Mailbox parity	pull_request	c11-1.0/C11-259-workspace-groups	3162148c	completed	cancelled	2026-10-02T04:45:22Z	2026-10-02T04:45:22Z	2026-10-02T04:46:56Z	1
+36965936133	CI	pull_request	c11-1.0/C11-259-workspace-groups	3162148c	completed	cancelled	2026-10-02T04:45:22Z	2026-10-02T04:45:22Z	2026-10-02T04:46:56Z	1
+36965936103	macOS Compatibility	pull_request	c11-1.0/C11-259-workspace-groups	3162148c	completed	cancelled	2026-10-02T04:45:22Z	2026-10-02T04:45:22Z	2026-10-02T04:46:56Z	1
+36965936194	Build GhosttyKit	pull_request	c11-1.0/C11-259-workspace-groups	3162148c	completed	cancelled	2026-10-02T04:45:22Z	2026-10-02T04:45:22Z	2026-10-02T04:46:56Z	1
+36965925331	Mailbox parity	push	c11-1.0/C11-259-workspace-groups	3162148c	completed	cancelled	2026-10-02T04:45:14Z	2026-10-02T04:45:14Z	2026-10-02T04:51:27Z	1
+36965760525	Build GhosttyKit	pull_request	c11-1.0/C11-299-duplicate-restore	27a7d7ee	completed	success	2026-10-02T04:43:01Z	2026-10-02T04:43:01Z	2026-10-02T04:49:41Z	1
+36965760422	macOS Compatibility	pull_request	c11-1.0/C11-299-duplicate-restore	27a7d7ee	completed	success	2026-10-02T04:43:01Z	2026-10-02T04:43:01Z	2026-10-02T04:58:14Z	1
+36965760412	CI	pull_request	c11-1.0/C11-299-duplicate-restore	27a7d7ee	completed	success	2026-10-02T04:43:01Z	2026-10-02T04:43:01Z	2026-10-02T05:15:24Z	1
+36965759131	Drawbridge	pull_request_target	c11-1.0/C11-299-duplicate-restore	27a7d7ee	completed	skipped	2026-10-02T04:42:59Z	2026-10-02T04:42:59Z	2026-10-02T04:43:01Z	1
+36965714820	macOS Compatibility	pull_request	c11-1.0/C11-306-bounded-stop-transcript	682f57f9	completed	success	2026-10-02T04:42:24Z	2026-10-02T04:42:24Z	2026-10-02T05:12:02Z	1
+36965714843	Build GhosttyKit	pull_request	c11-1.0/C11-306-bounded-stop-transcript	682f57f9	completed	success	2026-10-02T04:42:24Z	2026-10-02T04:42:24Z	2026-10-02T05:32:01Z	1
+36965714907	CI	pull_request	c11-1.0/C11-306-bounded-stop-transcript	682f57f9	completed	success	2026-10-02T04:42:24Z	2026-10-02T04:42:24Z	2026-10-02T05:27:03Z	1
+36965714910	Mailbox parity	pull_request	c11-1.0/C11-306-bounded-stop-transcript	682f57f9	completed	success	2026-10-02T04:42:24Z	2026-10-02T04:42:24Z	2026-10-02T05:41:21Z	1
+36965713821	Drawbridge	pull_request_target	c11-1.0/C11-306-bounded-stop-transcript	682f57f9	completed	skipped	2026-10-02T04:42:23Z	2026-10-02T04:42:23Z	2026-10-02T04:42:25Z	1
+36965711695	Mailbox parity	push	c11-1.0/C11-306-bounded-stop-transcript	682f57f9	completed	success	2026-10-02T04:42:22Z	2026-10-02T04:42:22Z	2026-10-02T04:52:22Z	1
+36965654121	macOS Compatibility	pull_request	c11-1.0/C11-284-guide-features	c2a7da2c	completed	cancelled	2026-10-02T04:41:33Z	2026-10-02T04:41:33Z	2026-10-02T04:49:15Z	1
+36965654119	Mailbox parity	pull_request	c11-1.0/C11-284-guide-features	c2a7da2c	completed	success	2026-10-02T04:41:33Z	2026-10-02T04:41:33Z	2026-10-02T04:45:59Z	1
+36965654274	CI	pull_request	c11-1.0/C11-284-guide-features	c2a7da2c	completed	failure	2026-10-02T04:41:33Z	2026-10-02T04:41:33Z	2026-10-02T04:47:57Z	1
+36965654077	Build GhosttyKit	pull_request	c11-1.0/C11-284-guide-features	c2a7da2c	completed	cancelled	2026-10-02T04:41:33Z	2026-10-02T04:41:33Z	2026-10-02T04:48:53Z	1
+36965651621	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	c2a7da2c	completed	skipped	2026-10-02T04:41:31Z	2026-10-02T04:41:31Z	2026-10-02T04:41:33Z	1
+36965288867	CI	pull_request	c11-257-c	f5ce0afc	completed	success	2026-10-02T04:36:28Z	2026-10-02T04:36:28Z	2026-10-02T04:46:03Z	1
+36965288872	macOS Compatibility	pull_request	c11-257-c	f5ce0afc	completed	success	2026-10-02T04:36:28Z	2026-10-02T04:36:28Z	2026-10-02T04:51:29Z	1
+36965288873	Build GhosttyKit	pull_request	c11-257-c	f5ce0afc	completed	success	2026-10-02T04:36:28Z	2026-10-02T04:36:28Z	2026-10-02T05:15:54Z	1
+36965288896	Mailbox parity	pull_request	c11-257-c	f5ce0afc	completed	success	2026-10-02T04:36:28Z	2026-10-02T04:36:28Z	2026-10-02T05:37:36Z	1
+36965286132	Drawbridge	pull_request_target	c11-257-c	f5ce0afc	completed	success	2026-10-02T04:36:26Z	2026-10-02T04:36:26Z	2026-10-02T04:38:19Z	1
+36965284798	Mailbox parity	push	c11-257-c	f5ce0afc	completed	success	2026-10-02T04:36:24Z	2026-10-02T04:36:24Z	2026-10-02T05:20:14Z	1
+36965199497	Build GhosttyKit	push	main	72cd3882	completed	success	2026-10-02T04:35:13Z	2026-10-02T04:35:13Z	2026-10-02T05:07:53Z	1
+36965199522	CI	push	main	72cd3882	completed	success	2026-10-02T04:35:13Z	2026-10-02T04:35:13Z	2026-10-02T05:17:34Z	1
+36965199505	Mailbox parity	push	main	72cd3882	completed	success	2026-10-02T04:35:13Z	2026-10-02T04:35:13Z	2026-10-02T05:37:07Z	1
+36965199515	macOS Compatibility	push	main	72cd3882	completed	success	2026-10-02T04:35:13Z	2026-10-02T04:35:13Z	2026-10-02T05:42:58Z	1
+36965158570	CI	push	main	3a38d8a2	completed	success	2026-10-02T04:34:39Z	2026-10-02T04:34:39Z	2026-10-02T05:00:21Z	1
+36965158556	macOS Compatibility	push	main	3a38d8a2	completed	success	2026-10-02T04:34:39Z	2026-10-02T04:34:39Z	2026-10-02T05:03:11Z	1
+36965158669	Mailbox parity	push	main	3a38d8a2	completed	success	2026-10-02T04:34:39Z	2026-10-02T04:34:39Z	2026-10-02T05:03:16Z	1
+36965158582	Build GhosttyKit	push	main	3a38d8a2	completed	success	2026-10-02T04:34:39Z	2026-10-02T04:34:39Z	2026-10-02T05:07:09Z	1
+36965148483	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	1a7190e1	completed	cancelled	2026-10-02T04:34:31Z	2026-10-02T04:34:31Z	2026-10-02T05:07:19Z	1
+36965148528	CI	pull_request	c11-1.0/C11-312-artifact-signing	1a7190e1	completed	success	2026-10-02T04:34:31Z	2026-10-02T04:34:31Z	2026-10-02T04:51:27Z	1
+36965148488	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	1a7190e1	completed	success	2026-10-02T04:34:31Z	2026-10-02T04:34:31Z	2026-10-02T04:51:46Z	1
+36965145868	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	1a7190e1	completed	skipped	2026-10-02T04:34:29Z	2026-10-02T04:34:29Z	2026-10-02T04:34:32Z	1
+36965144163	Sign unpublished c11 artifact	push	c11-1.0/C11-312-artifact-signing	1a7190e1	completed	success	2026-10-02T04:34:28Z	2026-10-02T04:34:28Z	2026-10-02T05:31:26Z	1
+36964972056	CI	pull_request	c11-257-c	e9b25928	completed	cancelled	2026-10-02T04:32:07Z	2026-10-02T04:32:07Z	2026-10-02T04:36:33Z	1
+36964972045	Build GhosttyKit	pull_request	c11-257-c	e9b25928	completed	cancelled	2026-10-02T04:32:07Z	2026-10-02T04:32:07Z	2026-10-02T04:36:29Z	1
+36964972057	macOS Compatibility	pull_request	c11-257-c	e9b25928	completed	cancelled	2026-10-02T04:32:07Z	2026-10-02T04:32:07Z	2026-10-02T04:36:29Z	1
+36964972081	Mailbox parity	pull_request	c11-257-c	e9b25928	completed	cancelled	2026-10-02T04:32:07Z	2026-10-02T04:32:07Z	2026-10-02T04:36:29Z	1
+36964969380	Drawbridge	pull_request_target	c11-257-c	e9b25928	completed	success	2026-10-02T04:32:05Z	2026-10-02T04:32:05Z	2026-10-02T04:33:59Z	1
+36964967339	Mailbox parity	push	c11-257-c	e9b25928	completed	success	2026-10-02T04:32:03Z	2026-10-02T04:32:03Z	2026-10-02T05:04:15Z	1
+36964853123	Mailbox parity	push	c11-257-int	cd25a631	completed	success	2026-10-02T04:30:29Z	2026-10-02T04:30:29Z	2026-10-02T04:54:46Z	1
+36964754571	Mailbox parity	push	c11-257-int	ba1ae1ed	completed	failure	2026-10-02T04:29:10Z	2026-10-02T04:29:10Z	2026-10-02T04:35:07Z	1
+36964689202	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	e4f67eb7	completed	success	2026-10-02T04:28:15Z	2026-10-02T04:28:15Z	2026-10-02T04:40:03Z	1
+36964689178	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	e4f67eb7	completed	cancelled	2026-10-02T04:28:15Z	2026-10-02T04:28:15Z	2026-10-02T05:00:44Z	1
+36964689181	CI	pull_request	c11-1.0/C11-287-webview-crash	e4f67eb7	completed	success	2026-10-02T04:28:15Z	2026-10-02T04:28:15Z	2026-10-02T04:57:54Z	1
+36964686763	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	e4f67eb7	completed	skipped	2026-10-02T04:28:13Z	2026-10-02T04:28:13Z	2026-10-02T04:28:15Z	1
+36964677712	CI	pull_request	c11-1.0/C11-312-artifact-signing	0849568e	completed	cancelled	2026-10-02T04:28:06Z	2026-10-02T04:28:06Z	2026-10-02T04:34:32Z	1
+36964677688	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	0849568e	completed	cancelled	2026-10-02T04:28:06Z	2026-10-02T04:28:06Z	2026-10-02T04:34:33Z	1
+36964677645	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	0849568e	completed	cancelled	2026-10-02T04:28:06Z	2026-10-02T04:28:06Z	2026-10-02T04:34:55Z	1
+36964674738	Sign unpublished c11 artifact	push	c11-1.0/C11-312-artifact-signing	0849568e	completed	cancelled	2026-10-02T04:28:04Z	2026-10-02T04:28:04Z	2026-10-02T04:34:31Z	1
+36964675675	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	0849568e	completed	skipped	2026-10-02T04:28:04Z	2026-10-02T04:28:04Z	2026-10-02T04:28:06Z	1
+36964537363	CI	pull_request	c11-1.0/C11-287-webview-crash	5d2de9c6	completed	cancelled	2026-10-02T04:26:08Z	2026-10-02T04:26:08Z	2026-10-02T04:28:17Z	1
+36964537251	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	5d2de9c6	completed	cancelled	2026-10-02T04:26:08Z	2026-10-02T04:26:08Z	2026-10-02T04:28:16Z	1
+36964537365	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	5d2de9c6	completed	cancelled	2026-10-02T04:26:08Z	2026-10-02T04:26:08Z	2026-10-02T04:28:16Z	1
+36964534326	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	5d2de9c6	completed	skipped	2026-10-02T04:26:06Z	2026-10-02T04:26:06Z	2026-10-02T04:26:08Z	1
+36964469292	CI	pull_request	c11-1.0/C11-312-artifact-signing	3465a47b	completed	cancelled	2026-10-02T04:25:12Z	2026-10-02T04:25:12Z	2026-10-02T04:28:08Z	1
+36964469303	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	3465a47b	completed	cancelled	2026-10-02T04:25:12Z	2026-10-02T04:25:12Z	2026-10-02T04:28:07Z	1
+36964469300	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	3465a47b	completed	cancelled	2026-10-02T04:25:12Z	2026-10-02T04:25:12Z	2026-10-02T04:28:08Z	1
+36964467848	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	3465a47b	completed	skipped	2026-10-02T04:25:11Z	2026-10-02T04:25:11Z	2026-10-02T04:25:13Z	1
+36964466347	Sign unpublished c11 artifact	push	c11-1.0/C11-312-artifact-signing	3465a47b	completed	cancelled	2026-10-02T04:25:10Z	2026-10-02T04:25:10Z	2026-10-02T04:26:30Z	1
+36964461212	Drawbridge	pull_request_target	c11-1.0/C11-312-artifact-signing	72dc1be7	completed	skipped	2026-10-02T04:25:06Z	2026-10-02T04:25:06Z	2026-10-02T04:25:08Z	1
+36964461335	macOS Compatibility	pull_request	c11-1.0/C11-312-artifact-signing	72dc1be7	completed	cancelled	2026-10-02T04:25:06Z	2026-10-02T04:25:06Z	2026-10-02T04:25:14Z	1
+36964461398	Build GhosttyKit	pull_request	c11-1.0/C11-312-artifact-signing	72dc1be7	completed	cancelled	2026-10-02T04:25:06Z	2026-10-02T04:25:06Z	2026-10-02T04:25:14Z	1
+36964461402	CI	pull_request	c11-1.0/C11-312-artifact-signing	72dc1be7	completed	cancelled	2026-10-02T04:25:06Z	2026-10-02T04:25:06Z	2026-10-02T04:25:32Z	1
+36964444609	CI	pull_request	c11-1.0/C11-287-webview-crash	dd4c8ba4	completed	cancelled	2026-10-02T04:24:53Z	2026-10-02T04:24:53Z	2026-10-02T04:26:10Z	1
+36964444683	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	dd4c8ba4	completed	cancelled	2026-10-02T04:24:53Z	2026-10-02T04:24:53Z	2026-10-02T04:26:10Z	1
+36964444612	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	dd4c8ba4	completed	cancelled	2026-10-02T04:24:53Z	2026-10-02T04:24:53Z	2026-10-02T04:26:10Z	1
+36964442716	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	dd4c8ba4	completed	skipped	2026-10-02T04:24:51Z	2026-10-02T04:24:51Z	2026-10-02T04:24:53Z	1
+36964399745	Build GhosttyKit	pull_request	c11-1.0/C11-299-duplicate-restore	45b86a52	completed	success	2026-10-02T04:24:15Z	2026-10-02T04:24:15Z	2026-10-02T04:41:56Z	1
+36964399596	macOS Compatibility	pull_request	c11-1.0/C11-299-duplicate-restore	45b86a52	completed	success	2026-10-02T04:24:15Z	2026-10-02T04:24:15Z	2026-10-02T04:42:56Z	1
+36964399715	CI	pull_request	c11-1.0/C11-299-duplicate-restore	45b86a52	completed	success	2026-10-02T04:24:15Z	2026-10-02T04:24:15Z	2026-10-02T04:30:52Z	1
+36964398081	Drawbridge	pull_request_target	c11-1.0/C11-299-duplicate-restore	45b86a52	completed	skipped	2026-10-02T04:24:14Z	2026-10-02T04:24:14Z	2026-10-02T04:24:16Z	1
+36964380025	macOS Compatibility	pull_request	c11-1.0/C11-216-atlas-builds	2adc5758	completed	success	2026-10-02T04:23:59Z	2026-10-02T04:23:59Z	2026-10-02T04:41:28Z	1
+36964379970	Build GhosttyKit	pull_request	c11-1.0/C11-216-atlas-builds	2adc5758	completed	success	2026-10-02T04:23:59Z	2026-10-02T04:23:59Z	2026-10-02T04:26:20Z	1
+36964380015	CI	pull_request	c11-1.0/C11-216-atlas-builds	2adc5758	completed	cancelled	2026-10-02T04:23:59Z	2026-10-02T04:23:59Z	2026-10-02T04:46:19Z	1
+36964378302	Drawbridge	pull_request_target	c11-1.0/C11-216-atlas-builds	2adc5758	completed	skipped	2026-10-02T04:23:57Z	2026-10-02T04:23:57Z	2026-10-02T04:23:59Z	1
+36964350680	macOS Compatibility	pull_request	c11-1.0/C11-284-guide-features	23075779	completed	success	2026-10-02T04:23:35Z	2026-10-02T04:23:35Z	2026-10-02T04:41:30Z	1
+36964350698	Mailbox parity	pull_request	c11-1.0/C11-284-guide-features	23075779	completed	cancelled	2026-10-02T04:23:35Z	2026-10-02T04:23:35Z	2026-10-02T04:41:52Z	1
+36964350647	CI	pull_request	c11-1.0/C11-284-guide-features	23075779	completed	failure	2026-10-02T04:23:35Z	2026-10-02T04:23:35Z	2026-10-02T04:40:28Z	1
+36964350689	Build GhosttyKit	pull_request	c11-1.0/C11-284-guide-features	23075779	completed	success	2026-10-02T04:23:35Z	2026-10-02T04:23:35Z	2026-10-02T04:31:18Z	1
+36964350752	Drawbridge	pull_request_target	c11-1.0/C11-284-guide-features	23075779	completed	skipped	2026-10-02T04:23:35Z	2026-10-02T04:23:35Z	2026-10-02T04:23:37Z	1
+36964313206	Mailbox parity	push	c11-1.0/C11-284-guide-features	23075779	completed	success	2026-10-02T04:23:05Z	2026-10-02T04:23:05Z	2026-10-02T04:30:09Z	1
+36964297640	macOS Compatibility	pull_request	c11-1.0/C11-306-bounded-stop-transcript	31fe7c8f	completed	success	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:33:38Z	1
+36964297692	CI	pull_request	c11-1.0/C11-306-bounded-stop-transcript	31fe7c8f	completed	success	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:30:33Z	1
+36964297072	macOS Compatibility	pull_request	c11-1.0/C11-299-duplicate-restore	1e83ac0f	completed	cancelled	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:24:16Z	1
+36964297048	CI	pull_request	c11-1.0/C11-299-duplicate-restore	1e83ac0f	completed	cancelled	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:24:17Z	1
+36964297038	Build GhosttyKit	pull_request	c11-1.0/C11-299-duplicate-restore	1e83ac0f	completed	cancelled	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:24:17Z	1
+36964297625	Build GhosttyKit	pull_request	c11-1.0/C11-306-bounded-stop-transcript	31fe7c8f	completed	success	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:25:55Z	1
+36964297644	Mailbox parity	pull_request	c11-1.0/C11-306-bounded-stop-transcript	31fe7c8f	completed	success	2026-10-02T04:22:52Z	2026-10-02T04:22:52Z	2026-10-02T04:35:34Z	1
+36964296280	Drawbridge	pull_request_target	c11-1.0/C11-306-bounded-stop-transcript	31fe7c8f	completed	skipped	2026-10-02T04:22:51Z	2026-10-02T04:22:51Z	2026-10-02T04:22:53Z	1
+36964294388	Drawbridge	pull_request_target	c11-1.0/C11-299-duplicate-restore	1e83ac0f	completed	skipped	2026-10-02T04:22:49Z	2026-10-02T04:22:49Z	2026-10-02T04:22:51Z	1
+36964281837	Drawbridge	pull_request_target	c11-1.0/C11-287-webview-crash	21031abc	completed	skipped	2026-10-02T04:22:39Z	2026-10-02T04:22:39Z	2026-10-02T04:22:40Z	1
+36964281503	Build GhosttyKit	pull_request	c11-1.0/C11-287-webview-crash	21031abc	completed	success	2026-10-02T04:22:38Z	2026-10-02T04:22:38Z	2026-10-02T04:24:48Z	1
+36964281480	CI	pull_request	c11-1.0/C11-287-webview-crash	21031abc	completed	cancelled	2026-10-02T04:22:38Z	2026-10-02T04:22:38Z	2026-10-02T04:24:54Z	1
+36964281491	macOS Compatibility	pull_request	c11-1.0/C11-287-webview-crash	21031abc	completed	cancelled	2026-10-02T04:22:38Z	2026-10-02T04:22:38Z	2026-10-02T04:25:30Z	1
+36964169760	Drawbridge	pull_request_target	c11-1.0/C11-306-bounded-stop-transcript	d6ada93f	completed	skipped	2026-10-02T04:21:06Z	2026-10-02T04:21:06Z	2026-10-02T04:21:07Z	1
+36964169734	Build GhosttyKit	pull_request	c11-1.0/C11-306-bounded-stop-transcript	d6ada93f	completed	cancelled	2026-10-02T04:21:05Z	2026-10-02T04:21:05Z	2026-10-02T04:22:54Z	1
+36964169754	Mailbox parity	pull_request	c11-1.0/C11-306-bounded-stop-transcript	d6ada93f	completed	cancelled	2026-10-02T04:21:05Z	2026-10-02T04:21:05Z	2026-10-02T04:22:54Z	1
+36964169753	macOS Compatibility	pull_request	c11-1.0/C11-306-bounded-stop-transcript	d6ada93f	completed	cancelled	2026-10-02T04:21:05Z	2026-10-02T04:21:05Z	2026-10-02T04:22:54Z	1
+36964169748	CI	pull_request	c11-1.0/C11-306-bounded-stop-transcript	d6ada93f	completed	cancelled	2026-10-02T04:21:05Z	2026-10-02T04:21:05Z	2026-10-02T04:23:11Z	1
+36964167836	Mailbox parity	push	c11-1.0/C11-306-bounded-stop-transcript	d6ada93f	completed	success	2026-10-02T04:21:04Z	2026-10-02T04:21:04Z	2026-10-02T04:28:09Z	1
+36964146586	Drawbridge	pull_request_target	skill/short-launch-prompts	947eff1a	completed	success	2026-10-02T04:20:47Z	2026-10-02T04:20:47Z	2026-10-02T04:22:26Z	1
+36964119671	Build GhosttyKit	pull_request	c11-1.0/C11-299-duplicate-restore	24357cb5	completed	success	2026-10-02T04:20:25Z	2026-10-02T04:20:25Z	2026-10-02T04:20:54Z	1
+36964119792	CI	pull_request	c11-1.0/C11-299-duplicate-restore	24357cb5	completed	cancelled	2026-10-02T04:20:25Z	2026-10-02T04:20:25Z	2026-10-02T04:22:53Z	1
+36964119733	macOS Compatibility	pull_request	c11-1.0/C11-299-duplicate-restore	24357cb5	completed	cancelled	2026-10-02T04:20:25Z	2026-10-02T04:20:25Z	2026-10-02T04:23:14Z	1
+36964119018	Drawbridge	pull_request_target	c11-1.0/C11-299-duplicate-restore	24357cb5	completed	skipped	2026-10-02T04:20:24Z	2026-10-02T04:20:24Z	2026-10-02T04:20:26Z	1
+36963847739	CI	pull_request	c11-1.0/C11-216-atlas-builds	a46d08aa	completed	cancelled	2026-10-02T04:16:39Z	2026-10-02T04:16:39Z	2026-10-02T04:24:24Z	1
+36963847762	macOS Compatibility	pull_request	c11-1.0/C11-216-atlas-builds	a46d08aa	completed	cancelled	2026-10-02T04:16:39Z	2026-10-02T04:16:39Z	2026-10-02T04:24:21Z	1
+36963847790	Build GhosttyKit	pull_request	c11-1.0/C11-216-atlas-builds	a46d08aa	completed	success	2026-10-02T04:16:39Z	2026-10-02T04:16:39Z	2026-10-02T04:17:42Z	1
+36963846133	Drawbridge	pull_request_target	c11-1.0/C11-216-atlas-builds	a46d08aa	completed	skipped	2026-10-02T04:16:38Z	2026-10-02T04:16:38Z	2026-10-02T04:16:40Z	1
+36963605331	macOS Compatibility	pull_request	c11-257-c	ea4d923b	completed	success	2026-10-02T04:13:33Z	2026-10-02T04:13:33Z	2026-10-02T04:23:36Z	1
+36963605413	Build GhosttyKit	pull_request	c11-257-c	ea4d923b	completed	success	2026-10-02T04:13:33Z	2026-10-02T04:13:33Z	2026-10-02T04:14:02Z	1
+36963605381	CI	pull_request	c11-257-c	ea4d923b	completed	success	2026-10-02T04:13:33Z	2026-10-02T04:13:33Z	2026-10-02T04:19:13Z	1
+36963605478	Mailbox parity	pull_request	c11-257-c	ea4d923b	completed	success	2026-10-02T04:13:33Z	2026-10-02T04:13:33Z	2026-10-02T04:21:35Z	1
+36963602860	Drawbridge	pull_request_target	c11-257-c	ea4d923b	completed	success	2026-10-02T04:13:31Z	2026-10-02T04:13:31Z	2026-10-02T04:15:17Z	1
+36963600198	Mailbox parity	push	c11-257-c	ea4d923b	completed	success	2026-10-02T04:13:29Z	2026-10-02T04:13:29Z	2026-10-02T04:18:16Z	1
+36963396911	CI	pull_request	c11-1.0/C11-216-atlas-builds	4c62188d	completed	cancelled	2026-10-02T04:10:43Z	2026-10-02T04:10:43Z	2026-10-02T04:16:42Z	1
+36963396890	macOS Compatibility	pull_request	c11-1.0/C11-216-atlas-builds	4c62188d	completed	cancelled	2026-10-02T04:10:43Z	2026-10-02T04:10:43Z	2026-10-02T04:17:08Z	1
+36963397022	Drawbridge	pull_request_target	c11-1.0/C11-216-atlas-builds	4c62188d	completed	skipped	2026-10-02T04:10:43Z	2026-10-02T04:10:43Z	2026-10-02T04:10:44Z	1
+36963396935	Build GhosttyKit	pull_request	c11-1.0/C11-216-atlas-builds	4c62188d	completed	success	2026-10-02T04:10:43Z	2026-10-02T04:10:43Z	2026-10-02T04:11:09Z	1
+36963274061	Mailbox parity	push	c11-257-int	37f8b258	completed	failure	2026-10-02T04:09:02Z	2026-10-02T04:09:02Z	2026-10-02T04:13:19Z	1
+36962472714	Mailbox parity	pull_request	c11-257-e	87c41217	completed	success	2026-10-02T03:58:09Z	2026-10-02T03:58:09Z	2026-10-02T04:02:10Z	1
+36962472741	CI	pull_request	c11-257-e	87c41217	completed	success	2026-10-02T03:58:09Z	2026-10-02T03:58:09Z	2026-10-02T04:03:45Z	1
+36962472753	macOS Compatibility	pull_request	c11-257-e	87c41217	completed	success	2026-10-02T03:58:09Z	2026-10-02T03:58:09Z	2026-10-02T04:05:25Z	1
+36962472737	Build GhosttyKit	pull_request	c11-257-e	87c41217	completed	success	2026-10-02T03:58:09Z	2026-10-02T03:58:09Z	2026-10-02T03:58:37Z	1
+36962470945	Drawbridge	pull_request_target	c11-257-e	87c41217	completed	success	2026-10-02T03:58:07Z	2026-10-02T03:58:07Z	2026-10-02T03:59:47Z	1
+36962468445	Mailbox parity	push	c11-257-e	87c41217	completed	success	2026-10-02T03:58:05Z	2026-10-02T03:58:05Z	2026-10-02T04:02:11Z	1
+36961929205	Build GhosttyKit	pull_request	c11-257-e	4c79a63c	completed	success	2026-10-02T03:50:36Z	2026-10-02T03:50:36Z	2026-10-02T03:53:44Z	1
+36961928434	Mailbox parity	pull_request	c11-257-e	4c79a63c	completed	success	2026-10-02T03:50:35Z	2026-10-02T03:50:35Z	2026-10-02T03:56:49Z	1
+36961928379	macOS Compatibility	pull_request	c11-257-e	4c79a63c	completed	cancelled	2026-10-02T03:50:35Z	2026-10-02T03:50:35Z	2026-10-02T03:58:21Z	1
+36961928374	Drawbridge	pull_request_target	c11-257-e	4c79a63c	completed	success	2026-10-02T03:50:35Z	2026-10-02T03:50:35Z	2026-10-02T03:52:08Z	1
+36961928431	CI	pull_request	c11-257-e	4c79a63c	completed	success	2026-10-02T03:50:35Z	2026-10-02T03:50:35Z	2026-10-02T03:57:32Z	1
+36961905923	Mailbox parity	push	c11-257-e	4c79a63c	completed	success	2026-10-02T03:50:17Z	2026-10-02T03:50:17Z	2026-10-02T03:54:49Z	1
+36961385165	Build GhosttyKit	pull_request	c11-257-d	7c4a5ea0	completed	success	2026-10-02T03:43:07Z	2026-10-02T03:43:07Z	2026-10-02T03:43:29Z	1
+36961385177	Mailbox parity	pull_request	c11-257-d	7c4a5ea0	completed	success	2026-10-02T03:43:07Z	2026-10-02T03:43:07Z	2026-10-02T03:51:39Z	1
+36961385256	CI	pull_request	c11-257-d	7c4a5ea0	completed	success	2026-10-02T03:43:07Z	2026-10-02T03:43:07Z	2026-10-02T03:52:45Z	1
+36961385198	macOS Compatibility	pull_request	c11-257-d	7c4a5ea0	completed	success	2026-10-02T03:43:07Z	2026-10-02T03:43:07Z	2026-10-02T03:53:18Z	1
+36961383251	Drawbridge	pull_request_target	c11-257-d	7c4a5ea0	completed	success	2026-10-02T03:43:05Z	2026-10-02T03:43:05Z	2026-10-02T03:44:51Z	1
+36961359976	Drawbridge	pull_request_target	skill/short-launch-prompts	c1be8afd	completed	success	2026-10-02T03:42:46Z	2026-10-02T03:42:46Z	2026-10-02T03:44:21Z	1
+36961338998	Mailbox parity	pull_request	c11-257-c	505aec6d	completed	success	2026-10-02T03:42:28Z	2026-10-02T03:42:28Z	2026-10-02T03:47:08Z	1
+36961338999	CI	pull_request	c11-257-c	505aec6d	completed	success	2026-10-02T03:42:28Z	2026-10-02T03:42:28Z	2026-10-02T03:48:35Z	1
+36961338996	macOS Compatibility	pull_request	c11-257-c	505aec6d	completed	success	2026-10-02T03:42:28Z	2026-10-02T03:42:28Z	2026-10-02T03:50:21Z	1
+36961338977	Build GhosttyKit	pull_request	c11-257-c	505aec6d	completed	success	2026-10-02T03:42:28Z	2026-10-02T03:42:28Z	2026-10-02T03:42:58Z	1
+36961335675	Drawbridge	pull_request_target	c11-257-c	505aec6d	completed	success	2026-10-02T03:42:26Z	2026-10-02T03:42:26Z	2026-10-02T03:44:12Z	1
+36961333719	Mailbox parity	push	c11-257-c	505aec6d	completed	success	2026-10-02T03:42:24Z	2026-10-02T03:42:24Z	2026-10-02T03:46:46Z	1
+36960903926	Mailbox parity	pull_request	c11-257-b	e349e842	completed	success	2026-10-02T03:36:19Z	2026-10-02T03:36:19Z	2026-10-02T03:40:53Z	1
+36960903878	macOS Compatibility	pull_request	c11-257-b	e349e842	completed	success	2026-10-02T03:36:19Z	2026-10-02T03:36:19Z	2026-10-02T03:42:06Z	1
+36960903867	CI	pull_request	c11-257-b	e349e842	completed	success	2026-10-02T03:36:19Z	2026-10-02T03:36:19Z	2026-10-02T03:41:55Z	1
+36960904026	Build GhosttyKit	pull_request	c11-257-b	e349e842	completed	success	2026-10-02T03:36:19Z	2026-10-02T03:36:19Z	2026-10-02T03:36:51Z	1
+36960902510	Drawbridge	pull_request_target	c11-257-b	e349e842	completed	success	2026-10-02T03:36:18Z	2026-10-02T03:36:18Z	2026-10-02T03:37:57Z	1

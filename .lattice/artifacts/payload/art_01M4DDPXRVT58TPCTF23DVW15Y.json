@@ -1,0 +1,256 @@
+{
+  "brand": {
+    "bundle": {
+      "name": "c11 DEV md-359",
+      "short_version": "1.0.0",
+      "display_name": "c11 DEV md-359",
+      "icon_name": "AppIcon-Debug",
+      "identifier": "com.stage11.c11.debug.md.359",
+      "build": "132"
+    },
+    "font_family": "JetBrains Mono",
+    "channel": "dev",
+    "palette": {
+      "paper_fill": "#E8E2D0",
+      "gold": "#c9a84c",
+      "white": "#e8e8e8",
+      "dim": "#555555",
+      "gold_faint": "#c9a84c33",
+      "black": "#000000",
+      "surface": "#0a0a0a",
+      "rule": "#333333"
+    },
+    "accent_hex": "#c9a84c"
+  },
+  "document": "/tmp/c11-359-messaging.md",
+  "panels": 20,
+  "metric": "sum of RSS (KiB) for c11 and WebKit processes in an isolated guest; shared pages may be counted more than once",
+  "uptime": "9:30  up 40 secs, 3 users, load averages: 115.71 31.65 11.69",
+  "before": {
+    "total_rss_kib": 606608,
+    "processes": [
+      {
+        "pid": 644,
+        "ppid": 1,
+        "rss_kib": 266448,
+        "command": "/Users/admin/c11-sandbox/apps/md359-reader/c11 DEV md-359.app/Contents/MacOS/c11"
+      },
+      {
+        "pid": 668,
+        "ppid": 1,
+        "rss_kib": 82544,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+      },
+      {
+        "pid": 670,
+        "ppid": 1,
+        "rss_kib": 39232,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+      },
+      {
+        "pid": 671,
+        "ppid": 1,
+        "rss_kib": 105424,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 698,
+        "ppid": 1,
+        "rss_kib": 112960,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      }
+    ]
+  },
+  "create_twenty_seconds": 1.398636125,
+  "never_shown": {
+    "total_rss_kib": 622896,
+    "processes": [
+      {
+        "pid": 644,
+        "ppid": 1,
+        "rss_kib": 267440,
+        "command": "/Users/admin/c11-sandbox/apps/md359-reader/c11 DEV md-359.app/Contents/MacOS/c11"
+      },
+      {
+        "pid": 668,
+        "ppid": 1,
+        "rss_kib": 82544,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+      },
+      {
+        "pid": 670,
+        "ppid": 1,
+        "rss_kib": 39232,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+      },
+      {
+        "pid": 671,
+        "ppid": 1,
+        "rss_kib": 120720,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 698,
+        "ppid": 1,
+        "rss_kib": 112960,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      }
+    ]
+  },
+  "visit_twenty_seconds": 11.1408925,
+  "after_visit": {
+    "total_rss_kib": 3623072,
+    "processes": [
+      {
+        "pid": 644,
+        "ppid": 1,
+        "rss_kib": 218944,
+        "command": "/Users/admin/c11-sandbox/apps/md359-reader/c11 DEV md-359.app/Contents/MacOS/c11"
+      },
+      {
+        "pid": 668,
+        "ppid": 1,
+        "rss_kib": 88736,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+      },
+      {
+        "pid": 670,
+        "ppid": 1,
+        "rss_kib": 28576,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+      },
+      {
+        "pid": 671,
+        "ppid": 1,
+        "rss_kib": 111616,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 698,
+        "ppid": 1,
+        "rss_kib": 70432,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1174,
+        "ppid": 1,
+        "rss_kib": 155808,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1180,
+        "ppid": 1,
+        "rss_kib": 149872,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1181,
+        "ppid": 1,
+        "rss_kib": 157456,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1186,
+        "ppid": 1,
+        "rss_kib": 152704,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1187,
+        "ppid": 1,
+        "rss_kib": 150448,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1190,
+        "ppid": 1,
+        "rss_kib": 167264,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1196,
+        "ppid": 1,
+        "rss_kib": 150736,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1202,
+        "ppid": 1,
+        "rss_kib": 158208,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1209,
+        "ppid": 1,
+        "rss_kib": 153936,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1210,
+        "ppid": 1,
+        "rss_kib": 164816,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1219,
+        "ppid": 1,
+        "rss_kib": 187936,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1226,
+        "ppid": 1,
+        "rss_kib": 220912,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1229,
+        "ppid": 1,
+        "rss_kib": 226976,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1232,
+        "ppid": 1,
+        "rss_kib": 222672,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1241,
+        "ppid": 1,
+        "rss_kib": 210768,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1242,
+        "ppid": 1,
+        "rss_kib": 203680,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1251,
+        "ppid": 1,
+        "rss_kib": 162032,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1252,
+        "ppid": 1,
+        "rss_kib": 38848,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1261,
+        "ppid": 1,
+        "rss_kib": 37232,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      },
+      {
+        "pid": 1262,
+        "ppid": 1,
+        "rss_kib": 32464,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+      }
+    ]
+  }
+}

@@ -1,0 +1,485 @@
+{
+  "browser": "151.0.7922.34",
+  "matrices": [
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/agent-browser-port-spec.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-mailbox-guide.md",
+      "heads": 1,
+      "figures": 6,
+      "svgs": 6,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-markdown-SKILL.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/task_01KYMTXQVWCXCF0TGN5ZWG341E.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/reader/specimen.md",
+      "heads": 1,
+      "figures": 1,
+      "svgs": 1,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/agent-browser-port-spec.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-mailbox-guide.md",
+      "heads": 1,
+      "figures": 6,
+      "svgs": 6,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-markdown-SKILL.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/task_01KYMTXQVWCXCF0TGN5ZWG341E.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/reader/specimen.md",
+      "heads": 1,
+      "figures": 1,
+      "svgs": 1,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/agent-browser-port-spec.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-mailbox-guide.md",
+      "heads": 1,
+      "figures": 6,
+      "svgs": 6,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-markdown-SKILL.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/task_01KYMTXQVWCXCF0TGN5ZWG341E.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/reader/specimen.md",
+      "heads": 1,
+      "figures": 1,
+      "svgs": 1,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/agent-browser-port-spec.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-mailbox-guide.md",
+      "heads": 1,
+      "figures": 6,
+      "svgs": 6,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-markdown-SKILL.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/task_01KYMTXQVWCXCF0TGN5ZWG341E.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 560,
+      "file": "docs/design-prototypes/markdown-viewer/reader/specimen.md",
+      "heads": 1,
+      "figures": 1,
+      "svgs": 1,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/agent-browser-port-spec.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-mailbox-guide.md",
+      "heads": 1,
+      "figures": 6,
+      "svgs": 6,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-markdown-SKILL.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/task_01KYMTXQVWCXCF0TGN5ZWG341E.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 820,
+      "file": "docs/design-prototypes/markdown-viewer/reader/specimen.md",
+      "heads": 1,
+      "figures": 1,
+      "svgs": 1,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/agent-browser-port-spec.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-mailbox-guide.md",
+      "heads": 1,
+      "figures": 6,
+      "svgs": 6,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-markdown-SKILL.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/fixtures/task_01KYMTXQVWCXCF0TGN5ZWG341E.md",
+      "heads": 1,
+      "figures": 0,
+      "svgs": 0,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/c11-messaging-primitive-design.md",
+      "heads": 1,
+      "figures": 7,
+      "svgs": 7,
+      "failed": 0,
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1200,
+      "file": "docs/design-prototypes/markdown-viewer/reader/specimen.md",
+      "heads": 1,
+      "figures": 1,
+      "svgs": 1,
+      "failed": 0,
+      "overflow": false
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "7 fixtures at 560/820/1200 px in light/dark",
+      "loads": 42
+    },
+    {
+      "name": "messaging document: all 7 diagrams, including entity-bearing sequences"
+    },
+    {
+      "name": "callouts, tasks/tree counts, math, highlighting/copy, frontmatter, responsive tables, margin/popover notes, diagram expansion"
+    },
+    {
+      "name": "literal find spans inline formatting, next/previous wrap, close clears marks"
+    },
+    {
+      "name": "reload preserves anchor, unchanged node/selection; theme/typeface/scale/outline/source preserve position at all widths"
+    },
+    {
+      "name": "async Mermaid resize above viewport and unchanged diagram identity across reload"
+    },
+    {
+      "name": "effective-width scale, invalid-setting defaults, system appearance"
+    },
+    {
+      "name": "load/settings ordering and superseded load completion"
+    },
+    {
+      "name": "hostile HTML/URLs inert; authorized local image URL policy",
+      "nativeBytes": "R2 WKURLSchemeHandler proof required"
+    },
+    {
+      "name": "link interception/native classification and in-document return pill"
+    },
+    {
+      "name": "heading slugs cannot collide with host DOM IDs; duplicate headings remain addressable"
+    },
+    {
+      "name": "malformed Mermaid produces quiet escaped-source fallback"
+    },
+    {
+      "name": "zero console errors and zero network requests"
+    },
+    {
+      "name": "prototype/bundle side-by-side screenshots at 560/1200 px in light/dark"
+    }
+  ],
+  "screenshots": [
+    "light-560-comparison.png",
+    "light-1200-comparison.png",
+    "dark-560-comparison.png",
+    "dark-1200-comparison.png"
+  ],
+  "consoleErrors": [],
+  "networkRequests": [],
+  "messages": {
+    "ready": 1,
+    "rendered": 65,
+    "state": 117
+  },
+  "result": "PASS"
+}

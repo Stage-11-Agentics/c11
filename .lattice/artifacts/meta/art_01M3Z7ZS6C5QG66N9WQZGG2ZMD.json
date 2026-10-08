@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:09Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z7ZS6C5QG66N9WQZGG2ZMD",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z7ZS6C5QG66N9WQZGG2ZMD.md",
+    "size_bytes": 3749
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-282 validation summary (batch validation, existing runtime evidence)\n\nMerged: PR #529 (squash 04458a8b0a, landing head f3192aae0a). Evidence is the owner's pre-merge tagged-build native run, the r",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

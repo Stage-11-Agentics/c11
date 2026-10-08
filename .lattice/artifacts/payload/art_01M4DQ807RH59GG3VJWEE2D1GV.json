@@ -1,0 +1,43 @@
+{
+  "pid": 593,
+  "panel": "053F6D27-4617-4726-BF84-83764F25B13A",
+  "native_events": [
+    "12:12:07.652 markdown.renderer.hidden panel=053F6D27-4617-4726-BF84-83764F25B13A line=77 offset=130.828125 width=720.0 height=601.0",
+    "12:12:08.683 markdown.renderer.ready panel=1FB0D199-AE00-478E-9473-BEE410DED002 elapsedMs=1069.928",
+    "12:12:08.734 markdown.renderer.hidden panel=1FB0D199-AE00-478E-9473-BEE410DED002 line=1 offset=-27.0 width=720.0 height=601.0",
+    "12:12:09.703 markdown.renderer.ready panel=75C4C407-79F1-41C1-96B4-B67D5FD60A53 elapsedMs=1007.796",
+    "12:12:09.760 markdown.renderer.hidden panel=75C4C407-79F1-41C1-96B4-B67D5FD60A53 line=1 offset=-27.0 width=720.0 height=601.0",
+    "12:12:10.752 markdown.renderer.ready panel=1DF34D17-4FCF-4592-A5FD-BCF92469737F elapsedMs=1035.229",
+    "12:12:10.808 markdown.renderer.hidden panel=1DF34D17-4FCF-4592-A5FD-BCF92469737F line=1 offset=-27.0 width=720.0 height=601.0",
+    "12:12:10.837 markdown.renderer.evicted panel=AAEA42E7-7E43-4BE3-9A39-C0E1AE50326B line=1 offset=-27.0 source=0 width=720.0 height=601.0",
+    "12:12:11.807 markdown.renderer.ready panel=0FE7FD27-C89D-4CD3-B30E-144D4612B5E9 elapsedMs=1044.587",
+    "12:12:11.855 markdown.renderer.hidden panel=0FE7FD27-C89D-4CD3-B30E-144D4612B5E9 line=1 offset=-27.0 width=720.0 height=601.0",
+    "12:12:11.882 markdown.renderer.evicted panel=053F6D27-4617-4726-BF84-83764F25B13A line=77 offset=130.828125 source=0 width=720.0 height=601.0",
+    "12:12:12.809 markdown.renderer.restored panel=AAEA42E7-7E43-4BE3-9A39-C0E1AE50326B line=1 offset=-27.0 width=720.0 height=601.0",
+    "12:12:12.809 markdown.renderer.ready panel=AAEA42E7-7E43-4BE3-9A39-C0E1AE50326B elapsedMs=991.316",
+    "12:12:12.856 markdown.renderer.hidden panel=AAEA42E7-7E43-4BE3-9A39-C0E1AE50326B line=1 offset=-27.0 width=720.0 height=601.0",
+    "12:12:12.878 markdown.renderer.evicted panel=1FB0D199-AE00-478E-9473-BEE410DED002 line=1 offset=-27.0 source=0 width=720.0 height=601.0",
+    "12:12:13.823 markdown.renderer.restored panel=053F6D27-4617-4726-BF84-83764F25B13A line=77 offset=130.828125 width=720.0 height=601.0",
+    "12:12:13.823 markdown.renderer.ready panel=053F6D27-4617-4726-BF84-83764F25B13A elapsedMs=996.377"
+  ],
+  "evicted": {
+    "kind": "evicted",
+    "panel": "053f6d27-4617-4726-bf84-83764f25b13a",
+    "raw": "12:12:11.882 markdown.renderer.evicted panel=053F6D27-4617-4726-BF84-83764F25B13A line=77 offset=130.828125 source=0 width=720.0 height=601.0",
+    "line": "77",
+    "offset": "130.828125",
+    "source": "0",
+    "width": "720.0",
+    "height": "601.0"
+  },
+  "ready": {
+    "kind": "ready",
+    "panel": "053f6d27-4617-4726-bf84-83764f25b13a",
+    "raw": "12:12:13.823 markdown.renderer.ready panel=053F6D27-4617-4726-BF84-83764F25B13A elapsedMs=996.377",
+    "elapsedMs": "996.377"
+  },
+  "screenshots": [
+    "repair-before-eviction.png",
+    "repair-after-eviction.png"
+  ]
+}

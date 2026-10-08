@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:27:34Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8WQNJHPQH5BHKVB1C678N",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8WQNJHPQH5BHKVB1C678N.png",
+    "size_bytes": 871018
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged build menu exposes System, Light, Dark and Theme default, Serif, Sans, Mono.",
+  "tags": [],
+  "title": "Theme and typeface menu choices",
+  "token_usage": null,
+  "type": "file"
+}

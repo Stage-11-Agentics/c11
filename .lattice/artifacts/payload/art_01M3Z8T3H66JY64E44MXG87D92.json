@@ -1,0 +1,33 @@
+{
+  "url": "http://127.0.0.1:19288/c11-288",
+  "historySHA256": "78969996cadabead0281cb25a6a8e1becbb913005fead34b17d114b5092f3fde",
+  "schema": {
+    "history_items": [
+      "id",
+      "url",
+      "domain_expansion",
+      "visit_count",
+      "daily_visit_counts",
+      "weekly_visit_counts",
+      "autocomplete_triggers",
+      "should_recompute_derived_visit_counts",
+      "visit_count_score",
+      "status_code"
+    ],
+    "history_visits": [
+      "id",
+      "history_item",
+      "visit_time",
+      "title",
+      "load_successful",
+      "http_non_get",
+      "synthesized",
+      "redirect_source",
+      "redirect_destination",
+      "origin",
+      "generation",
+      "attributes",
+      "score"
+    ]
+  }
+}

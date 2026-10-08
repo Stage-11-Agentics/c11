@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:49:51Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z62T9N9WFNM61JN1NT59N9",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z62T9N9WFNM61JN1NT59N9.json",
+    "size_bytes": 680664
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Window2 ABBA raw-score: INCOMPLETE, 800 trials, churn rate9.021Hz",
+  "token_usage": null,
+  "type": "file"
+}

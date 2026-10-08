@@ -1,0 +1,2529 @@
+{
+  "brand": {
+    "palette": {
+      "black": "#000000",
+      "white": "#e8e8e8",
+      "paper_fill": "#E8E2D0",
+      "gold": "#c9a84c",
+      "surface": "#0a0a0a",
+      "dim": "#555555",
+      "gold_faint": "#c9a84c33",
+      "rule": "#333333"
+    },
+    "channel": "dev",
+    "bundle": {
+      "identifier": "com.stage11.c11.debug.md.359",
+      "build": "132",
+      "icon_name": "AppIcon-Debug",
+      "name": "c11 DEV md-359",
+      "short_version": "1.0.0",
+      "display_name": "c11 DEV md-359"
+    },
+    "font_family": "JetBrains Mono",
+    "accent_hex": "#c9a84c"
+  },
+  "document": "/tmp/c11-359-messaging.md",
+  "panels": 20,
+  "socket": "/tmp/c11-sandbox-md359-bounded.sock",
+  "app_pid": 645,
+  "metric": "both",
+  "metric_definition": "sum of per-process auxiliary.phys_footprint bytes from footprint JSON for exact c11 listener and its responsible WebKit processes; RSS retained only as a separate optional metric",
+  "host_context": {
+    "hostname": "Atins-Mac-Studio.local",
+    "load_average": [
+      3.61669921875,
+      4.126953125,
+      5.1552734375
+    ]
+  },
+  "raw_reports_directory": "/Volumes/My Shared Files/out/bounded-physical-memory-raw",
+  "renderer_events_path": "/tmp/cmux-debug-com.stage11.c11.debug.md.359.log",
+  "uptime": "9:57  up 2 mins, 3 users, load averages: 19.61 14.58 6.35",
+  "before": {
+    "guest_load_average": [
+      19.61474609375,
+      14.58056640625,
+      6.3505859375
+    ],
+    "guest_uptime": "9:57  up 2 mins, 3 users, load averages: 19.61 14.58 6.35",
+    "processes": [
+      {
+        "pid": 645,
+        "ppid": 1,
+        "rss_kib": 208768,
+        "command": "/Users/admin/c11-sandbox/apps/md359-bounded/c11 DEV md-359.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 119049600,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-645.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-645.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 129977728,
+          "phys_footprint": 119049600
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 685,
+        "ppid": 1,
+        "rss_kib": 92672,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 15010176,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-685.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-685.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 34801792,
+          "phys_footprint": 15010176
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 695,
+        "ppid": 1,
+        "rss_kib": 37024,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12191744,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-695.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-695.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 18941952,
+          "phys_footprint": 12191744
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 696,
+        "ppid": 1,
+        "rss_kib": 133456,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 95062592,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-696.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-696.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 105663040,
+          "phys_footprint": 95062592
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 697,
+        "ppid": 1,
+        "rss_kib": 77040,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 53578240,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-697.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/before-697.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 84429312,
+          "phys_footprint": 53578240
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [],
+    "gone_processes": [],
+    "measurement_seconds": 0.33140791599999997,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 294892352,
+    "total_rss_kib": 548960
+  },
+  "create_twenty_seconds": 1.497317834,
+  "never_shown": {
+    "guest_load_average": [
+      19.61474609375,
+      14.58056640625,
+      6.3505859375
+    ],
+    "guest_uptime": "9:57  up 2 mins, 3 users, load averages: 19.61 14.58 6.35",
+    "processes": [
+      {
+        "pid": 645,
+        "ppid": 1,
+        "rss_kib": 210112,
+        "command": "/Users/admin/c11-sandbox/apps/md359-bounded/c11 DEV md-359.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 120147328,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-645.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-645.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 129977728,
+          "phys_footprint": 120147328
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 685,
+        "ppid": 1,
+        "rss_kib": 92672,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 15665536,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-685.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-685.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 34801792,
+          "phys_footprint": 15665536
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 695,
+        "ppid": 1,
+        "rss_kib": 37024,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12191744,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-695.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-695.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 18941952,
+          "phys_footprint": 12191744
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 696,
+        "ppid": 1,
+        "rss_kib": 133456,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 95078976,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-696.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-696.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 105663040,
+          "phys_footprint": 95078976
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 697,
+        "ppid": 1,
+        "rss_kib": 77040,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 53578240,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-697.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/never-shown-697.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 84429312,
+          "phys_footprint": 53578240
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [],
+    "gone_processes": [],
+    "measurement_seconds": 0.34496283299999986,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 296661824,
+    "total_rss_kib": 550304
+  },
+  "panel_ids": [
+    "9955CDF4-C613-4CA2-91DA-E8760E3B5850",
+    "3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C",
+    "013BB029-2939-44A9-B9D3-1C14D546550D",
+    "205D4458-EE5F-4117-9B7E-1DF080F4A951",
+    "F5B9DAB6-CE8A-437B-A2FC-45793DEA956F",
+    "0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE",
+    "A2D28D19-B45B-4279-808D-8F43EBA97CF2",
+    "3D045335-9B60-471A-9913-6D78C4906F64",
+    "CEEDC43C-5BC6-43B1-BD14-F4BE7AFED918",
+    "DE35BF93-85E2-4EE8-A325-83AD3A8595A4",
+    "56DC4ED2-774D-4F17-8815-7E29805DD408",
+    "5EE19675-DAA2-4AAE-8560-E48DE345B239",
+    "05A870F5-8C1E-4564-8114-37A947F7E07B",
+    "BB7D954F-7FEB-4541-B67D-9F8E78A3A1FD",
+    "0EF376D6-7CF4-4C2C-92AA-70EF8E6AE0C9",
+    "9A9EB7C7-301C-4ECA-B2C4-49A302B01388",
+    "C5A9D2C1-2D50-4157-A76C-821A0F6B3A51",
+    "A901A9CA-2CB6-4BD5-BF45-2EAD09304E6E",
+    "4AA96FC8-6AFA-4AC4-9276-ECBF838E6FA3",
+    "A39A43E7-8030-43A9-93FA-C40E5DEB0D10"
+  ],
+  "visit_twenty_seconds": 24.156753833,
+  "after_visit": {
+    "guest_load_average": [
+      13.7578125,
+      13.6025390625,
+      6.23486328125
+    ],
+    "guest_uptime": "9:57  up 2 mins, 3 users, load averages: 13.76 13.60 6.23",
+    "processes": [
+      {
+        "pid": 645,
+        "ppid": 1,
+        "rss_kib": 219904,
+        "command": "/Users/admin/c11-sandbox/apps/md359-bounded/c11 DEV md-359.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 122604928,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-645.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-645.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 129977728,
+          "phys_footprint": 122604928
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 685,
+        "ppid": 1,
+        "rss_kib": 101488,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 18844224,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-685.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-685.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 34801792,
+          "phys_footprint": 18844224
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 695,
+        "ppid": 1,
+        "rss_kib": 28992,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12109824,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-695.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-695.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 18941952,
+          "phys_footprint": 12109824
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 696,
+        "ppid": 1,
+        "rss_kib": 122896,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 95373888,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-696.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-696.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 105663040,
+          "phys_footprint": 95373888
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 697,
+        "ppid": 1,
+        "rss_kib": 76288,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 53496320,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-697.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-697.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 84429312,
+          "phys_footprint": 53496320
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2053,
+        "ppid": 1,
+        "rss_kib": 228880,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 135777088,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2053.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2053.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 180636480,
+          "phys_footprint": 135777088
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2062,
+        "ppid": 1,
+        "rss_kib": 233552,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 141839104,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2062.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2062.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 183241472,
+          "phys_footprint": 141839104
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2071,
+        "ppid": 1,
+        "rss_kib": 229600,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 137464512,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2071.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2071.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 182569664,
+          "phys_footprint": 137464512
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2084,
+        "ppid": 1,
+        "rss_kib": 228592,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 136629056,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2084.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2084.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 181308224,
+          "phys_footprint": 136629056
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2093,
+        "ppid": 1,
+        "rss_kib": 229136,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 152226688,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2093.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-visit-2093.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 181209984,
+          "phys_footprint": 152226688
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [],
+    "gone_processes": [],
+    "measurement_seconds": 0.6294390830000012,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 1006365632,
+    "total_rss_kib": 1699328
+  },
+  "reshow": {
+    "target_panel": "9955CDF4-C613-4CA2-91DA-E8760E3B5850",
+    "other_panels": [
+      "3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C",
+      "013BB029-2939-44A9-B9D3-1C14D546550D",
+      "205D4458-EE5F-4117-9B7E-1DF080F4A951",
+      "F5B9DAB6-CE8A-437B-A2FC-45793DEA956F",
+      "0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE"
+    ],
+    "samples": [
+      {
+        "iteration": 1,
+        "elapsed_ms": 1193.298,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:57:42.904 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1193.298",
+          "elapsedMs": "1193.298"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:57:47.905 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 2,
+        "elapsed_ms": 1283.734,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:57:50.370 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1283.734",
+          "elapsedMs": "1283.734"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:57:55.937 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 3,
+        "elapsed_ms": 1404.292,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:57:58.691 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1404.292",
+          "elapsedMs": "1404.292"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:05.760 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 4,
+        "elapsed_ms": 1362.696,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:08.740 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1362.696",
+          "elapsedMs": "1362.696"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:15.147 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 5,
+        "elapsed_ms": 3348.723,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:19.771 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=3348.723",
+          "elapsedMs": "3348.723"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:25.650 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 6,
+        "elapsed_ms": 1228.455,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:28.064 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1228.455",
+          "elapsedMs": "1228.455"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:33.200 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 7,
+        "elapsed_ms": 1233.659,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:35.669 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1233.659",
+          "elapsedMs": "1233.659"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:40.789 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 8,
+        "elapsed_ms": 1156.595,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:43.085 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1156.595",
+          "elapsedMs": "1156.595"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:47.942 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 9,
+        "elapsed_ms": 1214.725,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:50.314 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1214.725",
+          "elapsedMs": "1214.725"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:55.169 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      },
+      {
+        "iteration": 10,
+        "elapsed_ms": 1187.172,
+        "ready": {
+          "kind": "ready",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:58:57.553 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1187.172",
+          "elapsedMs": "1187.172"
+        },
+        "evicted": {
+          "kind": "evicted",
+          "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+          "raw": "09:59:02.385 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+          "line": "1",
+          "source": "0"
+        }
+      }
+    ],
+    "definition": "native creation-to-restored-settled elapsedMs, not RPC overhead",
+    "median_elapsed_ms": 1231.057
+  },
+  "after_reshow": {
+    "guest_load_average": [
+      7.625,
+      11.72119140625,
+      6.212890625
+    ],
+    "guest_uptime": "9:59  up 4 mins, 3 users, load averages: 7.62 11.72 6.21",
+    "processes": [
+      {
+        "pid": 645,
+        "ppid": 1,
+        "rss_kib": 221088,
+        "command": "/Users/admin/c11-sandbox/apps/md359-bounded/c11 DEV md-359.app/Contents/MacOS/c11",
+        "attribution": "exact sandbox socket listener",
+        "physical_footprint_bytes": 122899904,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-645.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-645.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 129977728,
+          "phys_footprint": 122899904
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 685,
+        "ppid": 1,
+        "rss_kib": 89360,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 18254272,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-685.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-685.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 34801792,
+          "phys_footprint": 18254272
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 695,
+        "ppid": 1,
+        "rss_kib": 29008,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 12093440,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-695.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-695.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 18941952,
+          "phys_footprint": 12093440
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 696,
+        "ppid": 1,
+        "rss_kib": 114368,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 74828352,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-696.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-696.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 106039872,
+          "phys_footprint": 74828352
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 697,
+        "ppid": 1,
+        "rss_kib": 76160,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 53496320,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-697.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-697.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 84429312,
+          "phys_footprint": 53496320
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2913,
+        "ppid": 1,
+        "rss_kib": 233600,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 144788224,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2913.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2913.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 182160128,
+          "phys_footprint": 144788224
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2930,
+        "ppid": 1,
+        "rss_kib": 233056,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 142723776,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2930.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2930.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 180554432,
+          "phys_footprint": 142723776
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2943,
+        "ppid": 1,
+        "rss_kib": 236192,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 146934528,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2943.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2943.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 186764032,
+          "phys_footprint": 146934528
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2956,
+        "ppid": 1,
+        "rss_kib": 229264,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 138169024,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2956.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2956.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 182012608,
+          "phys_footprint": 138169024
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      },
+      {
+        "pid": 2967,
+        "ppid": 1,
+        "rss_kib": 228800,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "attribution": "WebKit responsible PID matches sandbox listener",
+        "physical_footprint_bytes": 173771584,
+        "footprint_json_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2967.footprint.json",
+        "footprint_text_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2967.footprint.txt",
+        "footprint_auxiliary": {
+          "phys_footprint_peak": 180964160,
+          "phys_footprint": 173771584
+        },
+        "footprint_errors": [],
+        "footprint_warnings": []
+      }
+    ],
+    "excluded_webkit_processes": [
+      {
+        "pid": 2288,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "responsible_pid": 271,
+        "procinfo_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2288.procinfo.txt"
+      },
+      {
+        "pid": 2298,
+        "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "responsible_pid": 524,
+        "procinfo_path": "/Volumes/My Shared Files/out/bounded-physical-memory-raw/after-reshow-2298.procinfo.txt"
+      }
+    ],
+    "gone_processes": [],
+    "measurement_seconds": 0.6954280000000068,
+    "sample_note": "process physical ledgers sampled sequentially; not an atomic system snapshot",
+    "total_physical_footprint_bytes": 1027959424,
+    "total_rss_kib": 1690896
+  },
+  "renderer_events": [
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:18.240 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1285.038",
+      "elapsedMs": "1285.038"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:57:19.454 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1188.258",
+      "elapsedMs": "1188.258"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:57:20.641 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1170.517",
+      "elapsedMs": "1170.517"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:57:21.821 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1164.112",
+      "elapsedMs": "1164.112"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:57:23.047 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1208.443",
+      "elapsedMs": "1208.443"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:23.146 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:57:24.237 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1172.028",
+      "elapsedMs": "1172.028"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:57:24.344 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "a2d28d19-b45b-4279-808d-8f43eba97cf2",
+      "raw": "09:57:25.443 markdown.renderer.ready panel=A2D28D19-B45B-4279-808D-8F43EBA97CF2 elapsedMs=1180.284",
+      "elapsedMs": "1180.284"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:57:25.532 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3d045335-9b60-471a-9913-6d78c4906f64",
+      "raw": "09:57:26.643 markdown.renderer.ready panel=3D045335-9B60-471A-9913-6D78C4906F64 elapsedMs=1185.860",
+      "elapsedMs": "1185.860"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:57:26.740 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "ceedc43c-5bc6-43b1-bd14-f4be7afed918",
+      "raw": "09:57:27.817 markdown.renderer.ready panel=CEEDC43C-5BC6-43B1-BD14-F4BE7AFED918 elapsedMs=1156.997",
+      "elapsedMs": "1156.997"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:57:27.898 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "de35bf93-85e2-4ee8-a325-83ad3a8595a4",
+      "raw": "09:57:29.027 markdown.renderer.ready panel=DE35BF93-85E2-4EE8-A325-83AD3A8595A4 elapsedMs=1194.930",
+      "elapsedMs": "1194.930"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:57:29.132 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "56dc4ed2-774d-4f17-8815-7e29805dd408",
+      "raw": "09:57:30.193 markdown.renderer.ready panel=56DC4ED2-774D-4F17-8815-7E29805DD408 elapsedMs=1146.335",
+      "elapsedMs": "1146.335"
+    },
+    {
+      "kind": "evicted",
+      "panel": "a2d28d19-b45b-4279-808d-8f43eba97cf2",
+      "raw": "09:57:30.290 markdown.renderer.evicted panel=A2D28D19-B45B-4279-808D-8F43EBA97CF2 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "5ee19675-daa2-4aae-8560-e48de345b239",
+      "raw": "09:57:31.378 markdown.renderer.ready panel=5EE19675-DAA2-4AAE-8560-E48DE345B239 elapsedMs=1167.956",
+      "elapsedMs": "1167.956"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3d045335-9b60-471a-9913-6d78c4906f64",
+      "raw": "09:57:31.474 markdown.renderer.evicted panel=3D045335-9B60-471A-9913-6D78C4906F64 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "05a870f5-8c1e-4564-8114-37a947f7e07b",
+      "raw": "09:57:32.559 markdown.renderer.ready panel=05A870F5-8C1E-4564-8114-37A947F7E07B elapsedMs=1166.939",
+      "elapsedMs": "1166.939"
+    },
+    {
+      "kind": "evicted",
+      "panel": "ceedc43c-5bc6-43b1-bd14-f4be7afed918",
+      "raw": "09:57:32.626 markdown.renderer.evicted panel=CEEDC43C-5BC6-43B1-BD14-F4BE7AFED918 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "bb7d954f-7feb-4541-b67d-9f8e78a3a1fd",
+      "raw": "09:57:33.748 markdown.renderer.ready panel=BB7D954F-7FEB-4541-B67D-9F8E78A3A1FD elapsedMs=1168.314",
+      "elapsedMs": "1168.314"
+    },
+    {
+      "kind": "evicted",
+      "panel": "de35bf93-85e2-4ee8-a325-83ad3a8595a4",
+      "raw": "09:57:33.846 markdown.renderer.evicted panel=DE35BF93-85E2-4EE8-A325-83AD3A8595A4 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0ef376d6-7cf4-4c2c-92aa-70ef8e6ae0c9",
+      "raw": "09:57:34.959 markdown.renderer.ready panel=0EF376D6-7CF4-4C2C-92AA-70EF8E6AE0C9 elapsedMs=1194.346",
+      "elapsedMs": "1194.346"
+    },
+    {
+      "kind": "evicted",
+      "panel": "56dc4ed2-774d-4f17-8815-7e29805dd408",
+      "raw": "09:57:35.023 markdown.renderer.evicted panel=56DC4ED2-774D-4F17-8815-7E29805DD408 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9a9eb7c7-301c-4eca-b2c4-49a302b01388",
+      "raw": "09:57:36.134 markdown.renderer.ready panel=9A9EB7C7-301C-4ECA-B2C4-49A302B01388 elapsedMs=1148.381",
+      "elapsedMs": "1148.381"
+    },
+    {
+      "kind": "evicted",
+      "panel": "5ee19675-daa2-4aae-8560-e48de345b239",
+      "raw": "09:57:36.199 markdown.renderer.evicted panel=5EE19675-DAA2-4AAE-8560-E48DE345B239 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "c5a9d2c1-2d50-4157-a76c-821a0f6b3a51",
+      "raw": "09:57:37.336 markdown.renderer.ready panel=C5A9D2C1-2D50-4157-A76C-821A0F6B3A51 elapsedMs=1182.324",
+      "elapsedMs": "1182.324"
+    },
+    {
+      "kind": "evicted",
+      "panel": "05a870f5-8c1e-4564-8114-37a947f7e07b",
+      "raw": "09:57:37.435 markdown.renderer.evicted panel=05A870F5-8C1E-4564-8114-37A947F7E07B line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "a901a9ca-2cb6-4bd5-bf45-2ead09304e6e",
+      "raw": "09:57:38.569 markdown.renderer.ready panel=A901A9CA-2CB6-4BD5-BF45-2EAD09304E6E elapsedMs=1218.026",
+      "elapsedMs": "1218.026"
+    },
+    {
+      "kind": "evicted",
+      "panel": "bb7d954f-7feb-4541-b67d-9f8e78a3a1fd",
+      "raw": "09:57:38.641 markdown.renderer.evicted panel=BB7D954F-7FEB-4541-B67D-9F8E78A3A1FD line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "4aa96fc8-6afa-4ac4-9276-ecbf838e6fa3",
+      "raw": "09:57:39.879 markdown.renderer.ready panel=4AA96FC8-6AFA-4AC4-9276-ECBF838E6FA3 elapsedMs=1285.577",
+      "elapsedMs": "1285.577"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0ef376d6-7cf4-4c2c-92aa-70ef8e6ae0c9",
+      "raw": "09:57:39.974 markdown.renderer.evicted panel=0EF376D6-7CF4-4C2C-92AA-70EF8E6AE0C9 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "a39a43e7-8030-43a9-93fa-c40e5deb0d10",
+      "raw": "09:57:41.073 markdown.renderer.ready panel=A39A43E7-8030-43A9-93FA-C40E5DEB0D10 elapsedMs=1171.814",
+      "elapsedMs": "1171.814"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9a9eb7c7-301c-4eca-b2c4-49a302b01388",
+      "raw": "09:57:41.790 markdown.renderer.evicted panel=9A9EB7C7-301C-4ECA-B2C4-49A302B01388 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:42.904 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1193.298",
+      "elapsedMs": "1193.298"
+    },
+    {
+      "kind": "evicted",
+      "panel": "c5a9d2c1-2d50-4157-a76c-821a0f6b3a51",
+      "raw": "09:57:42.991 markdown.renderer.evicted panel=C5A9D2C1-2D50-4157-A76C-821A0F6B3A51 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:57:44.163 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1241.109",
+      "elapsedMs": "1241.109"
+    },
+    {
+      "kind": "evicted",
+      "panel": "a901a9ca-2cb6-4bd5-bf45-2ead09304e6e",
+      "raw": "09:57:44.253 markdown.renderer.evicted panel=A901A9CA-2CB6-4BD5-BF45-2EAD09304E6E line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:57:45.349 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1177.096",
+      "elapsedMs": "1177.096"
+    },
+    {
+      "kind": "evicted",
+      "panel": "4aa96fc8-6afa-4ac4-9276-ecbf838e6fa3",
+      "raw": "09:57:45.433 markdown.renderer.evicted panel=4AA96FC8-6AFA-4AC4-9276-ECBF838E6FA3 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:57:46.578 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1215.158",
+      "elapsedMs": "1215.158"
+    },
+    {
+      "kind": "evicted",
+      "panel": "a39a43e7-8030-43a9-93fa-c40e5deb0d10",
+      "raw": "09:57:46.639 markdown.renderer.evicted panel=A39A43E7-8030-43A9-93FA-C40E5DEB0D10 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:57:47.812 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1214.235",
+      "elapsedMs": "1214.235"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:47.905 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:57:49.076 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1248.823",
+      "elapsedMs": "1248.823"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:57:49.175 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:50.370 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1283.734",
+      "elapsedMs": "1283.734"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:57:50.451 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:57:51.623 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1237.693",
+      "elapsedMs": "1237.693"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:57:51.691 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:57:52.984 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1342.365",
+      "elapsedMs": "1342.365"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:57:53.056 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:57:54.316 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1305.592",
+      "elapsedMs": "1305.592"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:57:54.425 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:57:55.758 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1422.599",
+      "elapsedMs": "1422.599"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:55.937 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:57:57.273 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1494.876",
+      "elapsedMs": "1494.876"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:57:57.369 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:57:58.691 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1404.292",
+      "elapsedMs": "1404.292"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:57:58.795 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:00.392 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1691.717",
+      "elapsedMs": "1691.717"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:00.557 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:02.042 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1616.223",
+      "elapsedMs": "1616.223"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:02.143 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:03.534 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1480.656",
+      "elapsedMs": "1480.656"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:03.674 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:05.566 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=2013.172",
+      "elapsedMs": "2013.172"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:05.760 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:07.362 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1760.400",
+      "elapsedMs": "1760.400"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:07.436 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:08.740 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1362.696",
+      "elapsedMs": "1362.696"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:08.851 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:10.091 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1332.616",
+      "elapsedMs": "1332.616"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:10.184 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:12.093 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1986.124",
+      "elapsedMs": "1986.124"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:12.266 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:13.690 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1551.930",
+      "elapsedMs": "1551.930"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:13.765 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:15.057 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1348.698",
+      "elapsedMs": "1348.698"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:15.147 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:16.403 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1337.890",
+      "elapsedMs": "1337.890"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:16.476 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:19.771 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=3348.723",
+      "elapsedMs": "3348.723"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:19.853 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:21.354 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1562.129",
+      "elapsedMs": "1562.129"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:21.474 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:22.923 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1540.643",
+      "elapsedMs": "1540.643"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:23.045 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:24.252 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1305.195",
+      "elapsedMs": "1305.195"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:24.338 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:25.556 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1288.229",
+      "elapsedMs": "1288.229"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:25.650 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:26.826 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1261.040",
+      "elapsedMs": "1261.040"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:26.902 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:28.064 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1228.455",
+      "elapsedMs": "1228.455"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:28.127 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:29.342 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1257.560",
+      "elapsedMs": "1257.560"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:29.440 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:30.577 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1217.858",
+      "elapsedMs": "1217.858"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:30.641 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:31.856 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1256.532",
+      "elapsedMs": "1256.532"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:31.941 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:33.127 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1257.326",
+      "elapsedMs": "1257.326"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:33.200 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:34.419 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1268.926",
+      "elapsedMs": "1268.926"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:34.502 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:35.669 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1233.659",
+      "elapsedMs": "1233.659"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:35.732 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:37.012 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1328.752",
+      "elapsedMs": "1328.752"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:37.123 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:38.284 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1248.821",
+      "elapsedMs": "1248.821"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:38.353 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:39.510 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1202.573",
+      "elapsedMs": "1202.573"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:39.600 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:40.703 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1178.466",
+      "elapsedMs": "1178.466"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:40.789 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:41.903 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1181.229",
+      "elapsedMs": "1181.229"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:41.999 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:43.085 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1156.595",
+      "elapsedMs": "1156.595"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:43.160 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:44.300 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1201.650",
+      "elapsedMs": "1201.650"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:44.374 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:45.460 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1151.115",
+      "elapsedMs": "1151.115"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:45.539 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:46.681 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1206.633",
+      "elapsedMs": "1206.633"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:46.763 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:47.862 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1169.224",
+      "elapsedMs": "1169.224"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:47.942 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:49.075 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1198.124",
+      "elapsedMs": "1198.124"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:49.150 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:50.314 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1214.725",
+      "elapsedMs": "1214.725"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:50.379 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:51.501 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1164.816",
+      "elapsedMs": "1164.816"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:51.579 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:52.713 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1198.155",
+      "elapsedMs": "1198.155"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:52.773 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:53.929 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1193.330",
+      "elapsedMs": "1193.330"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:54.003 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:58:55.106 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1169.345",
+      "elapsedMs": "1169.345"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:55.169 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:58:56.338 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1211.114",
+      "elapsedMs": "1211.114"
+    },
+    {
+      "kind": "evicted",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:56.406 markdown.renderer.evicted panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:58:57.553 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1187.172",
+      "elapsedMs": "1187.172"
+    },
+    {
+      "kind": "evicted",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:57.644 markdown.renderer.evicted panel=013BB029-2939-44A9-B9D3-1C14D546550D line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "3f3f73a6-9f2b-45f4-aa65-a4bf94f4cb3c",
+      "raw": "09:58:58.754 markdown.renderer.ready panel=3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C elapsedMs=1190.485",
+      "elapsedMs": "1190.485"
+    },
+    {
+      "kind": "evicted",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:58:58.828 markdown.renderer.evicted panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "013bb029-2939-44a9-b9d3-1c14d546550d",
+      "raw": "09:58:59.943 markdown.renderer.ready panel=013BB029-2939-44A9-B9D3-1C14D546550D elapsedMs=1180.576",
+      "elapsedMs": "1180.576"
+    },
+    {
+      "kind": "evicted",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:59:00.016 markdown.renderer.evicted panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "205d4458-ee5f-4117-9b7e-1df080f4a951",
+      "raw": "09:59:01.103 markdown.renderer.ready panel=205D4458-EE5F-4117-9B7E-1DF080F4A951 elapsedMs=1151.641",
+      "elapsedMs": "1151.641"
+    },
+    {
+      "kind": "evicted",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:59:01.181 markdown.renderer.evicted panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "f5b9dab6-ce8a-437b-a2fc-45793dea956f",
+      "raw": "09:59:02.322 markdown.renderer.ready panel=F5B9DAB6-CE8A-437B-A2FC-45793DEA956F elapsedMs=1205.504",
+      "elapsedMs": "1205.504"
+    },
+    {
+      "kind": "evicted",
+      "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+      "raw": "09:59:02.385 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=1 source=0",
+      "line": "1",
+      "source": "0"
+    },
+    {
+      "kind": "ready",
+      "panel": "0a365f11-1d5b-45e8-9e5a-7aeb9a3ea5de",
+      "raw": "09:59:03.506 markdown.renderer.ready panel=0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE elapsedMs=1159.963",
+      "elapsedMs": "1159.963"
+    }
+  ],
+  "tree": {
+    "active": {
+      "area_ref": "area:2",
+      "panel_type": "markdown",
+      "panel_ref": "panel:11",
+      "window_ref": "window:1",
+      "workspace_ref": "workspace:2",
+      "panel_id": "0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE",
+      "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+      "workspace_id": "5C6ED23E-43B2-4723-8107-9406DD0ED68F",
+      "window_id": "ADDC6903-67A1-4131-A39F-DBF160C5B2DC",
+      "is_browser_panel": false,
+      "root_directory": null
+    },
+    "caller": null,
+    "scope": "workspace",
+    "windows": [
+      {
+        "selected_workspace_ref": "workspace:2",
+        "index": 0,
+        "workspace_groups": [],
+        "selected_workspace_id": "5C6ED23E-43B2-4723-8107-9406DD0ED68F",
+        "ref": "window:1",
+        "visible": true,
+        "id": "ADDC6903-67A1-4131-A39F-DBF160C5B2DC",
+        "workspace_count": 1,
+        "key": false,
+        "workspaces": [
+          {
+            "areas": [
+              {
+                "focused": true,
+                "panels": [
+                  {
+                    "id": "25761F7E-4A31-46EB-94A4-B0BDFCACB109",
+                    "index_in_area": 0,
+                    "index": 0,
+                    "selected": false,
+                    "type": "terminal",
+                    "last_seen_at": null,
+                    "being_seen": false,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "tty": "ttys000",
+                    "area_ref": "area:2",
+                    "ref": "panel:2",
+                    "title": "~",
+                    "prompt_cache": null,
+                    "url": null,
+                    "selected_in_area": false,
+                    "focused": false
+                  },
+                  {
+                    "title": "c11-359-messaging.md",
+                    "id": "A39A43E7-8030-43A9-93FA-C40E5DEB0D10",
+                    "index": 1,
+                    "type": "markdown",
+                    "prompt_cache": null,
+                    "url": null,
+                    "focused": false,
+                    "last_seen_at": null,
+                    "ref": "panel:25",
+                    "being_seen": false,
+                    "tty": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "selected": false,
+                    "area_ref": "area:2",
+                    "index_in_area": 1,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false
+                  },
+                  {
+                    "being_seen": false,
+                    "title": "c11-359-messaging.md",
+                    "type": "markdown",
+                    "selected": false,
+                    "id": "4AA96FC8-6AFA-4AC4-9276-ECBF838E6FA3",
+                    "index_in_area": 2,
+                    "ref": "panel:24",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "area_ref": "area:2",
+                    "tty": null,
+                    "url": null,
+                    "last_seen_at": null,
+                    "prompt_cache": null,
+                    "index": 2,
+                    "focused": false,
+                    "selected_in_area": false
+                  },
+                  {
+                    "being_seen": false,
+                    "selected": false,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "ref": "panel:23",
+                    "index_in_area": 3,
+                    "index": 3,
+                    "title": "c11-359-messaging.md",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "id": "A901A9CA-2CB6-4BD5-BF45-2EAD09304E6E",
+                    "last_seen_at": null,
+                    "area_ref": "area:2",
+                    "type": "markdown",
+                    "selected_in_area": false,
+                    "tty": null,
+                    "focused": false,
+                    "prompt_cache": null,
+                    "url": null
+                  },
+                  {
+                    "url": null,
+                    "prompt_cache": null,
+                    "title": "c11-359-messaging.md",
+                    "being_seen": false,
+                    "last_seen_at": null,
+                    "type": "markdown",
+                    "id": "C5A9D2C1-2D50-4157-A76C-821A0F6B3A51",
+                    "index": 4,
+                    "tty": null,
+                    "ref": "panel:22",
+                    "area_ref": "area:2",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "index_in_area": 4,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "selected": false,
+                    "focused": false,
+                    "selected_in_area": false
+                  },
+                  {
+                    "index_in_area": 5,
+                    "selected": false,
+                    "title": "c11-359-messaging.md",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false,
+                    "ref": "panel:21",
+                    "id": "9A9EB7C7-301C-4ECA-B2C4-49A302B01388",
+                    "url": null,
+                    "tty": null,
+                    "focused": false,
+                    "last_seen_at": null,
+                    "index": 5,
+                    "area_ref": "area:2",
+                    "prompt_cache": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "type": "markdown",
+                    "being_seen": false
+                  },
+                  {
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "title": "c11-359-messaging.md",
+                    "prompt_cache": null,
+                    "last_seen_at": null,
+                    "index": 6,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_ref": "area:2",
+                    "type": "markdown",
+                    "ref": "panel:20",
+                    "url": null,
+                    "selected": false,
+                    "being_seen": false,
+                    "tty": null,
+                    "index_in_area": 6,
+                    "focused": false,
+                    "selected_in_area": false,
+                    "id": "0EF376D6-7CF4-4C2C-92AA-70EF8E6AE0C9"
+                  },
+                  {
+                    "title": "c11-359-messaging.md",
+                    "ref": "panel:19",
+                    "id": "BB7D954F-7FEB-4541-B67D-9F8E78A3A1FD",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "focused": false,
+                    "selected": false,
+                    "being_seen": false,
+                    "selected_in_area": false,
+                    "index": 7,
+                    "prompt_cache": null,
+                    "last_seen_at": null,
+                    "index_in_area": 7,
+                    "type": "markdown",
+                    "url": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "tty": null,
+                    "area_ref": "area:2"
+                  },
+                  {
+                    "being_seen": false,
+                    "ref": "panel:18",
+                    "index": 8,
+                    "index_in_area": 8,
+                    "last_seen_at": null,
+                    "type": "markdown",
+                    "selected": false,
+                    "id": "05A870F5-8C1E-4564-8114-37A947F7E07B",
+                    "tty": null,
+                    "focused": false,
+                    "url": null,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "title": "c11-359-messaging.md",
+                    "area_ref": "area:2",
+                    "selected_in_area": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "prompt_cache": null
+                  },
+                  {
+                    "area_ref": "area:2",
+                    "url": null,
+                    "being_seen": false,
+                    "last_seen_at": null,
+                    "focused": false,
+                    "type": "markdown",
+                    "index": 9,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "title": "c11-359-messaging.md",
+                    "id": "5EE19675-DAA2-4AAE-8560-E48DE345B239",
+                    "prompt_cache": null,
+                    "index_in_area": 9,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "tty": null,
+                    "ref": "panel:17",
+                    "selected_in_area": false,
+                    "selected": false
+                  },
+                  {
+                    "url": null,
+                    "selected_in_area": false,
+                    "tty": null,
+                    "prompt_cache": null,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "focused": false,
+                    "last_seen_at": null,
+                    "type": "markdown",
+                    "title": "c11-359-messaging.md",
+                    "index": 10,
+                    "selected": false,
+                    "index_in_area": 10,
+                    "id": "56DC4ED2-774D-4F17-8815-7E29805DD408",
+                    "ref": "panel:16",
+                    "being_seen": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_ref": "area:2"
+                  },
+                  {
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "index": 11,
+                    "focused": false,
+                    "prompt_cache": null,
+                    "title": "c11-359-messaging.md",
+                    "selected": false,
+                    "last_seen_at": null,
+                    "url": null,
+                    "type": "markdown",
+                    "tty": null,
+                    "ref": "panel:15",
+                    "index_in_area": 11,
+                    "area_ref": "area:2",
+                    "being_seen": false,
+                    "selected_in_area": false,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "id": "DE35BF93-85E2-4EE8-A325-83AD3A8595A4"
+                  },
+                  {
+                    "prompt_cache": null,
+                    "area_ref": "area:2",
+                    "index_in_area": 12,
+                    "being_seen": false,
+                    "type": "markdown",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "id": "CEEDC43C-5BC6-43B1-BD14-F4BE7AFED918",
+                    "index": 12,
+                    "selected": false,
+                    "last_seen_at": null,
+                    "tty": null,
+                    "url": null,
+                    "selected_in_area": false,
+                    "title": "c11-359-messaging.md",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "focused": false,
+                    "ref": "panel:14"
+                  },
+                  {
+                    "last_seen_at": null,
+                    "id": "3D045335-9B60-471A-9913-6D78C4906F64",
+                    "url": null,
+                    "being_seen": false,
+                    "index_in_area": 13,
+                    "ref": "panel:13",
+                    "tty": null,
+                    "area_ref": "area:2",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "type": "markdown",
+                    "prompt_cache": null,
+                    "index": 13,
+                    "title": "c11-359-messaging.md",
+                    "selected": false,
+                    "focused": false
+                  },
+                  {
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "ref": "panel:12",
+                    "last_seen_at": null,
+                    "id": "A2D28D19-B45B-4279-808D-8F43EBA97CF2",
+                    "url": null,
+                    "title": "c11-359-messaging.md",
+                    "tty": null,
+                    "selected": false,
+                    "being_seen": false,
+                    "index_in_area": 14,
+                    "index": 14,
+                    "focused": false,
+                    "prompt_cache": null,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false,
+                    "area_ref": "area:2",
+                    "type": "markdown"
+                  },
+                  {
+                    "index": 15,
+                    "ref": "panel:11",
+                    "index_in_area": 15,
+                    "tty": null,
+                    "title": "c11-359-messaging.md",
+                    "being_seen": false,
+                    "selected": true,
+                    "last_seen_at": null,
+                    "focused": true,
+                    "prompt_cache": null,
+                    "id": "0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE",
+                    "selected_in_area": true,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "type": "markdown",
+                    "url": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_ref": "area:2"
+                  },
+                  {
+                    "tty": null,
+                    "focused": false,
+                    "index": 16,
+                    "url": null,
+                    "last_seen_at": null,
+                    "id": "F5B9DAB6-CE8A-437B-A2FC-45793DEA956F",
+                    "title": "c11-359-messaging.md",
+                    "area_ref": "area:2",
+                    "prompt_cache": null,
+                    "being_seen": false,
+                    "selected": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "type": "markdown",
+                    "ref": "panel:10",
+                    "selected_in_area": false,
+                    "index_in_area": 16
+                  },
+                  {
+                    "tty": null,
+                    "ref": "panel:9",
+                    "prompt_cache": null,
+                    "being_seen": false,
+                    "id": "205D4458-EE5F-4117-9B7E-1DF080F4A951",
+                    "area_ref": "area:2",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "focused": false,
+                    "index": 17,
+                    "type": "markdown",
+                    "url": null,
+                    "last_seen_at": null,
+                    "index_in_area": 17,
+                    "title": "c11-359-messaging.md",
+                    "selected": false,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false
+                  },
+                  {
+                    "being_seen": false,
+                    "id": "013BB029-2939-44A9-B9D3-1C14D546550D",
+                    "last_seen_at": null,
+                    "type": "markdown",
+                    "url": null,
+                    "selected_in_area": false,
+                    "area_ref": "area:2",
+                    "index_in_area": 18,
+                    "ref": "panel:8",
+                    "title": "c11-359-messaging.md",
+                    "focused": false,
+                    "prompt_cache": null,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "selected": false,
+                    "tty": null,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "index": 18
+                  },
+                  {
+                    "selected": false,
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "index": 19,
+                    "tty": null,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false,
+                    "last_seen_at": null,
+                    "focused": false,
+                    "being_seen": false,
+                    "ref": "panel:7",
+                    "area_ref": "area:2",
+                    "title": "c11-359-messaging.md",
+                    "index_in_area": 19,
+                    "url": null,
+                    "prompt_cache": null,
+                    "id": "3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C",
+                    "type": "markdown"
+                  },
+                  {
+                    "area_ref": "area:2",
+                    "selected": false,
+                    "id": "9955CDF4-C613-4CA2-91DA-E8760E3B5850",
+                    "title": "c11-359-messaging.md",
+                    "file_path": "/tmp/c11-359-messaging.md",
+                    "being_seen": false,
+                    "type": "markdown",
+                    "tty": null,
+                    "url": null,
+                    "index_in_area": 20,
+                    "last_seen_at": null,
+                    "ref": "panel:6",
+                    "focused": false,
+                    "prompt_cache": null,
+                    "index": 20,
+                    "area_id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                    "selected_in_area": false
+                  }
+                ],
+                "selected_panel_id": "0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE",
+                "panel_ids": [
+                  "25761F7E-4A31-46EB-94A4-B0BDFCACB109",
+                  "A39A43E7-8030-43A9-93FA-C40E5DEB0D10",
+                  "4AA96FC8-6AFA-4AC4-9276-ECBF838E6FA3",
+                  "A901A9CA-2CB6-4BD5-BF45-2EAD09304E6E",
+                  "C5A9D2C1-2D50-4157-A76C-821A0F6B3A51",
+                  "9A9EB7C7-301C-4ECA-B2C4-49A302B01388",
+                  "0EF376D6-7CF4-4C2C-92AA-70EF8E6AE0C9",
+                  "BB7D954F-7FEB-4541-B67D-9F8E78A3A1FD",
+                  "05A870F5-8C1E-4564-8114-37A947F7E07B",
+                  "5EE19675-DAA2-4AAE-8560-E48DE345B239",
+                  "56DC4ED2-774D-4F17-8815-7E29805DD408",
+                  "DE35BF93-85E2-4EE8-A325-83AD3A8595A4",
+                  "CEEDC43C-5BC6-43B1-BD14-F4BE7AFED918",
+                  "3D045335-9B60-471A-9913-6D78C4906F64",
+                  "A2D28D19-B45B-4279-808D-8F43EBA97CF2",
+                  "0A365F11-1D5B-45E8-9E5A-7AEB9A3EA5DE",
+                  "F5B9DAB6-CE8A-437B-A2FC-45793DEA956F",
+                  "205D4458-EE5F-4117-9B7E-1DF080F4A951",
+                  "013BB029-2939-44A9-B9D3-1C14D546550D",
+                  "3F3F73A6-9F2B-45F4-AA65-A4BF94F4CB3C",
+                  "9955CDF4-C613-4CA2-91DA-E8760E3B5850"
+                ],
+                "panel_count": 21,
+                "selected_panel_ref": "panel:11",
+                "index": 0,
+                "id": "FCF5DEE7-9DA7-41AA-8B96-82F9224364A8",
+                "panel_refs": [
+                  "panel:2",
+                  "panel:25",
+                  "panel:24",
+                  "panel:23",
+                  "panel:22",
+                  "panel:21",
+                  "panel:20",
+                  "panel:19",
+                  "panel:18",
+                  "panel:17",
+                  "panel:16",
+                  "panel:15",
+                  "panel:14",
+                  "panel:13",
+                  "panel:12",
+                  "panel:11",
+                  "panel:10",
+                  "panel:9",
+                  "panel:8",
+                  "panel:7",
+                  "panel:6"
+                ],
+                "layout": {
+                  "split_path": [
+                    "H:left",
+                    "V:top"
+                  ],
+                  "pixels": {
+                    "H": [
+                      0,
+                      460
+                    ],
+                    "V": [
+                      0,
+                      379
+                    ]
+                  },
+                  "percent": {
+                    "V": [
+                      0,
+                      0.5
+                    ],
+                    "H": [
+                      0,
+                      0.5
+                    ]
+                  }
+                },
+                "ref": "area:2"
+              },
+              {
+                "layout": {
+                  "split_path": [
+                    "H:left",
+                    "V:bottom"
+                  ],
+                  "pixels": {
+                    "H": [
+                      0,
+                      460
+                    ],
+                    "V": [
+                      379,
+                      757
+                    ]
+                  },
+                  "percent": {
+                    "H": [
+                      0,
+                      0.5
+                    ],
+                    "V": [
+                      0.5,
+                      1
+                    ]
+                  }
+                },
+                "panel_count": 1,
+                "index": 1,
+                "panel_refs": [
+                  "panel:5"
+                ],
+                "focused": false,
+                "panel_ids": [
+                  "C6DBF12C-ED18-47E3-8E68-AED030A9DE71"
+                ],
+                "selected_panel_ref": "panel:5",
+                "ref": "area:5",
+                "id": "B62F11D5-767A-4C7B-AFC6-40DBC8AC3D75",
+                "selected_panel_id": "C6DBF12C-ED18-47E3-8E68-AED030A9DE71",
+                "panels": [
+                  {
+                    "id": "C6DBF12C-ED18-47E3-8E68-AED030A9DE71",
+                    "url": null,
+                    "focused": false,
+                    "selected": true,
+                    "prompt_cache": null,
+                    "title": "welcome.md",
+                    "area_ref": "area:5",
+                    "index": 21,
+                    "index_in_area": 0,
+                    "type": "markdown",
+                    "ref": "panel:5",
+                    "file_path": "/Users/admin/c11-sandbox/apps/md359-bounded/c11 DEV md-359.app/Contents/Resources/welcome.md",
+                    "last_seen_at": null,
+                    "tty": null,
+                    "area_id": "B62F11D5-767A-4C7B-AFC6-40DBC8AC3D75",
+                    "being_seen": false,
+                    "selected_in_area": true
+                  }
+                ]
+              },
+              {
+                "panels": [
+                  {
+                    "title": "Stage 11 Agentics",
+                    "type": "browser",
+                    "last_seen_at": null,
+                    "prompt_cache": null,
+                    "tty": null,
+                    "id": "0470FE83-6CEB-4336-85CD-7A21BAA7B6C5",
+                    "area_id": "D98D2A3A-A9A0-45AB-8BF4-20A487BDC099",
+                    "index": 22,
+                    "selected": true,
+                    "area_ref": "area:3",
+                    "selected_in_area": true,
+                    "focused": false,
+                    "url": "https://www.stage11.ai/",
+                    "ref": "panel:3",
+                    "being_seen": false,
+                    "index_in_area": 0
+                  }
+                ],
+                "panel_count": 1,
+                "index": 2,
+                "layout": {
+                  "percent": {
+                    "V": [
+                      0,
+                      0.5
+                    ],
+                    "H": [
+                      0.5,
+                      1
+                    ]
+                  },
+                  "split_path": [
+                    "H:right",
+                    "V:top"
+                  ],
+                  "pixels": {
+                    "H": [
+                      460,
+                      920
+                    ],
+                    "V": [
+                      0,
+                      379
+                    ]
+                  }
+                },
+                "selected_panel_ref": "panel:3",
+                "panel_ids": [
+                  "0470FE83-6CEB-4336-85CD-7A21BAA7B6C5"
+                ],
+                "selected_panel_id": "0470FE83-6CEB-4336-85CD-7A21BAA7B6C5",
+                "panel_refs": [
+                  "panel:3"
+                ],
+                "ref": "area:3",
+                "id": "D98D2A3A-A9A0-45AB-8BF4-20A487BDC099",
+                "focused": false
+              },
+              {
+                "layout": {
+                  "percent": {
+                    "V": [
+                      0.5,
+                      1
+                    ],
+                    "H": [
+                      0.5,
+                      1
+                    ]
+                  },
+                  "pixels": {
+                    "H": [
+                      460,
+                      920
+                    ],
+                    "V": [
+                      379,
+                      757
+                    ]
+                  },
+                  "split_path": [
+                    "H:right",
+                    "V:bottom"
+                  ]
+                },
+                "panel_refs": [
+                  "panel:4"
+                ],
+                "panel_count": 1,
+                "selected_panel_ref": "panel:4",
+                "panel_ids": [
+                  "730F8F8D-1E2A-49A5-BABD-590D88D14C9E"
+                ],
+                "index": 3,
+                "focused": false,
+                "id": "0BC55766-D4B2-47FD-BC24-462F9A50AA2D",
+                "panels": [
+                  {
+                    "tty": "ttys001",
+                    "being_seen": false,
+                    "area_ref": "area:4",
+                    "url": null,
+                    "selected_in_area": true,
+                    "selected": true,
+                    "index_in_area": 0,
+                    "index": 23,
+                    "focused": false,
+                    "id": "730F8F8D-1E2A-49A5-BABD-590D88D14C9E",
+                    "last_seen_at": null,
+                    "type": "terminal",
+                    "area_id": "0BC55766-D4B2-47FD-BC24-462F9A50AA2D",
+                    "ref": "panel:4",
+                    "prompt_cache": null,
+                    "title": "~"
+                  }
+                ],
+                "ref": "area:4",
+                "selected_panel_id": "730F8F8D-1E2A-49A5-BABD-590D88D14C9E"
+              }
+            ],
+            "index": 0,
+            "ref": "workspace:2",
+            "group_id": null,
+            "root_directory": null,
+            "pinned": false,
+            "id": "5C6ED23E-43B2-4723-8107-9406DD0ED68F",
+            "selected": true,
+            "title": "Workspace 1",
+            "content_area": {
+              "pixels": {
+                "width": 920,
+                "height": 757
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

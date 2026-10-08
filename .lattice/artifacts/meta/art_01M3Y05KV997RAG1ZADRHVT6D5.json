@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:47:17Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3Y05KV997RAG1ZADRHVT6D5",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3Y05KV997RAG1ZADRHVT6D5.html",
+    "size_bytes": 1066008
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Scoped PASS with explicit unperformed interruption/legacy-native checks; sanitized visual and structured results; own UI released on capacity pause.",
+  "tags": [],
+  "title": "Tagged focus history: native Settings, restore and bounded typing comparison",
+  "token_usage": null,
+  "type": "file"
+}

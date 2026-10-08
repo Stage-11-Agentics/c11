@@ -1,0 +1,21 @@
+{
+  "pid": 645,
+  "panel": "9955CDF4-C613-4CA2-91DA-E8760E3B5850",
+  "evicted": {
+    "kind": "evicted",
+    "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+    "raw": "10:03:25.270 markdown.renderer.evicted panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 line=77 source=0",
+    "line": "77",
+    "source": "0"
+  },
+  "ready": {
+    "kind": "ready",
+    "panel": "9955cdf4-c613-4ca2-91da-e8760e3b5850",
+    "raw": "10:03:27.348 markdown.renderer.ready panel=9955CDF4-C613-4CA2-91DA-E8760E3B5850 elapsedMs=1088.419",
+    "elapsedMs": "1088.419"
+  },
+  "screenshots": [
+    "bounded-before-eviction.png",
+    "bounded-after-eviction.png"
+  ]
+}

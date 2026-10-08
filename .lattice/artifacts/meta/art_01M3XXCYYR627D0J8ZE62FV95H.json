@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:58:52Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3XXCYYR627D0J8ZE62FV95H",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3XXCYYR627D0J8ZE62FV95H.gz",
+    "size_bytes": 2761109
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Head 0440a7e939c4. 22 assertions + live CLI/model pass; primary fresh comparison has one p99 budget failure and one typing timeout. Retained text data, prior-attempt records, hashes, logs and cleanup text included; all images and binary test results omitted. Original withdrawn archive SHA256 a7eb91ba8145acd9b268adaa8759f185debb9178b1bf51d98395e50ed2a350cf. Public derivative omits all images and binary test results; original embedded hashes are historical identifiers. See PUBLIC-OMISSIONS-MANIFEST.json.",
+  "tags": [],
+  "title": "C11-259 round 1: localization, build-host tests and matched performance FAIL (public sanitized derivative)",
+  "token_usage": null,
+  "type": "file"
+}

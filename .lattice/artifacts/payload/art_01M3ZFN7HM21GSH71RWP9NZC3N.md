@@ -1,0 +1,24 @@
+C11-231 validation: existing runtime proof mapped to acceptance criteria (batch fast rule)
+
+Merged: PR #544, squash 37fbd0ecbf7910065d986148d99ab9b9399d1646, landing head b7c5a6f72051e0affaf06463825f5cba219989ff. Merge Captain receipt ev_01M3ZFK4RC50PNY292HYBAQBW7: exact-head gate 93853a403e7948ee88e13ed01bb1932e, Debug compile ok, full logic 2,465 tests, 3 skips, 0 failures (AgentRosterTests 7, JournalStoreTests 16, TabSheetDetailBuilderTests 20, EventLogTests 20, ClaudeHookMappingTests 7, LifecycleFixtureCatalogTests 2); installed c11 skill synced and byte-equal. Review: Astra rounds 2-3 resolved every product finding; round 3 (ev_01M3ZEY09XXA4STJ4S64P2A18E) and the quick check (ev_01M3ZF3NHKWFDNS6549GWKCQZB) failed only on the written restart-clock scenario, corrected in ev_01M3ZF5486FMV5MTK8QMRQ8RJD and attested by the Orchestrator (ev_01M3ZF5T6CEQYXK9DR39QH9TJ3). Owner validation ev_01M3ZBEH7TXDZQ6A5MCPG0HP06 (guest tests_v2 runs at a3644ede63) and ev_01M3ZES5T739D5P4KF7RN83PZM (native 72/0 and tagged UI probe at ae1d11b1ca); both heads are product-identical to the landing head apart from a CLI help string and a probe docstring. No new runs were made for this comment.
+
+Criterion -> evidence -> result
+1. Two-tab case: agents --json shows tab A's blocked reason and source while tab B works, with every field and explicit null/unavailable -> AgentRosterTests (Captain gate); isolated tagged guest tests_v2/test_agents_roster.py PASS (ev_01M3ZBEH7TXDZQ6A5MCPG0HP06) -> PASS.
+2. Opening a blocked tab updates seen without claiming the ask answered; opening an unread completion clears only unread; flags and suppression keep routing -> tagged UI probe journal_submit_ui_probe.py, one verified display, PID-scoped input, cleanup_ok true, PASS_PICKER_NOT_RUN: unread completion distinct from idle, opening it marks only the notification read with no journal append, clearing unread leaves a blocked ask untouched; typed draft, autorepeat Return, send-key enter, dead-key composition commit and copy-mode Return record nothing, one real Return records exactly one response and the ask stays blocked (ev_01M3ZBEH7TXDZQ6A5MCPG0HP06, ev_01M3ZES5T739D5P4KF7RN83PZM) -> PASS. Suppressed tabs keep their existing routing (unchanged).
+3. Incident analyzable from events: exact tab/agent and reason on a real transition, no duplicate lifecycle edges from repeated observations, waiting event compatibility documented -> EventLogTests and ClaudeHookMappingTests (Captain gate); guest test_journal_append_replay.py and test_events_parity.py PASS (jsonschema assertion skipped, package absent in guest); waiting.left documented as the exit edge -> PASS.
+4. Tab-sheet state/turn clocks match F3 timestamps and stay stable through restart; restored history is unconfirmed and invents no elapsed work -> TabSheetDetailBuilderTests 20 and AgentRosterTests (Captain gate); guest test_journal_restart.py PASS (offline crash-live candidate from a confirmed baseline with no connection_lost; force-kill/resume restores asks unconfirmed); LifecycleFixtureCatalogTests testCapturedC11271CasesReachCommittedRosterConsumersAfterReopen -> PASS at model, socket and fixture level. The visible restored tab-sheet clock was not driven in the UI: the corrected restart-clock scenario is routed to sign-off.
+5. Restore-candidate list identifies start-without-end sessions as historical candidates and distinguishes ended/unknown without launching anything -> AgentRosterTests; guest test_journal_restart.py and test_agents_roster.py (historical_candidate, ended, unknown labels, unconfirmed) -> PASS.
+6. Disconnected/degraded sources and a dropped telemetry interval: a fresh agents snapshot gives known state, provenance and freshness without moving focus -> guest test_agents_roster.py PASS, including a skipped event-stream interval and degraded-source recovery with focus unchanged -> PASS.
+
+Residuals, stated plainly
+- Claude Code AskUserQuestion picker answers are not observed: AgentRoster.pickerCommitKeyCode stays nil and picker Return fails closed, as documented in skills/c11/references/api.md and `c11 journal` help. The pinned picker fixture (P1) is routed to sign-off.
+- Typing-path cost of the operator-submit hook in GhosttyNSView keyDown, and the snapshot/event-load soak: owned by the C11-270 soak, not claimed here.
+- Merging this unblocks C11-278.
+
+Routed to C11-292 sign-off (signoff-additions.md)
+- Restart-clock scenario, steps 1-7 of ev_01M3ZF5486FMV5MTK8QMRQ8RJD (supersedes all earlier versions).
+- Picker fixture P1 (the earlier "sign-off step 6"), which needs a guest with Claude Code 2.1.287 and credentials.
+
+No check contradicts a criterion.
+
+Verdict: COMPLETE with the restart-clock UI scenario and picker fixture routed to C11-292 and the soak on C11-270.

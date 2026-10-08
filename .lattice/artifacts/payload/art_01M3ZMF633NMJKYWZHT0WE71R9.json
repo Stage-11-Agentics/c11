@@ -1,0 +1,67 @@
+{
+  "run_id": "c11-266-ui",
+  "pid": 654,
+  "checks": [
+    "Tagged PID matches exact bundle executable",
+    "Explicit socket listener belongs to tagged PID",
+    "Socket reports the exact tagged bundle identity",
+    "Guest starts with zero routine history",
+    "Guest starts with zero flags",
+    "Exactly one guest display enumerated",
+    "Exactly one visible tagged main window enumerated",
+    "Entire tagged window fits on the verified single guest display",
+    "Exact tagged PID is frontmost",
+    "Setup left the operator workspace selected",
+    "01-socket-opened-quick-view screenshots captured",
+    "A socket Command-I never switches workspaces",
+    "02-after-socket-return screenshots captured",
+    "A socket-simulated Return in the quick view never switches workspaces",
+    "Exact tagged PID foreground before keyboard action",
+    "03-after-operator-return-other-workspace screenshots captured"
+  ],
+  "screenshots": [
+    "/Volumes/My Shared Files/out/qv-ws4/01-socket-opened-quick-view-display.png",
+    "/Volumes/My Shared Files/out/qv-ws4/01-socket-opened-quick-view-window.png",
+    "/Volumes/My Shared Files/out/qv-ws4/02-after-socket-return-display.png",
+    "/Volumes/My Shared Files/out/qv-ws4/02-after-socket-return-window.png",
+    "/Volumes/My Shared Files/out/qv-ws4/03-after-operator-return-other-workspace-display.png",
+    "/Volumes/My Shared Files/out/qv-ws4/03-after-operator-return-other-workspace-window.png"
+  ],
+  "guest_model": "VirtualMac2,1",
+  "display_enumeration": {
+    "displays": [
+      {
+        "id": 1,
+        "x": 0,
+        "y": 0,
+        "width": 1024,
+        "height": 768
+      }
+    ],
+    "windows": [
+      {
+        "kCGWindowName": "Workspace 1",
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowSharingState": 1,
+        "kCGWindowOwnerPID": 654,
+        "kCGWindowOwnerName": "c11 DEV c11-266",
+        "kCGWindowNumber": 33,
+        "kCGWindowStoreType": 1,
+        "kCGWindowBounds": {
+          "X": 0,
+          "Height": 680,
+          "Y": 30,
+          "Width": 1024
+        },
+        "kCGWindowAlpha": 1
+      }
+    ]
+  },
+  "fixture": "Synthetic; actual packaged Command-I and Return; operator action switches workspace",
+  "result": "PASS",
+  "cleanup_note": "workspace left in place: socket close of the selected workspace is blocked by design",
+  "cleanup_errors": [],
+  "elapsed_seconds": 5.976
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T09:32:32Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DDPXRVT58TPCTF23DVW15Y",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M4DDPXRVT58TPCTF23DVW15Y.json",
+    "size_bytes": 9546
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-359 WebKit 20-panel RSS and timing",
+  "token_usage": null,
+  "type": "file"
+}

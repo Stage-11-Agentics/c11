@@ -1,0 +1,124 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-md-r4",
+  "branch_links": [
+    {
+      "branch": "md-viewer/C11-361-agent-cli",
+      "linked_at": "2026-10-08T13:31:11Z",
+      "linked_by": "agent:codex-md-r4",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "high",
+  "created_at": "2026-10-08T08:54:42Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "description": "Child of C11-336. Depends on R2 merged (state model + bridge); runs in parallel with R3. Contract: docs/markdown-viewer-design.md Agent surface table.\n\nScope: the agent CLI and socket methods, all using `--panel`:\n- `c11 markdown scroll --panel <p> --heading \"<text>\"`: jumps to the section and flashes it briefly in gold; no macOS focus steal, no workspace switch.\n- `c11 markdown visible --panel <p> --json`: heading path, line range, progress, theme, typeface, size, open find, selection; `--watch` streams changes.\n- `c11 markdown theme --panel <p> --set <name>` / `--list` (rejects unknown names); `c11 markdown typeface --panel <p> --set <name>` / `--list`; `c11 markdown font --panel <p> --scale <n>` (validated 0.5\u20133.0); `c11 markdown open-external --panel <p>`.\n- Socket methods under markdown.*: queries off-main per the socket threading policy; only what must touch the web view hops to main; non-focus commands never change focus. Register capabilities/features the way other versioned features are (Sources/CapabilityFeatures.swift).\n- skills/c11-markdown/SKILL.md (+ references/commands.md, and skills/c11 if it changes) updated in the same PR; installed-skill sync done by the Merge Captain after merge.\n- CLI tests through the CLI/socket seam (behavioural, no source-grep).\n\nProof: tagged Atlas build, each command driven from a terminal against a markdown panel in a background workspace, with observed results (screenshot for scroll flash).",
+  "done_at": "2026-10-08T19:31:45Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M4DZR2ETHN0KDS9CX4KBJ7DV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4E29RCRD7B8EPE5EV63J13K",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E29RGCAVMZDQ9Y6YHGGZ9A",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4E2AE64J79FYJAY13H4Y6DH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4E2B19R561Z9HYKDTSZZ7V5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4E5A0CZVPH8ZTPY92XQDS2T",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4E7ZF523J0ZAQSHB3TD4VYZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EB0RJSGZRP8W237XVMCGPS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4ECSEPA1KSW55AATM69ZGC4",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4ECW2XV0NEACTK6R9Q80EAH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EENG5F2EFE8TVJ794YRC1C",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EEV86Q9RTYVBQ0DCP55RV9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EG03K1EB34RBNTH2C13N4H",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M4EG03JYB6MKW182E21WPEBP",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M4DBHMJ7TVH2NCR3EZHRM3ZJ",
+  "last_event_id": "ev_01M4EGGYK7WJPZECEDZ0NFWTVD",
+  "last_status_changed_at": "2026-10-08T19:31:45Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T08:54:48Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "subtask_of"
+    },
+    {
+      "created_at": "2026-10-08T08:54:49Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4DBHMBXGSPCA6RAXJKF5YTQ",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 3,
+  "schema_version": 1,
+  "short_id": "C11-361",
+  "status": "done",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer R4: agent CLI (scroll, visible, theme, typeface, font, open-external) + skill",
+  "type": "task",
+  "updated_at": "2026-10-08T19:40:57Z",
+  "urgency": null
+}

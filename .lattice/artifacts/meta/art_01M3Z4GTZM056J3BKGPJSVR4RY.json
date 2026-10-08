@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:22:34Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z4GTZM056J3BKGPJSVR4RY",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Z4GTZM056J3BKGPJSVR4RY.gz",
+    "size_bytes": 11539591
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "SCP finished, gzip traversal passed, local SHA256 matches Atlas 4bb1d651a640b6ecd234bb38d9fb578e38757f995b445f9258be374d05760370. Previous attachment raced SCP and is invalid; retained and superseded.",
+  "tags": [],
+  "title": "COMPLETE verified seal015 archive (supersedes art_01M3Z4FN9YM68T99HMVRYV2SYN)",
+  "token_usage": null,
+  "type": "file"
+}

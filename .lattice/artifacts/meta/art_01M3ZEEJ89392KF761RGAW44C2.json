@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:16:05Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZEEJ89392KF761RGAW44C2",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZEEJ89392KF761RGAW44C2.png",
+    "size_bytes": 755772
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: closed target, unavailable status in reserved slot, no redirect",
+  "token_usage": null,
+  "type": "file"
+}

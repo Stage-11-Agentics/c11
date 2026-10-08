@@ -1,0 +1,254 @@
+<!doctype html><meta charset="utf-8"><title>C11-275 independent non-native evidence</title><style>body{font:17px system-ui;max-width:1100px;margin:48px auto;padding:0 20px;color:#17202c}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px ui-monospace;background:#f3f5f8;padding:20px}h1{font-size:28px}</style><h1>C11-275 non-native checks pass</h1><p>The current packaged wrapper and CLI checks pass at exact 11998, canonical build 89d2: hooks24, resume38, runtime capture26, mailbox41 expectations, 129 total. All three runtime file hashes and the clean manifest independently verify. The original runtime-capture attempt stopped at its JSON-only peer after a non-JSON preamble, inferred to be authentication from the CLI resolver and the corrected synthetic-auth run; one ignored peer adapter supplied explicit synthetic authentication and preserved every merged fixture assertion. The original failure and launcher bookkeeping error remain recorded. The retained12-case reducer gate is at dedc, not a new current-head run. Real provider/root/child/UI cases remain pending; no whole-ticket PASS or captured-child replay is claimed.</p><pre>{
+  &quot;ticket&quot;: &quot;C11-275&quot;,
+  &quot;state&quot;: &quot;NON_NATIVE_CHECKS_PASS_NATIVE_SCENARIOS_PENDING&quot;,
+  &quot;artifact&quot;: {
+    &quot;head&quot;: &quot;1199866cbc2c079de9198b9ed8773af3200d2821&quot;,
+    &quot;tag&quot;: &quot;c11-311&quot;,
+    &quot;invocation&quot;: &quot;89d2e6ce0e354179940f2963df741c70&quot;,
+    &quot;clean&quot;: true,
+    &quot;overlay&quot;: [],
+    &quot;copy_kind&quot;: &quot;VERIFIED_CANONICAL_COPY&quot;,
+    &quot;all_three_physical_hashes_verified&quot;: true,
+    &quot;actual_artifact_hashes&quot;: {
+      &quot;Contents/MacOS/c11&quot;: &quot;eef114c4910e6763ded7a6fbe62a80932d96dd04fc9458c60723750ee272092d&quot;,
+      &quot;Contents/MacOS/c11.debug.dylib&quot;: &quot;74cf381b89e42ac86ef63130fd9cd1e8811dfba9a61eac10bfdc269700cdbef3&quot;,
+      &quot;Contents/Resources/bin/c11&quot;: &quot;d3d05248717bada53e80b2d10450aafe21f369373f154eb7aaed9f04b3dd0a78&quot;
+    },
+    &quot;canonical_executable_sha256&quot;: &quot;eef114c4910e6763ded7a6fbe62a80932d96dd04fc9458c60723750ee272092d&quot;,
+    &quot;manifest_sha256&quot;: &quot;97b00b7399d90217158d378bfd507bbde098311a59727096ad8676c488dc0b07&quot;,
+    &quot;retention_sha256&quot;: &quot;69dd5cabff0856cf59351b924c8458a716121156a97dc285178632e8ae814a5c&quot;
+  },
+  &quot;source_manifest&quot;: {
+    &quot;head&quot;: &quot;1199866cbc2c079de9198b9ed8773af3200d2821&quot;,
+    &quot;release&quot;: &quot;7cec0946cd30b54ef88520e3fc5cd54385f17810&quot;,
+    &quot;pass1_head&quot;: &quot;7378162477ec7256ddef509d53cfcee46c82c12a&quot;,
+    &quot;contained&quot;: {
+      &quot;275&quot;: true,
+      &quot;291&quot;: true
+    },
+    &quot;sha256&quot;: {
+      &quot;Resources/bin/codex&quot;: &quot;a931b44176e1e59c3a0df7a65a1eca355280362c6e8d335f1e8f67391b61b8ce&quot;,
+      &quot;tests/test_codex_wrapper_hooks.py&quot;: &quot;4d9d32e6f5fbb206ec21f836e96af45ef9f13fe95303ff712648ded343c45a11&quot;,
+      &quot;tests/test_codex_wrapper_resume.py&quot;: &quot;feb207ebef1b42c731dda2996b13c4cf85e0944b7373b1368fa43b4dadf2a151&quot;,
+      &quot;tests/test_codex_runtime_capture_cli.py&quot;: &quot;d933c8fc3e221e0430cf6e4e5030196e65d7f9cff31ee937290d6b4d8ea1c71f&quot;,
+      &quot;tests/test_mailbox_hook_drain_cli.py&quot;: &quot;dcfc73c7ae95c952efddef1c54b064334285c589fce76bbe8fec3ec89cf8a0a1&quot;,
+      &quot;tests/fake_server_env.py&quot;: &quot;ea606fb8b29885c5861e2c89eb7a01c7994f695d0a2e155b0e14b18990d5da7a&quot;,
+      &quot;scripts/check-locale-tokens.py&quot;: &quot;b7f12f68793fa135a09eef43ddb5957699cf21775a3bdf8b36684ac144d51ca4&quot;,
+      &quot;scripts/probe-codex-hook-trust.sh&quot;: &quot;9b5bac417d9205a7fa774c3e7d9fafd4c22a3e61b2850b4d9af548986d811385&quot;,
+      &quot;Resources/Localizable.xcstrings&quot;: &quot;596753736bc59ee7f4d05760f4694018bb164bde6651b71675a5eb0a83fd8e2c&quot;,
+      &quot;release-catalog.json&quot;: &quot;f94c5d0bdeb2796e9f1fc9197c6e9c64364e9288b1d9cda88f886d9bff8cda4d&quot;,
+      &quot;pass1-catalog.json&quot;: &quot;05039cebd9b878a756531f95e6441950288915ab7b1230373621ab9de7613249&quot;
+    }
+  },
+  &quot;fixtures&quot;: [
+    {
+      &quot;fixture&quot;: &quot;test_codex_wrapper_hooks.py&quot;,
+      &quot;exit&quot;: 0,
+      &quot;elapsed_seconds&quot;: 3.748,
+      &quot;expectations&quot;: 24,
+      &quot;log_sha256&quot;: &quot;0879cd10096d3f7471524b137a771a336d7b036627dfb0969478d2887666aeb4&quot;,
+      &quot;fixture_sha256&quot;: &quot;4d9d32e6f5fbb206ec21f836e96af45ef9f13fe95303ff712648ded343c45a11&quot;,
+      &quot;uses_packaged_wrapper&quot;: true,
+      &quot;uses_built_cli_fake_peer&quot;: false,
+      &quot;final_exit&quot;: 0,
+      &quot;final_expectations&quot;: 24
+    },
+    {
+      &quot;fixture&quot;: &quot;test_codex_wrapper_resume.py&quot;,
+      &quot;exit&quot;: 0,
+      &quot;elapsed_seconds&quot;: 5.792,
+      &quot;expectations&quot;: 38,
+      &quot;log_sha256&quot;: &quot;1e11dc22744eb91239a7af62eba0326f08f795014499597d1e8d717e6babee88&quot;,
+      &quot;fixture_sha256&quot;: &quot;feb207ebef1b42c731dda2996b13c4cf85e0944b7373b1368fa43b4dadf2a151&quot;,
+      &quot;uses_packaged_wrapper&quot;: true,
+      &quot;uses_built_cli_fake_peer&quot;: false,
+      &quot;final_exit&quot;: 0,
+      &quot;final_expectations&quot;: 38
+    },
+    {
+      &quot;fixture&quot;: &quot;test_codex_runtime_capture_cli.py&quot;,
+      &quot;exit&quot;: 1,
+      &quot;elapsed_seconds&quot;: 1.582,
+      &quot;expectations&quot;: null,
+      &quot;log_sha256&quot;: &quot;4fad8059a9661aaf5559bb6ced8598811d7dcbfcc86c7d88f4f1c6d93b003d6c&quot;,
+      &quot;fixture_sha256&quot;: &quot;d933c8fc3e221e0430cf6e4e5030196e65d7f9cff31ee937290d6b4d8ea1c71f&quot;,
+      &quot;uses_packaged_wrapper&quot;: false,
+      &quot;uses_built_cli_fake_peer&quot;: true,
+      &quot;original_exit&quot;: 1,
+      &quot;original_outcome&quot;: &quot;JSON_ONLY_FAKE_PEER_PROTOCOL_GATE_WITH_UNCHANGED_AUTH_FALLBACK&quot;,
+      &quot;final_exit&quot;: 0,
+      &quot;final_expectations&quot;: 26,
+      &quot;adapted_receipt&quot;: {
+        &quot;state&quot;: &quot;PASS&quot;,
+        &quot;exit_status&quot;: 0,
+        &quot;scope&quot;: &quot;ACTUAL_BUNDLED_CLI_WITH_SYNTHETIC_AUTH_FAKE_PEER_UNCHANGED_FIXTURE_ASSERTIONS&quot;,
+        &quot;fixture_sha256&quot;: &quot;d933c8fc3e221e0430cf6e4e5030196e65d7f9cff31ee937290d6b4d8ea1c71f&quot;,
+        &quot;cli_sha256&quot;: &quot;d3d05248717bada53e80b2d10450aafe21f369373f154eb7aaed9f04b3dd0a78&quot;,
+        &quot;adapter_sha256&quot;: &quot;df4436ef18fc8f8f8f94f207dc9e0111f557f96f662b6eb65c8f3f27c732db02&quot;,
+        &quot;explicit_synthetic_credential_prevents_saved_file_and_keychain_reads&quot;: true,
+        &quot;product_or_shipping_fixture_edited&quot;: false,
+        &quot;synthetic_auth_requests&quot;: 18,
+        &quot;json_requests&quot;: 6,
+        &quot;expectations&quot;: 26
+      }
+    },
+    {
+      &quot;fixture&quot;: &quot;test_mailbox_hook_drain_cli.py&quot;,
+      &quot;exit&quot;: 0,
+      &quot;elapsed_seconds&quot;: 3.044,
+      &quot;expectations&quot;: 41,
+      &quot;log_sha256&quot;: &quot;c74c7fda3b7aafc5ed19b7a05cd3ecddbd9ca3e501f1efce118e40981dff6e5b&quot;,
+      &quot;fixture_sha256&quot;: &quot;dcfc73c7ae95c952efddef1c54b064334285c589fce76bbe8fec3ec89cf8a0a1&quot;,
+      &quot;uses_packaged_wrapper&quot;: false,
+      &quot;uses_built_cli_fake_peer&quot;: true,
+      &quot;final_exit&quot;: 0,
+      &quot;final_expectations&quot;: 41
+    }
+  ],
+  &quot;total_final_expectations&quot;: 129,
+  &quot;retained_synthetic_reducer&quot;: {
+    &quot;proof_kind&quot;: &quot;RETAINED_EXECUTED_SYNTHETIC_REDUCER_TESTS&quot;,
+    &quot;invocation&quot;: &quot;154a0db53f4b460c95540e06e39ed979&quot;,
+    &quot;head&quot;: &quot;dedc6007a5bb886388af23d7c48c48d76025772f&quot;,
+    &quot;current_artifact_head&quot;: &quot;1199866cbc2c079de9198b9ed8773af3200d2821&quot;,
+    &quot;tag&quot;: &quot;c11-265&quot;,
+    &quot;compile&quot;: &quot;ok&quot;,
+    &quot;tests&quot;: &quot;ok&quot;,
+    &quot;dirty&quot;: false,
+    &quot;overlay&quot;: [],
+    &quot;build_log_sha256&quot;: &quot;7ee2409eea8e4d0f58e1e5847e2869648952719248228a8b044dc91eb3749961&quot;,
+    &quot;excerpt_sha256&quot;: &quot;a8a0c1d7096d775f518f64d0e2411d375f69b43941f3a65f523dd5c2bd86d05b&quot;,
+    &quot;class&quot;: &quot;JournalReducerTests&quot;,
+    &quot;cases_passed&quot;: 12,
+    &quot;cases&quot;: [
+      {
+        &quot;name&quot;: &quot;testBypassRequestsPersistUntilCorrelatedResolution&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testChildAndUnknownOwnerDoNotChangeRoot&quot;,
+        &quot;seconds&quot;: 0.0
+      },
+      {
+        &quot;name&quot;: &quot;testCodexNotifyKeepsDegradedHookCoverageAndDeduplicatesCompletion&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testJournalAttentionSurvivesSeenAndRespectsSuppressionAndFlag&quot;,
+        &quot;seconds&quot;: 0.0
+      },
+      {
+        &quot;name&quot;: &quot;testLateToolCannotReopenCompletedTurnWithAnyClockQuality&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testMailboxDoesNotTreatBlockedReplayOrDuplicateAsPrompt&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testMergedFixtureCorpusHookSequences&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testOnlySameTurnClaudeHookStopResolvesApproval&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testRestoredAskHelpIsUnconfirmedWithoutDuration&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testSupportedInterruptAndKeyOnlyEvidenceHaveDifferentEffects&quot;,
+        &quot;seconds&quot;: 0.001
+      },
+      {
+        &quot;name&quot;: &quot;testTranscriptDuplicateStartCannotReopenHookBarrier&quot;,
+        &quot;seconds&quot;: 0.0
+      },
+      {
+        &quot;name&quot;: &quot;testTranscriptRankNeverSetsOrClearsBlockedAndGrokCannotClaimInterrupt&quot;,
+        &quot;seconds&quot;: 0.001
+      }
+    ],
+    &quot;fixture_source_sha256&quot;: &quot;190129c22b26e6e966fa720b2cdc082bfa891d197188033991f629d301cfb94f&quot;,
+    &quot;fixture_source_unchanged_at_current_head&quot;: true,
+    &quot;journal_named_source_changes_since_gate&quot;: [],
+    &quot;full_logic_executed&quot;: 2427,
+    &quot;full_logic_skipped&quot;: 3,
+    &quot;full_logic_failures&quot;: 0,
+    &quot;full_gate_TEST_SUCCEEDED&quot;: true,
+    &quot;limitations&quot;: [
+      &quot;Retained dedc execution, not a new11998 gate&quot;,
+      &quot;Synthetic reducer drafts, not live app socket projection or captured native child callbacks&quot;,
+      &quot;Wrapper reentry changed after this gate; current packaged fixtures remain pending&quot;
+    ],
+    &quot;suite_summary&quot;: &quot;Executed 12 tests, with 0 failures (0 unexpected) in 0.007 (0.009) seconds&quot;
+  },
+  &quot;original_attempt_preserved&quot;: true,
+  &quot;original_runtime_capture_failure_is_not_a_product_verdict&quot;: true,
+  &quot;launch_capture_note&quot;: &quot;The adapted fixture completed with exit0; a subsequent zsh read-only status assignment caused launcher exit1. Saved fixture result and stdout independently verified; no extra rerun.&quot;,
+  &quot;orchestrator_exit_note&quot;: &quot;Original four-fixture driver exited0 despite the runtime-capture child failure. Per-fixture exits and corrected receipt are authoritative.&quot;,
+  &quot;native_not_performed&quot;: [
+    &quot;real installed Codex trust-isolation experiment&quot;,
+    &quot;real current-root provider turn and idle/hook/completed degraded/live readback&quot;,
+    &quot;live child/root/duplicate callback projection and actual unread counters&quot;,
+    &quot;native marks/readability and synthesized app dismissal&quot;
+  ],
+  &quot;capture_gap_label&quot;: &quot;Codex child capture remains a capture gap; reducer/fake-peer success is not captured-child replay proof&quot;,
+  &quot;no_product_or_shipping_fixture_edits&quot;: true,
+  &quot;no_app_launch_guest_or_provider_login_install&quot;: true,
+  &quot;original_preamble_classification&quot;: {
+    &quot;observed&quot;: &quot;JSON-only peer raised JSONDecodeError; no JSON requests were retained before IndexError&quot;,
+    &quot;inferred&quot;: &quot;authentication preamble from saved-credential fallback; source resolver plus explicit synthetic-auth corrected run support this&quot;,
+    &quot;raw_credential_or_preamble_body_published&quot;: false
+  }
+}</pre><p>test_codex_wrapper_hooks.py</p><pre>PASS: Codex wrapper reports focus-independent turn completion to c11
+EXPECTATIONS=24
+</pre><p>test_codex_wrapper_resume.py</p><pre>PASS: Codex wrapper claims before exec and preserves passthrough/argv/exit/signal behavior
+EXPECTATIONS=38
+</pre><p>test_codex_runtime_capture_cli.py</p><pre>PASS: Codex runtime capture uses target env/cwd only and claim expiry is absolute
+{&quot;state&quot;: &quot;PASS&quot;, &quot;exit_status&quot;: 0, &quot;scope&quot;: &quot;ACTUAL_BUNDLED_CLI_WITH_SYNTHETIC_AUTH_FAKE_PEER_UNCHANGED_FIXTURE_ASSERTIONS&quot;, &quot;fixture_sha256&quot;: &quot;d933c8fc3e221e0430cf6e4e5030196e65d7f9cff31ee937290d6b4d8ea1c71f&quot;, &quot;cli_sha256&quot;: &quot;d3d05248717bada53e80b2d10450aafe21f369373f154eb7aaed9f04b3dd0a78&quot;, &quot;adapter_sha256&quot;: &quot;df4436ef18fc8f8f8f94f207dc9e0111f557f96f662b6eb65c8f3f27c732db02&quot;, &quot;explicit_synthetic_credential_prevents_saved_file_and_keychain_reads&quot;: true, &quot;product_or_shipping_fixture_edited&quot;: false, &quot;synthetic_auth_requests&quot;: 18, &quot;json_requests&quot;: 6, &quot;expectations&quot;: 26}
+</pre><p>test_mailbox_hook_drain_cli.py</p><pre>PASS: stalled socket: exit 0
+PASS: stalled socket: hook JSON with the message printed
+PASS: stalled socket: exits at once (30 ms)
+PASS: stalled socket: envelope claimed into _read/
+PASS: stalled socket: delivery receipt written
+PASS: stalled socket: no socket request at all
+PASS: empty recipient: silent exit 0
+PASS: empty recipient with sibling mail: median 17 ms &lt; 100 ms
+PASS: empty recipient: no socket request
+PASS: hook drain receipt names the recipient tab
+PASS: hook drain receipt names the envelope recipient
+PASS: receipt written atomically (no temp file left)
+PASS: broken pipe: every envelope stays in the inbox, none in _read/
+PASS: broken pipe: no receipt
+PASS: plain drain to a live pipe: all printed and claimed
+PASS: recv --tab &lt;name&gt;: receipt carries no tab_id rather than the caller&#x27;s
+PASS: plain drain: no delivery reported over the socket
+PASS: 600-message drain: every delivery is in a receipt (2 receipts: [512, 88])
+PASS: 600-message drain: each receipt within 512 deliveries and 64 KB (sizes [29766, 5174])
+PASS: mixed batch: the hand-written file is drained and claimed under a fresh ULID (_read/&lt;ULID&gt;.msg)
+PASS: mixed batch: one receipt records the envelopes and the hand-written file under its ULID
+PASS: moved tab: mail in the other workspace&#x27;s inbox is delivered and claimed
+PASS: moved tab: no socket request
+PASS: moved tab: receipt lands in the workspace that held the inbox
+PASS: codex hook format, socket reads one line then stops: exit 0, every claimed message printed and receipted (70)
+PASS: codex hook format, socket reads one line then stops: hook exits in 81 ms
+PASS: codex hook format, socket reads one line then stops: no socket request
+PASS: codex hook format, socket reads nothing: exit 0, every claimed message printed and receipted (70)
+PASS: codex hook format, socket reads nothing: hook exits in 84 ms
+PASS: codex hook format, socket reads nothing: no socket request
+PASS: claude-hook stop, socket reads one line then stops: exit 0, every claimed message printed and receipted (70)
+PASS: claude-hook stop, socket reads one line then stops: hook exits in 85 ms
+PASS: claude-hook stop, socket reads one line then stops: no socket request
+PASS: claude-hook stop, socket reads nothing: exit 0, every claimed message printed and receipted (70)
+PASS: claude-hook stop, socket reads nothing: hook exits in 83 ms
+PASS: claude-hook stop, socket reads nothing: no socket request
+PASS: prompt-submit, c11 stops reading: exits in 0.3 s (exit 0), mail left for the Stop
+PASS: prompt-submit, c11 answers every call after 2.5 s: exits in 0.3 s (exit 0), mail left for the Stop
+PASS: prompt-submit with a healthy c11: prints nothing and claims nothing (30 ms)
+PASS: the turn&#x27;s Stop then delivers it as the agent&#x27;s own next turn, receipted
+PASS: recv --hook-format codex --event prompt-submit: nothing (Codex has no prompt-submit hook either)
+PASS: mailbox drain CLI checks
+EXPECTATIONS=41
+</pre>

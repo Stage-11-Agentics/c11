@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T12:19:09Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DQ800M1HGCX19CKV5PCWK2",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4DQ800M1HGCX19CKV5PCWK2.png",
+    "size_bytes": 122009
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Atlas sandbox screenshot of the markdown panel at the saved mid-document position before visiting other panels.",
+  "tags": [],
+  "title": "Packaged C11-359 before renderer eviction",
+  "token_usage": null,
+  "type": "file"
+}

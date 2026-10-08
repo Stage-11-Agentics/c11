@@ -1,0 +1,30 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "low",
+  "created_at": "2026-10-06T11:08:23Z",
+  "created_by": "agent:claude-panel-rename",
+  "custom_fields": {},
+  "description": "Found in the C11-337 R7 review. The live simplified right-click menu reads command.copySurfaceRef.prefix (vendor/bonsplit Sources/Bonsplit/Internal/Views/TabItemView.swift ~1202), but no Localizable.strings file defines it, so all six non-English locales show 'Copy panel:N' in English. Fix: add the key to all 7 .lproj files. Bonsplit-touching: serialize with other Bonsplit work and follow the fork-branch + fast-forward-at-landing flow (#596/R7).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M48ECZ84K3Q8RCC417SNJVV2",
+  "last_event_id": "ev_01M49F8Z3Z58YHPW1VGNG3WNTJ",
+  "last_status_changed_at": "2026-10-06T20:42:54Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-339",
+  "status": "cancelled",
+  "tags": [
+    "vocabulary"
+  ],
+  "title": "Bonsplit: localize the 'Copy' prefix of the panel right-click menu's copy-ref item",
+  "type": "bug",
+  "updated_at": "2026-10-06T20:42:54Z",
+  "urgency": null
+}

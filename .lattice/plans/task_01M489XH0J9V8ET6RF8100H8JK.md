@@ -1,0 +1,3 @@
+# C11-338: 1.1: stop emitting tab_* JSON keys and flag_caller_tab_id; drop the CLI's tab-era version-skew tier
+
+Follow-up to C11-337 (panel rename). 1.0 emits panel_* (canonical) plus tab_* (the v0.67.0 spelling) for one release. In 1.1: stop emitting tab_* result keys (LegacyWireAliases KeyPair old side), stop writing metadata flag_caller_tab_id (flag_caller_surface_id stays permanent, it wins on read), stop emitting the tree/state-verify tabs/ref_tabs twins, and remove the CLI skew tier that downgrades to tab.* for v0.67 apps if telemetry or support shows no 0.67 apps remain. Input aliases (tab/surface spellings of commands, flags, refs, params, methods, env vars) stay forever. Also stop advertising tab.list in system.capabilities once no v0.67 CLI is expected.

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T21:23:28Z",
+  "created_by": "agent:sonnet-validator",
+  "custom_fields": {},
+  "id": "art_01M3Z80B46BM799CDC40G1VDHF",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z80B46BM799CDC40G1VDHF.md",
+    "size_bytes": 3033
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "# C11-265 validation: shared attention ordering, Feed and jump, menu-bar counts\n\nBasis: owner packaged UI pass, reviewer screenshot inspection, exact-head gates, independent merged-head rails. No new ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

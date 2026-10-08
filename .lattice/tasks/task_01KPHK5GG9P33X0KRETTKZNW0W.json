@@ -1,7 +1,8 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-04-19T00:45:05Z",
   "created_by": "agent:claude-opus-4-7",
@@ -10,11 +11,19 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPHK5GG9P33X0KRETTKZNW0W",
-  "last_event_id": "ev_01KT9WSYQRYFM828EHVAZV4H7D",
+  "last_event_id": "ev_01M49J7P263X96TQ7EFJ1ZZ90M",
   "last_status_changed_at": "2026-04-19T00:45:05Z",
   "linked_files": [],
   "priority": "medium",
-  "relationships_out": [],
+  "relationships_out": [
+    {
+      "created_at": "2026-10-06T09:47:15Z",
+      "created_by": "agent:claude-opus-5-5",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "related_to"
+    }
+  ],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-127",
@@ -26,6 +35,6 @@
   ],
   "title": "Markdown surface: user-configurable light/dark theme",
   "type": "task",
-  "updated_at": "2026-06-04T18:02:24Z",
+  "updated_at": "2026-10-06T21:34:38Z",
   "urgency": null
 }

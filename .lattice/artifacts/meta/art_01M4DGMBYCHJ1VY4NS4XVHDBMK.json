@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:23:34Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DGMBYCHJ1VY4NS4XVHDBMK",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M4DGMBYCHJ1VY4NS4XVHDBMK.zip",
+    "size_bytes": 769356
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final packaged acceptance: screenshots, ledgers, events, replay, cleanup",
+  "token_usage": null,
+  "type": "file"
+}

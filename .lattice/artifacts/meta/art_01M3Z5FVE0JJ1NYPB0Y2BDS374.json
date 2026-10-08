@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:39:30Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z5FVE0JJ1NYPB0Y2BDS374",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Z5FVE0JJ1NYPB0Y2BDS374.gz",
+    "size_bytes": 338174
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "A1-A9/A12/A13 PASS; A10 event subscription UNVERIFIED; A11 forced restore UNVERIFIED, not clean restart; C/H pending.",
+  "tags": [],
+  "title": "Native a2e448b74 scale/restore r2: exact identity and intermediate oracles",
+  "token_usage": null,
+  "type": "file"
+}

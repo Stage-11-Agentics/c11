@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T01:01:17Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZMF6BMFWZ7RC89DZ8PKV1Q",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZMF6BMFWZ7RC89DZ8PKV1Q.png",
+    "size_bytes": 874847
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged: after the operator's real Return, workspace 2 with the flagged tab",
+  "token_usage": null,
+  "type": "file"
+}

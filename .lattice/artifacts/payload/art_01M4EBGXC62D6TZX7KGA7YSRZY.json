@@ -1,0 +1,40 @@
+{
+  "invocation": "454e546a155d45219ffaedd460cea52a",
+  "head": "aeb3e8d7157d1e2c2016ed12f44045d339d19894",
+  "bundles": {},
+  "branch": "md-viewer/C11-360-reader-chrome",
+  "submodules": {
+    "ghostty": "e6999ae7adc7c584d6bbda415aa59a6a8c3a2470",
+    "vendor/bonsplit": "4ead59529af12405b03fd14e8943a473350dd97c"
+  },
+  "overlay": [
+    {
+      "path": "Sources/Panels/MarkdownPanelView.swift",
+      "kind": "file",
+      "sha256": "6290af613774ee1647611db55a1bd10579efcaf27a7e773ff62ae68120a437e2",
+      "mode": 420
+    },
+    {
+      "path": "scripts/markdown-viewer/test.mjs",
+      "kind": "file",
+      "sha256": "ee41e9d033893279d07e76abb17c95197091c3847b0ce4e04ab2fbb09967b4ab",
+      "mode": 420
+    }
+  ],
+  "dirty": true,
+  "tag": "md-360",
+  "slug": "md-360",
+  "mode": "debug",
+  "extra": [],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "na",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "app": "c11 DEV md-360.app",
+  "executable_sha256": "57686570e34c40748796a81c4eaac3c87affeac1338fd11ece329367f3185f96",
+  "ok": true,
+  "local_executable_sha256": "2ee83480f9b56575163dd9c462f1b413dbf789a37c5da8caf842df7922cbb55a"
+}

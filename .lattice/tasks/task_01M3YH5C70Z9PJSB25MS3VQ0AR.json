@@ -1,0 +1,60 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:grok-flaky",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-314-delete-flaky-tests",
+      "linked_at": "2026-10-02T14:49:02Z",
+      "linked_by": "agent:grok-flaky",
+      "repo": null
+    }
+  ],
+  "comment_count": 5,
+  "complexity": null,
+  "created_at": "2026-10-02T14:44:15Z",
+  "created_by": "agent:claude-orchestrator",
+  "custom_fields": {},
+  "description": "Atin (2026-10-02): eliminate flaky tests rather than fix them. Delete the cases observed red on unrelated PRs during the c11 1.0 run: WorkspaceRemoteConnectionTests timing/relay cases (15-32 s timeouts and crashes on main and PRs, evidence on C11-306), MessagesPageTests.testWriterMaxWaitRunsDuringSteadyTraffic (30 ms wait under load), and any other test the run recorded as flaky. Keep deterministic coverage of the same behavior where a cheap non-timing test already exists; otherwise delete outright and say so in the PR. Remove the Atlas gate exclusions once gone.",
+  "done_at": "2026-10-02T15:10:51Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YJ0W4XF10KEMTHGN5KZ7D0",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YJ5VVYRDB2VSFA4WGFK20F",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YJP2QDKMD7K1MTAGFNYHYQ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YJP2QBYDH1FZQD538G4V4V",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3YH5C70Z9PJSB25MS3VQ0AR",
+  "last_event_id": "ev_01M3YJTAR1NMGX4B1JP3GCBKD8",
+  "last_status_changed_at": "2026-10-02T15:10:51Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-314",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:infra",
+    "tier:p1"
+  ],
+  "title": "Delete flaky timing tests that block unrelated landings",
+  "type": "chore",
+  "updated_at": "2026-10-02T15:13:10Z",
+  "urgency": null
+}

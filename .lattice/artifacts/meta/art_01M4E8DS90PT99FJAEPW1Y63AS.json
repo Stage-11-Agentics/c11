@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:24Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DS90PT99FJAEPW1Y63AS",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DS90PT99FJAEPW1Y63AS.png",
+    "size_bytes": 868549
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "At 560 px, clicking the filtered CLI heading jumps the page while keeping the overlay open.",
+  "tags": [],
+  "title": "Filtered outline jump stays open",
+  "token_usage": null,
+  "type": "file"
+}

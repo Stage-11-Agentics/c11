@@ -1,0 +1,106 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-md-n1",
+  "branch_links": [
+    {
+      "branch": "md-viewer/C11-362-in-panel-nav",
+      "linked_at": "2026-10-08T19:36:28Z",
+      "linked_by": "agent:codex-md-n1",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "high",
+  "created_at": "2026-10-08T08:54:42Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "description": "Child of C11-357. Depends on C11-336 (all children) merged. Reference: docs/design-prototypes/markdown-viewer/navigator/index.html (round 1, not iterated with Atin), rendered in the reader's visual language from C11-336, not its own.\n\nScope: navigation inside one panel.\n- Relative .md links and in-doc anchors open in the same markdown panel with per-panel back/forward history (\u2318[ / \u2318], toolbar buttons) and a breadcrumb; \u2318-click opens in a new c11 markdown panel; a toggle sets which is the default. Scroll position restored on back/forward.\n- Hover peek: a link previews the target section's real content. Broken anchors suggest the closest heading.\n- Agent CLI: `c11 markdown open --panel <p> <file>#<anchor>` moves an existing panel and pushes history instead of spawning a new one, without stealing focus; `c11 markdown history --panel <p> --json`; `c11 markdown links --panel <p> --broken --json`. Skill updated in the same PR.\n- Vimium-style link hints are out (decision for this run).",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01M4EMRRCF8KY0VGCA0BG3AX65",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EMRZTY9WZCE9A4RGYQPAJ7",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EMRZYMKJQ0HG9N8PJ1HVDV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EMS028G3V6MY6HPJVM5P32",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EMS05X3AGJZ2CZE4YZHHTS",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EMS09K3CEM5N0Y33X7SB9D",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M4EMS0DDXD8SE1EQT9GETS6R",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M4EMXTQ291Q0DXDARAME209Y",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M4EPG8Z9P4EMFFF9X3XZ9W38",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M4DBHMNCH65FSY8HTB1Z4W6X",
+  "last_event_id": "ev_01M4EPHGKB56YD1W5B2NR0M94Y",
+  "last_status_changed_at": "2026-10-08T21:26:07Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-08T08:54:48Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4D6YG0JP1J6XJ7C68TJV85T",
+      "type": "subtask_of"
+    },
+    {
+      "created_at": "2026-10-08T08:54:49Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4DBHMF1X3CA14TZQC4XXDQ5",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-08T08:54:49Z",
+      "created_by": "agent:claude-md-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M4DBHMJ7TVH2NCR3EZHRM3ZJ",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-362",
+  "status": "in_progress",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown navigator N1: in-panel link navigation, history, peek, CLI open/history/links",
+  "type": "task",
+  "updated_at": "2026-10-08T21:26:07Z",
+  "urgency": null
+}

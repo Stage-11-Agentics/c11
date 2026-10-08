@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:49:18Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XWVDYJ2HY9VPA8Y9GT0W52",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3XWVDYJ2HY9VPA8Y9GT0W52.html",
+    "size_bytes": 8020
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Batch 3 sanitized exact-main prompt validation PASS",
+  "token_usage": null,
+  "type": "file"
+}

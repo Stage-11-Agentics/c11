@@ -1,0 +1,105 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-268",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-268-feed-answer",
+      "linked_at": "2026-10-03T00:33:49Z",
+      "linked_by": "agent:luna-268",
+      "repo": null
+    }
+  ],
+  "comment_count": 10,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:07Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator can reply to a finished turn, generic input request or flag from the CLI, and a lowered flag can record the answer that resolved it. Backlog item: A6.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `Sources/TerminalController.swift:6703-6727` is the paste/submit seam with delayed Return. `Sources/AttentionModel.swift:418-429` lowers flags through one mutation path. `Sources/Events/EventEmitter.swift:164-165` emits only by on flag.lowered.\n- Upstream: cmux #11917 and #8670; `Sources/AppDelegate+NotificationDeliverySeams.swift:135-177` is the comparative text-reply path. Its paste and later Return do not bind a key to a TUI request; do not port its banners or approval bridge.\n- Research: report 03 \u201cAnswering: verify, then type\u201d and \u201cFlag interaction\u201d; Fable Feed F3a; Astra Feed F3 and input-state race warning; revised HTML text-reply row. BACKLOG A6 is P2 after A5, not part of A2\u2019s read-only delivery.\n\n## Scope\nIn: c11 feed answer <tab> --text for turn_end, input and flag rows; reuse A5\u2019s inspection, existing text delivery and flag mutation; attach answer text to flag.lowered after successful dispatch.\nOut: question, permission and plan-menu answering; numeric shortcuts, automatic responses, banner actions, blocking bridge, crash-durable request identity and guaranteed agent comprehension.\n\n## Approach\nResolve an exact target and eligible current row, re-read its state and require acceptable A5 input inspection before text delivery. Reject unknown, draft, dialog, disappeared/replaced target or ineligible ask with an actionable open-tab result and no input. Empty text opens/refers the operator to the tab without sending. Keep paste and submit outcomes separate, using C3\u2019s delivered/queued/submitted vocabulary; do not close an ask or lower a flag merely because input was queued. Preserve caller attribution (agent vs explicit operator), retain the flag on refusal/failure, and avoid a duplicate flag.lowered from a synthetic Return. Answer text belongs in the explicitly documented local event channel, not J2\u2019s body-free analytics journal. Do not expand into a request-coordination framework.\n\n## Acceptance criteria\n1. For each eligible row kind with a fixture-covered empty prompt, an explicit command delivers the requested text once to the exact tab; multiline text remains one submission. Record transport/submit outcome separately from whether the agent acts on it.\n2. Question, plan and permission rows reject answer --text without typing. Draft, dialog, unknown, stale/missing target and empty-text cases produce the documented non-send result; no flag is lowered.\n3. A successful flag reply emits exactly one flag.lowered carrying the answer text and accurate by attribution. Plain dismiss/lower remains compatible without answer text. A replaced flag is not accidentally lowered by an earlier reply.\n4. Queued, failed or unconfirmed submission is not reported as an answered ask. The result gives callers enough detail to avoid blindly retrying and duplicating pasted text.\n5. A controlled prompt-change/close-before-submit scenario cancels or reports the bounded delivery failure without redirecting input. Documentation explicitly retains the residual check-to-use race and offers feed open as fallback.\n\n## Validation\nUse eligibility/flag-event fixtures and socket delivery tests covering refusal, queue/failure and delayed submit. tests_v2 exercises the real tagged socket; a computer-use reviewer verifies visible single/multiline replies and draft preservation in an isolated fixture session. Test relevant send timing under an Atlas soak against F2, with sanitized answer/event artifacts.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nDepends on A2 and A5. Coordinate with C3 for delivery response semantics, C11-257 for the shared send/messaging seam, and H-D for cold-tab reads; no mailbox changes are assigned here. F1 / C11-216 supplies build/soak capacity. P2: individually releasable and admitted by week 3.\n\n## Risks\nThe snapshot and later submit are not a transaction with the agent. Keep the contract limited to explicit text, observed refusals and transport outcomes. Answer events contain deliberate user text and require a clear local disclosure/retention contract. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: S. Tier: P2. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": "2026-10-03T05:44:57Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3ZV4279YD601SFS7R42GXSS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZVEZM13JWKHRK4B8ZVGCX9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZXVYXYHX73NXB82MBW3835",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZXZJAP0HHCWBYZ5Z3Z0SVX",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M400B80RBE4YEC4W5P37CAMW",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M402VH3XEEGH6TWGH2PS0Z57",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M403Z9V0AXCYDXQ9R7F9H0J9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M404C2DAX1N9M9DTPDTS0S7P",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M404PK8NHR0H6MQCWSHKC6D4",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M404PK8JKNMVQFFCSCY2BXQQ",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3WREH1ZAYM76M456HTCPH",
+  "last_event_id": "ev_01M404PK8NHR0H6MQCWSHKC6D6",
+  "last_status_changed_at": "2026-10-03T05:44:57Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:33:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:33:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WRBXMCM5NY1SEJ8TW4YG",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-268",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p2"
+  ],
+  "title": "Feed: explicit guarded text replies and answer-bearing flag lowering",
+  "type": "task",
+  "updated_at": "2026-10-03T05:44:57Z",
+  "urgency": null
+}

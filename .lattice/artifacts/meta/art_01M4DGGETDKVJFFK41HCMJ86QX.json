@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T10:21:26Z",
+  "created_by": "agent:codex-md-r2",
+  "custom_fields": {},
+  "id": "art_01M4DGGETDKVJFFK41HCMJ86QX",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4DGGETDKVJFFK41HCMJ86QX.png",
+    "size_bytes": 153520
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final packaged reader before eviction",
+  "token_usage": null,
+  "type": "file"
+}

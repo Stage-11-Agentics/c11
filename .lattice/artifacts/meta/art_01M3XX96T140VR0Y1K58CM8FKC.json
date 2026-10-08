@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:56:49Z",
+  "created_by": "agent:codex-merge-captain",
+  "custom_fields": {},
+  "id": "art_01M3XX96T140VR0Y1K58CM8FKC",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XX96T140VR0Y1K58CM8FKC.md",
+    "size_bytes": 7504
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Replacement public receipt; original identifying payload removed.",
+  "tags": [],
+  "title": "Sanitized merge receipt",
+  "token_usage": null,
+  "type": "note"
+}

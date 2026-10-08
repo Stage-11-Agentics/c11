@@ -1,0 +1,100 @@
+{
+  "control": {
+    "source_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "merge_base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "source_tree_dirty": false,
+    "remote_build_invocation": "d907baccb72647c095bd2cee381d5761",
+    "build_options": {
+      "mode": "debug",
+      "tag": "c11-261",
+      "no_launch": true,
+      "Xcode": "26.3",
+      "Zig": "0.15.2"
+    },
+    "app_path": "/private/tmp/c11-261-perf/builds/control/c11 DEV c11-261.app",
+    "artifact_sha256": {
+      "Contents/MacOS/c11": "657429efbb365204f21180f5ca07ea8914e05a795baec47a890881843c2dc9c1",
+      "Contents/MacOS/c11.debug.dylib": "ae0e1dbd8ffb1741d3c732532e0e67b3d7798ec2cbb7e13a1c0d9d8dc8e8bc89",
+      "Contents/Resources/bin/c11": "8f92dcd89f41787826748fdff865e52a8b42047098976dd78c47939b10aa8d0b"
+    },
+    "script_sha256": {
+      "abba_compare.py": "dc941c148e04a0dd2d5882c4e05d6d211010ba2faf8cd4ca1463cf5896d4b4b1",
+      "appearance.py": "88933c5140fa01c683503537d0746d0fae90f2e5fd6b6a08751ec72dd133b2b2",
+      "calibrate.py": "a967911f04dff2406e1d36e0484aabe362faa94e423c169c748cb642c41b8b57",
+      "compare.py": "e97cbb9315813ba446c10cc62ac2a1148cf45298fa5e78df8dc58813edc9ccfd",
+      "configure.py": "bf98be12a0c5de0cc062e49829e8a11e26d47d5763c18466227a5caac69ca410",
+      "dismiss.py": "78ebfe3c8b691509bf4643e5e8c91bf2d4335f0f8f350d63628329924889059d",
+      "g60.py": "0df5a54ad16e3aa5a397bead0f3dad57c605f702fb6b5a984f949ec40baf7846",
+      "guarded.py": "2ee601dfb04e993a8408006c47c4bdbda4173621c3cb5447947b194800325ff2",
+      "install_probes.py": "3a23e4f124baf5d51df90d8ec3fd21259da8d1aa7905640eee8cc68806a836b9",
+      "interleave.py": "72c86655ade0a502227b70e1d151163739e60914fa6e3627df4237fc8380f060",
+      "lease.py": "856f024226b55ec96e3ffb118e4b8f94308adfed31e903e7a90913dc28111482",
+      "pointer_burst.py": "93f771f794049b3f47ebc3d1dba76bdba83158a634db651405b25d4f2bc24bd1",
+      "prime_gate.py": "3e091c1ec1c49e38bde6f98cf5743a503889ad32c25380c6c16d176d8df95ce7",
+      "probe_terminal.py": "d245566ec379e55e7030f0013c1a0be3340ba4c51f0834b6cd0eecd540b04a0c",
+      "quiet_external.py": "9915bd6899fc16d658bdefcdd19d470474b03a0c3b1f5beb6b1a9a0bdb73e2fc",
+      "quiet_window.py": "b01d770bb74f8be8071d79c8e1c281775314f0131c71b31a12d0de5b777676d6",
+      "run_phases.py": "f34910055747272ea64b7a5b8471b8b2d6c56c2f80254cee34a84c75ddd444b7",
+      "schedule.py": "08675c13580ea354b37232ae61ab87234ab7c2b5088ca09292e6c0541eaa85c5",
+      "seal.py": "93cf56a4678aa3e7c3993caae5307c545ec6f419d18addaf4c0dd220542ece99",
+      "signoff_watch.py": "d35f10aa4a437b50b20b9da19f9eefe10a1e385588e06fb1edaee13c5f74b82b",
+      "test_preparation.py": "079d91a659e651ac87abd414bb5c168e8f75ba6d28dc716d92c3bbcdf99d443f",
+      "test_schedule.py": "96acdd85c178cd53fda893471bd883cf08befb2aeec0b13fe2cf3a4258743f45",
+      "ui_pair.py": "cd6cad6f4f2950bef52c9c6f2d23c693055e565e5254f2d81630dbbd2dbf1e12",
+      "ui_slot.py": "6771e88d0833dacc8d9c415090775e67e0d3e32676a0e1d73c0f7777e44e1ef4",
+      "visual_probe.py": "87957517ce7c711aa00728301cd660bcbcca4ddc1275a49be7f5b399e33fdc22"
+    },
+    "calibration_spec_sha256": "c1a60f7a84a6e9369e562451dbd068b7efa6e951cb6df03cfd3b95d44d31e482",
+    "protocol_sha256": "bbd34479a8915fdbf7bfc8cfdd4aec8bab31da90af270e85918c3905b46ca6e2"
+  },
+  "candidate": {
+    "source_sha": "a2e448b74d9ecdfdf356498cfb431036de9e5c95",
+    "base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "merge_base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "source_tree_dirty": false,
+    "remote_build_invocation": "55201e4f386a43658359deab1c1d1676",
+    "build_options": {
+      "mode": "debug",
+      "tag": "c11-261",
+      "no_launch": true,
+      "Xcode": "26.3",
+      "Zig": "0.15.2"
+    },
+    "app_path": "/private/tmp/c11-261-perf/builds/candidate/c11 DEV c11-261.app",
+    "artifact_sha256": {
+      "Contents/MacOS/c11": "91b9c7f479a43f61411dd05dd87b8470bd8fc364cff96011fb9a624a9c9acd77",
+      "Contents/MacOS/c11.debug.dylib": "8e02c92bf082443b0e71ed46f777fdb40d74a2109fd58f2ac3b20b7bdf6fdf70",
+      "Contents/Resources/bin/c11": "8f92dcd89f41787826748fdff865e52a8b42047098976dd78c47939b10aa8d0b"
+    },
+    "script_sha256": {
+      "abba_compare.py": "dc941c148e04a0dd2d5882c4e05d6d211010ba2faf8cd4ca1463cf5896d4b4b1",
+      "appearance.py": "88933c5140fa01c683503537d0746d0fae90f2e5fd6b6a08751ec72dd133b2b2",
+      "calibrate.py": "a967911f04dff2406e1d36e0484aabe362faa94e423c169c748cb642c41b8b57",
+      "compare.py": "e97cbb9315813ba446c10cc62ac2a1148cf45298fa5e78df8dc58813edc9ccfd",
+      "configure.py": "bf98be12a0c5de0cc062e49829e8a11e26d47d5763c18466227a5caac69ca410",
+      "dismiss.py": "78ebfe3c8b691509bf4643e5e8c91bf2d4335f0f8f350d63628329924889059d",
+      "g60.py": "0df5a54ad16e3aa5a397bead0f3dad57c605f702fb6b5a984f949ec40baf7846",
+      "guarded.py": "2ee601dfb04e993a8408006c47c4bdbda4173621c3cb5447947b194800325ff2",
+      "install_probes.py": "3a23e4f124baf5d51df90d8ec3fd21259da8d1aa7905640eee8cc68806a836b9",
+      "interleave.py": "72c86655ade0a502227b70e1d151163739e60914fa6e3627df4237fc8380f060",
+      "lease.py": "856f024226b55ec96e3ffb118e4b8f94308adfed31e903e7a90913dc28111482",
+      "pointer_burst.py": "93f771f794049b3f47ebc3d1dba76bdba83158a634db651405b25d4f2bc24bd1",
+      "prime_gate.py": "3e091c1ec1c49e38bde6f98cf5743a503889ad32c25380c6c16d176d8df95ce7",
+      "probe_terminal.py": "d245566ec379e55e7030f0013c1a0be3340ba4c51f0834b6cd0eecd540b04a0c",
+      "quiet_external.py": "9915bd6899fc16d658bdefcdd19d470474b03a0c3b1f5beb6b1a9a0bdb73e2fc",
+      "quiet_window.py": "b01d770bb74f8be8071d79c8e1c281775314f0131c71b31a12d0de5b777676d6",
+      "run_phases.py": "f34910055747272ea64b7a5b8471b8b2d6c56c2f80254cee34a84c75ddd444b7",
+      "schedule.py": "08675c13580ea354b37232ae61ab87234ab7c2b5088ca09292e6c0541eaa85c5",
+      "seal.py": "93cf56a4678aa3e7c3993caae5307c545ec6f419d18addaf4c0dd220542ece99",
+      "signoff_watch.py": "d35f10aa4a437b50b20b9da19f9eefe10a1e385588e06fb1edaee13c5f74b82b",
+      "test_preparation.py": "079d91a659e651ac87abd414bb5c168e8f75ba6d28dc716d92c3bbcdf99d443f",
+      "test_schedule.py": "96acdd85c178cd53fda893471bd883cf08befb2aeec0b13fe2cf3a4258743f45",
+      "ui_pair.py": "cd6cad6f4f2950bef52c9c6f2d23c693055e565e5254f2d81630dbbd2dbf1e12",
+      "ui_slot.py": "6771e88d0833dacc8d9c415090775e67e0d3e32676a0e1d73c0f7777e44e1ef4",
+      "visual_probe.py": "87957517ce7c711aa00728301cd660bcbcca4ddc1275a49be7f5b399e33fdc22"
+    },
+    "calibration_spec_sha256": "c1a60f7a84a6e9369e562451dbd068b7efa6e951cb6df03cfd3b95d44d31e482",
+    "protocol_sha256": "bbd34479a8915fdbf7bfc8cfdd4aec8bab31da90af270e85918c3905b46ca6e2"
+  }
+}

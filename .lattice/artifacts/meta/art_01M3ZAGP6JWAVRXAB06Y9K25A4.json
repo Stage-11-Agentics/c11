@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T22:07:20Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZAGP6JWAVRXAB06Y9K25A4",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZAGP6JWAVRXAB06Y9K25A4.json",
+    "size_bytes": 918
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Exact-head b4cd7e22b4 tagged app manifest (build 6f746bfe, exec sha256 339f70a3...)",
+  "token_usage": null,
+  "type": "file"
+}

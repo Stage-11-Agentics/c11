@@ -1,0 +1,47 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-soak",
+  "branch_links": [],
+  "comment_count": 10,
+  "complexity": "high",
+  "created_at": "2026-10-02T01:33:38Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe 1.0 candidate must remain usable while forty agents stream, wait and restart over days; short green tests cannot answer whether memory or typing deteriorates. Backlog item: F2.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Sources/MainThreadHangMonitor.swift:325` owns the watchdog and local hang log, with a 2-second detection threshold documented at `:331` and bounded files at `:373`. `tests_v2/test_socket_reliability_stress.py:105` exercises rapid surface creation, not a 72-hour mixed fleet.\n- Research: BACKLOG.md F2/D21/D22; Fable \u00a73 and \u00a77 fleet gate; Astra \u00a73 acceptance example 6; report 05 Top ten items 8 and 9 (GPU and sidebar risks). Upstream #5857/#7050/#10815/#10922 and #8211/#7117/#8270 motivate measurement; they do not authorize ports here.\n\n## Scope\nIn: reproducible mixed Claude/Codex/Grok fleet workload, 40 agents for 72 hours on Atlas, hang/memory/IOSurface/typing/switching/restart measurements, week-1 baseline, and a 16 GB physical or constrained-host run. Out: sidebar rewrite (D21), automatic GPU reclaim (D22 unless separately admitted from evidence), bug implementations, and release publishing.\n\n## Approach\nBuild a bounded, restartable harness around tagged artifacts, existing hang telemetry and machine-readable samples. Record source SHA, provider versions, host/display conditions, agent mix, workload and elapsed coverage. Pre-register numeric budgets and pass/fail calculation before measuring any candidate. Use the same workload for baseline and candidate; missing samples, aborted runs and adapter outages remain visible. A constrained-host report must state what was constrained, including any limits that do not emulate physical GPU/shared memory.\n\n## Acceptance criteria\n1. In week 1, produce a baseline on the then-current main with exact SHA and versioned workload; record pre-registered latency, hang, memory-growth and IOSurface budgets before a candidate run begins.\n2. Execute the final exact candidate with 40 mixed Claude, Codex and Grok agents for 72 hours on Atlas, including attention storms and prescribed restart cycles; retain duration, population and failure evidence instead of calling a shortened run complete.\n3. Report hang episodes, memory and IOSurface curves, typing-latency baseline/comparison and tab/workspace switching behavior. The machine-readable gate fails or reports incomplete when a registered budget or coverage requirement is missed.\n4. Complete one documented 16 GB Mac or constrained-host run and compare it to the same declared budgets/workload; distinguish simulated constraints from physical hardware evidence.\n5. Publish local review artifacts that answer whether sidebar work or GPU reclaim has evidence to justify follow-up. The harness does not silently implement either parked feature.\n\n## Validation\nExercise harness sampling, interruption and result classification with deterministic traces, then run the real tagged mixed fleet and 72-hour candidate soak on Atlas after F1. Capture an actual computer-use typing/switching path on a verified display with a termination timer and dismissal. Keep raw provider content out of public artifacts. A release gate report and Atin\u2019s artifact approval are separate.\n\n## Dependencies\nDepends on F1 / C11-216. Baseline must not wait for J2 or the final integrated candidate. Coordinate failure findings with existing hang tickets C11-197/C11-202/C11-205 and PTY tickets C11-130/C11-169/C11-235; do not duplicate them.\nWithin-workstream prerequisites: F1 (C11-216).\n\n## Risks\nThe harness itself can perturb timing or saturate the host. Sampling must be bounded/off-main, and restarts target only the isolated tagged app. Do not run the fleet on Hyperion. New report/UI labels need localization if product-facing; logs must not disclose private paths, accounts or prompts.\n\nSize: M. Tier: P0. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01M3XAV3A22K3Y4DE1VEDGJAZC",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+  "last_event_id": "ev_01M4A0744RAZ0MNM20EK292A70",
+  "last_status_changed_at": "2026-10-03T10:29:53Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "critical",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:06Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-270",
+  "status": "backlog",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p0"
+  ],
+  "title": "Gate c11 1.0 with a measured 40-agent fleet soak",
+  "type": "task",
+  "updated_at": "2026-10-07T01:39:00Z",
+  "urgency": null
+}

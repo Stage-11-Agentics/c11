@@ -1,0 +1,3 @@
+C11-311 Tier-2 bug sweep: complete for 1.0 (Orchestrator, 2026-10-03).
+
+All non-typing-path groups merged and verified: 15 merged, including slice 1, through B050 at abfb39b499 (PR #575). Each slice had a non-author Astra PASS at its final head and the captain's exact-head logic gate; receipts are in this ticket's comments. Atin's ruling (2026-10-03): the typing-path groups B032, B049, B093, B148 and B160, plus parked B018, are fixed after 1.0, never in the 1.0 build. They move to the follow-up ticket filed today ("Typing-path bug-sweep groups after 1.0"). The sign-off build signoff-1-1 (cde01d15) contains every merged slice.

@@ -1,0 +1,80 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-320",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-320-readme",
+      "linked_at": "2026-10-03T10:32:12Z",
+      "linked_by": "agent:luna-320",
+      "repo": null
+    }
+  ],
+  "comment_count": 9,
+  "complexity": null,
+  "created_at": "2026-10-02T18:28:29Z",
+  "created_by": "agent:claude-backlog-review",
+  "custom_fields": {},
+  "description": "Atin, 2026-10-02 backlog review: the README must be updated for 1.0. Rewrite README.md so it describes c11 as it ships at 1.0 and matches the sign-off build.\n\nScope:\n1. Every feature claim matches 1.0 behavior: workspaces \u2192 areas \u2192 tabs vocabulary (C11-248), workspace folders, the Feed and attention model (flags, suppression), the journal and agent analytics, the mailbox and messages page, saved agent configs and the A-button picker, browser profiles, exact-session resume across agents.\n2. Install section and hardware note current for the 1.0 release artifact.\n3. Screenshots or GIFs taken from the sign-off build (C11-292), not older builds.\n4. A slot for the walkthrough video (C11-124, Atin records it); link it when it exists.\n5. Voice per docs/c11-voice.md and company brand voice; no em-dashes.\n\nLand after C11-292 produces the sign-off build so screenshots and claims are checked against it. Text-only README edits may go direct to main.",
+  "done_at": "2026-10-03T13:35:49Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M40NZG4DS1W6A1CKDMFCMWGG",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40PCZRXE06GESV14WZM8T2N",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40PM6E19RH65M4FTSMPT482",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40PQK3K7NV438VV5TZW9HD2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40ZEHM8840BVDXGKENDCQDY",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40ZMRVY625Q8XGPBZW5959A",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M40ZMS0YDFDF218B2KS97233",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M40ZMS0W51VD36ZDG1B1RXJT",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3YXZY79HX8444ZJ7XX72BAZ",
+  "last_event_id": "ev_01M40ZMS0YDFDF218B2KS97236",
+  "last_status_changed_at": "2026-10-03T13:35:49Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-320",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "README for 1.0: describe c11 as it ships, with screenshots from the sign-off build",
+  "type": "task",
+  "updated_at": "2026-10-03T13:35:49Z",
+  "urgency": null
+}

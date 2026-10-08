@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T22:57:36Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZDCQFKSVZW0XPP37C5V90E",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZDCQFKSVZW0XPP37C5V90E.json",
+    "size_bytes": 1379
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Preflight output: Exact tagged PID is frontmost FAIL (Atlas-local second guest, head b4cd7e22b4, exec 3ef8b70e)",
+  "token_usage": null,
+  "type": "file"
+}

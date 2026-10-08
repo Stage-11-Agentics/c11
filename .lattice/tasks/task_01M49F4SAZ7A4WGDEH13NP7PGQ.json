@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-10-06T20:40:38Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "description": "Atin (2026-10-06): editing split out of C11-336 (markdown viewer upgrade). Depends on C11-336's WKWebView renderer.\n\nRecommended shape: a source editor (CodeMirror 6) beside the live preview, Cmd+S to save. Not WYSIWYG edit-in-place: round-tripping rendered content back to markdown reformats files agents wrote and makes every save a noisy diff.\n\nThe real work is not the editor:\n- Concurrent writes: agents write these files while the operator edits. Detect a disk change under a dirty buffer and offer reload / keep mine / diff, never silently clobber either side.\n- Dirty state: tab indicator, unsaved buffers survive c11 restart via the session snapshot.\n- Close with unsaved changes: a sheet, never runModal (see CLAUDE.md pitfalls).\n- Keyboard: editor shortcuts must not collide with c11 bindings; focus handoff between editor and terminal.\n- Agent-native: CLI/socket reports dirty state so an agent does not overwrite an operator's in-progress edit.\n\nEstimate: medium complexity, after C11-336 lands.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M49F4SAZ7A4WGDEH13NP7PGQ",
+  "last_event_id": "ev_01M49J7NZ22C9G6G08YPC00EJN",
+  "last_status_changed_at": "2026-10-06T21:34:38Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-06T20:40:58Z",
+      "created_by": "agent:claude-opus-5-5",
+      "note": null,
+      "target_task_id": "task_01M489RB3SGVPAWXQMMP9KMN25",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-344",
+  "status": "cancelled",
+  "tags": [
+    "post-1.0",
+    "markdown"
+  ],
+  "title": "Markdown viewer: edit markdown in a source pane beside the live preview",
+  "type": "task",
+  "updated_at": "2026-10-06T21:34:38Z",
+  "urgency": null
+}

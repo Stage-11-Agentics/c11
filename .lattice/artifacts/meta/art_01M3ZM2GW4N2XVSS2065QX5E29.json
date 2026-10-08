@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T00:54:22Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZM2GW4N2XVSS2065QX5E29",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3ZM2GW4N2XVSS2065QX5E29.json",
+    "size_bytes": 1816
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Red without the fix (fix reverted in working tree): socket-simulated Return in the quick view switches workspaces, 3 failures; operator Return passes",
+  "token_usage": null,
+  "type": "file"
+}

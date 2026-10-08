@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T15:33:05Z",
+  "created_by": "agent:claude-md-orchestrator",
+  "custom_fields": {},
+  "id": "art_01M4E2B39CGZYM2JQCFQS4ZZBV",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M4E2B39CGZYM2JQCFQS4ZZBV.md",
+    "size_bytes": 813
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-359 completion (Orchestrator, large-ticket track).\n- Main PR #621 merged a95823705c (head 75abca4256): Fable PASS, Astra FAIL -> Opus synthesis FAIL -> repair c3d4d0867d (verify 1 FAIL, V1 nested ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

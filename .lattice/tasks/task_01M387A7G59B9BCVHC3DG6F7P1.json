@@ -1,32 +1,111 @@
 {
   "acceptance_criteria": [],
-  "assigned_to": null,
-  "branch_links": [],
-  "comment_count": 0,
-  "complexity": "low",
+  "assigned_to": "agent:sonnet-231",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-231-agents-json",
+      "linked_at": "2026-10-02T14:42:18Z",
+      "linked_by": "agent:grok-consumers",
+      "repo": null
+    }
+  ],
+  "comment_count": 19,
+  "complexity": "medium",
   "created_at": "2026-09-23T22:48:51Z",
   "created_by": "agent:claude-fable-5-1",
   "custom_fields": {},
-  "description": "Why: verified 2026-09-23 on the live events file: waiting.entered carries only instance, seq, ts, type, v, workspace. No surface, no reason. Probe 1 counted 154 waiting events in one run workspace and 492 in another on 2026-07-31 and could not say which surface waited or why, so starvation and attention-flooding are unmeasurable. Deliverable: waiting.entered and waiting.exited carry surface (UUID) and a reason enum (agent_prompt, permission, flag, unknown) in payload; docs updated and synced; a test through the real event path. Out of scope: changing the sidebar attention model.",
-  "done_at": null,
-  "evidence_refs": [],
+  "description": "## Why\nOverwatch and the operator need to distinguish a blocked ask from an unread completion and see why each tab waits, without scraping multiple inconsistent surfaces. Backlog item: J6.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- Existing C11-231 records 154 and 492 workspace waiting events in two observed runs with no way to identify the waiting tab or reason; expand that ticket, do not create a duplicate.\n- c11: `Sources/Events/EventEmitter.swift:138` accepts optional surface but emits no reason; `Sources/Events/EventEnvelope.swift:51`\u2013`:52` name waiting.entered/waiting.left (the old ticket calls the latter exited). `Sources/TabLivenessDeriver.swift:13` conflates notification and waiting. `Sources/TabSheetDetail.swift:32` and `:49` source state/turn clocks separately; `Sources/TabSeenClock.swift:151` supplies seen time.\n- Upstream: #14870 crash session listing; `Packages/macOS/CmuxAgentJournal/Sources/CmuxAgentJournal/AgentJournalReplayPolicy.swift:24`. Research: BACKLOG.md J6; report 01 Waiting changes meaning/What the journal unlocks; Fable \u00a77 roster; Astra \u00a77 honest state contract.\n\n## Scope\nIn: c11 agents --json; lifecycle.changed; attributable waiting reason events; blocked versus unread-completion projection; journal-backed tab-sheet clocks; historical crash-live session list for restore. Out: redesigning sidebar/\u2325V ordering, Feed UI/replies, auto-resuming sessions, restore recipe/account changes, focus-history persistence and changing suppression policy.\n\n## Approach\nProject a single read snapshot from J2 plus existing identity, flag/suppressed and seen stores. Include kind, model, state, reason, since, source, freshness, flag, suppressed and last_seen_at per tab. Emit lifecycle.changed {tab, agent, from, to, reason} only on actual transitions; keep the existing events stream best-effort and make snapshot refresh the recovery route. Satisfy C11-231 with attributable waiting.entered/waiting.left reason payloads or an explicitly reviewed compatibility mapping, never silently rename left to exited. Project old blocked/error as unconfirmed and keep raw blocking separate from attention presentation.\n\n## Acceptance criteria\n1. For F3\u2019s two-tab case, agents --json identifies tab A\u2019s blocked reason and source while tab B works; includes every required field and explicit null/unavailable values where observation is missing.\n2. Opening a blocked tab updates seen information without claiming its ask answered. Opening an unread completion clears only unread attention; flags and suppression preserve their existing routing behavior.\n3. The C11-231 incident can be analyzed from events: a real transition carries the exact tab/agent and reason, repeated identical observations do not create duplicate lifecycle edges, and waiting event compatibility is documented.\n4. Tab-sheet state/turn clocks match the recorded F3 timestamps and remain stable through a restart; history restored as unconfirmed does not claim current liveness or invent elapsed work through a coverage gap.\n5. The restore-candidate list identifies sessions with start but no end at crash, labels them historical candidates, and distinguishes ended/unknown sessions without launching anything.\n6. For disconnected/degraded sources and a deliberately dropped telemetry interval, a fresh agents snapshot gives the known state, provenance and freshness without moving focus.\n\n## Validation\nUse projection/clock fixtures from F3 and behavioral event-stream tests, then tests_v2 against an isolated tagged socket for agents and lifecycle.changed. Independently drive seen/blocked/completion/suppression and tab-sheet UI with computer use (verified display, timer, dismissal). Run native builds and the F2 snapshot/event-load soak on Atlas after C11-216.\n\n## Dependencies\nDepends on J2. This is the expanded C11-231 scope and closes its waiting-reason requirement when implemented. Coordinate A2 Feed and workspace restore work (existing C11-131/C11-139) through the lead; no automatic resume is added. J8 owns matching skill updates and installed sync.\nWithin-workstream prerequisites: J2 (C11-273).\n\n## Risks\nKeep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: M. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": "2026-10-02T23:37:12Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YS8T3ZN1H4NCDT0Z1M0ZS9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YSHSAX9SE1YZQC75RBP6F9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZBEH7TXDZQ6A5MCPG0HP06",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZBS9984WSS80462P1RMCBK",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZES5T739D5P4KF7RN83PZM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZEY09XXA4STJ4S64P2A18E",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZF0VA4E639NQFR7Q322QJ5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZF3NHKWFDNS6549GWKCQZB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZF5486FMV5MTK8QMRQ8RJD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZFN7D13VJRRH7WSQCM3GJJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZFN7HQVQQNX77BAJZDNDXS",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3ZFN7HM21GSH71RWP9NZC3N",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01M387A7G59B9BCVHC3DG6F7P1",
-  "last_event_id": "ev_01M387A7G69VCM609BH88FTCV7",
-  "last_status_changed_at": "2026-09-23T22:48:51Z",
+  "last_event_id": "ev_01M3ZFN7HRPNRE8SSRTPSYFVCX",
+  "last_status_changed_at": "2026-10-02T23:37:12Z",
   "linked_files": [],
-  "priority": "medium",
-  "relationships_out": [],
-  "reopened_count": 0,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 2,
   "schema_version": 1,
   "short_id": "C11-231",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "events",
     "attention",
-    "overwatch"
+    "overwatch",
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
   ],
-  "title": "waiting.entered and waiting.exited carry surface and reason",
+  "title": "Expose journal-backed agent snapshots, waiting reasons, clocks and restore candidates",
   "type": "task",
-  "updated_at": "2026-09-23T22:48:51Z",
+  "updated_at": "2026-10-02T23:37:12Z",
   "urgency": null
 }

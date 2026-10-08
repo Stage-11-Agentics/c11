@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-10-02T06:44:09Z",
+  "created_by": "agent:codex-fixtures",
+  "custom_fields": {
+    "disclosure_sanitized": true,
+    "original_public_payload_removed": true
+  },
+  "id": "art_01M3XNP97V4YDM04R02NFXBPBF",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3XNP97V4YDM04R02NFXBPBF-sanitized.png",
+    "size_bytes": 145218
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Original screenshot pixel crop excludes terminal prompt. Structured probe retains exact-tab and popup-dismissal assertions; this crop shows only the retained visible region.",
+  "tags": [],
+  "title": "C11-263 menu area after dismissal (cropped)",
+  "token_usage": null,
+  "type": "file"
+}

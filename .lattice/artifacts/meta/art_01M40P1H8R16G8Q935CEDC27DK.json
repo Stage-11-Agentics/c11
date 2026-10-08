@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-03T10:48:01Z",
+  "created_by": "agent:orchestrator-c11-1.0",
+  "custom_fields": {},
+  "id": "art_01M40P1H8R16G8Q935CEDC27DK",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M40P1H8R16G8Q935CEDC27DK.md",
+    "size_bytes": 633
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-311 Tier-2 bug sweep: complete for 1.0 (Orchestrator, 2026-10-03).\n\nAll non-typing-path groups merged and verified: 15 merged, including slice 1, through B050 at abfb39b499 (PR #575). Each slice h",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

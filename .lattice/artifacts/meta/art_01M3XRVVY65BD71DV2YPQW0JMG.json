@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:39:38Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XRVVY65BD71DV2YPQW0JMG",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01M3XRVVY65BD71DV2YPQW0JMG.txt",
+    "size_bytes": 3027
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-297 repair exact-head Atlas sender regression",
+  "token_usage": null,
+  "type": "file"
+}

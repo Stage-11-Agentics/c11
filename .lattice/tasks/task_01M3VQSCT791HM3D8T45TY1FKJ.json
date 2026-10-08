@@ -1,0 +1,121 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-251fix",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-251-sidebar-target",
+      "linked_at": "2026-10-02T18:32:18Z",
+      "linked_by": "agent:codex-251",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-251-hourly-fix",
+      "linked_at": "2026-10-03T00:38:32Z",
+      "linked_by": "agent:luna-251fix",
+      "repo": null
+    }
+  ],
+  "comment_count": 18,
+  "complexity": "low",
+  "created_at": "2026-10-01T12:42:19Z",
+  "created_by": "agent:claude-release-captain",
+  "custom_fields": {},
+  "description": "Pre-existing in 0.66.1 and unchanged in 0.67.0. From a shell outside c11 (no C11_WORKSPACE_ID), clear-status, clear-progress, clear-log, list-status, list-log and sidebar-state with NO target flag act on the operator's currently selected workspace. A cron job running 'c11 clear-status <key>' silently clears whatever workspace Atin is looking at. Writes already require a target; make the destructive clear-* commands require one too (fail loudly), and decide whether list-*/sidebar-state should. See the final --tab matrix from C11-248 PR #472.",
+  "done_at": "2026-10-03T00:00:32Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3ZC57D846DSTTXKV66HA1TZ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZCCMSZQN27A006JRE7BXRJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZEJ8YNQ8XBQ57HCA67DPCA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZER8HW69M89JVSMY6T0S7E",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZFG9YB17B3NYTGGSGWV9TX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZFMX5B14CFTKJQH28N3VEV",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZG9YCASBACHMKJ5686Z07X",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZGJK32EMQKVFG98VH1VV3Y",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZGZYTKFYJSFNDPFRGGBCH9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZGZYZ6NCSHMT8YV6ZAZAH3",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3ZGZYZ3EKHPQDJPW48M58K0",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3ZJS10N0XWFRXXNV5NA9TR2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZMEV6WBC1VZ7Q55750PCDB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZN5DC1XHVJRQZ8XXSF8TVP",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3ZPKD0EMZQZYWHSEY28SXDY",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3VQSCT791HM3D8T45TY1FKJ",
+  "last_event_id": "ev_01M3ZPKD0EMZQZYWHSEY28SXDY",
+  "last_status_changed_at": "2026-10-03T00:00:32Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-251",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "Bare-shell clear/list sidebar commands act on the selected workspace",
+  "type": "bug",
+  "updated_at": "2026-10-03T01:38:32Z",
+  "urgency": null
+}

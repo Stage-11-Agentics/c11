@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:40:16Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z5H8GZGTFCFJM8WQD4M5WW",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z5H8GZGTFCFJM8WQD4M5WW.md",
+    "size_bytes": 5458
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Other five repairs implemented; 43 native tests+8 Python; perf remains actual pending ABBA; C/H/clean restart/event stream explicitly pending.",
+  "tags": [],
+  "title": "Six review findings: implementation and truthful evidence dispositions",
+  "token_usage": null,
+  "type": "file"
+}

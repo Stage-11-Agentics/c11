@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:34:39Z",
+  "created_by": "C11-257-Orchestrator-1",
+  "custom_fields": {},
+  "id": "art_01M3ZFGJ95CE8MDZHXQ01S1AJM",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3ZFGJ95CE8MDZHXQ01S1AJM.md",
+    "size_bytes": 1094
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-322 complete. PR #562 squash-merged to origin/main as fbf5bbe88bd0b613ea576d6d21e97bcf2f39b0ba (merged at head 6b5e072aaf with --match-head-commit; main was 4 commits ahead with no overlap in the ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,7 @@
+# Review: C11-278 (document bounded lifecycle hooks; sync the journal operating skill), cycle 1
+
+Follow `reviewer-common.md` in this directory (mailbox tab:210). Title `C11-278 Review Astra`. Actor `agent:astra-review-278`. Owner: Codex Luna.
+
+- PR https://github.com/Stage-11-Agentics/c11/pull/573, head `7a942d02224730a01e704e2b5ddaf93fc86570c2`, base = merge-base with origin/main. Ticket acceptance 1-4 (`lattice show C11-278`); validation: the C11-278 validation comment.
+- Check: (1) CLAUDE.md and PHILOSOPHY.md state the same bounded rule (optional, non-blocking observations; no tool or prompt bodies; no answers; no trust broadening; no blocking bridge; no tenant writes), consistent with CLAUDE.md's existing "unopinionated about the terminal" section and the session-resume wrapper exception; (2) the skill teaches the commands exactly as they ship on main (spot-run a few examples yourself against the owner's evidence or the CLI help at head), including advisory, degraded and unconfirmed evidence, the Codex trust-probe fallback, and C11-231's statement that Claude AskUserQuestion picker answers are unobserved; (3) metadata docs say activity persists despite the derived-field exclusion; events docs say the first emitted seq is 1 and is per-instance, distinct from the journal sequence; (4) every example targets an explicit tab, any send example chains `send && send-key`, and nothing teaches agent workspace switching (C11-323). Docs only; no Swift.
+- Reply `VERDICT C11-278 PASS|FAIL <head> <artifact>` to tab:210.

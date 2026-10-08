@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T17:19:25Z",
+  "created_by": "agent:codex-md-r3",
+  "custom_fields": {},
+  "id": "art_01M4E8DSYYHKFPD251AW174ABG",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4E8DSYYHKFPD251AW174ABG.png",
+    "size_bytes": 882277
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Manual theme matrix check in the tagged build.",
+  "tags": [],
+  "title": "Light reader with light c11 appearance",
+  "token_usage": null,
+  "type": "file"
+}

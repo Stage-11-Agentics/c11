@@ -1,0 +1,108 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-history",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-290-ssh-smoke",
+      "linked_at": "2026-10-02T07:16:19Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    }
+  ],
+  "comment_count": 8,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\n`c11 ssh atlas` is the escape hatch for a shell and a browser proxy on the always-on machine. The app skill already says remote commands are refused. The API reference still tells the reader to install tmux, and nobody has run the live path against Atlas since #490. Backlog item: R1.\n\n## Evidence\n- c11: origin/main is `0ff8887e5e`, which is #490, \"ssh: stop serving the remote command relay.\" `Sources/Workspace.swift:3118-3129` answers every post-auth command with `remote_commands_disabled` and the message \"c11 commands are not available over c11 ssh in this version\".\n- c11: `skills/c11/SKILL.md:131-136` already says that. `skills/c11/references/api.md:431` on this SHA is a different stale line: \"Tab is not a terminal. you used `--tab` without `--workspace`. Always pass both when targeting remote tabs.\" The sentence report 02 cited as the drift has moved to `:440`: \"c11 is a local multiplexer. For SSH work, install tmux on the remote.\" The backlog names line 431 from the older citation. Fix both lines so they match the skill and the smoke.\n- c11: `CLI/c11.swift:2128-2129` dispatches `ssh`. Help at `:8929-8946` says it creates a remote workspace and a local SSH proxy so browser traffic can egress from the remote host.\n- c11: docker tests already expect the refusal. `tests_v2/test_ssh_remote_cli_relay.py:135` and `tests_v2/test_ssh_remote_interactive_cmux_command_regression.py:188`. CI's `remote-daemon-tests` job runs `tests/test_cli_ssh_shell_bootstrap.py` (`.github/workflows/ci.yml:63` and `:210`). None of that is a live `c11 ssh atlas` from a tagged build.\n- Research: `upstream-triage/c11-1.0/02-ssh-agents.md` (the pre-#490 hole, now closed) and `06-grab-list.md` is not the ssh source. Fable row R0 and Astra row R0 both mark the smoke core. `c11-1.0.html` agrees. D9 and D10 stay pending (backlog R2). The command channel, tmux holder, and per-tab hosts are parked.\n\n## Scope\nIn: one live smoke of `c11 ssh atlas` from a tagged build. Record three results: a remote shell that runs a command, a browser tab in that workspace whose request egresses from Atlas, and a `c11` command inside the remote shell that fails with the refusal message. Then edit `skills/c11/references/api.md` so lines 431 and 440 match those results. Sync the installed c11 skill on the landing machine.\nOut: rebuilding the command relay. A tmux recipe for lid-close (if-time, not this ticket). The read-only Atlas fleet view. Persist and reattach of remote workspaces. Go holder, remote CLI verbs, per-tab hosts, `c11 move`, Prime override, federation. Those are parked or R2. Do not \"fix\" a smoke failure by turning the relay back on.\n\n## Approach\nUse `./scripts/launch-tagged-automation.sh <tag> --qa fresh` so the skills sheet and the resume picker are not in the way. From the local CLI, `c11 ssh atlas`. In the remote shell, run something harmless (`hostname`, `pwd`) and confirm the output is Atlas. Open a browser tab in that workspace and load a page that reports the client address, or use the existing proxy test's approach without copying secrets into the note. Inside the remote shell, run `c11 ping` and confirm the refusal string. Then rewrite the two api.md lines: `c11 ssh <host>` opens a remote shell and a browser proxy. Commands from inside that shell do not run on the Mac. Point at the SKILL.md section. If the shell or the proxy fails, file the failure in the PR with the log line. Fix it only when the fix stays inside the current design (bootstrap, proxy, refusal). A missing remote daemon or a refused command that does not match the message is a product bug. A wish for remote `c11 send` is out of scope.\n\n## Acceptance criteria\n1. The PR includes a smoke note: tag, machine, UTC time, `hostname` output from the remote shell, and whether the browser request showed Atlas as the egress. No keys, tokens, or cookie values.\n2. `c11 ping` inside that remote shell prints \"c11 commands are not available over c11 ssh in this version\" and does not return `pong` from the Mac.\n3. `skills/c11/references/api.md` no longer says to install tmux for SSH work, and no longer says a missing `--workspace` is why a remote tab is \"not a terminal.\" The new text matches criterion 2 and the shell result.\n4. `skills/c11/SKILL.md` SSH section stays true. If the smoke disagrees with it, update it in the same PR.\n5. The docker tests that assert the refusal still pass, or the PR says they were not re-run and why (they need Docker). Do not weaken the assertion.\n\n## Validation\nThe smoke is the validation. Computer use or `read-screen` confirms the shell and the browser tab. One local read of the edited api.md. No new unit test that greps the markdown. The socket tests already cover the refusal string. Builds and the tagged app come from Atlas once C11-216 (F1) lands. Until then, one tagged build needs a granted slot. The ssh target is Atlas either way.\n\n## Dependencies\nDepends on F1 (C11-216) for an Atlas-built tagged app. The smoke target is Atlas regardless. R2 (D9, D10) is not ticketed. Do not link this to a command-channel ticket.\n\n## Risks\nTyping latency: none. Main thread: do not move the relay onto main. Doctrine: the refusal stays. No tenant config on Atlas or the laptop. Do not install a remote skill or edit `~/.ssh/config` as part of the fix. Localization: api.md is English skill source. Public repo: the smoke note and the doc change describe the refusal. They do not describe how the old relay forwarded commands. #490's commit message is the public record. Do not expand it.\n\nSize: S. Tier: P1. Doctrine check: `c11 ssh` is a shell and a browser proxy. It is not a remote control socket.",
+  "done_at": "2026-10-02T08:25:38Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XSDVK1HASB7KCT04S1NK6T",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XT0CTWVY5KDD3VS7G2R88X",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XT0CYDPRW7KF5PMZMT99YD",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XT2QKPTQT18CA9W9HKJNFA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XT6R1T4JV5B9GST225RB8T",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XTATJHCCTZ93JS0YVZ3XPW",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XVG30EYSY132B69DHSCWES",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XVG3034SN8ESJEHKFM6CGG",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWWD5FK054P8477Q6Y7RVW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWWS63H3QF5KGZFSYGH4RE",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XX46RH67QPKFFWNBE6X177",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XX973X4N4FR8AD43ZHKJF6",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FP1W7C1SERYV9M5B8T45",
+  "last_event_id": "ev_01M3XX989YNRFZSE37510SDF7M",
+  "last_status_changed_at": "2026-10-02T08:25:38Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:46:33Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-290",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Smoke c11 ssh atlas and correct the API reference",
+  "type": "task",
+  "updated_at": "2026-10-02T08:56:51Z",
+  "urgency": null
+}

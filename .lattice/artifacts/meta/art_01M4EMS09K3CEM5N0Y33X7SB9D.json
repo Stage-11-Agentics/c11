@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-08T20:55:15Z",
+  "created_by": "agent:codex-md-n1",
+  "custom_fields": {},
+  "id": "art_01M4EMS09K3CEM5N0Y33X7SB9D",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M4EMS09K3CEM5N0Y33X7SB9D.png",
+    "size_bytes": 255696
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Command-click opens navigation-target.md in panel 8 while the source panel remains.",
+  "tags": [],
+  "title": "Atlas UI: Command-click new panel",
+  "token_usage": null,
+  "type": "file"
+}

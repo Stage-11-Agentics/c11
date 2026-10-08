@@ -1,0 +1,77 @@
+OK action=rename panel=panel:7 workspace=workspace:3
+OK panel:8 area:6 workspace:3
+OK action=rename panel=panel:8 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 02 panel:8 11. End-to-end: three agents coordinating a build
+OK panel:9 area:6 workspace:3
+OK action=rename panel=panel:9 workspace=workspace:3
+OK scrolled to heading: 9. Topic broadcast — subscribe + fan-out
+VISITED 03 panel:9 9. Topic broadcast — subscribe + fan-out
+OK panel:10 area:6 workspace:3
+OK action=rename panel=panel:10 workspace=workspace:3
+OK scrolled to heading: 7. Happy path — agent is idle
+VISITED 04 panel:10 7. Happy path — agent is idle
+OK panel:11 area:6 workspace:3
+OK action=rename panel=panel:11 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 05 panel:11 11. End-to-end: three agents coordinating a build
+OK panel:12 area:6 workspace:3
+OK action=rename panel=panel:12 workspace=workspace:3
+OK scrolled to heading: 9. Topic broadcast — subscribe + fan-out
+VISITED 06 panel:12 9. Topic broadcast — subscribe + fan-out
+OK panel:13 area:6 workspace:3
+OK action=rename panel=panel:13 workspace=workspace:3
+OK scrolled to heading: 7. Happy path — agent is idle
+VISITED 07 panel:13 7. Happy path — agent is idle
+OK panel:14 area:6 workspace:3
+OK action=rename panel=panel:14 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 08 panel:14 11. End-to-end: three agents coordinating a build
+OK panel:15 area:6 workspace:3
+OK action=rename panel=panel:15 workspace=workspace:3
+OK scrolled to heading: 9. Topic broadcast — subscribe + fan-out
+VISITED 09 panel:15 9. Topic broadcast — subscribe + fan-out
+OK panel:16 area:6 workspace:3
+OK action=rename panel=panel:16 workspace=workspace:3
+OK scrolled to heading: 7. Happy path — agent is idle
+VISITED 10 panel:16 7. Happy path — agent is idle
+OK panel:17 area:6 workspace:3
+OK action=rename panel=panel:17 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 11 panel:17 11. End-to-end: three agents coordinating a build
+OK panel:18 area:6 workspace:3
+OK action=rename panel=panel:18 workspace=workspace:3
+OK scrolled to heading: 9. Topic broadcast — subscribe + fan-out
+VISITED 12 panel:18 9. Topic broadcast — subscribe + fan-out
+OK panel:19 area:6 workspace:3
+OK action=rename panel=panel:19 workspace=workspace:3
+OK scrolled to heading: 7. Happy path — agent is idle
+VISITED 13 panel:19 7. Happy path — agent is idle
+OK panel:20 area:6 workspace:3
+OK action=rename panel=panel:20 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 14 panel:20 11. End-to-end: three agents coordinating a build
+OK panel:21 area:6 workspace:3
+OK action=rename panel=panel:21 workspace=workspace:3
+OK scrolled to heading: 9. Topic broadcast — subscribe + fan-out
+VISITED 15 panel:21 9. Topic broadcast — subscribe + fan-out
+OK panel:22 area:6 workspace:3
+OK action=rename panel=panel:22 workspace=workspace:3
+OK scrolled to heading: 7. Happy path — agent is idle
+VISITED 16 panel:22 7. Happy path — agent is idle
+OK panel:23 area:6 workspace:3
+OK action=rename panel=panel:23 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 17 panel:23 11. End-to-end: three agents coordinating a build
+OK panel:24 area:6 workspace:3
+OK action=rename panel=panel:24 workspace=workspace:3
+OK scrolled to heading: 9. Topic broadcast — subscribe + fan-out
+VISITED 18 panel:24 9. Topic broadcast — subscribe + fan-out
+OK panel:25 area:6 workspace:3
+OK action=rename panel=panel:25 workspace=workspace:3
+OK scrolled to heading: 7. Happy path — agent is idle
+VISITED 19 panel:25 7. Happy path — agent is idle
+OK panel:26 area:6 workspace:3
+OK action=rename panel=panel:26 workspace=workspace:3
+OK scrolled to heading: 11. End-to-end: three agents coordinating a build
+VISITED 20 panel:26 11. End-to-end: three agents coordinating a build

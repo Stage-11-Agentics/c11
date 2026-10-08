@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T23:54:01Z",
+  "created_by": "agent:sonnet-266",
+  "custom_fields": {},
+  "id": "art_01M3ZGM1BPRZ3FGYTP1B2E2C27",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3ZGM1BPRZ3FGYTP1B2E2C27.png",
+    "size_bytes": 848673
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Repair r1: same state 1 s later, ring not drawn (fill on Turns; ring is intermittent)",
+  "token_usage": null,
+  "type": "file"
+}

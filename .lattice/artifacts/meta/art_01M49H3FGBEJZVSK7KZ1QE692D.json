@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-06T21:14:52Z",
+  "created_by": "agent:cairn-retro",
+  "custom_fields": {},
+  "id": "art_01M49H3FGBEJZVSK7KZ1QE692D",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M49H3FGBEJZVSK7KZ1QE692D.md",
+    "size_bytes": 213
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Astra review PASS r1 at ff6b4ada98; rebase onto C11-337 was names only, attested at 859d3210f2 with Atlas 1676+68 host tests green; merged 3fdb7e2317 (#588), merged tree identical to the PR head for a",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

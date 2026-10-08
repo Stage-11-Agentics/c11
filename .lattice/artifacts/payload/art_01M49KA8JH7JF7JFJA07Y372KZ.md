@@ -1,0 +1,1 @@
+Astra review PASS r3 at 38023d5c8b; rebase onto #588 attested at 86584a6d91; proof run 37534378879 on macos-15 green (1673 + 68 host tests); merged 1edebf8d27 (#589), files identical; workflow re-enabled.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://stage11.ai/schemas/event-envelope.v2.json",
   "title": "c11 Event Envelope v2",
-  "description": "Source of truth for the c11 events-stream envelope (v2). Every NDJSON line written with \"v\": 2 to ~/Library/Application Support/c11/events/events-<instance>.ndjson must validate against this schema. One EventEnvelope serializes to exactly one line. v2 renames the subject refs (surface → panel, pane → area), three event types (surface.created → panel.created, surface.closed → panel.closed, tab.input_sent → panel.input_sent), the metadata.changed scope values (surface → panel, pane → area), and the caller payload key (caller_tab_id / caller_surface_id → caller_panel_id; lifecycle.changed tab → panel). Logs written before v2 are never rewritten: lines with \"v\": 1 validate against event-envelope.v1.schema.json, and readers accept both. See Sources/Events/EventEnvelope.swift and spec/README.md.",
+  "description": "Source of truth for the c11 events-stream envelope (v2). Every NDJSON line written with \"v\": 2 to ~/Library/Application Support/c11/events/events-<instance>.ndjson must validate against this schema. One EventEnvelope serializes to exactly one line. v2 renames the subject refs (surface \u2192 panel, pane \u2192 area), three event types (surface.created \u2192 panel.created, surface.closed \u2192 panel.closed, tab.input_sent \u2192 panel.input_sent), the metadata.changed scope values (surface \u2192 panel, pane \u2192 area), and the caller payload key (caller_tab_id / caller_surface_id \u2192 caller_panel_id; lifecycle.changed tab \u2192 panel). Logs written before v2 are never rewritten: lines with \"v\": 1 validate against event-envelope.v1.schema.json, and readers accept both. See Sources/Events/EventEnvelope.swift and spec/README.md.",
   "type": "object",
   "required": [
     "seq",
@@ -15,7 +15,7 @@
     "seq": {
       "type": "integer",
       "minimum": 0,
-      "description": "Monotonic per-instance sequence number, assigned on the writer's serial queue so file order and seq order always agree. THE ordering oracle — consumers order by seq, not ts."
+      "description": "Monotonic per-instance sequence number, assigned on the writer's serial queue so file order and seq order always agree. THE ordering oracle \u2014 consumers order by seq, not ts."
     },
     "ts": {
       "type": "string",
@@ -27,6 +27,16 @@
       "enum": [
         "panel.created",
         "panel.closed",
+        "app.activated",
+        "app.deactivated",
+        "screen.locked",
+        "screen.unlocked",
+        "system.sleep",
+        "system.wake",
+        "instance.sample",
+        "workspace.created",
+        "workspace.renamed",
+        "workspace.closed",
         "workspace.selected",
         "workspace.switch_blocked",
         "workspace.reordered",
@@ -49,9 +59,10 @@
         "ask.closed",
         "log.opened",
         "log.rotated",
-        "log.dropped"
+        "log.dropped",
+        "log.policy"
       ],
-      "description": "Dotted event type. The v2 taxonomy (EVT-2): panel.created, panel.closed, workspace.selected, workspace.switch_blocked, workspace.reordered, metadata.changed, liveness.derived, waiting.entered, waiting.left, lifecycle.changed, flag.raised, flag.lowered, flag.suppressed, flag.unsuppressed, mailbox.accepted, panel.input_sent, mailbox.delivered, conversation.resume.mode, conversation.resume.decision, hang.precursor, ask.opened, ask.closed. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers — not taxonomy members — that let consumers detect instance boundaries, rotation, and backpressure drops. ask.opened and ask.closed carry structural fields only (kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking, and resolution on close). They never carry prompt text, options, plan text, or a tool command. v1 spellings (surface.created, surface.closed, tab.input_sent) appear only on v1 lines; readers and `c11 events tail --filter type=` treat them as aliases of the panel.* names. v2 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
+      "description": "Dotted event type. The v2 taxonomy (EVT-2): panel.created, panel.closed, workspace.selected, workspace.switch_blocked, workspace.reordered, metadata.changed, liveness.derived, waiting.entered, waiting.left, lifecycle.changed, flag.raised, flag.lowered, flag.suppressed, flag.unsuppressed, mailbox.accepted, panel.input_sent, mailbox.delivered, conversation.resume.mode, conversation.resume.decision, hang.precursor, ask.opened, ask.closed. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers \u2014 not taxonomy members \u2014 that let consumers detect instance boundaries, rotation, and backpressure drops. ask.opened and ask.closed carry structural fields only (kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking, and resolution on close). They never carry prompt text, options, plan text, or a tool command. v1 spellings (surface.created, surface.closed, tab.input_sent) appear only on v1 lines; readers and `c11 events tail --filter type=` treat them as aliases of the panel.* names. v2 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
     },
     "instance": {
       "type": "string",
@@ -80,7 +91,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type — e.g. panel.created carries { kind, title }; metadata.changed carries { key, value, prior, source, scope } with scope panel or area; workspace.selected carries { previous?, cause, method?, caller_panel_id? }; workspace.switch_blocked carries { target, method, caller_panel_id }; workspace.reordered carries { window_id, final_workspace_ids }; lifecycle.changed carries { panel, agent, from, to, reason }; flag.raised carries { reason, caller_panel_id, by }; flag.lowered carries { by, answer? } (only feed answer attaches the submitted text, and only when its original flag epoch is lowered); flag.suppressed / flag.unsuppressed carry { by }; mailbox.accepted carries { id, from, body, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?, truncated? }; panel.input_sent carries { caller_panel_id, caller_title, target_title, kind, text, bytes, submitted, truncated?, queued? }; mailbox.delivered carries { id, recipient, via }; conversation.resume.mode carries { mode }; conversation.resume.decision carries { kind, conversation_id, mode, decision, skip_code, reason? }; hang.precursor carries { cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint }; ask.opened and ask.closed carry { kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking } and ask.closed also carries resolution (resumed, cancelled, unknown, or null). Those ask payloads never include prompt text or options. log.opened carries { pid }; log.rotated carries { rolled_to }; log.dropped carries { count }. Readers also accept the v1 payload keys caller_tab_id, caller_surface_id, and lifecycle tab. Omitted (not encoded as null) when empty."
+      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type \u2014 e.g. panel.created carries { kind, title }; metadata.changed carries { key, value, prior, source, scope } with scope panel or area; workspace.selected carries { previous?, cause, method?, caller_panel_id? }; workspace.switch_blocked carries { target, method, caller_panel_id }; workspace.reordered carries { window_id, final_workspace_ids }; lifecycle.changed carries { panel, agent, from, to, reason }; flag.raised carries { reason, caller_panel_id, by }; flag.lowered carries { by, answer? } (only feed answer attaches the submitted text, and only when its original flag epoch is lowered); flag.suppressed / flag.unsuppressed carry { by }; mailbox.accepted carries { id, from, body, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?, truncated? }; panel.input_sent carries { caller_panel_id, caller_title, target_title, kind, text, bytes, submitted, truncated?, queued? }; mailbox.delivered carries { id, recipient, via }; conversation.resume.mode carries { mode }; conversation.resume.decision carries { kind, conversation_id, mode, decision, skip_code, reason? }; hang.precursor carries { cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint }; ask.opened and ask.closed carry { kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking } and ask.closed also carries resolution (resumed, cancelled, unknown, or null). Those ask payloads never include prompt text or options. log.opened carries { pid }; log.rotated carries { rolled_to }; log.dropped carries { count }. Readers also accept the v1 payload keys caller_tab_id, caller_surface_id, and lifecycle tab. Omitted (not encoded as null) when empty. Local history additions: presence edges may carry snapshot=true for a baseline; workspace.created carries title/root_directory, workspace.renamed title/prior, workspace.closed title; instance.sample carries rss_mb/cpu_s_total/threads and optional shutdown=true; hang.precursor adds app_active/screen_locked/rss_mb (unknown context may be null); coalesced OSC title tails add title_change_count; log.policy carries enabled/analytics_enabled/keep_text/retention_days. Text-off panel.input_sent/mailbox.accepted carry bytes and text_recorded=false with text/body/body_ref omitted."
     }
   },
   "additionalProperties": false

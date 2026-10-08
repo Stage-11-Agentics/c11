@@ -146,3 +146,74 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 - **Per-instance, not global.** There is no cross-instance total order; `seq` only means something within one `instance`.
 
 To answer who attempted a switch, run `c11 events tail --filter type=workspace.switch_blocked`. Resolve `payload.caller_panel_id` against `c11 tree --all --json`; a closed caller remains attributable by UUID. CLI requests include their caller identity; raw sockets from terminals are attributed by the peer's controlling TTY. This is attribution, not permission to switch.
+
+## Local activity history (C11-349)
+
+The app records notification-driven presence edges: `app.activated` /
+`app.deactivated`, `screen.locked` / `screen.unlocked`, and `system.sleep` /
+`system.wake`. At launch, known presence dimensions are emitted with
+`payload.snapshot: true`; these establish a baseline rather than a physical
+transition. Duplicate lock/session notifications do not emit duplicate edges.
+
+`workspace.created` carries `{title, root_directory}` (root may be null),
+`workspace.renamed` carries `{title, prior}`, and `workspace.closed` carries
+`{title}`. Workspace teardown emits `panel.closed` for every remaining known
+panel before the workspace edge, including graphs replaced by session restore.
+Panel closes remain structural events when analytics are off.
+
+`hang.precursor` additionally carries `app_active`, `screen_locked` (null when
+not yet known), and current `rss_mb`. `instance.sample` carries current
+`rss_mb`, cumulative process `cpu_s_total`, and `threads`. A single
+`proc_pidinfo(PROC_PIDTASKINFO)` query obtains these together on the writer
+queue. The sole new timer repeats every ten minutes with sixty seconds of
+leeway, is cancelled during sleep or while analytics are off, and restarts
+without catch-up on wake. Clean shutdown records one final sample with
+`shutdown: true`. Samples never enumerate panels or parse transcripts.
+
+OSC title changes that differ only in leading Unicode status/spinner glyphs
+are suppressed. Within each sixty-second panel/scope window, meaningful title
+churn retains its first and last changes; the last carries
+`title_change_count`, including the first. Window expiry is checked by event
+traffic and the existing health sample. Close and shutdown flush pending last
+changes. Explicit title writes are unaffected. Pending state is bounded to
+4096 panel/scope entries; capacity eviction flushes the oldest entry.
+
+Rotation keeps numbered generations (`.1` newest, then `.2`, `.3`, ...), using
+plain renames. Retention prunes by modification age and a 64 MiB total budget
+across recognized event files in the history directory. It runs at open,
+rotation, policy changes and health samples. It never unlinks another live
+instance's current file; when live files exhaust the budget, new writes are
+shed instead of growing it. A record larger than the entire budget is shed.
+
+Policy defaults: analytics on, text on, retention 14 days. The cached keys are
+`c11.activityHistory.analyticsEnabled`, `c11.activityHistory.keepText`, and
+`c11.activityHistory.retentionDays` (7, 14 or 30). Analytics-off skips presence,
+workspace and sample envelopes before construction; existing panel, mailbox,
+feed and lifecycle events continue. `log.policy` records
+`{enabled, analytics_enabled, keep_text, retention_days}` at launch and policy
+changes. Disabling full recording writes the final policy boundary first;
+re-enabling analytics writes a new presence snapshot. Offline consumers must
+preserve disabled spans as unknown coverage, never zero usage.
+
+With text off, new `panel.input_sent` and `mailbox.accepted` payloads omit
+`text` / `body` / `body_ref`, retain the original UTF-8 `bytes` count, and carry
+`text_recorded: false`. Existing historical text is not rewritten.
+
+The full recording switch is defaults-only:
+
+```bash
+defaults write com.stage11.c11 c11.activityHistory.enabled -bool false
+# Restore recording:
+defaults write com.stage11.c11 c11.activityHistory.enabled -bool true
+```
+
+With this off, event tail, live Messages view updates, mailbox event receipts,
+and the event-backed feed lose new records; historical files remain readable.
+This is independent of anonymous telemetry. Tagged builds use their own
+bundle defaults domain.
+
+For a separate supported history location, launch the app or offline CLI with
+`C11_ACTIVITY_HISTORY_DIRECTORY=/absolute/path`. App writers, Messages readers,
+mailbox event receipt readers and offline consumers resolve the same directory.
+Relative overrides are ignored. Use a separate directory for tagged validation
+so its retention cannot remove production history.

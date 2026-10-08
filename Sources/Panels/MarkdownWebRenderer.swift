@@ -213,7 +213,13 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         call("setSourceMode", arguments: [position.sourceMode]) { [weak self] _ in
             guard let self, !self.closed else { return }
             let scroll = {
-                self.call("scrollToLine", arguments: [position.line, position.offset]) { [weak self] _ in
+                self.call("scrollToLine", arguments: [position.line, position.offset]) { [weak self] result in
+#if DEBUG
+                    if case .success(let value) = result, let state = value as? [String: Any],
+                       let actual = MarkdownReadingPosition(state: state), let self {
+                        dlog("markdown.renderer.restored panel=\(self.panel?.id.uuidString ?? "unknown") line=\(actual.line) offset=\(actual.offset) width=\(self.webView.frame.width) height=\(self.webView.frame.height)")
+                    }
+#endif
                     self?.finishRender(revision)
                 }
             }

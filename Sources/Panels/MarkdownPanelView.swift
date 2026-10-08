@@ -266,7 +266,7 @@ struct MarkdownPanelView: View {
     }
 }
 
-private struct MarkdownWebContent: NSViewRepresentable {
+struct MarkdownWebContent: NSViewRepresentable {
     let panel: MarkdownPanel
     let isFocused: Bool
 

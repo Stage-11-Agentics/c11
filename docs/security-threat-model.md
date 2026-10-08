@@ -237,7 +237,8 @@ JavaScript or a page URL. The web renderer disables raw HTML and sanitizes
 Mermaid output; document directives cannot configure Mermaid.
 
 Local raster images use `c11md-asset://doc/`. The handler percent-decodes
-paths, rejects traversal, checks the resolved real path against the open
+paths exactly once, treats remaining percent sequences as literal names,
+rejects traversal, checks the resolved real path against the open
 document's directory tree, and opens each component relative to a pinned
 directory descriptor without following symlinks. A symlink resolving within
 that tree is allowed; one escaping it is denied. HTML, SVG and script files

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 import XCTest
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -73,11 +74,19 @@ final class MarkdownWebRendererTests: XCTestCase {
     }
 
     func testEvictionWaitsForQueryAndRestoresPositionModeFindAndLatestContent() async throws {
+        try await evictionRestoresReadingState(sourceMode: true)
+    }
+
+    func testNarrowReadModeEvictionRestoresReadingState() async throws {
+        try await evictionRestoresReadingState(sourceMode: false)
+    }
+
+    private func evictionRestoresReadingState(sourceMode: Bool) async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-eviction-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let path = folder.appendingPathComponent("reader.md")
-        let text = "# Reader\n\n" + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
+        let text = "# Reader\n\n```mermaid\ngraph TD\nA-->B\n```\n\n" + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
         try text.write(to: path, atomically: true, encoding: .utf8)
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
         var others: [MarkdownPanel] = []
@@ -85,12 +94,13 @@ final class MarkdownWebRendererTests: XCTestCase {
         let host = UUID()
         panel.setRendererVisible(true, hostID: host)
         var first: MarkdownWebRenderer? = panel.ensureRenderer()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: sourceMode ? 1000 : 460, height: sourceMode ? 800 : 320), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentView = first!.webView
+        var hosted: NSView? = sourceMode ? first!.webView : NSHostingView(rootView: MarkdownWebContent(panel: panel, isFocused: false))
+        window.contentView = hosted
         defer { window.contentView = nil; window.close() }
         await rendered(first!, revision: 1)
-        _ = try await call(first!, "setSourceMode", arguments: [true])
+        _ = try await call(first!, "setSourceMode", arguments: [sourceMode])
         _ = try await call(first!, "find", arguments: ["Paragraph 40"])
         _ = try await call(first!, "scrollToLine", arguments: [160, 7.25])
         let beforeValue = try await call(first!, "visible")
@@ -98,13 +108,14 @@ final class MarkdownWebRendererTests: XCTestCase {
         let position = try XCTUnwrap(MarkdownReadingPosition(state: before))
         XCTAssertGreaterThan(position.line, 1)
         XCTAssertGreaterThan(position.offset, 0, "Approved offset bridge must be present")
-        XCTAssertTrue(position.sourceMode)
+        XCTAssertEqual(position.sourceMode, sourceMode)
         XCTAssertEqual(position.findQuery, "Paragraph 40")
         let evicted = expectation(description: "oldest hidden reader evicted")
         let token = MarkdownRendererCache.shared.evictions.first(where: { $0 == panel.id }).sink { _ in evicted.fulfill() }
         first!.call("visible") // A genuine asynchronous query pins the renderer.
         XCTAssertTrue(first!.hasQueriesInFlight)
         window.contentView = nil
+        hosted = nil
         panel.setRendererVisible(false, hostID: host)
         for _ in 0..<5 {
             let other = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
@@ -126,7 +137,8 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertNil(panel.renderer, "File reload must remain model-only while evicted")
         panel.setRendererVisible(true, hostID: host)
         let recreated = panel.ensureRenderer()
-        window.contentView = recreated.webView
+        hosted = sourceMode ? recreated.webView : NSHostingView(rootView: MarkdownWebContent(panel: panel, isFocused: false))
+        window.contentView = hosted
         await rendered(recreated, revision: 1)
         let afterValue = try await call(recreated, "visible")
         let after = try XCTUnwrap(afterValue as? [String: Any])

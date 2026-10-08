@@ -46,6 +46,12 @@ final class MarkdownRendererCache {
 
     func visibilityChanged(_ panel: MarkdownPanel) {
         guard let entry = entries[panel.id] else { return }
+#if DEBUG
+        if !panel.isRendererVisible, let renderer = panel.renderer,
+           let position = MarkdownReadingPosition(state: renderer.state) {
+            dlog("markdown.renderer.hidden panel=\(panel.id.uuidString) line=\(position.line) offset=\(position.offset) width=\(renderer.webView.frame.width) height=\(renderer.webView.frame.height)")
+        }
+#endif
         entry.epoch += 1
         policy.setVisible(panel.id, panel.isRendererVisible)
         reconsider()
@@ -93,7 +99,7 @@ final class MarkdownRendererCache {
                     panel.evictRenderer(renderer, position: position)
                     self.evictions.send(id)
 #if DEBUG
-                    dlog("markdown.renderer.evicted panel=\(id.uuidString) line=\(position.line) source=\(position.sourceMode ? 1 : 0)")
+                    dlog("markdown.renderer.evicted panel=\(id.uuidString) line=\(position.line) offset=\(position.offset) source=\(position.sourceMode ? 1 : 0) width=\(renderer.webView.frame.width) height=\(renderer.webView.frame.height)")
 #endif
                 }
                 self.reconsider()

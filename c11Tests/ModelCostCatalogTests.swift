@@ -91,6 +91,14 @@ final class ModelCostCatalogTests: XCTestCase {
         XCTAssertEqual(store.resolvedCatalog()["claude-sonnet-5-5"]?.inUSD, 2)
     }
 
+    func testDatedProviderAliasesResolveThroughCatalogLookup() throws {
+        XCTAssertEqual(store.cost(forModel: "anthropic/claude-haiku-4-5-20251001")?.inUSD, 1)
+        XCTAssertEqual(store.cost(forModel: "CLAUDE-OPUS-4-8")?.outUSD, 25)
+        try store.set(model: "claude-haiku-4-5-20251001", entry: entry(2, 3))
+        XCTAssertEqual(store.cost(forModel: "claude-haiku-4-5-20251001")?.inUSD, 2)
+        XCTAssertNil(store.cost(forModel: "claude-haiku-4-5-unknown"))
+    }
+
     func testCacheRateCLISetRoundTripsAndMissingRatesStayUnknown() throws {
         _ = try ModelCostsCommandCore.run(args: ["set", "example", "--in", "2", "--out", "10", "--cache-read", "0.1", "--cache-write", "2.5", "--cache-write-1h", "4"], store: store)
         let saved = ModelCostCatalogStore(directory: tempDir).catalog()["example"]

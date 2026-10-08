@@ -17,8 +17,8 @@
     "observed_foreground_hours",
     "presence_unknown_hours",
     "workspaces",
-    "daily_utc",
-    "hour_of_day_utc_events",
+    "daily",
+    "hour_of_day_events",
     "hang_rate_by_working_load",
     "host_usage",
     "coverage_gaps",
@@ -38,7 +38,11 @@
     "waiting_entered_unattributed",
     "hang_durations_ms",
     "load_unknown_hours",
-    "hangs_with_unknown_load"
+    "hangs_with_unknown_load",
+    "timezone",
+    "instance_scope",
+    "foreground_hours_range",
+    "skipped_counts"
   ],
   "properties": {
     "schema_version": {
@@ -150,89 +154,6 @@
             "minimum": 0
           }
         }
-      }
-    },
-    "daily_utc": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "date",
-          "events",
-          "panels_created",
-          "peak_open",
-          "peak_working",
-          "observed_peak_open",
-          "observed_peak_working",
-          "observed_hours",
-          "observed_agent_hours",
-          "load_unknown_hours",
-          "observed_foreground_hours",
-          "presence_unknown_hours"
-        ],
-        "properties": {
-          "date": {
-            "type": "string",
-            "format": "date"
-          },
-          "peak_open": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "peak_working": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "events": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "panels_created": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "observed_peak_open": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "observed_peak_working": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "observed_hours": {
-            "type": "number",
-            "minimum": 0
-          },
-          "observed_agent_hours": {
-            "type": "number",
-            "minimum": 0
-          },
-          "load_unknown_hours": {
-            "type": "number",
-            "minimum": 0
-          },
-          "observed_foreground_hours": {
-            "type": "number",
-            "minimum": 0
-          },
-          "presence_unknown_hours": {
-            "type": "number",
-            "minimum": 0
-          }
-        }
-      }
-    },
-    "hour_of_day_utc_events": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "integer",
-        "minimum": 0
       }
     },
     "hang_rate_by_working_load": {
@@ -415,6 +336,129 @@
     "hangs_with_unknown_load": {
       "type": "integer",
       "minimum": 0
+    },
+    "daily": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "date",
+          "events",
+          "panels_created",
+          "peak_open",
+          "peak_working",
+          "observed_peak_open",
+          "observed_peak_working",
+          "observed_hours",
+          "observed_agent_hours",
+          "load_unknown_hours",
+          "observed_foreground_hours",
+          "presence_unknown_hours"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "peak_open": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "peak_working": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "panels_created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_peak_open": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_peak_working": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_agent_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "load_unknown_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_foreground_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "presence_unknown_hours": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "hour_of_day_events": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "instance_scope": {
+      "enum": [
+        "production",
+        "explicit",
+        "all"
+      ]
+    },
+    "foreground_hours_range": {
+      "type": "object",
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "properties": {
+        "minimum": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "maximum": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "skipped_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
     }
   }
 }

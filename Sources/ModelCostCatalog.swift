@@ -87,6 +87,26 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     "out_usd": 50,
     "source": "https://platform.claude.com/docs/en/about-claude/pricing"
   },
+  "claude-haiku-4-5": {
+    "cache_read_usd": 0.1,
+    "cache_write_1h_usd": 2,
+    "cache_write_usd": 1.25,
+    "in_usd": 1,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 5,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-opus-4-8": {
+    "cache_read_usd": 0.5,
+    "cache_write_1h_usd": 10,
+    "cache_write_usd": 6.25,
+    "in_usd": 5,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 25,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
   "claude-opus-5-5": {
     "cache_read_usd": 0.2,
     "cache_write_1h_usd": 8,
@@ -106,6 +126,24 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     "observed_at": "2026-10-08",
     "out_usd": 10,
     "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "gpt-5.6-luna": {
+    "cache_read_usd": 0.02,
+    "cache_write_usd": 0.25,
+    "in_usd": 0.2,
+    "notes": "Standard API rates per million tokens. Cache-write tokens are billed separately; Codex transcripts do not identify them. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 1.2,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.6-sol": {
+    "cache_read_usd": 0.4,
+    "cache_write_usd": 5,
+    "in_usd": 4,
+    "notes": "Standard API rates per million tokens. Cache-write tokens are billed separately; Codex transcripts do not identify them. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 20,
+    "source": "https://developers.openai.com/api/docs/pricing"
   },
   "gpt-6-astra": {
     "cache_read_usd": 1,
@@ -149,21 +187,31 @@ final class ModelCostCatalogStore: @unchecked Sendable {
     }()
 
     /// Picker lookup. Tries the exact id, the lowercased id, then the
-    /// provider-stripped form (`deepseek/deepseek-chat` → `deepseek-chat`).
+    /// provider-stripped form (`deepseek/deepseek-chat` → `deepseek-chat`), then
+    /// a dated API suffix such as `-20251001`.
     /// `nil` model (inherit) or no entry → no cost shown; deliberately no
     /// fuzzy matching beyond that, so a wrong price can't attach to a
     /// look-alike model.
     func cost(forModel model: String?) -> (inUSD: Double, outUSD: Double)? {
         guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines),
               !model.isEmpty else { return nil }
-        let entries = resolvedCatalog()
+        guard let entry = Self.entry(forModel: model, in: resolvedCatalog()) else { return nil }
+        return (entry.inUSD, entry.outUSD)
+    }
+
+    /// Exact ids win; then case/provider aliases and a dated API suffix.
+    static func entry(forModel model: String, in entries: [String: ModelCostEntry]) -> ModelCostEntry? {
         let lowered = model.lowercased()
         var candidates = [model, lowered]
         if let slash = lowered.firstIndex(of: "/") {
             candidates.append(String(lowered[lowered.index(after: slash)...]))
         }
         for key in candidates {
-            if let e = entries[key] { return (e.inUSD, e.outUSD) }
+            if let entry = entries[key] { return entry }
+        }
+        for key in candidates {
+            if let suffix = key.range(of: "-[0-9]{8}$", options: .regularExpression),
+               let entry = entries[String(key[..<suffix.lowerBound])] { return entry }
         }
         return nil
     }

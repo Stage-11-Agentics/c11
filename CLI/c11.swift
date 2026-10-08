@@ -20622,8 +20622,8 @@ struct CMUXCLI {
           browser addscript <script>
           browser addstyle <css>
           browser identify [--panel <id|ref|index>]
-          usage [--since <date|duration>] [--by panel|workspace|model|harness] [--json]
-          report [--instance <id>] [--since <date|duration>] [--format md|json]
+          usage [--since <date|duration>] [--until <date>] [--by panel|workspace|model|harness] [--json]
+          report [--instance <id>|--all-instances] [--since <date|duration>] [--until <date>] [--utc] [--format md|json]
           events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
           help
 

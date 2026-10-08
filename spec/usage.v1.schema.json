@@ -9,7 +9,10 @@
     "totals",
     "unattributed",
     "groups",
-    "coverage_gaps"
+    "coverage_gaps",
+    "skipped_counts",
+    "unattributed_basis",
+    "until"
   ],
   "properties": {
     "schema_version": {
@@ -30,7 +33,14 @@
       ]
     },
     "totals": {
-      "$ref": "#/$defs/tokens"
+      "allOf": [
+        {
+          "$ref": "#/$defs/tokens"
+        },
+        {
+          "$ref": "#/$defs/cost"
+        }
+      ]
     },
     "unattributed": {
       "$ref": "#/$defs/tokens"
@@ -41,6 +51,9 @@
         "allOf": [
           {
             "$ref": "#/$defs/tokens"
+          },
+          {
+            "$ref": "#/$defs/cost"
           },
           {
             "type": "object",
@@ -72,6 +85,22 @@
     },
     "pricing_basis": {
       "type": "string"
+    },
+    "until": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "unattributed_basis": {
+      "type": "string"
+    },
+    "skipped_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
     }
   },
   "$defs": {
@@ -123,6 +152,49 @@
         },
         "total_tokens": {
           "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "required": [
+        "estimated_api_usd",
+        "known_api_usd_subtotal",
+        "unknown_cost_tokens",
+        "unknown_cost_calls",
+        "estimated_api_usd_lower_bound",
+        "estimated_api_usd_upper_bound"
+      ],
+      "properties": {
+        "estimated_api_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "known_api_usd_subtotal": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unknown_cost_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown_cost_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_api_usd_lower_bound": {
+          "type": "number",
+          "minimum": 0
+        },
+        "estimated_api_usd_upper_bound": {
+          "type": [
+            "number",
+            "null"
+          ],
           "minimum": 0
         }
       }

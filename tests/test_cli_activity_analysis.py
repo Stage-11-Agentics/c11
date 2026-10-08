@@ -25,23 +25,24 @@ class ActivityCLI(unittest.TestCase):
             path.mkdir(parents=True)
         self.journal = self.root / 'lifecycle.sqlite3'
         with sqlite3.connect(self.journal) as db:
-            db.execute('CREATE TABLE journal_events(tab_id TEXT,session_id TEXT,agent_kind TEXT,workspace_id TEXT)')
+            db.execute('CREATE TABLE journal_events(tab_id TEXT,session_id TEXT,agent_kind TEXT,workspace_id TEXT,committed_at_ms INTEGER NOT NULL DEFAULT 0)')
+        self.zone = 'UTC'
         self.cli = os.environ.get('C11_CLI_BIN', os.environ.get('C11_CLI', 'c11'))
 
     def run_cli(self, command, *args, ok=True):
         proc = subprocess.run([self.cli, '--socket', str(self.root / 'absent.sock'), command,
                                '--state-root', str(self.state), '--claude-root', str(self.claude),
                                '--codex-root', str(self.codex), '--journal', str(self.journal), *args],
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, timeout=20, env={**os.environ, 'TZ': self.zone})
         self.assertEqual(proc.returncode == 0, ok, proc.stderr + proc.stdout)
         return json.loads(proc.stdout) if ok and ('--json' in args or 'json' in args) else proc.stdout
 
     def write(self, path, rows):
         path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
 
-    def link(self, panel, session, kind, workspace='workspace-a'):
+    def link(self, panel, session, kind, workspace='workspace-a', committed_at_ms=0):
         with sqlite3.connect(self.journal) as db:
-            db.execute('INSERT INTO journal_events VALUES(?,?,?,?)', (panel, session, kind, workspace))
+            db.execute('INSERT INTO journal_events VALUES(?,?,?,?,?)', (panel, session, kind, workspace, committed_at_ms))
 
     def claude_row(self, msg='message-a', request='request-a', session='session-a', output=10, **usage):
         return {'type': 'assistant', 'timestamp': '2026-01-02T01:00:00Z', 'sessionId': session,
@@ -248,7 +249,7 @@ class ActivityCLI(unittest.TestCase):
         for index, row in enumerate(rows): row['seq'] = index + 1
         self.write(path, rows)
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
-        quiet = next(day for day in result['daily_utc'] if day['date'] == '2026-01-03')
+        quiet = next(day for day in result['daily'] if day['date'] == '2026-01-03')
         self.assertEqual(quiet['events'], 0)
         self.assertEqual(quiet['peak_open'], 1)
         self.assertEqual(quiet['peak_working'], 1)
@@ -269,7 +270,7 @@ class ActivityCLI(unittest.TestCase):
                              type=kind, panel=panel, payload=payload))
         self.write(path, rows)
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
-        days = {day['date']: day for day in result['daily_utc']}
+        days = {day['date']: day for day in result['daily']}
         for day in days.values():
             self.assertIsNone(day['peak_open'])
             self.assertIsNone(day['peak_working'])
@@ -295,7 +296,7 @@ class ActivityCLI(unittest.TestCase):
         for row in rows: row['seq'] += 100
         self.write(path, rows)
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
-        day = result['daily_utc'][0]
+        day = result['daily'][0]
         self.assertIsNone(day['peak_open'])
         self.assertIsNone(day['peak_working'])
         self.assertEqual(day['observed_peak_open'], 1)
@@ -320,7 +321,9 @@ class ActivityCLI(unittest.TestCase):
         rows[-1]['payload']['info']['total_token_usage']['input_tokens'] = 150000
         self.write(self.codex / 'aggregate.jsonl', rows)
         result = self.run_cli('usage', '--json')
-        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd'], .3)
+        self.assertIsNone(result['groups'][0]['estimated_api_usd'])
+        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd_lower_bound'], .3)
+        self.assertAlmostEqual(result['groups'][0]['estimated_api_usd_upper_bound'], .375)
 
     def test_unreadable_subtree_is_a_visible_gap(self):
         blocked = self.claude / 'blocked-project'
@@ -493,10 +496,207 @@ class ActivityCLI(unittest.TestCase):
         self.assertIn('not scanned', markdown)
         self.assertNotIn('test-model', markdown)
 
+    def test_scanner_skips_counts_and_recovers_after_oversize_line(self):
+        path = self.claude / 'session-a.jsonl'
+        with path.open('w') as stream:
+            stream.write('{"type":"user","content":"irrelevant"}\n')
+            stream.write('{"usage":' + 'x' * (17 * 1024 * 1024) + '\n')
+            stream.write('{"usage": malformed}\n{"usage": malformed again}\n')
+            stream.write(json.dumps(self.claude_row()) + '\n')
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['total_tokens'], 110)
+        self.assertEqual(result['skipped_counts']['oversize_jsonl_line'], 1)
+        self.assertEqual(result['skipped_counts']['malformed_jsonl'], 2)
+        self.assertEqual(result['skipped_counts']['filtered_lines'], 1)
+
+    def test_claude_mtime_filter_is_counted_and_disclosed(self):
+        path = self.claude / 'old.jsonl'
+        self.write(path, [self.claude_row()])
+        os.utime(path, (1, 1))
+        result = self.run_cli('usage', '--since', '2026-01-02T00:00:00Z', '--json')
+        self.assertEqual(result['totals']['calls'], 0)
+        self.assertEqual(result['skipped_counts']['claude_files_before_since_skipped'], 1)
+        self.assertIn('claude_file_mtime_filter_applied', result['coverage_gaps'])
+
+    def test_equal_or_unknown_codex_times_preserve_file_line_order(self):
+        for timestamp in ('2026-01-02T01:00:00Z', None):
+            with self.subTest(timestamp=timestamp):
+                rows = [{'type': 'session_meta', 'payload': {'id': 'codex-a'}}]
+                for count in range(1, 5):
+                    rows.append({'type': 'event_msg', 'timestamp': timestamp, 'payload': {
+                        'type': 'token_count', 'info': {'total_token_usage': {
+                            'input_tokens': count * 100, 'output_tokens': count * 10}}}})
+                self.write(self.codex / 'rollout.jsonl', rows)
+                result = self.run_cli('usage', '--json')
+                self.assertEqual(result['totals']['input_tokens'], 400)
+                self.assertEqual(result['totals']['output_tokens'], 40)
+                self.assertFalse(any('counter_reset' in g for g in result['coverage_gaps']))
+
+    def test_panel_move_preserves_panel_and_temporal_workspace_attribution(self):
+        first = self.claude_row(msg='first'); first['timestamp'] = '2026-01-02T00:30:00Z'
+        second = self.claude_row(msg='second'); second['timestamp'] = '2026-01-02T01:30:00Z'
+        self.write(self.claude / 'session-a.jsonl', [first, second])
+        self.link('panel-a', 'session-a', 'claude-code', 'workspace-a', 1767312000000)
+        self.link('panel-a', 'session-a', 'claude-code', 'workspace-b', 1767315600000)
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-a')
+        self.assertEqual(result['unattributed']['total_tokens'], 0)
+        result = self.run_cli('usage', '--by', 'workspace', '--json')
+        self.assertEqual({g['key']: g['total_tokens'] for g in result['groups']},
+                         {'workspace-a': 110, 'workspace-b': 110})
+
+    def test_copied_history_uses_earliest_proven_origin_not_filename(self):
+        # The copy sorts first on disk and has the same historical timestamp.
+        self.write(self.claude / 'a-copy.jsonl', [self.claude_row(session='session-b')])
+        self.write(self.claude / 'z-origin.jsonl', [self.claude_row(session='session-a')])
+        self.link('panel-a', 'session-a', 'claude-code', 'workspace-a', 1767312000000)
+        self.link('panel-b', 'session-b', 'claude-code', 'workspace-b', 1767315600000)
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-a')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertEqual(result['unattributed']['total_tokens'], 0)
+
+    def test_same_panel_with_unknown_workspace_time_does_not_lose_panel(self):
+        row = self.claude_row(); row.pop('timestamp')
+        self.write(self.claude / 'session-a.jsonl', [row])
+        self.link('panel-a', 'session-a', 'claude-code', 'workspace-a', 1)
+        self.link('panel-a', 'session-a', 'claude-code', 'workspace-b', 2)
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-a')
+        result = self.run_cli('usage', '--by', 'workspace', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+
+    def test_real_snapshot_order_exposes_foreground_bounds(self):
+        rows = [
+            ('2026-01-02T00:00:00Z', 'log.opened', {'pid': 123}),
+            ('2026-01-02T00:00:10Z', 'panel.created', {'kind': 'terminal'}),
+            ('2026-01-02T00:00:20Z', 'app.activated', {'snapshot': True}),
+            ('2026-01-02T00:00:20Z', 'screen.unlocked', {'snapshot': True}),
+            ('2026-01-02T00:00:20Z', 'system.wake', {'snapshot': True}),
+            ('2026-01-02T01:00:00Z', 'panel.closed', {}),
+        ]
+        self.write(self.state / 'events/events-synthetic.ndjson', [dict(
+            v=2, instance='synthetic', seq=i+1, ts=ts, type=kind, payload=payload, panel='panel-a')
+            for i, (ts, kind, payload) in enumerate(rows)])
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertIsNone(result['foreground_hours'])
+        bounds = result['foreground_hours_range']
+        self.assertAlmostEqual(bounds['minimum'], 3580 / 3600)
+        self.assertEqual(bounds['maximum'], 1)
+        self.assertAlmostEqual(result['presence_unknown_hours'], 20 / 3600)
+        markdown = self.run_cli('report', '--instance', 'synthetic', '--format', 'md')
+        self.assertIn('Foreground hours range:', markdown)
+
+    def test_report_defaults_to_local_calendar_and_can_select_utc(self):
+        self.events()
+        self.zone = 'America/Los_Angeles'
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['timezone'], 'America/Los_Angeles')
+        self.assertEqual(result['daily'][0]['date'], '2026-01-01')
+        self.assertIn('16', result['hour_of_day_events'])
+        result = self.run_cli('report', '--instance', 'synthetic', '--utc', '--format', 'json')
+        self.assertEqual(result['daily'][0]['date'], '2026-01-02')
+        self.assertIn('00', result['hour_of_day_events'])
+
+    def test_report_excludes_tagged_instances_by_default(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        base = [json.loads(line) for line in path.read_text().splitlines()]
+        path.unlink()
+        for instance in ('com.stage11.c11-123', 'test-tag-456'):
+            self.write(self.state / f'events/events-{instance}.ndjson',
+                       [{**row, 'instance': instance} for row in base])
+        result = self.run_cli('report', '--format', 'json')
+        self.assertEqual(result['instances'], ['com.stage11.c11-123'])
+        result = self.run_cli('report', '--since', '2026-01-01T00:00:00Z', '--format', 'json')
+        self.assertEqual(result['panels_created'], 1)
+        result = self.run_cli('report', '--all-instances', '--format', 'json')
+        self.assertEqual(result['panels_created'], 2)
+
+    def test_until_bounds_usage_and_replay_state(self):
+        self.events()
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
+        result = self.run_cli('usage', '--until', '2026-01-02T00:30:00Z', '--json')
+        self.assertEqual(result['totals']['calls'], 0)
+        result = self.run_cli('report', '--instance', 'synthetic', '--until',
+                              '2026-01-02T00:45:00Z', '--format', 'json')
+        self.assertEqual(result['end'], '2026-01-02T00:45:00Z')
+        self.assertEqual(result['open_at_observed_end'], 1)
+        self.assertEqual(result['observed_agent_hours'], .75)
+        self.run_cli('usage', '--since', '2026-01-03T00:00:00Z', '--until',
+                     '2026-01-02T00:00:00Z', ok=False)
+
+    def test_legacy_dated_aliases_and_missing_override_cache_gap(self):
+        first = self.claude_row(msg='haiku', cache_read_input_tokens=200)
+        first['message']['model'] = 'anthropic/claude-haiku-4-5-20251001'
+        second = self.claude_row(msg='opus', cache_read_input_tokens=200)
+        second['message']['model'] = 'claude-opus-4-8'
+        self.write(self.claude / 'session-a.jsonl', [first, second])
+        result = self.run_cli('usage', '--json')
+        self.assertAlmostEqual(result['totals']['estimated_api_usd'], .00102)
+        (self.state / 'model-costs.json').write_text(json.dumps({'claude-opus-4-8': {
+            'in_usd': 5, 'out_usd': 25}}))
+        result = self.run_cli('usage', '--json')
+        self.assertIsNone(result['totals']['estimated_api_usd'])
+        self.assertIn('model_cache_rate_unavailable', result['coverage_gaps'])
+        self.assertEqual(result['totals']['unknown_cost_tokens'], 310)
+        self.assertAlmostEqual(result['totals']['known_api_usd_subtotal'], .00017)
+
+    def test_cost_totals_preserve_known_subtotal_and_unknown_volume(self):
+        known = self.claude_row(msg='known'); known['message']['model'] = 'claude-sonnet-5-5'
+        unknown = self.claude_row(msg='unknown')
+        self.write(self.claude / 'session-a.jsonl', [known, unknown])
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertIsNone(result['totals']['estimated_api_usd'])
+        self.assertAlmostEqual(result['totals']['known_api_usd_subtotal'], .0003)
+        self.assertEqual(result['totals']['unknown_cost_tokens'], 110)
+        self.assertEqual(result['totals']['unknown_cost_calls'], 1)
+        self.assertAlmostEqual(result['groups'][0]['known_api_usd_subtotal'], .0003)
+
+    def test_codex_single_request_premium_and_cache_write_bounds(self):
+        total = {'input_tokens': 300000, 'cached_input_tokens': 100000,
+                 'output_tokens': 100, 'reasoning_output_tokens': 50}
+        rows = [{'type': 'session_meta', 'payload': {'id': 'single-request'}},
+                {'type': 'turn_context', 'payload': {'model': 'gpt-6-sol'}},
+                {'type': 'event_msg', 'timestamp': '2026-01-02T00:00:00Z', 'payload': {
+                    'type': 'token_count', 'info': {'total_token_usage': total,
+                                                  'last_token_usage': total}}}]
+        self.write(self.codex / 'single.jsonl', rows)
+        result = self.run_cli('usage', '--json')
+        self.assertIsNone(result['totals']['estimated_api_usd'])
+        self.assertAlmostEqual(result['totals']['estimated_api_usd_lower_bound'], .8415)
+        self.assertAlmostEqual(result['totals']['estimated_api_usd_upper_bound'], 1.0415)
+        self.assertIn('codex_cache_write_tokens_unknown', result['coverage_gaps'])
+        self.assertNotIn('codex_per_request_context_unknown', result['coverage_gaps'])
+        self.assertEqual(result['totals']['known_api_usd_subtotal'], 0)
+        self.assertEqual(result['totals']['unknown_cost_tokens'], 300100)
+
+    def test_journal_pruning_is_disclosed(self):
+        with sqlite3.connect(self.journal) as db:
+            db.execute('CREATE TABLE journal_meta(key TEXT PRIMARY KEY,value INTEGER)')
+            db.execute("INSERT INTO journal_meta VALUES('coverage_low_water', 50)")
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
+        result = self.run_cli('usage', '--json')
+        self.assertIn('journal_history_pruned', result['coverage_gaps'])
+
+    def test_retention_coordination_gap_does_not_invalidate_replay(self):
+        self.events()
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[4]['type'] = 'log.retention'
+        rows[4]['payload'] = {'state': 'degraded', 'reason': 'lock_busy'}
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertIn('retention_reconciliation_degraded', result['coverage_gaps'])
+        self.assertEqual(result['peak_open_per_instance'], 1)
+        self.assertEqual(result['foreground_hours'], 1)
+        self.assertEqual(result['load_unknown_hours'], 0)
+
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)
         self.run_cli('usage', '--since', 'garbage', ok=False)
         self.run_cli('report', '--format', 'html', ok=False)
+        self.run_cli('report', '--instance', 'synthetic', '--all-instances', ok=False)
 
 
 if __name__ == '__main__':

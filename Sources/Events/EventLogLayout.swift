@@ -10,7 +10,8 @@ import Foundation
 ///
 ///     <state>/events/
 ///         events-<instance>.ndjson       (current per-instance log)
-///         events-<instance>.ndjson.1      (one rolled generation, EVT-4)
+///         events-<instance>.ndjson.1      (newest rolled generation, EVT-4)
+///         events-<instance>.ndjson.2      (older generation, age/byte bounded)
 ///
 /// The log is **per-instance** (EVT-1): each running c11 process writes its own
 /// file, keyed by `<launch-tag-or-bundle>-<pid>`. This is deliberate — the state

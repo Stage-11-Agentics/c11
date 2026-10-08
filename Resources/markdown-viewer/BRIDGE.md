@@ -108,5 +108,5 @@ each path component; keep `/` separators. Reject any decoded `..` component
 (including encoded traversal), remote/data/unknown schemes, and absolute paths
 outside that tree. The native asset handler independently validates decoded paths,
 symlinks and file types before serving bytes. The renderer never loads a raw file
-or remote image URL. The disk harness supplies this private scheme with synthetic
-local image bytes; it grants no general network permission.
+or remote image URL. The disk harness proves URL rewriting and rejection policy without loading raw
+image URLs. C11-359 proves native byte serving and realpath/symlink/type validation.

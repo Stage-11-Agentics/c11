@@ -302,7 +302,9 @@ final class MailboxDispatcher {
             // Preserve the opt-out on local delivery and quarantine files. No
             // tenant files are changed; this is c11's own processing envelope.
             do {
-                try MailboxIO.atomicWrite(data: envelope.encode(), to: processingURL)
+                // The processing file already exists. MailboxIO.atomicWrite is
+                // create-only; Foundation's atomic data write replaces it.
+                try envelope.encode().write(to: processingURL, options: .atomic)
             } catch {
                 // Deliver the marked in-memory envelope; the accepted event
                 // still suppresses the unmarked processing file in Messages.

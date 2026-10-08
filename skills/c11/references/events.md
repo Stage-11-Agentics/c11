@@ -162,7 +162,9 @@ panel before the workspace edge, including graphs replaced by session restore.
 Panel closes remain structural events when analytics are off.
 
 `hang.precursor` additionally carries `app_active`, `screen_locked` (null when
-not yet known), and current `rss_mb`. `instance.sample` carries current
+not yet known), and current `rss_mb` while usage analytics are enabled. Turning
+analytics off preserves the original hang event without those fields or the
+process metrics query. `instance.sample` carries current
 `rss_mb`, cumulative process `cpu_s_total`, and `threads`. A single
 `proc_pidinfo(PROC_PIDTASKINFO)` query obtains these together on the writer
 queue. The sole new timer repeats every ten minutes with sixty seconds of

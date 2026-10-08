@@ -42,16 +42,20 @@ final class EventLog {
     private var knownHistoryBytes = 0
     private var historyInitialized = false
     private var historyLockFD: Int32 = -1
-    private var retentionDegraded = false
+    private var writerLockError: Int32?
+    private var retentionFailure: String?
     private var reportedRetentionDegraded = false
     private var sampleTimer: DispatchSourceTimer?
     private var nextSampleAt = Date.distantFuture
+    private var nextPruneAt: Date
     private var sampleProvider: (() -> EventEnvelope?)?
+    private var samplingStopped = false
     private var samplingAsleep = false
     private var recordingEnabled = true
     private var analyticsEnabled = true
     private let now: () -> Date
     private let healthMetrics: () -> [String: Any]
+    private let acquireWriterLock: (Int32) -> Int32
 
     private let queue: DispatchQueue
     private var fileHandle: FileHandle?
@@ -63,6 +67,9 @@ final class EventLog {
     var onQueueBeforeWrite: (() -> Void)?
     /// Observes actual directory reconciliations for runtime cost tests.
     var onHistoryReconcile: (() -> Void)?
+    /// Observes the actual timer lifecycle and selected deadline/leeway.
+    var onTimerCreated: (() -> Void)?
+    var onTimerScheduled: ((TimeInterval, Int) -> Void)?
 
     /// Assigned and read only on `queue`.
     private var nextSeq: UInt64 = 0
@@ -90,6 +97,10 @@ final class EventLog {
         maxTitlePanels: Int = 4096,
         now: @escaping () -> Date = { Date() },
         healthMetrics: @escaping () -> [String: Any] = ActivityHistoryMetrics.sample,
+        policy: ActivityHistoryPolicy? = nil,
+        acquireWriterLock: @escaping (Int32) -> Int32 = { fd in
+            flock(fd, LOCK_SH | LOCK_NB) == 0 ? 0 : errno
+        },
         label: String = "com.stage11.c11.events.log"
     ) {
         self.url = url
@@ -98,11 +109,15 @@ final class EventLog {
         self.maxPending = maxPending
         self.totalSizeCap = max(1, totalSizeCap)
         self.retentionNamespace = Self.buildLabel(for: url.lastPathComponent) ?? instance
-        self.retentionDays = retentionDays
+        self.retentionDays = policy?.retentionDays ?? retentionDays
+        self.recordingEnabled = policy?.enabled ?? true
+        self.analyticsEnabled = policy?.analyticsEnabled ?? true
         self.titleWindow = titleWindow
         self.maxTitlePanels = max(1, maxTitlePanels)
         self.now = now
         self.healthMetrics = healthMetrics
+        self.acquireWriterLock = acquireWriterLock
+        self.nextPruneAt = now().addingTimeInterval(86_400)
         self.queue = DispatchQueue(label: label, qos: .utility, autoreleaseFrequency: .workItem)
     }
 
@@ -146,8 +161,9 @@ final class EventLog {
             payload: ["pid": ProcessInfo.processInfo.processIdentifier]
         )
         queue.async { [weak self] in
-            self?.pruneHistory()
-            if self?.recordingEnabled == true { self?.writeAssigningSeq(env) }
+            guard let self else { return }
+            if self.recordingEnabled { self.writeAssigningSeq(env) }
+            else { self.pruneHistory() }
         }
     }
 
@@ -164,20 +180,23 @@ final class EventLog {
         queue.async { [weak self] in
             guard let self else { return }
             if self.recordingEnabled { self.flushTitles() }
+            let resumeHealth = policy.enabled && policy.analyticsEnabled
+                && (!self.recordingEnabled || !self.analyticsEnabled)
             self.recordingEnabled = policy.enabled
             self.analyticsEnabled = policy.analyticsEnabled
             self.retentionDays = policy.retentionDays
             self.pruneHistory()
-            self.nextSampleAt = policy.enabled && policy.analyticsEnabled
-                ? self.now().addingTimeInterval(600) : .distantFuture
+            if !policy.enabled || !policy.analyticsEnabled { self.nextSampleAt = .distantFuture }
+            else if resumeHealth { self.nextSampleAt = self.now().addingTimeInterval(600) }
             self.scheduleSampling()
         }
     }
 
-    /// One timer serves title deadlines and ten-minute health samples. Health
-    /// deadlines have one minute of leeway; title deadlines have 100 ms.
+    /// One rearmed timer serves title, health and daily retention deadlines.
+    /// Title deadlines allow two seconds of wakeup coalescing; other work 60s.
     func startSampling(_ provider: @escaping () -> EventEnvelope?) {
         queue.async { [weak self] in
+            self?.samplingStopped = false
             self?.sampleProvider = provider
             self?.nextSampleAt = self?.now().addingTimeInterval(600) ?? .distantFuture
             self?.scheduleSampling()
@@ -185,23 +204,31 @@ final class EventLog {
     }
 
     private func scheduleSampling() {
-        sampleTimer?.cancel()
-        sampleTimer = nil
-        guard !samplingAsleep, recordingEnabled else { return }
+        guard !samplingStopped, !samplingAsleep, recordingEnabled else {
+            sampleTimer?.cancel()
+            sampleTimer = nil
+            return
+        }
         let sampleDeadline = analyticsEnabled && sampleProvider != nil ? nextSampleAt : .distantFuture
-        let deadline = min(nextTitleExpiry, sampleDeadline)
-        guard deadline != .distantFuture else { return }
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + max(0, deadline.timeIntervalSince(now())),
-                       leeway: nextTitleExpiry <= sampleDeadline ? .milliseconds(100) : .seconds(60))
-        timer.setEventHandler { [weak self] in self?.deadlineFired() }
-        sampleTimer = timer
-        timer.resume()
+        let deadline = min(nextTitleExpiry, min(sampleDeadline, nextPruneAt))
+        let leeway = nextTitleExpiry <= min(sampleDeadline, nextPruneAt) ? 2 : 60
+        let delay = max(0, deadline.timeIntervalSince(now()))
+        if sampleTimer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.setEventHandler { [weak self] in self?.deadlineFired() }
+            sampleTimer = timer
+            timer.schedule(deadline: .now() + delay, leeway: .seconds(leeway))
+            timer.resume()
+            onTimerCreated?()
+        } else {
+            sampleTimer?.schedule(deadline: .now() + delay, leeway: .seconds(leeway))
+        }
+        onTimerScheduled?(delay, leeway)
     }
 
     func setSamplingAsleep(_ asleep: Bool) {
         queue.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.samplingAsleep != asleep else { return }
             self.samplingAsleep = asleep
             if asleep { self.sampleTimer?.cancel(); self.sampleTimer = nil }
             else {
@@ -213,6 +240,7 @@ final class EventLog {
 
     func stopSampling() {
         waitForQueue {
+            self.samplingStopped = true
             self.sampleTimer?.cancel()
             self.sampleTimer = nil
             self.sampleProvider = nil
@@ -221,6 +249,7 @@ final class EventLog {
 
     func finishSampling(_ provider: @escaping () -> EventEnvelope?) {
         waitForQueue {
+            self.samplingStopped = true
             self.sampleTimer?.cancel()
             self.sampleTimer = nil
             self.sampleProvider = nil
@@ -263,6 +292,7 @@ final class EventLog {
         if analyticsEnabled, sampleProvider != nil, now() >= nextSampleAt {
             sampleNow()
         } else {
+            if now() >= nextPruneAt { pruneHistory() }
             scheduleSampling()
         }
     }
@@ -377,7 +407,6 @@ final class EventLog {
             if countDrop { recordDrop() }
             return false
         }
-        if !historyInitialized { pruneHistory() }
         let sequence = nextSeq &+ 1
         let line = envelope.serialize(seq: sequence)
         guard writeLine(line) else {
@@ -398,6 +427,8 @@ final class EventLog {
             object: envelope.type,
             userInfo: ["seq": nextSeq]
         )
+        if !historyInitialized { pruneHistory() }
+        else { publishRetentionState() }
         if rotate { rotateIfNeeded() }
         return true
     }
@@ -452,16 +483,17 @@ final class EventLog {
         if fileHandle != nil { return }
         let parent = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        let fh = try FileHandle(forWritingTo: url)
-        guard flock(fh.fileDescriptor, LOCK_SH | LOCK_NB) == 0 else {
-            try? fh.close()
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
-        _ = fcntl(fh.fileDescriptor, F_SETFD, FD_CLOEXEC)
-        try fh.seekToEnd()
+        // O_CLOEXEC is atomic with open: a concurrent PTY fork must never
+        // inherit this descriptor and keep a dead writer's SH lock alive.
+        let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let lockError = acquireWriterLock(fd)
+        writerLockError = lockError == 0 ? nil : lockError
+        // Lock failures affect retention coordination, never event delivery.
+        // Busy is transient; unavailable locking gets an explicit boundary.
+        do { try fh.seekToEnd() }
+        catch { try? fh.close(); throw error }
         fileHandle = fh
     }
 
@@ -548,19 +580,32 @@ final class EventLog {
 
     private func pruneHistory() {
         onHistoryReconcile?()
+        if writerLockError != nil, let fileHandle {
+            let result = acquireWriterLock(fileHandle.fileDescriptor)
+            writerLockError = result == 0 ? nil : result
+        }
         let failure = acquireHistoryLock()
         // Contention degrades the shared target to a bounded own-instance
         // namespace. It must never stall or shed activity records.
         pruneHistoryFiles(ownInstanceOnly: failure != nil)
         if failure == nil { flock(historyLockFD, LOCK_UN) }
         historyInitialized = true
-        retentionDegraded = failure != nil
-        guard recordingEnabled else { return }
-        if let failure, !reportedRetentionDegraded {
+        nextPruneAt = now().addingTimeInterval(86_400)
+        if let writerLockError, writerLockError != EWOULDBLOCK && writerLockError != EAGAIN {
+            retentionFailure = "liveness_lock_unavailable"
+        } else { retentionFailure = failure }
+        publishRetentionState()
+    }
+
+    private func publishRetentionState() {
+        // A retention boundary must never precede the instance's first record
+        // (log.opened in production), including first enable after off startup.
+        guard recordingEnabled, nextSeq > 0 else { return }
+        if let failure = retentionFailure, !reportedRetentionDegraded {
             reportedRetentionDegraded = true
             writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
                 payload: ["state": "degraded", "reason": failure]), rotate: false)
-        } else if failure == nil, reportedRetentionDegraded {
+        } else if retentionFailure == nil, reportedRetentionDegraded {
             reportedRetentionDegraded = false
             writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
                 payload: ["state": "recovered"]), rotate: false)
@@ -594,6 +639,10 @@ final class EventLog {
         }.sorted { $0.date < $1.date }
         func removeIfInactive(_ item: URL) -> Bool {
             if item.lastPathComponent == url.lastPathComponent, fileHandle != nil { return false }
+            // If this volume cannot establish writer liveness, no current
+            // file is safe to prune even if an EX probe appears to succeed.
+            if let error = writerLockError, error != EWOULDBLOCK && error != EAGAIN,
+               item.lastPathComponent.hasSuffix(".ndjson") { return false }
             // The kernel releases a live writer's SH lock on process death;
             // pid reuse cannot make an abandoned file immortal. Hold EX until
             // unlink completes so another writer cannot acquire SH meanwhile.
@@ -607,7 +656,9 @@ final class EventLog {
             // A fixed development TTL may clean dead foreign tagged builds.
             // Production and nightly labels are never governed by our policy.
             for entry in allEntries where entry.label != retentionNamespace
-                && entry.label?.hasPrefix("com.stage11.c11.debug") == true
+                && entry.label != nil
+                && entry.label != "com.stage11.c11"
+                && entry.label != "com.stage11.c11.nightly"
                 && entry.date < developmentCutoff {
                 _ = removeIfInactive(entry.url)
             }

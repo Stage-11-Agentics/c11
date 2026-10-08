@@ -113,21 +113,21 @@ final class EventEmitter {
         guard let state = try? EventLogLayout.defaultStateURL() else { return }
         let instance = EventLogLayout.makeInstanceId()
         let url = EventLogLayout.logURL(state: state, instance: instance)
-        let newLog = EventLog(url: url, instance: instance)
+        let initialPolicy = ActivityHistoryPolicy(defaults: .standard)
+        let newLog = EventLog(url: url, instance: instance, policy: initialPolicy)
 
         lock.lock()
         guard log == nil else { lock.unlock(); return }
         log = newLog
         instanceId = instance
-        policy = ActivityHistoryPolicy(defaults: .standard)
+        policy = initialPolicy
         enabled = policy.enabled
-        let initialPolicy = policy
         hasOpened = initialPolicy.enabled
         lock.unlock()
 
-        newLog.updatePolicy(initialPolicy)
+        // open also performs the silent retention checkpoint when disabled.
+        newLog.open()
         if initialPolicy.enabled {
-            newLog.open()
             emit(.logPolicy, payload: Self.policyPayload(initialPolicy))
         }
         newLog.startSampling { [weak self] in self?.sampleEnvelope() }

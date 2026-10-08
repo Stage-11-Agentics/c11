@@ -621,8 +621,11 @@ enum ActivityAnalysisCommand {
             ?? "Unknown: no observed event span; host transcripts were not scanned."
         var output = "# Local activity report\n\nObserved span: \(show("start")) to \(show("end")) (\(show("span_hours")) h).\n\n"
         for (label, key) in [("Panels created", "panels_created"), ("Peak open per instance", "peak_open_per_instance"), ("Peak working per instance", "peak_working_per_instance"), ("Observed agent hours", "observed_agent_hours"), ("Foreground hours", "foreground_hours"), ("Observed foreground hours", "observed_foreground_hours"), ("Presence unknown hours", "presence_unknown_hours"), ("Hang precursors", "hang_precursors")] { output += "- \(label): \(show(key))\n" }
-        output += "\n## Daily activity (UTC)\n\nDate | Events | Created | Peak open | Peak working | Observed h | Agent h\n--- | ---: | ---: | ---: | ---: | ---: | ---:\n"
-        for d in report["daily_utc"] as? [Object] ?? [] { output += "\(d["date"] ?? "") | \(d["events"] ?? 0) | \(d["panels_created"] ?? 0) | \(d["peak_open"] ?? 0) | \(d["peak_working"] ?? 0) | \(d["observed_hours"] ?? 0) | \(d["observed_agent_hours"] ?? 0)\n" }
+        output += "\n## Daily activity (UTC)\n\nDate | Events | Created | Peak open | Peak working | Observed peak open | Observed peak working | Observed h | Observed agent h | Unknown load h\n--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---:\n"
+        for d in report["daily_utc"] as? [Object] ?? [] {
+            func cell(_ key: String) -> String { d[key] is NSNull ? "unknown" : String(describing: d[key] ?? "unknown") }
+            output += ["date", "events", "panels_created", "peak_open", "peak_working", "observed_peak_open", "observed_peak_working", "observed_hours", "observed_agent_hours", "load_unknown_hours"].map(cell).joined(separator: " | ") + "\n"
+        }
         output += "\n## Workspaces and observed topics\n\n"
         for w in report["workspaces"] as? [Object] ?? [] { output += "- \(w["name"] is NSNull ? "unknown" : String(describing: w["name"] ?? "unknown")) (\(w["id"] ?? "")): \((w["topics"] as? [String] ?? []).joined(separator: ", "))\n" }
         let extraKeys = ["kinds_created", "peak_open_kinds", "peak_open_by_kind", "mailbox_accepted", "mailbox_delivered", "mail_from", "flag_events", "hang_causes", "hang_durations_ms", "workspace_selection_unknown_hours", "workspace_agent_hours_unattributed", "waiting_entered_unattributed"]

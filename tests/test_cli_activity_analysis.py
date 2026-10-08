@@ -282,6 +282,11 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(sum(d['load_unknown_hours'] for d in days.values()), result['load_unknown_hours'])
         self.assertEqual(sum(d['observed_agent_hours'] for d in days.values()), result['observed_agent_hours'])
         self.assertEqual(result['hangs_with_unknown_load'], 1)
+        markdown = self.run_cli('report', '--instance', 'synthetic', '--format', 'md')
+        self.assertIn('2026-01-03 | 0 | 0 | unknown | unknown |', markdown)
+        self.assertIn('Observed peak open', markdown)
+        self.assertIn('Unknown load h', markdown)
+        self.assertNotIn('<null>', markdown)
 
     def test_truncated_daily_load_is_unknown_with_observed_lower_bounds(self):
         self.events()

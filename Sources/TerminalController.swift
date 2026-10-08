@@ -2258,6 +2258,45 @@ class TerminalController {
                 return SocketCommandContext.withContext(connection) {
                     processCommandUsingSocketExecutionPolicy(command)
                 }
+            },
+            stream: { command, streamSocket, shouldContinue in
+                guard let request = self.parseV2SocketRequest(command),
+                      request.method == "markdown.visible",
+                      request.params["watch"] as? Bool == true else { return false }
+                if let authResponse = self.authResponseIfNeeded(for: command, authenticated: &authenticated) {
+                    _ = Self.writeSocketResponse(authResponse, to: streamSocket)
+                    return true
+                }
+                if let startupResponse = self.startupNotReadyResponse(for: command) {
+                    _ = Self.writeSocketResponse(startupResponse, to: streamSocket)
+                    return true
+                }
+                guard shouldContinue() else { return true }
+                if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+                   let rejection = LegacyWireAliases.unsupportedRoutingKey(request.params) {
+                    _ = Self.writeSocketResponse(
+                        self.v2Error(id: request.id, code: rejection.code, message: rejection.message),
+                        to: streamSocket
+                    )
+                    return true
+                }
+                let context = SocketCommandContext(
+                    method: request.method,
+                    allowsFocus: false,
+                    callerPanelId: nil,
+                    callerTTYDevice: callerTTYDevice
+                )
+                SocketCommandContext.withContext(context) {
+                    self.withSocketCommandPolicy(commandKey: request.method, isV2: true) {
+                        self.v2StreamMarkdownVisible(
+                            id: request.id,
+                            params: request.params,
+                            socket: streamSocket,
+                            shouldContinue: shouldContinue
+                        )
+                    }
+                }
+                return true
             }
         )
     }
@@ -2302,6 +2341,24 @@ class TerminalController {
         shouldContinue: () -> Bool,
         respond: (String) -> String
     ) {
+        serveCommandLinesImpl(socket: socket, shouldContinue: shouldContinue, stream: nil, respond: respond)
+    }
+
+    nonisolated static func serveCommandLines(
+        socket: Int32,
+        shouldContinue: () -> Bool,
+        respond: (String) -> String,
+        stream: @escaping (String, Int32, () -> Bool) -> Bool
+    ) {
+        serveCommandLinesImpl(socket: socket, shouldContinue: shouldContinue, stream: stream, respond: respond)
+    }
+
+    private nonisolated static func serveCommandLinesImpl(
+        socket: Int32,
+        shouldContinue: () -> Bool,
+        stream: ((String, Int32, () -> Bool) -> Bool)?,
+        respond: (String) -> String
+    ) {
         var buffer = [UInt8](repeating: 0, count: 4096)
         var pending = Data()
 
@@ -2321,6 +2378,7 @@ class TerminalController {
                     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
 
+                    if stream?(trimmed, socket, shouldContinue) == true { return false }
                     guard writeSocketResponse(respond(trimmed), to: socket) else { return false }
                 }
                 return true
@@ -2433,6 +2491,14 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        // Markdown WebKit commands query state off-main and use only bounded
+        // main-actor hops for panel/model access and JavaScript submission.
+        "markdown.scroll",
+        "markdown.visible",
+        "markdown.theme",
+        "markdown.typeface",
+        "markdown.font",
+        "markdown.open_external",
         "browser.profiles.list",
         "browser.profiles.add",
         "browser.profiles.rename",
@@ -3125,11 +3191,14 @@ class TerminalController {
         return v2ResolveHandleRef(s)
     }
 
-    /// Destructive verbs (the closes, the close actions, clear-history) never
-    /// fall back to the focused target for a ref the caller named: an empty
-    /// ref, or one that no longer resolves to a live window, workspace, pane or
-    /// surface, is an error. Only an absent ref may take the documented default.
-    func v2RejectUnresolvedTargetRefs(_ params: [String: Any]) -> V2CallResult? {
+    /// Commands using an explicit target never fall back to the focused target
+    /// for a ref the caller named: an empty ref or one that no longer resolves
+    /// to a live window, workspace, pane or surface is an error. Only an absent
+    /// ref may take the documented default.
+    func v2RejectUnresolvedTargetRefs(
+        _ params: [String: Any],
+        fallbackWorkspaceManager: WorkspaceManager? = nil
+    ) -> V2CallResult? {
         let keys = ["window_id", "workspace_id", "pane_id", "surface_id", "tab_id", "panel_id"]
         for key in keys {
             switch SocketPanelRefValidator.classify(params[key]) {
@@ -3138,23 +3207,42 @@ class TerminalController {
             case .empty:
                 return .err(
                     code: SocketPanelRefValidator.emptyRefCode,
-                    message: "\(LegacyWireAliases.displayKey(key)) was provided but empty; destructive commands need a concrete ref and never fall back to the focused target",
+                    message: "\(LegacyWireAliases.displayKey(key)) was provided but empty; commands with explicit targets never fall back to the focused target",
                     data: ["key": LegacyWireAliases.displayKey(key)]
                 )
             case .present(let handle):
                 let isLive: Bool = v2MainSync {
-                    guard let uuid = v2UUID(params, key), let app = AppDelegate.shared else { return false }
+                    guard let uuid = v2UUID(params, key) else { return false }
+                    if let app = AppDelegate.shared {
+                        switch key {
+                        case "window_id":
+                            if app.workspaceManagerFor(windowId: uuid) != nil { return true }
+                        case "workspace_id":
+                            if app.workspaceManagerFor(workspaceId: uuid) != nil { return true }
+                        case "pane_id":
+                            if v2LocatePane(uuid) != nil { return true }
+                        default:
+                            if app.locateSurface(surfaceId: uuid) != nil { return true }
+                        }
+                    }
+                    guard let fallbackWorkspaceManager else { return false }
                     switch key {
-                    case "window_id": return app.workspaceManagerFor(windowId: uuid) != nil
-                    case "workspace_id": return app.workspaceManagerFor(workspaceId: uuid) != nil
-                    case "pane_id": return v2LocatePane(uuid) != nil
-                    default: return app.locateSurface(surfaceId: uuid) != nil
+                    case "workspace_id":
+                        return fallbackWorkspaceManager.workspaces.contains { $0.id == uuid }
+                    case "pane_id":
+                        return fallbackWorkspaceManager.workspaces.contains { workspace in
+                            workspace.bonsplitController.allPaneIds.contains { $0.id == uuid }
+                        }
+                    case "surface_id", "tab_id", "panel_id":
+                        return fallbackWorkspaceManager.workspaces.contains { $0.panels[uuid] != nil }
+                    default:
+                        return false
                     }
                 }
                 if !isLive {
                     return .err(
                         code: "not_found",
-                        message: "Unknown \(LegacyWireAliases.displayKey(key)): \(handle); destructive commands never fall back to the focused target",
+                        message: "Unknown \(LegacyWireAliases.displayKey(key)): \(handle); commands with explicit targets never fall back to the focused target",
                         data: [key: handle]
                     )
                 }

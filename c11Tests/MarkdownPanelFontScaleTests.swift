@@ -100,6 +100,59 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
         }
         XCTAssertNil(panel.renderer, "hidden model never creates a web view")
     }
+
+    func testUnsupportedThemeAndTypefaceAreRejectedWithoutChangingTheModel() {
+        let defaults = UserDefaults.standard
+        let keys = ["markdown.theme.lastUsed", "markdown.typeface.lastUsed"]
+        var savedDefaults: [String: Any] = [:]
+        for key in keys {
+            if let value = defaults.object(forKey: key) { savedDefaults[key] = value }
+        }
+        defer {
+            for key in keys {
+                if let value = savedDefaults[key] { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+        defaults.set("system", forKey: "markdown.theme.lastUsed")
+        defaults.set("theme", forKey: "markdown.typeface.lastUsed")
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+
+        XCTAssertFalse(panel.setTheme("sepia"))
+        XCTAssertFalse(panel.setTypeface("comic"))
+        XCTAssertEqual(panel.theme, "system")
+        XCTAssertEqual(panel.typeface, "theme")
+        XCTAssertNil(panel.renderer, "presentation validation stays model-only")
+    }
+
+    func testPresentationChangesReachWatchersWhileReaderIsEvicted() throws {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        var snapshots: [[String: Any]] = []
+        let observation = panel.observeReaderEvents { event in
+            if case .state(let state) = event { snapshots.append(state) }
+        }
+        defer { panel.removeReaderObserver(observation) }
+
+        panel.publishRendererState([
+            "file": "guide.md",
+            "pane": ["width": 720, "effectiveWidth": 720],
+            "theme": ["choice": "system", "resolved": "light"],
+            "typeface": ["choice": "theme", "resolved": "sans"],
+            "font_scale": 1.0,
+            "outline": ["open": false]
+        ])
+        XCTAssertTrue(panel.setTheme("dark"))
+        XCTAssertTrue(panel.setTypeface("mono"))
+        XCTAssertTrue(panel.setFontScale(1.4))
+
+        let latest = try XCTUnwrap(snapshots.last)
+        XCTAssertEqual((latest["theme"] as? [String: Any])?["choice"] as? String, "dark")
+        XCTAssertEqual((latest["typeface"] as? [String: Any])?["choice"] as? String, "mono")
+        XCTAssertEqual(latest["font_scale"] as? Double, 1.4)
+        XCTAssertNil(panel.renderer, "watch events must not create or pin a reader")
+    }
 }
 
 @MainActor
@@ -224,5 +277,74 @@ final class MarkdownReaderInteractionTests: XCTestCase {
     private func restore(_ value: Any?, key: String) {
         if let value { UserDefaults.standard.set(value, forKey: key) }
         else { UserDefaults.standard.removeObject(forKey: key) }
+    }
+}
+
+final class MarkdownVisibleStateBufferTests: XCTestCase {
+    func testInitialSnapshotIncludesReaderFieldsWithoutTheOutlineTree() {
+        let buffer = MarkdownVisibleStateBuffer()
+        buffer.begin(with: state(progress: 0.25, firstLine: 8, selection: "selected"))
+
+        let snapshot = buffer.next()
+        XCTAssertEqual(snapshot?["heading_path"] as? [String], ["Guide", "Install"])
+        XCTAssertEqual((snapshot?["lines"] as? [String: Any])?["first"] as? Int, 8)
+        XCTAssertEqual(snapshot?["progress"] as? Double, 0.25)
+        XCTAssertEqual(snapshot?["size"] as? String, "medium")
+        XCTAssertEqual(snapshot?["selection"] as? String, "selected")
+        XCTAssertNil(snapshot?["outline"])
+    }
+
+    func testWatchDeduplicatesAndBoundsQueuedChangesToLatestState() {
+        let buffer = MarkdownVisibleStateBuffer()
+        let initial = state(progress: 0.1, firstLine: 1)
+        buffer.begin(with: initial)
+        buffer.publish(initial)
+        buffer.publish(state(progress: 0.2, firstLine: 2))
+        buffer.publish(state(progress: 0.3, firstLine: 3))
+
+        XCTAssertEqual(buffer.next()?["progress"] as? Double, 0.1)
+        XCTAssertEqual(buffer.next()?["progress"] as? Double, 0.3)
+        buffer.finish()
+        XCTAssertNil(buffer.next())
+    }
+
+    func testFinishingWakesAnEventWaiter() {
+        let buffer = MarkdownVisibleStateBuffer()
+        buffer.begin(with: state(progress: 0.1, firstLine: 1))
+        let initialConsumed = expectation(description: "initial snapshot consumed")
+        let waiterParked = expectation(description: "next-state waiter parked")
+        let finished = expectation(description: "watch waiter released")
+        DispatchQueue.global(qos: .userInitiated).async {
+            var signaledWaiterParked = false
+            XCTAssertNotNil(buffer.next())
+            initialConsumed.fulfill()
+            XCTAssertNil(buffer.next(onWaiting: {
+                guard !signaledWaiterParked else { return }
+                signaledWaiterParked = true
+                waiterParked.fulfill()
+            }))
+            finished.fulfill()
+        }
+
+        wait(for: [initialConsumed, waiterParked], timeout: 2)
+        buffer.finish()
+        wait(for: [finished], timeout: 2)
+    }
+
+    private func state(progress: Double, firstLine: Int, selection: String? = nil) -> [String: Any] {
+        [
+            "file": "guide.md",
+            "heading_path": ["Guide", "Install"],
+            "lines": ["first": firstLine, "last": firstLine + 4, "total": 40, "offset": 5.0],
+            "progress": progress,
+            "minutes_left": 2,
+            "pane": ["width": 700, "effectiveWidth": 700, "size": "medium"],
+            "theme": ["choice": "system", "resolved": "light"],
+            "typeface": ["choice": "theme", "resolved": "sans"],
+            "font_scale": 1.2,
+            "find": NSNull(),
+            "selection": selection as Any? ?? NSNull(),
+            "outline": ["tree": [["text": "large page outline"]]]
+        ]
     }
 }

@@ -842,7 +842,17 @@ function scrollToLine(raw,rawOffset=0) {
 }
 function scrollToHeading(query) {
   const q=String(query||'').toLowerCase().replace(/^#/,'');
-  const h=S.heads.find(x=>x.slug.toLowerCase()===q)||S.heads.find(x=>x.text.toLowerCase()===q)||S.heads.find(x=>x.text.toLowerCase().startsWith(q)&&q)||S.heads.find(x=>x.text.toLowerCase().includes(q)&&q);
+  const exactSlug=S.heads.filter(x=>x.slug.toLowerCase()===q);
+  const exactText=S.heads.filter(x=>x.text.toLowerCase()===q);
+  let h=exactSlug.length===1?exactSlug[0]:exactSlug.length>1?null:exactText.length===1?exactText[0]:null;
+  let ambiguous=exactSlug.length>1?exactSlug:exactSlug.length===0&&exactText.length>1?exactText:null;
+  if(!h&&!ambiguous) {
+    const prefix=S.heads.filter(x=>q&&x.text.toLowerCase().startsWith(q));
+    const candidates=prefix.length?prefix:S.heads.filter(x=>q&&x.text.toLowerCase().includes(q));
+    if(candidates.length===1)h=candidates[0];
+    else if(candidates.length>1)ambiguous=candidates;
+  }
+  if(ambiguous)return {ok:false,heading:null,ambiguous:true,total:ambiguous.length,matches:ambiguous.slice(0,12).map(x=>({text:x.text,slug:x.slug,line:x.line}))};
   if(!h)return {ok:false,heading:null};
   if(S.mode==='source')setSourceMode(false);
   const el=headingElement(h.slug);if(el){scroller.scrollTop=topIn(el)-18;el.classList.remove('section-flash');void el.offsetWidth;el.classList.add('section-flash');}

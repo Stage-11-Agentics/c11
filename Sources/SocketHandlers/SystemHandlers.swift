@@ -342,6 +342,12 @@ extension TerminalController {
             methods.append("feed.open")
             methods.append("feed.note_display")
         }
+        if CapabilityFeatures.current.supports(.markdownAgentCLI) {
+            methods.append(contentsOf: [
+                "markdown.scroll", "markdown.visible", "markdown.theme",
+                "markdown.typeface", "markdown.font", "markdown.open_external"
+            ])
+        }
 
         return [
             "protocol": "cmux-socket",

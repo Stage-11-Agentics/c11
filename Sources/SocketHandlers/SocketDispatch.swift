@@ -49,7 +49,7 @@ extension TerminalController {
         return "ERROR: not_ready: \(Self.sessionNotReadyMessage)"
     }
 
-    private nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
+    nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
         guard command.hasPrefix("{"),
               let data = command.data(using: .utf8),
               let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
@@ -159,6 +159,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case let method where method.hasPrefix("markdown."):
+            return v2Result(id: request.id, v2DispatchMarkdownWorker(method, params: request.params))
         case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
              "browser.profiles.clear", "browser.profiles.delete":
             return v2Result(

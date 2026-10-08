@@ -10,6 +10,13 @@ protocol MarkdownPanelReaderCommanding: AnyObject {
     func openFind(focusAllowed: Bool)
 }
 
+enum MarkdownPanelReaderEvent {
+    case rendererAvailable(MarkdownWebRenderer)
+    case rendererEvicted(MarkdownWebRenderer)
+    case state([String: Any])
+    case closed
+}
+
 /// A panel that renders a markdown file with live file-watching.
 /// When the file changes on disk, the content is automatically reloaded.
 @MainActor
@@ -55,6 +62,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     }
     private var cachedExternalAppPath: String?
     private var cachedExternalAppName: String?
+    private var latestRendererState: [String: Any] = [:]
     var fontScale: Double { presentation.fontScale }
     var theme: String { presentation.theme }
     var typeface: String { presentation.typeface }
@@ -77,6 +85,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     func setFontScale(_ value: Double) -> Bool {
         presentation.fontScale = Self.normalizedFontScale(value)
         presentation.saveLastUsed(fields: [.fontScale])
+        publishModelPresentationState()
         renderer?.synchronize()
         return true
     }
@@ -86,6 +95,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         guard MarkdownPresentation.themeNames.contains(value) else { return false }
         presentation.theme = value
         presentation.saveLastUsed(fields: [.theme])
+        publishModelPresentationState()
         renderer?.synchronize()
         return true
     }
@@ -95,6 +105,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         guard MarkdownPresentation.typefaceNames.contains(value) else { return false }
         presentation.typeface = value
         presentation.saveLastUsed(fields: [.typeface])
+        publishModelPresentationState()
         renderer?.synchronize()
         return true
     }
@@ -102,6 +113,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     func setOutlineOpen(_ value: Bool?) {
         presentation.outlineOpen = value
         presentation.saveLastUsed(fields: [.outlineOpen])
+        publishModelPresentationState()
         readerCommandRenderer?.synchronize()
     }
 
@@ -167,11 +179,13 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     func applyRestoredFontScale(_ value: Double) {
         presentation.fontScale = MarkdownPresentation.normalizedFontScale(value)
+        publishModelPresentationState()
         renderer?.synchronize()
     }
 
     func applyRestoredPresentation(_ snapshot: SessionMarkdownPanelSnapshot) {
         presentation = snapshot.presentation
+        publishModelPresentationState()
         renderer?.synchronize()
     }
 
@@ -179,6 +193,95 @@ final class MarkdownPanel: Panel, ObservableObject {
     var isRendererVisible: Bool { !visibleRendererHosts.isEmpty }
     private(set) var readingPosition: MarkdownReadingPosition?
     private(set) var readingContent: String?
+    private(set) var lastKnownViewportSize = NSSize(width: 800, height: 600)
+    private var readerObservers: [UUID: (MarkdownPanelReaderEvent) -> Void] = [:]
+
+    func rememberViewportSize(_ size: NSSize) {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width >= 100, size.height >= 100,
+              size.width <= 20_000, size.height <= 20_000 else { return }
+        lastKnownViewportSize = size
+    }
+
+    @discardableResult
+    func observeReaderEvents(_ observer: @escaping (MarkdownPanelReaderEvent) -> Void) -> UUID {
+        let id = UUID()
+        guard !isClosed else {
+            observer(.closed)
+            return id
+        }
+        readerObservers[id] = observer
+        if let renderer { observer(.rendererAvailable(renderer)) }
+        return id
+    }
+
+    func removeReaderObserver(_ id: UUID) {
+        readerObservers.removeValue(forKey: id)
+    }
+
+    func publishRendererState(_ state: [String: Any]) {
+        let compact = Self.compactReaderState(state)
+        latestRendererState = compact
+        notifyReaderObservers(.state(compact))
+    }
+
+    private static func compactReaderState(_ state: [String: Any]) -> [String: Any] {
+        let pane = state["pane"] as? [String: Any] ?? [:]
+        let lines = state["lines"] as? [String: Any] ?? [:]
+        let headings = (state["heading_path"] as? [String] ?? []).prefix(32).map { String($0.prefix(512)) }
+        let find = state["find"] as? [String: Any]
+        let boundedFind: Any
+        if let find {
+            boundedFind = [
+                "query": String((find["query"] as? String ?? "").prefix(8192)),
+                "matches": find["matches"] ?? 0,
+                "current": find["current"] ?? 0
+            ]
+        }
+        else { boundedFind = NSNull() }
+        let selection = state["selection"] as? String
+        let boundedSelection: Any = selection.map { String($0.prefix(120)) as Any } ?? NSNull()
+        return [
+            "file": String((state["file"] as? String ?? "").prefix(4096)),
+            "heading_path": headings,
+            "lines": ["first": lines["first"] ?? NSNull(), "last": lines["last"] ?? NSNull(), "total": lines["total"] ?? NSNull()],
+            "progress": state["progress"] ?? 0,
+            "minutes_left": state["minutes_left"] ?? 0,
+            "pane": ["width": pane["width"] ?? NSNull(), "effectiveWidth": pane["effectiveWidth"] ?? NSNull(), "size": pane["size"] ?? NSNull()],
+            "theme": state["theme"] ?? NSNull(),
+            "typeface": state["typeface"] ?? NSNull(),
+            "font_scale": state["font_scale"] ?? NSNull(),
+            "find": boundedFind,
+            "selection": boundedSelection
+        ]
+    }
+
+    private func publishModelPresentationState() {
+        guard !latestRendererState.isEmpty else { return }
+        var state = latestRendererState
+        var themeState = state["theme"] as? [String: Any] ?? [:]
+        themeState["choice"] = theme
+        if theme == "light" || theme == "dark" { themeState["resolved"] = theme }
+        state["theme"] = themeState
+        var typefaceState = state["typeface"] as? [String: Any] ?? [:]
+        typefaceState["choice"] = typeface
+        state["typeface"] = typefaceState
+        state["font_scale"] = fontScale
+        var outlineState = state["outline"] as? [String: Any] ?? [:]
+        if let outlineOpen { outlineState["open"] = outlineOpen }
+        state["outline"] = outlineState
+        state["file"] = filePath ?? ""
+        var paneState = state["pane"] as? [String: Any] ?? [:]
+        paneState["width"] = Int(lastKnownViewportSize.width)
+        paneState["effectiveWidth"] = Double(lastKnownViewportSize.width) / fontScale
+        state["pane"] = paneState
+        latestRendererState = state
+        notifyReaderObservers(.state(state))
+    }
+
+    private func notifyReaderObservers(_ event: MarkdownPanelReaderEvent) {
+        for observer in Array(readerObservers.values) { observer(event) }
+    }
 
     func setRendererVisible(_ visible: Bool, hostID: UUID) {
         let previous = isRendererVisible
@@ -186,6 +289,9 @@ final class MarkdownPanel: Panel, ObservableObject {
         else { visibleRendererHosts.remove(hostID) }
         if isRendererVisible != previous {
             renderer?.webView.setViewportVisible(isRendererVisible)
+            if !isRendererVisible, let size = renderer?.webView.frame.size {
+                rememberViewportSize(size)
+            }
             MarkdownRendererCache.shared.visibilityChanged(self)
         }
     }
@@ -194,6 +300,8 @@ final class MarkdownPanel: Panel, ObservableObject {
         guard self.renderer === renderer else { return }
         readingPosition = position
         readingContent = content
+        rememberViewportSize(renderer.webView.frame.size)
+        notifyReaderObservers(.rendererEvicted(renderer))
         renderer.close()
         self.renderer = nil
     }
@@ -203,12 +311,14 @@ final class MarkdownPanel: Panel, ObservableObject {
         readingContent = nil
     }
 
-    /// Called by the visible NSView host only; model construction never starts WebKit.
+    /// The visible host or an explicit agent read may create WebKit; model
+    /// construction alone remains renderer-free.
     func ensureRenderer() -> MarkdownWebRenderer {
         if let renderer { return renderer }
         let created = MarkdownWebRenderer(panel: self)
         renderer = created
         MarkdownRendererCache.shared.register(self)
+        notifyReaderObservers(.rendererAvailable(created))
         return created
     }
 
@@ -221,7 +331,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     // main actor, but DispatchSource.cancel() is thread-safe.
     private nonisolated(unsafe) var fileWatchSource: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
-    private var isClosed: Bool = false
+    private(set) var isClosed: Bool = false
     private nonisolated let watchQueue = DispatchQueue(label: "com.stage11.c11.markdown-file-watch", qos: .utility)
 
     /// Pending debounced reload. Accessed only on `watchQueue`.
@@ -306,6 +416,8 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     func close() {
         isClosed = true
+        notifyReaderObservers(.closed)
+        readerObservers.removeAll()
         MarkdownRendererCache.shared.remove(self)
         stopFileWatcher()
         stopAppearanceObserver()

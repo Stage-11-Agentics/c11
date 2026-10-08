@@ -129,7 +129,7 @@ with `id` and `version`, plus `server` and `cli` identities (`short_version`,
 true for matching short/full hashes, false for different commits, null if
 either stamp is unavailable. It never substitutes checkout or environment
 identity. Existing ids: `vocabulary.workspace_area_panel`, `send.explicit_panel`,
-`events.offline`, `feed.asks`. Later commands advertise `routing.canonical_keys`,
+`events.offline`, `feed.asks`, and `markdown.agent_cli`. Later commands advertise `routing.canonical_keys`,
 `create.initial_input`, `send.raw`, `read_selection.terminal`, and
 `input_state.terminal`, and `window.route_without_focus` only when implemented. Adding an id preserves
 `features_version`; changing an existing id's meaning increments it.

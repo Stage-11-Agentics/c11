@@ -220,7 +220,6 @@
 		A5001240 /* WindowDecorationsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001241 /* WindowDecorationsController.swift */; };
 		A5001250 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A5001251 /* Sentry */; };
 		A5001270 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A5001271 /* PostHog */; };
-		A5001290 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = A5001291 /* MarkdownUI */; };
 		A50012F1 /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50012F0 /* Backport.swift */; };
 		A50012F3 /* KeyboardShortcutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50012F2 /* KeyboardShortcutSettings.swift */; };
 		A50012F5 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50012F4 /* KeyboardLayout.swift */; };
@@ -265,8 +264,6 @@
 		DD488C60E0F13C57E4D9F0D8 /* WorkspaceRootEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A3B2A7D755BCA0666E041D /* WorkspaceRootEditor.swift */; };
 		A5008F21 /* TitleFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008F22 /* TitleFormatting.swift */; };
 		A500DA01 /* QALaunchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A500DA02 /* QALaunchPolicy.swift */; };
-		A58689DE /* MermaidRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C229 /* MermaidRenderer.swift */; };
-		A58689DF /* FencedCodeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C22A /* FencedCodeRenderer.swift */; };
 		A5C101A0 /* AreaInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B0 /* AreaInteraction.swift */; };
 		A5C101A1 /* AreaInteractionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B1 /* AreaInteractionCardView.swift */; };
 		A5C101A2 /* AreaInteractionOverlayHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B2 /* AreaInteractionOverlayHost.swift */; };
@@ -602,6 +599,16 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		C11260000000000000000202 /* WorkspaceGroupDropPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000201 /* WorkspaceGroupDropPlanner.swift */; };
 		C11260000000000000000302 /* WorkspaceGroupSidebarProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */; };
 		C11260000000000000000402 /* WorkspaceGroupDropPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */; };
+		1225531C36D0490ABEF43158 /* MarkdownPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42ACF3628CC84ACF9D07160D /* MarkdownPresentation.swift */; };
+		E30BC8DC8F8B4162BF6B9B44 /* MarkdownRendererRetentionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D6404733A4435687B3F79B /* MarkdownRendererRetentionPolicy.swift */; };
+		567753CDEB0441C5B633B8D9 /* MarkdownAssetPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB166B74BF024B208D51D7E8 /* MarkdownAssetPolicy.swift */; };
+		648FF2341FC04E189D36F6B3 /* MarkdownWebRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060DB2BE0CFC4CE69EA6D7E5 /* MarkdownWebRenderer.swift */; };
+		BC304CC329AF43128746ECC7 /* MarkdownRendererCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DC66C2CFA741C29B5012A2 /* MarkdownRendererCache.swift */; };
+		E82D48CDE3BD488B8AAFA67D /* MarkdownPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */; };
+		D596A20B742A467FAA6951C3 /* MarkdownRendererRetentionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D43C0C6E454F73AA5EEF37 /* MarkdownRendererRetentionPolicyTests.swift */; };
+		13F986E4DA1C4EAF92CA9445 /* MarkdownAssetPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */; };
+		05251A54C599458CAD99E315 /* markdown-viewer in Resources */ = {isa = PBXBuildFile; fileRef = 0D0D85360E4743C8A64E4740 /* markdown-viewer */; };
+		36493FA6400141C484A5DCBD /* MarkdownWebRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -854,8 +861,6 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		C9A3B2A7D755BCA0666E041D /* WorkspaceRootEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRootEditor.swift; sourceTree = "<group>"; };
 		A5008F22 /* TitleFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleFormatting.swift; sourceTree = "<group>"; };
 		A500DA02 /* QALaunchPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QALaunchPolicy.swift; sourceTree = "<group>"; };
-		A537C229 /* MermaidRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MermaidRenderer.swift; sourceTree = "<group>"; };
-		A537C22A /* FencedCodeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/FencedCodeRenderer.swift; sourceTree = "<group>"; };
 		A5C101B0 /* AreaInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/AreaInteraction.swift; sourceTree = "<group>"; };
 		A5C101B1 /* AreaInteractionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/AreaInteractionCardView.swift; sourceTree = "<group>"; };
 		A5C101B2 /* AreaInteractionOverlayHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/AreaInteractionOverlayHost.swift; sourceTree = "<group>"; };
@@ -1220,6 +1225,16 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		C11260000000000000000201 /* WorkspaceGroupDropPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sidebar/WorkspaceGroupDropPlanner.swift"; sourceTree = "<group>"; };
 		C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkspaceGroupSidebarProjectionTests.swift"; sourceTree = "<group>"; };
 		C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkspaceGroupDropPlannerTests.swift"; sourceTree = "<group>"; };
+		42ACF3628CC84ACF9D07160D /* MarkdownPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPresentation.swift; sourceTree = "<group>"; };
+		C0D6404733A4435687B3F79B /* MarkdownRendererRetentionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererRetentionPolicy.swift; sourceTree = "<group>"; };
+		AB166B74BF024B208D51D7E8 /* MarkdownAssetPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownAssetPolicy.swift; sourceTree = "<group>"; };
+		060DB2BE0CFC4CE69EA6D7E5 /* MarkdownWebRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownWebRenderer.swift; sourceTree = "<group>"; };
+		84DC66C2CFA741C29B5012A2 /* MarkdownRendererCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownRendererCache.swift; sourceTree = "<group>"; };
+		24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPresentationTests.swift; sourceTree = "<group>"; };
+		63D43C0C6E454F73AA5EEF37 /* MarkdownRendererRetentionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererRetentionPolicyTests.swift; sourceTree = "<group>"; };
+		AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownAssetPolicyTests.swift; sourceTree = "<group>"; };
+		0D0D85360E4743C8A64E4740 /* markdown-viewer */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/markdown-viewer; sourceTree = SOURCE_ROOT; };
+		F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownWebRendererTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1239,7 +1254,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5001230 /* Sparkle in Frameworks */,
 				A5001250 /* Sentry in Frameworks */,
 				A5001270 /* PostHog in Frameworks */,
-				A5001290 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1329,6 +1343,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				B9000003A1B2C3D4E5F60719 /* CLI */,
 				087C454FFF74443AB06942C3 /* Resources */,
 				A5001101 /* Assets.xcassets */,
+				0D0D85360E4743C8A64E4740 /* markdown-viewer */,
 				IC000002 /* AppIcon.icon */,
 				A5001016 /* GhosttyKit.xcframework */,
 				A5001017 /* ghostty.h */,
@@ -1496,6 +1511,11 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5001414 /* BrowserPanelView.swift */,
 				A5007421 /* BrowserPopupWindowController.swift */,
 				A5001418 /* MarkdownPanel.swift */,
+				060DB2BE0CFC4CE69EA6D7E5 /* MarkdownWebRenderer.swift */,
+				84DC66C2CFA741C29B5012A2 /* MarkdownRendererCache.swift */,
+				AB166B74BF024B208D51D7E8 /* MarkdownAssetPolicy.swift */,
+				42ACF3628CC84ACF9D07160D /* MarkdownPresentation.swift */,
+				C0D6404733A4435687B3F79B /* MarkdownRendererRetentionPolicy.swift */,
 				A5C101B0 /* AreaInteraction.swift */,
 				A5C101B1 /* AreaInteractionCardView.swift */,
 				A5C101B2 /* AreaInteractionOverlayHost.swift */,
@@ -1506,8 +1526,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5C101B7 /* WorkspaceCloseCardView.swift */,
 				A5C101B8 /* WorkspaceCloseOverlayController.swift */,
 				A5C101B9 /* WorkspaceCloseOverlayHostView.swift */,
-				A537C229 /* MermaidRenderer.swift */,
-				A537C22A /* FencedCodeRenderer.swift */,
 				A5001419 /* MarkdownPanelView.swift */,
 				A5001510 /* CmuxWebView.swift */,
 				A5001415 /* PanelContentView.swift */,
@@ -1754,7 +1772,11 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				D7001BF1A1B2C3D4E5F60718 /* PanelTitleBarRenderTests.swift */,
 				C11250C1A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift */,
 				D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */,
+				F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */,
 				4D11AA02B2C3D4E5F6071921 /* MarkdownPanelFontScaleTests.swift */,
+				AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */,
+				24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */,
+				63D43C0C6E454F73AA5EEF37 /* MarkdownRendererRetentionPolicyTests.swift */,
 				D7003BF1A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift */,
 				C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */,
 				D7004BF1A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift */,
@@ -1931,7 +1953,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5001251 /* Sentry */,
 				A5001271 /* PostHog */,
 				A5001261 /* Bonsplit */,
-				A5001291 /* MarkdownUI */,
 			);
 			productName = c11;
 			productReference = A5001000 /* c11.app */;
@@ -2039,7 +2060,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5001232 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A5001252 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				A5001272 /* XCRemoteSwiftPackageReference "posthog-ios" */,
-				A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				A5001260 /* XCLocalSwiftPackageReference "bonsplit" */,
 			);
 			productRefGroup = A5001042 /* Products */;
@@ -2067,6 +2087,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				05251A54C599458CAD99E315 /* markdown-viewer in Resources */,
 				A5001100 /* Assets.xcassets in Resources */,
 				84E00D47E4584162AE53BC8D /* xterm-ghostty in Resources */,
 				A5002000 /* THIRD_PARTY_LICENSES.md in Resources */,
@@ -2188,6 +2209,9 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				39AF4F57C52E593EC8CF0680 /* MailboxPanelResolverTests.swift in Sources */,
 				C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */,
 				4D11AA01B2C3D4E5F6071920 /* MarkdownPanelFontScaleTests.swift in Sources */,
+				13F986E4DA1C4EAF92CA9445 /* MarkdownAssetPolicyTests.swift in Sources */,
+				E82D48CDE3BD488B8AAFA67D /* MarkdownPresentationTests.swift in Sources */,
+				D596A20B742A467FAA6951C3 /* MarkdownRendererRetentionPolicyTests.swift in Sources */,
 				A5FA2032A22C7558D3C7FABB /* MetadataPersistencePrecedenceTests.swift in Sources */,
 				657579B3785D58411C3804B6 /* MetadataPersistenceRoundTripTests.swift in Sources */,
 				AF258345FA9BD35CA62B9C6C /* MetadataPersistenceUncoercibleTests.swift in Sources */,
@@ -2451,6 +2475,11 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5001404 /* BrowserPanelView.swift in Sources */,
 				A5007420 /* BrowserPopupWindowController.swift in Sources */,
 				A5001420 /* MarkdownPanel.swift in Sources */,
+				648FF2341FC04E189D36F6B3 /* MarkdownWebRenderer.swift in Sources */,
+				BC304CC329AF43128746ECC7 /* MarkdownRendererCache.swift in Sources */,
+				567753CDEB0441C5B633B8D9 /* MarkdownAssetPolicy.swift in Sources */,
+				1225531C36D0490ABEF43158 /* MarkdownPresentation.swift in Sources */,
+				E30BC8DC8F8B4162BF6B9B44 /* MarkdownRendererRetentionPolicy.swift in Sources */,
 				A5C101A0 /* AreaInteraction.swift in Sources */,
 				A5C101A1 /* AreaInteractionCardView.swift in Sources */,
 				A5C101A2 /* AreaInteractionOverlayHost.swift in Sources */,
@@ -2461,8 +2490,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A5C101A7 /* WorkspaceCloseCardView.swift in Sources */,
 				A5C101A8 /* WorkspaceCloseOverlayController.swift in Sources */,
 				A5C101A9 /* WorkspaceCloseOverlayHostView.swift in Sources */,
-				A58689DE /* MermaidRenderer.swift in Sources */,
-				A58689DF /* FencedCodeRenderer.swift in Sources */,
 				A5001421 /* MarkdownPanelView.swift in Sources */,
 				A5001500 /* CmuxWebView.swift in Sources */,
 				A5001405 /* PanelContentView.swift in Sources */,
@@ -2659,6 +2686,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				36493FA6400141C484A5DCBD /* MarkdownWebRendererTests.swift in Sources */,
 				A721E30DB74CE0665ECC036B /* WorkspaceManagerSessionSnapshotTests.swift in Sources */,
 				DE686C76120208E59FAE152A /* PanelIdentityRestoreTests.swift in Sources */,
 				C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */,
@@ -3137,14 +3165,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				minimumVersion = 3.41.0;
 			};
 		};
-		A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.4.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -3167,11 +3187,6 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 			isa = XCSwiftPackageProductDependency;
 			package = A5001272 /* XCRemoteSwiftPackageReference "posthog-ios" */;
 			productName = PostHog;
-		};
-		A5001291 /* MarkdownUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
-			productName = MarkdownUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

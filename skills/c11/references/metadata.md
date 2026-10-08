@@ -149,7 +149,7 @@ c11 set-panel-icon  --panel "$C11_PANEL_ID" --clear      # "" also clears
 
 Write canonical `icon` / `color` with `source: explicit` (`--source` overrides). Equivalent to `set-metadata --key icon|color --value …`; a blank value clears the key.
 
-The description renders with MarkdownUI at 11pt with a compact heading hierarchy (13/12/11). Links render styled but are **not navigable** in v1 (`OpenURLAction { .discarded }`). Images, fenced code blocks, and table rows are stripped at render time; the raw string still round-trips through the store unchanged. Content over ~5 lines scrolls internally inside a 90pt-capped region.
+The description renders with native SwiftUI and Foundation markdown text at 11pt with a compact heading hierarchy (13/12/11). Links render styled but are **not navigable** in v1 (`OpenURLAction { .discarded }`). Images, fenced code blocks, and table rows are stripped at render time; the raw string still round-trips through the store unchanged. Content over ~5 lines scrolls internally inside a 90pt-capped region.
 
 When `description` is empty the title bar renders as collapsed regardless of the flag (`effective_collapsed = collapsed || description.isEmpty`) — this is what the socket payload's `effective_collapsed` field reports.
 

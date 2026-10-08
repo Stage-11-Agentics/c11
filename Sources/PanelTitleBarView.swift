@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import MarkdownUI
 
 // M7 — Surface title bar.
 //
@@ -178,8 +177,7 @@ struct PanelTitleBarView: View {
     @ViewBuilder
     private func expandedDescription(_ description: String) -> some View {
         let sanitized = sanitizeDescriptionMarkdown(description)
-        let markdown = Markdown(sanitized)
-            .markdownTheme(titleBarMarkdownTheme(for: colorScheme))
+        let markdown = TitleBarDescriptionMarkdown(text: sanitized)
             .environment(\.openURL, OpenURLAction { _ in .discarded })
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -226,7 +224,7 @@ private struct TitleBarDescriptionHeightKey: PreferenceKey {
 // MARK: - Markdown subset enforcement
 
 /// Strips markdown constructs that the title-bar subset does not allow before
-/// the string reaches MarkdownUI. Preserves inline code, bold, italic, lists,
+/// the string reaches the native renderer. Preserves inline code, bold, italic, lists,
 /// headings, blockquotes, rules, and links (link navigation is disabled
 /// elsewhere via OpenURLAction { .discarded }).
 ///
@@ -276,116 +274,323 @@ func sanitizeDescriptionMarkdown(_ input: String) -> String {
     return s
 }
 
-// MARK: - Compact MarkdownUI theme
+// MARK: - Compact native markdown subset
 
-/// Tight variant of `cmuxMarkdownTheme` sized for a 5-line-capped title bar.
-/// Base font 11pt; heading hierarchy 13/12/11 so a `#` heading stays readable
-/// but does not dominate a short description region.
-func titleBarMarkdownTheme(for colorScheme: ColorScheme) -> Theme {
-    let isDark = colorScheme == .dark
-    let baseSize: CGFloat = 11
-    let inlineCodeFill = isDark
-        ? Color(nsColor: NSColor(white: 0.18, alpha: 1.0))
-        : Color(nsColor: NSColor(white: 0.92, alpha: 1.0))
-    let inlineCodeFg = isDark
-        ? Color(red: 0.85, green: 0.6, blue: 0.95)
-        : Color(red: 0.6, green: 0.2, blue: 0.7)
+/// Block structure stays native and lightweight: expanded descriptions never
+/// create a web view. The caller sanitizes unsupported constructs first.
+enum TitleBarDescriptionBlock: Equatable {
+    case paragraph(AttributedString)
+    case heading(level: Int, text: AttributedString)
+    case listItem(marker: String, text: AttributedString, depth: Int)
+    case quote(AttributedString)
+    case rule
+}
 
-    return Theme()
-        .text {
-            ForegroundColor(.secondary)
-            FontSize(baseSize)
-        }
-        .heading1 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.bold)
-                    FontSize(13)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 4, bottom: 2)
-        }
-        .heading2 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.bold)
-                    FontSize(12)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 4, bottom: 2)
-        }
-        .heading3 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.semibold)
-                    FontSize(11)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 3, bottom: 2)
-        }
-        .heading4 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.semibold)
-                    FontSize(11)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 3, bottom: 2)
-        }
-        .heading5 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.medium)
-                    FontSize(11)
-                    ForegroundColor(.primary)
-                }
-                .markdownMargin(top: 2, bottom: 2)
-        }
-        .heading6 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontWeight(.medium)
-                    FontSize(11)
-                    ForegroundColor(.secondary)
-                }
-                .markdownMargin(top: 2, bottom: 2)
-        }
-        .code {
-            FontFamilyVariant(.monospaced)
-            FontSize(baseSize)
-            ForegroundColor(inlineCodeFg)
-            BackgroundColor(inlineCodeFill)
-        }
-        .blockquote { configuration in
-            HStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(isDark ? Color.white.opacity(0.2) : Color.gray.opacity(0.4))
-                    .frame(width: 2)
-                configuration.label
-                    .markdownTextStyle {
-                        ForegroundColor(.secondary)
-                        FontSize(baseSize)
-                    }
-                    .padding(.leading, 8)
+private enum TitleBarDescriptionBlockKind: Equatable {
+    case paragraph
+    case heading(Int)
+    case listItem(marker: String, depth: Int)
+    case quote
+    case codeBlock
+    case rule
+}
+
+/// Uses semantic block identity to group runs from one native row. List items
+/// and block quotes can span multiple paragraph intents, so they key by item or
+/// quote identity instead of paragraph identity.
+private struct TitleBarDescriptionBlockKey: Equatable {
+    let enclosingIdentity: Int
+    let blockIdentity: Int
+    let kind: TitleBarDescriptionBlockKind
+}
+
+func titleBarDescriptionBlocks(_ text: String) -> [TitleBarDescriptionBlock] {
+    guard let parsed = try? AttributedString(
+        markdown: text,
+        options: .init(interpretedSyntax: .full)
+    ) else {
+        return text.isEmpty ? [] : [.paragraph(AttributedString(text))]
+    }
+
+    var blocks: [TitleBarDescriptionBlock] = []
+    var currentKey: TitleBarDescriptionBlockKey?
+    var currentText = AttributedString()
+    var currentParagraphIdentity: Int?
+
+    func flushCurrentBlock() {
+        guard let key = currentKey else { return }
+        let content = titleBarDescriptionTrimmed(currentText)
+
+        switch key.kind {
+        case .paragraph:
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.paragraph(titleBarDescriptionInertLinks(content)))
+        case .codeBlock:
+            guard !content.characters.isEmpty else { break }
+            var code = titleBarDescriptionInertLinks(content)
+            for run in code.runs {
+                code[run.range].font = .system(size: 11, design: .monospaced)
             }
-            .markdownMargin(top: 3, bottom: 3)
+            blocks.append(.paragraph(code))
+        case .heading(let level):
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.heading(level: level, text: titleBarDescriptionInertLinks(content)))
+        case .listItem(let marker, let depth):
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.listItem(
+                marker: marker,
+                text: titleBarDescriptionInertLinks(content),
+                depth: depth
+            ))
+        case .quote:
+            guard !content.characters.isEmpty else { break }
+            blocks.append(.quote(titleBarDescriptionInertLinks(content)))
+        case .rule:
+            blocks.append(.rule)
         }
-        .link {
-            ForegroundColor(Color.accentColor)
+
+        currentKey = nil
+        currentText = AttributedString()
+        currentParagraphIdentity = nil
+    }
+
+    for (runIndex, run) in parsed.runs.enumerated() {
+        let key = titleBarDescriptionBlockKey(
+            for: run.presentationIntent,
+            fallbackIdentity: runIndex
+        )
+        let paragraphIdentity = titleBarDescriptionParagraphIdentity(for: run.presentationIntent)
+
+        if currentKey != key {
+            flushCurrentBlock()
+            currentKey = key
+        } else if titleBarDescriptionJoinsParagraphs(key.kind),
+                  let previousParagraphIdentity = currentParagraphIdentity,
+                  let paragraphIdentity,
+                  previousParagraphIdentity != paragraphIdentity {
+            currentText.append(AttributedString("\n"))
         }
-        .strong {
-            FontWeight(.semibold)
+        currentParagraphIdentity = paragraphIdentity
+
+        var fragment = AttributedString(parsed[run.range])
+        if key.kind == .rule {
+            fragment = AttributedString(String(fragment.characters).replacingOccurrences(of: "\u{2E3B}", with: ""))
         }
-        .thematicBreak {
-            Divider()
-                .markdownMargin(top: 4, bottom: 4)
+        currentText.append(fragment)
+    }
+    flushCurrentBlock()
+    return blocks
+}
+
+private func titleBarDescriptionBlockKey(
+    for intent: PresentationIntent?,
+    fallbackIdentity: Int
+) -> TitleBarDescriptionBlockKey {
+    let components = intent?.components ?? []
+    let enclosingIdentity = components.first?.identity ?? fallbackIdentity
+
+    if let itemIndex = components.firstIndex(where: {
+        if case .listItem = $0.kind { return true }
+        return false
+    }), case .listItem(let ordinal) = components[itemIndex].kind {
+        let item = components[itemIndex]
+        let parentList = components.dropFirst(itemIndex + 1).first(where: {
+            switch $0.kind {
+            case .orderedList, .unorderedList: return true
+            default: return false
+            }
+        })
+        let marker: String
+        if let parentList, case .orderedList = parentList.kind {
+            marker = "\(ordinal)."
+        } else {
+            marker = "•"
         }
-        .listItem { configuration in
-            configuration.label
-                .markdownMargin(top: 2, bottom: 2)
+        let depth = max(0, components.reduce(into: 0) { count, component in
+            switch component.kind {
+            case .orderedList, .unorderedList: count += 1
+            default: break
+            }
+        } - 1)
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: item.identity,
+            blockIdentity: item.identity,
+            kind: .listItem(marker: marker, depth: depth)
+        )
+    }
+
+    if let heading = components.last(where: {
+        if case .header = $0.kind { return true }
+        return false
+    }), case .header(let level) = heading.kind {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: heading.identity,
+            kind: .heading(level)
+        )
+    }
+
+    if let rule = components.last(where: {
+        if case .thematicBreak = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: rule.identity,
+            kind: .rule
+        )
+    }
+
+    if let codeBlock = components.last(where: {
+        if case .codeBlock = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: codeBlock.identity,
+            kind: .codeBlock
+        )
+    }
+
+    if let quote = components.first(where: {
+        if case .blockQuote = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: quote.identity,
+            blockIdentity: quote.identity,
+            kind: .quote
+        )
+    }
+
+    if let paragraph = components.last(where: {
+        if case .paragraph = $0.kind { return true }
+        return false
+    }) {
+        return TitleBarDescriptionBlockKey(
+            enclosingIdentity: enclosingIdentity,
+            blockIdentity: paragraph.identity,
+            kind: .paragraph
+        )
+    }
+
+    return TitleBarDescriptionBlockKey(
+        enclosingIdentity: enclosingIdentity,
+        blockIdentity: fallbackIdentity,
+        kind: .paragraph
+    )
+}
+
+private func titleBarDescriptionParagraphIdentity(for intent: PresentationIntent?) -> Int? {
+    intent?.components.first(where: {
+        if case .paragraph = $0.kind { return true }
+        return false
+    })?.identity
+}
+
+private func titleBarDescriptionJoinsParagraphs(_ kind: TitleBarDescriptionBlockKind) -> Bool {
+    switch kind {
+    case .listItem, .quote: return true
+    default: return false
+    }
+}
+
+private func titleBarDescriptionTrimmed(_ input: AttributedString) -> AttributedString {
+    guard let first = input.characters.firstIndex(where: { !$0.isWhitespace }),
+          let last = input.characters.lastIndex(where: { !$0.isWhitespace }) else {
+        return AttributedString()
+    }
+    return AttributedString(input[first..<input.index(afterCharacter: last)])
+}
+
+/// Full Markdown parsing retains inline styling while the native block mapper
+/// consumes presentation intents. Drop links after parsing so labels remain
+/// visible without creating controls or navigation.
+private func titleBarDescriptionInertLinks(_ input: AttributedString) -> AttributedString {
+    var result = input
+    for run in result.runs where run.link != nil {
+        result[run.range].foregroundColor = Color.accentColor
+        result[run.range].link = nil
+    }
+    return result
+}
+
+/// Foundation supplies inline emphasis/code parsing for this compatibility
+/// helper. Drop the URL attribute entirely so links retain their text but
+/// cannot navigate or become controls.
+func titleBarDescriptionInline(_ text: String) -> AttributedString {
+    let parsed = (try? AttributedString(
+        markdown: text,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(text)
+    return titleBarDescriptionInertLinks(parsed)
+}
+
+private struct TitleBarDescriptionMarkdown: View {
+    let text: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(titleBarDescriptionBlocks(text).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
         }
-        .paragraph { configuration in
-            configuration.label
-                .markdownMargin(top: 2, bottom: 3)
+        .font(.system(size: 11))
+        .foregroundColor(.secondary)
+    }
+
+    private func inline(_ text: AttributedString, size: CGFloat = 11) -> Text {
+        var attributed = titleBarDescriptionInertLinks(text)
+        for run in attributed.runs {
+            let isCodeBlock = run.presentationIntent?.components.contains(where: {
+                if case .codeBlock = $0.kind { return true }
+                return false
+            }) ?? false
+            guard isCodeBlock || run.inlinePresentationIntent?.contains(.code) == true else { continue }
+            attributed[run.range].font = .system(size: size, design: .monospaced)
+            attributed[run.range].foregroundColor = colorScheme == .dark
+                ? Color(red: 0.85, green: 0.6, blue: 0.95)
+                : Color(red: 0.6, green: 0.2, blue: 0.7)
         }
+        return Text(attributed)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: TitleBarDescriptionBlock) -> some View {
+        switch block {
+        case .paragraph(let text):
+            inline(text)
+                .padding(.vertical, 2)
+        case .heading(let level, let text):
+            let size: CGFloat = level == 1 ? 13 : (level == 2 ? 12 : 11)
+            inline(text, size: size)
+                .font(.system(size: size, weight: level < 3 ? .bold : (level < 5 ? .semibold : .medium)))
+                .foregroundColor(level == 6 ? .secondary : .primary)
+                .padding(.top, level < 3 ? 4 : (level < 5 ? 3 : 2))
+                .padding(.bottom, 2)
+        case .listItem(let marker, let text, let depth):
+            HStack(alignment: .top, spacing: 5) {
+                Text(verbatim: marker)
+                    .monospacedDigit()
+                    .frame(minWidth: 12, alignment: .trailing)
+                inline(text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, CGFloat(depth) * 12)
+            .padding(.vertical, 2)
+        case .quote(let text):
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.2) : Color.gray.opacity(0.4))
+                    .frame(width: 2)
+                inline(text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 3)
+        case .rule:
+            Divider().padding(.vertical, 4)
+        }
+    }
 }

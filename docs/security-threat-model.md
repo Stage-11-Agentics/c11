@@ -136,10 +136,11 @@ renders HTML. The relevant ATS posture:
   `http://` for the loopback subdomain c11 uses to render local
   developer servers.
 
-There is no explicit JS bridge from web content to the c11 socket. The
-browser panel communicates with c11 via `WKContentController` script
-message handlers configured per panel; new handlers must be added to
-this doc when introduced (the diff signal in section 9 catches this).
+The browser exposes no page-reachable bridge to the c11 socket. Markdown
+uses a separate, allowlisted `c11md` script-message channel described below;
+its controller is never shared with browser content. New handlers must be
+recorded here when introduced. The ATS relaxation applies to markdown too,
+so its CSP and native navigation policy enforce the offline boundary.
 
 Browser-triggered modals (the `http://` navigation warning, JavaScript
 `alert`/`confirm`/`prompt`) are raised by page content or by
@@ -210,6 +211,60 @@ Sources/Messages/MessagesPage.swift                    (messages page renderer, 
 Sources/Panels/BrowserPanelView.swift                  (panel host)
 Sources/BrowserWindowPortal.swift                      (popout / portal layer)
 Sources/BrowserSnapshotStore.swift                     (snapshot capture)
+```
+
+---
+
+## Markdown document renderer (C11-359)
+
+Markdown panels load a bundled, offline WKWebView renderer through
+`c11md://bundle/index.html`. They never receive `file://` read access.
+Each panel gets its own content controller and directory capabilities; the
+process pool and nonpersistent website data store are shared. A panel that
+has never been visible does not allocate a web view. Every visible reader stays
+live; a process-wide LRU retains at most four hidden readers. Eviction captures
+source line/offset, mode and find query, then removes the message handler and
+releases WebKit. Queries pin their renderer until completion. Recreation restores
+transient reading state before revealing the reader; raw content queries remain
+model-only even when no web view exists.
+
+The native scheme handler sends a restrictive CSP response header and injects
+the same policy before the bundled
+page's scripts: remote requests, connections, frames, objects, forms and base
+URLs are denied. Scripts and fonts come only from the bundled renderer.
+Document text enters `c11md.load` as a JSON argument, never interpolated
+JavaScript or a page URL. The web renderer disables raw HTML and sanitizes
+Mermaid output; document directives cannot configure Mermaid.
+
+Local raster images use `c11md-asset://doc/`. The handler percent-decodes
+paths exactly once, treats remaining percent sequences as literal names,
+rejects traversal, checks the resolved real path against the open
+document's directory tree, and opens each component relative to a pinned
+directory descriptor without following symlinks. A symlink resolving within
+that tree is allowed; one escaping it is denied. HTML, SVG and script files
+are not image resources. Reads are bounded to 20 MiB per image and run off
+main; stopped scheme requests receive no late callbacks. This capability
+permits the document to display images in its directory tree, including
+subdirectories, and grants no arbitrary file-read bridge.
+
+Only the initial bundled main-frame navigation is allowed. Document links,
+redirects, frames, downloads and new windows cannot navigate the reader.
+Bridge messages are accepted only from its bundled main frame. Native code
+independently resolves the original link: anchors stay in the document,
+relative markdown links open a markdown panel, and HTTP(S) links follow c11's
+browser routing settings. Other schemes and arbitrary local files are
+refused. No bridge method exposes a socket, shell, evaluator or file read.
+Copy messages write bounded text to the pasteboard. Content-state messages
+remain transient; durable presentation fields use the session snapshot.
+
+Evidence:
+
+```
+Sources/MarkdownAssetPolicy.swift                     (scoped reads and link validation)
+Sources/Panels/MarkdownWebRenderer.swift               (WebKit and native bridge policy)
+Resources/markdown-viewer/BRIDGE.md                    (renderer contract)
+c11Tests/MarkdownAssetPolicyTests.swift               (positive and negative capabilities)
+c11Tests/MarkdownPresentationTests.swift              (field-local restore fallback)
 ```
 
 ---

@@ -1,0 +1,653 @@
+import AppKit
+import Combine
+import SwiftUI
+import XCTest
+import WebKit
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
+#endif
+
+/// Real WebKit + the app's bundled offline renderer. No fake page or JS engine.
+@MainActor
+final class MarkdownWebRendererTests: XCTestCase {
+    func testBundledRendererMermaidSettingsHostileContentAndReload() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-web-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")!
+        try image.write(to: folder.appendingPathComponent("local.png"))
+        let text = "# Reader\n\n```mermaid\ngraph TD\nA-->B\n```\n\n"
+            + (1...80).map { "## Section \($0)\n\nParagraph \($0).\n\n" }.joined()
+            + "![local](local.png)\n<script>window.hostileExecuted=true</script>\n<img src=x onerror='window.hostileExecuted=true'>\n[jump](javascript:alert(1))\n![remote](https://example.invalid/canary.png)\n[executable](./evil.command)\n[application](file:///System/Applications/Calculator.app)\n"
+        try text.write(to: path, atomically: true, encoding: .utf8)
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        defer { panel.close() }
+        XCTAssertNil(panel.renderer)
+        panel.applyRestoredPresentation(SessionMarkdownPanelSnapshot(fontScale: 1.3, theme: "dark", typeface: "mono", outlineOpen: false))
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        // Attaching to a non-visible window supplies AppKit layout without any
+        // screen activation, clicks, or changes to the operator's workspace.
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+        XCTAssertFalse(renderer.failure)
+        XCTAssertEqual(renderer.webView.pageZoom, 1)
+        XCTAssertFalse(renderer.webView.allowsMagnification)
+        let initial = try await call(renderer, "visible") as? [String: Any]
+        XCTAssertEqual(initial?["font_scale"] as? Double, 1.3)
+        XCTAssertEqual((initial?["theme"] as? [String: Any])?["choice"] as? String, "dark")
+        XCTAssertEqual((initial?["typeface"] as? [String: Any])?["choice"] as? String, "mono")
+        let secure = try await evaluate(renderer, "({executed:window.hostileExecuted===true,remote:document.querySelectorAll('[src^=https]').length,svg:document.querySelectorAll('svg').length})") as? [String: Any]
+        XCTAssertEqual(secure?["executed"] as? Bool, false)
+        XCTAssertEqual(secure?["remote"] as? Int, 0)
+        XCTAssertGreaterThan(secure?["svg"] as? Int ?? 0, 0, "Mermaid must render offline through the custom scheme")
+        let imageLoaded: Any = try await withCheckedThrowingContinuation { continuation in
+            renderer.webView.callAsyncJavaScript(
+            "const img=document.querySelector('img[src^=\"c11md-asset:\"]'); if(!img)return false; await img.decode(); return img.naturalWidth===1;",
+            arguments: [:], in: nil, in: .page) { continuation.resume(with: $0) }
+        }
+        XCTAssertEqual(imageLoaded as? Bool, true, "Scoped image bytes must load through WebKit")
+        _ = try await call(renderer, "scrollToHeading", arguments: ["Section 40"])
+        let before = try await call(renderer, "visible") as? [String: Any]
+        let firstLine = (before?["lines"] as? [String: Any])?["first"] as? Int
+        XCTAssertGreaterThan(firstLine ?? 0, 1, "The witness must be scrolled away from the top")
+        let beforeY = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top") as? Double
+        // A real file-watcher reload that changes layout above the viewport.
+        let changed = text.replacingOccurrences(of: "Paragraph 1.", with: String(repeating: "Expanded introduction. ", count: 100)) + "\nAppended paragraph.\n"
+        try changed.write(to: path, atomically: true, encoding: .utf8)
+        await rendered(renderer, revision: 2)
+        let after = try await call(renderer, "visible") as? [String: Any]
+        XCTAssertEqual((after?["lines"] as? [String: Any])?["first"] as? Int, firstLine)
+        let afterY = try await evaluate(renderer, "document.getElementById('c11md-h-section-40').getBoundingClientRect().top") as? Double
+        XCTAssertEqual(try XCTUnwrap(afterY), try XCTUnwrap(beforeY), accuracy: 1)
+        XCTAssertEqual(panel.content, changed)
+        panel.zoomIn()
+        let scaled = try await call(renderer, "visible") as? [String: Any]
+        XCTAssertEqual(scaled?["font_scale"] as? Double, 1.4)
+        XCTAssertEqual(renderer.webView.pageZoom, 1)
+        XCTAssertTrue(panel.ensureRenderer() === renderer, "re-showing a panel reuses its web view")
+    }
+
+    func testSourceModeEvictionRestoresPositionModeFindAndLatestContent() async throws {
+        try await evictionRestoresReadingState(sourceMode: true)
+    }
+
+    func testNarrowReadModeEvictionRestoresReadingState() async throws {
+        try await evictionRestoresReadingState(sourceMode: false)
+    }
+
+    func testReadModeEvictionRestoresInteriorLineInsideSoftWrappedParagraph() async throws {
+        try await evictionRestoresReadingState(sourceMode: false, multiline: true)
+    }
+
+    private func evictionRestoresReadingState(sourceMode: Bool, multiline: Bool = false) async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-eviction-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        let text = "# Reader\n\n```mermaid\ngraph TD\nA-->B\n```\n\n" + (1...80).map { section in
+            guard multiline else { return "## Section \(section)\n\nParagraph \(section).\n\n" }
+            let sourceLines = ["a", "b", "c", "d"].map { label in
+                "Line \(label) of \(section): " + String(repeating: "a deliberately long phrase that must wrap in the narrow reader ", count: 4)
+            }
+            return "## Section \(section)\n\n" + sourceLines.joined(separator: "\n") + "\n\n"
+        }.joined()
+        try text.write(to: path, atomically: true, encoding: .utf8)
+        // In the multiline fixture, Section 20 starts on source line 141 and
+        // its third paragraph source line is 145, inside one rendered block.
+        let targetLine = multiline ? 145 : 160
+        let findQuery = multiline ? "" : "Paragraph 40"
+        let targetTextRowProbe = """
+        (()=>{
+          const sc=document.getElementById('scroller');
+          const walker=document.createTreeWalker(document.getElementById('article'),NodeFilter.SHOW_TEXT);
+          const nodes=[];
+          let node;
+          while((node=walker.nextNode())) nodes.push(node);
+          const text=nodes.map(node=>node.data).join('');
+          const start=text.indexOf('Line c of 20');
+          const end=text.indexOf('Line d of 20',start);
+          if(start<0||end<0) return {error:'source-line text not found',start,end,text:text.slice(0,240)};
+          const boundary=offset=>{
+            for(const node of nodes) {
+              if(offset<=node.data.length) return [node,offset];
+              offset-=node.data.length;
+            }
+            const last=nodes.at(-1);
+            return [last,last?.data.length||0];
+          };
+          const [startNode,startOffset]=boundary(start);
+          const [endNode,endOffset]=boundary(end);
+          const first=document.createRange();
+          first.setStart(startNode,startOffset); first.setEnd(startNode,startOffset+1);
+          const line=document.createRange();
+          line.setStart(startNode,startOffset); line.setEnd(endNode,endOffset);
+          return {
+            top:first.getBoundingClientRect().top-sc.getBoundingClientRect().top,
+            rows:line.getClientRects().length,
+            width:sc.clientWidth,
+            lineText:text.slice(start,end),
+            colWidth:document.querySelector('.col')?.getBoundingClientRect().width ?? -1
+          };
+        })()
+        """
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        var others: [MarkdownPanel] = []
+        defer { panel.close(); others.forEach { $0.close() } }
+        let host = UUID()
+        panel.setRendererVisible(true, hostID: host)
+        var first: MarkdownWebRenderer? = panel.ensureRenderer()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: sourceMode ? 1000 : 460, height: sourceMode ? 800 : 320), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        var hosted: NSView? = sourceMode ? first!.webView : NSHostingView(rootView: MarkdownWebContent(panel: panel, isFocused: false))
+        window.contentView = hosted
+        defer { window.contentView = nil; window.close() }
+        await rendered(first!, revision: 1)
+        _ = try await call(first!, "setSourceMode", arguments: [sourceMode])
+        _ = try await call(first!, "find", arguments: [findQuery])
+        _ = try await call(first!, "scrollToLine", arguments: [targetLine, 7.25])
+        let beforeValue = try await call(first!, "visible")
+        let before = try XCTUnwrap(beforeValue as? [String: Any])
+        let position = try XCTUnwrap(MarkdownReadingPosition(state: before))
+        XCTAssertGreaterThan(position.line, 1)
+        XCTAssertGreaterThan(position.offset, 0, "Approved offset bridge must be present")
+        XCTAssertEqual(position.sourceMode, sourceMode)
+        XCTAssertEqual(position.findQuery, findQuery)
+        if multiline {
+            let visibleLines = try XCTUnwrap(before["lines"] as? [String: Any])
+            XCTAssertEqual(visibleLines["first"] as? Int, targetLine, "visible().lines.first must be the selected interior source line")
+            XCTAssertEqual(position.line, targetLine)
+            XCTAssertEqual(position.offset, 7.25, accuracy: 1)
+            let geometryValue = try await evaluate(first!, targetTextRowProbe)
+            let geometry = try XCTUnwrap(geometryValue as? [String: Any])
+            XCTAssertGreaterThan(geometry["rows"] as? Int ?? 0, 1, "Each source line must soft-wrap in the 460 px reader: \(geometry)")
+            XCTAssertEqual(try XCTUnwrap(geometry["top"] as? Double), -position.offset, accuracy: 1,
+                           "The interior line's text row must sit at the requested offset")
+        }
+        let evicted = expectation(description: "oldest hidden reader evicted")
+        let token = MarkdownRendererCache.shared.evictions.first(where: { $0 == panel.id }).sink { _ in evicted.fulfill() }
+        let hidden = expectation(description: "last native host dismantled")
+        let visibilityToken = MarkdownRendererCache.shared.visibilityChanges.first(where: {
+            $0 == panel.id && !panel.isRendererVisible
+        }).sink { _ in hidden.fulfill() }
+        window.contentView = nil
+        hosted = nil
+        panel.setRendererVisible(false, hostID: host)
+        await fulfillment(of: [hidden], timeout: 10)
+        withExtendedLifetime(visibilityToken) {}
+        if !sourceMode {
+            // SwiftUI dismantling can zero the retained native view. Capturing
+            // that reflowed page must not replace the operator's reading anchor.
+            first!.webView.frame = .zero
+        }
+        for _ in 0..<5 {
+            let other = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+            others.append(other)
+            _ = other.ensureRenderer()
+        }
+        await fulfillment(of: [evicted], timeout: 30)
+        withExtendedLifetime(token) {}
+        XCTAssertNil(panel.renderer)
+        XCTAssertEqual(panel.readingPosition, position)
+        first = nil
+        let changed = text + "\nLatest content while evicted.\n"
+        let reloaded = expectation(description: "evicted model reload")
+        let contentToken = panel.$content.first(where: { $0 == changed }).sink { _ in reloaded.fulfill() }
+        try changed.write(to: path, atomically: true, encoding: .utf8)
+        await fulfillment(of: [reloaded], timeout: 10)
+        withExtendedLifetime(contentToken) {}
+        XCTAssertNil(panel.renderer, "File reload must remain model-only while evicted")
+        panel.setRendererVisible(true, hostID: host)
+        let recreated = panel.ensureRenderer()
+        hosted = sourceMode ? recreated.webView : NSHostingView(rootView: MarkdownWebContent(panel: panel, isFocused: false))
+        window.contentView = hosted
+        await rendered(recreated, revision: 1)
+        let afterValue = try await call(recreated, "visible")
+        let after = try XCTUnwrap(afterValue as? [String: Any])
+        let restored = try XCTUnwrap(MarkdownReadingPosition(state: after))
+        XCTAssertEqual(restored.line, position.line)
+        XCTAssertEqual(restored.offset, position.offset, accuracy: 1)
+        XCTAssertEqual(restored.sourceMode, position.sourceMode)
+        XCTAssertEqual(restored.findQuery, position.findQuery)
+        if multiline {
+            let restoredLines = try XCTUnwrap(after["lines"] as? [String: Any])
+            XCTAssertEqual(restoredLines["first"] as? Int, targetLine, "The restored visible().lines.first must remain the interior source line")
+            XCTAssertEqual(restored.line, targetLine)
+            let geometryValue = try await evaluate(recreated, targetTextRowProbe)
+            let geometry = try XCTUnwrap(geometryValue as? [String: Any])
+            XCTAssertGreaterThan(geometry["rows"] as? Int ?? 0, 1, "The restored paragraph must remain soft-wrapped: \(geometry)")
+            XCTAssertEqual(try XCTUnwrap(geometry["top"] as? Double), -restored.offset, accuracy: 1,
+                           "The restored interior text row must sit at the captured offset")
+        }
+        XCTAssertTrue(panel.content.contains("Latest content while evicted."))
+        XCTAssertEqual(recreated.webView.pageZoom, 1)
+    }
+
+    func testHeldVisibleQueryPinsRendererUntilTheQueryFinishes() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-query-pin-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Reader\n\nA stable paragraph.\n".write(to: path, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        var others: [MarkdownPanel] = []
+        defer {
+            panel.close()
+            others.forEach { $0.close() }
+        }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let userContentController = renderer.webView.configuration.userContentController
+        let scriptProbe = MarkdownWebScriptMessageProbe()
+        userContentController.add(scriptProbe, name: "c11mdTestProbe")
+        defer { userContentController.removeScriptMessageHandler(forName: "c11mdTestProbe") }
+        let queryEntered = expectation(description: "held visible query entered the page bridge")
+        scriptProbe.onMessage = { body in
+            guard body["type"] as? String == "visible-entered", body["call"] as? Int == 1 else { return }
+            queryEntered.fulfill()
+        }
+        try await installVisibleGate(renderer, heldCalls: [1])
+
+        let queryFinished = expectation(description: "held visible query completed")
+        var queryResult: Result<Any, Error>?
+        renderer.call("visible") { result in
+            queryResult = result
+            queryFinished.fulfill()
+        }
+        await fulfillment(of: [queryEntered], timeout: 10)
+        XCTAssertTrue(renderer.hasQueriesInFlight, "The bridge promise must still be held while cache pressure is applied")
+
+        let readyOther = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        others.append(readyOther)
+        let readyOtherRenderer = readyOther.ensureRenderer()
+        await rendered(readyOtherRenderer, revision: 1)
+        for _ in 0..<4 {
+            others.append(MarkdownPanel(workspaceId: UUID(), filePath: path.path))
+        }
+
+        let otherEvicted = expectation(description: "the cache evicted another eligible renderer")
+        let otherIDs = Set(others.map(\.id))
+        var observedOtherEviction = false
+        let otherEvictionToken = MarkdownRendererCache.shared.evictions.sink { id in
+            guard otherIDs.contains(id), !observedOtherEviction else { return }
+            observedOtherEviction = true
+            otherEvicted.fulfill()
+        }
+        for other in others.dropFirst() {
+            // These fillers count toward the bounded cache but cannot race the
+            // one ready peer for the deterministic eviction signal.
+            other.ensureRenderer().webView.stopLoading()
+        }
+        await fulfillment(of: [otherEvicted], timeout: 30)
+        XCTAssertTrue(panel.renderer === renderer, "The held query must keep its renderer resident while the cache evicts a peer")
+        XCTAssertTrue(renderer.hasQueriesInFlight)
+
+        let heldRendererEvicted = expectation(description: "the held renderer became eligible after its query finished")
+        let heldEvictionToken = MarkdownRendererCache.shared.evictions
+            .filter { $0 == panel.id }
+            .sink { _ in heldRendererEvicted.fulfill() }
+        let queryReleased = try await evaluate(renderer, "window.__releaseMarkdownVisibleCall(1)") as? Bool
+        XCTAssertEqual(queryReleased, true)
+        await fulfillment(of: [queryFinished], timeout: 10)
+        _ = try XCTUnwrap(queryResult).get()
+
+        // Reassert pressure if the peer eviction brought the cache exactly
+        // back to capacity. The held renderer is oldest and must now leave.
+        let finalFiller = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        others.append(finalFiller)
+        let finalFillerRenderer = finalFiller.ensureRenderer()
+        await rendered(finalFillerRenderer, revision: 1)
+        await fulfillment(of: [heldRendererEvicted], timeout: 30)
+        XCTAssertNil(panel.renderer)
+        withExtendedLifetime((otherEvictionToken, heldEvictionToken)) {}
+    }
+
+    func testCacheDiscardsCaptureCrossedByNativeQueryEpoch() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-capture-epoch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Reader\n\nA stable paragraph.\n".write(to: path, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        var fillers: [MarkdownPanel] = []
+        defer {
+            panel.close()
+            fillers.forEach { $0.close() }
+        }
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let userContentController = renderer.webView.configuration.userContentController
+        let scriptProbe = MarkdownWebScriptMessageProbe()
+        userContentController.add(scriptProbe, name: "c11mdTestProbe")
+        defer { userContentController.removeScriptMessageHandler(forName: "c11mdTestProbe") }
+        let firstCaptureEntered = expectation(description: "cache capture entered its held bridge call")
+        let recaptureEntered = expectation(description: "stale capture returned and cache began a fresh round")
+        scriptProbe.onMessage = { body in
+            guard body["type"] as? String == "visible-entered" else { return }
+            switch body["call"] as? Int {
+            case 1: firstCaptureEntered.fulfill()
+            case 3: recaptureEntered.fulfill()
+            default: break
+            }
+        }
+        try await installVisibleGate(renderer, heldCalls: [1, 3])
+
+        // Four stopped renderers make this oldest hidden renderer the sole
+        // eligible candidate without allowing filler captures to race it.
+        for _ in 0..<4 {
+            let filler = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+            fillers.append(filler)
+            filler.ensureRenderer().webView.stopLoading()
+        }
+        await fulfillment(of: [firstCaptureEntered], timeout: 10)
+
+        let queryValue = try await call(renderer, "visible")
+        XCTAssertNotNil(queryValue as? [String: Any])
+        XCTAssertFalse(renderer.hasQueriesInFlight)
+        let firstCaptureReleased = try await evaluate(renderer, "window.__releaseMarkdownVisibleCall(1)") as? Bool
+        XCTAssertEqual(firstCaptureReleased, true)
+
+        await fulfillment(of: [recaptureEntered], timeout: 10)
+        XCTAssertTrue(panel.renderer === renderer, "The first capture crossed a newer native query and must not evict")
+
+        let evicted = expectation(description: "the fresh capture round may evict the still-oldest hidden renderer")
+        let token = MarkdownRendererCache.shared.evictions
+            .filter { $0 == panel.id }
+            .sink { _ in evicted.fulfill() }
+        let recaptureReleased = try await evaluate(renderer, "window.__releaseMarkdownVisibleCall(3)") as? Bool
+        XCTAssertEqual(recaptureReleased, true)
+        await fulfillment(of: [evicted], timeout: 30)
+        XCTAssertNil(panel.renderer)
+        withExtendedLifetime(token) {}
+    }
+
+    func testRealWebKitRejectsNavigationPopupAndZoomShortcut() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-web-navigation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let path = folder.appendingPathComponent("reader.md")
+        try "# Reader\n\nStable page marker.\n".write(to: path, atomically: true, encoding: .utf8)
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: path.path)
+        defer { panel.close() }
+        let renderer = panel.ensureRenderer()
+        // Exercise the native createWebViewWith refusal even though normal
+        // production policy also disables script-created windows.
+        renderer.webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        let navigationProbe = MarkdownWebRendererDelegateProbe(renderer: renderer)
+        renderer.webView.navigationDelegate = navigationProbe
+        renderer.webView.uiDelegate = navigationProbe
+
+        let renderedToken = renderer.$renderedRevision.dropFirst().sink { _ in
+            navigationProbe.renderedEventsAfterStart += 1
+        }
+        let initialState = try await call(renderer, "visible") as? [String: Any]
+        let revision = try XCTUnwrap(initialState?["revision"] as? Int)
+        _ = try await evaluate(renderer, "window.__markdownNavigationMarker = 'stable'; true")
+
+        let c11Decision = expectation(description: "c11md navigation was canceled")
+        let c11DecisionToken = navigationProbe.decisions.first(where: {
+            $0.0 == "c11md://bundle/index.html?x"
+        }).sink { _, policy in
+            XCTAssertEqual(policy, .cancel)
+            c11Decision.fulfill()
+        }
+        _ = try await evaluate(renderer, "location.assign('c11md://bundle/index.html?x'); true")
+        await fulfillment(of: [c11Decision], timeout: 10)
+        try await assertNavigationMarker(renderer, revision: revision)
+
+        let httpsDecision = expectation(description: "HTTPS navigation was canceled")
+        let httpsDecisionToken = navigationProbe.decisions.first(where: {
+            $0.0 == "https://example.invalid/"
+        }).sink { _, policy in
+            XCTAssertEqual(policy, .cancel)
+            httpsDecision.fulfill()
+        }
+        _ = try await evaluate(renderer, "location.assign('https://example.invalid/'); true")
+        await fulfillment(of: [httpsDecision], timeout: 10)
+        try await assertNavigationMarker(renderer, revision: revision)
+
+        let popupCreated = expectation(description: "window.open reached the native new-window refusal")
+        let popupToken = navigationProbe.newWindows.first(where: {
+            $0 == "c11md://bundle/index.html"
+        }).sink { _ in popupCreated.fulfill() }
+        _ = try await evaluate(renderer, "window.__markdownPopupReturnedNull = window.open('c11md://bundle/index.html') === null; true")
+        await fulfillment(of: [popupCreated], timeout: 10)
+        let popupWasBlocked = try await evaluate(renderer, "window.__markdownPopupReturnedNull") as? Bool
+        XCTAssertEqual(popupWasBlocked, true)
+        XCTAssertEqual(navigationProbe.returnedWebViewCount, 0, "The native delegate must not create a second WebView")
+        try await assertNavigationMarker(renderer, revision: revision)
+
+        let oldMainMenu = NSApp.mainMenu
+        let appDelegate = AppDelegate.shared
+        let oldWorkspaceManager = appDelegate?.workspaceManager
+        NSApp.mainMenu = nil
+        appDelegate?.workspaceManager = nil
+        defer {
+            NSApp.mainMenu = oldMainMenu
+            appDelegate?.workspaceManager = oldWorkspaceManager
+            renderer.webView.navigationDelegate = renderer
+            renderer.webView.uiDelegate = renderer
+        }
+        let zoomEvent = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "=",
+            charactersIgnoringModifiers: "=",
+            isARepeat: false,
+            keyCode: 24
+        ))
+        renderer.webView.allowsPanelFocus = true
+        XCTAssertTrue(window.makeFirstResponder(renderer.webView), "The synthetic shortcut must run through the real WebKit responder")
+        XCTAssertTrue(window.firstResponder === renderer.webView)
+        XCTAssertFalse(renderer.webView.performKeyEquivalent(with: zoomEvent))
+        XCTAssertEqual(renderer.webView.pageZoom, 1)
+        XCTAssertEqual(renderer.renderedRevision, 1)
+        XCTAssertEqual(navigationProbe.renderedEventsAfterStart, 0, "Rejected navigation must not render a new entry")
+        withExtendedLifetime((renderedToken, c11DecisionToken, httpsDecisionToken, popupToken)) {}
+    }
+
+    func testEveryPresentationFieldInvalidatesSessionAutosaveFingerprint() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let pane = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let panel = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: nil, focus: false))
+        defer { for value in workspace.panels.values { value.close() } }
+        var snapshot = SessionMarkdownPanelSnapshot(fontScale: 1, theme: "system", typeface: "theme", outlineOpen: nil)
+        panel.applyRestoredPresentation(snapshot)
+        var before = manager.sessionAutosaveFingerprint()
+        for field in 0..<4 {
+            switch field {
+            case 0: snapshot.fontScale = 1.4
+            case 1: snapshot.theme = "dark"
+            case 2: snapshot.typeface = "mono"
+            default: snapshot.outlineOpen = false
+            }
+            panel.applyRestoredPresentation(snapshot)
+            let after = manager.sessionAutosaveFingerprint()
+            XCTAssertNotEqual(after, before, "Presentation field \(field) must trigger autosave")
+            before = after
+        }
+        XCTAssertNil(panel.renderer, "Autosave must not create WebKit for hidden documents")
+    }
+
+    func testClosingPanelReleasesItsRendererAndScopedHandlers() {
+        weak var retained: MarkdownWebRenderer?
+        autoreleasepool {
+            let panel = MarkdownPanel(workspaceId: UUID())
+            retained = panel.ensureRenderer()
+            XCTAssertNotNil(retained)
+            panel.close()
+            XCTAssertNil(panel.renderer)
+        }
+        XCTAssertNil(retained, "Closing must break WKUserContentController's message-handler cycle")
+    }
+
+    private func installVisibleGate(_ renderer: MarkdownWebRenderer, heldCalls: [Int]) async throws {
+        let installed = try await evaluateAsync(renderer, #"""
+            const original = window.c11md;
+            const heldCalls = new Set(heldCallsArgument);
+            window.__markdownVisibleCalls = 0;
+            window.__markdownVisibleReleases = Object.create(null);
+            window.c11md = Object.freeze({
+              ...original,
+              visible: async (...args) => {
+                const call = ++window.__markdownVisibleCalls;
+                window.webkit.messageHandlers.c11mdTestProbe.postMessage({type: 'visible-entered', call});
+                if (heldCalls.has(call)) {
+                  await new Promise(resolve => { window.__markdownVisibleReleases[call] = resolve; });
+                }
+                return original.visible(...args);
+              }
+            });
+            window.__releaseMarkdownVisibleCall = call => {
+              const release = window.__markdownVisibleReleases[call];
+              if (typeof release !== 'function') return false;
+              delete window.__markdownVisibleReleases[call];
+              release();
+              return true;
+            };
+            return Object.getOwnPropertyDescriptor(window, 'c11md').writable === true;
+            """#, arguments: ["heldCallsArgument": heldCalls])
+        XCTAssertEqual(installed as? Bool, true, "The bridge object must be writable for the held-promise witness")
+    }
+
+    private func assertNavigationMarker(_ renderer: MarkdownWebRenderer, revision: Int) async throws {
+        let value = try await evaluate(renderer, "({marker: window.__markdownNavigationMarker, revision: window.c11md.visible().revision})")
+        let state = try XCTUnwrap(value as? [String: Any])
+        XCTAssertEqual(state["marker"] as? String, "stable")
+        XCTAssertEqual(state["revision"] as? Int, revision)
+        XCTAssertEqual(renderer.renderedRevision, revision)
+    }
+
+    private func rendered(_ renderer: MarkdownWebRenderer, revision: Int) async {
+        let done = expectation(description: "renderer settled revision \(revision)")
+        let token = renderer.$renderedRevision.first(where: { $0 == revision }).sink { _ in done.fulfill() }
+        await fulfillment(of: [done], timeout: 30)
+        withExtendedLifetime(token) {}
+    }
+
+    private func call(_ renderer: MarkdownWebRenderer, _ method: String, arguments: [Any] = []) async throws -> Any {
+        try await withCheckedThrowingContinuation { continuation in
+            renderer.call(method, arguments: arguments) { continuation.resume(with: $0) }
+        }
+    }
+
+    private func evaluate(_ renderer: MarkdownWebRenderer, _ script: String) async throws -> Any {
+        try await withCheckedThrowingContinuation { continuation in
+            renderer.webView.evaluateJavaScript(script) { value, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: value ?? NSNull()) }
+            }
+        }
+    }
+
+    private func evaluateAsync(
+        _ renderer: MarkdownWebRenderer,
+        _ script: String,
+        arguments: [String: Any] = [:]
+    ) async throws -> Any {
+        try await withCheckedThrowingContinuation { continuation in
+            renderer.webView.callAsyncJavaScript(script, arguments: arguments, in: nil, in: .page) {
+                continuation.resume(with: $0)
+            }
+        }
+    }
+}
+
+@MainActor
+private final class MarkdownWebScriptMessageProbe: NSObject, WKScriptMessageHandler {
+    var onMessage: (([String: Any]) -> Void)?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
+        onMessage?(body)
+    }
+}
+
+@MainActor
+private final class MarkdownWebRendererDelegateProbe: NSObject, WKNavigationDelegate, WKUIDelegate {
+    weak var renderer: MarkdownWebRenderer?
+    let decisions = PassthroughSubject<(String, WKNavigationActionPolicy), Never>()
+    let newWindows = PassthroughSubject<String, Never>()
+    private(set) var returnedWebViewCount = 0
+    var renderedEventsAfterStart = 0
+
+    init(renderer: MarkdownWebRenderer) {
+        self.renderer = renderer
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let renderer else {
+            decisionHandler(.cancel)
+            return
+        }
+        renderer.webView(webView, decidePolicyFor: navigationAction) { [weak self] policy in
+            self?.decisions.send((navigationAction.request.url?.absoluteString ?? "", policy))
+            decisionHandler(policy)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        renderer?.webView(webView, didFinish: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        renderer?.webView(webView, didFailProvisionalNavigation: navigation, withError: error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        renderer?.webView(webView, didFail: navigation, withError: error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        renderer?.webViewWebContentProcessDidTerminate(webView)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        newWindows.send(navigationAction.request.url?.absoluteString ?? "")
+        let result = renderer?.webView(webView, createWebViewWith: configuration, for: navigationAction, windowFeatures: windowFeatures)
+        if result != nil { returnedWebViewCount += 1 }
+        return result
+    }
+}

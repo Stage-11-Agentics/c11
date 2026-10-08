@@ -911,7 +911,10 @@ extension Workspace {
             browserSnapshot = nil
             markdownSnapshot = SessionMarkdownPanelSnapshot(
                 filePath: markdownPanel.filePath,
-                fontScale: markdownPanel.fontScale
+                fontScale: markdownPanel.fontScale,
+                theme: markdownPanel.theme,
+                typeface: markdownPanel.typeface,
+                outlineOpen: markdownPanel.outlineOpen
             )
         }
 
@@ -1181,9 +1184,7 @@ extension Workspace {
             ) else {
                 return nil
             }
-            if let restoredScale = snapshot.markdown?.fontScale {
-                markdownPanel.applyRestoredFontScale(restoredScale)
-            }
+            markdownPanel.applyRestoredPresentation(snapshot.markdown ?? SessionMarkdownPanelSnapshot())
             applySessionPanelMetadata(snapshot, toPanelId: markdownPanel.id)
             return markdownPanel.id
         }

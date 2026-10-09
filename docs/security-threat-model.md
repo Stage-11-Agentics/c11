@@ -409,12 +409,31 @@ Since 1.0 the events log is no longer content-free. Every successful
 event carrying the caller, the target and the sent text (the first
 256 KiB), mailbox `accepted` events carry the message body, and a flag
 answered through `c11 feed answer` records the answer on `flag.lowered`.
-The log files are created with default permissions (`0644`) inside the
-`0700` `~/Library`, so they stay private to the operator's uid, but each
-launch writes a new per-instance file and old instance files are never
-pruned. Anything an agent types into another panel through c11 (a
-pasted token, say) therefore persists in plaintext until the operator
-deletes it.
+The text is plaintext, so the history is owner-only and bounded:
+
+- **Modes.** Event files are created `0600` and the `events/` directory
+  `0700`. 1.0 created its files `0644` (still inside the `0700`
+  `~/Library`). Every retention checkpoint, starting at launch, removes
+  group and other access from the directory and from every event file in
+  it, whichever build wrote it, without following symlinks or changing
+  content.
+- **Retention.** Each build label (production, nightly, each tag) keeps
+  its history for 14 days by default and within 64 MiB across all its
+  launches and numbered generations, deleting the oldest first.
+  Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days
+  (`c11.activityHistory.retentionDays`). Pruning runs at launch, on
+  rotation, on policy changes, at clean shutdown and at least daily,
+  including while recording is off. The file the running process is
+  writing is never deleted. A launch that reuses a dead launch's pid
+  rolls that launch's file into the numbered generations instead of
+  appending to it, so its age still counts.
+- **Text off.** With Keep message and input text off, new records carry
+  byte counts only. Existing history is not rewritten; it ages out.
+
+Anything an agent types into another panel through c11 (a pasted token,
+say) therefore persists in plaintext, readable by the operator's uid,
+for up to the retention period. Pruning is a plain unlink, not a secure
+erase.
 
 Other local artifacts added in 1.0, all owner-only:
 
@@ -475,7 +494,7 @@ Sources/TerminalController.swift:1096                  (ancestry walk, parentPid
 Sources/TerminalController.swift:2222                  (c11Only connection check)
 Sources/TerminalController.swift:2300                  (serveCommandLines, newline framing)
 Sources/Events/EventEmitter.swift                      (panel.input_sent payload, 256 KiB text cap)
-Sources/Events/EventLog.swift                          (per-instance log, one rolled generation)
+Sources/Events/EventLog.swift                          (per-instance log, 0600/0700 modes, age and byte retention)
 Sources/Journal/JournalStorageLayout.swift             (journal location and permissions)
 Sources/LaunchPromptStore.swift                        (staged launch prompts)
 Sources/SocketHandlers/                                (per-domain command dispatch, v0.58.0)

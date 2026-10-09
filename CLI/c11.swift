@@ -22169,6 +22169,11 @@ extension CMUXCLI {
             if let text = String(data: data, encoding: .utf8) { drainLines(text) }
             lastSize = (try? handle.offset()) ?? 0
             try? handle.close()
+        } else if let instance, !follow {
+            // C11-348: retention removes old instance logs. Say so rather than
+            // exit silently, so a caller can tell "no events" from "no log".
+            FileHandle.standardError.c11SafeWrite(Data(
+                "note: no event log for instance \(instance); it was never written or retention removed it\n".utf8))
         }
 
         guard follow else { return }

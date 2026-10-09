@@ -1012,8 +1012,9 @@ and target checks. This bounded settle period remains inside the guarded single-
 submit path.
 
 On a successful flag reply, the local `flag.lowered` event carries `{by, answer}`;
-the reply body is not written to the structural journal. The local EventLog retains
-an 8 MiB current file and one rolled generation. Other lower paths omit `answer`.
+the reply body is not written to the structural journal. The local event log keeps it,
+owner-only, until retention removes it (14 days by default; see
+[events.md](events.md)). Other lower paths omit `answer`.
 
 Debug builds expose `debug.feed_answer.hold_after_paste` for deterministic race
 validation. Arm it with the exact `workspace_id`, `panel_id`, and `hold_ms` (1–5000)

@@ -2116,3 +2116,249 @@ extension EventLogTests {
         XCTAssertFalse(events.contains { $0["type"] as? String == "log.dropped" }, "A retried control boundary never lost an activity record")
     }
 }
+
+
+// MARK: - C11-348: owner-only modes and retention of sent text
+
+extension EventLogTests {
+    private func permissions(_ url: URL) -> mode_t {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return 0 }
+        return info.st_mode & 0o7777
+    }
+
+    private func modificationDate(_ url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    private func seed(_ url: URL, _ text: String = "legacy history", ageDays: Double = 0, mode: Int = 0o644) throws {
+        try Data(text.utf8).write(to: url)
+        try FileManager.default.setAttributes([
+            .modificationDate: Date().addingTimeInterval(-ageDays * 86_400),
+            .posixPermissions: mode,
+        ], ofItemAtPath: url.path)
+    }
+
+    func testNewHistoryIsCreatedOwnerOnlyIncludingRolledGenerationsAndMissingParents() throws {
+        let state = tempDir.appendingPathComponent("fresh-state", isDirectory: true)
+        let directory = state.appendingPathComponent("events", isDirectory: true)
+        let url = directory.appendingPathComponent("events-synthetic-modes-7001.ndjson")
+        let log = EventLog(url: url, instance: "synthetic-modes-7001", sizeCap: 400, totalSizeCap: 64 * 1024)
+        log.open()
+        for index in 0..<12 {
+            log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-modes-7001", ts: Date(),
+                                     payload: ["n": index, "text": String(repeating: "x", count: 100)]))
+        }
+        log.flush()
+        XCTAssertEqual(permissions(directory), 0o700)
+        XCTAssertEqual(permissions(state), 0o700, "A missing parent is created owner-only too")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path + ".2"), "The run must exercise rotation")
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        XCTAssertTrue(files.contains { $0.lastPathComponent == ".activity-history.lock" })
+        for file in files {
+            XCTAssertEqual(permissions(file), 0o600, file.lastPathComponent)
+        }
+    }
+
+    func testLaunchCheckpointTightensOlderHistoryOffMainWithRecordingOnOrOff() throws {
+        for recording in [true, false] {
+            let directory = tempDir.appendingPathComponent("legacy-\(recording)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o755])
+            let legacy = ["events-com.stage11.c11-4100.ndjson", "events-com.stage11.c11-4100.ndjson.1",
+                          "events-com.stage11.c11.debug.other-4200.ndjson.3"].map { directory.appendingPathComponent($0) }
+            let unrelated = directory.appendingPathComponent("notes.txt")
+            let outside = tempDir.appendingPathComponent("outside-\(recording).ndjson")
+            let link = directory.appendingPathComponent("events-com.stage11.c11-4300.ndjson")
+            for file in legacy + [unrelated, outside] { try seed(file, ageDays: 1) }
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+            XCTAssertEqual(permissions(directory), 0o755)
+
+            let url = directory.appendingPathComponent("events-com.stage11.c11-4400.ndjson")
+            let log = EventLog(url: url, instance: "com.stage11.c11-4400",
+                               policy: ActivityHistoryPolicy(enabled: recording))
+            var reconciledOnMain = false
+            log.onHistoryReconcile = { if Thread.isMainThread { reconciledOnMain = true } }
+            log.open()
+            log.flush()
+
+            XCTAssertFalse(reconciledOnMain)
+            XCTAssertEqual(permissions(directory), 0o700)
+            for file in legacy {
+                XCTAssertEqual(permissions(file), 0o600, file.lastPathComponent)
+                XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "legacy history", "Tightening never edits content")
+            }
+            XCTAssertEqual(permissions(unrelated), 0o644, "Only event history is tightened")
+            XCTAssertEqual(permissions(outside), 0o644, "A symlink is never followed")
+            XCTAssertEqual(FileManager.default.fileExists(atPath: url.path), recording)
+            if recording { XCTAssertEqual(permissions(url), 0o600) }
+
+            // Idempotent, and every later checkpoint also catches a file an
+            // older build wrote after launch.
+            let late = directory.appendingPathComponent("events-com.stage11.c11-4500.ndjson")
+            try seed(late, ageDays: 0)
+            log.sampleForTesting()
+            log.updatePolicy(ActivityHistoryPolicy(enabled: recording, retentionDays: 30))
+            log.flush()
+            for file in legacy + [late] { XCTAssertEqual(permissions(file), 0o600, file.lastPathComponent) }
+            XCTAssertEqual(permissions(directory), 0o700)
+            log.stopSampling()
+        }
+    }
+
+    func testOneDotZeroBacklogAgesOutAtLaunchAndTheCurrentFileOutlivesItsOwnAge() throws {
+        var clock = Date()
+        let directory = tempDir.appendingPathComponent("backlog", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var kept: [URL] = [], aged: [URL] = []
+        for day in 0..<40 {
+            let file = directory.appendingPathComponent("events-com.stage11.c11-\(5000 + day).ndjson")
+            try seed(file, "{\"type\":\"panel.input_sent\",\"payload\":{\"text\":\"day \(day)\"}}\n",
+                     ageDays: Double(day) + 0.05)
+            if day >= 14 { aged.append(file) } else { kept.append(file) }
+        }
+        let url = directory.appendingPathComponent("events-com.stage11.c11-5100.ndjson")
+        let log = EventLog(url: url, instance: "com.stage11.c11-5100", now: { clock })
+        log.open()
+        log.flush()
+        for file in aged { XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), file.lastPathComponent) }
+        for file in kept {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), file.lastPathComponent)
+            XCTAssertEqual(permissions(file), 0o600, file.lastPathComponent)
+        }
+
+        // Sixty days later every other file is past the horizon. This
+        // launch's own current file is never deleted, whatever its age.
+        clock.addTimeInterval(60 * 86_400)
+        log.append(EventEnvelope(type: .panelInputSent, instance: "com.stage11.c11-5100", ts: clock, payload: ["text": "kept"]))
+        log.sampleForTesting()
+        for file in kept { XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), file.lastPathComponent) }
+        XCTAssertEqual(readLines(url).map(parse).compactMap { $0["type"] as? String }, ["log.opened", "panel.input_sent"])
+    }
+
+    func testByteBudgetPrunesOldestHistoryFirstButNeverTheCurrentLaunchFile() throws {
+        let directory = tempDir.appendingPathComponent("budget", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var rolls: [URL] = []
+        for index in 0..<8 {
+            let roll = directory.appendingPathComponent("events-com.stage11.c11-\(6000 + index).ndjson.1")
+            try seed(roll, String(repeating: "y", count: 1024), ageDays: Double(8 - index) / 24)
+            rolls.append(roll)
+        }
+        let budget = 4096
+        let url = directory.appendingPathComponent("events-com.stage11.c11-6100.ndjson")
+        let log = EventLog(url: url, instance: "com.stage11.c11-6100", sizeCap: 1024, totalSizeCap: budget)
+        log.open()
+        log.flush()
+        let survivors = rolls.filter { FileManager.default.fileExists(atPath: $0.path) }
+        XCTAssertFalse(survivors.isEmpty)
+        XCTAssertLessThan(survivors.count, rolls.count)
+        XCTAssertEqual(survivors, Array(rolls.suffix(survivors.count)), "Oldest history goes first")
+        let total = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
+            .filter { EventLogLayout.isLogFileName($0.lastPathComponent) }
+            .reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }
+        XCTAssertLessThanOrEqual(total, budget)
+        XCTAssertEqual(readLines(url).map(parse).first?["type"] as? String, "log.opened")
+    }
+
+    func testReusedPidRollsInheritedCurrentFileAsideSoRetentionStillApplies() throws {
+        for (ageDays, survives) in [(20.0, false), (3.0, true)] {
+            let directory = tempDir.appendingPathComponent("reused-\(Int(ageDays))", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("events-com.stage11.c11-7001.ndjson")
+            let rolled = URL(fileURLWithPath: url.path + ".1")
+            try seed(url, "{\"type\":\"panel.input_sent\",\"payload\":{\"text\":\"INHERITED_SECRET\"}}\n", ageDays: ageDays)
+            let inheritedDate = try XCTUnwrap(modificationDate(url))
+            let log = EventLog(url: url, instance: "com.stage11.c11-7001")
+            log.open()
+            log.append(EventEnvelope(type: .surfaceCreated, instance: "com.stage11.c11-7001", ts: Date()))
+            log.flush()
+            let current = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertFalse(current.contains("INHERITED_SECRET"), "This launch's file holds only this launch")
+            XCTAssertEqual(readLines(url).map(parse).first?["type"] as? String, "log.opened")
+            XCTAssertEqual(permissions(url), 0o600)
+            if survives {
+                XCTAssertTrue(try String(contentsOf: rolled, encoding: .utf8).contains("INHERITED_SECRET"))
+                XCTAssertEqual(permissions(rolled), 0o600)
+                XCTAssertEqual(try XCTUnwrap(modificationDate(rolled)).timeIntervalSince(inheritedDate), 0, accuracy: 1,
+                               "The roll keeps the inherited mtime, so its age still counts")
+            } else {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: rolled.path), "Inherited history past the horizon is pruned")
+            }
+        }
+    }
+
+    func testInheritedCurrentFileHeldByALiveWriterIsAppendedNotMoved() throws {
+        let url = logURL("events-synthetic-held-7001.ndjson")
+        try seed(url, "{\"type\":\"log.opened\"}\n", ageDays: 1)
+        let log = EventLog(url: url, instance: "synthetic-held-7001")
+        try withExternalFileLocks(at: [url], exclusive: false) {
+            log.open()
+            log.flush()
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".1"))
+        XCTAssertEqual(readLines(url).count, 2)
+        XCTAssertEqual(permissions(url), 0o600, "A reused file is tightened on open")
+    }
+
+    func testRetentionDaysDefaultsKeyOverridesTheFourteenDayDefault() throws {
+        let suiteName = "c11-348-retention-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        XCTAssertEqual(ActivityHistoryPolicy(defaults: defaults).retentionDays, 14)
+        let tenDays = logURL("events-synthetic-override-7000.ndjson.1")
+        let twentyDays = logURL("events-synthetic-override-6999.ndjson.1")
+        try seed(tenDays, ageDays: 10)
+        try seed(twentyDays, ageDays: 20)
+        let url = logURL("events-synthetic-override-7001.ndjson")
+        let initial = ActivityHistoryPolicy(defaults: defaults)
+        let log = EventLog(url: url, instance: "synthetic-override-7001", policy: initial)
+        EventEmitter.shared.startForTesting(log: log, instance: "synthetic-override-7001", policy: initial)
+        log.open()
+        log.flush()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tenDays.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: twentyDays.path))
+
+        defaults.set(7, forKey: ActivityHistoryPolicy.retentionDaysKey)
+        EventEmitter.shared.reloadPolicy(defaults: defaults)
+        EventEmitter.shared.flush()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tenDays.path))
+        let policy = readLines(url).map(parse).last { $0["type"] as? String == "log.policy" }
+        XCTAssertEqual((policy?["payload"] as? [String: Any])?["retention_days"] as? Int, 7)
+
+        // Only the Settings values are accepted; anything else is the default.
+        defaults.set(3, forKey: ActivityHistoryPolicy.retentionDaysKey)
+        XCTAssertEqual(ActivityHistoryPolicy(defaults: defaults).retentionDays, 14)
+        defaults.set(30, forKey: ActivityHistoryPolicy.retentionDaysKey)
+        XCTAssertEqual(ActivityHistoryPolicy(defaults: defaults).retentionDays, 30)
+    }
+
+    func testRecordingOffStillRunsTheDailyRetentionCheckpoint() throws {
+        var clock = Date()
+        var timers = 0
+        var schedules: [(TimeInterval, Int)] = []
+        let stale = logURL("events-synthetic-off-daily-7002.ndjson.1")
+        try seed(stale, ageDays: 6.5)
+        let url = logURL("events-synthetic-off-daily-7001.ndjson")
+        let log = EventLog(url: url, instance: "synthetic-off-daily-7001", now: { clock },
+                           policy: ActivityHistoryPolicy(enabled: false, retentionDays: 7))
+        log.onTimerCreated = { timers += 1 }
+        log.onTimerScheduled = { schedules.append(($0, $1)) }
+        log.open()
+        log.startSampling { XCTFail("Recording off must not sample health"); return nil }
+        log.flush()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertEqual(timers, 1)
+        XCTAssertEqual(schedules.last?.0 ?? -1, 86_400, accuracy: 0.001)
+        XCTAssertEqual(schedules.last?.1, 60)
+        clock.addTimeInterval(86_399)
+        log.fireDeadlineForTesting()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
+        clock.addTimeInterval(1)
+        log.fireDeadlineForTesting()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "Recording off writes nothing")
+        XCTAssertEqual(schedules.last?.0 ?? -1, 86_400, accuracy: 0.001, "The next daily checkpoint is armed")
+        log.stopSampling()
+    }
+}

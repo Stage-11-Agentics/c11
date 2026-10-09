@@ -17,7 +17,9 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 ## File & format
 
 - **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>` (e.g. `com.stage11.c11-12345`) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
-- **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`.
+- **Owner-only.** Event files are `0600` and the `events/` directory `0700`, because `panel.input_sent`, `mailbox.accepted` and `flag.lowered` can carry sent text. Every retention checkpoint, starting at launch, tightens older files (1.0 wrote `0644`).
+- **Bounded history.** Generations older than the retention age (14 days by default) or past the build's 64 MiB budget are deleted, oldest first; see [retention](#local-activity-history-c11-349). Old instance logs disappear; the file a running c11 is writing never does.
+- **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`. When that instance's log no longer exists, a one-shot tail prints a `note:` on stderr and exits 0.
 - **`log.opened` begins each instance's log.** Its payload carries the `pid` and its first emitted `seq` is **1**. The counter is per instance, not the lifecycle journal's committed sequence; do not resume a journal cursor from an events file.
 - **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (older numbered generations are retained within the build’s age and byte budget). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
 
@@ -224,12 +226,21 @@ nightly and each tag have separate policies. A build never prunes another
 production or nightly label. Dead debug/tag labels may also be pruned after a
 fixed fourteen-day idle TTL. Live current files are protected by writer locks.
 Pruning runs at open, rotation, sample, policy changes and clean shutdown,
-plus a daily checkpoint while recording is enabled.
-With full recording disabled, startup, policy and shutdown checkpoints still
-prune history, but no retention timer runs. A long disabled session can retain
-files past their wall-clock age limit until the next checkpoint. Writes maintain
+plus a daily checkpoint. The daily checkpoint also runs with full recording
+disabled: nothing new is written, but retained history still ages out. Writes maintain
 a running byte count; ordinary records do not scan the directory or take a
 retention lock.
+
+Every checkpoint also removes group and other access from the history
+directory and from every event file in it, whichever build wrote it. It skips
+symlinks, files owned by another user and non-event files, and never adds a
+permission bit, so it is idempotent. New files are created `0600` and new
+directories `0700`. Instance ids end in the pid, so a launch can reuse a dead
+launch's current file name. At its first write, that launch rolls the inherited
+file into its numbered generations (a plain rename that keeps the file's mtime)
+instead of appending to it, so the inherited history keeps its age and is
+pruned on schedule. If a live writer could still hold the file, it appends as
+before.
 
 Shared per-label reconciliation uses a nonblocking lock. If it is busy or
 unavailable, recording continues with best-effort pruning of this instance’s
@@ -246,7 +257,10 @@ writes consume sequence numbers and publish written notifications.
 
 Policy defaults: analytics on, text on, retention 14 days. The cached keys are
 `c11.activityHistory.analyticsEnabled`, `c11.activityHistory.keepText`, and
-`c11.activityHistory.retentionDays` (7, 14 or 30). Analytics-off skips presence,
+`c11.activityHistory.retentionDays` (7, 14 or 30; any other value reads as 14).
+Settings → Data & Privacy sets them. For an external write such as
+`defaults write com.stage11.c11 c11.activityHistory.retentionDays -int 7`,
+relaunch c11 for it to take effect. The 64 MiB budget has no override. Analytics-off skips presence,
 workspace and sample envelopes before construction; existing panel, mailbox,
 feed and lifecycle events continue. `log.policy` records
 `{enabled, analytics_enabled, keep_text, retention_days}` at launch and policy

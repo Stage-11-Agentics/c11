@@ -29,8 +29,8 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `seq` | int (≥ 0) | yes | Monotonic per instance, assigned on the writer's serial queue so file order and seq order always agree. **THE ordering oracle** — order by `seq`, never by `ts`. |
-| `ts` | string | yes | ISO-8601 / RFC3339 UTC with fractional seconds and `Z` (`2026-07-07T08:20:00.123Z`). Captured on the emitting thread — only *approximately* monotonic and may invert slightly relative to `seq` across racing threads. **Approximate ordering only.** |
+| `seq` | int (≥ 0) | yes | Monotonic per instance, assigned on the writer's serial queue so file order and seq order always agree. **The write-order oracle**, not title-change order: a pending OSC tail can follow unrelated events emitted after its last change. |
+| `ts` | string | yes | ISO-8601 / RFC3339 UTC with fractional seconds and `Z` (`2026-07-07T08:20:00.123Z`). Captured on the emitting thread. May invert relative to `seq` across racing threads or when an OSC title tail is deferred for its sixty-second window. **Approximate ordering only.** |
 | `type` | string | yes | Dotted event type from the closed v2 enum (below). Matches `^[a-z][a-z0-9_.]*$`. |
 | `instance` | string | yes | The emitting process's instance id. Namespaces `seq`. |
 | `v` | int | yes | Schema version, `2`. Integer, not a string. Bumps are breaking. |
@@ -50,7 +50,7 @@ The taxonomy types below are the closed v2 enum. The envelope fields `workspace`
 | `workspace.reordered` | none (window-scoped) | `{window_id, final_workspace_ids}` | Applied batch order changed. Dry-run, no-op and rejected batches emit nothing. |
 | `workspace.selected` | selected workspace | `{previous?, cause, method?, caller_panel_id?}` | Operator selection. `cause` is `sidebar`, `shortcut`, `palette`, `notification`, `jump`, `menu`, `socket`, `close_fallback`, `restore`, or `create`. Socket fields identify the method and calling panel when known. |
 | `workspace.switch_blocked` | requested workspace | `{target, method, caller_panel_id}` | Socket attempt refused before selection changes. `caller_panel_id` is the peer TTY's panel, or the supplied caller UUID when no TTY is available; null means unknown. |
-| `metadata.changed` | workspace + panel | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `panel`\|`area`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
+| `metadata.changed` | workspace + panel | `{scope, key, value?, prior?, source, title_change_count?, last_changed_at?}` | A canonical/non-canonical metadata write landed. `scope` ∈ `panel`\|`area`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). Coalesced OSC title tails add the meaningful change count and the latest change's RFC3339 UTC timestamp. **`progress` is excluded** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
 | `liveness.derived` | workspace + panel | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
 | `waiting.entered` | workspace + panel? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
 | `waiting.left` | workspace + panel? | — | Paired exit edge for `waiting.entered`. This name stays; it is never `waiting.exited`. |
@@ -144,7 +144,7 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 
 - **Not a durable queue.** The log has bounded numbered generations and age retention. History pruned from those generations is gone. Consumers that need durability **own it** — checkpoint your `seq` and persist what you must keep.
 - **Drops surface as data, not silence.** Under a stalled disk c11 sheds events and records the loss as `log.dropped {count}` rather than blocking. A gap is always marked; it is never hidden.
-- **`ts` is not authoritative for ordering.** It can invert slightly relative to `seq` across racing threads. Never sort or dedupe on `ts`.
+- **`ts` is not authoritative for write ordering.** It can invert relative to `seq` across racing threads and deferred OSC title tails. Never dedupe on `ts`; use `last_changed_at` for the tail's last title-change time, while retaining `seq` for stream consumption.
 - **Per-instance, not global.** There is no cross-instance total order; `seq` only means something within one `instance`.
 
 To answer who attempted a switch, run `c11 events tail --filter type=workspace.switch_blocked`. Resolve `payload.caller_panel_id` against `c11 tree --all --json`; a closed caller remains attributable by UUID. CLI requests include their caller identity; raw sockets from terminals are attributed by the peer's controlling TTY. This is attribution, not permission to switch.
@@ -203,11 +203,18 @@ retention deadlines. Clean shutdown records one final sample with
 
 OSC title changes differing only in a recognized leading status/spinner glyph
 are suppressed. Meaningful OSC title churn keeps first and last changes plus
-`title_change_count` within sixty seconds. Explicit and declared titles,
-descriptions, status and all other events are never coalesced. Before any
-non-OSC event for a panel, its pending OSC tail is flushed. Panel close,
-workspace close, policy changes and shutdown flush applicable tails before
-the boundary event. This documented sixty-second tail deadline is the sole
+`title_change_count` within sixty seconds. The tail also carries `last_changed_at`,
+the latest meaningful title envelope's timestamp formatted as RFC3339 UTC with
+fractional seconds; it is the change time, not the tail's eventual write time.
+The tail's `ts` retains that same change timestamp. Input, mailbox, liveness and
+other unrelated events write immediately without ending the pending window.
+Title-semantic boundaries flush the panel's tail first: non-OSC title replacements
+or clears at any precedence tier, description/status changes, and panel close.
+Workspace close, policy changes and shutdown flush applicable tails before
+the boundary event. Explicit/declared titles and all non-OSC events retain their
+ordinary latency and are never coalesced. `seq` records serialization order;
+intervening input or mail may precede a tail whose last change happened earlier.
+This documented sixty-second tail deadline is the sole
 EVT-6 latency exception. Pending state is bounded to 4096 panel/scope entries;
 capacity eviction flushes the oldest entry.
 

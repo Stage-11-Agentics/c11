@@ -1128,6 +1128,117 @@ extension EventLogTests {
         XCTAssertEqual(events.compactMap { $0["seq"] as? Int }, Array(1...9))
     }
 
+    func testFiveSecondOSCTitlesKeepOneWindowAcrossTenSecondInputAndThirtySecondMail() {
+        let start = Date(timeIntervalSince1970: 1_770_000_000)
+        var clock = start
+        let log = EventLog(url: logURL(), instance: "synthetic-interleaving", now: { clock },
+                           policy: ActivityHistoryPolicy(analyticsEnabled: false))
+        defer { log.stopSampling() }
+        for second in stride(from: 0, through: 55, by: 5) {
+            clock = start.addingTimeInterval(Double(second))
+            var payload: [String: Any] = ["key": "title", "value": "Step \(second)", "source": "osc", "scope": "panel"]
+            if second > 0 { payload["prior"] = "Step \(second - 5)" }
+            log.append(EventEnvelope(type: .metadataChanged, instance: "synthetic-interleaving", ts: clock,
+                                     surface: "panel", payload: payload))
+            if second > 0, second.isMultiple(of: 10) {
+                log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-interleaving", ts: clock,
+                                         surface: "panel", payload: ["kind": "text", "bytes": 1, "submitted": true]))
+            }
+            if second == 30 {
+                log.append(EventEnvelope(type: .mailboxAccepted, instance: "synthetic-interleaving", ts: clock,
+                                         surface: "panel", payload: ["id": "synthetic-mail", "bytes": 1, "text_recorded": false]))
+                log.append(EventEnvelope(type: .mailboxDelivered, instance: "synthetic-interleaving", ts: clock,
+                                         surface: "panel", payload: ["id": "synthetic-mail", "via": "drain"]))
+            }
+            log.flush()
+            let events = readLines(logURL()).map(parse)
+            XCTAssertEqual(events.filter { $0["type"] as? String == "metadata.changed" }.count, 1,
+                           "Input and mailbox events must not end the sixty-second OSC window")
+            XCTAssertEqual(events.count, 1 + second / 10 + (second >= 30 ? 2 : 0),
+                           "Every unrelated event must be readable at its own queue drain")
+        }
+        clock = start.addingTimeInterval(58)
+        log.append(EventEnvelope(type: .livenessDerived, instance: "synthetic-interleaving", ts: clock,
+                                 surface: "panel", payload: ["state": "working"]))
+        log.flush()
+        XCTAssertEqual(readLines(logURL()).map(parse).last?["type"] as? String, "liveness.derived")
+        clock = start.addingTimeInterval(59)
+        log.fireDeadlineForTesting()
+        XCTAssertEqual(readLines(logURL()).count, 9)
+        clock = start.addingTimeInterval(60)
+        log.fireDeadlineForTesting()
+        let events = readLines(logURL()).map(parse)
+        let titles = events.filter { $0["type"] as? String == "metadata.changed" }
+        XCTAssertEqual(titles.count, 2)
+        XCTAssertEqual((titles.first?["payload"] as? [String: Any])?["value"] as? String, "Step 0")
+        XCTAssertNil((titles.first?["payload"] as? [String: Any])?["last_changed_at"])
+        let tail = titles.last?["payload"] as? [String: Any]
+        XCTAssertEqual(tail?["value"] as? String, "Step 55")
+        XCTAssertEqual(tail?["title_change_count"] as? Int, 12)
+        XCTAssertEqual(tail?["last_changed_at"] as? String, EventEnvelope.formatTimestamp(start.addingTimeInterval(55)))
+        XCTAssertEqual(events.last?["ts"] as? String, EventEnvelope.formatTimestamp(start.addingTimeInterval(55)),
+                       "The tail records the actual last title change, not its sixty-second write deadline")
+        XCTAssertEqual(events.compactMap { $0["seq"] as? Int }, Array(1...10))
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, [
+            "metadata.changed", "panel.input_sent", "panel.input_sent", "panel.input_sent",
+            "mailbox.accepted", "mailbox.delivered", "panel.input_sent", "panel.input_sent",
+            "liveness.derived", "metadata.changed"
+        ])
+        log.append(EventEnvelope(type: .surfaceClosed, instance: "synthetic-interleaving", ts: clock, surface: "panel"))
+        log.flush()
+        XCTAssertEqual(readLines(logURL()).count, 11, "Close after expiry must not duplicate the title tail")
+    }
+
+    func testNonOSCTitleReplacementAndClearFlushOnlyTheAffectedPanelWindow() {
+        let start = Date(timeIntervalSince1970: 1_770_000_000)
+        for source in ["explicit", "declare", "derived", "heuristic"] {
+            for clear in [false, true] {
+                let url = logURL("title-boundary-\(source)-\(clear).ndjson")
+                var clock = start
+                let log = EventLog(url: url, instance: "synthetic-title-boundary", now: { clock })
+                func title(_ value: String, panel: String) {
+                    log.append(EventEnvelope(type: .metadataChanged, instance: "synthetic-title-boundary", ts: clock,
+                                             surface: panel, payload: ["key": "title", "value": value, "source": "osc", "scope": "panel"]))
+                }
+                title("First", panel: "panel")
+                title("Other first", panel: "other-panel")
+                log.flush()
+                clock = start.addingTimeInterval(5)
+                title("Last", panel: "panel")
+                title("Other last", panel: "other-panel")
+                log.flush()
+                clock = start.addingTimeInterval(10)
+                let replacement: Any = clear ? NSNull() : "Replacement"
+                log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-title-boundary", ts: clock,
+                                         surface: "panel", payload: ["kind": "text", "bytes": 1]))
+                log.append(EventEnvelope(type: .metadataChanged, instance: "synthetic-title-boundary", ts: clock,
+                                         surface: "panel", payload: ["key": "title", "value": replacement,
+                                                                   "source": source, "scope": "panel"]))
+                log.flush()
+                let beforeClose = readLines(url).map(parse)
+                XCTAssertEqual(beforeClose.compactMap { $0["type"] as? String }, [
+                    "metadata.changed", "metadata.changed", "panel.input_sent", "metadata.changed", "metadata.changed"
+                ])
+                let tail = beforeClose[3]["payload"] as? [String: Any]
+                XCTAssertEqual(tail?["value"] as? String, "Last")
+                XCTAssertEqual(tail?["title_change_count"] as? Int, 2)
+                XCTAssertEqual(tail?["last_changed_at"] as? String, EventEnvelope.formatTimestamp(start.addingTimeInterval(5)))
+                XCTAssertEqual((beforeClose[4]["payload"] as? [String: Any])?["source"] as? String, source)
+                if clear { XCTAssertTrue((beforeClose[4]["payload"] as? [String: Any])?["value"] is NSNull) }
+                else { XCTAssertEqual((beforeClose[4]["payload"] as? [String: Any])?["value"] as? String, "Replacement") }
+                log.append(EventEnvelope(type: .surfaceClosed, instance: "synthetic-title-boundary", ts: clock, surface: "other-panel"))
+                log.flush()
+                let events = readLines(url).map(parse)
+                XCTAssertEqual(events.count, 7)
+                XCTAssertEqual(events.compactMap { $0["seq"] as? Int }, Array(1...7))
+                XCTAssertEqual((events[5]["payload"] as? [String: Any])?["value"] as? String, "Other last",
+                               "A title replacement on one panel must preserve the other panel's pending tail")
+                XCTAssertEqual(events.last?["type"] as? String, "panel.closed")
+                log.stopSampling()
+            }
+        }
+    }
+
     func testPolicyBoundariesFlushPendingTitleBeforeMarkerIncludingFullDisable() {
         let policies = [ActivityHistoryPolicy(keepText: false), ActivityHistoryPolicy(analyticsEnabled: false), ActivityHistoryPolicy(enabled: false)]
         for (index, policy) in policies.enumerated() {

@@ -53,13 +53,13 @@ In each fixture directory, `valid-*.json` must all parse successfully and `inval
 - **`seq` monotonicity across lines.** The schema validates one line in isolation; gap-free, strictly-increasing seq within a file is the writer's contract (`EventLog`, serial queue).
 - **`instance` uniqueness** across processes, and the seq namespace being per-instance.
 - **Ref UUIDs matching live panels/workspaces/areas.** `workspace` / `panel` / `area` are validated as UUID strings only; whether they name an entity that currently exists lives in the emitter/consumer.
-- **`ts` ordering.** `ts` is captured on the emitting thread and is only approximately monotonic; it may invert relative to `seq` across racing threads.
+- **`ts` ordering.** `ts` is captured on the emitting thread and is only approximately monotonic; it may invert relative to `seq` across racing threads or when an OSC title tail is deferred behind unrelated events.
 
 **`seq` (not `ts`) is the ordering oracle.** Consumers order by `seq`, which the writer assigns on its serial queue so file order and seq order always agree. Those cross-line and liveness invariants live in `Sources/Events/EventEnvelope.swift` and the `EventLog` writer / `c11 events tail` reader, not the schema.
 
 ## C11-349 latency exception
 
-Only meaningful OSC title churn is coalesced into first/last/count windows with a sixty-second awake tail deadline, even with analytics off. Spinner-only changes are discarded. Other event types retain EVT-6’s one-second latency; pending tails flush before non-OSC panel events, panel/workspace close, policy changes and shutdown.
+Only meaningful OSC title churn is coalesced into first/last/count windows with a sixty-second awake tail deadline, even with analytics off. Spinner-only changes are discarded. Coalesced tails add `title_change_count` and `last_changed_at` (RFC3339 UTC with fractional seconds), recording the latest meaningful title change rather than the later write deadline; the tail's `ts` retains the same change time. Input, mailbox, liveness and unrelated events retain EVT-6’s one-second latency without ending that window. Pending tails flush before non-OSC title replacements/clears (all precedence tiers), description/status changes, panel/workspace close, policy changes and shutdown. Sequence numbers remain write order; the title-change timestamp can precede intervening unrelated records.
 
 # Mailbox Envelope Spec
 

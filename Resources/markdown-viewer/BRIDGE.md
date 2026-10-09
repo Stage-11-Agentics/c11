@@ -145,8 +145,9 @@ with `type` and the following fields (no JSON string wrapping):
   and validation. Footnote/back-reference links set `localOnly` and remain
   page-local. Local/external links never navigate the page. Native independently
   validates paths/schemes before opening anything. `javascript:`, `data:`,
-  unknown schemes and malformed URLs are blocked. No link creates a window or
-  loads a URL.
+  unknown schemes and malformed URLs are blocked. No link creates a web-view
+  window or loads a URL in the page; see the security section for where native
+  sends web and `mailto:` links.
 - `{type:"peek", action:"show"|"hide", id:number, href, rect}`: a delayed hover
   on a relative Markdown link asks native to validate and read the target within
   the current repository/document scope. Native may return an approved excerpt
@@ -190,7 +191,17 @@ with strict security, no document-supplied initialization/config directives,
 and sanitized SVG; hyperlinks inside diagrams are inert. CSP disallows network,
 frames, objects, forms and base tags. The host must additionally reject arbitrary
 navigation/new windows and grant the custom scheme only bundled assets. The
-bridge exposes no eval, file read, socket, external-open or arbitrary native call.
+bridge exposes no eval, socket, shell, disk write or arbitrary native call. Two
+messages reach past the page, and native resolves and validates each href itself
+without trusting the page's `resolvedURL` or `kind`:
+
+- `peek` reads a file. Native reads the relative markdown target, only inside the
+  current repository or document scope and at most 256 KiB, and returns it
+  through `showLinkPeek`.
+- `link` opens outside the page. An `http`/`https` link opens in a c11 browser
+  panel, or in the default browser through `NSWorkspace` when settings or ⌥
+  send it there; a validated `mailto:` link goes to the default mail app
+  through `NSWorkspace`. Other schemes and non-markdown files are blocked.
 
 ## Local images (accepted amendment)
 

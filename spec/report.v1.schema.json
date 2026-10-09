@@ -48,7 +48,12 @@
     "hang_precursors",
     "open_at_observed_end",
     "usage_scope",
-    "closed_lifetimes_minutes"
+    "closed_lifetimes_minutes",
+    "raw_events_observed",
+    "bootstrap_graphs_excluded",
+    "bootstrap_events_excluded",
+    "bootstrap_event_types_excluded",
+    "bootstrap_scope"
   ],
   "properties": {
     "schema_version": {
@@ -596,6 +601,28 @@
           "minimum": 0
         }
       }
+    },
+    "raw_events_observed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bootstrap_graphs_excluded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bootstrap_events_excluded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bootstrap_event_types_excluded": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "bootstrap_scope": {
+      "type": "string"
     }
   }
 }

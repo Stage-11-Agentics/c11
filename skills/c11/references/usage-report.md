@@ -113,6 +113,22 @@ compact typed events, excluding raw text/body dictionaries and duration arrays;
 its memory also depends on the retained event count. Retention and unrecorded harness usage can
 never be proven complete by this command.
 
+Report excludes pre-install bootstrap workspace graphs explicitly marked by
+strict boolean `payload.transient: true` from installed-panel load, lifetimes,
+workspace dwell/waits, kinds, topics, mail, flags and daily event rhythm. It
+precollects marked workspace/panel IDs across retained history, so a later marker
+or a rotated-away creation edge still classifies the graph. Sequence and time
+continuity consume every event; process-wide presence, samples and hangs remain
+included, as do all bounded host transcript tokens. No closure is invented and
+the raw event files are unchanged. `bootstrap_graphs_excluded` counts classified
+workspace graphs in selected retained histories that intersect the observed
+span, including replay baselines. `bootstrap_events_excluded` and its per-type
+map count only excluded events within that span; `raw_events_observed` counts
+all valid events there. `bootstrap_scope` states those boundaries. The Markdown
+report shows the excluded counts. A numeric/string truthy value does not mark a
+graph as transient. Mandatory panel events carry this marker even with analytics
+off; an analytics toggle cannot turn a bootstrap graph into installed load.
+
 Report derives span, panel creation, per-instance peak open/working counts,
 observed agent hours, closed-panel lifetime percentiles, workspace names and
 explicit panel-title topics, daily activity and hour-of-day event rhythm. Quiet intervals are split at

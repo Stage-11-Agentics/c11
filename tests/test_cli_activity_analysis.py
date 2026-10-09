@@ -158,6 +158,107 @@ class ActivityCLI(unittest.TestCase):
         self.assertIn('Test workspace', markdown)
         self.assertIn('Daily activity', markdown)
 
+    def bootstrap_events(self, late_marker=False, analytics_off=False):
+        rows = []
+        def add(minute, event_type, workspace=None, panel=None, **payload):
+            rows.append({'v': 2, 'instance': 'synthetic', 'seq': len(rows) + 1,
+                'ts': '2026-01-02T%02d:%02d:00Z' % divmod(minute, 60),
+                'type': event_type, 'workspace': workspace, 'panel': panel, 'payload': payload})
+        add(0, 'log.opened', app_active=True, screen_locked=False, system_asleep=False)
+        if analytics_off:
+            add(0, 'log.policy', enabled=True, analytics_enabled=False)
+        else:
+            add(0, 'workspace.created', 'bootstrap', title='Transient graph', **({} if late_marker else {'transient': True}))
+        add(0, 'panel.created', 'bootstrap', 'bootstrap-panel', kind='browser', **({} if late_marker else {'transient': True}))
+        add(0, 'liveness.derived', 'bootstrap', 'bootstrap-panel', state='working')
+        add(0, 'workspace.selected', 'bootstrap')
+        add(0, 'workspace.created', 'installed', title='Installed graph')
+        add(0, 'panel.created', 'installed', 'installed-panel', kind='terminal')
+        add(0, 'liveness.derived', 'installed', 'installed-panel', state='working')
+        add(0, 'workspace.selected', 'installed')
+        for w, panel in [('bootstrap', 'bootstrap-panel'), ('installed', 'installed-panel')]:
+            add(10, 'waiting.entered', w, panel)
+            add(10, 'mailbox.accepted', w, **{'from': w})
+            add(10, 'mailbox.delivered', w, panel)
+            add(10, 'flag.raised', w, panel)
+        if late_marker:
+            add(20, 'workspace.renamed', 'bootstrap', title='Transient graph', transient=True)
+        add(30, 'hang.precursor', cause='main-thread', durations_ms=[10], count=1)
+        add(60, 'panel.closed', 'installed', 'installed-panel')
+        add(60, 'panel.closed', 'bootstrap', 'bootstrap-panel')
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+        return rows
+
+    def test_report_bootstrap_graphs_are_visible_but_excluded_from_installed_summaries(self):
+        rows = self.bootstrap_events()
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['bootstrap_graphs_excluded'], 1)
+        self.assertEqual(result['bootstrap_events_excluded'], 9)
+        self.assertEqual(result['raw_events_observed'], len(rows))
+        self.assertEqual(result['bootstrap_event_types_excluded']['mailbox.accepted'], 1)
+        self.assertEqual(result['panels_created'], 1)
+        self.assertEqual(result['peak_open_per_instance'], 1)
+        self.assertEqual(result['peak_working_per_instance'], 1)
+        self.assertEqual(result['kinds_created'], {'terminal': 1})
+        self.assertEqual(result['observed_agent_hours'], 1)
+        self.assertEqual(result['foreground_hours'], 1)
+        self.assertEqual(result['closed_lifetimes_minutes']['count'], 1)
+        self.assertEqual(result['mailbox_accepted'], 1)
+        self.assertEqual(result['mailbox_delivered'], 1)
+        self.assertEqual(result['flag_events'], {'flag.raised': 1})
+        self.assertEqual(result['hang_precursors'], 1)
+        self.assertEqual(result['host_usage']['totals']['calls'], 1)
+        self.assertEqual([w['id'] for w in result['workspaces']], ['installed'])
+        self.assertEqual(result['workspaces'][0]['selected_dwell_hours'], 1)
+        self.assertEqual(result['workspaces'][0]['waiting_entered'], 1)
+        self.assertEqual(sum(d['events'] for d in result['daily']), len(rows) - 9)
+        self.assertNotIn('event_sequence_gap', result['coverage_gaps'])
+        markdown = self.run_cli('report', '--instance', 'synthetic', '--format', 'md')
+        self.assertIn('Bootstrap workspace graphs excluded: 1; events excluded: 9', markdown)
+        self.assertNotIn('Transient graph', markdown)
+
+    def test_report_late_transient_marker_classifies_earlier_events(self):
+        self.bootstrap_events(late_marker=True)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['peak_open_per_instance'], 1)
+        self.assertEqual(result['panels_created'], 1)
+        self.assertEqual(result['bootstrap_events_excluded'], 10)
+        self.assertEqual(result['kinds_created'], {'terminal': 1})
+
+    def test_report_truncated_transient_panel_marker_preserves_unknown_load(self):
+        self.write(self.state / 'events/events-synthetic.ndjson', [
+            {'v': 2, 'instance': 'synthetic', 'seq': 10, 'ts': '2026-01-02T00:00:00Z', 'type': 'panel.created',
+             'workspace': 'bootstrap', 'panel': 'bootstrap-panel', 'payload': {'kind': 'browser', 'transient': True}},
+            {'v': 2, 'instance': 'synthetic', 'seq': 11, 'ts': '2026-01-02T00:00:00Z', 'type': 'panel.created',
+             'workspace': 'installed', 'panel': 'installed-panel', 'payload': {'kind': 'terminal'}},
+            {'v': 2, 'instance': 'synthetic', 'seq': 12, 'ts': '2026-01-02T01:00:00Z', 'type': 'hang.precursor'},
+            {'v': 2, 'instance': 'synthetic', 'seq': 13, 'ts': '2026-01-02T02:00:00Z', 'type': 'panel.closed',
+             'workspace': 'installed', 'panel': 'installed-panel'}])
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['bootstrap_graphs_excluded'], 1)
+        self.assertEqual(result['bootstrap_events_excluded'], 1)
+        self.assertEqual(result['observed_peak_open_per_instance'], 1)
+        self.assertIsNone(result['peak_open_per_instance'])
+        self.assertEqual(result['kinds_created'], {'terminal': 1})
+        self.assertEqual(result['hangs_with_unknown_load'], 1)
+        self.assertEqual(result['load_unknown_hours'], 2)
+
+    def test_report_analytics_off_transient_panels_and_strict_boolean_marker(self):
+        rows = self.bootstrap_events(analytics_off=True)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['bootstrap_graphs_excluded'], 1)
+        self.assertEqual(result['panels_created'], 1)
+        self.assertEqual(result['hang_precursors'], 1)
+        self.assertIsNone(result['foreground_hours'])
+        for row in rows:
+            if row['payload'].get('transient') is True:
+                row['payload']['transient'] = 1
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['bootstrap_graphs_excluded'], 0)
+        self.assertEqual(result['panels_created'], 2)
+
     def test_report_missing_presence_and_sequence_gap_are_unknown(self):
         self.events(gap=True, presence=False)
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')

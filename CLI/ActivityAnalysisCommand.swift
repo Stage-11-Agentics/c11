@@ -681,12 +681,14 @@ enum ActivityAnalysisCommand {
         let panel: String?
         let workspace: String?
         let detail: Detail
+        let transient: Bool
         init(raw: Object, seq: Int64, ts: Date, pool: inout StringPool) {
             self.seq = seq; self.ts = ts
             type = pool.intern(EventEnvelope.canonicalType(raw["type"] as? String ?? ""))
             panel = (text(raw["panel"]) ?? text(raw["surface"])).map { pool.intern($0) }
             workspace = text(raw["workspace"]).map { pool.intern($0) }
             let p = object(raw["payload"])
+            transient = (p["transient"] as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue } ?? false
             func owned(_ value: String) -> String { String(decoding: value.utf8, as: UTF8.self) }
             switch type {
             case "workspace.created", "workspace.renamed", "workspace.closed":
@@ -750,6 +752,8 @@ enum ActivityAnalysisCommand {
         }
         if malformedEnvelope { gaps.insert("invalid_event_envelope"); counts["invalid_event_envelope"] = invalidEnvelopes }
         var replayIncomplete = malformedEnvelope
+        var bootstrapGraphs = 0, bootstrapEvents = 0, rawEvents = 0
+        var bootstrapEventTypes: [String: Int] = [:]
         var starts: [Date] = [], ends: [Date] = [], created = 0, peakOpen = 0, peakWorking = 0, agentSeconds = 0.0
         var foreground = 0.0, foregroundUnknown = 0.0, hangCount = 0
         var kindsCreated: [String: Int] = [:], peakKinds: [String: Int] = [:], peakByKind: [String: Int] = [:]
@@ -820,6 +824,16 @@ enum ActivityAnalysisCommand {
             let start = max(options.since ?? first.ts, first.ts), end = min(options.until ?? last.ts, last.ts)
             guard end >= start else { continue }
             starts.append(start); ends.append(end)
+            // Classify from the complete retained sequence before replay. A later
+            // marker or rotated-away workspace.created must not create false load.
+            var bootstrapWorkspaces = Set<String>(), bootstrapPanels = Set<String>()
+            for event in ordered where event.transient {
+                if let workspace = event.workspace { bootstrapWorkspaces.insert(workspace) }
+            }
+            for event in ordered where event.transient || event.workspace.map(bootstrapWorkspaces.contains) == true {
+                if let panel = event.panel { bootstrapPanels.insert(panel) }
+            }
+            bootstrapGraphs += bootstrapWorkspaces.count
             if first.seq != 1 { gaps.insert("event_history_truncated"); replayIncomplete = true }
             if first.type != "log.opened" { gaps.insert("instance_start_missing"); replayIncomplete = true }
             var open = Set<String>(), working = Set<String>(), births: [String: Date] = [:]
@@ -880,6 +894,15 @@ enum ActivityAnalysisCommand {
                 if now > end { break }
                 previous = now
                 let inRange = event.ts >= start && event.ts <= end
+                if inRange { rawEvents += 1 }
+                let isBootstrap = event.workspace.map(bootstrapWorkspaces.contains) == true
+                    || event.panel.map(bootstrapPanels.contains) == true
+                if isBootstrap {
+                    if inRange { bootstrapEvents += 1; bootstrapEventTypes[event.type, default: 0] += 1 }
+                    // Sequence, time and global presence integration already advanced.
+                    // The raw stream and bounded host transcript usage remain intact.
+                    continue
+                }
                 let panel = event.panel
                 if let w = event.workspace {
                     if let panel { panelWorkspaces[panel] = w }
@@ -996,6 +1019,9 @@ enum ActivityAnalysisCommand {
         return ["schema_version": 1, "instances": instances, "start": starts.min().map(iso.string) as Any? ?? null,
                 "end": ends.max().map(iso.string) as Any? ?? null, "span_hours": starts.min().flatMap { s in ends.max().map { $0.timeIntervalSince(s) / 3600 } } as Any? ?? null,
                 "panels_created": starts.isEmpty ? null : created as Any,
+                "raw_events_observed": rawEvents, "bootstrap_graphs_excluded": bootstrapGraphs,
+                "bootstrap_events_excluded": bootstrapEvents, "bootstrap_event_types_excluded": bootstrapEventTypes,
+                "bootstrap_scope": "Pre-install bootstrap workspace graphs marked by strict payload transient=true in retained selected-instance history. Graph counts include replay baselines; event counts cover the observed span. Installed graph summaries exclude them; process evidence, raw history and host transcript tokens remain included.",
                 "observed_peak_open_per_instance": peakOpen, "observed_peak_working_per_instance": peakWorking,
                 "kinds_created": starts.isEmpty ? null : kindsCreated as Any, "observed_peak_open_kinds": peakKinds, "observed_peak_open_by_kind": peakByKind,
                 "peak_open_kinds": starts.isEmpty || replayIncomplete ? null : peakKinds as Any,
@@ -1044,6 +1070,7 @@ enum ActivityAnalysisCommand {
             ?? "Unknown: no observed event span; host transcripts were not scanned."
         var output = "# Local activity report\n\nObserved span: \(show("start")) to \(show("end")) (\(show("span_hours")) h).\n\n"
         for (label, key) in [("Panels created", "panels_created"), ("Peak open per instance", "peak_open_per_instance"), ("Peak working per instance", "peak_working_per_instance"), ("Observed agent hours", "observed_agent_hours"), ("Foreground hours", "foreground_hours"), ("Observed foreground hours", "observed_foreground_hours"), ("Presence unknown hours", "presence_unknown_hours"), ("Hang precursors", "hang_precursors")] { output += "- \(label): \(show(key))\n" }
+        output += "\nBootstrap workspace graphs excluded: \(show("bootstrap_graphs_excluded")); events excluded: \(show("bootstrap_events_excluded")) of \(show("raw_events_observed")) raw events.\n"
         let bounds = object(report["foreground_hours_range"])
         func bound(_ key: String) -> String { bounds[key] is NSNull ? "unknown" : String(describing: bounds[key] ?? "unknown") }
         output += "\nForeground hours range: \(bound("minimum")) to \(bound("maximum")).\n"

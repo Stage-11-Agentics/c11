@@ -241,7 +241,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     /// Shared process resources, separate controllers/handlers per document.
     private static let processPool = WKProcessPool()
     private static let dataStore = WKWebsiteDataStore.nonPersistent()
-    let webView: MarkdownWKWebView
+    private(set) var webView: MarkdownWKWebView
+    /// Bumps when the web view is replaced so SwiftUI mounts the new one.
+    @Published private(set) var webViewGeneration = 0
     private(set) var state: [String: Any] = [:]
     @Published private(set) var themeChoices: [MarkdownReaderThemeChoice] = []
     @Published private(set) var typefaceChoices: [MarkdownReaderTypefaceChoice] = []
@@ -279,7 +281,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     var hasQueriesInFlight: Bool { activeQueries > 0 }
     var canCaptureReadingPosition: Bool { ready || failure }
     var isReadyForQueries: Bool { ready && !closed }
-    private var recoveringAfterTermination = false
+    private var recovery = MarkdownRendererRecovery()
 
     init(panel: MarkdownPanel) {
         self.panel = panel
@@ -290,37 +292,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         hasPendingNavigation = pendingNavigation.position != nil || pendingNavigation.fragment != nil
         pendingNavigationToken = navigationToken
         restoreContentBeforeReload = panel.readingContent
-        let root = Bundle.main.resourceURL?.appendingPathComponent("markdown-viewer", isDirectory: true)
-        let policy = MarkdownAssetPolicy(
-            bundle: root.flatMap(MarkdownAssetRoot.init(directory:)),
-            document: panel.filePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }.flatMap(MarkdownAssetRoot.init(directory:))
-        )
-        let config = WKWebViewConfiguration()
-        config.processPool = Self.processPool
-        config.websiteDataStore = Self.dataStore
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
-        let scheme = MarkdownSchemeHandler(policy: policy)
-        config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.viewerScheme)
-        config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
-        webView = MarkdownWKWebView(frame: NSRect(origin: .zero, size: panel.lastKnownViewportSize), configuration: config)
+        webView = Self.makeWebView(panel: panel)
         super.init()
-        webView.renderer = self
-        webView.onViewportSizeChange = { [weak panel] size in panel?.rememberViewportSize(size) }
-        webView.onShowPanelDetails = { [weak panel] in
-            guard let panel else { return }
-            PanelManifestViewerWindowController.show(
-                workspaceId: panel.workspaceId,
-                surfaceId: panel.id,
-                kind: .markdown
-            )
-        }
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.allowsMagnification = false
-        webView.allowsBackForwardNavigationGestures = false
-        webView.pageZoom = 1
-        webView.setValue(false, forKey: "drawsBackground")
-        config.userContentController.add(self, name: "c11md")
+        adopt(webView)
         webView.load(URLRequest(url: MarkdownAssetPolicy.entryURL))
     }
 
@@ -540,7 +514,12 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     }
 
     func synchronize() {
-        guard ready, !closed, let panel else { return }
+        guard !closed, let panel else { return }
+        if recovery.contentChanged(to: panel.content) == .recreateRenderer {
+            recreateWebView(for: panel)
+            return
+        }
+        guard ready else { return }
         webView.pageZoom = 1
         let appearance = webView.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? "dark" : "light"
         let settings = ["theme": panel.theme, "typeface": panel.typeface,
@@ -571,15 +550,16 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard !closed, message.frameInfo.isMainFrame,
+        guard !closed, message.webView === webView, message.frameInfo.isMainFrame,
               message.frameInfo.request.url?.scheme == MarkdownAssetPolicy.viewerScheme,
               message.frameInfo.request.url?.host == "bundle",
               let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
         case "ready":
-            guard (body["version"] as? Int) == 1 else { failure = true; return }
+            let effect = recovery.bridgeReady(version: body["version"] as? Int)
+            syncFailureFlag()
+            guard effect == .clearFailure || effect == .boot else { return }
             ready = true
-            failure = false
             loadRegistryChoices()
             synchronize()
             MarkdownRendererCache.shared.reconsider()
@@ -589,10 +569,14 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                 publishObservedState(value)
             }
         case "error":
-            if body["code"] as? String == "render_failed" { failure = true }
+            if body["code"] as? String == "render_failed" {
+                recovery.renderFailed()
+                syncFailureFlag()
+            }
         case "rendered":
-            recoveringAfterTermination = false
             if let value = body["revision"] as? Int {
+                _ = recovery.rendered(revision: value, currentRevision: revision)
+                syncFailureFlag()
                 let finishNavigation: () -> Void = { [weak self] in
                     guard let self else { return }
                     let capturedContent = self.restoreContentBeforeReload
@@ -901,20 +885,40 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         webView.evaluateJavaScript("typeof window.c11md === 'object'") { [weak self] value, error in
-            if error != nil || value as? Bool != true { self?.failure = true }
+            guard let self, webView === self.webView else { return }
+            if error != nil || value as? Bool != true {
+                self.recovery.renderFailed()
+                self.syncFailureFlag()
+            }
         }
     }
 
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failure = true }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failure = true }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }
+        recovery.renderFailed()
+        syncFailureFlag()
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }
+        recovery.renderFailed()
+        syncFailureFlag()
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        guard !closed else { return }
-        guard !recoveringAfterTermination else {
-            failure = true
-            return
-        }
-        recoveringAfterTermination = true
+        guard !closed, webView === self.webView else { return }
+        let effect = recovery.webContentTerminated(content: panel?.content ?? "")
+        syncFailureFlag()
+        if effect == .reloadPage { beginInPlaceReload() }
+    }
+
+    private func syncFailureFlag() {
+        let failed = recovery.showsFailure
+        if failure != failed { failure = failed }
+    }
+
+    /// Reloads the bridge in the current web view after its content process died once.
+    private func beginInPlaceReload() {
         pendingRestorePosition = MarkdownReadingPosition(state: state)
         pendingNavigationToken = navigationToken
         ready = false
@@ -924,6 +928,72 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         loadedContent = nil
         loadedSettings = [:]
         webView.load(URLRequest(url: MarkdownAssetPolicy.entryURL))
+    }
+
+    /// Replaces the web view after a second termination. The panel and its error
+    /// overlay stay; the overlay clears when the new page posts `rendered`.
+    private func recreateWebView(for panel: MarkdownPanel) {
+        retire(webView)
+        let created = Self.makeWebView(panel: panel)
+        webView = created
+        adopt(created)
+        webViewGeneration += 1
+        ready = false
+        lastCorpusPublishedKey = nil
+        renderedRevision = nil
+        entryNavigationAdmitted = false
+        loadedContent = nil
+        loadedSettings = [:]
+        pendingRestorePosition = MarkdownReadingPosition(state: state)
+        pendingNavigationToken = navigationToken
+        created.load(URLRequest(url: MarkdownAssetPolicy.entryURL))
+    }
+
+    private static func makeWebView(panel: MarkdownPanel) -> MarkdownWKWebView {
+        let root = Bundle.main.resourceURL?.appendingPathComponent("markdown-viewer", isDirectory: true)
+        let policy = MarkdownAssetPolicy(
+            bundle: root.flatMap(MarkdownAssetRoot.init(directory:)),
+            document: panel.filePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }.flatMap(MarkdownAssetRoot.init(directory:))
+        )
+        let config = WKWebViewConfiguration()
+        config.processPool = processPool
+        config.websiteDataStore = dataStore
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        let scheme = MarkdownSchemeHandler(policy: policy)
+        config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.viewerScheme)
+        config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
+        let webView = MarkdownWKWebView(frame: NSRect(origin: .zero, size: panel.lastKnownViewportSize), configuration: config)
+        webView.allowsMagnification = false
+        webView.allowsBackForwardNavigationGestures = false
+        webView.pageZoom = 1
+        webView.setValue(false, forKey: "drawsBackground")
+        return webView
+    }
+
+    private func adopt(_ webView: MarkdownWKWebView) {
+        webView.renderer = self
+        webView.onViewportSizeChange = { [weak panel] size in panel?.rememberViewportSize(size) }
+        webView.onShowPanelDetails = { [weak panel] in
+            guard let panel else { return }
+            PanelManifestViewerWindowController.show(
+                workspaceId: panel.workspaceId,
+                surfaceId: panel.id,
+                kind: .markdown
+            )
+        }
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.configuration.userContentController.add(self, name: "c11md")
+    }
+
+    private func retire(_ webView: MarkdownWKWebView) {
+        webView.stopLoading()
+        webView.renderer = nil
+        webView.onShowPanelDetails = nil
+        webView.onViewportSizeChange = nil
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "c11md")
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
     }
 
     private static var localizedStrings: [String: String] { [

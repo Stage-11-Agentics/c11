@@ -305,7 +305,10 @@ private struct MarkdownRendererContent: View {
                 readout: renderer.readerReadout,
                 readerOutline: readerOutline
             )
-            Group {
+            ZStack {
+                MarkdownWebViewHost(webView: renderer.webView)
+                    .id(renderer.webViewGeneration)
+                    .opacity(renderer.renderedRevision == nil ? 0 : 1)
                 if renderer.failure {
                     VStack(spacing: 12) {
                         Text(String(localized: "markdown.rendererUnavailable.title", defaultValue: "Renderer unavailable"))
@@ -314,9 +317,7 @@ private struct MarkdownRendererContent: View {
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    MarkdownWebViewHost(webView: renderer.webView)
-                        .opacity(renderer.renderedRevision == nil ? 0 : 1)
+                    .background(palette.paper)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

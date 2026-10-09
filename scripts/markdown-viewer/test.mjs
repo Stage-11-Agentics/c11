@@ -324,6 +324,45 @@ try {
     assertOutlineAnchor(before,closed,`${mode.name} outline close`);
   }
   scenario('outline flips between overlay and docked at the exact adjacent-width threshold; open and close preserve the reading anchor in both modes');
+  // A width change and a late image load both reflow before their observers run.
+  // The anchor has to come from the scroll frame that preceded that reflow.
+  const sectionTop=()=>page.locator('#c11md-h-section-30').evaluate(node=>{
+    const range=document.createRange();range.selectNodeContents(node.lastChild);return range.getBoundingClientRect().top;
+  });
+  const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await page.setViewportSize({width:1000,height:820});
+  await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:false});
+  await load(long,'/synthetic/reflow-anchor.md',1);
+  await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
+  await settle();
+  const wideTop=await sectionTop();
+  await page.setViewportSize({width:560,height:820});
+  await settle();
+  const narrowTop=await sectionTop();
+  await page.evaluate(()=>{
+    const image=document.createElement('img');
+    image.alt='late reflow';image.style.display='block';image.width=8;image.height=1;
+    document.querySelector('#article').prepend(image);
+  });
+  await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
+  await settle();
+  const beforeImage=await sectionTop();
+  await page.evaluate(()=>{
+    const image=document.querySelector('#article img');
+    image.style.height='400px';
+    image.dispatchEvent(new Event('load',{bubbles:true}));
+  });
+  await settle();
+  const afterImage=await sectionTop();
+  assert.deepEqual(
+    [
+      Math.abs(wideTop-narrowTop)<1?null:`width 1000 -> 560 moved Section 30 ${wideTop} -> ${narrowTop}`,
+      Math.abs(beforeImage-afterImage)<1?null:`image load moved Section 30 ${beforeImage} -> ${afterImage}`,
+    ].filter(Boolean),
+    []
+  );
+  scenario('narrowing the pane keeps the reading anchor',{before:wideTop,after:narrowTop});
+  scenario('image-load reflow keeps the reading anchor',{before:beforeImage,after:afterImage});
   await page.setViewportSize({width:1200,height:820});await settings({outlineOpen:'auto'});
 
   const evictionMarkdown='# Eviction restore\n\n'+Array.from({length:80},(_,i)=>`Eviction witness ${i}: ${'A visible source line keeps its exact viewport position. '.repeat(2)}`).join('\n\n')+'\n';

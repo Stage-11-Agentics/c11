@@ -69,6 +69,31 @@ jobs:
       - name: Validate Sentry recurrence checks
         run: ./scripts/telemetry/sentry-position.py --self-test
 
+  offline-activity-cli:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Build native CLI only
+        run: |
+          set -euo pipefail
+          ./scripts/with-build-lock.sh xcodebuild \
+            -project GhosttyTabs.xcodeproj -target c11-cli -configuration Debug \
+            -sdk macosx SYMROOT="$RUNNER_TEMP/c11-activity-cli" \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build
+
+      - name: Exercise offline activity commands without an app
+        env:
+          C11_ACTIVITY_MEMORY_PROBE: "1"
+        run: |
+          set -euo pipefail
+          C11_CLI_BIN="$RUNNER_TEMP/c11-activity-cli/Debug/c11" \
+            python3 tests/test_cli_activity_analysis.py
+
   remote-daemon-tests:
     runs-on: ubuntu-latest
     steps:

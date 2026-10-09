@@ -1,0 +1,630 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://c11.stage11.ai/spec/report.v1.schema.json",
+  "title": "c11 offline report output v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "instances",
+    "start",
+    "end",
+    "span_hours",
+    "panels_created",
+    "peak_open_per_instance",
+    "peak_working_per_instance",
+    "observed_agent_hours",
+    "foreground_hours",
+    "observed_foreground_hours",
+    "presence_unknown_hours",
+    "workspaces",
+    "daily",
+    "hour_of_day_events",
+    "hang_rate_by_working_load",
+    "host_usage",
+    "coverage_gaps",
+    "hang_rate_by_open_load",
+    "kinds_created",
+    "peak_open_kinds",
+    "peak_open_by_kind",
+    "observed_peak_open_kinds",
+    "observed_peak_open_by_kind",
+    "mail_from",
+    "flag_events",
+    "hang_causes",
+    "mailbox_accepted",
+    "mailbox_delivered",
+    "workspace_selection_unknown_hours",
+    "workspace_agent_hours_unattributed",
+    "waiting_entered_unattributed",
+    "hang_durations_ms",
+    "load_unknown_hours",
+    "hangs_with_unknown_load",
+    "timezone",
+    "instance_scope",
+    "foreground_hours_range",
+    "skipped_counts",
+    "observed_peak_open_per_instance",
+    "observed_peak_working_per_instance",
+    "hang_precursors",
+    "open_at_observed_end",
+    "usage_scope",
+    "closed_lifetimes_minutes",
+    "raw_events_observed",
+    "bootstrap_graphs_excluded",
+    "bootstrap_events_excluded",
+    "bootstrap_event_types_excluded",
+    "bootstrap_scope"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "instances": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "start": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "end": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "span_hours": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "host_usage": {
+      "anyOf": [
+        {
+          "$ref": "usage.v1.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "foreground_hours": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "observed_foreground_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "presence_unknown_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "topics",
+          "panels_created",
+          "selections",
+          "waiting_entered",
+          "selected_dwell_hours",
+          "observed_agent_hours"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "panels_created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting_entered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selected_dwell_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_agent_hours": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "hang_rate_by_working_load": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "working_panels",
+          "observed_hours",
+          "hangs",
+          "hangs_per_hour"
+        ],
+        "properties": {
+          "working_panels": {
+            "type": "string"
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hangs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hangs_per_hour": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "hang_rate_by_open_load": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "open_panels",
+          "observed_hours",
+          "hangs",
+          "hangs_per_hour"
+        ],
+        "properties": {
+          "open_panels": {
+            "type": "string"
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hangs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hangs_per_hour": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "kinds_created": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "peak_open_kinds": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "peak_open_by_kind": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "observed_peak_open_kinds": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "observed_peak_open_by_kind": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "mail_from": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "flag_events": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "hang_causes": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "mailbox_accepted": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "mailbox_delivered": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "workspace_selection_unknown_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "workspace_agent_hours_unattributed": {
+      "type": "number",
+      "minimum": 0
+    },
+    "waiting_entered_unattributed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hang_durations_ms": {
+      "type": "object",
+      "required": [
+        "samples",
+        "unknown_precursors",
+        "total",
+        "max",
+        "observed_total",
+        "observed_max"
+      ],
+      "properties": {
+        "samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown_precursors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "observed_total": {
+          "type": "number",
+          "minimum": 0
+        },
+        "observed_max": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "load_unknown_hours": {
+      "type": "number",
+      "minimum": 0
+    },
+    "hangs_with_unknown_load": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "daily": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "date",
+          "events",
+          "panels_created",
+          "peak_open",
+          "peak_working",
+          "observed_peak_open",
+          "observed_peak_working",
+          "observed_hours",
+          "observed_agent_hours",
+          "load_unknown_hours",
+          "observed_foreground_hours",
+          "presence_unknown_hours"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "peak_open": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "peak_working": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "panels_created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_peak_open": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_peak_working": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_agent_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "load_unknown_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observed_foreground_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "presence_unknown_hours": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "hour_of_day_events": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "instance_scope": {
+      "enum": [
+        "production",
+        "explicit",
+        "all"
+      ]
+    },
+    "foreground_hours_range": {
+      "type": "object",
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "properties": {
+        "minimum": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "maximum": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "skipped_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "panels_created": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "peak_open_per_instance": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "peak_working_per_instance": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "open_at_observed_end": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "observed_peak_open_per_instance": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_peak_working_per_instance": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hang_precursors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_agent_hours": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "usage_scope": {
+      "type": "string"
+    },
+    "closed_lifetimes_minutes": {
+      "type": "object",
+      "required": [
+        "count",
+        "p10",
+        "median",
+        "p90",
+        "censored_panels"
+      ],
+      "properties": {
+        "p10": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "median": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "p90": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "censored_panels": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "raw_events_observed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bootstrap_graphs_excluded": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Marked bootstrap workspace graphs excluded unless retained installed graph context conflicts; conflicts raise bootstrap_classification_conflict and preserve the connected graph."
+    },
+    "bootstrap_events_excluded": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Known graph events excluded within the observed span. Process evidence remains included even when it carries classified graph IDs."
+    },
+    "bootstrap_event_types_excluded": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "bootstrap_scope": {
+      "type": "string"
+    }
+  }
+}

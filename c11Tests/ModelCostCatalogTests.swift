@@ -78,6 +78,37 @@ final class ModelCostCatalogTests: XCTestCase {
         XCTAssertNil(store.cost(forModel: "opus"))
     }
 
+    func testShippedDefaultsResolveWithoutWritingAndPreserveWholeOverrides() throws {
+        let bundled = store.resolvedCatalog()["claude-sonnet-5-5"]
+        XCTAssertEqual(bundled?.inUSD, 2)
+        XCTAssertEqual(bundled?.cacheReadUSD, 0.1)
+        XCTAssertEqual(bundled?.cacheWrite1hUSD, 4)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(ModelCostCatalogStore.fileName).path))
+        try store.set(model: "claude-sonnet-5-5", entry: entry(1, 2))
+        XCTAssertEqual(store.resolvedCatalog()["claude-sonnet-5-5"]?.inUSD, 1)
+        XCTAssertNil(store.resolvedCatalog()["claude-sonnet-5-5"]?.cacheReadUSD)
+        XCTAssertTrue(try store.remove(model: "claude-sonnet-5-5"))
+        XCTAssertEqual(store.resolvedCatalog()["claude-sonnet-5-5"]?.inUSD, 2)
+    }
+
+    func testDatedProviderAliasesResolveThroughCatalogLookup() throws {
+        XCTAssertEqual(store.cost(forModel: "anthropic/claude-haiku-4-5-20251001")?.inUSD, 1)
+        XCTAssertEqual(store.cost(forModel: "CLAUDE-OPUS-4-8")?.outUSD, 25)
+        try store.set(model: "claude-haiku-4-5-20251001", entry: entry(2, 3))
+        XCTAssertEqual(store.cost(forModel: "claude-haiku-4-5-20251001")?.inUSD, 2)
+        XCTAssertNil(store.cost(forModel: "claude-haiku-4-5-unknown"))
+    }
+
+    func testCacheRateCLISetRoundTripsAndMissingRatesStayUnknown() throws {
+        _ = try ModelCostsCommandCore.run(args: ["set", "example", "--in", "2", "--out", "10", "--cache-read", "0.1", "--cache-write", "2.5", "--cache-write-1h", "4"], store: store)
+        let saved = ModelCostCatalogStore(directory: tempDir).catalog()["example"]
+        XCTAssertEqual(saved?.cacheReadUSD, 0.1)
+        XCTAssertEqual(saved?.cacheWriteUSD, 2.5)
+        XCTAssertEqual(saved?.cacheWrite1hUSD, 4)
+        XCTAssertThrowsError(try ModelCostsCommandCore.run(args: ["set", "bad", "--in", "2", "--out", "10", "--cache-read", "nan"], store: store))
+        XCTAssertNil(store.catalog()["bad"])
+    }
+
     // MARK: CLI core
 
     func testCoreSetStampsObservedAtAndListsIt() throws {
@@ -99,6 +130,17 @@ final class ModelCostCatalogTests: XCTestCase {
         XCTAssertThrowsError(try ModelCostsCommandCore.run(args: ["set", "opus", "--in", "x", "--out", "75"], store: store))
         XCTAssertThrowsError(try ModelCostsCommandCore.run(args: ["set", "opus", "--in", "15"], store: store))
         XCTAssertThrowsError(try ModelCostsCommandCore.run(args: ["set"], store: store))
+    }
+
+    func testCacheRateFlagsRequireValuesWithoutWritingCatalog() {
+        let base = ["set", "example", "--in", "2", "--out", "10"]
+        for flag in ["--cache-read", "--cache-write", "--cache-write-1h"] {
+            for suffix in [[flag], [flag, "--notes", "example"], [flag + "="]] {
+                XCTAssertThrowsError(try ModelCostsCommandCore.run(args: base + suffix, store: store))
+                XCTAssertTrue(store.catalog().isEmpty)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(ModelCostCatalogStore.fileName).path))
+            }
+        }
     }
 
     func testCoreImportFromFileAndRm() throws {

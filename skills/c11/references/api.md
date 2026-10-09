@@ -231,8 +231,11 @@ c11 config launch <name|id> [--area <id|ref> | --workspace <id|ref> | --new-work
     # `default --pin-current` snapshots the most-recent launch into a new saved config
     # and pins it (optional name overrides the auto label). `--window <N>d` = last N days.
 
+c11 usage [--since <ISO-8601|duration>] [--until <ISO-8601>] [--by panel|workspace|model|harness] [--json]
+c11 report [--instance <id>|--all-instances] [--since <ISO-8601|duration>] [--until <ISO-8601>] [--utc] [--format md|json]
+    # Offline, app-down analytics. See references/usage-report.md for coverage and privacy.
 c11 model-costs list [--json]                     # model token-cost catalog (picker $ column)
-c11 model-costs set <model> --in <usd> --out <usd> [--source <url>] [--notes <text>]
+c11 model-costs set <model> --in <usd> --out <usd> [--cache-read <usd>] [--cache-write <5m-usd>] [--cache-write-1h <usd>] [--source <url>] [--notes <text>]
 c11 model-costs get <model> [--json] | rm <model>
 c11 model-costs import <path|-> [--replace]       # bulk JSON: {"<model>": {"in_usd": n, "out_usd": n, ...}}
     # Agent-maintained API list prices ($/Mtok) at the state root (model-costs.json),

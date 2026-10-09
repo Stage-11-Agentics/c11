@@ -1,0 +1,106 @@
+{
+  "claude-fable-5-1": {
+    "cache_read_usd": 0.25,
+    "cache_write_1h_usd": 20,
+    "cache_write_usd": 12.5,
+    "in_usd": 10,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 50,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-haiku-4-5": {
+    "cache_read_usd": 0.1,
+    "cache_write_1h_usd": 2,
+    "cache_write_usd": 1.25,
+    "in_usd": 1,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 5,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-opus-4-8": {
+    "cache_read_usd": 0.5,
+    "cache_write_1h_usd": 10,
+    "cache_write_usd": 6.25,
+    "in_usd": 5,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 25,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-opus-5-5": {
+    "cache_read_usd": 0.2,
+    "cache_write_1h_usd": 8,
+    "cache_write_usd": 5,
+    "in_usd": 4,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 20,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "claude-sonnet-5-5": {
+    "cache_read_usd": 0.1,
+    "cache_write_1h_usd": 4,
+    "cache_write_usd": 2.5,
+    "in_usd": 2,
+    "notes": "Standard first-party global API rates per million tokens. Fast mode, residency, batch and server tools may change billing. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 10,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "gpt-5.6-luna": {
+    "cache_read_usd": 0.02,
+    "cache_write_usd": 0.25,
+    "in_usd": 0.2,
+    "notes": "Standard API rates per million tokens. Cache-write tokens are billed separately; Codex transcripts do not identify them. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 1.2,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.6-sol": {
+    "cache_read_usd": 0.4,
+    "cache_write_usd": 5,
+    "in_usd": 4,
+    "notes": "Standard API rates per million tokens. Cache-write tokens are billed separately; Codex transcripts do not identify them. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 20,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-6-astra": {
+    "cache_read_usd": 1,
+    "cache_write_usd": 12.5,
+    "in_usd": 10,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 50,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-6-luna": {
+    "cache_read_usd": 0.01,
+    "cache_write_usd": 0.125,
+    "in_usd": 0.1,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 0.5,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-6-sol": {
+    "cache_read_usd": 0.2,
+    "cache_write_usd": 2.5,
+    "in_usd": 2,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 10,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-6.1-sol": {
+    "cache_read_usd": 0.1,
+    "cache_write_usd": 2.5,
+    "in_usd": 2,
+    "notes": "Standard API rates per million tokens for prompts at most 272K. Above 272K input/cache rates double and output rates multiply by 1.5. Fast, Ultrafast, regional, Batch and Flex billing differs. Reverify before use.",
+    "observed_at": "2026-10-08",
+    "out_usd": 10,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  }
+}

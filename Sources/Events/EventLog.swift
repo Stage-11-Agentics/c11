@@ -324,7 +324,13 @@ final class EventLog {
         if envelope.type == EventEnvelope.EventType.logPolicy.rawValue
             || envelope.type == EventEnvelope.EventType.workspaceClosed.rawValue {
             flushTitles()
-        } else if !oscTitle, envelope.surface != nil {
+        } else if envelope.surface != nil,
+            envelope.type == EventEnvelope.EventType.surfaceClosed.rawValue
+            || (envelope.type == EventEnvelope.EventType.metadataChanged.rawValue
+                && !oscTitle
+                && ["title", "description", "status"].contains(envelope.payload["key"] as? String ?? "")) {
+            // Only title-semantic boundaries end the window. Input, mailbox
+            // and liveness events remain immediate without defeating coalescing.
             flushTitles(panel: envelope.surface)
         }
         if oscTitle,
@@ -369,6 +375,7 @@ final class EventLog {
         let event = state.latest
         var payload = event.payload
         payload["title_change_count"] = state.count
+        payload["last_changed_at"] = EventEnvelope.formatTimestamp(event.ts)
         writeAssigningSeq(EventEnvelope(type: event.type, instance: event.instance, ts: event.ts,
                                        workspace: event.workspace, surface: event.surface, pane: event.pane, payload: payload))
     }

@@ -194,7 +194,7 @@ Send flags accepted by the CLI:
 | `--ts <rfc3339>`      | Pin timestamp (testing / replay).                                  |
 | `--content-type <m>`  | MIME hint for body or body_ref.                                    |
 
-An empty body with no `--body-ref` is refused. `--body` together with a trailing argument, a second trailing argument, and any unknown flag are refused. The command exits nonzero and writes nothing. `--` before a trailing argument treats it as text, so a body that starts with `--` is `c11 mailbox send --to watcher -- --literal`.
+An empty body with no `--body-ref` is refused. `--body` together with a trailing argument, a second trailing argument, and any unknown flag are refused. The command exits nonzero and writes nothing. `--body` takes the next token as text even when it starts with dashes (`--body ---`, `--body --help`). `--` before a trailing argument does the same (`-- --literal`). `mailbox send --help` still prints help and sends nothing.
 
 **Raw file write (any process, any language):**
 
@@ -350,7 +350,7 @@ c11 mailbox recv --panel watcher --drain   # drain on someone else's behalf
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
 
-A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. The error tells you to run `c11 mailbox recv --drain --ack`. A drain from a tool call is that pipe case: the agent reads the pipe, and still must pass `--ack`. `--peek` never marks mail read.
+A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. The error tells you to run `c11 mailbox recv --drain --ack`. When you passed `--panel`, `--tab`, or `--surface`, that flag stays in the command, so the retry drains the same inbox. A drain from a tool call is that pipe case: the agent reads the pipe, and still must pass `--ack`. `--peek` never marks mail read.
 
 Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the panel's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. Both inboxes are merged into one ULID order, for `--peek` and `--drain` alike. `c11 mailbox inbox-dir` prints the UUID-keyed path.
 

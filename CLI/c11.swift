@@ -2279,11 +2279,14 @@ struct CMUXCLI {
         let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-panel"].contains(command)
         let (createCommandText, createArgs) = isTerminalCreate
             ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        let mailboxHelp = Self.mailboxHelpScan(command: command, commandArgs: commandArgs)
         let feedAnswerValueOptions: Set<String> =
             command == "feed" && commandArgs.first?.lowercased() == "answer" ? ["--text"] : []
+        let helpValueOptions = feedAnswerValueOptions.union(mailboxHelp.valueOptions)
         let hasSubcommandHelp = CLIHelpFlagScanner.containsHelpFlag(
             in: createArgs,
-            valueOptions: feedAnswerValueOptions
+            valueOptions: helpValueOptions,
+            stopAtEndOfOptions: mailboxHelp.stopAtEndOfOptions
         )
         var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
@@ -2370,7 +2373,8 @@ struct CMUXCLI {
             if dispatchSubcommandHelp(
                 command: command,
                 commandArgs: commandArgs,
-                valueOptions: feedAnswerValueOptions
+                valueOptions: helpValueOptions,
+                stopAtEndOfOptions: mailboxHelp.stopAtEndOfOptions
             ) {
                 return
             }
@@ -12619,12 +12623,37 @@ struct CMUXCLI {
     }
 
     /// Dispatch help for a subcommand. Returns true if help was printed.
+    /// Mailbox text is never help. `send` value flags and a bare `--` mark
+    /// the following token as a body. `recv` value flags are the same class:
+    /// a recipient or event name is not a help request. Other mailbox
+    /// subcommands still stop at `--`, and a real `--help` / `-h` before
+    /// that delimiter still prints help.
+    private static func mailboxHelpScan(
+        command: String,
+        commandArgs: [String]
+    ) -> (valueOptions: Set<String>, stopAtEndOfOptions: Bool) {
+        guard command == "mailbox" else { return ([], false) }
+        switch commandArgs.first(where: { !$0.hasPrefix("-") }) {
+        case "send":
+            return (MailboxSendArguments.valueFlags, true)
+        case "recv":
+            return (MailboxRecvArguments.valueFlags, true)
+        default:
+            return ([], true)
+        }
+    }
+
     private func dispatchSubcommandHelp(
         command: String,
         commandArgs: [String],
-        valueOptions: Set<String> = []
+        valueOptions: Set<String> = [],
+        stopAtEndOfOptions: Bool = false
     ) -> Bool {
-        guard CLIHelpFlagScanner.containsHelpFlag(in: commandArgs, valueOptions: valueOptions) else { return false }
+        guard CLIHelpFlagScanner.containsHelpFlag(
+            in: commandArgs,
+            valueOptions: valueOptions,
+            stopAtEndOfOptions: stopAtEndOfOptions
+        ) else { return false }
         guard let text = subcommandUsage(command, commandArgs: commandArgs) else { return false }
         // For two-level commands (e.g. `c11 workspace new --help`) include the
         // resolved subcommand in the header so the operator can tell which
@@ -21345,7 +21374,9 @@ extension CMUXCLI {
 
           An empty body with no --body-ref is an error. --body together with a
           trailing argument, a second trailing argument, and unknown flags are
-          errors. Nothing is sent.
+          errors. Nothing is sent. --body takes the next token as text, even
+          when that token starts with dashes. -- before a trailing argument
+          does the same. mailbox send --help still prints this help.
 
         Recv flags:
           --drain                 default — print each message and move it to _read/
@@ -21360,7 +21391,8 @@ extension CMUXCLI {
 
           A drain marks mail read only when stdout is a terminal or --ack is
           passed. Otherwise it exits nonzero and leaves the inbox unchanged.
-          The error tells you to run: c11 mailbox recv --drain --ack
+          The error tells you to run c11 mailbox recv --drain --ack, and keeps
+          --panel, --tab, or --surface when you passed one.
         """
     }
 
@@ -21743,7 +21775,11 @@ extension CMUXCLI {
             claimed = try MailboxRecvAdmission.consume(
                 inboxes: inboxURLs,
                 stdoutIsTTY: isatty(STDOUT_FILENO) != 0,
-                acknowledged: parsed.ack
+                acknowledged: parsed.ack,
+                retryCommand: MailboxRecvAdmission.retryCommand(
+                    panelFlag: parsed.panelFlag,
+                    panel: parsed.panel
+                )
             ) { message in
                 Self.writeStdout(message.text + "\n")
             }.claimed

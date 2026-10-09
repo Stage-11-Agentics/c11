@@ -559,7 +559,89 @@ final class MailboxCLISeamTests: XCTestCase {
         XCTAssertTrue(parsed.drains)
         XCTAssertTrue(parsed.ack)
         XCTAssertEqual(parsed.panel, "watcher")
+        XCTAssertEqual(parsed.panelFlag, "--tab")
         let peek = try MailboxRecvArguments.parse(["--peek"])
         XCTAssertFalse(peek.drains)
+        XCTAssertNil(peek.panelFlag)
+    }
+
+    func testBodyFlagKeepsDashPrefixedText() throws {
+        let frontMatter = try MailboxSendArguments.parse(["--to", "watcher", "--body", "---\nBuild green"])
+        XCTAssertEqual(frontMatter.body, "---\nBuild green")
+        let flagShaped = try MailboxSendArguments.parse(["--to", "watcher", "--body", "--nope"])
+        XCTAssertEqual(flagShaped.body, "--nope")
+        let help = try MailboxSendArguments.parse(["--to", "watcher", "--body", "--help"])
+        XCTAssertEqual(help.body, "--help")
+        let shortHelp = try MailboxSendArguments.parse(["--to", "watcher", "--body", "-h"])
+        XCTAssertEqual(shortHelp.body, "-h")
+    }
+
+    func testBodyFlagStillRequiresAValueAndOtherFlagsRejectDashes() {
+        assertSend(["--to", "watcher", "--body"], fails: .flagNeedsValue("--body"))
+        assertSend(["--to", "--nope", "hello"], fails: .flagNeedsValue("--to"))
+    }
+
+    func testRetryCommandKeepsTheExplicitRecipient() {
+        XCTAssertEqual(
+            MailboxRecvAdmission.retryCommand(panelFlag: nil, panel: nil),
+            "c11 mailbox recv --drain --ack"
+        )
+        XCTAssertEqual(
+            MailboxRecvAdmission.retryCommand(panelFlag: "--panel", panel: "other"),
+            "c11 mailbox recv --panel other --drain --ack"
+        )
+        XCTAssertEqual(
+            MailboxRecvAdmission.retryCommand(panelFlag: "--tab", panel: "other"),
+            "c11 mailbox recv --tab other --drain --ack"
+        )
+        XCTAssertEqual(
+            MailboxRecvAdmission.retryCommand(panelFlag: "--surface", panel: "watcher"),
+            "c11 mailbox recv --surface watcher --drain --ack"
+        )
+        XCTAssertEqual(
+            MailboxRecvAdmission.retryCommand(panelFlag: "--panel", panel: "other agent"),
+            "c11 mailbox recv --panel 'other agent' --drain --ack"
+        )
+        let refusal = MailboxRecvAdmission.Refusal(
+            retryCommand: MailboxRecvAdmission.retryCommand(panelFlag: "--panel", panel: "other")
+        )
+        XCTAssertTrue(refusal.description.contains("c11 mailbox recv --panel other --drain --ack"))
+        XCTAssertTrue(MailboxRecvAdmission.Refusal().description.contains("recv --drain --ack"))
+    }
+
+    func testExecutableBodyHelpAndRetryTarget() throws {
+        let cli = try bundledCLI()
+        let script = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tests/test_mailbox_body_cli.py")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cli.path), cli.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: script.path), script.path)
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [script.path, cli.path]
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0, String(decoding: data, as: UTF8.self))
+    }
+
+    private func bundledCLI() throws -> URL {
+        var url = Bundle(for: Self.self).bundleURL
+        let names = ["c11 DEV.app", "c11.app"]
+        for _ in 0..<6 {
+            for name in names {
+                let cli = url.appendingPathComponent(name + "/Contents/Resources/bin/c11")
+                if FileManager.default.isExecutableFile(atPath: cli.path) {
+                    return cli
+                }
+            }
+            url.deleteLastPathComponent()
+        }
+        XCTFail("bundled c11 CLI not found from \(Bundle(for: Self.self).bundleURL.path)")
+        throw MailboxSendArguments.Failure.emptyBody
     }
 }

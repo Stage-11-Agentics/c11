@@ -324,7 +324,7 @@ enum MailboxSendArguments {
         var json: Bool
     }
 
-    private static let valueFlags: Set<String> = [
+    static let valueFlags: Set<String> = [
         "--to", "--to-workspace", "--topic", "--body", "--body-ref",
         "--reply-to", "--in-reply-to", "--ttl-seconds", "--from",
         "--id", "--ts", "--content-type",
@@ -361,6 +361,16 @@ enum MailboxSendArguments {
                     let value: String
                     if let inline {
                         value = inline
+                    } else if name == "--body" {
+                        // The next argv token is the message, including a
+                        // Markdown rule or a flag-shaped word. Other value
+                        // flags still reject a following token that starts
+                        // with `--`.
+                        guard index + 1 < args.count else {
+                            throw Failure.flagNeedsValue(name)
+                        }
+                        value = args[index + 1]
+                        index += 1
                     } else {
                         guard index + 1 < args.count, !args[index + 1].hasPrefix("--") else {
                             throw Failure.flagNeedsValue(name)
@@ -451,17 +461,20 @@ enum MailboxRecvArguments {
         var hookFormat: String?
         var event: String?
         var panel: String?
+        /// The `--panel`, `--tab`, or `--surface` spelling the caller used.
+        var panelFlag: String?
         /// Explicit `--drain`, or the default when `--peek` is absent.
         var drains: Bool
     }
 
     private static let panelFlags: Set<String> = ["--panel", "--tab", "--surface"]
-    private static let valueFlags: Set<String> = ["--hook-format", "--event", "--panel", "--tab", "--surface"]
+    static let valueFlags: Set<String> = ["--hook-format", "--event", "--panel", "--tab", "--surface"]
     private static let boolFlags: Set<String> = ["--drain", "--peek", "--ack"]
 
     static func parse(_ args: [String]) throws -> Parsed {
         var values: [String: String] = [:]
         var flags = Set<String>()
+        var panelFlag: String?
         var index = 0
         while index < args.count {
             let argument = args[index]
@@ -496,6 +509,9 @@ enum MailboxRecvArguments {
                 }
                 guard values[name] == nil else { throw Failure.duplicateFlag(name) }
                 values[name] = value
+                if panelFlags.contains(name) {
+                    panelFlag = name
+                }
             } else {
                 throw Failure.unknownFlag(name)
             }
@@ -510,6 +526,7 @@ enum MailboxRecvArguments {
             hookFormat: values["--hook-format"],
             event: values["--event"],
             panel: panelFlags.compactMap { values[$0] }.first,
+            panelFlag: panelFlag,
             drains: flags.contains("--drain") || !peek
         )
     }
@@ -518,13 +535,40 @@ enum MailboxRecvArguments {
 /// Whether a drain may claim envelopes. A drain whose stdout nobody can read
 /// throws and leaves the inbox untouched.
 enum MailboxRecvAdmission {
+    static let defaultRetryCommand = "c11 mailbox recv --drain --ack"
+
     struct Refusal: Error, Equatable, CustomStringConvertible {
+        var retryCommand: String
+
+        init(retryCommand: String = MailboxRecvAdmission.defaultRetryCommand) {
+            self.retryCommand = retryCommand
+        }
+
         var description: String {
             String(
-                localized: "mailbox.cli.error.drain-unreadable",
-                defaultValue: "Refusing to mark mailbox messages read because stdout is not a terminal. Run c11 mailbox recv --drain --ack"
+                format: String(
+                    localized: "mailbox.cli.error.drain-unreadable",
+                    defaultValue: "Refusing to mark mailbox messages read because stdout is not a terminal. Run %@"
+                ),
+                retryCommand
             )
         }
+    }
+
+    /// The command a refused drain tells the caller to run. `--ack` is added
+    /// and an explicit `--panel`, `--tab`, or `--surface` is kept, so the
+    /// retry reads the same inbox.
+    static func retryCommand(panelFlag: String?, panel: String?) -> String {
+        guard let panelFlag, let panel, !panel.isEmpty else { return defaultRetryCommand }
+        return "c11 mailbox recv \(panelFlag) \(shellToken(panel)) --drain --ack"
+    }
+
+    private static func shellToken(_ value: String) -> String {
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.:"))
+        if !value.isEmpty, value.unicodeScalars.allSatisfy(safe.contains) {
+            return value
+        }
+        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     static func allowsMarkRead(stdoutIsTTY: Bool, acknowledged: Bool) -> Bool {
@@ -537,10 +581,11 @@ enum MailboxRecvAdmission {
         acknowledged: Bool,
         budget: Int = Int.max,
         fileManager: FileManager = .default,
+        retryCommand: String = defaultRetryCommand,
         accept: (MailboxDrain.ClaimedMessage) -> Bool = { _ in true }
     ) throws -> (claimed: [MailboxDrain.ClaimedMessage], remaining: Int) {
         guard allowsMarkRead(stdoutIsTTY: stdoutIsTTY, acknowledged: acknowledged) else {
-            throw Refusal()
+            throw Refusal(retryCommand: retryCommand)
         }
         return MailboxDrain.claimPending(
             inboxes: inboxes,

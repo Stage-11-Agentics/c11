@@ -217,7 +217,10 @@ struct cmuxApp: App {
         Self.applyAppearance(.dark)
         // Carry the old `tabLayoutMode` forward before the Settings picker or any workspace reads it.
         PanelLayoutSettings.migrateLegacyKeys(defaults: .standard)
-        _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
+        // Reading an uninstalled StateObject re-evaluates its autoclosure.
+        // Share one launch instance with SwiftUI and the early delegate wiring.
+        let launchWorkspaceManager = WorkspaceManager()
+        _workspaceManager = StateObject(wrappedValue: launchWorkspaceManager)
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
         if let stored = defaults.string(forKey: SocketControlSettings.appStorageKey) {
@@ -242,7 +245,7 @@ struct cmuxApp: App {
 
         // UI tests depend on AppDelegate wiring happening even if SwiftUI view appearance
         // callbacks (e.g. `.onAppear`) are delayed or skipped.
-        appDelegate.configure(workspaceManager: workspaceManager, notificationStore: notificationStore, sidebarState: sidebarState)
+        appDelegate.configure(workspaceManager: launchWorkspaceManager, notificationStore: notificationStore, sidebarState: sidebarState)
     }
 
     private static func terminateForMissingLaunchTag() -> Never {

@@ -434,7 +434,7 @@ Changes to what reaches the socket and agents in 1.0:
   v2 request. It goes through the same connection gate and reaches no
   method the socket did not already expose.
 - Mail bodies reach agents' context: a busy agent's hooks
-  (`mailbox recv --drain --hook-format …`) inject queued messages as
+  (`mailbox recv --drain --hook-format … --ack`) inject queued messages as
   `additionalContext` or a Stop-hook reason, and an idle agent receives
   mail as a typed turn. This is an agent-to-agent channel inside the
   semi-trusted tier (section 1): any socket client allowed by the

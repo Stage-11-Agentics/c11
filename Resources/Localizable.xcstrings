@@ -2,6 +2,126 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "mailbox.cli.error.unknown-flag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Unknown flag '%@'."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "不明なフラグ '%@'。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Невідомий прапорець '%@'."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "알 수 없는 플래그 '%@'."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "未知标志 '%@'。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "未知旗標 '%@'。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Неизвестный флаг '%@'."}}
+      }
+    },
+    "mailbox.cli.error.flag-needs-value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flag '%@' requires a value."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグ '%@' には値が必要です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Прапорець '%@' потребує значення."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 '%@'에는 값이 필요합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标志 '%@' 需要一个值。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "旗標 '%@' 需要一個值。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Флаг '%@' требует значения."}}
+      }
+    },
+    "mailbox.cli.error.flag-no-value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flag '%@' does not take a value."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグ '%@' は値を取りません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Прапорець '%@' не приймає значення."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 '%@'는 값을 받지 않습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标志 '%@' 不接受值。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "旗標 '%@' 不接受值。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Флаг '%@' не принимает значения."}}
+      }
+    },
+    "mailbox.cli.error.duplicate-flag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flag '%@' was passed more than once."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグ '%@' が複数回指定されました。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Прапорець '%@' передано більше одного разу."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 '%@'가 두 번 이상 전달되었습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标志 '%@' 被传递了多次。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "旗標 '%@' 被傳遞了多次。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Флаг '%@' передан больше одного раза."}}
+      }
+    },
+    "mailbox.cli.error.body-conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Pass the message as --body or as one trailing argument, not both."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "メッセージは --body か末尾の引数のどちらか一方で渡してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Передайте повідомлення як --body або як один кінцевий аргумент, але не обидва."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "메시지는 --body 또는 끝의 인자 중 하나만 전달하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请将消息作为 --body 或一个尾随参数传递，不要同时使用。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請將訊息作為 --body 或一個尾隨參數傳遞，不要同時使用。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Передайте сообщение как --body или как один завершающий аргумент, но не оба сразу."}}
+      }
+    },
+    "mailbox.cli.error.extra-argument": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "mailbox send takes one message. Quote it, or pass --body."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "mailbox send はメッセージを1つ取ります。引用符で囲むか、--body を使ってください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "mailbox send приймає одне повідомлення. Візьміть його в лапки або передайте --body."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "mailbox send는 메시지 하나를 받습니다. 따옴표로 감싸거나 --body를 사용하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "mailbox send 只接受一条消息。请用引号括起，或使用 --body。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "mailbox send 只接受一則訊息。請用引號括起，或使用 --body。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "mailbox send принимает одно сообщение. Заключите его в кавычки или передайте --body."}}
+      }
+    },
+    "mailbox.cli.error.empty-body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Refusing to send an empty mailbox message. Pass the text, or pass --body-ref for a file."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "空のメールボックスメッセージは送信しません。テキストを渡すか、ファイルには --body-ref を使ってください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Порожнє повідомлення поштової скриньки не надсилається. Передайте текст або --body-ref для файлу."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "빈 메일박스 메시지는 보내지 않습니다. 텍스트를 전달하거나, 파일은 --body-ref로 지정하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "拒绝发送空的邮箱消息。请传入文本，或用 --body-ref 指定文件。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "拒絕傳送空的信箱訊息。請傳入文字，或用 --body-ref 指定檔案。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Пустое сообщение почтового ящика не отправляется. Передайте текст или --body-ref для файла."}}
+      }
+    },
+    "mailbox.cli.error.recv-unexpected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "mailbox recv does not take a trailing argument."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "mailbox recv は末尾の引数を取りません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "mailbox recv не приймає кінцевий аргумент."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "mailbox recv는 끝의 인자를 받지 않습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "mailbox recv 不接受尾随参数。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "mailbox recv 不接受尾隨參數。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "mailbox recv не принимает завершающий аргумент."}}
+      }
+    },
+    "mailbox.cli.error.recv-one-panel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Pass only one of --panel, --tab, or --surface."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "--panel、--tab、--surface のうち1つだけを指定してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Передайте лише один із --panel, --tab або --surface."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "--panel, --tab, --surface 중 하나만 전달하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请只传递 --panel、--tab 或 --surface 中的一个。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請只傳遞 --panel、--tab 或 --surface 中的一個。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Передайте только один из --panel, --tab или --surface."}}
+      }
+    },
+    "mailbox.cli.error.drain-unreadable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Refusing to mark mailbox messages read because stdout is not a terminal. Pass --ack to mark them read, or run this in a terminal."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "標準出力が端末ではないため、メールボックスのメッセージを既読にしません。既読にするには --ack を渡すか、端末で実行してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Повідомлення поштової скриньки не позначаються прочитаними, бо stdout не є терміналом. Передайте --ack, щоб позначити їх прочитаними, або запустіть це в терміналі."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "stdout이 터미널이 아니므로 메일박스 메시지를 읽음으로 표시하지 않습니다. 읽음으로 표시하려면 --ack를 전달하거나 터미널에서 실행하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标准输出不是终端，因此拒绝将邮箱消息标为已读。请传入 --ack 以标为已读，或在终端中运行。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "標準輸出不是終端機，因此拒絕將信箱訊息標為已讀。請傳入 --ack 以標為已讀，或在終端機中執行。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сообщения почтового ящика не помечаются прочитанными, потому что stdout не является терминалом. Передайте --ack, чтобы пометить их прочитанными, или запустите это в терминале."}}
+      }
+    },
     "markdown.reader.history.back": {
     "extractionState": "manual",
     "localizations": {

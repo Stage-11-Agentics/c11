@@ -403,3 +403,162 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertEqual(decoded.dropped.count, 1)
     }
 }
+
+/// C11-364 / C11-369: the mailbox CLI seam. `c11 mailbox send` and `recv`
+/// call these functions before any outbox write or inbox claim.
+final class MailboxCLISeamTests: XCTestCase {
+
+    private var inbox: URL!
+    private let idA = "01K0000000000000000000000A"
+
+    override func setUpWithError() throws {
+        inbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-cli-seam-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("watcher", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: inbox.deletingLastPathComponent())
+    }
+
+    private func deliver(body: String) throws {
+        let envelope = try MailboxEnvelope.build(
+            from: "builder",
+            to: "watcher",
+            body: body,
+            id: idA,
+            ts: "2026-10-01T12:00:00Z"
+        )
+        try envelope.encode().write(to: inbox.appendingPathComponent("\(idA).msg"))
+    }
+
+    private func messageNames(in directory: URL) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .filter { $0.hasSuffix(".msg") }
+            .sorted()
+    }
+
+    private func assertSend(
+        _ args: [String],
+        fails expected: MailboxSendArguments.Failure,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try MailboxSendArguments.parse(args), file: file, line: line) { error in
+            XCTAssertEqual(error as? MailboxSendArguments.Failure, expected, file: file, line: line)
+        }
+    }
+
+    func testPositionalBodyIsDeliveredOnTheEnvelope() throws {
+        let parsed = try MailboxSendArguments.parse(["--to", "watcher", "build green sha=abc"])
+        let envelope = try MailboxEnvelope.build(
+            from: "builder",
+            to: parsed.to,
+            body: parsed.body,
+            id: idA,
+            ts: "2026-10-01T12:00:00Z"
+        )
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try envelope.encode()) as? [String: Any])
+        XCTAssertEqual(object["body"] as? String, "build green sha=abc")
+        XCTAssertEqual(object["to"] as? String, "watcher")
+    }
+
+    func testBodyFlagStillDelivers() throws {
+        let parsed = try MailboxSendArguments.parse(["--to", "watcher", "--body", "from the flag"])
+        XCTAssertEqual(parsed.body, "from the flag")
+        XCTAssertEqual(try MailboxEnvelope.build(from: "builder", to: parsed.to, body: parsed.body, id: idA, ts: "2026-10-01T12:00:00Z").body, "from the flag")
+    }
+
+    func testBodyRefAllowsAnEmptyBody() throws {
+        let parsed = try MailboxSendArguments.parse(["--to", "watcher", "--body-ref", "/tmp/diff.patch"])
+        XCTAssertEqual(parsed.body, "")
+        XCTAssertEqual(parsed.bodyRef, "/tmp/diff.patch")
+    }
+
+    func testEmptyBodyIsRefused() {
+        assertSend(["--to", "watcher"], fails: .emptyBody)
+        assertSend(["--to", "watcher", "--body", ""], fails: .emptyBody)
+        XCTAssertTrue(MailboxSendArguments.Failure.emptyBody.description.contains("empty"))
+    }
+
+    func testBodyAndPositionalTogetherAreRefused() {
+        assertSend(["--to", "watcher", "--body", "flag", "positional"], fails: .bodyConflict)
+    }
+
+    func testExtraPositionalIsRefused() {
+        assertSend(["--to", "watcher", "one", "two"], fails: .extraArgument)
+    }
+
+    func testUnknownFlagIsRefused() {
+        assertSend(["--to", "watcher", "--nope", "hello"], fails: .unknownFlag("--nope"))
+        XCTAssertTrue(MailboxSendArguments.Failure.unknownFlag("--nope").description.contains("Unknown flag"))
+        XCTAssertTrue(MailboxSendArguments.Failure.unknownFlag("--nope").description.contains("--nope"))
+    }
+
+    func testLiteralDashDashCanCarryFlagShapedText() throws {
+        let parsed = try MailboxSendArguments.parse(["--to", "watcher", "--", "--nope"])
+        XCTAssertEqual(parsed.body, "--nope")
+    }
+
+    func testRedirectedDrainLeavesTheEnvelopeUnread() throws {
+        try deliver(body: "HANDOFF C11-361")
+        var handedOff = false
+        XCTAssertThrowsError(try MailboxRecvAdmission.consume(
+            inboxes: [inbox],
+            stdoutIsTTY: false,
+            acknowledged: false
+        ) { _ in
+            handedOff = true
+            return true
+        }) { error in
+            XCTAssertTrue((error as? MailboxRecvAdmission.Refusal)?.description.contains("--ack") == true)
+        }
+        XCTAssertFalse(handedOff)
+        XCTAssertEqual(messageNames(in: inbox), ["\(idA).msg"])
+        XCTAssertEqual(messageNames(in: MailboxDrain.readURL(inbox: inbox)), [])
+    }
+
+    func testAcknowledgedDrainMarksTheEnvelopeRead() throws {
+        try deliver(body: "HANDOFF C11-361")
+        var printed = ""
+        let result = try MailboxRecvAdmission.consume(
+            inboxes: [inbox],
+            stdoutIsTTY: false,
+            acknowledged: true
+        ) { message in
+            printed += message.text
+            return true
+        }
+        XCTAssertEqual(result.claimed.map(\.id), [idA])
+        XCTAssertTrue(printed.contains("HANDOFF C11-361"))
+        XCTAssertEqual(messageNames(in: inbox), [])
+        XCTAssertEqual(messageNames(in: MailboxDrain.readURL(inbox: inbox)), ["\(idA).msg"])
+    }
+
+    func testTerminalDrainMarksReadWithoutAck() throws {
+        try deliver(body: "visible")
+        let result = try MailboxRecvAdmission.consume(
+            inboxes: [inbox],
+            stdoutIsTTY: true,
+            acknowledged: false
+        )
+        XCTAssertEqual(result.claimed.map(\.id), [idA])
+        XCTAssertEqual(messageNames(in: inbox), [])
+    }
+
+    func testRecvUnknownFlagIsRefused() {
+        XCTAssertThrowsError(try MailboxRecvArguments.parse(["--drain", "--nope"])) { error in
+            XCTAssertEqual(error as? MailboxRecvArguments.Failure, .unknownFlag("--nope"))
+        }
+    }
+
+    func testRecvTabAliasAndAckParse() throws {
+        let parsed = try MailboxRecvArguments.parse(["--drain", "--ack", "--tab", "watcher"])
+        XCTAssertTrue(parsed.drains)
+        XCTAssertTrue(parsed.ack)
+        XCTAssertEqual(parsed.panel, "watcher")
+        let peek = try MailboxRecvArguments.parse(["--peek"])
+        XCTAssertFalse(peek.drains)
+    }
+}

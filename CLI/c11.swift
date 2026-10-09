@@ -19253,7 +19253,8 @@ struct CMUXCLI {
             if subcommand == "stop",
                let drain = prepareMailboxHookDrain(
                    format: .claude,
-                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput)
+                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput),
+                   acknowledged: true
                ),
                deliverMailboxHookDrain(drain, client: client) {
                 telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
@@ -21331,6 +21332,7 @@ extension CMUXCLI {
           --to-workspace <ref>    disambiguate a name shared across workspaces
           --topic <topic>         dotted topic token
           --body <text>           inline body (≤ 4096 bytes UTF-8)
+          <text>                  one trailing argument, the body, when --body is absent
           --body-ref <path>       absolute path to external body (body must be empty)
           --reply-to <panel>      panel that should receive the reply
           --in-reply-to <ulid>    envelope id this is replying to
@@ -21341,13 +21343,22 @@ extension CMUXCLI {
           --ts <rfc3339>          pin timestamp (testing / replay)
           --content-type <mime>   MIME hint for body or body_ref
 
+          An empty body with no --body-ref is an error. --body together with a
+          trailing argument, a second trailing argument, and unknown flags are
+          errors. Nothing is sent.
+
         Recv flags:
           --drain                 default — print each message and move it to _read/
           --peek                  list + print only
+          --ack                   mark read even when stdout is not a terminal
           --hook-format <h>       claude | codex | grok: print that harness's Stop-hook JSON
-                                  (turn-end drain; event from hook stdin or --event)
+                                  (turn-end drain; event from hook stdin or --event).
+                                  Pass --ack: a hook has no terminal.
           --event <e>             stop (with --hook-format; other events never drain)
           --panel <name>          override caller's resolved panel
+
+          A drain marks mail read only when stdout is a terminal or --ack is
+          passed. Otherwise it exits nonzero and leaves the inbox unchanged.
         """
     }
 
@@ -21439,19 +21450,28 @@ extension CMUXCLI {
         client: SocketClient,
         jsonOutput: Bool
     ) throws {
-        let to = optionValue(subArgs, name: "--to")
-        let topic = optionValue(subArgs, name: "--topic")
-        let body = optionValue(subArgs, name: "--body") ?? ""
-        let bodyRef = optionValue(subArgs, name: "--body-ref")
-        let replyTo = optionValue(subArgs, name: "--reply-to")
-        let inReplyTo = optionValue(subArgs, name: "--in-reply-to")
-        let urgent = hasFlag(subArgs, name: "--urgent")
-        let ttlSeconds = optionValue(subArgs, name: "--ttl-seconds").flatMap(Int.init)
-        let idOverride = optionValue(subArgs, name: "--id")
-        let tsOverride = optionValue(subArgs, name: "--ts")
-        let contentType = optionValue(subArgs, name: "--content-type")
-        let fromOverride = optionValue(subArgs, name: "--from")
-        let toWorkspace = optionValue(subArgs, name: "--to-workspace")
+        // Parse before any socket call or outbox write. A bad argv must exit
+        // nonzero with nothing sent (C11-364).
+        let parsed: MailboxSendArguments.Parsed
+        do {
+            parsed = try MailboxSendArguments.parse(subArgs)
+        } catch let failure as MailboxSendArguments.Failure {
+            throw CLIError(message: failure.description)
+        }
+        let reportJSON = jsonOutput || parsed.json
+        let to = parsed.to
+        let topic = parsed.topic
+        let body = parsed.body
+        let bodyRef = parsed.bodyRef
+        let replyTo = parsed.replyTo
+        let inReplyTo = parsed.inReplyTo
+        let urgent = parsed.urgent
+        let ttlSeconds = parsed.ttlSeconds.flatMap(Int.init)
+        let idOverride = parsed.id
+        let tsOverride = parsed.ts
+        let contentType = parsed.contentType
+        let fromOverride = parsed.from
+        let toWorkspace = parsed.toWorkspace
 
         if to == nil && topic == nil {
             throw CLIError(
@@ -21554,7 +21574,7 @@ extension CMUXCLI {
             throw CLIError(message: message)
         }
 
-        if jsonOutput {
+        if reportJSON {
             print(jsonString([
                 "id": envelope.id,
                 "outbox_path": targetURL.path,
@@ -21650,13 +21670,31 @@ extension CMUXCLI {
         client: SocketClient,
         jsonOutput: Bool
     ) throws {
-        if let rawFormat = optionValue(subArgs, name: "--hook-format") {
-            runMailboxHookRecv(rawFormat: rawFormat, subArgs: subArgs, client: client)
+        let parsed: MailboxRecvArguments.Parsed
+        do {
+            parsed = try MailboxRecvArguments.parse(subArgs)
+        } catch let failure as MailboxRecvArguments.Failure {
+            throw CLIError(message: failure.description)
+        }
+        if let rawFormat = parsed.hookFormat {
+            // A hook has no terminal. It marks mail read only when the caller
+            // passed --ack (or stdout really is a terminal). Missing --ack
+            // claims nothing and still exits 0: a hook must not fail the harness.
+            let acknowledged = MailboxRecvAdmission.allowsMarkRead(
+                stdoutIsTTY: isatty(STDOUT_FILENO) != 0,
+                acknowledged: parsed.ack
+            )
+            runMailboxHookRecv(
+                rawFormat: rawFormat,
+                subArgs: subArgs,
+                client: client,
+                acknowledged: acknowledged
+            )
             return
         }
-        let peek = hasFlag(subArgs, name: "--peek")
-        let drain = hasFlag(subArgs, name: "--drain") || !peek
-        let surfaceOverride = optionValue(subArgs, name: "--panel")
+        let peek = parsed.peek
+        let drain = parsed.drains
+        let surfaceOverride = parsed.panel
 
         let (workspaceId, panelName, callerPanelId) = try resolveMailboxCaller(
             client: client,
@@ -21698,9 +21736,18 @@ extension CMUXCLI {
         // envelope back and stops, so nothing reaches `_read/` unless it
         // reached stdout.
         signal(SIGPIPE, SIG_IGN)
-        let claimed = MailboxDrain.claimPending(inboxes: inboxURLs) { message in
-            Self.writeStdout(message.text + "\n")
-        }.claimed
+        let claimed: [MailboxDrain.ClaimedMessage]
+        do {
+            claimed = try MailboxRecvAdmission.consume(
+                inboxes: inboxURLs,
+                stdoutIsTTY: isatty(STDOUT_FILENO) != 0,
+                acknowledged: parsed.ack
+            ) { message in
+                Self.writeStdout(message.text + "\n")
+            }.claimed
+        } catch let refusal as MailboxRecvAdmission.Refusal {
+            throw CLIError(message: refusal.description)
+        }
         // `tabId` is the recipient's: the caller's own without `--tab`, the
         // override's resolved UUID with it, nil when a `--tab` name matched no
         // single live tab (the event then carries no surface rather than the
@@ -21733,7 +21780,13 @@ extension CMUXCLI {
     /// `hookEventName`); `--event` overrides it. Prints the harness's hook JSON
     /// only when it claimed mail. Every failure is silent with exit 0: this
     /// runs on every turn and must never block or error the harness.
-    private func runMailboxHookRecv(rawFormat: String, subArgs: [String], client: SocketClient) {
+    private func runMailboxHookRecv(
+        rawFormat: String,
+        subArgs: [String],
+        client: SocketClient,
+        acknowledged: Bool
+    ) {
+        guard acknowledged else { return }
         guard let format = MailboxHookFormat(rawValue: rawFormat.lowercased()) else { return }
         let stdinData = isatty(STDIN_FILENO) == 0
             ? FileHandle.standardInput.readDataToEndOfFile()
@@ -21742,7 +21795,11 @@ extension CMUXCLI {
         if let rawEvent = optionValue(subArgs, name: "--event") {
             input.event = MailboxHookEvent(name: rawEvent)
         }
-        guard let drain = prepareMailboxHookDrain(format: format, input: input) else {
+        guard let drain = prepareMailboxHookDrain(
+            format: format,
+            input: input,
+            acknowledged: true
+        ) else {
             return
         }
         deliverMailboxHookDrain(drain, client: client)
@@ -21761,7 +21818,8 @@ extension CMUXCLI {
     /// `c11 mailbox recv --drain`.
     private func prepareMailboxHookDrain(
         format: MailboxHookFormat,
-        input: MailboxHookInput
+        input: MailboxHookInput,
+        acknowledged: Bool
     ) -> MailboxHookDrain? {
         let env = ProcessInfo.processInfo.environment
         guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
@@ -21782,10 +21840,26 @@ extension CMUXCLI {
               MailboxHookOutput.mayClaim(processElapsedSeconds: Self.processElapsedSeconds()) else {
             return nil
         }
-        let (claimed, remaining) = MailboxDrain.claimPending(
-            inboxes: inboxes,
-            budget: MailboxHookOutput.contextBudget
-        )
+        // `acknowledged` is the caller's statement that something will read
+        // this stdout (the harness, for `claude-hook stop`; `--ack` or a
+        // terminal, for `mailbox recv --hook-format`). Without it the claim
+        // does not run.
+        let claimed: [MailboxDrain.ClaimedMessage]
+        let remaining: Int
+        do {
+            (claimed, remaining) = try MailboxRecvAdmission.consume(
+                inboxes: inboxes,
+                stdoutIsTTY: false,
+                acknowledged: acknowledged,
+                budget: MailboxHookOutput.contextBudget
+            )
+        } catch is MailboxRecvAdmission.Refusal {
+            return nil
+        } catch {
+            // `consume` only throws Refusal, and it throws before any claim.
+            // A hook still must not fail the harness if that changes.
+            return nil
+        }
         guard !claimed.isEmpty else { return nil }
         let context = MailboxHookOutput.context(framedBlocks: claimed.map(\.framed), remaining: remaining)
         let json = MailboxHookOutput.render(MailboxHookOutput.payload(context: context))

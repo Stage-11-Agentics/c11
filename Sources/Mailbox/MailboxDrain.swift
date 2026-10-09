@@ -248,6 +248,309 @@ enum MailboxDrain {
     }
 }
 
+// MARK: - CLI seam (C11-364, C11-369)
+//
+// `c11 mailbox send` / `recv` call these before any outbox write or inbox
+// claim. c11LogicTests call the same functions, so a guard that lets a
+// message vanish fails here.
+
+/// Parsed `c11 mailbox send` arguments. One trailing positional is the body
+/// when `--body` is absent, the same shape as `c11 send`.
+enum MailboxSendArguments {
+    enum Failure: Error, Equatable, CustomStringConvertible {
+        case unknownFlag(String)
+        case flagNeedsValue(String)
+        case flagTakesNoValue(String)
+        case duplicateFlag(String)
+        case bodyConflict
+        case extraArgument
+        case emptyBody
+
+        var description: String {
+            switch self {
+            case .unknownFlag(let name):
+                return String(
+                    localized: "mailbox.cli.error.unknown-flag",
+                    defaultValue: "Unknown flag '%@'."
+                ).replacingOccurrences(of: "%@", with: name)
+            case .flagNeedsValue(let name):
+                return String(
+                    localized: "mailbox.cli.error.flag-needs-value",
+                    defaultValue: "Flag '%@' requires a value."
+                ).replacingOccurrences(of: "%@", with: name)
+            case .flagTakesNoValue(let name):
+                return String(
+                    localized: "mailbox.cli.error.flag-no-value",
+                    defaultValue: "Flag '%@' does not take a value."
+                ).replacingOccurrences(of: "%@", with: name)
+            case .duplicateFlag(let name):
+                return String(
+                    localized: "mailbox.cli.error.duplicate-flag",
+                    defaultValue: "Flag '%@' was passed more than once."
+                ).replacingOccurrences(of: "%@", with: name)
+            case .bodyConflict:
+                return String(
+                    localized: "mailbox.cli.error.body-conflict",
+                    defaultValue: "Pass the message as --body or as one trailing argument, not both."
+                )
+            case .extraArgument:
+                return String(
+                    localized: "mailbox.cli.error.extra-argument",
+                    defaultValue: "mailbox send takes one message. Quote it, or pass --body."
+                )
+            case .emptyBody:
+                return String(
+                    localized: "mailbox.cli.error.empty-body",
+                    defaultValue: "Refusing to send an empty mailbox message. Pass the text, or pass --body-ref for a file."
+                )
+            }
+        }
+    }
+
+    struct Parsed: Equatable {
+        var to: String?
+        var toWorkspace: String?
+        var topic: String?
+        var body: String
+        var bodyRef: String?
+        var replyTo: String?
+        var inReplyTo: String?
+        var urgent: Bool
+        var ttlSeconds: String?
+        var from: String?
+        var id: String?
+        var ts: String?
+        var contentType: String?
+        var json: Bool
+    }
+
+    private static let valueFlags: Set<String> = [
+        "--to", "--to-workspace", "--topic", "--body", "--body-ref",
+        "--reply-to", "--in-reply-to", "--ttl-seconds", "--from",
+        "--id", "--ts", "--content-type",
+    ]
+    private static let boolFlags: Set<String> = ["--urgent", "--json"]
+
+    static func parse(_ args: [String]) throws -> Parsed {
+        var values: [String: String] = [:]
+        var flags = Set<String>()
+        var positionals: [String] = []
+        var literal = false
+        var index = 0
+        while index < args.count {
+            let argument = args[index]
+            if !literal, argument == "--" {
+                literal = true
+                index += 1
+                continue
+            }
+            if !literal, argument.hasPrefix("--") {
+                let name: String
+                let inline: String?
+                if let eq = argument.firstIndex(of: "=") {
+                    name = String(argument[..<eq])
+                    inline = String(argument[argument.index(after: eq)...])
+                } else {
+                    name = argument
+                    inline = nil
+                }
+                if boolFlags.contains(name) {
+                    if inline != nil { throw Failure.flagTakesNoValue(name) }
+                    guard flags.insert(name).inserted else { throw Failure.duplicateFlag(name) }
+                } else if valueFlags.contains(name) {
+                    let value: String
+                    if let inline {
+                        value = inline
+                    } else {
+                        guard index + 1 < args.count, !args[index + 1].hasPrefix("--") else {
+                            throw Failure.flagNeedsValue(name)
+                        }
+                        value = args[index + 1]
+                        index += 1
+                    }
+                    guard values[name] == nil else { throw Failure.duplicateFlag(name) }
+                    values[name] = value
+                } else {
+                    throw Failure.unknownFlag(name)
+                }
+                index += 1
+                continue
+            }
+            positionals.append(argument)
+            index += 1
+        }
+
+        if values["--body"] != nil, !positionals.isEmpty {
+            throw Failure.bodyConflict
+        }
+        if positionals.count > 1 {
+            throw Failure.extraArgument
+        }
+        let body = values["--body"] ?? positionals.first ?? ""
+        let bodyRef = values["--body-ref"].flatMap { $0.isEmpty ? nil : $0 }
+        if body.isEmpty, bodyRef == nil {
+            throw Failure.emptyBody
+        }
+        return Parsed(
+            to: values["--to"],
+            toWorkspace: values["--to-workspace"],
+            topic: values["--topic"],
+            body: body,
+            bodyRef: bodyRef,
+            replyTo: values["--reply-to"],
+            inReplyTo: values["--in-reply-to"],
+            urgent: flags.contains("--urgent"),
+            ttlSeconds: values["--ttl-seconds"],
+            from: values["--from"],
+            id: values["--id"],
+            ts: values["--ts"],
+            contentType: values["--content-type"],
+            json: flags.contains("--json")
+        )
+    }
+}
+
+/// Parsed `c11 mailbox recv` arguments. Unknown flags are refused so a typo
+/// cannot drain the inbox.
+enum MailboxRecvArguments {
+    enum Failure: Error, Equatable, CustomStringConvertible {
+        case unknownFlag(String)
+        case flagNeedsValue(String)
+        case flagTakesNoValue(String)
+        case duplicateFlag(String)
+        case unexpectedArgument(String)
+        case conflictingPanel
+
+        var description: String {
+            switch self {
+            case .unknownFlag(let name):
+                return MailboxSendArguments.Failure.unknownFlag(name).description
+            case .flagNeedsValue(let name):
+                return MailboxSendArguments.Failure.flagNeedsValue(name).description
+            case .flagTakesNoValue(let name):
+                return MailboxSendArguments.Failure.flagTakesNoValue(name).description
+            case .duplicateFlag(let name):
+                return MailboxSendArguments.Failure.duplicateFlag(name).description
+            case .unexpectedArgument:
+                return String(
+                    localized: "mailbox.cli.error.recv-unexpected",
+                    defaultValue: "mailbox recv does not take a trailing argument."
+                )
+            case .conflictingPanel:
+                return String(
+                    localized: "mailbox.cli.error.recv-one-panel",
+                    defaultValue: "Pass only one of --panel, --tab, or --surface."
+                )
+            }
+        }
+    }
+
+    struct Parsed: Equatable {
+        var peek: Bool
+        var ack: Bool
+        var hookFormat: String?
+        var event: String?
+        var panel: String?
+        /// Explicit `--drain`, or the default when `--peek` is absent.
+        var drains: Bool
+    }
+
+    private static let panelFlags: Set<String> = ["--panel", "--tab", "--surface"]
+    private static let valueFlags: Set<String> = ["--hook-format", "--event", "--panel", "--tab", "--surface"]
+    private static let boolFlags: Set<String> = ["--drain", "--peek", "--ack"]
+
+    static func parse(_ args: [String]) throws -> Parsed {
+        var values: [String: String] = [:]
+        var flags = Set<String>()
+        var index = 0
+        while index < args.count {
+            let argument = args[index]
+            if argument == "--" {
+                throw Failure.unexpectedArgument(argument)
+            }
+            guard argument.hasPrefix("--") else {
+                throw Failure.unexpectedArgument(argument)
+            }
+            let name: String
+            let inline: String?
+            if let eq = argument.firstIndex(of: "=") {
+                name = String(argument[..<eq])
+                inline = String(argument[argument.index(after: eq)...])
+            } else {
+                name = argument
+                inline = nil
+            }
+            if boolFlags.contains(name) {
+                if inline != nil { throw Failure.flagTakesNoValue(name) }
+                guard flags.insert(name).inserted else { throw Failure.duplicateFlag(name) }
+            } else if valueFlags.contains(name) {
+                let value: String
+                if let inline {
+                    value = inline
+                } else {
+                    guard index + 1 < args.count, !args[index + 1].hasPrefix("--") else {
+                        throw Failure.flagNeedsValue(name)
+                    }
+                    value = args[index + 1]
+                    index += 1
+                }
+                guard values[name] == nil else { throw Failure.duplicateFlag(name) }
+                values[name] = value
+            } else {
+                throw Failure.unknownFlag(name)
+            }
+            index += 1
+        }
+        let panelHits = panelFlags.filter { values[$0] != nil }
+        if panelHits.count > 1 { throw Failure.conflictingPanel }
+        let peek = flags.contains("--peek")
+        return Parsed(
+            peek: peek,
+            ack: flags.contains("--ack"),
+            hookFormat: values["--hook-format"],
+            event: values["--event"],
+            panel: panelFlags.compactMap { values[$0] }.first,
+            drains: flags.contains("--drain") || !peek
+        )
+    }
+}
+
+/// Whether a drain may claim envelopes. A drain whose stdout nobody can read
+/// throws and leaves the inbox untouched.
+enum MailboxRecvAdmission {
+    struct Refusal: Error, Equatable, CustomStringConvertible {
+        var description: String {
+            String(
+                localized: "mailbox.cli.error.drain-unreadable",
+                defaultValue: "Refusing to mark mailbox messages read because stdout is not a terminal. Pass --ack to mark them read, or run this in a terminal."
+            )
+        }
+    }
+
+    static func allowsMarkRead(stdoutIsTTY: Bool, acknowledged: Bool) -> Bool {
+        stdoutIsTTY || acknowledged
+    }
+
+    static func consume(
+        inboxes: [URL],
+        stdoutIsTTY: Bool,
+        acknowledged: Bool,
+        budget: Int = Int.max,
+        fileManager: FileManager = .default,
+        accept: (MailboxDrain.ClaimedMessage) -> Bool = { _ in true }
+    ) throws -> (claimed: [MailboxDrain.ClaimedMessage], remaining: Int) {
+        guard allowsMarkRead(stdoutIsTTY: stdoutIsTTY, acknowledged: acknowledged) else {
+            throw Refusal()
+        }
+        return MailboxDrain.claimPending(
+            inboxes: inboxes,
+            budget: budget,
+            fileManager: fileManager,
+            accept: accept
+        )
+    }
+}
+
 // MARK: - Hook output
 
 /// The harnesses whose hook JSON `c11 mailbox recv --hook-format` speaks.

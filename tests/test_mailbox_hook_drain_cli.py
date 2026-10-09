@@ -215,7 +215,7 @@ def main() -> int:
     fx = Fixture()
     stalled = FakeC11(os.path.join(tmp, "stall.sock"), stall=True)
     ulid = fx.deliver(TAB.lower())
-    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
+    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "codex"],
                    fx.env(stalled.path), stop_input)
     out = proc.stdout.decode()
     check(proc.returncode == 0, "stalled socket: exit 0", f"exit {proc.returncode} {proc.stderr!r}")
@@ -231,7 +231,7 @@ def main() -> int:
     fx.deliver(SIBLING.lower())
     timings = []
     for _ in range(10):
-        proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "claude"],
+        proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "claude"],
                        fx.env(stalled.path), stop_input)
         timings.append(ms)
         check(proc.returncode == 0 and proc.stdout == b"", "empty recipient: silent exit 0") if _ == 0 else None
@@ -245,7 +245,7 @@ def main() -> int:
     fx = Fixture()
     rec = FakeC11(os.path.join(tmp, "rec.sock"), stall=False)
     ulid = fx.deliver(TAB.lower(), to="lane-c-agent")
-    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "codex"],
                   fx.env(rec.path), stop_input)
     receipts = fx.receipts()
     check(len(receipts) == 1 and receipts[0].get("panel_id", "").upper() == TAB and receipts[0].get("via") == "drain",
@@ -256,11 +256,19 @@ def main() -> int:
     check(not [n for n in os.listdir(spool) if n.endswith(".tmp")], "receipt written atomically (no temp file left)")
     os.remove(os.path.join(spool, os.listdir(spool)[0]))
 
-    # Plain drain of someone else's (title-keyed) inbox into a closed pipe.
+    # Plain drain of someone else's (title-keyed) inbox.
     ids = [fx.deliver("watcher") for _ in range(3)]
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"],
+                  fx.env(rec.path))
+    root, read = fx.listing("watcher")
+    check(proc.returncode != 0 and proc.stdout == b"" and b"--ack" in proc.stderr
+          and root == sorted(i + ".msg" for i in ids) and read == [],
+          "redirected drain without --ack: nonzero, nothing printed, inbox unchanged",
+          f"exit {proc.returncode} root={root} read={read} err={proc.stderr[:160]!r}")
+    # --ack plus a closed pipe still puts a failed write back in the inbox.
     read_fd, write_fd = os.pipe()
     os.close(read_fd)
-    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"],
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--ack", "--tab", "watcher"],
                   fx.env(rec.path), stdout=write_fd)
     os.close(write_fd)
     root, read = fx.listing("watcher")
@@ -269,7 +277,7 @@ def main() -> int:
     check(fx.receipts() == [], "broken pipe: no receipt", json.dumps(fx.receipts()))
 
     rec.requests.clear()
-    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(rec.path))
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--ack", "--tab", "watcher"], fx.env(rec.path))
     printed = proc.stdout.decode()
     root, read = fx.listing("watcher")
     check(all(i in printed for i in ids) and root == [] and len(read) == 3,
@@ -289,7 +297,7 @@ def main() -> int:
     fx = Fixture()
     rec = FakeC11(os.path.join(tmp, "rec600.sock"), stall=False)
     many = [fx.deliver("watcher") for _ in range(600)]
-    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(rec.path), timeout=60)
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--ack", "--tab", "watcher"], fx.env(rec.path), timeout=60)
     spool = os.path.join(fx.mailboxes, "_receipts")
     sizes = [os.path.getsize(os.path.join(spool, n)) for n in os.listdir(spool) if n.endswith(".receipt")]
     counts = [len(r["deliveries"]) for r in fx.receipts()]
@@ -306,7 +314,7 @@ def main() -> int:
     good = [fx.deliver("watcher") for _ in range(3)]
     with open(os.path.join(fx.mailboxes, "watcher", "0note.msg"), "w") as f:
         f.write("hand-written note, not an envelope")
-    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(rec.path))
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--ack", "--tab", "watcher"], fx.env(rec.path))
     root, read = fx.listing("watcher")
     minted = [n[:-4] for n in read if n[:-4] not in good]
     note_ok = len(minted) == 1 and "hand-written note" in open(os.path.join(fx.mailboxes, "watcher", "_read", minted[0] + ".msg")).read()
@@ -321,7 +329,7 @@ def main() -> int:
     fx = Fixture()
     stalled = FakeC11(os.path.join(tmp, "stall2.sock"), stall=True)
     ulid = fx.deliver(TAB.lower(), workspace=MOVED_TO)
-    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
+    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "codex"],
                    fx.env(stalled.path), stop_input)
     check(ulid in proc.stdout.decode() and fx.listing(TAB.lower(), MOVED_TO) == ([], [ulid + ".msg"]),
           "moved tab: mail in the other workspace's inbox is delivered and claimed", proc.stdout.decode()[:120])
@@ -335,7 +343,7 @@ def main() -> int:
     #    that reads nothing; Codex format and claude-hook stop.
     groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 71)]
     for label, args, stdin in [
-        ("codex hook format", ["mailbox", "recv", "--drain", "--hook-format", "codex"], stop_input),
+        ("codex hook format", ["mailbox", "recv", "--drain", "--ack", "--hook-format", "codex"], stop_input),
         ("claude-hook stop", ["claude-hook", "stop"], json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"})),
     ]:
         for mode, kwargs in [("reads one line then stops", {"one_line": True}), ("reads nothing", {"pause": 30.0})]:

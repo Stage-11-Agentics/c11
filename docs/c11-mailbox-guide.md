@@ -41,7 +41,7 @@ Choose the channel by whether the communication needs a record:
 | Need | Command | Contract |
 |---|---|---|
 | Nudge, short brief, or immediate instruction in a panel | `c11 send --workspace <ref> --panel <ref> "…"` | Types into the target PTY and submits one turn. c11 records the full text as `panel.input_sent`, but the PTY action is not a durable completion receipt. |
-| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> --body "…"` | Records the envelope and body. `mailbox.accepted` and `mailbox.delivered` events make the exchange inspectable; delivery records `via: push`, `drain`, or `inbox`. A waiting agent that opted into push (`mailbox.delivery=stdin`) receives a new turn; a busy agent receives it at the end of its turn. |
+| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> "<text>"` or `--body "<text>"` | Records the envelope and body. One trailing argument is the body when `--body` is absent, the same shape as `c11 send`. An empty body with no `--body-ref` is an error, and so is an unknown flag or a second trailing argument; nothing is sent. `mailbox.accepted` and `mailbox.delivered` events make the exchange inspectable; delivery records `via: push`, `drain`, or `inbox`. A waiting agent that opted into push (`mailbox.delivery=stdin`) receives a new turn; a busy agent receives it at the end of its turn. |
 | Review the recorded exchange | `c11 messages view` or `c11 mailbox view` | Opens the live traffic page in a c11 browser panel without taking focus. The mailbox spelling is an alias. |
 
 Declare `mailbox.address` once during orientation, before peers need to reach the panel. The address is stable across title changes, so it is the right value to use with `--to`; a title is display text and can change.
@@ -81,7 +81,8 @@ Do **not** reach for the mailbox when:
 ```bash
 # In panel "builder":
 c11 set-title "builder"
-c11 mailbox send --to watcher --body "build green sha=abc"
+c11 mailbox send --to watcher "build green sha=abc"
+c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 
 # In panel "watcher":
 c11 set-title "watcher"
@@ -89,7 +90,8 @@ c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in t
 # The framed block lands in the PTY the next time builder sends. An agent at
 # its prompt gets it as a new turn at once; mid-turn, it lands when the turn
 # ends (see "When the push lands" below).
-c11 mailbox recv --drain                   # pull now (agents also get mail at turn boundaries via hooks)
+c11 mailbox recv --drain                   # pull now, when stdout is a terminal
+c11 mailbox recv --drain --ack             # mark read when stdout is not a terminal
 ```
 
 If `mailbox.delivery` is not set on the recipient, the envelope still lands in the recipient's inbox; the recipient drains it explicitly with `c11 mailbox recv`. With `stdin` set, push delivers to a waiting agent and to one whose turn ends; draining at turn boundaries stays the floor for everything push cannot reach.
@@ -181,7 +183,8 @@ Send flags accepted by the CLI:
 | `--to-workspace <ref>`| Disambiguate a name that exists in more than one workspace. A workspace UUID or `workspace:*` ref. |
 | `--topic <token>`     | Dotted topic. Stored on the envelope; not used for routing yet.    |
 | `--body <text>`       | Inline body, ≤ 4096 bytes UTF-8.                                   |
-| `--body-ref <path>`   | Absolute path to an external body. `--body` must be empty.         |
+| `<text>`              | One trailing argument, used as the body when `--body` is absent.   |
+| `--body-ref <path>`   | Absolute path to an external body. The inline body must be empty.  |
 | `--reply-to <panel>`| Panel that should receive the reply.                             |
 | `--in-reply-to <id>`  | ULID of the envelope being answered.                               |
 | `--urgent`            | Sender hint. Handlers may honor or ignore.                         |
@@ -190,6 +193,8 @@ Send flags accepted by the CLI:
 | `--id <ulid>`         | Pin envelope id (testing / replay).                                |
 | `--ts <rfc3339>`      | Pin timestamp (testing / replay).                                  |
 | `--content-type <m>`  | MIME hint for body or body_ref.                                    |
+
+An empty body with no `--body-ref` is refused. `--body` together with a trailing argument, a second trailing argument, and any unknown flag are refused. The command exits nonzero and writes nothing. `--` before a trailing argument treats it as text, so a body that starts with `--` is `c11 mailbox send --to watcher -- --literal`.
 
 **Raw file write (any process, any language):**
 
@@ -339,10 +344,13 @@ Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mai
 ### Explicit inbox drain
 
 ```bash
-c11 mailbox recv --drain    # default: print each message, move it to _read/
+c11 mailbox recv --drain    # print each message and move it to _read/ when stdout is a terminal
 c11 mailbox recv --peek     # list + print only, leave files in place
 c11 mailbox recv --panel watcher --drain   # drain on someone else's behalf
+c11 mailbox recv --drain --ack             # mark read when stdout is not a terminal
 ```
+
+A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. `--peek` never marks mail read.
 
 Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the panel's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. Both inboxes are merged into one ULID order, for `--peek` and `--drain` alike. `c11 mailbox inbox-dir` prints the UUID-keyed path.
 
@@ -367,8 +375,10 @@ Mail is never drained at prompt submit. Added to a turn the operator just starte
 The hook command is:
 
 ```bash
-c11 mailbox recv --drain --hook-format claude|codex|grok [--event stop]
+c11 mailbox recv --drain --hook-format claude|codex|grok --ack [--event stop]
 ```
+
+`--ack` is required here: a hook's stdout is not a terminal, and without it the drain claims nothing. `c11 claude-hook stop` acknowledges internally, because the harness reads that hook's JSON. A `--hook-format` drain that omits `--ack` still exits 0, so a missed flag cannot fail the harness; the mail stays in the inbox.
 
 It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claude, Codex) or `hookEventName` (Grok); `--event` overrides it. It prints the harness's hook JSON only when it claimed mail at a Stop:
 

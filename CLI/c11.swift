@@ -22172,8 +22172,10 @@ extension CMUXCLI {
         } else if let instance, !follow {
             // C11-348: retention removes old instance logs. Say so rather than
             // exit silently, so a caller can tell "no events" from "no log".
-            FileHandle.standardError.c11SafeWrite(Data(
-                "note: no event log for instance \(instance); it was never written or retention removed it\n".utf8))
+            let note = FileManager.default.fileExists(atPath: logURL.path)
+                ? "note: cannot read the event log for instance \(instance) at \(logURL.path)\n"
+                : "note: no event log for instance \(instance); it was never written or retention removed it\n"
+            FileHandle.standardError.c11SafeWrite(Data(note.utf8))
         }
 
         guard follow else { return }

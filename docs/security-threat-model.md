@@ -414,26 +414,36 @@ The text is plaintext, so the history is owner-only and bounded:
 - **Modes.** Event files are created `0600` and the `events/` directory
   `0700`. 1.0 created its files `0644` (still inside the `0700`
   `~/Library`). Every retention checkpoint, starting at launch, removes
-  group and other access from the directory and from every event file in
-  it, whichever build wrote it, without following symlinks or changing
-  content.
+  group and other access from the history directory (at its target, if
+  it is a symlink) and from every event file in it, whichever build wrote
+  it. It skips symlinked files and files owned by another user, and never
+  changes content.
 - **Retention.** Each build label (production, nightly, each tag) keeps
   its history for 14 days by default and within 64 MiB across all its
   launches and numbered generations, deleting the oldest first.
   Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days
-  (`c11.activityHistory.retentionDays`). Pruning runs at launch, on
-  rotation, on policy changes, at clean shutdown and at least daily,
-  including while recording is off. The file the running process is
-  writing is never deleted. A launch that reuses a dead launch's pid
-  rolls that launch's file into the numbered generations instead of
-  appending to it, so its age still counts.
+  (`c11.activityHistory.retentionDays`). A generation is deleted at the
+  first checkpoint after its last write passes the retention age.
+  Checkpoints run at launch, on rotation, on policy changes, at clean
+  shutdown, at every ten-minute health sample and at least daily,
+  including while recording is off.
+- **The live file.** The file a running c11 is writing is never deleted.
+  It rolls into the numbered generations at 8 MiB and once it has been
+  written for a day, so a long session's text ages out while the session
+  runs. A launch that reuses a dead launch's pid rolls that launch's file
+  aside instead of appending to it, so its age still counts.
 - **Text off.** With Keep message and input text off, new records carry
   byte counts only. Existing history is not rewritten; it ages out.
 
-Anything an agent types into another panel through c11 (a pasted token,
-say) therefore persists in plaintext, readable by the operator's uid,
-for up to the retention period. Pruning is a plain unlink, not a secure
-erase.
+Sent text (a pasted token, say) therefore stays on disk in plaintext,
+readable by the operator's uid, until shortly after the retention age:
+about a day later with usage analytics on (ten-minute checkpoints), up to
+about three with it off (daily checkpoints). Three cases keep it longer:
+nothing is pruned while no c11 runs or the Mac sleeps; with
+recording off, a running c11 keeps its open file until it quits; and a
+production or nightly build that is never launched again keeps its
+history, because builds do not prune each other's production or nightly
+history. Pruning is a plain unlink, not a secure erase.
 
 Other local artifacts added in 1.0, all owner-only:
 

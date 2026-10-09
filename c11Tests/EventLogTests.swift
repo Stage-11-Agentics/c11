@@ -2229,13 +2229,53 @@ extension EventLogTests {
 
         // Sixty days later every other file is past the horizon. This
         // launch's own current file is never deleted, whatever its age.
+        // (A policy checkpoint prunes without the periodic daily roll.)
         clock.addTimeInterval(60 * 86_400)
         log.append(EventEnvelope(type: .panelInputSent, instance: "com.stage11.c11-5100", ts: clock, payload: ["text": "kept"]))
-        log.sampleForTesting()
+        log.updatePolicy(ActivityHistoryPolicy())
+        log.flush()
         for file in kept { XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), file.lastPathComponent) }
         XCTAssertEqual(readLines(url).map(parse).compactMap { $0["type"] as? String }, ["log.opened", "panel.input_sent"])
+        log.stopSampling()
     }
 
+    func testLongSessionRollsItsLiveFileDailySoItsSentTextStillAgesOut() throws {
+        var clock = Date()
+        let url = logURL("events-synthetic-long-7001.ndjson")
+        let rolled = URL(fileURLWithPath: url.path + ".1")
+        let log = EventLog(url: url, instance: "synthetic-long-7001", now: { clock },
+                           policy: ActivityHistoryPolicy(retentionDays: 7))
+        log.open()
+        log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-long-7001", ts: clock, payload: ["text": "DAY_ZERO_SECRET"]))
+        log.flush()
+        func holdsSecret() -> Bool {
+            [url, rolled, URL(fileURLWithPath: url.path + ".2")].contains {
+                (try? String(contentsOf: $0, encoding: .utf8))?.contains("DAY_ZERO_SECRET") == true
+            }
+        }
+
+        clock.addTimeInterval(23 * 3600)
+        log.sampleForTesting()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rolled.path), "A live file younger than a day stays put")
+        XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("DAY_ZERO_SECRET"))
+
+        clock.addTimeInterval(3600)
+        log.sampleForTesting()
+        XCTAssertTrue(try String(contentsOf: rolled, encoding: .utf8).contains("DAY_ZERO_SECRET"), "The day-old live file rolled")
+        XCTAssertEqual(readLines(url).map(parse).first?["type"] as? String, "log.rotated")
+        XCTAssertEqual(permissions(rolled), 0o600)
+
+        // The rolled generation now ages by its last write. Past the horizon
+        // the session's day-zero text is gone while c11 keeps running.
+        clock.addTimeInterval(8 * 86_400)
+        log.sampleForTesting()
+        XCTAssertFalse(holdsSecret())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "The live file itself is never deleted")
+        log.stopSampling()
+    }
+
+    // The byte budget and the retention key come from C11-349. These two
+    // tests are C11-348's acceptance coverage for them, on 1.0-style names.
     func testByteBudgetPrunesOldestHistoryFirstButNeverTheCurrentLaunchFile() throws {
         let directory = tempDir.appendingPathComponent("budget", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -2292,13 +2332,19 @@ extension EventLogTests {
         let url = logURL("events-synthetic-held-7001.ndjson")
         try seed(url, "{\"type\":\"log.opened\"}\n", ageDays: 1)
         let log = EventLog(url: url, instance: "synthetic-held-7001")
+        // Observe the mode at the first write: the handle is open and no
+        // reconciliation has run, so only the open path can have tightened it.
+        var modeAtFirstWrite: mode_t?
+        log.onQueueBeforeWrite = { [unowned self] in
+            if modeAtFirstWrite == nil { modeAtFirstWrite = self.permissions(url) }
+        }
         try withExternalFileLocks(at: [url], exclusive: false) {
             log.open()
             log.flush()
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".1"))
         XCTAssertEqual(readLines(url).count, 2)
-        XCTAssertEqual(permissions(url), 0o600, "A reused file is tightened on open")
+        XCTAssertEqual(modeAtFirstWrite, 0o600, "A reused file is tightened on open")
     }
 
     func testRetentionDaysDefaultsKeyOverridesTheFourteenDayDefault() throws {

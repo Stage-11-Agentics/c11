@@ -15,7 +15,8 @@ import Darwin
 /// - **Owner-only history** (C11-348): files are created 0600 and the
 ///   directory 0700, because `panel.input_sent` and mailbox records carry the
 ///   sent text. Every retention checkpoint, starting at launch, tightens
-///   older files and the directory.
+///   older files and the directory. Periodic checkpoints also roll a live
+///   file written for a day, so a long session's text ages out.
 ///
 /// Non-blocking under a slow/full disk (EVT-3): `append` never touches the disk
 /// on the caller thread, and a bounded in-flight cap drops rather than growing
@@ -47,6 +48,8 @@ final class EventLog {
     private var historyInitialized = false
     private var historyLockFD: Int32 = -1
     private var checkedInheritedCurrentFile = false
+    /// When this launch began writing the current file (open or rotation).
+    private var currentFileStartedAt: Date?
     private var writerLockError: Int32?
     private var retentionFailure: String?
     private var reportedRetentionDegraded = false
@@ -311,7 +314,7 @@ final class EventLog {
         if analyticsEnabled, sampleProvider != nil, now() >= nextSampleAt {
             sampleNow()
         } else {
-            if now() >= nextPruneAt { pruneHistory() }
+            if now() >= nextPruneAt { reconcileAtCheckpoint() }
             scheduleSampling()
         }
     }
@@ -321,10 +324,26 @@ final class EventLog {
         flushTitles(expiredOnly: true)
         reportDropsIfNeeded()
         if recordingEnabled, analyticsEnabled, let event = sampleProvider?() { writeAssigningSeq(event) }
-        pruneHistory()
+        reconcileAtCheckpoint()
         nextSampleAt = now().addingTimeInterval(600)
         scheduleSampling()
     }
+
+    /// Periodic checkpoints (health sample, daily deadline) also roll a live
+    /// file that has been written for a day. Current-file protection would
+    /// otherwise keep a long session's sent text past the retention age; as
+    /// a rolled generation it ages out by its last write, like any other.
+    /// rotate() ends with the reconciliation itself.
+    private func reconcileAtCheckpoint() {
+        if recordingEnabled, let fileHandle, let started = currentFileStartedAt,
+           now().timeIntervalSince(started) >= Self.liveFileRollAge,
+           ((try? fileHandle.offset()) ?? 0) > 0, rotate() {
+            return
+        }
+        pruneHistory()
+    }
+
+    static let liveFileRollAge: TimeInterval = 86_400
 
     // MARK: - Queue-confined writing
 
@@ -513,21 +532,40 @@ final class EventLog {
             checkedInheritedCurrentFile = true
             rollAsideInheritedCurrentFile()
         }
-        // O_CLOEXEC is atomic with open: a concurrent PTY fork must never
-        // inherit this descriptor and keep a dead writer's SH lock alive.
-        let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, Self.privateFileMode)
-        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
-        // The create mode covers new files only. A file this open reused
-        // (an inherited path that could not be rolled aside) may be 0644.
-        Self.tightenOpenFile(fd)
-        let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        let lockError = acquireWriterLock(fd)
-        writerLockError = lockError == 0 ? nil : lockError
-        // Lock failures affect retention coordination, never event delivery.
-        // Busy is transient; unavailable locking gets an explicit boundary.
-        do { try fh.seekToEnd() }
-        catch { try? fh.close(); throw error }
-        fileHandle = fh
+        var attempt = 0
+        while true {
+            attempt += 1
+            // O_CLOEXEC is atomic with open: a concurrent PTY fork must never
+            // inherit this descriptor and keep a dead writer's SH lock alive.
+            let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, Self.privateFileMode)
+            guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+            // The create mode covers new files only. A file this open reused
+            // (an inherited path that could not be rolled aside) may be 0644.
+            Self.tightenOpenFile(fd)
+            let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            let lockError = acquireWriterLock(fd)
+            writerLockError = lockError == 0 ? nil : lockError
+            // Another writer's pruner may have unlinked a reused file between
+            // open and lock. Never append to an orphan: reopen once.
+            if attempt == 1, !Self.pathNamesOpenFile(url.path, fd) {
+                try? fh.close()
+                continue
+            }
+            // Lock failures affect retention coordination, never event delivery.
+            // Busy is transient; unavailable locking gets an explicit boundary.
+            do { try fh.seekToEnd() }
+            catch { try? fh.close(); throw error }
+            fileHandle = fh
+            if currentFileStartedAt == nil { currentFileStartedAt = now() }
+            return
+        }
+    }
+
+    /// True when `path` still names the inode open on `fd`.
+    private static func pathNamesOpenFile(_ path: String, _ fd: Int32) -> Bool {
+        var opened = stat(), named = stat()
+        guard fstat(fd, &opened) == 0, lstat(path, &named) == 0 else { return false }
+        return opened.st_dev == named.st_dev && opened.st_ino == named.st_ino
     }
 
     // MARK: - Rotation (EVT-4)
@@ -539,7 +577,8 @@ final class EventLog {
         rotate()
     }
 
-    private func rotate() {
+    @discardableResult
+    private func rotate() -> Bool {
         let rolled = EventLogLayout.rolledURL(for: url)
         // Keep the old file's shared liveness lock until the rename completes.
         let previousHandle = fileHandle
@@ -548,9 +587,10 @@ final class EventLog {
             // If the roll failed, keep appending to the current file rather than
             // losing events; reopen and carry on (cap will retrigger).
             fileHandle = previousHandle
-            return
+            return false
         }
         try? previousHandle?.close()
+        currentFileStartedAt = nil
         // Fresh current file starts with a rotation marker so a consumer that
         // re-reads from the top after detecting the shrink lands on the boundary.
         let marker = EventEnvelope(
@@ -561,6 +601,7 @@ final class EventLog {
         )
         writeAssigningSeq(marker, rotate: false)
         pruneHistory()
+        return true
     }
 
     /// Shifts this path's numbered generations up by one, then renames the
@@ -569,6 +610,9 @@ final class EventLog {
     /// contract, and newest is always `.1`. False when the final rename fails.
     private func rollCurrentPathToFirstGeneration() -> Bool {
         let fm = FileManager.default
+        // Without a current file there is nothing to roll; never renumber.
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return false }
         // historyFiles enumerates exactly this directory. Match filenames,
         // because Foundation can return /private/var aliases for a /var URL.
         let generationPrefix = url.lastPathComponent + "."
@@ -598,10 +642,10 @@ final class EventLog {
     private func rollAsideInheritedCurrentFile() {
         var info = stat()
         guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size > 0 else { return }
-        let fd = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        let fd = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else { return }
         defer { Darwin.close(fd) }
-        guard acquirePruneLock(fd) == 0 else { return }
+        guard acquirePruneLock(fd) == 0, Self.pathNamesOpenFile(url.path, fd) else { return }
         _ = rollCurrentPathToFirstGeneration()
     }
 
@@ -788,7 +832,9 @@ final class EventLog {
             let fd = Darwin.open(item.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
             guard fd >= 0 else { return false }
             defer { Darwin.close(fd) }
-            guard acquirePruneLock(fd) == 0 else { return false }
+            // Generation shifts rename without the history lock. Unlink only
+            // the file this lock covers, not one just renamed onto its path.
+            guard acquirePruneLock(fd) == 0, Self.pathNamesOpenFile(item.path, fd) else { return false }
             do { try fm.removeItem(at: item); return true } catch { return false }
         }
         if !ownInstanceOnly {

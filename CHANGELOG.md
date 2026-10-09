@@ -8,7 +8,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ### Changed
 
-- **The event log keeps 14 days of history by default.** It used to keep every launch's file forever. Each build now keeps its event history for 14 days and within 64 MiB, deleting the oldest files first, and never deletes the file the running c11 is writing. Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days (`c11.activityHistory.retentionDays`). Pruning runs at launch and at least once a day, including with recording off. `c11 events tail --instance` notes on stderr when that instance's log is gone. ([#627](https://github.com/Stage-11-Agentics/c11/pull/627), PR_C11_348)
+- **The event log keeps 14 days of history by default.** It used to keep every launch's file forever. Each build now deletes event history 14 days after its last write, and keeps its total within 64 MiB, oldest first. The file the running c11 is writing is never deleted; it rolls daily so a long session's text ages out too. Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days (`c11.activityHistory.retentionDays`). Pruning runs at launch and at least once a day while c11 runs, including with recording off. A one-shot `c11 events tail --instance` notes on stderr when that instance's log is gone. ([#627](https://github.com/Stage-11-Agentics/c11/pull/627), PR_C11_348)
 
 ### Fixed
 

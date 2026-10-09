@@ -608,11 +608,13 @@
     },
     "bootstrap_graphs_excluded": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Marked bootstrap workspace graphs excluded unless retained installed graph context conflicts; conflicts raise bootstrap_classification_conflict and preserve the connected graph."
     },
     "bootstrap_events_excluded": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Known graph events excluded within the observed span. Process evidence remains included even when it carries classified graph IDs."
     },
     "bootstrap_event_types_excluded": {
       "type": "object",

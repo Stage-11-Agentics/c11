@@ -106,7 +106,7 @@
     },
     "analysis_counts": {
       "type": "object",
-      "description": "Aggregate replay and snapshot diagnostics; copied candidate token volumes are measured before choosing the unique supported delta. No transcript identities are emitted.",
+      "description": "Aggregate diagnostics without transcript identities. Unproven first-cumulative records and cumulative input-plus-output tokens count only surviving globally deduplicated Codex records.",
       "additionalProperties": {
         "type": "integer"
       }

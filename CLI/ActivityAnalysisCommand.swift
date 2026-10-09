@@ -473,11 +473,6 @@ enum ActivityAnalysisCommand {
                 // only compact in-window usage identities survive this callback.
                 if let timestamp, let since = options.since, timestamp < since { return }
                 if let timestamp, let until, timestamp > until { return }
-                if !hasPredecessor && total != last {
-                    analysis["codex_first_cumulative_without_matching_last_records", default: 0] += 1
-                    analysis["codex_first_cumulative_without_matching_last_tokens", default: 0] += total.value(0) + total.value(2)
-                    fileGaps.insert("codex_first_cumulative_baseline_unproven")
-                }
                 let input = delta[0], cached = delta[1]
                 if cached > input { fileGaps.insert("codex_cached_tokens_exceed_input") }
                 var row = UsageRow(session: session, harness: "codex", model: model, timestamp: timestamp,
@@ -520,7 +515,16 @@ enum ActivityAnalysisCommand {
             gaps.formUnion(fileGaps)
         }
         var uniqueVolume = Tokens()
-        for candidate in codex.values { uniqueVolume.add(candidate.row.tokens) }
+        for (identity, candidate) in codex {
+            uniqueVolume.add(candidate.row.tokens)
+            // A truncated copy is not an unproven baseline when the selected
+            // exact native identity retains an observed predecessor elsewhere.
+            if !candidate.hasPredecessor && identity.total != identity.last {
+                analysis["codex_first_cumulative_without_matching_last_records", default: 0] += 1
+                analysis["codex_first_cumulative_without_matching_last_tokens", default: 0] += identity.total.value(0) + identity.total.value(2)
+                gaps.insert("codex_first_cumulative_baseline_unproven")
+            }
+        }
         analysis["codex_duplicate_candidate_records_removed"] = candidateVolume.calls - uniqueVolume.calls
         analysis["codex_duplicate_candidate_input_tokens_removed"] = candidateVolume.input - uniqueVolume.input
         analysis["codex_duplicate_candidate_cache_read_tokens_removed"] = candidateVolume.read - uniqueVolume.read
@@ -713,9 +717,65 @@ enum ActivityAnalysisCommand {
             default: detail = .none
             }
         }
+        // Only known graph events can enroll or be excluded as bootstrap data.
+        // Process evidence remains visible even if its envelope has graph refs.
+        var isGraphEvent: Bool {
+            switch type {
+            case "workspace.created", "workspace.renamed", "workspace.closed", "workspace.selected",
+                 "workspace.switch_blocked", "workspace.reordered", "panel.created", "panel.closed",
+                 "metadata.changed", "liveness.derived", "waiting.entered", "waiting.left", "lifecycle.changed",
+                 "flag.raised", "flag.lowered", "flag.suppressed", "flag.unsuppressed",
+                 "mailbox.accepted", "mailbox.delivered", "panel.input_sent",
+                 "conversation.resume.mode", "conversation.resume.decision", "ask.opened", "ask.closed": return true
+            default: return false
+            }
+        }
         var title: String? { if case .title(let value) = detail { return value }; return nil }
         var explicitTitle: String? { if case .explicitTitle(let value) = detail { return value }; return nil }
         var kind: String? { if case .kind(let value) = detail { return value }; return nil }
+    }
+    private static func bootstrapClassification(_ events: [Event]) -> (workspaces: Set<String>, panels: Set<String>, conflict: Bool) {
+        var workspaceMarkers: [String: Int64] = [:], panelMarkers: [String: Int64] = [:]
+        for event in events where event.isGraphEvent && event.transient {
+            if let w = event.workspace { workspaceMarkers[w] = min(workspaceMarkers[w] ?? event.seq, event.seq) }
+            if let p = event.panel { panelMarkers[p] = min(panelMarkers[p] ?? event.seq, event.seq) }
+        }
+        var workspacePanels: [String: Set<String>] = [:], panelWorkspaces: [String: Set<String>] = [:]
+        for event in events where event.isGraphEvent {
+            if let w = event.workspace, let marker = workspaceMarkers[w], let p = event.panel {
+                panelMarkers[p] = min(panelMarkers[p] ?? marker, marker)
+                workspacePanels[w, default: []].insert(p)
+                panelWorkspaces[p, default: []].insert(w)
+            }
+        }
+        var workspaceConflicts = Set<String>(), panelConflicts = Set<String>()
+        for event in events where event.isGraphEvent && !event.transient {
+            if let w = event.workspace, let marker = workspaceMarkers[w], event.seq > marker {
+                workspaceConflicts.insert(w)
+            }
+            if let p = event.panel, let marker = panelMarkers[p],
+               event.seq > marker || event.workspace.map({ workspaceMarkers[$0] == nil }) == true {
+                panelConflicts.insert(p)
+            }
+        }
+        // Preserve the entire connected candidate graph on conflicting context:
+        // excluding its creation while keeping later installed edges would also
+        // misstate load and lifetimes. Late markers still classify earlier edges.
+        var conflicts = workspaceConflicts.map { (workspace: true, id: $0) }
+            + panelConflicts.map { (workspace: false, id: $0) }
+        var conflictedWorkspaces = Set<String>(), conflictedPanels = Set<String>(), index = 0
+        while index < conflicts.count {
+            let item = conflicts[index]; index += 1
+            if item.workspace {
+                guard conflictedWorkspaces.insert(item.id).inserted else { continue }
+                for p in workspacePanels[item.id] ?? [] { conflicts.append((false, p)) }
+            } else {
+                guard conflictedPanels.insert(item.id).inserted else { continue }
+                for w in panelWorkspaces[item.id] ?? [] { conflicts.append((true, w)) }
+            }
+        }
+        return (Set(workspaceMarkers.keys).subtracting(conflictedWorkspaces),
+                Set(panelMarkers.keys).subtracting(conflictedPanels), !conflicts.isEmpty)
     }
     private static func reportResult(_ options: Options, gaps: inout Set<String>) throws -> Object {
         let directory = EventLogLayout.eventsDirectoryURL(state: options.state)
@@ -826,14 +886,9 @@ enum ActivityAnalysisCommand {
             starts.append(start); ends.append(end)
             // Classify from the complete retained sequence before replay. A later
             // marker or rotated-away workspace.created must not create false load.
-            var bootstrapWorkspaces = Set<String>(), bootstrapPanels = Set<String>()
-            for event in ordered where event.transient {
-                if let workspace = event.workspace { bootstrapWorkspaces.insert(workspace) }
-            }
-            for event in ordered where event.transient || event.workspace.map(bootstrapWorkspaces.contains) == true {
-                if let panel = event.panel { bootstrapPanels.insert(panel) }
-            }
-            bootstrapGraphs += bootstrapWorkspaces.count
+            let bootstrap = bootstrapClassification(ordered)
+            if bootstrap.conflict { gaps.insert("bootstrap_classification_conflict") }
+            bootstrapGraphs += bootstrap.workspaces.count
             if first.seq != 1 { gaps.insert("event_history_truncated"); replayIncomplete = true }
             if first.type != "log.opened" { gaps.insert("instance_start_missing"); replayIncomplete = true }
             var open = Set<String>(), working = Set<String>(), births: [String: Date] = [:]
@@ -895,8 +950,8 @@ enum ActivityAnalysisCommand {
                 previous = now
                 let inRange = event.ts >= start && event.ts <= end
                 if inRange { rawEvents += 1 }
-                let isBootstrap = event.workspace.map(bootstrapWorkspaces.contains) == true
-                    || event.panel.map(bootstrapPanels.contains) == true
+                let isBootstrap = event.isGraphEvent && (event.workspace.map(bootstrap.workspaces.contains) == true
+                    || event.panel.map(bootstrap.panels.contains) == true)
                 if isBootstrap {
                     if inRange { bootstrapEvents += 1; bootstrapEventTypes[event.type, default: 0] += 1 }
                     // Sequence, time and global presence integration already advanced.
@@ -904,7 +959,7 @@ enum ActivityAnalysisCommand {
                     continue
                 }
                 let panel = event.panel
-                if let w = event.workspace {
+                if event.isGraphEvent, let w = event.workspace {
                     if let panel { panelWorkspaces[panel] = w }
                     var ws = workspaceRow(w)
                     if let title = event.title { ws["name"] = title }
@@ -1021,7 +1076,7 @@ enum ActivityAnalysisCommand {
                 "panels_created": starts.isEmpty ? null : created as Any,
                 "raw_events_observed": rawEvents, "bootstrap_graphs_excluded": bootstrapGraphs,
                 "bootstrap_events_excluded": bootstrapEvents, "bootstrap_event_types_excluded": bootstrapEventTypes,
-                "bootstrap_scope": "Pre-install bootstrap workspace graphs marked by strict payload transient=true in retained selected-instance history. Graph counts include replay baselines; event counts cover the observed span. Installed graph summaries exclude them; process evidence, raw history and host transcript tokens remain included.",
+                "bootstrap_scope": "Pre-install bootstrap workspace graphs marked by strict payload transient=true in retained selected-instance history, unless installed graph context conflicts. Graph counts include replay baselines; event counts cover only known graph event types in the observed span. Process evidence, raw history and host transcript tokens remain included.",
                 "observed_peak_open_per_instance": peakOpen, "observed_peak_working_per_instance": peakWorking,
                 "kinds_created": starts.isEmpty ? null : kindsCreated as Any, "observed_peak_open_kinds": peakKinds, "observed_peak_open_by_kind": peakByKind,
                 "peak_open_kinds": starts.isEmpty || replayIncomplete ? null : peakKinds as Any,

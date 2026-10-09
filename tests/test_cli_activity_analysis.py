@@ -170,22 +170,23 @@ class ActivityCLI(unittest.TestCase):
         else:
             add(0, 'workspace.created', 'bootstrap', title='Transient graph', **({} if late_marker else {'transient': True}))
         add(0, 'panel.created', 'bootstrap', 'bootstrap-panel', kind='browser', **({} if late_marker else {'transient': True}))
-        add(0, 'liveness.derived', 'bootstrap', 'bootstrap-panel', state='working')
-        add(0, 'workspace.selected', 'bootstrap')
+        add(0, 'liveness.derived', 'bootstrap', 'bootstrap-panel', state='working', **({} if late_marker else {'transient': True}))
+        add(0, 'workspace.selected', 'bootstrap', **({} if late_marker else {'transient': True}))
         add(0, 'workspace.created', 'installed', title='Installed graph')
         add(0, 'panel.created', 'installed', 'installed-panel', kind='terminal')
         add(0, 'liveness.derived', 'installed', 'installed-panel', state='working')
         add(0, 'workspace.selected', 'installed')
         for w, panel in [('bootstrap', 'bootstrap-panel'), ('installed', 'installed-panel')]:
-            add(10, 'waiting.entered', w, panel)
-            add(10, 'mailbox.accepted', w, **{'from': w})
-            add(10, 'mailbox.delivered', w, panel)
-            add(10, 'flag.raised', w, panel)
+            marker = {'transient': True} if w == 'bootstrap' and not late_marker else {}
+            add(10, 'waiting.entered', w, panel, **marker)
+            add(10, 'mailbox.accepted', w, **{'from': w}, **marker)
+            add(10, 'mailbox.delivered', w, panel, **marker)
+            add(10, 'flag.raised', w, panel, **marker)
         if late_marker:
             add(20, 'workspace.renamed', 'bootstrap', title='Transient graph', transient=True)
         add(30, 'hang.precursor', cause='main-thread', durations_ms=[10], count=1)
         add(60, 'panel.closed', 'installed', 'installed-panel')
-        add(60, 'panel.closed', 'bootstrap', 'bootstrap-panel')
+        add(60, 'panel.closed', 'bootstrap', 'bootstrap-panel', transient=True)
         self.write(self.state / 'events/events-synthetic.ndjson', rows)
         return rows
 
@@ -258,6 +259,59 @@ class ActivityCLI(unittest.TestCase):
         result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
         self.assertEqual(result['bootstrap_graphs_excluded'], 0)
         self.assertEqual(result['panels_created'], 2)
+
+    def test_report_bootstrap_conflicting_installed_context_preserves_graph(self):
+        for conflict in ['workspace.selected', 'panel.created']:
+            with self.subTest(conflict=conflict):
+                rows = self.bootstrap_events()
+                rows.insert(-3, {'v': 2, 'instance': 'synthetic', 'ts': '2026-01-02T00:20:00Z',
+                    'type': conflict, 'workspace': 'bootstrap' if conflict == 'workspace.selected' else 'installed',
+                    'panel': None if conflict == 'workspace.selected' else 'bootstrap-panel',
+                    'payload': {'kind': 'browser'}})
+                for seq, row in enumerate(rows, 1):
+                    row['seq'] = seq
+                self.write(self.state / 'events/events-synthetic.ndjson', rows)
+                result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+                self.assertIn('bootstrap_classification_conflict', result['coverage_gaps'])
+                self.assertEqual(result['bootstrap_graphs_excluded'], 0)
+                self.assertEqual(result['bootstrap_events_excluded'], 0)
+                self.assertEqual(result['peak_open_per_instance'], 2)
+                self.assertEqual(result['mailbox_accepted'], 2)
+                self.assertEqual({w['id'] for w in result['workspaces']}, {'bootstrap', 'installed'})
+
+    def test_report_bootstrap_ids_do_not_exclude_process_evidence(self):
+        rows = self.bootstrap_events()
+        additions = [
+            (20, 'app.deactivated', {}),
+            (25, 'instance.sample', {'rss_mb': 64}),
+            (30, 'hang.precursor', {'cause': 'main-thread', 'durations_ms': [20], 'count': 1}),
+            (40, 'log.retention', {'state': 'degraded'}),
+            (50, 'app.activated', {})]
+        for minute, event_type, payload in additions:
+            rows.append({'v': 2, 'instance': 'synthetic', 'ts': '2026-01-02T00:%02d:00Z' % minute,
+                'type': event_type, 'workspace': 'bootstrap', 'panel': 'bootstrap-panel',
+                'payload': dict(payload, transient=True)})
+        rows.sort(key=lambda row: row['ts'])
+        for seq, row in enumerate(rows, 1):
+            row['seq'] = seq
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['bootstrap_events_excluded'], 9)
+        self.assertEqual(result['hang_precursors'], 2)
+        self.assertAlmostEqual(result['foreground_hours'], 0.5)
+        self.assertIn('retention_reconciliation_degraded', result['coverage_gaps'])
+        self.assertNotIn('bootstrap_classification_conflict', result['coverage_gaps'])
+        self.assertEqual([w['id'] for w in result['workspaces']], ['installed'])
+        self.assertEqual(sum(d['events'] for d in result['daily']), len(rows) - 9)
+        # A process event's marker cannot enroll an otherwise installed graph.
+        for row in rows:
+            if row['type'] not in {'app.deactivated', 'app.activated', 'instance.sample', 'hang.precursor', 'log.retention'}:
+                row['payload'].pop('transient', None)
+        self.write(self.state / 'events/events-synthetic.ndjson', rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['bootstrap_graphs_excluded'], 0)
+        self.assertEqual(result['bootstrap_events_excluded'], 0)
+        self.assertEqual(result['peak_open_per_instance'], 2)
 
     def test_report_missing_presence_and_sequence_gap_are_unknown(self):
         self.events(gap=True, presence=False)
@@ -860,6 +914,18 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_tokens'], 1100)
         self.assertIn('codex_first_cumulative_baseline_unproven', result['coverage_gaps'])
 
+    def test_codex_copied_unproven_first_sample_is_diagnosed_once(self):
+        row = self.codex_row('2026-01-02T00:00:00Z', 1000, 800, 100,
+            {'input_tokens': 10, 'cached_input_tokens': 5, 'output_tokens': 2})
+        for name in ['parent', 'fork']:
+            self.write(self.codex / (name + '.jsonl'), [
+                {'type': 'session_meta', 'payload': {'id': name}}, row])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_records'], 1)
+        self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_tokens'], 1100)
+        self.assertIn('codex_first_cumulative_baseline_unproven', result['coverage_gaps'])
+
     def test_report_compact_events_preserve_summaries_and_discard_irrelevant_text(self):
         self.summary_events(missing_duration=True)
         path = self.state / 'events/events-synthetic.ndjson'
@@ -978,6 +1044,9 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['totals']['cache_read_tokens'], 40)
         self.assertEqual(result['totals']['output_tokens'], 20)
         self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_records'], 0)
+        self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_tokens'], 0)
+        self.assertNotIn('codex_first_cumulative_baseline_unproven', result['coverage_gaps'])
 
     def test_codex_global_copy_key_includes_full_last_usage_tuple(self):
         first = self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)

@@ -89,7 +89,9 @@ inherited metadata, first cumulative samples without a matching last request,
 and copied candidate records/tokens removed; candidate token
 volume includes truncated first cumulative snapshots before predecessor selection.
 First-sample diagnostic tokens are cumulative input plus output (cached input
-and reasoning are subsets), before global copy selection. They flag an unproven
+and reasoning are subsets), counted only on surviving globally deduplicated
+records. A copy whose selected native identity retains a predecessor does not
+raise this diagnostic. They flag an unproven
 initial baseline without changing the documented first-cumulative counting rule.
 These diagnostics contain no raw transcript identity. Missing transcript timestamps are included with an explicit
 gap because their time window cannot be proven. Malformed candidate lines,
@@ -117,7 +119,12 @@ Report excludes pre-install bootstrap workspace graphs explicitly marked by
 strict boolean `payload.transient: true` from installed-panel load, lifetimes,
 workspace dwell/waits, kinds, topics, mail, flags and daily event rhythm. It
 precollects marked workspace/panel IDs across retained history, so a later marker
-or a rotated-away creation edge still classifies the graph. Sequence and time
+or a rotated-away creation edge still classifies the graph. An unmarked graph
+edge after its first marker, or a marked panel appearing in an unmarked workspace,
+raises `bootstrap_classification_conflict`; the connected candidate graph remains
+included. Earlier unmarked edges can still be classified by a later marker.
+Only known graph event types enroll or exclude IDs; process events carrying those
+same IDs remain included and cannot enroll a graph. Sequence and time
 continuity consume every event; process-wide presence, samples and hangs remain
 included, as do all bounded host transcript tokens. No closure is invented and
 the raw event files are unchanged. `bootstrap_graphs_excluded` counts classified

@@ -250,7 +250,7 @@ function lineTops(root,points,sc) {
   if(!root||!points?.length)return [];
   const cached=root._lineTops;
   if(cached&&cached.epoch===lineMetricEpoch&&cached.points===points)return cached.tops;
-  const tops=new Array(points.length).fill(null);
+  const tops=new Array(points.length).fill(null),marks=new Array(points.length).fill(null);
   const walker=lineTree(root);let n,offset=0,index=0;
   const range=document.createRange();
   const box=sc.getBoundingClientRect(),base=sc.scrollTop-box.top;
@@ -258,18 +258,21 @@ function lineTops(root,points,sc) {
   while((n=walker.nextNode())&&index<points.length) {
     if(n.nodeType===Node.ELEMENT_NODE) {
       const at=[...n.parentNode.childNodes].indexOf(n);
-      while(index<points.length&&points[index]<=offset) {range.setStart(n.parentNode,at);range.collapse(true);tops[index++]=measure();}
+      while(index<points.length&&points[index]<=offset) {
+        range.setStart(n.parentNode,at);range.collapse(true);
+        tops[index]=measure();marks[index]={node:n,offset:0};index++;
+      }
       offset++;continue;
     }
     const end=offset+n.data.length;
     while(index<points.length&&points[index]<end) {
       const local=points[index]-offset,stop=Math.min(local+1,n.data.length);
       if(stop>local)range.setStart(n,local),range.setEnd(n,stop);else range.setStart(n,local),range.collapse(true);
-      tops[index++]=measure();
+      tops[index]=measure();marks[index]={node:n,offset:local};index++;
     }
     offset=end;
   }
-  root._lineTops={epoch:lineMetricEpoch,points,tops};
+  root._lineTops={epoch:lineMetricEpoch,points,tops,marks};
   return tops;
 }
 function lineAtOrBefore(root,points,base,scrollY,sc) {
@@ -295,6 +298,19 @@ function lineAtY(block,scrollY,sc) {
     return +block.dataset.ls;
   }
   return lineAtOrBefore(block,block._linePoints,block._lineBase||+block.dataset.ls,scrollY,sc)??+block.dataset.ls;
+}
+function lineMark(block,line,sc) {
+  if(line===null||line===undefined)return null;
+  const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
+  const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
+  if(code) {
+    const root=$('pre code',code);lineTops(root,code._linePoints,sc);
+    return root._lineTops?.marks?.[line-code._sourceLineStart]?.node||null;
+  }
+  const index=line-(block._lineBase||+block.dataset.ls);
+  if(index<0||index>=(block._linePoints?.length||0))return null;
+  lineTops(block,block._linePoints,sc);
+  return block._lineTops?.marks?.[index]?.node||null;
 }
 function prepareBlock(node,tokens) {
   const headingTokens=tokens.filter(t=>t.type==='heading_open');
@@ -756,16 +772,20 @@ function estimateLineOrigin(line,block,sc) {
   if(span<=1)return origin;
   return origin+Math.max(0,top+(block.offsetHeight||1)-origin)*index/(span-1);
 }
-function firstTextAt(block,y) {
+function firstTextAt(block,y,start=null) {
   // A character anchor holds a real rendered text row through metric changes.
-  const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest(lineMapSkip)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
+  // start is the cached line's node, so a scroll frame begins there instead of walking the fence.
+  const accept=n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim()&&!n.parentElement?.closest(lineMapSkip);
+  const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT,{acceptNode:n=>accept(n)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
   let n;
-  while((n=walker.nextNode())) {
+  if(start&&block.contains(start)) {walker.currentNode=start;n=accept(start)?start:walker.nextNode();}
+  else n=walker.nextNode();
+  while(n) {
     const range=document.createRange();range.selectNodeContents(n);const r=range.getBoundingClientRect();
-    if(!r.height||r.bottom<y)continue;
+    if(!r.height||r.bottom<y){n=walker.nextNode();continue;}
     let lo=0,hi=n.length;
     while(lo<hi) {const mid=(lo+hi)>>1;range.setStart(n,mid);range.setEnd(n,Math.min(mid+1,n.length));if(range.getBoundingClientRect().bottom<=y)lo=mid+1;else hi=mid;}
-    if(lo>=n.length)continue;
+    if(lo>=n.length){n=walker.nextNode();continue;}
     range.setStart(n,lo);range.setEnd(n,Math.min(lo+1,n.length));
     const path=[];for(let x=n;x!==block;x=x.parentNode)path.unshift([...x.parentNode.childNodes].indexOf(x));
     return {node:n,path,offset:lo,dy:range.getBoundingClientRect().top-y,text:n.textContent.slice(lo,lo+32)};
@@ -779,8 +799,9 @@ function capture(withText=true) {
     return row?{line:+row.dataset.line,dy:topIn(row,sc)-sc.scrollTop,lineOffset:sc.scrollTop-topIn(row,sc),source:true}:null;
   }
   const b=S.blocks.find(x=>topIn(x)+x.offsetHeight>sc.scrollTop)||S.blocks.at(-1);if(!b)return null;
-  const text=withText?firstTextAt(b,sc.getBoundingClientRect().top):null;
-  const line=lineAtY(b,sc.scrollTop,sc)??lineForText(b,text)??+b.dataset.ls,origin=lineOrigin(line,b,sc);
+  const lineGuess=lineAtY(b,sc.scrollTop,sc);
+  const text=withText?firstTextAt(b,sc.getBoundingClientRect().top,lineMark(b,lineGuess,sc)):null;
+  const line=lineGuess??lineForText(b,text)??+b.dataset.ls,origin=lineOrigin(line,b,sc);
   return {block:b,signature:b._signature,occurrence:S.blocks.filter(x=>x._signature===b._signature).indexOf(b),
     line,lineOffset:sc.scrollTop-origin,dy:topIn(b)-sc.scrollTop,frac:clamp((sc.scrollTop-topIn(b))/(b.offsetHeight||1),0,1),text};
 }
@@ -1026,8 +1047,8 @@ function visible() {
     diagram_open:S.diagram,selection:selection?selection.slice(0,120):null};
 }
 let stateFrame=0, stableAnchor=null;
-// Scroll path must not walk the fence.
-function publish() {if(!stateFrame)stateFrame=requestAnimationFrame(()=>{stateFrame=0;stableAnchor=capture(false);updateOutlineActive();updateOutlineSummary();post({type:'state',state:visible()});});}
+// The scroll frame stores the character from the cached line. It must not walk the fence.
+function publish() {if(!stateFrame)stateFrame=requestAnimationFrame(()=>{stateFrame=0;stableAnchor=capture();updateOutlineActive();updateOutlineSummary();post({type:'state',state:visible()});});}
 function enqueue(task,supersedes=true) {
   const generation=supersedes?++S.generation:null;
   const run=async()=>{if(supersedes&&generation!==S.generation)return visible();try {return await task(generation??S.generation);}catch(e){error('render_failed',e);return visible();}};
@@ -1323,11 +1344,10 @@ document.addEventListener('keydown',e=>{
 });
 for(const sc of [scroller,srcScroller])sc.addEventListener('scroll',publish,{passive:true});
 document.addEventListener('selectionchange',publish);
-// Preserve the last settled anchor when an image or pane resize changes layout.
-// Scroll frames store a line only, so take the character anchor once before layout.
-const anchorBeforeLayout=()=>stableAnchor?.text?stableAnchor:capture();
-new ResizeObserver(()=>{const a=anchorBeforeLayout();layoutAll();restore(a);publish();}).observe(surface);
-article.addEventListener('load',()=>{const a=anchorBeforeLayout();layoutAll();restore(a);publish();},true);
+// These callbacks run after the image or the pane has already changed geometry.
+// Restore the character the last scroll frame stored, before that change.
+new ResizeObserver(()=>{const a=stableAnchor;layoutAll();restore(a);publish();}).observe(surface);
+article.addEventListener('load',()=>{const a=stableAnchor;layoutAll();restore(a);publish();},true);
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(S.theme==='system'&&!S.os)setSettings({});});
 window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,setCorpus,setCorpusJSON,openCorpusPalette,closeCorpusPalette,
   corpusSnapshot:()=>S.corpus,corpusBacklinks:()=>({path:S.corpus?.current||S.file,heading:currentHeading(),links:(S.corpus?.links||[]).filter(link=>link.target===(S.corpus?.current||S.file))}),

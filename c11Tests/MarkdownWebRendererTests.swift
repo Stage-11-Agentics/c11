@@ -119,11 +119,10 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertEqual(secure?["executed"] as? Bool, false)
         XCTAssertEqual(secure?["remote"] as? Int, 0)
         XCTAssertGreaterThan(secure?["svg"] as? Int ?? 0, 0, "Mermaid must render offline through the custom scheme")
-        let imageLoaded: Any = try await withCheckedThrowingContinuation { continuation in
-            renderer.webView.callAsyncJavaScript(
-            "const img=document.querySelector('img[src^=\"c11md-asset:\"]'); if(!img)return false; await img.decode(); return img.naturalWidth===1;",
-            arguments: [:], in: nil, in: .page) { continuation.resume(with: $0) }
-        }
+        let imageLoaded = try await evaluateAsync(
+            renderer,
+            "const img=document.querySelector('img[src^=\"c11md-asset:\"]'); if(!img)return false; await img.decode(); return img.naturalWidth===1;"
+        )
         XCTAssertEqual(imageLoaded as? Bool, true, "Scoped image bytes must load through WebKit")
         _ = try await call(renderer, "scrollToHeading", arguments: ["Section 40"])
         let before = try await call(renderer, "visible") as? [String: Any]
@@ -173,7 +172,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         defer { window.contentView = nil; window.close() }
         await rendered(renderer, revision: 1)
 
-        let firstNavigation = await panel.navigate(to: target, fragment: "details", origin: .palette)
+        let firstNavigation = try await within("navigate") { await panel.navigate(to: target, fragment: "details", origin: .palette) }
         XCTAssertEqual(firstNavigation, .navigated)
         await rendered(renderer, revision: 2)
         XCTAssertEqual(panel.id, panelID)
@@ -185,12 +184,12 @@ final class MarkdownWebRendererTests: XCTestCase {
         let targetState = try XCTUnwrap(targetStateValue as? [String: Any])
         XCTAssertEqual((targetState["heading"] as? [String: Any])?["text"] as? String, "Details")
 
-        let backOutcome = await panel.navigateBack()
+        let backOutcome = try await within("navigateBack") { await panel.navigateBack() }
         XCTAssertEqual(backOutcome, .navigated)
         await rendered(renderer, revision: 3)
         XCTAssertEqual(panel.filePath, source.path)
         XCTAssertTrue(panel.canNavigateForward)
-        let forwardOutcome = await panel.navigateForward()
+        let forwardOutcome = try await within("navigateForward") { await panel.navigateForward() }
         XCTAssertEqual(forwardOutcome, .navigated)
         await rendered(renderer, revision: 4)
         XCTAssertEqual(panel.filePath, target.path)
@@ -198,7 +197,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertEqual(panel.workspaceId, workspaceID)
 
         let entriesBeforeRejection = panel.navigationHistory.entries.count
-        let rejectedNavigation = await panel.navigate(to: outside, fragment: nil, origin: .backlink)
+        let rejectedNavigation = try await within("navigate") { await panel.navigate(to: outside, fragment: nil, origin: .backlink) }
         XCTAssertEqual(rejectedNavigation, .outsideScope)
         XCTAssertEqual(panel.filePath, target.path)
         XCTAssertEqual(panel.navigationHistory.entries.count, entriesBeforeRejection)
@@ -217,7 +216,7 @@ final class MarkdownWebRendererTests: XCTestCase {
 
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
         defer { panel.close() }
-        let navigation = await panel.navigate(to: target, fragment: nil, origin: .agentCLI)
+        let navigation = try await within("navigate") { await panel.navigate(to: target, fragment: nil, origin: .agentCLI) }
         XCTAssertEqual(navigation, .navigated)
         XCTAssertEqual(panel.filePath, target.path)
         XCTAssertEqual(panel.content, "# Target\n")
@@ -305,7 +304,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         let tokenBeforeAnchorReport = panel.currentNavigationToken
         let anchorTask = try XCTUnwrap(renderer.routeLink("#bottom", modifiers: [:], position: MarkdownReadingPosition()))
         XCTAssertGreaterThan(panel.currentNavigationToken, tokenBeforeAnchorReport, "Page-applied anchors reserve their navigation generation synchronously")
-        await anchorTask.value
+        try await within("the page-applied anchor navigation") { await anchorTask.value }
         XCTAssertEqual(panel.navigationHistory.current?.target.fragment, "bottom")
 
         let released = try await evaluate(renderer, "(window.__releaseMarkdownSourceMode(), true)") as? Bool
@@ -334,7 +333,8 @@ final class MarkdownWebRendererTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let realFile = real.appendingPathComponent("notes.md")
         let linkedFile = linked.appendingPathComponent("notes.md")
-        try "# Notes\n\n## Details\n\nSymlink preview content.\n".write(to: realFile, atomically: true, encoding: .utf8)
+        try "# Notes\n\nSee [the details](#details).\n\n## Details\n\nSymlink preview content.\n"
+            .write(to: realFile, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: realFile)
 
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: linkedFile.path)
@@ -367,9 +367,29 @@ final class MarkdownWebRendererTests: XCTestCase {
             """#)
         XCTAssertEqual(installed as? Bool, true)
 
-        renderer.routePeek("#details", requestID: 0, rect: ["x": 12, "y": 12, "height": 16])
-        await fulfillment(of: [peekShown], timeout: 10)
-        let peekText = try await evaluate(renderer, "document.querySelector('#linkPeek .peek-content').textContent") as? String
+        // Hover the link the way the operator does. The page numbers the peek
+        // request with its current generation, so any earlier overlay change
+        // cannot make the native reply stale.
+        let hovered = try await evaluateAsync(renderer, #"""
+            const link = document.querySelector('#article a[href="#details"]');
+            if (!link) return false;
+            link.dispatchEvent(new PointerEvent('pointerover', {bubbles: true}));
+            return true;
+            """#)
+        XCTAssertEqual(hovered as? Bool, true, "The fixture must render its same-document link")
+        let shown = await XCTWaiter().fulfillment(of: [peekShown], timeout: 10)
+        guard shown == .completed else {
+            let preparation = try await within("the peek target preparation") {
+                await panel.prepareDocumentLink(URL(fileURLWithPath: linkedFile.path))
+            }
+            return XCTFail("""
+                The symlinked same-document preview never reached the page. \
+                rendererCurrent=\(panel.renderer === renderer) ready=\(renderer.isReadyForQueries) \
+                panelToken=\(panel.currentNavigationToken) rendererToken=\(renderer.navigationToken) \
+                preparation=\(preparation)
+                """)
+        }
+        let peekText = try await evaluate(renderer, "document.querySelector('#linkPeek .peek-content')?.textContent ?? null") as? String
         XCTAssertTrue(peekText?.contains("Symlink preview content.") == true, "The same-document fallback must use resolved path identity")
     }
 
@@ -408,9 +428,9 @@ final class MarkdownWebRendererTests: XCTestCase {
             repository.resolvingSymlinksInPath().standardizedFileURL.path
         )
 
-        let away = await openedPanel.navigate(to: outside, fragment: nil, origin: .agentCLI)
+        let away = try await within("navigate") { await openedPanel.navigate(to: outside, fragment: nil, origin: .agentCLI) }
         XCTAssertEqual(away, .navigated)
-        let back = await openedPanel.navigateBack()
+        let back = try await within("navigateBack") { await openedPanel.navigateBack() }
         XCTAssertEqual(back, .navigated, "Back must replay the document-link root under its captured repository scope")
         XCTAssertEqual(
             openedPanel.filePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path },
@@ -957,6 +977,8 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
         let client = sockets[0]
         let server = sockets[1]
+        setReceiveTimeout(client)
+        setReceiveTimeout(server)
         let serverTask = Task.detached {
             TerminalController.serveCommandLines(
                 socket: server,
@@ -986,7 +1008,7 @@ final class MarkdownWebRendererTests: XCTestCase {
         let written = requestBytes.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
         XCTAssertEqual(written, requestBytes.count)
 
-        let responseLine = await Task.detached { () -> String? in
+        let reader = Task.detached { () -> String? in
             var response: [UInt8] = []
             var byte: UInt8 = 0
             while read(client, &byte, 1) == 1 {
@@ -994,11 +1016,12 @@ final class MarkdownWebRendererTests: XCTestCase {
                 response.append(byte)
             }
             return nil
-        }.value
+        }
+        let responseLine = try await within("the watch response line") { await reader.value }
         let responseData = try XCTUnwrap(responseLine?.data(using: .utf8))
         let envelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: responseData) as? [String: Any])
         continueFlag.stop()
-        await serverTask.value
+        try await within("the watch server to stop") { await serverTask.value }
         close(client)
         close(server)
         sockets = [-1, -1]
@@ -1076,6 +1099,8 @@ final class MarkdownWebRendererTests: XCTestCase {
             XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
             let client = sockets[0]
             let server = sockets[1]
+            setReceiveTimeout(client)
+            setReceiveTimeout(server)
             let serverTask = Task.detached {
                 TerminalController.serveCommandLines(
                     socket: server,
@@ -1119,7 +1144,7 @@ final class MarkdownWebRendererTests: XCTestCase {
             let written = bytes.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
             XCTAssertEqual(written, bytes.count)
             _ = shutdown(client, SHUT_WR)
-            let responseLine = await Task.detached { () -> String? in
+            let reader = Task.detached { () -> String? in
                 var response: [UInt8] = []
                 var byte: UInt8 = 0
                 while read(client, &byte, 1) == 1 {
@@ -1127,11 +1152,12 @@ final class MarkdownWebRendererTests: XCTestCase {
                     response.append(byte)
                 }
                 return response.isEmpty ? nil : String(decoding: response, as: UTF8.self)
-            }.value
+            }
+            let responseLine = try await within("the \(method) response line") { await reader.value }
             let responseData = try XCTUnwrap(responseLine?.data(using: .utf8))
             let envelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: responseData) as? [String: Any])
             continueFlag.stop()
-            await serverTask.value
+            try await within("the \(method) server to stop") { await serverTask.value }
             close(client)
             close(server)
             sockets = [-1, -1]
@@ -1295,17 +1321,22 @@ final class MarkdownWebRendererTests: XCTestCase {
         withExtendedLifetime(token) {}
     }
 
-    private func call(_ renderer: MarkdownWebRenderer, _ method: String, arguments: [Any] = []) async throws -> Any {
-        try await withCheckedThrowingContinuation { continuation in
-            renderer.call(method, arguments: arguments) { continuation.resume(with: $0) }
+    private func call(
+        _ renderer: MarkdownWebRenderer,
+        _ method: String,
+        arguments: [Any] = [],
+        line: UInt = #line
+    ) async throws -> Any {
+        try await bounded("c11md.\(method)", line: line) { finish in
+            renderer.call(method, arguments: arguments) { finish($0) }
         }
     }
 
-    private func evaluate(_ renderer: MarkdownWebRenderer, _ script: String) async throws -> Any {
-        try await withCheckedThrowingContinuation { continuation in
+    private func evaluate(_ renderer: MarkdownWebRenderer, _ script: String, line: UInt = #line) async throws -> Any {
+        try await bounded("evaluateJavaScript", line: line) { finish in
             renderer.webView.evaluateJavaScript(script) { value, error in
-                if let error { continuation.resume(throwing: error) }
-                else { continuation.resume(returning: value ?? NSNull()) }
+                if let error { finish(.failure(error)) }
+                else { finish(.success(value ?? NSNull())) }
             }
         }
     }
@@ -1313,13 +1344,74 @@ final class MarkdownWebRendererTests: XCTestCase {
     private func evaluateAsync(
         _ renderer: MarkdownWebRenderer,
         _ script: String,
-        arguments: [String: Any] = [:]
+        arguments: [String: Any] = [:],
+        line: UInt = #line
     ) async throws -> Any {
-        try await withCheckedThrowingContinuation { continuation in
-            renderer.webView.callAsyncJavaScript(script, arguments: arguments, in: nil, in: .page) {
-                continuation.resume(with: $0)
+        try await bounded("callAsyncJavaScript", line: line) { finish in
+            renderer.webView.callAsyncJavaScript(script, arguments: arguments, in: nil, in: .page) { finish($0) }
+        }
+    }
+
+    /// Awaits a main-actor operation for at most `seconds`, so a WebKit
+    /// callback or task that never finishes fails this test instead of hanging
+    /// the suite. The timer runs on the main queue, not the cooperative pool.
+    private func within<T>(
+        _ label: String,
+        seconds: TimeInterval = 10,
+        line: UInt = #line,
+        _ operation: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
+        try await bounded(label, seconds: seconds, line: line) { finish in
+            Task { @MainActor in
+                do { finish(.success(try await operation())) } catch { finish(.failure(error)) }
             }
         }
+    }
+
+    /// Bridges a completion-handler API with a deadline. Whichever of the
+    /// completion and the deadline arrives first resumes the continuation.
+    private func bounded<T>(
+        _ label: String,
+        seconds: TimeInterval = 10,
+        line: UInt = #line,
+        _ start: (@escaping (Result<T, Error>) -> Void) -> Void
+    ) async throws -> T {
+        let once = MarkdownTestResumeOnce<T>()
+        return try await withCheckedThrowingContinuation { continuation in
+            once.continuation = continuation
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                once.resume(.failure(MarkdownTestTimeout(label: label, seconds: seconds, line: line)))
+            }
+            start { once.resume($0) }
+        }
+    }
+
+    /// Socket reads in these tests run on a detached task; a receive timeout
+    /// ends a read the peer never answers instead of pinning a pool thread.
+    private func setReceiveTimeout(_ socket: Int32, seconds: Int = 10) {
+        var timeout = timeval(tv_sec: seconds, tv_usec: 0)
+        let result = setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        XCTAssertEqual(result, 0, "SO_RCVTIMEO")
+    }
+}
+
+private struct MarkdownTestTimeout: Error, CustomStringConvertible {
+    let label: String
+    let seconds: TimeInterval
+    let line: UInt
+    var description: String { "Timed out after \(Int(seconds)) s waiting for \(label) (line \(line))" }
+}
+
+private final class MarkdownTestResumeOnce<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    var continuation: CheckedContinuation<T, Error>?
+
+    func resume(_ result: Result<T, Error>) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
     }
 }
 
@@ -1488,6 +1580,8 @@ extension MarkdownWebRendererTests {
         var sockets: [Int32] = [-1, -1]
         XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
         let client = sockets[0], server = sockets[1]
+        setReceiveTimeout(client)
+        setReceiveTimeout(server)
         let serverTask = Task.detached {
             TerminalController.serveCommandLines(
                 socket: server,
@@ -1505,12 +1599,15 @@ extension MarkdownWebRendererTests {
         let bytes = try JSONSerialization.data(withJSONObject: ["id": UUID().uuidString, "method": method, "params": params]) + Data([0x0A])
         XCTAssertEqual(bytes.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }, bytes.count)
         _ = shutdown(client, SHUT_WR)
-        let line = await Task.detached { () -> String? in
+        let reader = Task.detached { () -> String? in
             var response: [UInt8] = []; var byte: UInt8 = 0
             while read(client, &byte, 1) == 1 { if byte == 0x0A { break }; response.append(byte) }
             return response.isEmpty ? nil : String(decoding: response, as: UTF8.self)
-        }.value
-        flag.stop(); await serverTask.value; close(client); close(server)
+        }
+        let line = try await within("the \(method) response line") { await reader.value }
+        flag.stop()
+        try await within("the \(method) server to stop") { await serverTask.value }
+        close(client); close(server)
         let lineData = try XCTUnwrap(line?.data(using: .utf8))
         return try XCTUnwrap(try JSONSerialization.jsonObject(with: lineData) as? [String: Any])
     }
@@ -1678,14 +1775,11 @@ extension MarkdownWebRendererTests {
         func postNavigation(path: String, fragment: String?, origin: String) async throws {
             var payload: [String: Any] = ["type": "corpusNavigate", "path": path, "origin": origin]
             if let fragment { payload["fragment"] = fragment }
-            let result: Any = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any, Error>) in
-                renderer.webView.callAsyncJavaScript(
-                    "window.webkit.messageHandlers.c11md.postMessage(payload); return true;",
-                    arguments: ["payload": payload],
-                    in: nil,
-                    in: .page
-                ) { continuation.resume(with: $0) }
-            }
+            let result = try await evaluateAsync(
+                renderer,
+                "window.webkit.messageHandlers.c11md.postMessage(payload); return true;",
+                arguments: ["payload": payload]
+            )
             XCTAssertEqual(result as? Bool, true)
             // Script messages are delivered to the native handler on WebKit's
             // main-thread queue after the JavaScript call returns.
@@ -1752,10 +1846,10 @@ extension MarkdownWebRendererTests {
         var submitTimes: [Double] = []
         for _ in 0..<7 {
             var submitMilliseconds = 0.0
-            let applied: Any = try await withCheckedThrowingContinuation { continuation in
+            let applied: Any = try await bounded("c11md.setCorpusJSON") { finish in
                 let startedAt = ProcessInfo.processInfo.systemUptime
                 renderer.call("setCorpusJSON", arguments: [panel.corpusSnapshot.bridgeJSON, panel.corpusCurrentPath as Any? ?? NSNull()]) {
-                    continuation.resume(with: $0)
+                    finish($0)
                 }
                 submitMilliseconds = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
             }
@@ -1791,20 +1885,20 @@ extension MarkdownWebRendererTests {
         let before = try XCTUnwrap(MarkdownReadingPosition(state: try XCTUnwrap(beforeValue as? [String: Any])))
         XCTAssertGreaterThan(before.line, 100)
 
-        let o1 = await panel.navigate(to: target, fragment: nil, origin: .palette); XCTAssertEqual(o1, .navigated)
+        let o1 = try await within("navigate") { await panel.navigate(to: target, fragment: nil, origin: .palette) }; XCTAssertEqual(o1, .navigated)
         await rendered(renderer, revision: 2)
-        let o2 = await panel.navigateBack(); XCTAssertEqual(o2, .navigated)
+        let o2 = try await within("navigateBack") { await panel.navigateBack() }; XCTAssertEqual(o2, .navigated)
         await rendered(renderer, revision: 3)
         let liveValue = try await call(renderer, "visible")
         let live = try XCTUnwrap(MarkdownReadingPosition(state: try XCTUnwrap(liveValue as? [String: Any])))
         XCTAssertEqual(live.line, before.line, "live Back must restore the source position")
 
-        let o3 = await panel.navigateForward(); XCTAssertEqual(o3, .navigated)
+        let o3 = try await within("navigateForward") { await panel.navigateForward() }; XCTAssertEqual(o3, .navigated)
         await rendered(renderer, revision: 4)
         // Evict, then go back while no renderer exists.
         panel.evictRenderer(renderer, position: MarkdownReadingPosition())
         XCTAssertNil(panel.renderer)
-        let o4 = await panel.navigateBack(); XCTAssertEqual(o4, .navigated)
+        let o4 = try await within("navigateBack") { await panel.navigateBack() }; XCTAssertEqual(o4, .navigated)
         XCTAssertEqual(panel.filePath, source.path)
         renderer = panel.ensureRenderer()
         renderer.webView.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
@@ -1881,7 +1975,7 @@ extension MarkdownWebRendererTests {
                     modifiers: ["meta": metaHeld],
                     position: position
                 ))
-                await task.value
+                try await within("the routed anchor navigation") { await task.value }
                 XCTAssertEqual(workspace.panels.count, panelCount, "anchor routing must not create a duplicate panel")
                 XCTAssertEqual(panel.navigationHistory.entries.count, initialCount + 1, "repeating the same anchor must not duplicate history")
                 XCTAssertEqual(panel.navigationHistory.entries[0].readingPosition?.line, 8, "the source position is retained for Back")
@@ -1908,7 +2002,7 @@ extension MarkdownWebRendererTests {
         defer { window.contentView = nil; window.close() }
         await rendered(renderer, revision: 1)
 
-        let firstOutcome = await panel.navigate(to: file, fragment: "details", origin: .agentCLI)
+        let firstOutcome = try await within("navigate") { await panel.navigate(to: file, fragment: "details", origin: .agentCLI) }
         XCTAssertEqual(firstOutcome, .navigated)
         let firstValue = try await call(renderer, "visible")
         let firstState = try XCTUnwrap(firstValue as? [String: Any])
@@ -1918,7 +2012,7 @@ extension MarkdownWebRendererTests {
         let awayState = try XCTUnwrap(awayValue as? [String: Any])
         XCTAssertNotEqual((awayState["heading"] as? [String: Any])?["text"] as? String, "Details")
 
-        let repeatOutcome = await panel.navigate(to: file, fragment: "details", origin: .agentCLI)
+        let repeatOutcome = try await within("navigate") { await panel.navigate(to: file, fragment: "details", origin: .agentCLI) }
         XCTAssertEqual(repeatOutcome, .navigated)
         let restoredValue = try await call(renderer, "visible")
         let restored = try XCTUnwrap(restoredValue as? [String: Any])
@@ -1942,12 +2036,9 @@ extension MarkdownWebRendererTests {
         // This is the socket timeout action: the caller has received timeout,
         // so any navigation still preparing must be unable to commit.
         cancellation.cancel()
-        let outcome = await panel.navigate(
-            to: target,
-            fragment: nil,
-            origin: .agentCLI,
-            cancellation: cancellation
-        )
+        let outcome = try await within("the cancelled navigation") {
+            await panel.navigate(to: target, fragment: nil, origin: .agentCLI, cancellation: cancellation)
+        }
         XCTAssertEqual(outcome, .superseded)
         XCTAssertEqual(panel.filePath, source.path)
         XCTAssertEqual(panel.navigationHistory.entries.count, originalHistoryCount)
@@ -1971,15 +2062,21 @@ extension MarkdownWebRendererTests {
 
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
         defer { panel.close() }
-        let slowRequestStarted = expectation(description: "slow request entered before the newer navigation")
+        // Both requests are queued on the main actor before either runs. The slow
+        // one reserves its navigation and suspends in its off-main file read; the
+        // newer one runs next, before that read can resume. Waiting on an
+        // expectation between them let a fast runner finish the slow read first.
+        let tokenBefore = panel.currentNavigationToken
         let slowRequest = Task { @MainActor in
-            slowRequestStarted.fulfill()
-            return await panel.navigate(to: slow, fragment: nil, origin: .agentCLI)
+            await panel.navigate(to: slow, fragment: nil, origin: .agentCLI)
         }
-        await fulfillment(of: [slowRequestStarted], timeout: 2)
+        let latestRequest = Task { @MainActor in
+            XCTAssertGreaterThan(panel.currentNavigationToken, tokenBefore, "the slow request must reserve its navigation first")
+            return await panel.navigate(to: fast, fragment: nil, origin: .agentCLI)
+        }
 
-        let latest = await panel.navigate(to: fast, fragment: nil, origin: .agentCLI)
-        let stale = await slowRequest.value
+        let latest = try await within("the newer navigation", seconds: 30) { await latestRequest.value }
+        let stale = try await within("the superseded navigation", seconds: 30) { await slowRequest.value }
         XCTAssertEqual(latest, .navigated)
         XCTAssertEqual(stale, .superseded)
         XCTAssertEqual(panel.filePath, fast.path, "the older request must not commit after a newer target")
@@ -2026,9 +2123,9 @@ extension MarkdownWebRendererTests {
                 initialNavigationScopeRootPath: initialScopeRoot
             )
             defer { panel.close() }
-            let away = await panel.navigate(to: outside, fragment: nil, origin: .agentCLI)
+            let away = try await within("navigate") { await panel.navigate(to: outside, fragment: nil, origin: .agentCLI) }
             XCTAssertEqual(away, .navigated, "root origin \(origin)")
-            let back = await panel.navigateBack()
+            let back = try await within("navigateBack") { await panel.navigateBack() }
             let path = panel.filePath ?? "nil"
             print("RV362V root=\(origin) back=\(back) path=\(path)")
             XCTAssertEqual(back, .navigated, "Back to a \(origin)-origin root after an agent left its scope")

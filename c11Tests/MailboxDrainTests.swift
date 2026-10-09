@@ -512,7 +512,8 @@ final class MailboxCLISeamTests: XCTestCase {
             handedOff = true
             return true
         }) { error in
-            XCTAssertTrue((error as? MailboxRecvAdmission.Refusal)?.description.contains("--ack") == true)
+            let message = (error as? MailboxRecvAdmission.Refusal)?.description ?? ""
+            XCTAssertTrue(message.contains("recv --drain --ack"), message)
         }
         XCTAssertFalse(handedOff)
         XCTAssertEqual(messageNames(in: inbox), ["\(idA).msg"])

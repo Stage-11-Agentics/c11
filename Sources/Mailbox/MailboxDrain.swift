@@ -522,7 +522,7 @@ enum MailboxRecvAdmission {
         var description: String {
             String(
                 localized: "mailbox.cli.error.drain-unreadable",
-                defaultValue: "Refusing to mark mailbox messages read because stdout is not a terminal. Pass --ack to mark them read, or run this in a terminal."
+                defaultValue: "Refusing to mark mailbox messages read because stdout is not a terminal. Run c11 mailbox recv --drain --ack"
             )
         }
     }

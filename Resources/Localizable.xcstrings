@@ -113,13 +113,13 @@
     "mailbox.cli.error.drain-unreadable": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Refusing to mark mailbox messages read because stdout is not a terminal. Pass --ack to mark them read, or run this in a terminal."}},
-        "ja": {"stringUnit": {"state": "translated", "value": "標準出力が端末ではないため、メールボックスのメッセージを既読にしません。既読にするには --ack を渡すか、端末で実行してください。"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "Повідомлення поштової скриньки не позначаються прочитаними, бо stdout не є терміналом. Передайте --ack, щоб позначити їх прочитаними, або запустіть це в терміналі."}},
-        "ko": {"stringUnit": {"state": "translated", "value": "stdout이 터미널이 아니므로 메일박스 메시지를 읽음으로 표시하지 않습니다. 읽음으로 표시하려면 --ack를 전달하거나 터미널에서 실행하세요."}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标准输出不是终端，因此拒绝将邮箱消息标为已读。请传入 --ack 以标为已读，或在终端中运行。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "標準輸出不是終端機，因此拒絕將信箱訊息標為已讀。請傳入 --ack 以標為已讀，或在終端機中執行。"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "Сообщения почтового ящика не помечаются прочитанными, потому что stdout не является терминалом. Передайте --ack, чтобы пометить их прочитанными, или запустите это в терминале."}}
+        "en": {"stringUnit": {"state": "translated", "value": "Refusing to mark mailbox messages read because stdout is not a terminal. Run c11 mailbox recv --drain --ack"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "標準出力が端末ではないため、メールボックスのメッセージを既読にしません。c11 mailbox recv --drain --ack を実行してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Повідомлення поштової скриньки не позначаються прочитаними, бо stdout не є терміналом. Виконайте c11 mailbox recv --drain --ack"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "stdout이 터미널이 아니므로 메일박스 메시지를 읽음으로 표시하지 않습니다. c11 mailbox recv --drain --ack 를 실행하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标准输出不是终端，因此拒绝将邮箱消息标为已读。请运行 c11 mailbox recv --drain --ack"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "標準輸出不是終端機，因此拒絕將信箱訊息標為已讀。請執行 c11 mailbox recv --drain --ack"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сообщения почтового ящика не помечаются прочитанными, потому что stdout не является терминалом. Выполните c11 mailbox recv --drain --ack"}}
       }
     },
     "markdown.reader.history.back": {

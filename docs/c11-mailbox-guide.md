@@ -91,7 +91,7 @@ c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in t
 # its prompt gets it as a new turn at once; mid-turn, it lands when the turn
 # ends (see "When the push lands" below).
 c11 mailbox recv --drain                   # pull now, when stdout is a terminal
-c11 mailbox recv --drain --ack             # mark read when stdout is not a terminal
+c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
 
 If `mailbox.delivery` is not set on the recipient, the envelope still lands in the recipient's inbox; the recipient drains it explicitly with `c11 mailbox recv`. With `stdin` set, push delivers to a waiting agent and to one whose turn ends; draining at turn boundaries stays the floor for everything push cannot reach.
@@ -347,10 +347,10 @@ Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mai
 c11 mailbox recv --drain    # print each message and move it to _read/ when stdout is a terminal
 c11 mailbox recv --peek     # list + print only, leave files in place
 c11 mailbox recv --panel watcher --drain   # drain on someone else's behalf
-c11 mailbox recv --drain --ack             # mark read when stdout is not a terminal
+c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
 
-A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. `--peek` never marks mail read.
+A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. The error tells you to run `c11 mailbox recv --drain --ack`. A drain from a tool call is that pipe case: the agent reads the pipe, and still must pass `--ack`. `--peek` never marks mail read.
 
 Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the panel's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. Both inboxes are merged into one ULID order, for `--peek` and `--drain` alike. `c11 mailbox inbox-dir` prints the UUID-keyed path.
 

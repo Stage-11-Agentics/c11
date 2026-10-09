@@ -21350,7 +21350,8 @@ extension CMUXCLI {
         Recv flags:
           --drain                 default — print each message and move it to _read/
           --peek                  list + print only
-          --ack                   mark read even when stdout is not a terminal
+          --ack                   mark read even when stdout is not a terminal.
+                                  A tool call's stdout is a pipe: pass --ack.
           --hook-format <h>       claude | codex | grok: print that harness's Stop-hook JSON
                                   (turn-end drain; event from hook stdin or --event).
                                   Pass --ack: a hook has no terminal.
@@ -21359,6 +21360,7 @@ extension CMUXCLI {
 
           A drain marks mail read only when stdout is a terminal or --ack is
           passed. Otherwise it exits nonzero and leaves the inbox unchanged.
+          The error tells you to run: c11 mailbox recv --drain --ack
         """
     }
 

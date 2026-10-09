@@ -132,6 +132,7 @@ final class PanelSeenTracker {
         } else {
             interruptions.remove(.locked)
         }
+        EventEmitter.shared.observePresence(appActive: true, screenLocked: interruptions.contains(.locked) || interruptions.contains(.sessionInactive), sleeping: false)
         refresh()
     }
 
@@ -147,6 +148,11 @@ final class PanelSeenTracker {
 
     func setInterruption(_ reason: InterruptReason, active: Bool) {
         if active { interruptions.insert(reason) } else { interruptions.remove(reason) }
+        if reason == .locked || reason == .sessionInactive {
+            EventEmitter.shared.observePresence(screenLocked: interruptions.contains(.locked) || interruptions.contains(.sessionInactive))
+        } else if reason == .systemAsleep {
+            EventEmitter.shared.observePresence(sleeping: active)
+        }
         refresh()
     }
 
@@ -189,6 +195,9 @@ final class PanelSeenTracker {
                     if let reason {
                         self.setInterruption(reason, active: active)
                     } else {
+                        if name == NSApplication.didResignActiveNotification {
+                            EventEmitter.shared.observePresence(appActive: false)
+                        }
                         self.refresh()
                     }
                 }
@@ -240,6 +249,7 @@ final class PanelSeenTracker {
             )
         }
         interruptions.formUnion(screenLockedProvider() ? [.locked] : [])
+        EventEmitter.shared.observePresence(appActive: NSApp.isActive, screenLocked: interruptions.contains(.locked), sleeping: false, snapshot: true)
         refresh()
     }
 }

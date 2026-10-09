@@ -65,7 +65,7 @@ The sidebar must stop lying. Two mechanisms, deterministic, no model inference i
 - **EVT-3** Event writes happen off-main and are non-blocking for the emitting path; a slow or full disk never stalls the UI or socket handling.
 - **EVT-4** The log rotates at a size cap with at least one rolled generation retained; consumers can detect rotation (seq reset or rotation marker).
 - **EVT-5** `c11 events tail` exists with `--follow`, `--filter type=...`, and `--since <seq|duration>`; it is sugar over the file (the file is the contract; any process may consume it directly).
-- **EVT-6** Latency: an event is observable by a tailing consumer within 1 second of the underlying transition under normal load.
+- **EVT-6** Latency: an event is observable by a tailing consumer within 1 second of the underlying transition under normal load. C11-349 exception: meaningful `source=osc` title churn retains first/last/count over a 60-second window, with the tail observable by its awake deadline even when analytics are off. Spinner-only changes are dropped. All other events remain within 1 second; pending panel tails flush before non-OSC panel events, close, policy changes and shutdown.
 - **EVT-7** Scenario proof (recorded): a consumer tails the stream; a status change, a mailbox delivery, and a surface close each appear as events and the consumer reacts.
 - **EVT-8** The c11 skill documents the event file location, schema, taxonomy, and CLI. A JSON schema for the envelope lands in `spec/`.
 

@@ -62,6 +62,16 @@ In the c11 1.0 run, packaged-app validation and computer use run on Atlas only. 
 
 Live proofs that need real agent panels (Claude Code, Codex, Grok receiving mail or running hooks) run in an Atlas sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained Atlas copy of a remote build is under `~/c11-builds/<tag>/artifacts/<invocation>/`; running the sandbox scripts on Atlas with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
 
+## Isolate activity-history validation
+
+`C11_ACTIVITY_HISTORY_DIRECTORY=/absolute/owned/path` is a validation hook,
+not a user storage setting. Pass it at launch with
+`launch-tagged-automation.sh <tag> --qa fresh --env C11_ACTIVITY_HISTORY_DIRECTORY=/absolute/owned/path`.
+The app, Messages, mailbox receipts and offline readers share that path;
+relative values are ignored. The environment is captured once per process.
+Use synthetic fixtures and preserve production history. Details and evidence
+requirements: `docs/validation/c11-349/README.md`.
+
 ## Remote variants
 
 | Command | Result |

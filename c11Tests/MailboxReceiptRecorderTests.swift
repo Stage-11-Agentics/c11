@@ -64,6 +64,7 @@ final class MailboxReceiptRecorderTests: XCTestCase {
             startedAt: startedAt,
             emit: { sink.append(Emitted(workspace: $0, id: $1, recipient: $2, surface: $3)) },
             flush: { sink.lock.lock(); sink.flushes += 1; sink.lock.unlock() },
+            confirmedDeliveries: { ids in ids.intersection(Set(sink.snapshot.map(\.id))) },
             isRecording: { sink.recording },
             eventsDirectory: { [eventsDir] in eventsDir }
         )
@@ -201,6 +202,46 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         ])
         XCTAssertGreaterThanOrEqual(sink.flushes, 1)
         XCTAssertEqual(names(spool(workspace)), [])
+    }
+
+    func testDefaultRecorderConfirmsRealEventLogBeforeDeletingReceipt() throws {
+        let logURL = eventsDir.appendingPathComponent("events-confirmed.ndjson")
+        let log = EventLog(url: logURL, instance: "confirmed")
+        EventEmitter.shared.startForTesting(log: log, instance: "confirmed")
+        defer { EventEmitter.shared.resetForTesting() }
+        let receiptURL = try XCTUnwrap(writeReceipt([idA, idB]))
+        let recorder = MailboxReceiptRecorder(eventsDirectory: { [eventsDir] in eventsDir })
+        sweep(recorder)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: receiptURL.path))
+        XCTAssertEqual(names(spool(workspace), ext: "claim"), [])
+        let rows = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").compactMap {
+            (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+        }
+        let deliveries = rows.filter { $0["type"] as? String == "mailbox.delivered" }
+        XCTAssertEqual(deliveries.compactMap { ($0["payload"] as? [String: Any])?["id"] as? String }, [idA, idB])
+        XCTAssertEqual(log.confirmedDrainDeliveryIDs([idA, idB, idC]), [idA, idB])
+    }
+
+    func testFailedRealEventWriteKeepsReceiptClaimWithoutAutomaticRetry() throws {
+        // A regular file in the required parent-directory position creates a
+        // real filesystem failure, without mocking admission or the writer.
+        let blocked = root.appendingPathComponent("not-a-directory")
+        try Data("blocked".utf8).write(to: blocked)
+        let log = EventLog(url: blocked.appendingPathComponent("events-failed.ndjson"), instance: "failed")
+        EventEmitter.shared.startForTesting(log: log, instance: "failed")
+        defer { EventEmitter.shared.resetForTesting() }
+        let receiptURL = try XCTUnwrap(writeReceipt([idA]))
+        let original = try Data(contentsOf: receiptURL)
+        let recorder = MailboxReceiptRecorder(eventsDirectory: { [eventsDir] in eventsDir })
+        sweep(recorder)
+        let claims = names(spool(workspace), ext: "claim")
+        XCTAssertEqual(claims.count, 1)
+        let claim = spool(workspace).appendingPathComponent(try XCTUnwrap(claims.first))
+        XCTAssertEqual(try Data(contentsOf: claim), original)
+        XCTAssertEqual(log.confirmedDrainDeliveryIDs([idA]), [])
+        sweep(recorder)
+        XCTAssertEqual(names(spool(workspace), ext: "claim"), claims)
+        XCTAssertEqual(try Data(contentsOf: claim), original)
     }
 
     func testDuplicateReceiptIsRecordedOnce() {

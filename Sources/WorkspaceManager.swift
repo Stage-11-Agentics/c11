@@ -5921,7 +5921,8 @@ extension WorkspaceManager {
                 stableDefaultTitle: workspaceSnapshot.stableDefaultTitle,
                 workingDirectory: workspaceSnapshot.currentDirectory,
                 rootDirectory: workspaceSnapshot.rootDirectory,
-                portOrdinal: ordinal
+                portOrdinal: ordinal,
+                restoringSession: true
             )
             workspace.owningWorkspaceManager = self
             workspace.restoreSessionSnapshot(workspaceSnapshot)

@@ -10,7 +10,8 @@ import Foundation
 ///
 ///     <state>/events/
 ///         events-<instance>.ndjson       (current per-instance log)
-///         events-<instance>.ndjson.1      (one rolled generation, EVT-4)
+///         events-<instance>.ndjson.1      (newest rolled generation, EVT-4)
+///         events-<instance>.ndjson.2      (older generation, age/byte bounded)
 ///
 /// The log is **per-instance** (EVT-1): each running c11 process writes its own
 /// file, keyed by `<launch-tag-or-bundle>-<pid>`. This is deliberate — the state
@@ -22,6 +23,9 @@ import Foundation
 /// See `spec/event-envelope.v2.schema.json` (v1 lines: `.v1.schema.json`) for the line format and
 /// `skills/c11/references/events.md` for the consumer contract.
 enum EventLogLayout {
+    // Validation-only override. Capture once; ProcessInfo.environment copies
+    // the complete environment dictionary when read.
+    private static let historyDirectoryOverride = ProcessInfo.processInfo.environment["C11_ACTIVITY_HISTORY_DIRECTORY"]
 
     // MARK: - Names
 
@@ -68,8 +72,28 @@ enum EventLogLayout {
     // MARK: - Path builders
 
     /// `<state>/events/`.
-    static func eventsDirectoryURL(state: URL) -> URL {
-        state.appendingPathComponent(eventsDirectoryName, isDirectory: true)
+    /// Validation-only history storage override, shared by app and offline
+    /// CLI readers. Tagged validation can keep its recording/retention entirely
+    /// outside production history. Relative paths are rejected.
+    static func eventsDirectoryURL(
+        state: URL,
+        directoryOverride: String? = historyDirectoryOverride
+    ) -> URL {
+        if let directoryOverride, directoryOverride.hasPrefix("/") {
+            return URL(fileURLWithPath: directoryOverride, isDirectory: true)
+        }
+        return state.appendingPathComponent(eventsDirectoryName, isDirectory: true)
+    }
+
+    /// Exact current/numbered-generation filename recognition. Readers accept
+    /// all generations; only the current file is eligible for newestLogURL.
+    static func isLogFileName(_ name: String, includingRolled: Bool = true) -> Bool {
+        guard name.hasPrefix(logFilePrefix), let range = name.range(of: ".ndjson", options: .backwards),
+              range.lowerBound > name.index(name.startIndex, offsetBy: logFilePrefix.count) else { return false }
+        let suffix = name[range.upperBound...]
+        if suffix.isEmpty { return true }
+        guard includingRolled, suffix.first == ".", let generation = Int(suffix.dropFirst()) else { return false }
+        return generation > 0
     }
 
     /// Filename for a given instance id: `events-<instance>.ndjson`.

@@ -23,6 +23,206 @@ final class MessagesPageTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
     }
 
+    func testRedactedEventOverridesDurableMailboxBodyAndReference() throws {
+        let instance = "privacy-test"
+        let log = EventLog(url: EventLogLayout.logURL(state: tempDir, instance: instance), instance: instance)
+        log.open()
+        log.append(EventEnvelope(type: .panelInputSent, instance: instance, ts: Date(), payload: [
+            "text_recorded": false, "bytes": 11, "kind": "text", "submitted": true,
+        ]))
+        log.append(EventEnvelope(type: .mailboxAccepted, instance: instance, ts: Date(), payload: [
+            "id": "01K3A2B7X8PQRTVWYZ0123456J", "from": "sender", "to": "recipient",
+            "text_recorded": false, "bytes": 15,
+        ]))
+        log.flush()
+        let envelope = try MailboxEnvelope.build(
+            from: "sender", to: "recipient", body: "HIDDEN_MAIL_BODY",
+            id: "01K3A2B7X8PQRTVWYZ0123456J"
+        )
+        let inbox = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try envelope.encode().write(to: inbox.appendingPathComponent("\(envelope.id).msg"))
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        XCTAssertEqual(snapshot.messages.count, 2)
+        for message in snapshot.messages {
+            XCTAssertFalse(message.textRecorded)
+            XCTAssertTrue(message.body.isEmpty)
+            XCTAssertNil(message.bodyRef)
+            XCTAssertNotNil(message.recordedBytes)
+            XCTAssertEqual(message.jsonObject["text_recorded"] as? Bool, false)
+        }
+        let rendered = MessagesPageRenderer.render(snapshot: snapshot)
+        XCTAssertFalse(rendered.contains("HIDDEN_MAIL_BODY"))
+        XCTAssertTrue(rendered.contains("text not recorded"))
+    }
+
+    func testDurableMailboxOptOutSurvivesAcceptedEventRetention() throws {
+        let envelope = try MailboxEnvelope.build(
+            from: "sender", to: "recipient", body: "DELIVERY_BODY_STAYS_LOCAL",
+            id: "01K3A2B7X8PQRTVWYZ0123456K", ext: ["custom": "preserved"]
+        ).suppressActivityHistoryText()
+        let inbox = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let bytes = try envelope.encode()
+        try bytes.write(to: inbox.appendingPathComponent("\(envelope.id).msg"))
+        let delivered = try MailboxEnvelope.validate(data: bytes)
+        XCTAssertEqual(delivered.body, "DELIVERY_BODY_STAYS_LOCAL")
+        XCTAssertEqual(delivered.ext?["custom"] as? String, "preserved")
+        XCTAssertEqual(delivered.ext?["c11_activity_text_recorded"] as? Bool, false)
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertTrue(source.events.isEmpty)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        let message = try XCTUnwrap(snapshot.messages.first)
+        XCTAssertFalse(message.textRecorded)
+        XCTAssertEqual(message.recordedBytes, delivered.body.utf8.count)
+        XCTAssertTrue(message.body.isEmpty)
+        XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(delivered.body))
+    }
+
+    func testUnacceptedOutboxAndProcessingHideTextWhileAcceptedInboxHistoryRemainsReadable() throws {
+        let root = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+        let directories = [
+            (MailboxLayout.outboxDirectoryName, "outbox", false),
+            (MailboxLayout.processingDirectoryName, "processing", false),
+            ("recipient", "pending", true),
+            ("_read", "read", true),
+            (MailboxLayout.rejectedDirectoryName, "rejected", true),
+        ]
+        var expected: [(MailboxEnvelope, String, Bool)] = []
+        for (directoryName, state, textRecorded) in directories {
+            let directory = root.appendingPathComponent(directoryName, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for usesReference in [false, true] {
+                let envelope = try MailboxEnvelope.build(
+                    from: "sender", to: "recipient",
+                    body: usesReference ? "" : "BODY_FOR_\(state)",
+                    bodyRef: usesReference ? "/tmp/reference-for-\(state)" : nil
+                )
+                try envelope.encode().write(to: directory.appendingPathComponent("\(envelope.id).msg"))
+                expected.append((envelope, state, textRecorded))
+            }
+        }
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertTrue(source.events.isEmpty, "No accepted events are needed to reproduce durable artifact loading")
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+        XCTAssertEqual(snapshot.messages.count, expected.count)
+        for (envelope, state, textRecorded) in expected {
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+            XCTAssertEqual(message.status, state)
+            XCTAssertEqual(message.textRecorded, textRecorded)
+            XCTAssertEqual(message.body, textRecorded ? envelope.body : "")
+            XCTAssertEqual(message.bodyRef, textRecorded ? envelope.bodyRef : nil)
+            if !textRecorded {
+                XCTAssertEqual(message.recordedBytes, envelope.body.utf8.count)
+            }
+        }
+        let rendered = MessagesPageRenderer.render(snapshot: snapshot)
+        XCTAssertFalse(rendered.contains("BODY_FOR_outbox"))
+        XCTAssertFalse(rendered.contains("BODY_FOR_processing"))
+        XCTAssertTrue(rendered.contains("BODY_FOR_pending"))
+    }
+
+    func testRejectedInvalidArtifactFollowsCurrentPolicyWithoutAnAcceptanceDecision() throws {
+        let log = EventLog(url: EventLogLayout.logURL(state: tempDir, instance: "rejected-policy"), instance: "rejected-policy")
+        EventEmitter.shared.startForTesting(log: log, instance: "rejected-policy")
+        defer { EventEmitter.shared.resetForTesting() }
+        let directory = MailboxLayout.rejectedURL(state: tempDir, workspaceId: UUID())
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Deliberately invalid: validation rejects an envelope with no version
+        // or routing fields before the dispatcher can accept it.
+        let object: [String: Any] = ["id": "invalid-message", "body": "PRIVATE_INVALID_BODY",
+                                     "body_ref": "/tmp/private-invalid-reference",
+                                     "ext": ["c11_activity_text_recorded": true]]
+        try JSONSerialization.data(withJSONObject: object).write(to: directory.appendingPathComponent("invalid-message.msg"))
+        for keepText in [false, true] {
+            EventEmitter.shared.updatePolicy(ActivityHistoryPolicy(keepText: keepText))
+            let source = MessagesPageSource.load(stateURL: tempDir)
+            let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == "invalid-message" })
+            XCTAssertEqual(message.textRecorded, keepText)
+            XCTAssertEqual(message.body, keepText ? "PRIVATE_INVALID_BODY" : "")
+            XCTAssertEqual(message.bodyRef, keepText ? "/tmp/private-invalid-reference" : nil)
+            if !keepText { XCTAssertEqual(message.recordedBytes, "PRIVATE_INVALID_BODY".utf8.count) }
+        }
+    }
+
+    func testReadsOlderNumberedEventGenerations() throws {
+        let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try c1Line.write(to: directory.appendingPathComponent("events-history.ndjson.3"), atomically: true, encoding: .utf8)
+        try c1Line.write(to: directory.appendingPathComponent("events-history.ndjson.backup"), atomically: true, encoding: .utf8)
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.events.count, 1)
+        let snapshot = MessagesPageBuilder.build(events: source.events)
+        XCTAssertEqual(snapshot.messages.first?.body, "C11_257_TEXT_PROOF")
+    }
+
+    func testExplicitAcceptedTextDecisionOverridesSenderArtifactOptOut() throws {
+        let directory = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for usesReference in [false, true] {
+            let envelope = try MailboxEnvelope.build(
+                from: "sender", to: "recipient", body: usesReference ? "" : "ACCEPTED_BODY",
+                bodyRef: usesReference ? "/tmp/accepted-reference" : nil,
+                ext: ["c11_activity_text_recorded": false]
+            )
+            try envelope.encode().write(to: directory.appendingPathComponent("\(envelope.id).msg"))
+            var payload: [String: Any] = [
+                "id": envelope.id, "body": envelope.body, "text_recorded": true,
+                "bytes": envelope.body.utf8.count,
+            ]
+            if let reference = envelope.bodyRef { payload["body_ref"] = reference }
+            let event = try XCTUnwrap(MessagesPageEvent(object: [
+                "v": 2, "type": "mailbox.accepted", "instance": "accepted-policy",
+                "ts": "2026-10-08T00:00:00.000Z", "seq": 1, "payload": payload,
+            ]))
+            let source = MessagesPageSource.load(stateURL: tempDir)
+            let snapshot = MessagesPageBuilder.build(events: [event], mailboxArtifacts: source.mailboxArtifacts)
+            let message = try XCTUnwrap(snapshot.messages.first { $0.id == envelope.id })
+            XCTAssertTrue(message.textRecorded)
+            XCTAssertEqual(message.body, envelope.body)
+            XCTAssertEqual(message.bodyRef, envelope.bodyRef)
+        }
+    }
+
+    func testRotatingGenerationsReuseCachedFileContentsByIdentity() throws {
+        let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let current = directory.appendingPathComponent("events-cache.ndjson")
+        let first = directory.appendingPathComponent("events-cache.ndjson.1")
+        let second = directory.appendingPathComponent("events-cache.ndjson.2")
+        try c1Line.write(to: current, atomically: true, encoding: .utf8)
+        var cache = MessagesPageEventLogCache()
+        var reads = 0
+        func load() -> MessagesPageSourceData {
+            MessagesPageSource.load(stateURL: tempDir, eventLogCache: &cache, readEventData: { url in
+                reads += 1
+                return try Data(contentsOf: url)
+            })
+        }
+        XCTAssertEqual(load().events.count, 1)
+        XCTAssertEqual(reads, 1)
+        try FileManager.default.moveItem(at: current, to: first)
+        try acceptedLine.write(to: current, atomically: true, encoding: .utf8)
+        XCTAssertEqual(load().events.count, 2)
+        XCTAssertEqual(reads, 2, "The renamed first generation must not be read again")
+        try FileManager.default.moveItem(at: first, to: second)
+        try FileManager.default.moveItem(at: current, to: first)
+        try deliveredLine.write(to: current, atomically: true, encoding: .utf8)
+        let rotated = load()
+        XCTAssertEqual(rotated.events.count, 3)
+        XCTAssertEqual(reads, 3, "Only the newly created current file needs a read")
+        let snapshot = MessagesPageBuilder.build(events: rotated.events)
+        XCTAssertEqual(snapshot.messages.first { $0.channel == "mailbox" }?.status, "delivered")
+        try FileManager.default.removeItem(at: second)
+        XCTAssertEqual(load().events.count, 2, "Pruned file identities must leave the cache")
+        XCTAssertEqual(reads, 3)
+    }
+
     func testPinnedC1AndC2FixturesShapeBothChannelsAndLifecycle() throws {
         let events = [c1Line, acceptedLine, deliveredLine].compactMap(MessagesPageEvent.init(line:))
         let snapshot = MessagesPageBuilder.build(

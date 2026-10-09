@@ -3889,6 +3889,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
         guard let createdSurface = surface else { return }
+        EventEmitter.shared.noteWorkspaceRuntimeSurfaceCreated(workspaceId)
         // One native creation consumes this request. Runtime reconstruction and
         // reparenting must never execute the caller's command a second time.
         initialInput = nil

@@ -64,6 +64,16 @@ struct MailboxEnvelope: Equatable {
         (try? lhs.encode()) == (try? rhs.encode())
     }
 
+    /// Delivery keeps its local body, while history consumers honor the durable
+    /// opt-out even after the accepted event has aged out of the event log.
+    func suppressActivityHistoryText() -> MailboxEnvelope {
+        var object = raw
+        var extensionFields = ext ?? [:]
+        extensionFields["c11_activity_text_recorded"] = false
+        object["ext"] = extensionFields
+        return MailboxEnvelope(raw: object)
+    }
+
     // MARK: - Encoding
 
     /// Compact, lexicographically key-sorted JSON. This is the byte form both

@@ -217,6 +217,10 @@ struct cmuxApp: App {
         Self.applyAppearance(.dark)
         // Carry the old `tabLayoutMode` forward before the Settings picker or any workspace reads it.
         PanelLayoutSettings.migrateLegacyKeys(defaults: .standard)
+        // The initial WorkspaceManager immediately creates a workspace and its
+        // terminal. Start recording before those lifecycle edges can be emitted.
+        mirrorC11CmuxEnv()
+        EventEmitter.shared.start()
         _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
@@ -242,7 +246,13 @@ struct cmuxApp: App {
 
         // UI tests depend on AppDelegate wiring happening even if SwiftUI view appearance
         // callbacks (e.g. `.onAppear`) are delayed or skipped.
-        appDelegate.configure(workspaceManager: workspaceManager, notificationStore: notificationStore, sidebarState: sidebarState)
+        // SwiftUI's uninstalled StateObject getter constructs a temporary graph.
+        // Classify that real graph without changing the existing bootstrap wiring;
+        // the installed StateObject's later construction runs outside this scope.
+        let bootstrapWorkspaceManager = EventEmitter.shared.withTransientWorkspaceConstruction {
+            workspaceManager
+        }
+        appDelegate.configure(workspaceManager: bootstrapWorkspaceManager, notificationStore: notificationStore, sidebarState: sidebarState)
     }
 
     private static func terminateForMissingLaunchTag() -> Never {
@@ -4473,6 +4483,18 @@ struct SettingsView: View {
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
+    @AppStorage(ActivityHistoryPolicy.analyticsEnabledKey)
+    private var recordUsageAnalytics = true
+    @AppStorage(ActivityHistoryPolicy.keepTextKey)
+    private var keepActivityText = true
+    @AppStorage(ActivityHistoryPolicy.retentionDaysKey)
+    private var activityRetentionDays = 14
+    private var activityRetentionSelection: Binding<Int> {
+        Binding(
+            get: { [7, 14, 30].contains(activityRetentionDays) ? activityRetentionDays : 14 },
+            set: { activityRetentionDays = $0 }
+        )
+    }
     @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
     @AppStorage("cmuxPortRange") private var cmuxPortRange = 10
     @AppStorage(BrowserSearchSettings.searchEngineKey) private var browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
@@ -6460,6 +6482,42 @@ struct SettingsView: View {
             }
         }
 
+        SettingsSectionHeader(title: String(localized: "settings.section.localActivityHistory", defaultValue: "Local activity history"))
+        SettingsCard {
+            SettingsCardNote(String(localized: "settings.activityHistory.localOnly", defaultValue: "Activity history stays on this Mac."))
+            SettingsCardDivider()
+            SettingsCardRow(
+                String(localized: "settings.activityHistory.analytics", defaultValue: "Record usage analytics"),
+                subtitle: String(localized: "settings.activityHistory.analytics.subtitle", defaultValue: "Record foreground, workspace, and app health events.")
+            ) {
+                Toggle("", isOn: $recordUsageAnalytics)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsActivityAnalyticsToggle")
+            }
+            SettingsCardDivider()
+            SettingsCardRow(
+                String(localized: "settings.activityHistory.keepText", defaultValue: "Keep message and input text"),
+                subtitle: String(localized: "settings.activityHistory.keepText.subtitle", defaultValue: "When off, new activity records keep byte counts only. Mailbox delivery still needs its local message files.")
+            ) {
+                Toggle("", isOn: $keepActivityText)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsActivityTextToggle")
+            }
+            SettingsCardDivider()
+            SettingsCardRow(String(localized: "settings.activityHistory.retention", defaultValue: "Keep history for")) {
+                Picker("", selection: activityRetentionSelection) {
+                    Text(String(localized: "settings.activityHistory.retention.7", defaultValue: "7 days")).tag(7)
+                    Text(String(localized: "settings.activityHistory.retention.14", defaultValue: "14 days")).tag(14)
+                    Text(String(localized: "settings.activityHistory.retention.30", defaultValue: "30 days")).tag(30)
+                }
+                .labelsHidden()
+                .frame(width: pickerColumnWidth)
+                .accessibilityIdentifier("SettingsActivityRetentionPicker")
+            }
+        }
+
         SettingsSectionHeader(title: String(localized: "settings.section.localBrowserData", defaultValue: "Local Browser Data"))
         SettingsCard {
             SettingsCardRow(String(localized: "settings.browser.history", defaultValue: "Browsing History"), subtitle: browserHistorySubtitle) {
@@ -6605,6 +6663,9 @@ struct SettingsView: View {
         panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
+        recordUsageAnalytics = true
+        keepActivityText = true
+        activityRetentionDays = 14
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
         browserSearchSuggestionsEnabled = BrowserSearchSettings.defaultSearchSuggestionsEnabled
         browserThemeMode = BrowserThemeSettings.defaultMode.rawValue

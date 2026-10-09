@@ -316,7 +316,7 @@ extension Workspace {
         let restoredStableDefaultTitle = snapshot.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         stableDefaultTitle = restoredStableDefaultTitle.isEmpty ? nil : restoredStableDefaultTitle
         applyProcessTitle(snapshot.processTitle)
-        setCustomTitle(snapshot.customTitle)
+        setCustomTitle(snapshot.customTitle, recordRename: false)
         setCustomColor(snapshot.customColor)
         isPinned = snapshot.isPinned
         groupId = snapshot.groupId
@@ -371,6 +371,11 @@ extension Workspace {
             focusPanel(fallbackFocusedPanelId)
         } else {
             scheduleFocusReconcile()
+        }
+
+        if workspaceCreationPendingRestore {
+            workspaceCreationPendingRestore = false
+            EventEmitter.shared.emitWorkspaceCreated(workspace: id, title: title, rootDirectory: rootDirectory)
         }
 
         // C11-24: schedule agent-resume for restored terminal surfaces that
@@ -4890,6 +4895,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// subscription. `lastKnownPanelIds` is the diff baseline.
     private var panelEventsCancellable: AnyCancellable?
     private var lastKnownPanelIds: Set<UUID> = []
+    private var workspaceCreationPendingRestore = false
 
     /// Monotonically incrementing token used by the sidebar workspace row to
     /// observe focus flashes targeting any panel in this workspace. Bumped
@@ -5572,13 +5578,16 @@ final class Workspace: Identifiable, ObservableObject {
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
         initialTerminalInput: String? = nil,
-        initialTerminalEnvironment: [String: String] = [:]
+        initialTerminalEnvironment: [String: String] = [:],
+        restoringSession: Bool = false
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
         // workspace UUIDs can survive across app restarts. Nil mints a fresh
         // UUID (the normal creation path); a supplied id is used as-is (the
         // restore path in `TabManager.restoreSessionSnapshot`).
-        self.id = id ?? UUID()
+        let workspaceID = id ?? UUID()
+        self.id = workspaceID
+        EventEmitter.shared.enrollTransientWorkspaceConstruction(workspaceID)
         self.portOrdinal = portOrdinal
         self.processTitle = title
         let trimmedStableDefaultTitle = stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -5809,6 +5818,10 @@ final class Workspace: Identifiable, ObservableObject {
         // terminal), then on every subsequent mutation — a single chokepoint
         // that no create/close/reattach/teardown path can bypass. No debounce:
         // events must be observable within 1s (EVT-6).
+        workspaceCreationPendingRestore = restoringSession
+        if !restoringSession {
+            EventEmitter.shared.emitWorkspaceCreated(workspace: self.id, title: self.title, rootDirectory: self.rootDirectory)
+        }
         panelEventsCancellable = $panels
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)
@@ -5827,6 +5840,7 @@ final class Workspace: Identifiable, ObservableObject {
         // `@MainActor` so the last release must run on main; `assumeIsolated`
         // lets the iso-checker see that.
         MainActor.assumeIsolated {
+            emitWorkspaceTeardownEvents()
             for state in persistentFlashPanels.values {
                 state.timer.invalidate()
             }
@@ -5840,6 +5854,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// blocks. A rolled-back create surfaces as a balanced created→closed pair;
     /// a cross-pane detach→reattach as closed→created (amendment D move policy).
     private func reconcilePanelEvents(_ newPanels: [UUID: any Panel]) {
+        guard !didEmitWorkspaceClose else { return }
         let newIds = Set(newPanels.keys)
         guard newIds != lastKnownPanelIds else { return }
         for createdId in newIds.subtracting(lastKnownPanelIds) {
@@ -7250,7 +7265,8 @@ final class Workspace: Identifiable, ObservableObject {
         return true
     }
 
-    func setCustomTitle(_ title: String?) {
+    func setCustomTitle(_ title: String?, recordRename: Bool = true) {
+        let prior = self.title
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty {
             customTitle = nil
@@ -7258,6 +7274,10 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             customTitle = trimmed
             self.title = trimmed
+        }
+        // Restoring persisted identity is not an operator rename.
+        if recordRename {
+            EventEmitter.shared.emitWorkspaceRenamed(workspace: id, title: self.title, prior: prior)
         }
     }
 
@@ -9399,6 +9419,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
     func teardownAllPanels() {
+        emitWorkspaceTeardownEvents()
+
         // Drain every pending pane interaction with .dismissed FIRST so any
         // in-flight presentConfirmClose / presentTextInput / socket pane.confirm
         // continuation resumes before the panel state disappears. Skipping this
@@ -9434,6 +9456,16 @@ final class Workspace: Identifiable, ObservableObject {
         terminalInheritanceFontPointsByPanelId.removeAll(keepingCapacity: false)
         lastTerminalConfigInheritancePanelId = nil
         lastTerminalConfigInheritanceFontPoints = nil
+    }
+
+    private var didEmitWorkspaceClose = false
+
+    private func emitWorkspaceTeardownEvents() {
+        guard !didEmitWorkspaceClose else { return }
+        didEmitWorkspaceClose = true
+        let remaining = lastKnownPanelIds
+        lastKnownPanelIds.removeAll()
+        EventEmitter.shared.emitWorkspaceClosed(workspace: id, title: title, remainingPanels: remaining)
     }
 
     /// Close a panel.

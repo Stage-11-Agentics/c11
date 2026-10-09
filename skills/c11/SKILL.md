@@ -212,7 +212,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, conversation resume & lifecycle journal | [references/conversation.md](references/conversation.md) |
 | read agent lifecycle, journal analytics & export | [references/journal.md](references/journal.md) |
-| offline token usage, activity reports, attribution and cache pricing | [references/usage-report.md](references/usage-report.md) |
+| offline token usage (30d default; `--since all` for full history), activity reports, attribution and cache pricing | [references/usage-report.md](references/usage-report.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |
 | drive the embedded browser (validate UI without leaving c11) | [c11-browser skill](../c11-browser/SKILL.md) |
 | open markdown panels with live reload | [c11-markdown skill](../c11-markdown/SKILL.md) |

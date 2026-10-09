@@ -5,6 +5,7 @@ C11_CLI=/path/to/tagged.app/Contents/Resources/bin/c11 python3 tests/test_cli_ac
 All inputs are synthetic and confined to a system temporary directory.
 """
 import json
+import datetime
 from contextlib import closing
 import os
 from pathlib import Path
@@ -32,10 +33,15 @@ class ActivityCLI(unittest.TestCase):
         self.zone = 'UTC'
         self.cli = os.environ.get('C11_CLI_BIN', os.environ.get('C11_CLI', 'c11'))
 
-    def run_cli(self, command, *args, ok=True):
+    def run_cli(self, command, *args, ok=True, default_window=False, auto_journal=True):
+        # Historical synthetic fixtures request full history explicitly. Tests of
+        # the product's default window opt into the actual omitted-option path.
+        if command == 'usage' and not default_window and not any(arg == '--since' or arg.startswith('--since=') for arg in args):
+            args = (*args, '--since', 'all')
+        journal_args = ['--journal', str(self.journal)] if auto_journal else []
         proc = subprocess.run([self.cli, '--socket', str(self.root / 'absent.sock'), command,
                                '--state-root', str(self.state), '--claude-root', str(self.claude),
-                               '--codex-root', str(self.codex), '--journal', str(self.journal), *args],
+                               '--codex-root', str(self.codex), *journal_args, *args],
                               capture_output=True, text=True, timeout=20, env={**os.environ, 'TZ': self.zone})
         self.assertEqual(proc.returncode == 0, ok, proc.stderr + proc.stdout)
         return json.loads(proc.stdout) if ok and ('--json' in args or 'json' in args) else proc.stdout
@@ -51,6 +57,77 @@ class ActivityCLI(unittest.TestCase):
         return {'type': 'assistant', 'timestamp': '2026-01-02T01:00:00Z', 'sessionId': session,
                 'requestId': request, 'message': {'id': msg, 'model': 'test-model',
                 'usage': {'input_tokens': 100, 'output_tokens': output, **usage}}}
+
+    def test_usage_defaults_to_thirty_days_and_full_history_is_explicit(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        def stamp(days):
+            return (now + datetime.timedelta(days=days)).isoformat().replace('+00:00', 'Z')
+        old = self.claude_row(msg='old', output=3)
+        old['timestamp'] = stamp(-45)
+        recent = self.claude_row(msg='recent', output=7)
+        recent['timestamp'] = stamp(-1)
+        future = self.claude_row(msg='future', output=11)
+        future['timestamp'] = stamp(1)
+        self.write(self.claude / 'old.jsonl', [old])
+        old_mtime = (now - datetime.timedelta(days=45)).timestamp()
+        os.utime(self.claude / 'old.jsonl', (old_mtime, old_mtime))
+        self.write(self.claude / 'recent.jsonl', [recent, future])
+        self.write(self.codex / 'rollout.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'native-session'}},
+            self.codex_row(stamp(-45), 100, 80, 10),
+            self.codex_row(stamp(-1), 120, 90, 15)])
+        result = self.run_cli('usage', '--json', default_window=True)
+        self.assertEqual(result['totals']['calls'], 2)
+        window = result['effective_window']
+        self.assertEqual(window['mode'], 'default_30d')
+        self.assertIsNone(window['requested_since'])
+        self.assertEqual(window['since'], result['since'])
+        self.assertEqual(window['until'], result['until'])
+        parse = lambda value: datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+        self.assertAlmostEqual((parse(window['until']) - parse(window['since'])).total_seconds(), 30 * 86400, delta=1)
+        self.assertLess(abs((parse(window['until']) - now).total_seconds()), 20)
+        self.assertEqual(result['totals']['input_tokens'], 110)
+        self.assertEqual(result['totals']['cache_read_tokens'], 10)
+        self.assertEqual(result['totals']['output_tokens'], 12)
+        self.assertEqual(result['skipped_counts']['claude_files_before_since_skipped'], 1)
+        all_usage = self.run_cli('usage', '--since', 'all', '--json')
+        self.assertEqual(all_usage['effective_window']['mode'], 'all')
+        self.assertEqual(all_usage['effective_window']['requested_since'], 'all')
+        self.assertIsNone(all_usage['since'])
+        self.assertIsNone(all_usage['until'])
+        self.assertEqual(all_usage['totals']['calls'], 5)
+        self.assertEqual(all_usage['totals']['output_tokens'], 36)
+        markdown = self.run_cli('usage', default_window=True)
+        self.assertIn('Window (default_30d):', markdown)
+        ending = self.run_cli('usage', '--until', '2026-01-02T00:00:00Z', '--json', default_window=True)
+        self.assertEqual(ending['since'], '2025-12-03T00:00:00Z')
+        self.assertEqual(ending['until'], '2026-01-02T00:00:00Z')
+
+    def test_report_and_journal_directory_symlinks_preserve_results(self):
+        self.events()
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
+        self.link('panel-a', 'session-a', 'claude-code')
+        baseline = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        direct_usage = self.run_cli('usage', '--since', '2026-01-01T00:00:00Z', '--by', 'panel', '--json')
+        real_events = self.root / 'real-events'
+        (self.state / 'events').rename(real_events)
+        (self.state / 'events').symlink_to(real_events, target_is_directory=True)
+        real_journal = self.root / 'real-journal'
+        real_journal.mkdir()
+        self.journal.rename(real_journal / 'lifecycle.sqlite3')
+        (self.state / 'journal').symlink_to(real_journal, target_is_directory=True)
+        symlinked = self.run_cli('report', '--instance', 'synthetic', '--format', 'json', auto_journal=False)
+        symlinked_usage = self.run_cli('usage', '--since', '2026-01-01T00:00:00Z', '--by', 'panel', '--json', auto_journal=False)
+        with self.subTest(directory='events'):
+            self.assertEqual(symlinked['instances'], baseline['instances'])
+            self.assertEqual(symlinked['panels_created'], baseline['panels_created'])
+            self.assertEqual(symlinked['observed_agent_hours'], baseline['observed_agent_hours'])
+            self.assertEqual(symlinked['host_usage']['totals'], baseline['host_usage']['totals'])
+            self.assertNotIn('event_history_unavailable', symlinked['coverage_gaps'])
+        with self.subTest(directory='journal'):
+            self.assertEqual(symlinked_usage['groups'], direct_usage['groups'])
+            self.assertEqual(symlinked_usage['unattributed']['total_tokens'], 0)
+            self.assertNotIn('journal_unavailable', symlinked_usage['coverage_gaps'])
 
     def test_claude_dedup_request_and_final_snapshot(self):
         rows = [self.claude_row(output=1), self.claude_row(output=10), self.claude_row(output=10),
@@ -788,11 +865,15 @@ class ActivityCLI(unittest.TestCase):
         self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
         result = self.run_cli('usage', '--until', '2026-01-02T00:30:00Z', '--json')
         self.assertEqual(result['totals']['calls'], 0)
+        self.assertEqual(result['effective_window']['mode'], 'all')
+        self.assertEqual(result['effective_window']['until'], '2026-01-02T00:30:00Z')
         result = self.run_cli('report', '--instance', 'synthetic', '--until',
                               '2026-01-02T00:45:00Z', '--format', 'json')
         self.assertEqual(result['end'], '2026-01-02T00:45:00Z')
         self.assertEqual(result['open_at_observed_end'], 1)
         self.assertEqual(result['observed_agent_hours'], .75)
+        self.assertEqual(result['host_usage']['effective_window']['mode'], 'observed_span')
+        self.assertEqual(result['host_usage']['effective_window']['until'], result['end'])
         self.run_cli('usage', '--since', '2026-01-03T00:00:00Z', '--until',
                      '2026-01-02T00:00:00Z', ok=False)
 

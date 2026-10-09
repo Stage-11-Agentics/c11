@@ -6,10 +6,11 @@ import CoreFoundation
 /// File-only analytics. This file belongs to c11-cli, never the app target.
 enum ActivityAnalysisCommand {
     static let usage = """
-    Usage: c11 usage [--since <ISO-8601|Nd|Nh|Nm>] [--until <ISO-8601>] [--by panel|workspace|model|harness] [--json]
-           c11 report [--instance <id>|--all-instances] [--since <ISO-8601|Nd|Nh|Nm>] [--until <ISO-8601>] [--utc] [--format md|json]
+    Usage: c11 usage [--since <ISO-8601|Nd|Nh|Nm|all>] [--until <ISO-8601>] [--by panel|workspace|model|harness] [--json]
+           c11 report [--instance <id>|--all-instances] [--since <ISO-8601|Nd|Nh|Nm|all>] [--until <ISO-8601>] [--utc] [--format md|json]
 
     Reads local transcripts and history without a socket. Unknown is never zero.
+    Usage defaults to 30 days ending at command start or --until; --since all reads full retained history.
     File overrides: --state-root <directory>, --claude-root <directory>,
     --codex-root <directory>, --journal <lifecycle.sqlite3> (repeatable).
     Report defaults to production instances; use --instance or --all-instances for tagged builds.
@@ -109,10 +110,11 @@ enum ActivityAnalysisCommand {
         var until: Date?
         var utc = false
         var allInstances = false
+        var windowMode = "explicit"
         var state: URL
         var claude: URL
         var codex: URL
-        init(_ args: [String], json: Bool) throws {
+        init(_ args: [String], json: Bool, command: String) throws {
             let home = FileManager.default.homeDirectoryForCurrentUser
             // Read-only resolution: do not trigger the app's state migration from an offline query.
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -138,16 +140,22 @@ enum ActivityAnalysisCommand {
                 guard !value.isEmpty else { throw CLIError(message: "analytics: empty \(parts[0])") }
                 values[parts[0], default: []].append(value); i += 1
             }
+            let now = Date()
             if let s = value("--since") {
-                if let d = ActivityAnalysisCommand.date(s) { since = d }
+                if s == "all" { windowMode = "all" }
+                else if let d = ActivityAnalysisCommand.date(s) { since = d }
                 else if let suffix = s.last, let n = Double(s.dropLast()), n.isFinite, n > 0,
                         let unit = ["d": 86400.0, "h": 3600.0, "m": 60.0][String(suffix)] {
-                    since = Date().addingTimeInterval(-n * unit)
-                } else { throw CLIError(message: "analytics: --since must be ISO-8601 or a positive duration (Nd, Nh, Nm)") }
+                    since = now.addingTimeInterval(-n * unit)
+                } else { throw CLIError(message: "analytics: --since must be all, ISO-8601 or a positive duration (Nd, Nh, Nm)") }
             }
             if let s = value("--until") {
                 guard let d = ActivityAnalysisCommand.date(s) else { throw CLIError(message: "analytics: --until must be ISO-8601 with timezone") }
                 until = d
+            }
+            if command == "usage", value("--since") == nil {
+                let end = until ?? now
+                since = end.addingTimeInterval(-30 * 86400); until = end; windowMode = "default_30d"
             }
             if allInstances && value("--instance") != nil { throw CLIError(message: "report: --instance and --all-instances are mutually exclusive") }
             if let since, let until, until < since { throw CLIError(message: "analytics: --until precedes --since") }
@@ -161,7 +169,7 @@ enum ActivityAnalysisCommand {
     }
     static func run(command: String, args: [String], json: Bool) throws {
         if args.contains("--help") || args.contains("-h") { print(usage); return }
-        let options = try Options(args, json: json)
+        let options = try Options(args, json: json, command: command)
         var gaps = Set<String>()
         if command == "usage" {
             let tokens = try usageResult(options, gaps: &gaps)
@@ -218,6 +226,7 @@ enum ActivityAnalysisCommand {
         } catch { gaps.insert("unreadable_file") }
     }
     private static func files(_ root: URL, ext: String, gaps: inout Set<String>) -> [URL] {
+        let root = root.resolvingSymlinksInPath()
         guard FileManager.default.fileExists(atPath: root.path) else { gaps.insert("missing_\(ext)_root"); return [] }
         var failedSubtree = false
         guard let iterator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles], errorHandler: { _, _ in
@@ -639,7 +648,9 @@ enum ActivityAnalysisCommand {
         totalJSON["estimated_api_usd_upper_bound"] = unboundedCost.isEmpty ? upperCosts.values.reduce(0, +) as Any : null
         totalJSON["unknown_cost_tokens"] = unknownCostTokens.values.reduce(0, +)
         totalJSON["unknown_cost_calls"] = unknownCostCalls.values.reduce(0, +)
-        return ["schema_version": 1, "by": axis, "since": options.since.map(iso.string) as Any? ?? null,
+        let window: Object = ["mode": options.windowMode, "requested_since": options.value("--since") as Any? ?? null,
+                              "since": options.since.map(iso.string) as Any? ?? null, "until": until.map(iso.string) as Any? ?? null]
+        return ["schema_version": 1, "by": axis, "since": options.since.map(iso.string) as Any? ?? null, "effective_window": window,
                 "totals": totalJSON, "unattributed": unattributed.json, "groups": groupRows,
                 "until": until.map(iso.string) as Any? ?? null, "skipped_counts": counts, "analysis_counts": analysis,
                 "snapshot_basis": "Claude upgrades compare the selected most-complete snapshot with first seen in sorted transcript path/append order, and with minimum observed output. This order may differ from another scanner. Codex deltas follow each rollout's append chain; copies use full timestamp/last/total tuples across source sessions.",
@@ -778,11 +789,11 @@ enum ActivityAnalysisCommand {
                 Set(panelMarkers.keys).subtracting(conflictedPanels), !conflicts.isEmpty)
     }
     private static func reportResult(_ options: Options, gaps: inout Set<String>) throws -> Object {
-        let directory = EventLogLayout.eventsDirectoryURL(state: options.state)
+        let directory = EventLogLayout.eventsDirectoryURL(state: options.state).resolvingSymlinksInPath()
         let names = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         var instance = options.value("--instance")
         func production(_ name: String) -> Bool { name.hasPrefix("events-com.stage11.c11-") }
-        if instance == nil && options.since == nil && !options.allInstances {
+        if instance == nil && options.value("--since") == nil && !options.allInstances {
             instance = names.filter { production($0.lastPathComponent) && $0.lastPathComponent.hasSuffix(".ndjson") }
                 .sorted {
                     ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
@@ -1065,7 +1076,7 @@ enum ActivityAnalysisCommand {
                             "hangs": unknownLoadHangs, "hangs_per_hour": null])
         let tokens: Object?
         if let start = starts.min(), let end = ends.max() {
-            var usageOptions = options; usageOptions.since = start
+            var usageOptions = options; usageOptions.since = start; usageOptions.windowMode = "observed_span"
             tokens = try usageResult(usageOptions, gaps: &gaps, until: end)
         } else {
             gaps.insert("usage_span_unavailable")
@@ -1108,7 +1119,10 @@ enum ActivityAnalysisCommand {
                 "coverage_gaps": gaps.sorted()]
     }
     private static func usageMarkdown(_ result: Object) -> String {
-        var output = "Token usage by \(result["by"] ?? "model")\n\nKey | Fresh/uncached input | Cache read | Cache write | Output | API estimate USD\n--- | ---: | ---: | ---: | ---: | ---:\n"
+        let window = object(result["effective_window"])
+        let start = window["since"] as? String ?? "all retained history"
+        let end = window["until"] as? String ?? "unbounded"
+        var output = "Token usage by \(result["by"] ?? "model")\n\nWindow (\(window["mode"] ?? "explicit")): \(start) to \(end).\n\nKey | Fresh/uncached input | Cache read | Cache write | Output | API estimate USD\n--- | ---: | ---: | ---: | ---: | ---:\n"
         for row in result["groups"] as? [Object] ?? [] {
             let write = number(row["cache_write_5m_tokens"]) + number(row["cache_write_1h_tokens"]) + number(row["cache_write_unknown_ttl_tokens"])
             output += "\(row["key"] ?? "unknown") | \(row["input_tokens"] ?? 0) | \(row["cache_read_tokens"] ?? 0) | \(write) | \(row["output_tokens"] ?? 0) | \(row["estimated_api_usd"] is NSNull ? "unknown" : String(describing: row["estimated_api_usd"] ?? "unknown"))\n"

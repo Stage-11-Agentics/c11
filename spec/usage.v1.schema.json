@@ -14,7 +14,9 @@
     "unattributed_basis",
     "until",
     "analysis_counts",
-    "snapshot_basis"
+    "snapshot_basis",
+    "since",
+    "effective_window"
   ],
   "properties": {
     "schema_version": {
@@ -114,6 +116,45 @@
     "snapshot_basis": {
       "type": "string",
       "description": "Counter chronology, copied-record identity, and snapshot comparison order used for analysis_counts."
+    },
+    "effective_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "requested_since",
+        "since",
+        "until"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "default_30d",
+            "all",
+            "explicit",
+            "observed_span"
+          ]
+        },
+        "requested_since": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "description": "Effective timestamp bounds. Usage defaults to 30 days ending at command start or explicit until; explicit since=all reads full retained history unless until is supplied. Report host usage uses its observed replay span. Rows with unknown timestamps remain included with a coverage gap."
     }
   },
   "$defs": {

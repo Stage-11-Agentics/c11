@@ -10,12 +10,20 @@ c11 usage --since 7d --by panel --json
 c11 usage --since 2026-10-01T00:00:00Z --by workspace
 c11 usage --by model
 c11 usage --by harness
+c11 usage --since all --by harness # Explicit full retained history
 c11 report --instance <instance-id> --format md
 c11 report --since 14d --format json
 ```
 
-`--since` accepts an ISO-8601 timestamp with timezone or a positive duration in
-minutes, hours, or days (`30m`, `12h`, `7d`). `--until` accepts an ISO-8601 timestamp
+Usage defaults to **30 days**, ending at command start or an explicit `--until`. JSON exposes
+`effective_window` with `mode`, `requested_since`, `since`, and `until`, and
+Markdown shows the selected bounds. `--since all` explicitly selects full
+retained history, with no implicit upper bound. An explicit `--until` still
+bounds that full-history query. Report keeps its instance-selection default and
+bounds host usage to the actually observed replay span (`mode: observed_span`).
+
+`--since` accepts `all`, an ISO-8601 timestamp with timezone or a positive duration
+in minutes, hours, or days (`30m`, `12h`, `7d`). `--until` accepts an ISO-8601 timestamp
 and bounds both transcript usage and replay state, inclusively. An end before the
 start is rejected. Report selects the newest **production** instance when no
 selector is supplied. `--since` alone includes retained production instances;
@@ -81,7 +89,7 @@ Conflicting retained predecessors expose an ambiguity gap and retain only the
 last known request with unknown cost.
 
 JSON has `schema_version: 1`, `totals`, `unattributed`, `groups`, `coverage_gaps`
-and `skipped_counts`, plus aggregate `analysis_counts` and `snapshot_basis`.
+and `skipped_counts`, plus `effective_window`, aggregate `analysis_counts` and `snapshot_basis`.
 Claude output diagnostics compare the selected most-complete snapshot with the
 first seen in sorted path/append order and the minimum observed output. Another
 scanner may encounter a different first snapshot. Codex diagnostics count
@@ -109,8 +117,14 @@ are discarded after updating that baseline; only compact in-window identities
 and typed counters remain for deduplication. Session/model strings are interned,
 and parsed JSON objects are not retained. Memory depends on retained Codex
 window identities, every Claude identity in files that survive the mtime filter
-(including pre-window messages), and result groups. With no `--since`, all
-Claude identities and Codex usage identities remain eligible. Report retains
+(including pre-window messages), and result groups. With explicit `--since all`,
+all Claude identities and Codex usage identities remain eligible. One full-history
+validation run took about **491 seconds** and **838 MiB maximum RSS**; these are
+corpus-specific measurements, not fixed resource limits. Full-history runtime
+and memory grow with retained identities. The default 30-day usage window limits
+eligible Codex identities and skips older native files; a recently modified
+Claude file can still retain earlier message identities for correct copied-record
+deduplication. Report retains
 compact typed events, excluding raw text/body dictionaries and duration arrays;
 its memory also depends on the retained event count. Retention and unrecorded harness usage can
 never be proven complete by this command.
@@ -201,7 +215,9 @@ Open/censored panel lifetimes are counted separately from completed lifetimes.
 
 For synthetic fixtures or alternate stores, use `--state-root <directory>`,
 `--claude-root <directory>`, `--codex-root <directory>`, and repeatable
-`--journal <lifecycle.sqlite3>`. These do not modify the selected stores.
+`--journal <lifecycle.sqlite3>`. Directory roots are resolved through symlinks
+before enumeration, including the state root’s `events` and `journal` directories.
+These do not modify the selected stores.
 The shared event-directory override, where supported by the app build, also
 applies to report. No server is started and no app focus changes.
 

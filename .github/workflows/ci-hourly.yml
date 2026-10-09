@@ -177,6 +177,9 @@ jobs:
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \
             -skip-testing:c11LogicTests/SocketControlPasswordStoreTests \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 60 \
             COMPILER_INDEX_STORE_ENABLE=NO \
             test
 
@@ -224,6 +227,9 @@ jobs:
               -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
               -disableAutomaticPackageResolution \
               -destination "platform=macOS" \
+              -test-timeouts-enabled YES \
+              -default-test-execution-time-allowance 60 \
+              -maximum-test-execution-time-allowance 60 \
               COMPILER_INDEX_STORE_ENABLE=NO \
               test
           }

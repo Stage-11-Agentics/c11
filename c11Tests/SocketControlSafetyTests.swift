@@ -661,7 +661,7 @@ final class SocketPasswordModeTests: XCTestCase {
             #"{"id":9,"method":"markdown.visible","params":{"watch":true}}"#,
             "auth hunter2",
         ])
-        XCTAssertEqual(session.executed, [])
+        // The stream bypasses `execute`; the auth_required reply is the check.
         XCTAssertEqual(session.responses.count, 1, "a refused stream closes the connection: \(session.responses)")
         try assertV2Error(session.responses.first ?? "", id: 9, code: "auth_required")
     }

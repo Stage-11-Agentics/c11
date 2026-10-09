@@ -299,6 +299,8 @@ extension SocketControlPasswordStore {
         var environment: @Sendable () -> [String: String]
         /// nil reads the default file under Application Support.
         var fileURL: URL?
+        /// Called at most once per process across every Source; tests reset it
+        /// with `resetLazyKeychainFallbackCacheForTests()`.
         var loadKeychainPassword: @Sendable () -> String?
 
         static let shipped = Source(

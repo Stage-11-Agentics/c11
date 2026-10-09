@@ -3,9 +3,9 @@ name: Mailbox parity
 # Syntax check for the c11 mailbox hook-drain CLI test (C11-13 Stage 2).
 # Push and PR events stay cheap: this workflow only compiles that Python
 # test. Native Mailbox* and StdinHandler* coverage runs in the main
-# backstop's `c11-logic` lane in `ci-hourly.yml`. No CLI-vs-raw envelope
-# byte-parity check runs anywhere now; the old live-socket parity script was removed in
-# C11-345 because its setup switched the operator's workspace.
+# backstop's `c11-logic` lane in `ci-hourly.yml`, including the CLI-vs-raw
+# envelope byte-parity lock
+# (MailboxEnvelopeValidationTests.testCLIAndRawFileSendersProduceIdenticalInboxBytes).
 
 on:
   push:

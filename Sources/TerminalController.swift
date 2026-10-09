@@ -2260,11 +2260,10 @@ class TerminalController {
     }
 
     /// Serves one accepted connection once `handleClient` has admitted its peer.
-    /// In password mode every command, including a streaming request, must pass
-    /// this connection's `auth` / `auth.login` before `execute` sees it, and the
+    /// In password mode every command must pass this connection's `auth` /
+    /// `auth.login` before `execute` or the markdown watch stream runs, and the
     /// login ends with the connection. The mode is read per command, so switching
     /// to password mode also locks connections that are already open.
-    /// C11-347 tests drive this over a socketpair with a recording `execute`.
     func serveClientCommandLines(
         socket: Int32,
         callerTTYDevice: UInt32?,

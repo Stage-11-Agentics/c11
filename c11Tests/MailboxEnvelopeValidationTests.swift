@@ -278,7 +278,8 @@ final class MailboxEnvelopeValidationTests: XCTestCase {
     /// what a raw-file sender writes: Python's
     /// `json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`.
     /// The CLI's envelope must encode to those bytes, and the dispatcher's
-    /// validate-then-encode of a raw envelope (its inbox copy) must keep them.
+    /// validate-then-encode of a raw envelope (its inbox copy, with activity
+    /// text recorded, the default) must keep them.
     func testCLIAndRawFileSendersProduceIdenticalInboxBytes() throws {
         let id = "01K3A2B7X8PQRTVWYZ0123456J"
         func ts(_ seq: Int) -> String { String(format: "2026-04-24T00:00:00.%03dZ", seq) }
@@ -310,9 +311,11 @@ final class MailboxEnvelopeValidationTests: XCTestCase {
         ]
         for (name, cliEnvelope, raw) in cases {
             let rawBytes = Data(raw.utf8)
-            XCTAssertEqual(String(decoding: try cliEnvelope.encode(), as: UTF8.self), raw, "[\(name)] CLI bytes")
+            // Compare Data: String equality would accept a different Unicode form.
+            let cliBytes = try cliEnvelope.encode()
+            XCTAssertEqual(cliBytes, rawBytes, "[\(name)] CLI bytes: \(String(decoding: cliBytes, as: UTF8.self))")
             let delivered = try MailboxEnvelope.validate(data: rawBytes).encode()
-            XCTAssertEqual(String(decoding: delivered, as: UTF8.self), raw, "[\(name)] dispatcher re-encode of the raw file")
+            XCTAssertEqual(delivered, rawBytes, "[\(name)] dispatcher re-encode: \(String(decoding: delivered, as: UTF8.self))")
         }
     }
 }

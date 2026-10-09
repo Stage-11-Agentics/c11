@@ -367,11 +367,6 @@ final class MarkdownWebRendererTests: XCTestCase {
             """#)
         XCTAssertEqual(installed as? Bool, true)
 
-        // C11-368 diagnostic: hideLinkPeek(0) succeeds only while the page's
-        // peek generation is still 0, the id the old test hardcoded.
-        let generationZero = try await evaluate(renderer, "window.c11md.hideLinkPeek(0)") as? Bool
-        print("C11-368 peek generation still zero before hover: \(String(describing: generationZero))")
-
         // Hover the link the way the operator does. The page numbers the peek
         // request with its current generation, so any earlier overlay change
         // cannot make the native reply stale.

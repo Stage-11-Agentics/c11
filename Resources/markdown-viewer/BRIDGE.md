@@ -11,6 +11,14 @@ back through `setSettings`. The native Find menu route opens the page popover wi
 `openFind()`; the web view keeps first responder only when the panel focus policy
 allows it.
 
+Native also owns the bounded corpus index and navigation. The page filters its
+immutable document, heading, and backlink snapshot for the ⌘K palette and the
+outline panel's Referenced by tab. Palette and backlink selections post a target
+to native; native validates it against the latest snapshot and calls
+`MarkdownPanel.navigate(to:fragment:origin:)` with `.palette` or `.backlink`.
+Ticket cards read local `.lattice` task snapshots without writing to the board;
+IDs remain plain text when no matching board entry exists.
+
 ## Native → page
 
 Call `window.c11md` only after `ready`. Arguments/results are JSON values. `load`
@@ -35,8 +43,23 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   `imageBlocked`, `notes`, `back`, `source`, `frontmatter`, `outlineTitle`,
   `outlineFilter`, `outlineEmpty`, `outlineNoMatches`, `outlineClearFilter`,
   `outlineSummary`, `outlineTaskCount`, `findOpen`, `findPlaceholder`,
-  `findPrevious`, `findNext`, `findClose`, `findCount`. Native localizes these
-  when constructing settings; content is never used as localization markup.
+  `findPrevious`, `findNext`, `findClose`, `findCount`, `corpusOutline`,
+  `corpusBacklinks`, `corpusFilter`, `corpusDocument`, `corpusSection`,
+  `corpusNoReferences`, `corpusIndexing`, `corpusSearch`, `corpusNoMatches`,
+  `corpusFile`, `corpusHeading`, `corpusHint`, `corpusTicketStatus`,
+  `corpusLine`, `corpusMore`. Native localizes these when constructing
+  settings; content is never used as localization markup.
+- `setCorpus(snapshot)` / `setCorpusJSON(json, currentPath)`: replace the
+  current immutable corpus snapshot. Native serializes the bounded snapshot
+  off-main and submits one JSON string; `currentPath` is the resolved active
+  document path. The page parses the string and never scans files itself.
+  Documents carry an absolute path, relative path, title and bounded heading
+  list; links carry the source path/section and in-corpus target; ticket cards
+  contain only locally resolved title/status. The page filters this data and
+  never scans files itself.
+- `openCorpusPalette()` / `closeCorpusPalette()`: open or close the ⌘K
+  file/heading palette.
+- `corpusBacklinks()`: read-only current-file backlink query for diagnostics.
 - `scrollToHeading(textOrSlug)`: exact slug, exact case-insensitive text, then
   a unique case-insensitive prefix, then a unique substring. Exact matches win
   over broader matches. Multiple matches at the best available tier return
@@ -130,6 +153,10 @@ with `type` and the following fields (no JSON string wrapping):
 - `{type:"outlineDismiss"}`: the page handled Escape while the outline was open;
   native persists the explicit closed choice and sends it back through
   `setSettings({outlineOpen:false})`.
+- `{type:"corpusNavigate", origin:"palette"|"backlink", path, fragment?}`:
+  native checks the file and source relationship against its latest corpus
+  snapshot, then uses N1 navigation directly. Renderer-supplied paths never
+  bypass native validation.
 - `{type:"escapeUnhandled"}`: the page's popover, footnote, filter and outline
   layers did not consume Escape; native may then close and persist the outline.
 - `{type:"error", code, message, revision}`: recoverable renderer error. Codes

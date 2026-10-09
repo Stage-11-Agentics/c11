@@ -167,6 +167,7 @@ def main() -> None:
                     "markdown.scroll",
                     {"panel_id": panel, "heading": "Installation"},
                 ),
+                (["markdown", "backlinks", "--panel", panel, "--json"], "markdown.backlinks", {"panel_id": panel}),
                 (["markdown", "visible", "--panel", panel, "--json"], "markdown.visible", {"panel_id": panel, "watch": False}),
                 (["--json", "markdown", "theme", "--panel", panel, "--list"], "markdown.theme", {"panel_id": panel, "action": "list"}),
                 (
@@ -229,6 +230,7 @@ def main() -> None:
 
             for args in [
                 ["markdown", "scroll", "--heading", "Installation"],
+                ["markdown", "backlinks", "--panel", panel],
                 ["markdown", "visible", "--panel", panel],
                 ["markdown", "visible", "--panel", "1", "--json"],
                 ["markdown", "font", "--panel", panel, "--scale", "3.1"],

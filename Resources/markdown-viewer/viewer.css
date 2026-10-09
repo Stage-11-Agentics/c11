@@ -362,3 +362,41 @@ body { display:block; background:var(--paper); }
 .fnpop { display:block; max-height:50%; overflow:auto; }
 .surface { display:flex; flex-direction:column; min-height:0; position:relative; background:var(--paper); }
 .backpill[hidden] { display:none; }
+
+/* Corpus navigator: fixed overlays and rows keep the reader geometry stable. */
+.otabs { height:32px; flex:none; display:flex; align-items:stretch; gap:4px; padding:3px 8px; border-bottom:1px solid var(--rule-soft); }
+.otabs button { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; flex:1; border-radius:4px; padding:0 7px; color:var(--c-faint); font-size:10.5px; white-space:nowrap; }
+.otabs button:hover { color:var(--c-text); background:var(--wash); }
+.otabs button[aria-selected="true"] { color:var(--ink-strong); background:var(--wash-2); }
+.otab-count { color:var(--c-faint); font-size:10px; font-variant-numeric:tabular-nums; }
+.backlink-list button { width:100%; display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left; border-radius:0 4px 4px 0; padding:6px 8px 6px 12px; color:var(--ink-dim); }
+.backlink-list button:hover, .backlink-list button:focus-visible { color:var(--ink-strong); background:var(--wash); outline:none; }
+.backlink-list .ref-group { padding:10px 8px 5px 12px; color:var(--c-faint); font-family:var(--chrome-mono); font-size:9px; text-transform:uppercase; letter-spacing:.06em; }
+.backlink-list .ref-title { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-head); font-size:calc(12.5px * var(--scale) * var(--face-rail)); }
+.backlink-list .ref-detail { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--c-faint); font-family:var(--chrome-mono); font-size:10px; }
+.olist[hidden], .corpus-scrim[hidden], .ticket-card[hidden] { display:none!important; }
+.corpus-scrim { position:absolute; inset:0; z-index:70; display:flex; justify-content:center; align-items:flex-start; padding:48px 12px 12px; background:rgba(0,0,0,.24); }
+.corpus-palette { width:min(660px,100%); max-height:calc(100% - 60px); display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--rule2); border-radius:7px; background:var(--pop); box-shadow:var(--shadow); }
+.corpus-search { height:46px; flex:none; display:flex; align-items:center; gap:7px; padding:0 8px 0 14px; border-bottom:1px solid var(--rule-soft); }
+.corpus-search input { flex:1; min-width:0; height:36px; border:0; outline:0; background:transparent; color:var(--ink-strong); font-family:var(--font-prose); font-size:16px; }
+.corpus-search input::placeholder { color:var(--c-faint); }
+.corpus-count { width:4ch; flex:none; text-align:right; color:var(--c-faint); font-size:10px; font-variant-numeric:tabular-nums; }
+.corpus-search button { width:28px; height:28px; flex:none; border-radius:4px; color:var(--c-faint); font-size:17px; }
+.corpus-search button:hover, .corpus-search button:focus-visible { background:var(--wash); color:var(--c-text); outline:none; }
+.corpus-results { min-height:54px; overflow:auto; padding:5px; scrollbar-width:thin; }
+.corpus-result { width:100%; min-height:46px; display:flex; align-items:center; gap:10px; text-align:left; padding:6px 10px; border-radius:5px; color:var(--c-text); }
+.corpus-result:hover, .corpus-result.selected { background:var(--wash-2); }
+.corpus-result:focus-visible { outline:1px solid var(--ink-strong); outline-offset:-1px; }
+.corpus-kind { width:44px; flex:none; color:var(--c-faint); font-size:9px; text-transform:uppercase; letter-spacing:.06em; }
+.corpus-labels { min-width:0; flex:1; display:flex; flex-direction:column; gap:2px; }
+.corpus-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-head); font-size:12.5px; color:var(--ink-strong); }
+.corpus-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--c-faint); font-size:10px; }
+.corpus-empty { padding:14px 12px; color:var(--c-faint); font-size:11px; }
+.corpus-foot { height:30px; flex:none; display:flex; align-items:center; gap:5px; padding:0 12px; border-top:1px solid var(--rule-soft); color:var(--c-faint); font-size:10px; }
+.corpus-foot span { flex:1; }
+.corpus-foot kbd { border:1px solid var(--rule-soft); border-radius:3px; padding:1px 4px; font:inherit; }
+.prose .ticket-ref { display:inline; border:0; padding:0; background:none; color:inherit; font:inherit; text-decoration:underline; text-decoration-style:dotted; text-decoration-color:var(--link-line); text-underline-offset:.2em; cursor:help; }
+.prose .ticket-ref:hover, .prose .ticket-ref:focus-visible { color:var(--ink-strong); text-decoration-style:solid; outline:none; }
+.ticket-card { position:absolute; z-index:72; width:min(300px,calc(100% - 20px)); padding:10px 12px; border:1px solid var(--rule2); border-radius:6px; background:var(--pop); box-shadow:var(--shadow); color:var(--c-text); pointer-events:none; }
+.ticket-card strong { display:block; margin-bottom:5px; font-family:var(--font-head); font-size:12.5px; color:var(--ink-strong); }
+.ticket-card span { display:block; color:var(--c-faint); font-size:10.5px; }

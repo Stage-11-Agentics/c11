@@ -20,14 +20,26 @@
 <body>
 <main class="surface" id="surface" data-mode="read" data-size="wide">
   <aside class="opanel" id="outlinePanel" aria-label="Outline" aria-hidden="true">
+    <div class="otabs" role="tablist">
+      <button id="outlineTab" type="button" role="tab" aria-selected="true"></button>
+      <button id="backlinksTab" type="button" role="tab" aria-selected="false"><span id="backlinkTabTitle"></span><span class="otab-count" id="backlinkCount">0</span></button>
+    </div>
     <div class="ohead">
       <input id="outlineFilter" type="search" placeholder="Filter outline" autocomplete="off" spellcheck="false">
       <button class="oclear" id="outlineClear" type="button" hidden aria-label="Clear filter">×</button>
       <span class="oc" id="outlineCount"></span>
     </div>
     <nav class="olist" id="outlineList" aria-label="Outline"></nav>
+    <nav class="olist backlink-list" id="backlinkList" hidden></nav>
     <div class="ofoot" id="outlineSummary"></div>
   </aside>
+  <div class="corpus-scrim" id="corpusScrim" hidden>
+    <section class="corpus-palette" id="corpusPalette" role="dialog" aria-modal="true" aria-label="Jump to file or heading">
+      <div class="corpus-search"><input id="corpusSearch" type="search" autocomplete="off" spellcheck="false"><span class="corpus-count" id="corpusCount"></span><button id="corpusClose" type="button" aria-label="Close">×</button></div>
+      <div class="corpus-results" id="corpusResults" role="listbox"></div>
+      <div class="corpus-foot"><span id="corpusHint"></span><kbd>↑↓</kbd><kbd>↵</kbd><kbd>esc</kbd></div>
+    </section>
+  </div>
   <aside class="findbar" id="findbar" role="search" aria-hidden="true">
     <input id="findInput" type="search" autocomplete="off" spellcheck="false">
     <span class="find-count" id="findCount" aria-live="polite"></span>
@@ -42,6 +54,7 @@
   <aside class="fnpop" id="note" hidden></aside>
   <aside class="anchor-suggestions" id="anchorSuggestions" hidden role="status" aria-live="polite"></aside>
   <aside class="link-peek" id="linkPeek" hidden></aside>
+  <aside class="ticket-card" id="ticketCard" role="tooltip" hidden></aside>
   <section id="diagramOverlay" hidden role="dialog" aria-modal="true"><div class="diagram-tools"><button data-zoom="-1" aria-label="−">−</button><button data-zoom="0" aria-label="100%">100%</button><button data-zoom="1" aria-label="+">+</button><button id="diagramClose"></button></div><div class="diagram-pan" id="diagramPan"><div class="diagram-zoom" id="diagramZoom"></div></div></section>
 </main>
 </body>

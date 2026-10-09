@@ -77094,6 +77094,186 @@
           }
         }
       }
+    },
+    "markdown.corpus.outline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Outline"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "アウトライン"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Структура"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "개요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "大纲"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "大綱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Структура"}}
+      }
+    },
+    "markdown.corpus.backlinks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Referenced by"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照元"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Посилання з"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조한 문서"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "引用来源"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "引用來源"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ссылаются"}}
+      }
+    },
+    "markdown.corpus.filter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Filter references"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照を絞り込む"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Фільтрувати посилання"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조 필터링"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "筛选引用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "篩選引用"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Фильтр ссылок"}}
+      }
+    },
+    "markdown.corpus.document": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This document"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このドキュメント"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Цей документ"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 문서"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "本文档"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "本文件"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Этот документ"}}
+      }
+    },
+    "markdown.corpus.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This section"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このセクション"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Цей розділ"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 섹션"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "本节"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "本節"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Этот раздел"}}
+      }
+    },
+    "markdown.corpus.noReferences": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No references"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照はありません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Посилань немає"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조가 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "没有引用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有引用"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Нет ссылок"}}
+      }
+    },
+    "markdown.corpus.indexing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Indexing documents…"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "文書を索引中…"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Індексація документів…"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "문서 색인 중…"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "正在索引文档…"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在索引文件…"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Индексирование документов…"}}
+      }
+    },
+    "markdown.corpus.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Search files and headings"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ファイルと見出しを検索"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Пошук файлів і заголовків"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일 및 제목 검색"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "搜索文件和标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋檔案和標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Поиск файлов и заголовков"}}
+      }
+    },
+    "markdown.corpus.noMatches": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No matching files or headings"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "一致するファイルや見出しはありません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Файлів або заголовків не знайдено"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "일치하는 파일 또는 제목이 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "没有匹配的文件或标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有相符的檔案或標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Совпадений файлов или заголовков нет"}}
+      }
+    },
+    "markdown.corpus.file": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "File"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ファイル"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Файл"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "文件"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "檔案"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Файл"}}
+      }
+    },
+    "markdown.corpus.heading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Heading"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "見出し"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Заголовок"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "제목"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Заголовок"}}
+      }
+    },
+    "markdown.corpus.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Jump to a file or heading"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ファイルまたは見出しへ移動"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перейти до файлу або заголовка"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일 또는 제목으로 이동"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "跳转到文件或标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "跳至檔案或標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Перейти к файлу или заголовку"}}
+      }
+    },
+    "markdown.corpus.ticket.status": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Status"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "状態"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Статус"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "상태"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "状态"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Статус"}}
+      }
+    },
+    "markdown.corpus.line": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "line"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "行"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "рядок"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "줄"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "行"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "行"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "строка"}}
+      }
+    },
+    "markdown.corpus.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%d more references"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ほか %d 件の参照"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Ще %d посилань"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조 %d개 더 있음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "还有 %d 条引用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "還有 %d 則引用"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ещё ссылок: %d"}}
+      }
     }
   }
 }

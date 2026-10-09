@@ -2497,6 +2497,7 @@ class TerminalController {
         "markdown.navigate",
         "markdown.history",
         "markdown.links",
+        "markdown.backlinks",
         "markdown.visible",
         "markdown.theme",
         "markdown.typeface",

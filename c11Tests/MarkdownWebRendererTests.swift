@@ -1594,6 +1594,180 @@ extension MarkdownWebRendererTests {
         XCTAssertEqual(manager.selectedWorkspaceId, selectedBefore)
     }
 
+    func testMarkdownBacklinksHandlerReturnsLivePanelCorpusLinks() async throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let pane = try XCTUnwrap(workspace.bonsplitController.focusedPaneId)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-backlinks-handler-\(UUID().uuidString)")
+        let docs = root.appendingPathComponent("docs", isDirectory: true)
+        try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { workspace.teardownAllPanels(); try? FileManager.default.removeItem(at: root) }
+
+        let source = docs.appendingPathComponent("source.md")
+        let target = docs.appendingPathComponent("target.md")
+        try "# Source\n\n## Setup\n\n[Target](target.md#install)\n".write(to: source, atomically: true, encoding: .utf8)
+        try "# Target\n\n## Install\n".write(to: target, atomically: true, encoding: .utf8)
+        let panel = try XCTUnwrap(workspace.newMarkdownPanel(inPane: pane, filePath: target.path, focus: false))
+        let corpusReady = expectation(description: "panel receives its indexed corpus")
+        let subscription = panel.$corpusSnapshot.sink { snapshot in
+            if snapshot.containsDocument(path: source.path), snapshot.containsDocument(path: target.path) {
+                corpusReady.fulfill()
+            }
+        }
+        await fulfillment(of: [corpusReady], timeout: 10)
+        subscription.cancel()
+
+        let controller = TerminalController.makeForTesting()
+        let priorManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = priorManager }
+        let response = try await reviewSend(
+            controller,
+            "markdown.backlinks",
+            params: ["surface_id": panel.id.uuidString, "workspace_id": workspace.id.uuidString]
+        )
+        XCTAssertEqual(response["ok"] as? Bool, true, "\(response)")
+        let result = try XCTUnwrap(response["result"] as? [String: Any], "\(response)")
+        XCTAssertEqual(result["file_path"] as? String, target.path)
+        let backlinks = try XCTUnwrap(result["backlinks"] as? [[String: Any]], "\(response)")
+        XCTAssertEqual(backlinks.count, 1)
+        XCTAssertEqual(backlinks.first?["source_path"] as? String, source.path)
+        XCTAssertEqual(backlinks.first?["section_slug"] as? String, "setup")
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "markdown.backlinks"), .socketWorker)
+    }
+
+    func testCorpusNavigateMessageValidatesAndUsesN1Origins() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-corpus-navigation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let current = root.appendingPathComponent("current.md")
+        let source = root.appendingPathComponent("source.md")
+        let palette = root.appendingPathComponent("palette.md")
+        let outside = root.deletingLastPathComponent().appendingPathComponent("outside-\(UUID().uuidString).md")
+        try "# Current\n\n## Install\n".write(to: current, atomically: true, encoding: .utf8)
+        try "# Source\n\n## Setup\n\n[Current](current.md#install)\n".write(to: source, atomically: true, encoding: .utf8)
+        try "# Palette\n\n## Jump\n".write(to: palette, atomically: true, encoding: .utf8)
+        try "# Outside\n".write(to: outside, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: current.path)
+        defer { panel.close() }
+        let corpusReady = expectation(description: "the panel has validated corpus destinations")
+        let snapshotToken = panel.$corpusSnapshot.sink { snapshot in
+            if snapshot.containsDocument(path: current.path),
+               snapshot.containsDocument(path: source.path),
+               snapshot.containsDocument(path: palette.path) {
+                corpusReady.fulfill()
+            }
+        }
+        await fulfillment(of: [corpusReady], timeout: 10)
+        snapshotToken.cancel()
+
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        func postNavigation(path: String, fragment: String?, origin: String) async throws {
+            var payload: [String: Any] = ["type": "corpusNavigate", "path": path, "origin": origin]
+            if let fragment { payload["fragment"] = fragment }
+            let result: Any = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any, Error>) in
+                renderer.webView.callAsyncJavaScript(
+                    "window.webkit.messageHandlers.c11md.postMessage(payload); return true;",
+                    arguments: ["payload": payload],
+                    in: nil,
+                    in: .page
+                ) { continuation.resume(with: $0) }
+            }
+            XCTAssertEqual(result as? Bool, true)
+            // Script messages are delivered to the native handler on WebKit's
+            // main-thread queue after the JavaScript call returns.
+            try await Task.sleep(nanoseconds: 150_000_000)
+        }
+
+        let initialHistoryCount = panel.navigationHistory.entries.count
+        try await postNavigation(path: outside.path, fragment: nil, origin: "palette")
+        try await postNavigation(path: current.path, fragment: "missing", origin: "palette")
+        try await postNavigation(path: palette.path, fragment: "jump", origin: "backlink")
+        XCTAssertEqual(panel.filePath, current.path, "unlisted files, unknown fragments, and unrelated backlinks are rejected")
+        XCTAssertEqual(panel.navigationHistory.entries.count, initialHistoryCount)
+
+        let backlinkNavigation = expectation(description: "native corpus message navigates through N1 with backlink origin")
+        let backlinkToken = panel.$filePath.sink { if $0 == source.path { backlinkNavigation.fulfill() } }
+        try await postNavigation(path: source.path, fragment: "setup", origin: "backlink")
+        await fulfillment(of: [backlinkNavigation], timeout: 10)
+        backlinkToken.cancel()
+        XCTAssertEqual(panel.navigationHistory.current?.origin, .backlink)
+        await rendered(renderer, revision: 2)
+
+        let paletteNavigation = expectation(description: "native corpus message navigates through N1 with palette origin")
+        let paletteToken = panel.$filePath.sink { if $0 == palette.path { paletteNavigation.fulfill() } }
+        try await postNavigation(path: palette.path, fragment: "jump", origin: "palette")
+        await fulfillment(of: [paletteNavigation], timeout: 10)
+        paletteToken.cancel()
+        XCTAssertEqual(panel.navigationHistory.current?.origin, .palette)
+        await rendered(renderer, revision: 3)
+    }
+
+    func testCorpusBridgeSubmissionCostOnC11Checkout() async throws {
+        _ = NSApplication.shared
+        var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path) {
+            root = root.deletingLastPathComponent()
+        }
+        let document = root.appendingPathComponent("docs/c11-mailbox-guide.md")
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path),
+              FileManager.default.fileExists(atPath: document.path) else {
+            throw XCTSkip("the c11 checkout is not present beside this test source")
+        }
+
+        let panel = MarkdownPanel(workspaceId: UUID(), filePath: document.path)
+        defer { panel.close() }
+        let indexed = expectation(description: "the checkout corpus is indexed")
+        let token = panel.$corpusSnapshot.sink { snapshot in
+            if snapshot.rootPath == root.path && snapshot.containsDocument(path: document.path) { indexed.fulfill() }
+        }
+        await fulfillment(of: [indexed], timeout: 45)
+        token.cancel()
+
+        let bridgeBytes = panel.corpusSnapshot.bridgeJSON.utf8.count
+        XCTAssertGreaterThan(bridgeBytes, 100_000, "this proof must exercise the c11 checkout corpus")
+        let indexedOpenDocument = try XCTUnwrap(panel.corpusSnapshot.documents.first { $0.path == document.path })
+        XCTAssertFalse(indexedOpenDocument.headings.isEmpty, "nearest-first allocation must preserve the open docs document's headings")
+        let renderer = panel.ensureRenderer()
+        renderer.webView.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
+        let window = NSWindow(contentRect: renderer.webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.webView
+        defer { window.contentView = nil; window.close() }
+        await rendered(renderer, revision: 1)
+
+        var submitTimes: [Double] = []
+        for _ in 0..<7 {
+            var submitMilliseconds = 0.0
+            let applied: Any = try await withCheckedThrowingContinuation { continuation in
+                let startedAt = ProcessInfo.processInfo.systemUptime
+                renderer.call("setCorpusJSON", arguments: [panel.corpusSnapshot.bridgeJSON, panel.corpusCurrentPath as Any? ?? NSNull()]) {
+                    continuation.resume(with: $0)
+                }
+                submitMilliseconds = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+            }
+            XCTAssertEqual(applied as? Bool, true)
+            submitTimes.append(submitMilliseconds)
+        }
+        let ordered = submitTimes.sorted()
+        let median = ordered[ordered.count / 2]
+        print("CORPUS_PUBLISH_C11_CHECKOUT bytes=\(bridgeBytes) medianMainMs=\(String(format: "%.3f", median)) samplesMs=\(submitTimes.map { String(format: "%.3f", $0) }.joined(separator: ","))")
+        XCTAssertLessThan(median, 74.2, "pre-serialized corpus submission should improve on the 74.2 ms pre-repair median")
+    }
+
     func testMarkdownHistoryBackRestoresPositionLiveAndAfterEviction() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("markdown-history-back-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

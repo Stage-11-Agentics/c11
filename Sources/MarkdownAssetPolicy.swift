@@ -55,6 +55,24 @@ final class MarkdownAssetRoot: @unchecked Sendable {
     }
 }
 
+enum MarkdownDocumentRoot {
+    static func corpusRoot(for fileURL: URL) -> URL {
+        let source = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        let fallback = source.deletingLastPathComponent()
+        let components = fallback.pathComponents
+        if !components.isEmpty {
+            for count in stride(from: components.count, through: 1, by: -1) {
+                let path = NSString.path(withComponents: Array(components.prefix(count)))
+                let directory = URL(fileURLWithPath: path, isDirectory: true)
+                if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
+                    return directory.resolvingSymlinksInPath().standardizedFileURL
+                }
+            }
+        }
+        return fallback.resolvingSymlinksInPath().standardizedFileURL
+    }
+}
+
 struct MarkdownAssetPolicy: Sendable {
     static let viewerScheme = "c11md"
     static let imageScheme = "c11md-asset"
@@ -358,18 +376,6 @@ enum MarkdownNavigationPolicy {
     }
 
     private static func documentRoot(for filePath: String) -> URL? {
-        let manager = FileManager.default
-        let source = URL(fileURLWithPath: filePath).resolvingSymlinksInPath().standardizedFileURL
-        var directory = source.deletingLastPathComponent()
-        let documentDirectory = directory
-        while true {
-            if manager.fileExists(atPath: directory.appendingPathComponent(".git", isDirectory: true).path) {
-                return directory
-            }
-            let parent = directory.deletingLastPathComponent()
-            guard parent.path != directory.path else { break }
-            directory = parent
-        }
-        return documentDirectory
+        MarkdownDocumentRoot.corpusRoot(for: URL(fileURLWithPath: filePath))
     }
 }

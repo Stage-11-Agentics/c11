@@ -27,7 +27,16 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     /// Absolute path to the markdown file being displayed, or nil when the
     /// panel is unbound (empty state — user hasn't picked a file yet).
-    @Published private(set) var filePath: String?
+    @Published private(set) var filePath: String? {
+        didSet {
+            guard oldValue != filePath else { return }
+            updateCorpusIndexer(for: filePath)
+        }
+    }
+
+    @Published private(set) var corpusSnapshot = MarkdownCorpusSnapshot.empty
+    private(set) var corpusCurrentPath: String?
+    private var corpusIndexGeneration: UInt64 = 0
 
     /// Navigation history is transient and belongs to this panel only.
     @Published private(set) var navigationHistory = MarkdownNavigationHistory()
@@ -637,6 +646,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         if filePath != nil {
             loadFileContent()
             startFileWatcher()
+            updateCorpusIndexer(for: filePath)
             if isFileUnavailable && fileWatchSource == nil {
                 // Session restore can create a panel before the file is recreated.
                 // Retry briefly so atomic-rename recreations can reconnect.
@@ -685,6 +695,9 @@ final class MarkdownPanel: Panel, ObservableObject {
     func close() {
         isClosed = true
         navigationGeneration &+= 1
+        corpusIndexGeneration &+= 1
+        let corpusGeneration = corpusIndexGeneration
+        Task { await MarkdownCorpusIndexRegistry.shared.remove(panelID: id, generation: corpusGeneration) }
         notifyReaderObservers(.closed)
         readerObservers.removeAll()
         MarkdownRendererCache.shared.remove(self)
@@ -692,6 +705,40 @@ final class MarkdownPanel: Panel, ObservableObject {
         stopAppearanceObserver()
         renderer?.close()
         renderer = nil
+    }
+
+    private func updateCorpusIndexer(for path: String?) {
+        corpusIndexGeneration &+= 1
+        let generation = corpusIndexGeneration
+        guard !isClosed, let path else {
+            corpusSnapshot = .empty
+            corpusCurrentPath = nil
+            renderer?.publishCorpusSnapshot()
+            Task { await MarkdownCorpusIndexRegistry.shared.remove(panelID: id, generation: generation) }
+            return
+        }
+
+        let fileURL = URL(fileURLWithPath: path)
+        corpusSnapshot = .empty
+        corpusCurrentPath = nil
+        renderer?.publishCorpusSnapshot()
+        Task { [weak self] in
+            guard let self else { return }
+            await MarkdownCorpusIndexRegistry.shared.update(
+                panelID: self.id,
+                generation: generation,
+                fileURL: fileURL
+            ) { [weak self] snapshot, currentPath in
+                Task { @MainActor [weak self] in
+                    guard let self, !self.isClosed, self.filePath == path,
+                          self.corpusIndexGeneration == generation,
+                          snapshot.revision >= self.corpusSnapshot.revision else { return }
+                    self.corpusCurrentPath = currentPath
+                    self.corpusSnapshot = snapshot
+                    self.renderer?.publishCorpusSnapshot()
+                }
+            }
+        }
     }
 
     func triggerFlash() {

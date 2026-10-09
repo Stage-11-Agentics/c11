@@ -779,6 +779,26 @@ try {
     }
     await ref.close();scenario('prototype/bundle side-by-side screenshots at 560/1200 px in light/dark');
   }
+  await load('# Hidden theme\n\nThe paragraph stays.\n\n```js\nconst answer = 42;\n```\n','/synthetic/hidden-theme.md',1);
+  await settings({theme:'dark',osAppearance:'dark',typeface:'serif',scale:1,outlineOpen:false});
+  const hiddenTheme=await page.evaluate(async()=>{
+    const original=requestAnimationFrame;
+    requestAnimationFrame=()=>0;
+    const t0=performance.now();
+    let settled=false;
+    const pending=c11md.setSettings({theme:'light',osAppearance:'light',typeface:'serif',scale:1,outlineOpen:false});
+    const state=await Promise.race([
+      pending.then(value=>{settled=true;return value;}),
+      new Promise(resolve=>setTimeout(()=>resolve(null),500))
+    ]);
+    requestAnimationFrame=original;
+    return {settled,ms:performance.now()-t0,resolved:state&&state.theme?state.theme.resolved:null};
+  });
+  assert.equal(hiddenTheme.settled,true,`hidden renderer theme change never settled (${Math.round(hiddenTheme.ms)}ms)`);
+  assert.ok(hiddenTheme.ms<250,`hidden renderer theme change took ${Math.round(hiddenTheme.ms)}ms`);
+  assert.equal(hiddenTheme.resolved,'light');
+  scenario('theme change settles when requestAnimationFrame never fires',{ms:Math.round(hiddenTheme.ms)});
+
   report.messages=await page.evaluate(()=>({ready:testMessages.filter(x=>x.type==='ready').length,rendered:testMessages.filter(x=>x.type==='rendered').length,state:testMessages.filter(x=>x.type==='state').length}));
   report.result='PASS';await writeFile(path.join(output,'results.json'),JSON.stringify(report,null,2)+'\n');
   console.log(`PASS ${report.scenarios.length} scenarios; evidence: ${output}`);

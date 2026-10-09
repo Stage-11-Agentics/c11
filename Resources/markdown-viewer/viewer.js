@@ -1129,9 +1129,17 @@ async function setSettings(input={}) {
     const colorsChanged=S.resolved!==prevResolved;
     if(colorsChanged) {
       // One layout keeps the anchor on the font-weight reflow. The frame yield
-      // is what lets that paint land before Mermaid and the rest of the measure.
+      // lets that paint land before Mermaid. WebKit does not fire
+      // requestAnimationFrame for a hidden or offscreen view, and that view can
+      // still report itself visible, so the wait also ends on a short timer.
+      // On a visible page the frames win and the paint stays on the next frame.
       layoutAll();restore(a);
-      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      await new Promise(resolve=>{
+        let settled=false,timer=0;
+        const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);resolve();};
+        requestAnimationFrame(()=>requestAnimationFrame(finish));
+        timer=setTimeout(finish,50);
+      });
       if(generation!==S.generation)return visible();
       if(metricsChanged){await document.fonts.ready;if(generation!==S.generation)return visible();layoutAll();restore(a);}
       await diagrams(generation,true);

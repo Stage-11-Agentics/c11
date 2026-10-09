@@ -39,7 +39,9 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   when c11 appearance is System). Invalid values restore the default for that
   field (`system`, `theme`, `1`, `auto`). A theme or appearance change paints
   the new text and highlight colours on the next frame, before Mermaid figures
-  settle. Returns settled `visible()` after those figures and scroll restoration.
+  settle. A hidden or offscreen page does not produce that frame, so the wait
+  also ends after 50 ms and the renderer still settles. Returns settled
+  `visible()` after those figures and scroll restoration.
   `strings` is an optional localized string map, merged over English defaults:
   `copy`, `copied`, `copyLink`, `expand`, `close`, `diagram`, `diagramError`,
   `imageBlocked`, `notes`, `back`, `source`, `frontmatter`, `outlineTitle`,

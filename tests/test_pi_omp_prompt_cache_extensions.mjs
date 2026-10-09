@@ -1,0 +1,143 @@
+#!/usr/bin/env node
+// Prompt cache reports from c11's runtime extensions for Pi and omp (C11-382).
+// Drives each extension through a fake extension API and checks the exact
+// `c11 rpc agent.prompt_cache.report` payloads it would send. Needs a Node that
+// strips TypeScript types (22.18+/23.6+).
+import assert from "node:assert/strict";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import path from "node:path";
+
+const bin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../Resources/bin");
+const { default: piExtension } = await import(pathToFileURL(path.join(bin, "pi-lifecycle.ts")));
+const ompModule = await import(pathToFileURL(path.join(bin, "omp-prompt-cache.ts")));
+const ompExtension = ompModule.default;
+
+const PANEL = "11111111-1111-4111-8111-111111111111";
+const SOCKET = "/tmp/c11-test.sock";
+
+function fakeHost(version) {
+  const handlers = new Map();
+  const calls = [];
+  const api = {
+    on: (event, handler) => handlers.set(event, handler),
+    exec: (command, args, options) => {
+      calls.push({ command, args, options });
+      return Promise.resolve({ stdout: "", stderr: "", code: 0, killed: false });
+    },
+  };
+  if (version !== undefined) api.pi = { VERSION: version };
+  const reports = () => calls
+    .filter(({ args }) => args.includes("agent.prompt_cache.report"))
+    .map(({ args }) => {
+      assert.deepEqual(args.slice(0, 4), ["--socket", SOCKET, "rpc", "agent.prompt_cache.report"]);
+      return JSON.parse(args[4]);
+    });
+  return { api, handlers, calls, reports };
+}
+
+async function withEnv(values, body) {
+  const keys = ["C11_AGENT_HOOK_CLI", "CMUX_SOCKET_PATH", "C11_PANEL_ID", "C11_TAB_ID", "CMUX_SURFACE_ID", "PI_CACHE_RETENTION"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  Object.assign(process.env, values);
+  try { return await body(); } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  }
+}
+
+const baseEnv = { C11_AGENT_HOOK_CLI: "/fake/c11", CMUX_SOCKET_PATH: SOCKET, C11_PANEL_ID: PANEL };
+const assistant = (usage, extra = {}) => ({
+  message: {
+    role: "assistant", api: "anthropic-messages", provider: "anthropic", model: "claude-opus-4-8",
+    timestamp: 1_790_000_000_000, usage, content: [{ type: "text", text: "PRIVATE-SENTINEL" }], ...extra,
+  },
+});
+
+// ---- Pi ---------------------------------------------------------------------
+await withEnv(baseEnv, async () => {
+  const host = fakeHost();
+  piExtension(host.api);
+  for (const event of ["agent_start", "agent_settled", "message_end", "cache_warming_decision"]) {
+    assert(host.handlers.has(event), `pi registers ${event}`);
+  }
+  const end = host.handlers.get("message_end");
+
+  await end(assistant({ input: 12, output: 40, cacheRead: 0, cacheWrite: 9_000, cacheWrite1h: 9_000 }));
+  await end(assistant({ input: 5, output: 40, cacheRead: 9_000, cacheWrite: 0 }, { timestamp: 1_790_000_060_000 }));
+  await end(assistant({ input: 5, output: 40, cacheRead: 9_000, cacheWrite: 300, cacheWrite1h: 0 }, { timestamp: 1_790_000_120_000 }));
+  await end({ message: { role: "user", content: "PRIVATE-SENTINEL", timestamp: 1 } });
+  await end(assistant({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, { stopReason: "error" }));
+  await end(assistant({ input: 70, output: 9, cacheRead: 2_000, cacheWrite: 0 },
+    { api: "openai-responses", provider: "openai", model: "gpt-5.6", timestamp: 1_790_000_180_000 }));
+
+  const reports = host.reports();
+  assert.equal(reports.length, 4, "user lines and requests that never reached the provider are not reported");
+  assert.deepEqual(reports[0], {
+    panel_id: PANEL,
+    request: {
+      at_ms: 1_790_000_000_000, input_tokens: 12, cache_read_tokens: 0, cache_write_tokens: 9_000,
+      provider: "anthropic", model: "claude-opus-4-8", ttl_seconds: 3600,
+    },
+  });
+  assert.equal(reports[1].request.ttl_seconds, 3600, "a pure read keeps the tier the last write named");
+  assert.equal(reports[2].request.ttl_seconds, 300, "a request with a 5-minute write is a 5-minute cache");
+  assert.equal(reports[3].request.ttl_seconds, undefined, "c11's policy table decides a non-Anthropic lifetime");
+  assert.equal(reports[3].request.provider, "openai");
+  assert(!JSON.stringify(host.calls).includes("PRIVATE-SENTINEL"), "no message text leaves Pi");
+
+  const decide = host.handlers.get("cache_warming_decision");
+  assert.equal(await decide({ type: "cache_warming_decision", action: "stop" }), undefined);
+  assert.equal(host.reports().length, 4, "a refresh that is not sent changes nothing");
+  assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }), undefined,
+    "the extension never overrides the warmer's decision");
+  assert.deepEqual(host.reports().at(-1), { panel_id: PANEL, unknown: { reason: "cache_warming" } });
+});
+
+await withEnv({ ...baseEnv, PI_CACHE_RETENTION: "long" }, async () => {
+  const host = fakeHost();
+  piExtension(host.api);
+  await host.handlers.get("message_end")(assistant({ input: 1, cacheRead: 50, cacheWrite: 0 },
+    { api: "bedrock-converse-stream", provider: "amazon-bedrock", model: "us.anthropic.claude-sonnet-4-5" }));
+  assert.equal(host.reports()[0].request.ttl_seconds, 3600, "PI_CACHE_RETENTION=long is a 1h cache");
+});
+
+await withEnv({ CMUX_SOCKET_PATH: SOCKET }, async () => {
+  const host = fakeHost();
+  piExtension(host.api);
+  assert.equal(host.handlers.size, 0, "outside c11 the extension stays inert");
+});
+
+// ---- omp --------------------------------------------------------------------
+assert.equal(ompModule.versionAtLeast("18.3.5", [18, 3, 5]), true);
+assert.equal(ompModule.versionAtLeast("18.10.0", [18, 3, 5]), true);
+assert.equal(ompModule.versionAtLeast("18.3.4", [18, 3, 5]), false);
+assert.equal(ompModule.versionAtLeast("16.2.2", [18, 3, 5]), false);
+assert.equal(ompModule.versionAtLeast("19.0.0-beta.1", [18, 3, 5]), true);
+
+await withEnv(baseEnv, async () => {
+  const before = fakeHost("16.2.2");
+  ompExtension(before.api);
+  assert(before.handlers.has("message_end"));
+  assert(!before.handlers.has("cache_warming_decision"), "omp before 18.3.5 cannot warm the cache");
+  assert(!before.handlers.has("agent_start"), "omp lifecycle is not reported by this extension");
+
+  const end = before.handlers.get("message_end");
+  await end(assistant({ input: 3, cacheRead: 0, cacheWrite: 800, cttl: { ephemeral1h: 800 } }));
+  await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 0 }));
+  await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 90, cttl: { ephemeral5m: 90 } }));
+  assert.deepEqual(before.reports().map((report) => report.request.ttl_seconds), [3600, 3600, 300]);
+  assert.equal(before.reports()[0].panel_id, PANEL);
+
+  for (const version of ["18.4.6", undefined]) {
+    const after = fakeHost(version);
+    ompExtension(after.api);
+    const decide = after.handlers.get("cache_warming_decision");
+    assert(decide, `omp ${version ?? "of unknown version"} may warm the cache`);
+    assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }), undefined);
+    assert.deepEqual(after.reports(), [{ panel_id: PANEL, unknown: { reason: "cache_warming" } }]);
+  }
+});
+
+console.log("PASS: Pi and omp extensions report each request's prompt cache, and unknown once a warmer refreshes it");

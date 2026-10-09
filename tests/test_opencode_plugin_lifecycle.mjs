@@ -18,6 +18,7 @@ const draft = JSON.parse(input);
 console.log(JSON.stringify({event_id: draft.event_id.toUpperCase(), sequence: 1, replayed: false}));\n`, { mode: 0o700 });
 process.env.C11_AGENT_HOOK_CLI = fakeCLI;
 process.env.C11_TAB_ID = "11111111-1111-4111-8111-111111111111";
+delete process.env.C11_PANEL_ID;
 process.env.C11_WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const events = () => readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
 const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../skills/opencode-plugins/c11-notify.js");
@@ -53,6 +54,43 @@ try {
   await hooks.event({ event: { type: "session.status", properties: { sessionID: "ses_child", status: { type: "busy" } } } });
   await hooks["chat.message"]({ sessionID: "ses_child" });
   assert.deepEqual([calls.length, events().length], beforeChild, "child callbacks must not clobber root");
+
+  // Prompt cache reports (C11-382): one per finished step, anchored on its step-start.
+  const cacheReports = () => calls
+    .filter(({ args }) => args[0] === "rpc" && args[1] === "agent.prompt_cache.report")
+    .map(({ args }) => JSON.parse(args[2]));
+  const assistant = (tokens, extra = {}) => ({ id: "msg_a", sessionID: "ses_root", role: "assistant", parentID: "msg_u",
+    providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 1_790_000_000_000 }, tokens, ...extra });
+  const zero = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root", info: assistant(zero) } } });
+  assert.equal(cacheReports().length, 0, "a new message has no usage yet");
+  await hooks.event({ event: { type: "message.part.updated", properties: { sessionID: "ses_root", time: 1_790_000_005_000,
+    part: { id: "prt_1", sessionID: "ses_root", messageID: "msg_a", type: "step-start" } } } });
+  await hooks.event({ event: { type: "message.part.updated", properties: { sessionID: "ses_root", time: 1_790_000_006_000,
+    part: { id: "prt_2", sessionID: "ses_root", messageID: "msg_a", type: "text", text: "PRIVATE-SENTINEL" } } } });
+  const step = { input: 900, output: 40, reasoning: 0, cache: { read: 52_000, write: 1_100 } };
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root", info: assistant(step) } } });
+  assert.deepEqual(cacheReports().at(-1), {
+    request: { at_ms: 1_790_000_005_000, provider: "anthropic", model: "claude-sonnet-4-5",
+      input_tokens: 900, cache_read_tokens: 52_000, cache_write_tokens: 1_100 },
+    panel_id: "11111111-1111-4111-8111-111111111111",
+  });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root",
+    info: assistant(step, { time: { created: 1_790_000_000_000, completed: 1_790_000_009_000 } }) } } });
+  assert.equal(cacheReports().length, 1, "the completion update repeats the last step's usage");
+  await hooks.event({ event: { type: "message.part.updated", properties: { sessionID: "ses_root", time: 1_790_000_030_000,
+    part: { id: "prt_3", sessionID: "ses_root", messageID: "msg_b", type: "step-start" } } } });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root",
+    info: assistant(zero, { id: "msg_b", error: { name: "MessageAbortedError", data: { message: "PRIVATE-SENTINEL" } } }) } } });
+  assert.deepEqual(cacheReports().at(-1).request, { at_ms: 1_790_000_030_000 }, "an interrupted step still sent its request");
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_child",
+    info: assistant(step, { id: "msg_c", sessionID: "ses_child" }) } } });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root",
+    info: { id: "msg_u", sessionID: "ses_root", role: "user", time: { created: 1 } } } } });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root",
+    info: assistant(step, { id: "msg_s", summary: true }) } } });
+  assert.equal(cacheReports().length, 2, "subagent, user and compaction summary messages are not reported");
+  assert(!cacheReports().some((report) => JSON.stringify(report).includes("PRIVATE-SENTINEL")));
 
   process.env.JOURNAL_TEST_FAILURE = "storage_unavailable";
   const beforeFailedPermission = calls.length;

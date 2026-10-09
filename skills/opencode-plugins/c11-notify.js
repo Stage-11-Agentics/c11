@@ -13,6 +13,8 @@ import { randomUUID } from "node:crypto";
 //   permission.asked   → c11 notify "Approval needed"     (permission_prompt equivalent)
 //   session.error      → c11 notify "Session error"       (bonus, no Claude equivalent)
 //   session.status     → c11 activity + status metadata
+//   message.updated    → c11 prompt cache report (C11-382): each model request's
+//                        time, provider, model and token counts, never text
 //
 // The plugin is dependency-free and silently no-ops when c11 is not on
 // PATH or the socket is unavailable (e.g. OpenCode running outside c11).
@@ -42,6 +44,51 @@ export const C11NotifyPlugin = async ({ $ }) => {
 
   const sessionIDFrom = (properties) =>
     typeof properties?.sessionID === "string" ? properties.sessionID : undefined;
+
+  // Prompt cache telemetry. A step's request goes out at its `step-start` part;
+  // its usage lands on the assistant message when the step finishes. Counts,
+  // times and ids only. Both maps are bounded to recent messages.
+  const stepStartedAt = new Map();
+  const reportedSteps = new Map();
+  const remember = (map, key, value) => {
+    map.delete(key);
+    if (map.size >= 64) map.delete(map.keys().next().value);
+    map.set(key, value);
+  };
+  const tokenCount = (value) => (Number.isFinite(value) && value >= 0 ? Math.round(value) : 0);
+  const reportPromptCache = (request) => {
+    const panel = process.env.C11_PANEL_ID || process.env.C11_TAB_ID || process.env.CMUX_SURFACE_ID;
+    const payload = { request };
+    if (panel) payload.panel_id = panel;
+    return c11(["rpc", "agent.prompt_cache.report", JSON.stringify(payload)]);
+  };
+  const notePromptCache = async (message) => {
+    if (message?.role !== "assistant" || typeof message.id !== "string") return;
+    // A compaction summary reads the prefix it replaces; the cache it leaves is not the next prompt's.
+    if (message.summary === true) return;
+    const at = stepStartedAt.get(message.id) ?? message.time?.created;
+    if (!Number.isFinite(at)) return;
+    const tokens = message.tokens ?? {};
+    const input = tokenCount(tokens.input);
+    const read = tokenCount(tokens.cache?.read);
+    const write = tokenCount(tokens.cache?.write);
+    const used = input + read + write > 0;
+    // The creation update carries no usage yet; each finished step does. A
+    // step the operator interrupted still sent its request, which read the cache.
+    if (!used && message.error?.name !== "MessageAbortedError") return;
+    const key = used ? `${at}:${input}:${read}:${write}` : `${at}:sent`;
+    if (reportedSteps.get(message.id) === key) return;
+    remember(reportedSteps, message.id, key);
+    const request = { at_ms: at };
+    if (used) {
+      if (typeof message.providerID === "string") request.provider = message.providerID.slice(0, 128);
+      if (typeof message.modelID === "string") request.model = message.modelID.slice(0, 128);
+      request.input_tokens = input;
+      request.cache_read_tokens = read;
+      request.cache_write_tokens = write;
+    }
+    await reportPromptCache(request);
+  };
 
   const statusTypeFrom = (status) => {
     if (typeof status === "string") return status.toLowerCase();
@@ -131,7 +178,8 @@ export const C11NotifyPlugin = async ({ $ }) => {
       const properties = event.properties ?? {};
       const sessionID = sessionIDFrom(properties);
       const info = properties.info;
-      if (info?.id && info.parentID) {
+      // Only a session's parentID marks a child; a message's names its prompt.
+      if (event.type.startsWith("session.") && info?.id && info.parentID) {
         childSessions.add(info.id);
       }
       if (sessionID && childSessions.has(sessionID)) {
@@ -210,6 +258,17 @@ export const C11NotifyPlugin = async ({ $ }) => {
         case "session.error":
           await append("agent.error.reported", event.type, sessionID, { reason_code: "session_failure" });
           await notify("OpenCode", "Session error", "Error");
+          break;
+        case "message.part.updated": {
+          // A subagent's requests use its own cache prefix.
+          const part = properties.part;
+          if (part?.type === "step-start" && typeof part.messageID === "string" && !childSessions.has(part.sessionID)) {
+            remember(stepStartedAt, part.messageID, Number.isFinite(properties.time) ? properties.time : Date.now());
+          }
+          break;
+        }
+        case "message.updated":
+          if (!childSessions.has(info?.sessionID)) await notePromptCache(info);
           break;
       }
     },

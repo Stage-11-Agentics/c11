@@ -366,7 +366,9 @@
 		C1124300000000000000A002 /* PanelSeenClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124300000000000000A001 /* PanelSeenClock.swift */; };
 		C1124300000000000000A004 /* PanelSeenClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124300000000000000A003 /* PanelSeenClockTests.swift */; };
 		C1124400000000000000B002 /* AgentModelDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B001 /* AgentModelDetection.swift */; };
+		C1382000000000000000A002 /* PromptCacheReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A001 /* PromptCacheReports.swift */; };
 		C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B003 /* AgentModelDetectionTests.swift */; };
+		C1382000000000000000A004 /* PromptCacheReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A003 /* PromptCacheReportTests.swift */; };
 		C1124400000000000000B012 /* TabActivitySignals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B011 /* TabActivitySignals.swift */; };
 		C1124400000000000000B014 /* PanelActivitySignalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B013 /* PanelActivitySignalsTests.swift */; };
 		C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */; };
@@ -472,6 +474,7 @@
 		C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1CDE00001A1B2C3D4E5F719 /* codex */; };
 		C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00001A1B2C3D4E5F719 /* pi */; };
 		C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */; };
+		C1382000000000000000A006 /* omp-prompt-cache.ts in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A005 /* omp-prompt-cache.ts */; };
 		C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F2E00001A1B2C3D4E5F719 /* omp */; };
 		C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F3E00001A1B2C3D4E5F719 /* grok */; };
 		C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F4E00001A1B2C3D4E5F719 /* opencode */; };
@@ -667,6 +670,7 @@
 				C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */,
 				C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */,
 				C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */,
+				C1382000000000000000A006 /* omp-prompt-cache.ts in Copy CLI */,
 				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
 				C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */,
 				C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */,
@@ -971,7 +975,9 @@
 		C1124300000000000000A001 /* PanelSeenClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelSeenClock.swift; sourceTree = "<group>"; };
 		C1124300000000000000A003 /* PanelSeenClockTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelSeenClockTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B001 /* AgentModelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelDetection.swift; sourceTree = "<group>"; };
+		C1382000000000000000A001 /* PromptCacheReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCacheReports.swift; sourceTree = "<group>"; };
 		C1124400000000000000B003 /* AgentModelDetectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelDetectionTests.swift; sourceTree = "<group>"; };
+		C1382000000000000000A003 /* PromptCacheReportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PromptCacheReportTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B011 /* TabActivitySignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabActivitySignals.swift; sourceTree = "<group>"; };
 		C1124400000000000000B013 /* PanelActivitySignalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelActivitySignalsTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentLaunchModelTierTests.swift; sourceTree = "<group>"; };
@@ -1070,6 +1076,7 @@
 		C1CDE00001A1B2C3D4E5F719 /* codex */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/codex; sourceTree = SOURCE_ROOT; };
 		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
 		C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.typescript; path = "Resources/bin/pi-lifecycle.ts"; sourceTree = SOURCE_ROOT; };
+		C1382000000000000000A005 /* omp-prompt-cache.ts */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.typescript; path = "Resources/bin/omp-prompt-cache.ts"; sourceTree = SOURCE_ROOT; };
 		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
 		C1F3E00001A1B2C3D4E5F719 /* grok */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/grok; sourceTree = SOURCE_ROOT; };
 		C1F4E00001A1B2C3D4E5F719 /* opencode */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/opencode; sourceTree = SOURCE_ROOT; };
@@ -1297,6 +1304,7 @@
 				C1CDE00001A1B2C3D4E5F719 /* codex */,
 				C1F1E00001A1B2C3D4E5F719 /* pi */,
 				C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */,
+				C1382000000000000000A005 /* omp-prompt-cache.ts */,
 				C1F2E00001A1B2C3D4E5F719 /* omp */,
 				C1F3E00001A1B2C3D4E5F719 /* grok */,
 				C1F4E00001A1B2C3D4E5F719 /* opencode */,
@@ -1424,6 +1432,7 @@
 				C11262000000000000000003 /* FocusHistoryStore.swift */,
 				C11262000000000000000001 /* FocusHistoryModel.swift */,
 				C1124400000000000000B001 /* AgentModelDetection.swift */,
+				C1382000000000000000A001 /* PromptCacheReports.swift */,
 				C1124400000000000000B011 /* TabActivitySignals.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
@@ -1908,6 +1917,7 @@
 				C1124300000000000000A003 /* PanelSeenClockTests.swift */,
 				C11262000000000000000007 /* FocusHistoryModelTests.swift */,
 				C1124400000000000000B003 /* AgentModelDetectionTests.swift */,
+				C1382000000000000000A003 /* PromptCacheReportTests.swift */,
 				C1124400000000000000B013 /* PanelActivitySignalsTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketPanelRefValidatorTests.swift */,
 				C11279000000000000000001 /* LegacyWireRoutingKeyTests.swift */,
@@ -2306,6 +2316,7 @@
 				C1124300000000000000A004 /* PanelSeenClockTests.swift in Sources */,
 				C11262000000000000000008 /* FocusHistoryModelTests.swift in Sources */,
 				C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */,
+				C1382000000000000000A004 /* PromptCacheReportTests.swift in Sources */,
 				C1124400000000000000B014 /* PanelActivitySignalsTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketPanelRefValidatorTests.swift in Sources */,
 				C11279000000000000000002 /* LegacyWireRoutingKeyTests.swift in Sources */,
@@ -2396,6 +2407,7 @@
 				C11262000000000000000004 /* FocusHistoryStore.swift in Sources */,
 				C11262000000000000000002 /* FocusHistoryModel.swift in Sources */,
 				C1124400000000000000B002 /* AgentModelDetection.swift in Sources */,
+				C1382000000000000000A002 /* PromptCacheReports.swift in Sources */,
 				C1124400000000000000B012 /* TabActivitySignals.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,

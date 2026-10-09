@@ -7,7 +7,11 @@
 #      and
 #   2. wrapper-claims a placeholder ConversationRef at launch, and
 #   3. watches OMP's tty-scoped pointer until its JSONL actually exists,
-#      then pushes the exact UUID, effective cwd, and path as causal evidence.
+#      then pushes the exact UUID, effective cwd, and path as causal evidence,
+#      and
+#   4. loads a bundled runtime extension (omp-prompt-cache.ts) that reports
+#      each model request's prompt cache use, never text. Nothing is written
+#      to omp's config.
 #
 # Outside c11 (or when the socket is unreachable), it passes through to the
 # real omp binary unchanged.
@@ -192,4 +196,9 @@ if [[ -n "$c11_bin" ]]; then
     fi
 fi
 
+# (4) Runtime extension for prompt cache reports, by flag only.
+if [[ -n "$c11_bin" && -f "$self_dir/omp-prompt-cache.ts" ]]; then
+    export C11_AGENT_HOOK_CLI="$c11_bin"
+    exec "$REAL_OMP" --extension "$self_dir/omp-prompt-cache.ts" "$@"
+fi
 exec "$REAL_OMP" "$@"

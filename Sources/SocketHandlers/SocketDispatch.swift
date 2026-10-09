@@ -110,6 +110,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2PanelSendKey(params: request.params))
         case "agent.event.append":
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
+        case "agent.prompt_cache.report":
+            return v2Result(id: request.id, v2PromptCacheReport(params: request.params))
         case "agents.list":
             return v2Result(id: request.id, v2AgentsList(params: request.params))
         case "journal.clear":

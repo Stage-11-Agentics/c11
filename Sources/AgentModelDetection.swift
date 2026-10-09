@@ -1,3 +1,5 @@
+import CryptoKit
+import Darwin
 import Foundation
 import SQLite3
 
@@ -35,6 +37,10 @@ import SQLite3
 //   grok         <session dir>/summary.json                     `current_model_id`
 //   opencode     ~/.local/share/opencode/opencode.db            `session.model` (JSON `{id}`)
 //   kimi, github-copilot: no model in the files c11 can locate.
+//
+// Prompt cache only, no model: kimi's `~/.kimi-code/sessions/wd_*/session_*/agents/main/wire.jsonl`,
+// located from the Kimi process (`KimiWireLocator`); only its `llm.request` and
+// `usage.record` lines are parsed.
 
 enum AgentModelDetection: Equatable, Sendable {
     /// The latest model id found in the harness's own files.
@@ -125,6 +131,13 @@ struct TranscriptSignals: Equatable, Sendable {
         promptCache = cache
     }
 
+    /// A line written as a request goes out (Kimi's `llm.request`): it moves
+    /// the anchor like a prompt, and the response line after it anchors on it.
+    mutating func noteRequestSent(_ at: Date?) {
+        notePromptSent(at)
+        noteLine(at)
+    }
+
     /// Something replaced the cached prefix (a model switch, a compaction):
     /// cold from that moment, until the next request writes a new cache.
     mutating func resetPromptCache(_ line: PromptCacheResetLine) {
@@ -150,15 +163,27 @@ struct TranscriptSignals: Equatable, Sendable {
 ///
 /// Anthropic publishes the lifetime (5 minutes by default, 1 hour on the
 /// extended tier), counted from the start of each request that reads or writes
-/// the cache, so a Claude Code expiry is computed. OpenAI and xAI publish no
-/// fixed lifetime; c11 calls those caches cold after an idle span measured on
-/// real sessions and labels the result an estimate.
+/// the cache, so a Claude Code expiry is computed. OpenAI, xAI and Moonshot
+/// publish no fixed lifetime; c11 calls those caches cold after an idle span
+/// measured on real sessions and labels the result an estimate.
 struct PromptCacheObservation: Equatable, Sendable {
     enum Basis: Equatable, Sendable {
         /// The provider's published lifetime, in seconds.
         case ttl(TimeInterval)
         /// No published lifetime: treat as cold after this much idle time.
         case estimate(TimeInterval)
+    }
+
+    /// Where c11 learned it.
+    enum Source: String, Equatable, Sendable {
+        /// c11 read the harness's own session files.
+        case transcript
+        /// A plugin, extension or custom kind reported the request over the
+        /// socket (`agent.prompt_cache.report`).
+        case report
+        /// The harness's own cache state, which the operator's statusline
+        /// reported over the socket: exact, including keepalive touches.
+        case statusline
     }
 
     /// When the last request that read or wrote the cache was sent.
@@ -170,6 +195,9 @@ struct PromptCacheObservation: Equatable, Sendable {
     /// Set when something replaced the cached prefix before its lifetime ran out.
     var reset: Reset? = nil
     var resetAt: Date? = nil
+    var source: Source = .transcript
+    /// Cache misses this session, where the harness counts them (statusline).
+    var misses: Int? = nil
 
     enum Reset: Equatable, Sendable {
         case modelSwitch
@@ -232,6 +260,33 @@ enum PromptCachePolicy {
     /// Grok Build: xAI documents automatic caching and no lifetime. Implicit
     /// caches measured here keep little past an hour.
     static let grokColdAfter: TimeInterval = 60 * 60
+    /// Every other implicit cache (Moonshot for Kimi, DeepSeek, GLM, other
+    /// OpenRouter routes): no published lifetime, and the cached share measured
+    /// here falls below a quarter past an hour.
+    static let implicitColdAfter: TimeInterval = 60 * 60
+
+    /// A reported lifetime outside this range is a caller error, not a cache.
+    static let reportedTTLRange: ClosedRange<TimeInterval> = 60...(24 * 60 * 60)
+
+    /// The policy row for a request a plugin or extension reported: the
+    /// reporter's TTL (Anthropic's 5m or 1h, which only the harness knows),
+    /// else the provider's published default, else an implicit cache.
+    static func reportedBasis(provider: String?, model: String?, ttl: TimeInterval?) -> PromptCacheObservation.Basis {
+        if let ttl { return .ttl(ttl) }
+        if isAnthropic(provider: provider, model: model) { return .ttl(anthropicDefaultTTL) }
+        if provider?.lowercased() == "openai" { return .estimate(codexColdAfter) }
+        return .estimate(implicitColdAfter)
+    }
+
+    /// Anthropic's API directly, or a router or cloud that passes its cache
+    /// through (OpenRouter `anthropic/…`, Bedrock `anthropic.…`, Vertex).
+    static func isAnthropic(provider: String?, model: String?) -> Bool {
+        let provider = provider?.lowercased() ?? ""
+        let model = model?.lowercased() ?? ""
+        if provider.contains("anthropic") { return true }
+        guard ["openrouter", "amazon-bedrock", "bedrock"].contains(provider) else { return false }
+        return model.hasPrefix("anthropic/") || model.hasPrefix("anthropic.") || model.contains(".anthropic.")
+    }
 
     /// Replaces every estimated span (not a published TTL), so a validation
     /// run can watch an estimate go cold without waiting hours.
@@ -264,6 +319,9 @@ struct ParsedTranscriptLine: Equatable, Sendable {
     /// A user line the harness echoes for a local command or `!` shell line:
     /// no model request went out.
     var sendsNoRequest = false
+    /// A line the harness writes as a model request goes out (Kimi), before
+    /// its usage is known.
+    var promptCacheRequestSentAt: Date? = nil
 }
 
 /// A structural lifecycle record found in a harness transcript. This type is
@@ -403,8 +461,8 @@ struct AgentModelProbe: Sendable {
             } else {
                 summary = nil
             }
-            tail(kind: kind, ref: ref, state: &state, now: now,
-                 lifecycle: &lifecycle, coverage: &coverage)
+            tail(kind: kind, expectedSessionID: ref.id, state: &state, now: now,
+                 lifecycle: &lifecycle, coverage: &coverage) { locateTranscript(kind: kind, ref: ref) }
             if let summary {
                 if let model = summary.model { state.model = model }
                 if let lastActiveAt = summary.lastActiveAt {
@@ -412,8 +470,8 @@ struct AgentModelProbe: Sendable {
                 }
             }
         case "claude-code", "codex", "pi", "omp":
-            tail(kind: kind, ref: ref, state: &state, now: now,
-                 lifecycle: &lifecycle, coverage: &coverage)
+            tail(kind: kind, expectedSessionID: ref.id, state: &state, now: now,
+                 lifecycle: &lifecycle, coverage: &coverage) { locateTranscript(kind: kind, ref: ref) }
         default:
             return AgentModelDetectionResult(
                 detection: .unsupported("no model detection for \(kind)"), lifecycle: [], coverage: .none
@@ -426,20 +484,45 @@ struct AgentModelProbe: Sendable {
         )
     }
 
+    /// Kimi Code keeps no session id c11 can learn, so the sweep locates the
+    /// panel's `wire.jsonl` from the agent process (`KimiWireLocator`) and
+    /// passes it here. Only the prompt cache is read; the model stays
+    /// unsupported, and Kimi produces no lifecycle observations.
+    func detectKimi(
+        wirePath: String?,
+        state: inout ModelTailState,
+        now: Date = Date()
+    ) -> AgentModelDetectionResult {
+        let unsupported = AgentModelDetection.unsupported(Self.unsupportedReason(kind: "kimi") ?? "kimi")
+        guard let wirePath else {
+            state = ModelTailState()
+            return AgentModelDetectionResult(detection: unsupported, lifecycle: [], coverage: .none)
+        }
+        if state.conversationId != wirePath {
+            state = ModelTailState(conversationId: wirePath)
+        }
+        var lifecycle: [TranscriptLifecycleObservation] = []
+        var coverage = TranscriptCoverage.none
+        tail(kind: "kimi", expectedSessionID: wirePath, state: &state, now: now,
+             lifecycle: &lifecycle, coverage: &coverage) { wirePath }
+        return AgentModelDetectionResult(detection: unsupported, lifecycle: [], coverage: .none)
+    }
+
     // MARK: - JSONL harnesses
 
     private func tail(
         kind: String,
-        ref: ConversationRef,
+        expectedSessionID: String,
         state: inout ModelTailState,
         now: Date,
         lifecycle: inout [TranscriptLifecycleObservation],
-        coverage: inout TranscriptCoverage
+        coverage: inout TranscriptCoverage,
+        locate: () -> String?
     ) {
         if state.path == nil || !FileManager.default.fileExists(atPath: state.path!) {
             state.path = nil
             if let retry = state.nextLocateAt, now < retry { return }
-            guard let located = locateTranscript(kind: kind, ref: ref) else {
+            guard let located = locate() else {
                 state.nextLocateAt = now.addingTimeInterval(Self.locateRetry)
                 return
             }
@@ -470,7 +553,7 @@ struct AgentModelProbe: Sendable {
             if kind == "codex" {
                 state.transcriptIdentityInvalid = false
                 state.transcriptIdentityVerified = false
-                switch verifyCodexSessionIdentity(handle: handle, size: size, expectedSessionID: ref.id) {
+                switch verifyCodexSessionIdentity(handle: handle, size: size, expectedSessionID: expectedSessionID) {
                 case .verified:
                     state.transcriptIdentityVerified = true
                 case .mismatch:
@@ -479,10 +562,10 @@ struct AgentModelProbe: Sendable {
                     break
                 }
             }
-            initialScan(kind: kind, expectedSessionID: ref.id, handle: handle, size: size,
+            initialScan(kind: kind, expectedSessionID: expectedSessionID, handle: handle, size: size,
                         state: &state, lifecycle: &lifecycle, coverage: &coverage)
         } else if size > state.offset {
-            incrementalScan(kind: kind, expectedSessionID: ref.id, handle: handle, size: size,
+            incrementalScan(kind: kind, expectedSessionID: expectedSessionID, handle: handle, size: size,
                             state: &state, lifecycle: &lifecycle, coverage: &coverage)
         }
     }
@@ -516,7 +599,10 @@ struct AgentModelProbe: Sendable {
                           into: &state, lifecycle: &candidateLifecycle, coverage: &candidateCoverage)
             }
             state.offset = start + UInt64(consumed)
-            let complete = state.model != nil && (state.signals.turnStartedAt != nil || start == 0)
+            // Kimi's wire carries no model c11 reads; its last request is enough.
+            let complete = kind == "kimi"
+                ? state.signals.promptCache != nil
+                : state.model != nil && (state.signals.turnStartedAt != nil || start == 0)
             if complete || start == 0 || window >= UInt64(Self.maxInitialWindow) {
                 if start > 0 {
                     // The omitted prefix invalidates pairings from before the
@@ -669,6 +755,7 @@ struct AgentModelProbe: Sendable {
         if acceptedLifecycle || parsed.lifecycle == nil {
             if let model = parsed.model { state.model = model }
             if let reset = parsed.promptCacheReset { state.signals.resetPromptCache(reset) }
+            if let sentAt = parsed.promptCacheRequestSentAt { state.signals.noteRequestSent(sentAt) }
             if let usage = parsed.promptCache { state.signals.notePromptCache(usage) }
             if let event = parsed.event {
                 state.signals.apply(event)
@@ -833,8 +920,39 @@ struct AgentModelProbe: Sendable {
         case "codex": return parseCodex(line)
         case "grok": return parseGrok(line)
         case "pi", "omp": return parsePiOmp(kind: kind, line: line)
+        case "kimi": return parseKimi(line)
         default: return ParsedTranscriptLine()
         }
+    }
+
+    /// Kimi Code's `wire.jsonl`: only `llm.request` (written as a request goes
+    /// out) and `usage.record` (its usage, written when it returns) are parsed;
+    /// every other line, prompts and context included, is dropped on the type
+    /// check. Moonshot caches implicitly and publishes no lifetime.
+    private static func parseKimi(_ line: Data) -> ParsedTranscriptLine {
+        let isRequest = hasType(line, "llm.request")
+        guard isRequest || hasType(line, "usage.record"),
+              line.count <= maxParseBytes, let object = parseObject(line),
+              let ms = (object["time"] as? NSNumber)?.doubleValue, ms > 0 else { return ParsedTranscriptLine() }
+        let at = Date(timeIntervalSince1970: ms / 1000)
+        if isRequest {
+            // A compaction request summarizes the old prefix and replaces it.
+            if (object["kind"] as? String) == "compaction" {
+                return ParsedTranscriptLine(promptCacheReset: PromptCacheResetLine(reason: .compaction, at: at))
+            }
+            return ParsedTranscriptLine(promptCacheRequestSentAt: at)
+        }
+        // A `session` record totals a compaction's own usage, not a request.
+        guard (object["usageScope"] as? String) != "session",
+              let usage = object["usage"] as? [String: Any] else { return ParsedTranscriptLine() }
+        let prompt = int(usage["inputOther"]) + int(usage["inputCacheRead"]) + int(usage["inputCacheCreation"])
+        return ParsedTranscriptLine(promptCache: PromptCacheUsage(
+            at: at, requestKey: nil,
+            basis: .estimate(PromptCachePolicy.implicitColdAfter),
+            fallbackBasis: .estimate(PromptCachePolicy.implicitColdAfter),
+            promptTokens: prompt > 0 ? prompt : nil,
+            anchorsOnPriorLine: true
+        ))
     }
 
     /// Largest line worth a JSON parse; bigger ones are classified by substring.
@@ -1374,6 +1492,83 @@ struct AgentModelProbe: Sendable {
     }
 }
 
+// MARK: - Kimi Code
+
+/// Finds the `wire.jsonl` a live Kimi Code process is writing. Kimi records no
+/// session id c11 can learn (no hook route without writing its config), so the
+/// file is found from the process instead: Kimi keeps one folder per working
+/// directory, `~/.kimi-code/sessions/wd_<name>_<first 12 hex of SHA-256(path)>/`,
+/// and the panel's session is the one whose main-agent wire was written since
+/// the process started. Only directory listings and file dates are read here;
+/// `state.json` (which holds prompt text) and the session index are never opened.
+struct KimiWireLocator {
+    let home: URL
+    /// A wire last written this long before the process started belongs to an
+    /// earlier run.
+    static let startSlack: TimeInterval = 2
+
+    init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home
+    }
+
+    static func workDirSuffix(forCwd cwd: String) -> String {
+        let hex = SHA256.hash(data: Data(cwd.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "_" + hex.prefix(12)
+    }
+
+    /// The newest main-agent wire in `cwd`'s folder written since `startedAt`,
+    /// or nil before the session writes anything.
+    func wirePath(cwd: String, startedAt: Date) -> String? {
+        let fm = FileManager.default
+        let root = home.appendingPathComponent(".kimi-code/sessions", isDirectory: true)
+        let suffix = Self.workDirSuffix(forCwd: cwd)
+        guard let folder = (try? fm.contentsOfDirectory(atPath: root.path))?
+                .first(where: { $0.hasPrefix("wd_") && $0.hasSuffix(suffix) }) else { return nil }
+        let workDir = root.appendingPathComponent(folder, isDirectory: true)
+        let floor = startedAt.addingTimeInterval(-Self.startSlack)
+        var newest: (path: String, modified: Date)?
+        for session in (try? fm.contentsOfDirectory(atPath: workDir.path)) ?? [] where session.hasPrefix("session_") {
+            let path = workDir.appendingPathComponent(session, isDirectory: true)
+                .appendingPathComponent("agents/main/wire.jsonl").path
+            guard let modified = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date,
+                  modified >= floor else { continue }
+            if newest.map({ modified > $0.modified }) ?? true { newest = (path, modified) }
+        }
+        return newest?.path
+    }
+
+    /// Wires for each live Kimi panel, keyed by panel. Two panels running Kimi
+    /// in one directory cannot be told apart, so neither gets one.
+    func wirePaths(for processes: [UUID: (cwd: String, startedAt: Date)]) -> [UUID: String] {
+        var panelsByCwd: [String: Int] = [:]
+        for process in processes.values { panelsByCwd[process.cwd, default: 0] += 1 }
+        var paths: [UUID: String] = [:]
+        for (panel, process) in processes where panelsByCwd[process.cwd] == 1 {
+            paths[panel] = wirePath(cwd: process.cwd, startedAt: process.startedAt)
+        }
+        return paths
+    }
+}
+
+/// What c11 reads about a live agent process without touching its files.
+enum AgentProcessFacts {
+    /// The working directory and start time of a live process, or nil when it
+    /// has exited or is not readable.
+    static func cwdAndStart(pid: Int32) -> (cwd: String, startedAt: Date)? {
+        var vnode = proc_vnodepathinfo()
+        let vnodeSize = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &vnode, vnodeSize) == vnodeSize else { return nil }
+        let cwd = withUnsafeBytes(of: vnode.pvi_cdir.vip_path) { raw in
+            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+        var bsd = proc_bsdinfo()
+        let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard !cwd.isEmpty, proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, bsdSize) == bsdSize else { return nil }
+        let startedAt = TimeInterval(bsd.pbi_start_tvsec) + TimeInterval(bsd.pbi_start_tvusec) / 1_000_000
+        return (cwd, Date(timeIntervalSince1970: startedAt))
+    }
+}
+
 // MARK: - Live detector
 
 /// One sweep's view of an agent's prompt cache.
@@ -1398,6 +1593,9 @@ final class AgentModelDetector: @unchecked Sendable {
         let workspaceId: UUID
         let surfaceId: UUID
         let kind: String
+        /// The foreground agent process; set only for Kimi, whose session file
+        /// is found from it.
+        var pid: Int32? = nil
     }
 
     private let queue = DispatchQueue(label: "com.stage11.c11.agent-model", qos: .utility)
@@ -1445,6 +1643,14 @@ final class AgentModelDetector: @unchecked Sendable {
                     defer { inFlight = false }
                     let probe = AgentModelProbe()
                     let live = Set(agents.map(\.surfaceId))
+                    // Kimi has no session id; find each panel's wire from its process.
+                    var kimiProcesses: [UUID: (cwd: String, startedAt: Date)] = [:]
+                    for target in agents where target.kind == "kimi" {
+                        if let pid = target.pid, let facts = AgentProcessFacts.cwdAndStart(pid: pid) {
+                            kimiProcesses[target.surfaceId] = facts
+                        }
+                    }
+                    let kimiWires = kimiProcesses.isEmpty ? [:] : KimiWireLocator(home: probe.home).wirePaths(for: kimiProcesses)
                     states = states.filter { live.contains($0.key) }
                     publishedLock.lock()
                     publishedSignals = publishedSignals.filter { live.contains($0.key) }
@@ -1455,7 +1661,9 @@ final class AgentModelDetector: @unchecked Sendable {
                         var state = states[target.surfaceId] ?? ModelTailState()
                         let hadModel = state.model != nil
                         let scanStartedAt = Date()
-                        let detection = probe.detectWithObservations(kind: target.kind, ref: ref, state: &state)
+                        let detection = target.kind == "kimi"
+                            ? probe.detectKimi(wirePath: kimiWires[target.surfaceId], state: &state)
+                            : probe.detectWithObservations(kind: target.kind, ref: ref, state: &state)
                         states[target.surfaceId] = state
                         setSignals(state.signals, scannedAt: scanStartedAt, forSurface: target.surfaceId)
                         if let ref {

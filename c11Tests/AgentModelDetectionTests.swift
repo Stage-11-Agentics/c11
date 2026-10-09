@@ -1163,4 +1163,122 @@ final class AgentModelDetectionTests: XCTestCase {
         _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
         XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:00:00"))
     }
+
+    // MARK: - Kimi Code prompt cache (wire.jsonl)
+
+    private let kimiCwd = "/work/kimi-demo"
+
+    private func kimiMs(_ hms: String) -> Int { Int(t(hms).timeIntervalSince1970 * 1000) }
+
+    private func kimiRequest(_ hms: String, kind: String = "loop") -> String {
+        #"{"type":"llm.request","kind":"\#(kind)","provider":"openai","model":"k3-256k","messageCount":4,"turnStep":"1.2","time":\#(kimiMs(hms))}"#
+    }
+
+    private func kimiUsage(_ hms: String, other: Int, read: Int, created: Int = 0, scope: String = "turn") -> String {
+        #"{"type":"usage.record","model":"kimi-code/k3-256k","usage":{"inputOther":\#(other),"output":40,"inputCacheRead":\#(read),"inputCacheCreation":\#(created)},"usageScope":"\#(scope)","time":\#(kimiMs(hms))}"#
+    }
+
+    private func kimiPrompt(_ hms: String) -> String {
+        #"{"type":"turn.prompt","input":[{"type":"text","text":"PRIVATE-SENTINEL"}],"origin":{"kind":"user"},"time":\#(kimiMs(hms))}"#
+    }
+
+    @discardableResult
+    private func placeKimiWire(_ lines: [String], session: String = "session_aaaaaaaa-0000-4000-8000-000000000001",
+                               agent: String = "main", modified: Date? = nil) throws -> URL {
+        let folder = "wd_kimi-demo" + KimiWireLocator.workDirSuffix(forCwd: kimiCwd)
+        let url = try place(Data((lines.joined(separator: "\n") + "\n").utf8),
+                            at: ".kimi-code/sessions/\(folder)/\(session)/agents/\(agent)/wire.jsonl")
+        if let modified {
+            try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
+        }
+        return url
+    }
+
+    func testKimiPromptCacheAnchorsOnTheRequestLineAndIsAnEstimate() throws {
+        let wire = try placeKimiWire([
+            #"{"type":"metadata","protocol_version":"1.5","created_at":1}"#,
+            kimiPrompt("09:59:58"),
+            kimiRequest("10:00:00"),
+            #"{"type":"context.append_loop_event","event":{"text":"PRIVATE-SENTINEL"}}"#,
+            kimiUsage("10:00:12", other: 4_882, read: 19_200),
+        ])
+        var state = ModelTailState()
+        let result = probe.detectKimi(wirePath: wire.path, state: &state)
+        XCTAssertEqual(result.detection, .unsupported("kimi session files carry no model"))
+        XCTAssertEqual(result.lifecycle, [])
+        let cache = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(cache.requestAt, t("10:00:00"), "the request line, not the usage written when it returned")
+        XCTAssertEqual(cache.basis, .estimate(PromptCachePolicy.implicitColdAfter))
+        XCTAssertEqual(cache.promptTokens, 4_882 + 19_200)
+        XCTAssertNil(state.signals.turnStartedAt, "Kimi's prompts are not read")
+        XCTAssertNil(state.signals.lastEventAt)
+
+        // Appended later: an interrupted request (no usage) still read the cache.
+        try append(kimiRequest("10:20:00") + "\n", to: wire)
+        _ = probe.detectKimi(wirePath: wire.path, state: &state)
+        XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:20:00"))
+        XCTAssertEqual(state.signals.promptCache?.promptTokens, 4_882 + 19_200)
+    }
+
+    func testKimiCompactionResetsUntilTheNextRequestAndItsSessionTotalIsNotARequest() throws {
+        let wire = try placeKimiWire([
+            kimiRequest("10:00:00"),
+            kimiUsage("10:00:10", other: 100, read: 200_000),
+            kimiRequest("10:05:00", kind: "compaction"),
+            kimiUsage("10:05:30", other: 1_373, read: 211_968, scope: "session"),
+        ])
+        var state = ModelTailState()
+        _ = probe.detectKimi(wirePath: wire.path, state: &state)
+        let reset = try XCTUnwrap(state.signals.promptCache)
+        XCTAssertEqual(reset.reset, .compaction)
+        XCTAssertEqual(reset.coldAt(), t("10:05:00"))
+        XCTAssertEqual(reset.promptTokens, 200_100, "the compaction's session total is not the next prompt")
+
+        try append([kimiRequest("10:06:00"), kimiUsage("10:06:05", other: 3_000, read: 0, created: 0)].joined(separator: "\n") + "\n", to: wire)
+        _ = probe.detectKimi(wirePath: wire.path, state: &state)
+        XCTAssertNil(state.signals.promptCache?.reset)
+        XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:06:00"))
+    }
+
+    func testKimiWithoutAWireDropsWhatTheLastSessionLeft() throws {
+        let wire = try placeKimiWire([kimiRequest("10:00:00"), kimiUsage("10:00:05", other: 1, read: 1)])
+        var state = ModelTailState()
+        _ = probe.detectKimi(wirePath: wire.path, state: &state)
+        XCTAssertNotNil(state.signals.promptCache)
+        _ = probe.detectKimi(wirePath: nil, state: &state)
+        XCTAssertNil(state.signals.promptCache)
+    }
+
+    func testKimiWireLocatorFindsThisRunsMainWireOnly() throws {
+        let started = Date(timeIntervalSince1970: 1_790_000_000)
+        try placeKimiWire([kimiRequest("09:00:00")], session: "session_old", modified: started.addingTimeInterval(-3_600))
+        let current = try placeKimiWire([kimiRequest("10:00:00")], session: "session_new", modified: started.addingTimeInterval(60))
+        try placeKimiWire([kimiRequest("10:01:00")], session: "session_new", agent: "agent-0", modified: started.addingTimeInterval(120))
+        let locator = KimiWireLocator(home: home)
+        XCTAssertEqual(locator.wirePath(cwd: kimiCwd, startedAt: started), current.path)
+        XCTAssertNil(locator.wirePath(cwd: kimiCwd, startedAt: started.addingTimeInterval(600)), "nothing written since this run began")
+        XCTAssertNil(locator.wirePath(cwd: "/work/elsewhere", startedAt: started))
+
+        let a = UUID(), b = UUID(), c = UUID()
+        let paths = locator.wirePaths(for: [
+            a: (cwd: kimiCwd, startedAt: started), b: (cwd: kimiCwd, startedAt: started),
+            c: (cwd: "/work/elsewhere", startedAt: started),
+        ])
+        XCTAssertNil(paths[a], "two Kimi panels in one directory cannot be told apart")
+        XCTAssertNil(paths[b])
+        XCTAssertTrue(paths.isEmpty)
+    }
+
+    func testKimiWorkDirFolderSuffixIsTheFirst12HexOfTheSHA256OfThePath() {
+        // `printf '%s' /Users/atin/Projects/Gregorovich | shasum -a 256` → 6b6ccce27f11…
+        XCTAssertEqual(KimiWireLocator.workDirSuffix(forCwd: "/Users/atin/Projects/Gregorovich"), "_6b6ccce27f11")
+    }
+
+    func testProcessFactsReadThisProcessesDirectoryAndStart() throws {
+        let facts = try XCTUnwrap(AgentProcessFacts.cwdAndStart(pid: getpid()))
+        XCTAssertEqual(URL(fileURLWithPath: facts.cwd).resolvingSymlinksInPath().path,
+                       URL(fileURLWithPath: FileManager.default.currentDirectoryPath).resolvingSymlinksInPath().path)
+        XCTAssertLessThanOrEqual(facts.startedAt, Date())
+        XCTAssertNil(AgentProcessFacts.cwdAndStart(pid: -1))
+    }
 }

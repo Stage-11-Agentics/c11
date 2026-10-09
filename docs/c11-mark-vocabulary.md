@@ -22,20 +22,32 @@ what is inside the cell — full of output, holding a payload, empty, or collaps
 **What makes an agent cold.** Cold is a live agent at rest whose next message starts from
 cold. A process that exits leaves no mark at all: the panel becomes a plain terminal.
 
-- **Prompt cache: Claude Code, Codex and Grok Build.** These agents' lifecycle comes from
-  their journal (hooks or transcript), and they go cold only when their prompt cache
-  expires, so the next message re-caches its whole context; without cache data they never
-  go cold. The cache comes from the harness's own transcript: Claude Code names its tier on
-  every request (5 minutes, or 1 hour on a subscription within plan), counted from when the
-  last request or prompt went out, and a `/model` switch, an `/effort` change or a
-  compaction resets it at once;
-  slash commands and `!` shell lines send no request and leave it alone. Codex and Grok
-  Build publish no lifetime, so c11 estimates one (Codex 2 hours, Grok 1 hour) from measured
-  reuse. A warm 1-hour agent stays an idle frame for the whole hour.
-- **Dormancy: every other agent.** An agent outside the journal (other harnesses) goes cold
-  after the dormancy threshold: idle and untouched for `sidebarAgentColdThresholdSeconds`
-  (default 10 minutes, 1-60, env `C11_AGENT_COLD_SECONDS`). Where such an agent does have
-  cache evidence, the cache decides instead.
+- **Prompt cache.** Where c11 knows the cache, the agent goes cold when it expires, so the
+  next message re-caches its whole context. c11 learns it from:
+  - **Transcripts.** Claude Code names its tier on every request (5 minutes, or 1 hour on a
+    subscription within plan), counted from when the last request or prompt went out, and a
+    `/model` switch, an `/effort` change or a compaction resets it at once; slash commands
+    and `!` shell lines send no request and leave it alone. Codex, Grok Build and Kimi Code
+    (its `wire.jsonl` request and usage lines) publish no lifetime, so c11 estimates one
+    (Codex 2 hours, Grok and Kimi 1 hour) from measured reuse.
+  - **c11's runtime plugins.** OpenCode's plugin and the Pi and omp extensions report each
+    request over the socket (`agent.prompt_cache.report`): an Anthropic TTL (Pi and omp
+    honour `PI_CACHE_RETENTION=long`, omp's OAuth default is 1 hour), else an estimate.
+    Custom kinds can report the same way.
+  - **The statusline tap (opt-in, Claude Code).** A snippet the operator pastes into their
+    own statusline script reports Claude's exact `prompt_cache`, keepalive touches included;
+    it wins over the transcript estimate while it keeps reporting. c11 never writes it.
+
+  A warm 1-hour agent stays an idle frame for the whole hour. A journal-backed agent (hooks,
+  a plugin's lifecycle or a transcript) never goes cold without cache data. While Pi 0.86+
+  or omp 18.3.5+ refreshes its own cache, the last request no longer says when it expires:
+  the extension reports `unknown`, and c11 has no cache data for that agent until its next
+  request.
+- **Dormancy: every other agent.** An agent outside the journal goes cold after the
+  dormancy threshold: idle and untouched for `sidebarAgentColdThresholdSeconds` (default 10
+  minutes, 1-60, env `C11_AGENT_COLD_SECONDS`). Where such an agent does have cache
+  evidence, the cache decides instead. GitHub Copilot exposes no cache data, so it always
+  follows this rule.
 
 Priority order for any UI that ranks states: **needs attention · working · idle · cold.**
 

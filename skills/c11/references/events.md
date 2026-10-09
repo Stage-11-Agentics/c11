@@ -17,9 +17,11 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 ## File & format
 
 - **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>` (e.g. `com.stage11.c11-12345`) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
-- **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`.
+- **Owner-only.** Event files are `0600` and the `events/` directory `0700`, because `panel.input_sent`, `mailbox.accepted` and `flag.lowered` can carry sent text. Every retention checkpoint, starting at launch, tightens older files (1.0 wrote `0644`).
+- **Bounded history.** Generations whose last write is older than the retention age (14 days by default), or past the build's 64 MiB budget, are deleted, oldest first; see [retention](#local-activity-history-c11-349). Old instance logs disappear; the file a running c11 is writing never does, but it rolls daily so its text ages too.
+- **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`. When that instance's log no longer exists, a one-shot tail prints a `note:` on stderr and exits 0; `--follow` waits for it to appear.
 - **`log.opened` begins each instance's log.** Its payload carries the `pid` and its first emitted `seq` is **1**. The counter is per instance, not the lifecycle journal's committed sequence; do not resume a journal cursor from an events file.
-- **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (older numbered generations are retained within the build’s age and byte budget). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
+- **Rotation at a size cap (~8 MiB) and daily.** The live file is rolled at the cap, and at the first health or daily checkpoint after it has been written for a day, to `events-<instance>.ndjson.1` (older numbered generations are retained within the build’s age and byte budget). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
 
 Schema: **`spec/event-envelope.v2.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line. Event logs written by older builds still contain v1 lines (`v` 1, with `surface` / `pane` subject fields and the older type names), and readers accept both. v1 lines validate against `spec/event-envelope.v1.schema.json`.
 
@@ -77,7 +79,7 @@ Five additional `type` values are **not taxonomy members** — they are structur
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `log.opened` | `{pid}` | First line of an instance's log. `seq` starts here. |
-| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). |
+| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). `rolled_to` is `null` when the live file was deleted or replaced out from under c11: nothing rolled, and every record in the deleted file (including any written after the deletion, until c11 noticed) is gone. If the path was replaced rather than deleted, the marker follows the replacement's content instead of opening the file. |
 | `log.dropped` | `{count}` | Backpressure or failed writes shed `count` events. This marks incomplete coverage. |
 | `log.policy` | `{enabled, analytics_enabled, keep_text, retention_days}` | Recording policy boundary; disabled spans have unknown coverage. |
 | `log.retention` | `{state, reason?}` | `degraded` begins a retention-coordination episode; `recovered` ends it. This softens the shared byte cap without implying lost events. Failed boundary writes remain pending for retry and do not increment `log.dropped`. |
@@ -138,7 +140,7 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 - **Off-main and non-blocking.** Emission never blocks the UI or the writer's caller; serialization and the file write happen off the main actor.
 - **Low latency.** Ordinary events are readable **within ~1s** under normal disk conditions. C11-349 deliberately coalesces meaningful `source=osc` title changes into first/last/count windows: the final tail has a **60-second deadline** while awake, including with analytics off. Spinner-only changes are discarded. This is the sole EVT-6 exception.
 - **`seq` is the oracle.** Ordering within an instance is total and gap-free *except* where a `log.dropped` marker explicitly records a gap. Order by `seq`; `ts` is advisory.
-- **Rotation is observable.** The `log.rotated` marker (first line of the fresh file) plus the CLI's rotation-aware follow (it drains the rolled `.1` tail, then continues) means a follower doesn't silently lose events across a roll. A direct file reader that wants the same guarantee should watch for a size shrink / inode change and drain `.ndjson.1`.
+- **Rotation is observable.** The `log.rotated` marker (first line of the fresh file) plus the CLI's rotation-aware follow (it drains the rolled `.1` tail, then continues) means a follower doesn't silently lose events across a roll. A direct file reader that wants the same guarantee should watch for a size shrink / inode change and drain `.ndjson.1` only when `.1` has the inode it was reading. After a recovery (`log.rotated` with `rolled_to: null`), `.1` is an older, unrelated generation; `c11 events tail --follow` skips it.
 
 **Non-guarantees**
 
@@ -224,12 +226,40 @@ nightly and each tag have separate policies. A build never prunes another
 production or nightly label. Dead debug/tag labels may also be pruned after a
 fixed fourteen-day idle TTL. Live current files are protected by writer locks.
 Pruning runs at open, rotation, sample, policy changes and clean shutdown,
-plus a daily checkpoint while recording is enabled.
-With full recording disabled, startup, policy and shutdown checkpoints still
-prune history, but no retention timer runs. A long disabled session can retain
-files past their wall-clock age limit until the next checkpoint. Writes maintain
+plus a daily checkpoint. The daily checkpoint also runs with full recording
+disabled: nothing new is written, but retained history still ages out. The
+health-sample and daily checkpoints also roll a live file that has been written
+for a day and holds more than a rotation marker (`log.rotated` as usual), so current-file protection cannot keep a long
+session's text past the retention age. With recording off, the open file is not
+rolled; it is kept until the process quits. Nothing is pruned while no c11 runs
+or the Mac sleeps, and a production or nightly label that is never launched
+again keeps its history. Writes maintain
 a running byte count; ordinary records do not scan the directory or take a
 retention lock.
+
+Every checkpoint also removes group and other access from the history
+directory (its target, when the directory is a symlink) and from every event
+file in it, whichever build wrote it. Owner and special bits are left alone,
+except that S_ISGID is cleared when the kernel refuses to keep it. It skips
+symlinked files, files owned by another user and non-event files. It changes a
+mode through an `O_NOFOLLOW` descriptor whose inode matches the listed path or,
+for a mode the owner cannot open, with `fchmodat` without following a symlink.
+It never adds a permission bit, so it is idempotent. Retention counts,
+ages and deletes regular files only (by `lstat`, with `unlink(2)`): a symlink or
+directory named like an event file is never followed, counted or removed.
+
+If the live file is deleted out from under a running c11, the next health or
+daily checkpoint, or the next size-cap roll, notices that the path no longer
+names the open file and starts a fresh current file with a `log.rotated`
+marker whose `rolled_to` is `null`. Records in the deleted file, including any
+written before c11 noticed, are lost. Only a missing path or a different inode
+counts; any other stat error keeps the existing handle writing. New files are created `0600` and new
+directories `0700`. Instance ids end in the pid, so a launch can reuse a dead
+launch's current file name. At its first write, that launch rolls the inherited
+file into its numbered generations (a plain rename that keeps the file's mtime)
+instead of appending to it, so the inherited history keeps its age and is
+pruned on schedule. If a live writer could still hold the file, it appends as
+before.
 
 Shared per-label reconciliation uses a nonblocking lock. If it is busy or
 unavailable, recording continues with best-effort pruning of this instance’s
@@ -246,7 +276,10 @@ writes consume sequence numbers and publish written notifications.
 
 Policy defaults: analytics on, text on, retention 14 days. The cached keys are
 `c11.activityHistory.analyticsEnabled`, `c11.activityHistory.keepText`, and
-`c11.activityHistory.retentionDays` (7, 14 or 30). Analytics-off skips presence,
+`c11.activityHistory.retentionDays` (7, 14 or 30; any other value reads as 14).
+Settings → Data & Privacy sets them. For an external write such as
+`defaults write com.stage11.c11 c11.activityHistory.retentionDays -int 7`,
+relaunch c11 for it to take effect. The 64 MiB budget has no override. Analytics-off skips presence,
 workspace and sample envelopes before construction; existing panel, mailbox,
 feed and lifecycle events continue. `log.policy` records
 `{enabled, analytics_enabled, keep_text, retention_days}` at launch and policy

@@ -12,7 +12,12 @@ records. It is separate from Send anonymous telemetry.
   Feed answers retain `answer_bytes` instead of `answer`. Messages view shows “text not recorded.” Existing history is unchanged.
 - **Keep history for** selects 7, 14 or 30 days for the activity-log generations,
   subject to the byte cap for that build label. Dead debug/tag history also expires after fourteen days idle. This does not delete local mailbox delivery
-  files, agent transcripts, or other tenant state.
+  files, agent transcripts, or other tenant state. The key is
+  `c11.activityHistory.retentionDays`; retention keeps running while recording
+  is off.
+
+History files are owner-only: `0600` files in a `0700` directory. Launch
+tightens files an older build wrote with wider modes.
 
 Mailbox delivery still needs the local message body or body reference. c11 marks
 accepted mailbox envelopes with `ext.c11_activity_text_recorded: false` so

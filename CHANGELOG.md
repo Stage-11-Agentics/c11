@@ -4,6 +4,16 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [Unreleased]
+
+### Changed
+
+- **The first launch of this version deletes event history older than 14 days and trims what remains to 64 MiB.** 1.0 kept every launch's event log, including the text of every send, paste and mailbox message, forever. From now on each build deletes event history 14 days after its last write and keeps its total within 64 MiB, oldest first. The file the running c11 is writing is never deleted; it rolls daily so a long session's text ages out too. Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days (`c11.activityHistory.retentionDays`). Pruning runs at launch and at least once a day while c11 runs, including with recording off. A one-shot `c11 events tail --instance` notes on stderr when that instance's log is gone. ([#627](https://github.com/Stage-11-Agentics/c11/pull/627), [#643](https://github.com/Stage-11-Agentics/c11/pull/643))
+
+### Fixed
+
+- **Event log files are private to your account.** The event log records sent text, but 1.0 created its files `0644`. New files are `0600` in a `0700` directory, and launch tightens the files and directory 1.0 left behind. A launch that reuses an old process id no longer appends to that process's log, so the older history still ages out. ([#643](https://github.com/Stage-11-Agentics/c11/pull/643))
+
 ## [1.0.0] - 2026-10-06
 
 Headline: **c11 1.0. The vocabulary settles on window → workspace → area → panel. Agents get a Feed, a lifecycle journal and mail that arrives. A full fleet no longer hangs the app or costs you a session.**

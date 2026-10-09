@@ -12,6 +12,11 @@ import Darwin
 /// - **Size-capped rotation** (EVT-4): at the cap the current file rolls to
 ///   `.1`, older generations are retained within age and total-byte bounds, and a `log.rotated` marker is written as
 ///   the first line of the fresh file so consumers detect the boundary.
+/// - **Owner-only history** (C11-348): files are created 0600 and the
+///   directory 0700, because `panel.input_sent` and mailbox records carry the
+///   sent text. Every retention checkpoint, starting at launch, tightens
+///   older files and the directory. Periodic checkpoints also roll a live
+///   file written for a day, so a long session's text ages out.
 ///
 /// Non-blocking under a slow/full disk (EVT-3): `append` never touches the disk
 /// on the caller thread, and a bounded in-flight cap drops rather than growing
@@ -42,6 +47,11 @@ final class EventLog {
     private var knownHistoryBytes = 0
     private var historyInitialized = false
     private var historyLockFD: Int32 = -1
+    private var checkedInheritedCurrentFile = false
+    /// When this launch began writing the current file (open or rotation),
+    /// and whether it holds any record besides a rotation marker.
+    private var currentFileStartedAt: Date?
+    private var currentFileHasRecords = false
     private var writerLockError: Int32?
     private var retentionFailure: String?
     private var reportedRetentionDegraded = false
@@ -210,14 +220,17 @@ final class EventLog {
     }
 
     private func scheduleSampling() {
-        guard !samplingStopped, !samplingAsleep, recordingEnabled else {
+        guard !samplingStopped, !samplingAsleep else {
             sampleTimer?.cancel()
             sampleTimer = nil
             return
         }
-        let sampleDeadline = analyticsEnabled && sampleProvider != nil ? nextSampleAt : .distantFuture
-        let deadline = min(nextTitleExpiry, min(sampleDeadline, nextPruneAt))
-        let leeway = nextTitleExpiry <= min(sampleDeadline, nextPruneAt) ? 2 : 60
+        // With recording off only the daily retention checkpoint remains:
+        // nothing new is written, but retained history must still age out.
+        let titleDeadline = recordingEnabled ? nextTitleExpiry : .distantFuture
+        let sampleDeadline = recordingEnabled && analyticsEnabled && sampleProvider != nil ? nextSampleAt : .distantFuture
+        let deadline = min(titleDeadline, min(sampleDeadline, nextPruneAt))
+        let leeway = titleDeadline <= min(sampleDeadline, nextPruneAt) ? 2 : 60
         let delay = max(0, deadline.timeIntervalSince(now()))
         if sampleTimer == nil {
             let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -293,12 +306,17 @@ final class EventLog {
     }
 
     private func deadlineFired() {
-        guard recordingEnabled, !samplingAsleep else { return }
+        guard !samplingAsleep else { return }
+        guard recordingEnabled else {
+            if now() >= nextPruneAt { pruneHistory() }
+            scheduleSampling()
+            return
+        }
         flushTitles(expiredOnly: true)
         if analyticsEnabled, sampleProvider != nil, now() >= nextSampleAt {
             sampleNow()
         } else {
-            if now() >= nextPruneAt { pruneHistory() }
+            if now() >= nextPruneAt { reconcileAtCheckpoint() }
             scheduleSampling()
         }
     }
@@ -306,11 +324,58 @@ final class EventLog {
     private func sampleNow() {
         guard recordingEnabled, !samplingAsleep else { return }
         flushTitles(expiredOnly: true)
+        // Recover a deleted live file before the drop marker and the sample,
+        // so neither lands in the orphan.
+        if recordingEnabled, liveFileDetached() { reattachDetachedLiveFile() }
         reportDropsIfNeeded()
         if recordingEnabled, analyticsEnabled, let event = sampleProvider?() { writeAssigningSeq(event) }
-        pruneHistory()
+        reconcileAtCheckpoint()
         nextSampleAt = now().addingTimeInterval(600)
         scheduleSampling()
+    }
+
+    /// Periodic checkpoints (health sample, daily deadline) also roll a live
+    /// file that has been written for a day. Current-file protection would
+    /// otherwise keep a long session's sent text past the retention age; as
+    /// a rolled generation it ages out by its last write, like any other.
+    /// rotate() ends with the reconciliation itself.
+    private func reconcileAtCheckpoint() {
+        if recordingEnabled, liveFileDetached() {
+            reattachDetachedLiveFile()
+            pruneHistory()
+            return
+        }
+        if recordingEnabled, fileHandle != nil, currentFileHasRecords, let started = currentFileStartedAt,
+           now().timeIntervalSince(started) >= Self.liveFileRollAge, rotate() {
+            return
+        }
+        pruneHistory()
+    }
+
+    static let liveFileRollAge: TimeInterval = 86_400
+
+    /// The live path no longer names the open file: something deleted or
+    /// replaced it. Writing on would grow an unlinked inode nobody can read.
+    /// Only a missing path or a different inode counts. Any other stat
+    /// failure (EACCES, EIO) keeps the still-linked handle writing.
+    private func liveFileDetached() -> Bool {
+        guard let fileHandle else { return false }
+        var opened = stat(), named = stat()
+        guard fstat(fileHandle.fileDescriptor, &opened) == 0 else { return false }
+        guard stat(url.path, &named) == 0 else { return errno == ENOENT || errno == ENOTDIR }
+        return named.st_dev != opened.st_dev || named.st_ino != opened.st_ino
+    }
+
+    /// Abandons a detached handle and starts a fresh current file. Its first
+    /// line is a `log.rotated` marker with `rolled_to: null`: nothing rolled,
+    /// and records written to the deleted file in the meantime are gone.
+    private func reattachDetachedLiveFile() {
+        try? fileHandle?.close()
+        fileHandle = nil
+        currentFileStartedAt = nil
+        currentFileHasRecords = false
+        writeAssigningSeq(EventEnvelope(type: .logRotated, instance: instance, ts: now(),
+                                        payload: ["rolled_to": NSNull()]), rotate: false)
     }
 
     // MARK: - Queue-confined writing
@@ -427,6 +492,7 @@ final class EventLog {
             return false
         }
         nextSeq = sequence
+        if envelope.type != EventEnvelope.EventType.logRotated.rawValue { currentFileHasRecords = true }
         if envelope.type == EventEnvelope.EventType.mailboxDelivered.rawValue,
            envelope.payload["via"] as? String == "drain", let id = envelope.payload["id"] as? String,
            confirmedDrainIDs.insert(id).inserted {
@@ -495,19 +561,47 @@ final class EventLog {
     private func ensureHandle() throws {
         if fileHandle != nil { return }
         let parent = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-        // O_CLOEXEC is atomic with open: a concurrent PTY fork must never
-        // inherit this descriptor and keep a dead writer's SH lock alive.
-        let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
-        let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        let lockError = acquireWriterLock(fd)
-        writerLockError = lockError == 0 ? nil : lockError
-        // Lock failures affect retention coordination, never event delivery.
-        // Busy is transient; unavailable locking gets an explicit boundary.
-        do { try fh.seekToEnd() }
-        catch { try? fh.close(); throw error }
-        fileHandle = fh
+        try Self.createPrivateDirectory(parent)
+        if !checkedInheritedCurrentFile {
+            checkedInheritedCurrentFile = true
+            rollAsideInheritedCurrentFile()
+        }
+        var attempt = 0
+        while true {
+            attempt += 1
+            // O_CLOEXEC is atomic with open: a concurrent PTY fork must never
+            // inherit this descriptor and keep a dead writer's SH lock alive.
+            let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, Self.privateFileMode)
+            guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+            // The create mode covers new files only. A file this open reused
+            // (an inherited path that could not be rolled aside) may be 0644.
+            Self.tightenOpenFile(fd, path: url.path)
+            let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            let lockError = acquireWriterLock(fd)
+            writerLockError = lockError == 0 ? nil : lockError
+            // Another writer's pruner may have unlinked a reused file between
+            // open and lock. Never append to an orphan: reopen once.
+            if attempt == 1, !Self.pathNamesOpenFile(url.path, fd, followingSymlink: true) {
+                try? fh.close()
+                continue
+            }
+            // Lock failures affect retention coordination, never event delivery.
+            // Busy is transient; unavailable locking gets an explicit boundary.
+            do { try fh.seekToEnd() }
+            catch { try? fh.close(); throw error }
+            fileHandle = fh
+            if currentFileStartedAt == nil { currentFileStartedAt = now() }
+            return
+        }
+    }
+
+    /// True when `path` still names the inode open on `fd`. The writer's open
+    /// follows a symlinked current path; the O_NOFOLLOW probes do not.
+    private static func pathNamesOpenFile(_ path: String, _ fd: Int32, followingSymlink: Bool = false) -> Bool {
+        var opened = stat(), named = stat()
+        guard fstat(fd, &opened) == 0,
+              (followingSymlink ? stat(path, &named) : lstat(path, &named)) == 0 else { return false }
+        return opened.st_dev == named.st_dev && opened.st_ino == named.st_ino
     }
 
     // MARK: - Rotation (EVT-4)
@@ -519,34 +613,28 @@ final class EventLog {
         rotate()
     }
 
-    private func rotate() {
-        let fm = FileManager.default
+    @discardableResult
+    private func rotate() -> Bool {
+        // Nothing to roll when the live path was deleted under us; recover
+        // onto a fresh file instead of writing on into the orphan.
+        if liveFileDetached() {
+            reattachDetachedLiveFile()
+            pruneHistory()
+            return true
+        }
         let rolled = EventLogLayout.rolledURL(for: url)
         // Keep the old file's shared liveness lock until the rename completes.
         let previousHandle = fileHandle
         fileHandle = nil
-        // Plain renames only. Numbered generations preserve the `.1` tail
-        // compatibility contract; newest is always `.1`.
-        // historyFiles enumerates exactly this directory. Match filenames,
-        // because Foundation can return /private/var aliases for a /var URL.
-        let generationPrefix = url.lastPathComponent + "."
-        let generations = historyFiles().filter { $0.lastPathComponent.hasPrefix(generationPrefix) }
-        let numbered = generations.compactMap { item -> (URL, Int)? in
-            guard let number = Int(item.lastPathComponent.dropFirst(generationPrefix.count)) else { return nil }
-            return (item, number)
-        }.sorted { $0.1 > $1.1 }
-        for (item, number) in numbered {
-            try? fm.moveItem(at: item, to: URL(fileURLWithPath: url.path + "." + String(number + 1)))
-        }
-        do {
-            try fm.moveItem(at: url, to: rolled)
-        } catch {
+        guard rollCurrentPathToFirstGeneration() else {
             // If the roll failed, keep appending to the current file rather than
             // losing events; reopen and carry on (cap will retrigger).
             fileHandle = previousHandle
-            return
+            return false
         }
         try? previousHandle?.close()
+        currentFileStartedAt = nil
+        currentFileHasRecords = false
         // Fresh current file starts with a rotation marker so a consumer that
         // re-reads from the top after detecting the shrink lands on the boundary.
         let marker = EventEnvelope(
@@ -557,6 +645,128 @@ final class EventLog {
         )
         writeAssigningSeq(marker, rotate: false)
         pruneHistory()
+        return true
+    }
+
+    /// Shifts this path's numbered generations up by one, then renames the
+    /// current path to `.1`. Plain renames only, so each file keeps its mtime
+    /// and mode; numbered generations preserve the `.1` tail compatibility
+    /// contract, and newest is always `.1`. False when the final rename fails.
+    private func rollCurrentPathToFirstGeneration() -> Bool {
+        let fm = FileManager.default
+        // Without a current file there is nothing to roll; never renumber.
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return false }
+        // historyFiles enumerates exactly this directory. Match filenames,
+        // because Foundation can return /private/var aliases for a /var URL.
+        let generationPrefix = url.lastPathComponent + "."
+        let generations = historyFiles().filter { $0.lastPathComponent.hasPrefix(generationPrefix) }
+        let numbered = generations.compactMap { item -> (URL, Int)? in
+            // A planted `.9223372036854775807` must not overflow `number + 1`.
+            guard let number = Int(item.lastPathComponent.dropFirst(generationPrefix.count)),
+                  number < Int.max else { return nil }
+            return (item, number)
+        }.sorted { $0.1 > $1.1 }
+        for (item, number) in numbered {
+            try? fm.moveItem(at: item, to: URL(fileURLWithPath: url.path + "." + String(number + 1)))
+        }
+        do {
+            try fm.moveItem(at: url, to: EventLogLayout.rolledURL(for: url))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// The instance id is `<label>-<pid>`, so a launch that reuses a dead
+    /// launch's pid finds that launch's current file at its own path.
+    /// Appending would put the old history under this launch's current-file
+    /// protection, past its retention age. Roll it into the numbered
+    /// generations instead: the rename keeps its mtime, so the first
+    /// reconciliation ages or budgets it out like any closed file. When a
+    /// live writer could still hold the file, append as before.
+    private func rollAsideInheritedCurrentFile() {
+        var info = stat()
+        guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size > 0 else { return }
+        let fd = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return }
+        defer { Darwin.close(fd) }
+        guard acquirePruneLock(fd) == 0, Self.pathNamesOpenFile(url.path, fd) else { return }
+        _ = rollCurrentPathToFirstGeneration()
+    }
+
+    // MARK: - Private modes (C11-348)
+
+    /// Event history holds sent text, so it is owner-only: files 0600 and
+    /// the history directory 0700.
+    static let privateFileMode: mode_t = 0o600
+    static let privateDirectoryMode: mode_t = 0o700
+
+    /// New directories (including missing parents) are created owner-only.
+    /// An existing directory keeps its mode until reconciliation tightens it.
+    private static func createPrivateDirectory(_ directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: Int(privateDirectoryMode)])
+    }
+
+    /// Removes group and other access from one path this user owns, and
+    /// nothing else. It never follows a symlink and never adds a bit, so it is
+    /// safe to repeat at every checkpoint. The common already-private case
+    /// costs one lstat; a change goes through an O_NOFOLLOW descriptor whose
+    /// inode must match, so a swapped path is never chmodded.
+    @discardableResult
+    private static func tightenMode(atPath path: String, directory: Bool) -> Bool {
+        let type = directory ? S_IFDIR : S_IFREG
+        var named = stat()
+        guard lstat(path, &named) == 0, named.st_uid == geteuid(),
+              named.st_mode & S_IFMT == type, named.st_mode & 0o077 != 0 else { return false }
+        let fd = Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC | (directory ? O_DIRECTORY : 0))
+        guard fd >= 0 else {
+            // An owner-unreadable mode (0244, 0311) cannot be opened; it still
+            // must lose group and other access. This path-based change after
+            // lstat accepts the race the descriptor path closes: at worst it
+            // clears group and other bits on a same-owner swapped path.
+            guard errno == EACCES else { return false }
+            return Self.retryingWithoutSetGID(named.st_mode) {
+                fchmodat(AT_FDCWD, path, $0, AT_SYMLINK_NOFOLLOW)
+            }
+        }
+        defer { Darwin.close(fd) }
+        var opened = stat()
+        guard fstat(fd, &opened) == 0, opened.st_mode & S_IFMT == type, opened.st_uid == geteuid(),
+              opened.st_dev == named.st_dev, opened.st_ino == named.st_ino else { return false }
+        return Self.retryingWithoutSetGID(opened.st_mode) { fchmod(fd, $0) }
+    }
+
+    /// A non-member owner may not keep S_ISGID (EPERM); privacy wins then.
+    private static func retryingWithoutSetGID(_ mode: mode_t, _ change: (mode_t) -> Int32) -> Bool {
+        let tightened = withoutGroupAndOther(mode)
+        if change(tightened) == 0 { return true }
+        guard errno == EPERM, tightened & S_ISGID != 0 else { return false }
+        return change(tightened & ~S_ISGID) == 0
+    }
+
+    /// Only a regular file still named by `path` (never a symlink's target)
+    /// is tightened through the writer's descriptor.
+    private static func tightenOpenFile(_ fd: Int32, path: String) {
+        var opened = stat(), named = stat()
+        guard fstat(fd, &opened) == 0, opened.st_mode & S_IFMT == S_IFREG, opened.st_uid == geteuid(),
+              opened.st_mode & 0o077 != 0, lstat(path, &named) == 0,
+              named.st_dev == opened.st_dev, named.st_ino == opened.st_ino else { return }
+        _ = Self.retryingWithoutSetGID(opened.st_mode) { fchmod(fd, $0) }
+    }
+
+    /// Clears group and other bits only; owner bits and special bits stay.
+    private static func withoutGroupAndOther(_ mode: mode_t) -> mode_t {
+        (mode & 0o7777) & ~mode_t(0o077)
+    }
+
+    /// Reconciliation tightens the directory and every event file in it,
+    /// whichever build wrote them. This upgrades the 0644 files 1.0 left
+    /// behind on the first launch, and any written later by an older build.
+    private func tightenHistoryModes(_ files: [URL]) {
+        Self.tightenMode(atPath: url.deletingLastPathComponent().resolvingSymlinksInPath().path, directory: true)
+        for file in files { Self.tightenMode(atPath: file.path, directory: false) }
     }
 
     private func historyFiles() -> [URL] {
@@ -565,7 +775,7 @@ final class EventLog {
         // directory itself before discovering retained generations.
         let directory = url.deletingLastPathComponent().resolvingSymlinksInPath()
         let files = (try? FileManager.default.contentsOfDirectory(at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])) ?? []
+            includingPropertiesForKeys: nil)) ?? []
         return files.filter { item in
             let name = item.lastPathComponent
             // Only event files in this dedicated directory. Custom test paths
@@ -578,13 +788,21 @@ final class EventLog {
         }
     }
 
-    /// Only open, rotation, health sample and policy changes reconcile files.
+    /// Only open, rotation, health sample, policy changes, shutdown and the
+    /// daily checkpoint reconcile files (and tighten their modes).
     /// Normal appends update cached bytes without directory scans or flock.
     private func acquireHistoryLock() -> String? {
+        let directory = url.deletingLastPathComponent()
+        let lockPath = directory.appendingPathComponent(".activity-history.lock").path
+        // A deleted history directory leaves our lock on an unlinked inode
+        // that other writers no longer share; reopen it at the path.
+        if historyLockFD >= 0, !Self.pathNamesOpenFile(lockPath, historyLockFD, followingSymlink: true) {
+            Darwin.close(historyLockFD)
+            historyLockFD = -1
+        }
         if historyLockFD < 0 {
-            let directory = url.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            historyLockFD = Darwin.open(directory.appendingPathComponent(".activity-history.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+            try? Self.createPrivateDirectory(directory)
+            historyLockFD = Darwin.open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, Self.privateFileMode)
         }
         guard historyLockFD >= 0 else { return "lock_unavailable" }
         if flock(historyLockFD, LOCK_EX | LOCK_NB) == 0 { return nil }
@@ -665,14 +883,19 @@ final class EventLog {
     }
 
     private func pruneHistoryFiles(ownInstanceOnly: Bool, reservedBytes: Int) {
-        let fm = FileManager.default
         let cutoff = now().addingTimeInterval(-Double(retentionDays) * 86_400)
         let developmentCutoff = now().addingTimeInterval(-14 * 86_400)
         let currentFileCutoff = now().addingTimeInterval(-86_400)
-        let allEntries = historyFiles().compactMap { item -> (url: URL, date: Date, bytes: Int, label: String?)? in
-            guard let values = try? item.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]),
-                  values.isRegularFile == true else { return nil }
-            return (item, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0,
+        let files = historyFiles()
+        tightenHistoryModes(files)
+        // lstat, not URL resource values: a symlink or directory named like
+        // an event file is never counted, aged by its target, or deleted.
+        let allEntries = files.compactMap { item -> (url: URL, date: Date, bytes: Int, label: String?)? in
+            var info = stat()
+            guard lstat(item.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec)
+                + TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+            return (item, modified, Int(info.st_size),
                     isOwnInstanceFile(item.lastPathComponent) ? retentionNamespace : Self.buildLabel(for: item.lastPathComponent))
         }.sorted { $0.date < $1.date }
         func removeIfInactive(_ item: URL, modified: Date) -> Bool {
@@ -687,9 +910,10 @@ final class EventLog {
                item.lastPathComponent.hasSuffix(".ndjson") { return false }
             // This writer never appends to its rolled generations. They need
             // no liveness probe, including on volumes without flock support.
+            // unlink(2) removes exactly one non-directory entry, never a tree.
             if item.lastPathComponent != url.lastPathComponent,
                isOwnInstanceFile(item.lastPathComponent) {
-                do { try fm.removeItem(at: item); return true } catch { return false }
+                return Darwin.unlink(item.path) == 0
             }
             // The kernel releases a live writer's SH lock on process death;
             // pid reuse cannot make an abandoned file immortal. Hold EX until
@@ -697,8 +921,10 @@ final class EventLog {
             let fd = Darwin.open(item.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
             guard fd >= 0 else { return false }
             defer { Darwin.close(fd) }
-            guard acquirePruneLock(fd) == 0 else { return false }
-            do { try fm.removeItem(at: item); return true } catch { return false }
+            // Generation shifts rename without the history lock. Unlink only
+            // the file this lock covers, not one just renamed onto its path.
+            guard acquirePruneLock(fd) == 0, Self.pathNamesOpenFile(item.path, fd) else { return false }
+            return Darwin.unlink(item.path) == 0
         }
         if !ownInstanceOnly {
             // A fixed development TTL may clean dead foreign tagged builds.

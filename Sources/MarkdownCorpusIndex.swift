@@ -612,34 +612,59 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         let signature: Signature
     }
 
+    struct WalkResult {
+        let paths: [String]
+        let visitedEntries: Int
+        let truncated: Bool
+    }
+
     private func discoverFiles(rootURL: URL) -> (files: [Candidate], truncated: Bool) {
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
             .fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey
         ]
         var candidates: [Candidate] = []
-        var paths = repositoryPaths(rootURL: rootURL) ?? walkedPaths(rootURL: rootURL)
+        let discoveredPaths: [String]
+        let walkTruncated: Bool
+        if let repositoryPaths = repositoryPaths(rootURL: rootURL) {
+            discoveredPaths = repositoryPaths
+            walkTruncated = false
+        } else {
+            let walk = Self.walkedPaths(
+                rootURL: rootURL,
+                priorityRelativePaths: priorityRelativePaths,
+                maximumVisitedEntries: limits.maximumVisitedEntries
+            )
+            discoveredPaths = walk.paths
+            walkTruncated = walk.truncated
+        }
+        var paths = discoveredPaths
         for priorityPath in priorityRelativePaths where FileManager.default.fileExists(
             atPath: rootURL.appendingPathComponent(priorityPath).path
         ) {
             paths.append(priorityPath)
         }
         var seen: Set<String> = []
-        let orderedPaths = paths
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
-            .filter {
-                !$0.isEmpty && seen.insert($0).inserted
-                    && (!Self.isExcludedPath($0) || priorityRelativePaths.contains($0))
-            }
-            .sorted {
-                let left = proximityRank(for: $0)
-                let right = proximityRank(for: $1)
-                return left == right ? $0 < $1 : left < right
-            }
-        var truncated = orderedPaths.count > limits.maximumVisitedEntries
+        var normalizedPaths: [String] = []
+        for path in paths {
+            let relativePath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            guard !relativePath.isEmpty, seen.insert(relativePath).inserted else { continue }
+            guard !Self.isExcludedPath(relativePath) || priorityRelativePaths.contains(relativePath) else { continue }
+            normalizedPaths.append(relativePath)
+        }
+        var orderedPaths: [(relativePath: String, rank: Int)] = []
+        orderedPaths.reserveCapacity(normalizedPaths.count)
+        for relativePath in normalizedPaths {
+            orderedPaths.append((relativePath: relativePath, rank: proximityRank(for: relativePath)))
+        }
+        orderedPaths.sort {
+            $0.rank == $1.rank ? $0.relativePath < $1.relativePath : $0.rank < $1.rank
+        }
+        var truncated = walkTruncated || orderedPaths.count > limits.maximumVisitedEntries
         let visitedPaths = orderedPaths.prefix(limits.maximumVisitedEntries)
 
-        for relative in visitedPaths {
+        for rankedPath in visitedPaths {
+            let relative = rankedPath.relativePath
             guard Self.isMarkdownPath(relative) else { continue }
             let url = rootURL.appendingPathComponent(relative)
             guard let values = try? url.resourceValues(forKeys: keys),
@@ -668,7 +693,10 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     private func repositoryPaths(rootURL: URL) -> [String]? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", rootURL.path, "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+        process.arguments = [
+            "-C", rootURL.path, "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+            "--", "*.md", "*.markdown", "*.mdown"
+        ]
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -687,29 +715,110 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         }
     }
 
-    private func walkedPaths(rootURL: URL) -> [String] {
-        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: Array(keys),
-            options: [],
-            errorHandler: { _, _ in true }
-        ) else { return [] }
-        var paths: [String] = []
-        while let url = enumerator.nextObject() as? URL {
-            let relative = Self.relativePath(url, under: rootURL)
-            if Self.isExcludedPath(relative) {
-                enumerator.skipDescendants()
-                continue
-            }
-            guard let values = try? url.resourceValues(forKeys: keys), values.isSymbolicLink != true else {
-                enumerator.skipDescendants()
-                continue
-            }
-            if values.isDirectory == true { continue }
-            paths.append(relative)
+    static func walkedPaths(
+        rootURL: URL,
+        priorityRelativePaths: [String],
+        maximumVisitedEntries: Int
+    ) -> WalkResult {
+        guard maximumVisitedEntries > 0 else {
+            return WalkResult(paths: [], visitedEntries: 0, truncated: true)
         }
-        return paths
+
+        let canonicalRoot = rootURL.standardizedFileURL
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
+        var paths: [String] = []
+        var visitedEntries = 0
+        var truncated = false
+        var visitedDirectories: Set<String> = []
+        var pendingDirectories: [String] = []
+        var pendingDirectoryIndex = 0
+
+        func visitDirectEntries(in relativeDirectory: String) -> [String] {
+            guard !truncated, visitedDirectories.insert(relativeDirectory).inserted else { return [] }
+            let directoryURL = relativeDirectory.isEmpty
+                ? canonicalRoot
+                : canonicalRoot.appendingPathComponent(relativeDirectory, isDirectory: true)
+            guard let directoryValues = try? directoryURL.resourceValues(forKeys: keys),
+                  directoryValues.isDirectory == true,
+                  directoryValues.isSymbolicLink != true,
+                  let enumerator = FileManager.default.enumerator(
+                    at: directoryURL,
+                    includingPropertiesForKeys: Array(keys),
+                    options: [],
+                    errorHandler: { _, _ in true }
+                  ) else { return [] }
+
+            var childDirectories: [String] = []
+            while visitedEntries < maximumVisitedEntries,
+                  let url = enumerator.nextObject() as? URL {
+                visitedEntries += 1
+                let relativePath = Self.relativePath(url, under: canonicalRoot)
+                if Self.isExcludedPath(relativePath) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                guard let values = try? url.resourceValues(forKeys: keys),
+                      values.isSymbolicLink != true else {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                if values.isDirectory == true {
+                    enumerator.skipDescendants()
+                    if !visitedDirectories.contains(relativePath) {
+                        childDirectories.append(relativePath)
+                    }
+                    continue
+                }
+                paths.append(relativePath)
+            }
+            if visitedEntries >= maximumVisitedEntries { truncated = true }
+            return childDirectories
+        }
+
+        var priorityDirectoryChains: [[String]] = []
+        for priorityPath in priorityRelativePaths {
+            let components = priorityPath.split(separator: "/").map(String.init)
+            guard !priorityPath.hasPrefix("/"),
+                  !components.isEmpty,
+                  !components.contains("..") else { continue }
+            var directory = components.dropLast().joined(separator: "/")
+            var chain: [String] = []
+            while true {
+                if !Self.isExcludedPath(directory) { chain.append(directory) }
+                if directory.isEmpty { break }
+                let parent = (directory as NSString).deletingLastPathComponent
+                directory = parent == "." ? "" : parent
+            }
+            priorityDirectoryChains.append(chain)
+        }
+
+        var preferredDirectories: [String] = []
+        var preferredDirectorySet: Set<String> = []
+        let maximumChainDepth = priorityDirectoryChains.map(\.count).max() ?? 0
+        for depth in 0..<maximumChainDepth {
+            for chain in priorityDirectoryChains where depth < chain.count {
+                let directory = chain[depth]
+                if preferredDirectorySet.insert(directory).inserted {
+                    preferredDirectories.append(directory)
+                }
+            }
+        }
+        if preferredDirectories.isEmpty { preferredDirectories.append("") }
+
+        for directory in preferredDirectories where !truncated {
+            pendingDirectories.append(contentsOf: visitDirectEntries(in: directory))
+        }
+        while !truncated && pendingDirectoryIndex < pendingDirectories.count {
+            let directory = pendingDirectories[pendingDirectoryIndex]
+            pendingDirectoryIndex += 1
+            pendingDirectories.append(contentsOf: visitDirectEntries(in: directory))
+        }
+
+        return WalkResult(
+            paths: paths,
+            visitedEntries: visitedEntries,
+            truncated: truncated
+        )
     }
 
     private func proximityRank(for relativePath: String) -> Int {

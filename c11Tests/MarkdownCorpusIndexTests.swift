@@ -125,6 +125,46 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertTrue(snapshot.truncated, "the visited-entry cap should report the ignored lexical-noise corpus as truncated")
     }
 
+    func testNonGitFallbackCapsVisitedEntriesAndKeepsNearestNeighbors() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("plain", isDirectory: true)
+        let lexicalNoise = root.appendingPathComponent("a-noise", isDirectory: true)
+        let documentDirectory = root.appendingPathComponent("docs/nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: lexicalNoise, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: documentDirectory, withIntermediateDirectories: true)
+
+        let reader = documentDirectory.appendingPathComponent("reader.md")
+        let nearby = documentDirectory.appendingPathComponent("nearby.md")
+        try Data("# Reader\n".utf8).write(to: reader)
+        try Data("# Nearby\n".utf8).write(to: nearby)
+        for index in 0..<32 {
+            try Data("# Noise \(index)\n".utf8)
+                .write(to: lexicalNoise.appendingPathComponent("\(index).md"))
+        }
+
+        let maximumVisitedEntries = 5
+        let walk = MarkdownCorpusIndexer.walkedPaths(
+            rootURL: root,
+            priorityRelativePaths: ["docs/nested/reader.md"],
+            maximumVisitedEntries: maximumVisitedEntries
+        )
+        XCTAssertLessThanOrEqual(walk.visitedEntries, maximumVisitedEntries)
+        XCTAssertTrue(walk.truncated)
+        XCTAssertTrue(walk.paths.contains("docs/nested/reader.md"))
+        XCTAssertTrue(walk.paths.contains("docs/nested/nearby.md"))
+
+        var limits = MarkdownCorpusIndexer.Limits()
+        limits.maximumVisitedEntries = maximumVisitedEntries
+        let snapshot = await scan(MarkdownCorpusIndexer(
+            rootURL: root,
+            limits: limits,
+            priorityFileURLs: [reader]
+        ) { _ in })
+        XCTAssertEqual(Set(snapshot.documents.map(\.relativePath)), Set(["docs/nested/reader.md", "docs/nested/nearby.md"]))
+        XCTAssertTrue(snapshot.truncated)
+    }
+
     func testHeadingParserIgnoresFrontmatterAndIndentedCodeAndUsesViewerSlugs() throws {
         let root = URL(fileURLWithPath: "/tmp/markdown-parser-fixture", isDirectory: true)
         let file = root.appendingPathComponent("reader.md")

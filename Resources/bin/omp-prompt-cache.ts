@@ -65,15 +65,19 @@ export default function c11OmpPromptCache(omp: {
     else if (count(usage.cttl?.ephemeral1h) > 0) lastTTL = 3600;
     return lastTTL ?? (longRetention ? 3600 : 300);
   };
-  // Anthropic itself, or a router serving its model under an `anthropic/…`,
-  // `anthropic.…` or `….anthropic.…` id. Other providers on the
-  // anthropic-messages API (Kimi, MiniMax, GLM, Copilot) cache implicitly, so
+  // Anthropic itself, a router serving its model under an `anthropic/…`,
+  // `anthropic.…` or `….anthropic.…` id, a backend passing its cache through
+  // under a bare `claude-…` id (Vertex, OpenCode Zen), or a request whose usage
+  // names Anthropic's cache tiers. Other providers on the anthropic-messages API
+  // (Kimi, MiniMax, GLM) and GitHub Copilot's Claude cache their own way, so
   // c11's policy table decides their lifetime.
   const usesAnthropicCache = (message: any) => {
     const provider = String(message.provider ?? "").toLowerCase();
     const model = String(message.model ?? "").toLowerCase();
     return provider.includes("anthropic")
-      || model.startsWith("anthropic/") || model.startsWith("anthropic.") || model.includes(".anthropic.");
+      || model.startsWith("anthropic/") || model.startsWith("anthropic.") || model.includes(".anthropic.")
+      || (model.startsWith("claude") && provider !== "github-copilot")
+      || count(message.usage?.cttl?.ephemeral5m) + count(message.usage?.cttl?.ephemeral1h) > 0;
   };
 
   omp.on("message_end", async (event) => {

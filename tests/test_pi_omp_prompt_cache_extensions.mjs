@@ -59,7 +59,8 @@ const assistant = (usage, extra = {}) => ({
 await withEnv(baseEnv, async () => {
   const host = fakeHost();
   piExtension(host.api);
-  for (const event of ["agent_start", "agent_settled", "message_end", "cache_warming_decision", "session_compact", "model_select"]) {
+  for (const event of ["agent_start", "agent_settled", "message_end", "cache_warming_decision", "session_compact",
+    "model_select", "thinking_level_select", "session_start"]) {
     assert(host.handlers.has(event), `pi registers ${event}`);
   }
   const end = host.handlers.get("message_end");
@@ -78,9 +79,11 @@ await withEnv(baseEnv, async () => {
     { api: "openai-completions", provider: "github-copilot", model: "claude-sonnet-4.5", timestamp: 1_790_000_300_000 }));
   await end(assistant({ input: 40, output: 9, cacheRead: 3_000, cacheWrite: 0 },
     { api: "openai-completions", provider: "openrouter", model: "anthropic/claude-sonnet-4.5", timestamp: 1_790_000_360_000 }));
+  await end(assistant({ input: 40, output: 9, cacheRead: 3_000, cacheWrite: 0 },
+    { provider: "opencode", model: "claude-sonnet-4-5", timestamp: 1_790_000_420_000 }));
 
   const reports = host.reports();
-  assert.equal(reports.length, 7, "user lines and requests that never reached the provider are not reported");
+  assert.equal(reports.length, 8, "user lines and requests that never reached the provider are not reported");
   assert(host.calls.every(({ options }) => options?.timeout >= 5000), "a slow c11 still gets the report");
   assert.deepEqual(reports[0], {
     panel_id: PANEL,
@@ -96,11 +99,12 @@ await withEnv(baseEnv, async () => {
   assert.equal(reports[4].request.ttl_seconds, undefined, "another provider on the anthropic-messages API caches implicitly");
   assert.equal(reports[5].request.ttl_seconds, undefined, "Copilot's Claude is not Anthropic's cache");
   assert.equal(reports[6].request.ttl_seconds, 300, "OpenRouter's anthropic/ models are");
+  assert.equal(reports[7].request.ttl_seconds, 300, "a bare claude- id on a pass-through backend is too");
   assert(!JSON.stringify(host.calls).includes("PRIVATE-SENTINEL"), "no message text leaves Pi");
 
   const decide = host.handlers.get("cache_warming_decision");
   assert.equal(await decide({ type: "cache_warming_decision", action: "stop" }), undefined);
-  assert.equal(host.reports().length, 7, "a refresh that is not sent changes nothing");
+  assert.equal(host.reports().length, 8, "a refresh that is not sent changes nothing");
   const beforeWarm = Date.now();
   assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }), undefined,
     "the extension never overrides the warmer's decision");
@@ -118,6 +122,20 @@ await withEnv(baseEnv, async () => {
   await select({ model: { provider: "anthropic", id: "claude-sonnet-4-5" }, previousModel: { provider: "anthropic", id: "claude-opus-4-8" } });
   assert.deepEqual(Object.keys(host.reports().at(-1)), ["reset", "panel_id"]);
   assert.equal(host.reports().at(-1).reset.reason, "model_switch");
+
+  const thinking = host.handlers.get("thinking_level_select");
+  const beforeThinking = host.reports().length;
+  await thinking({ type: "thinking_level_select", level: "high", previousLevel: "high" });
+  assert.equal(host.reports().length, beforeThinking, "an unchanged level resets nothing");
+  await thinking({ type: "thinking_level_select", level: "high", previousLevel: "low" });
+  assert.equal(host.reports().at(-1).reset.reason, "effort_change", "the last request was Anthropic's");
+
+  const start = host.handlers.get("session_start");
+  const beforeStart = host.reports().length;
+  await start({ type: "session_start", reason: "startup" });
+  assert.equal(host.reports().length, beforeStart, "a fresh process has no cache to forget");
+  await start({ type: "session_start", reason: "new", previousSessionFile: "/x" });
+  assert.deepEqual(host.reports().at(-1), { unknown: { reason: "session_switch" }, panel_id: PANEL });
 });
 
 await withEnv({ ...baseEnv, PI_CACHE_RETENTION: "long" }, async () => {
@@ -152,7 +170,9 @@ await withEnv(baseEnv, async () => {
   await end(assistant({ input: 3, cacheRead: 0, cacheWrite: 800, cttl: { ephemeral1h: 800 } }));
   await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 0 }));
   await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 90, cttl: { ephemeral5m: 90 } }));
-  assert.deepEqual(before.reports().map((report) => report.request.ttl_seconds), [3600, 3600, 300]);
+  await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 0 }, { provider: "google-vertex", model: "claude-opus-4-8@default" }));
+  await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 0 }, { provider: "minimax", model: "MiniMax-M3" }));
+  assert.deepEqual(before.reports().map((report) => report.request.ttl_seconds), [3600, 3600, 300, 300, undefined]);
   assert.equal(before.reports()[0].panel_id, PANEL);
 
   for (const version of ["18.4.6", undefined]) {

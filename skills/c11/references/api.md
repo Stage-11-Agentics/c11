@@ -658,12 +658,12 @@ Every panel node also carries `prompt_cache`: the agent's prompt cache as of its
 |---|---|---|
 | Claude Code, Codex, Grok Build | The harness's transcript, on the 10-second sweep | Claude `ttl`; Codex and Grok `estimate` |
 | Kimi Code | `llm.request` / `usage.record` lines of the panel's `~/.kimi-code/sessions/…/wire.jsonl` (found from the Kimi process; two Kimi panels in one directory get none) | `estimate` (1 hour) |
-| OpenCode, Pi, omp | c11's runtime plugin or extension reports each request ([prompt cache reports](#prompt-cache-reports)) | Anthropic `ttl` (Pi and omp: 5 minutes, or 1 hour on `PI_CACHE_RETENTION=long` or omp OAuth); others `estimate` |
+| OpenCode, Pi, omp | c11's runtime plugin or extension reports each request, compaction and (Pi) model or thinking change ([prompt cache reports](#prompt-cache-reports)) | Anthropic `ttl` (Pi and omp: 5 minutes, or 1 hour on `PI_CACHE_RETENTION=long` or omp OAuth); others `estimate` |
 | Claude Code, exact | The operator's own statusline, opt-in ([statusline tap](#exact-claude-cache-the-statusline-tap)); wins over the transcript while it keeps reporting | `ttl` |
 | Custom kinds | Their own wrapper or plugin, through the same socket method | as reported |
 | GitHub Copilot | Unsupported: its hooks carry no usage and its backend cache is opaque | none |
 
-It is `null` for a non-agent panel, before the first request, and without cache evidence. When a reporter says it cannot tell, it is `{"state": "unknown", "source": "report"}`, and the mark treats the agent as having no cache data. Pi 0.86+ and omp 18.3.5+ can refresh their own cache ("cache warming"); their extensions report each refresh as a request, so the cache goes cold one lifetime after the last refresh. Otherwise:
+It is `null` for a non-agent panel, before the first request, and without cache evidence. When a reporter says it cannot tell, it is `{"state": "unknown", "source": "report"}`, and the mark treats the agent as having no cache data. Pi 0.86+ and omp 18.3.5+ can refresh their own cache ("cache warming"); their extensions report each refresh as a request, so the cache goes cold one lifetime after the last refresh. A refresh that errors, is cancelled after the decision, or is overridden by another extension can leave the mark warm for at most one lifetime too long. Otherwise:
 
 | Field | Meaning |
 |---|---|
@@ -910,11 +910,12 @@ Params: `panel_id` (a panel UUID; defaults to the caller's panel) and exactly on
 | `unknown` | `true` or `{"reason": "…"}` (≤ 64 chars) | The reporter cannot tell when the cache expires. c11 shows no cache state until the next `request`. |
 
 The lifetime comes from `ttl_seconds` when given, else from the provider:
-Anthropic (a provider naming `anthropic`, or a model id `anthropic/…`,
-`anthropic.…` or `….anthropic.…` on a router or cloud) is a 5-minute TTL;
-OpenAI (`openai`, `openai-codex…`, `azure`, `azure-openai…`) is a 2-hour
-estimate; anything else is an implicit cache, a 1-hour estimate. A Claude model
-on another backend (GitHub Copilot's `claude-…`) is not Anthropic's cache. An
+Anthropic (a provider naming `anthropic`; a model id `anthropic/…`,
+`anthropic.…` or `….anthropic.…` on a router or cloud; or a `claude-…` id on a
+pass-through backend such as Vertex or OpenCode Zen) is a 5-minute TTL; OpenAI
+(`openai`, `openai-codex…`, `azure`, `azure-openai…`) is a 2-hour estimate;
+anything else is an implicit cache, a 1-hour estimate. GitHub Copilot's
+`claude-…` is its own backend's cache, not Anthropic's. An
 Anthropic request that reads and writes nothing (caching off) says nothing. An
 implicit cache counts once a request has read from it. Older reports never move
 the anchor back. `at_ms` below 10^12 is rejected: it is seconds sent by mistake.
@@ -948,13 +949,13 @@ if [ -n "$c11_panel" ] && command -v c11 >/dev/null 2>&1; then
     c11_pc=$(printf '%s' "$input" | jq -c '.prompt_cache // empty | {prompt_cache: .}' 2>/dev/null)
     c11_last="${TMPDIR:-/tmp}/c11-prompt-cache-$c11_panel"
     if [ -n "$c11_pc" ] && [ "$c11_pc" != "$(cat "$c11_last" 2>/dev/null)" ]; then
-        printf '%s' "$c11_pc" > "$c11_last"
-        (c11 rpc agent.prompt_cache.report "$c11_pc" >/dev/null 2>&1 &)
+        (c11 rpc agent.prompt_cache.report "$c11_pc" && printf '%s' "$c11_pc" > "$c11_last") >/dev/null 2>&1 &
     fi
 fi
 ```
 
-It sends only when the object changes, in the background, so the statusline
+It sends only when the object changes (a failed send is retried on the next
+redraw), in the background, so the statusline
 never waits, and does nothing outside c11 or before the first response. A
 `/model`, `/effort` or compaction after the statusline's last request still
 comes from the transcript, which sees it. A statusline `refreshInterval` lets it

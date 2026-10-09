@@ -278,15 +278,18 @@ enum PromptCachePolicy {
         return .estimate(implicitColdAfter)
     }
 
-    /// Anthropic's API directly (also Vertex's `google-vertex-anthropic`), or a
-    /// router or cloud serving an Anthropic model under its own id: OpenRouter
+    /// Anthropic's API directly (also Vertex's `google-vertex-anthropic`), a
+    /// router or cloud serving an Anthropic model under its own id (OpenRouter
     /// and the AI gateways `anthropic/…`, Bedrock `anthropic.…` or
-    /// `us.anthropic.…`. A bare `claude-…` id elsewhere (GitHub Copilot) is
-    /// another backend's cache.
+    /// `us.anthropic.…`), or a backend passing Anthropic's cache through under
+    /// a bare `claude-…` id (Vertex, OpenCode Zen). GitHub Copilot's `claude-…`
+    /// is its own backend's cache.
     static func isAnthropic(provider: String?, model: String?) -> Bool {
-        if provider?.lowercased().contains("anthropic") == true { return true }
+        let provider = provider?.lowercased() ?? ""
+        if provider.contains("anthropic") { return true }
         let model = model?.lowercased() ?? ""
-        return model.hasPrefix("anthropic/") || model.hasPrefix("anthropic.") || model.contains(".anthropic.")
+        if model.hasPrefix("anthropic/") || model.hasPrefix("anthropic.") || model.contains(".anthropic.") { return true }
+        return model.hasPrefix("claude") && provider != "github-copilot"
     }
 
     /// OpenAI's own backends: the API, the Codex (ChatGPT login) backend, Azure.

@@ -148,6 +148,9 @@ final class PromptCacheReportTests: XCTestCase {
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "amazon-bedrock", model: "us.anthropic.claude-sonnet-4-5", ttl: nil), .ttl(300))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "google-vertex-anthropic", model: "claude", ttl: nil), .ttl(300))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "vercel-ai-gateway", model: "anthropic/claude-opus-4-8", ttl: nil), .ttl(300))
+        XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "google-vertex", model: "claude-opus-4-8@default", ttl: nil), .ttl(300),
+                       "Vertex passes Anthropic's cache through under a bare claude- id")
+        XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "opencode", model: "claude-sonnet-4-5", ttl: nil), .ttl(300))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "kimi-coding", model: "k3", ttl: nil), .estimate(3600),
                        "another provider behind the anthropic-messages API caches implicitly")
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "openai", model: "gpt-5.6", ttl: nil), .estimate(2 * 3600))

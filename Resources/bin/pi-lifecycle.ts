@@ -64,17 +64,22 @@ export default function c11Lifecycle(pi: {
     if (write > 0 && typeof usage.cacheWrite1h === "number") lastTTL = usage.cacheWrite1h >= write ? 3600 : 300;
     return lastTTL ?? (longRetention ? 3600 : 300);
   };
-  // Anthropic itself, or a router serving its model under an `anthropic/…`,
-  // `anthropic.…` or `….anthropic.…` id. Other providers on the
-  // anthropic-messages API (Kimi, MiniMax, GLM, Copilot) cache implicitly, so
+  // Anthropic itself, a router serving its model under an `anthropic/…`,
+  // `anthropic.…` or `….anthropic.…` id, a backend passing its cache through
+  // under a bare `claude-…` id (Vertex, OpenCode Zen), or a request whose usage
+  // names Anthropic's cache tiers. Other providers on the anthropic-messages API
+  // (Kimi, MiniMax, GLM) and GitHub Copilot's Claude cache their own way, so
   // c11's policy table decides their lifetime.
   const usesAnthropicCache = (message: any) => {
     const provider = String(message.provider ?? "").toLowerCase();
     const model = String(message.model ?? "").toLowerCase();
     return provider.includes("anthropic")
-      || model.startsWith("anthropic/") || model.startsWith("anthropic.") || model.includes(".anthropic.");
+      || model.startsWith("anthropic/") || model.startsWith("anthropic.") || model.includes(".anthropic.")
+      || (model.startsWith("claude") && provider !== "github-copilot")
+      || count(message.usage?.cacheWrite1h) > 0;
   };
 
+  let lastRequestAnthropic = false;
   pi.on("message_end", async (event) => {
     const message = event?.message;
     if (message?.role !== "assistant") return;
@@ -93,7 +98,8 @@ export default function c11Lifecycle(pi: {
     };
     if (typeof message.provider === "string") request.provider = message.provider.slice(0, 128);
     if (typeof message.model === "string") request.model = message.model.slice(0, 128);
-    if (usesAnthropicCache(message)) request.ttl_seconds = anthropicTTL(usage);
+    lastRequestAnthropic = usesAnthropicCache(message);
+    if (lastRequestAnthropic) request.ttl_seconds = anthropicTTL(usage);
     reportCache({ request });
   });
 
@@ -115,5 +121,17 @@ export default function c11Lifecycle(pi: {
     const previous = event?.previousModel;
     if (!next || !previous || (next.provider === previous.provider && next.id === previous.id)) return;
     reportCache({ reset: { reason: "model_switch", at_ms: Date.now() } });
+  });
+  // Anthropic drops cached messages when the thinking settings change.
+  pi.on("thinking_level_select", async (event) => {
+    if (!lastRequestAnthropic || !event || event.level === event.previousLevel) return;
+    reportCache({ reset: { reason: "effort_change", at_ms: Date.now() } });
+  });
+  // Another conversation in the same panel (`/new`, a resume or a fork) has
+  // its own cache, which c11 knows nothing about until its first request.
+  pi.on("session_start", async (event) => {
+    if (event?.reason === "new" || event?.reason === "resume" || event?.reason === "fork") {
+      reportCache({ unknown: { reason: "session_switch" } });
+    }
   });
 }

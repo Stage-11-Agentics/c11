@@ -191,11 +191,11 @@ final class PromptCacheReportTests: XCTestCase {
 
     func testAnImplicitCacheProvesItselfWithItsFirstRead() throws {
         let t0 = now
-        var slot = PromptCacheReportStore.fold(nil, request(t0, provider: "deepseek", read: 0), receivedAt: t0)
+        var slot = PromptCacheReportStore.fold(nil, request(t0, provider: "deepseek", model: "deepseek-v4", read: 0), receivedAt: t0)
         XCTAssertNil(slot.observation, "a provider that never reads may not cache at all")
-        slot = PromptCacheReportStore.fold(slot, request(t0.addingTimeInterval(10), provider: "deepseek", read: 4_000), receivedAt: t0)
+        slot = PromptCacheReportStore.fold(slot, request(t0.addingTimeInterval(10), provider: "deepseek", model: "deepseek-v4", read: 4_000), receivedAt: t0)
         XCTAssertEqual(slot.observation?.basis, .estimate(PromptCachePolicy.implicitColdAfter))
-        slot = PromptCacheReportStore.fold(slot, request(t0.addingTimeInterval(20), provider: "deepseek", read: 0), receivedAt: t0)
+        slot = PromptCacheReportStore.fold(slot, request(t0.addingTimeInterval(20), provider: "deepseek", model: "deepseek-v4", read: 0), receivedAt: t0)
         XCTAssertEqual(slot.observation?.requestAt, t0.addingTimeInterval(20), "once proven, a miss still re-caches")
     }
 
@@ -386,7 +386,7 @@ final class PromptCacheReportTests: XCTestCase {
         XCTAssertNil(PanelLivenessDeriver.isPromptCacheCold(resolved, restingSince: t0, now: t0.addingTimeInterval(9_000)),
                      "no cache state: the dormancy rule decides")
 
-        let noEvidence = PromptCacheReportStore.fold(nil, request(t0.addingTimeInterval(30), provider: "deepseek", read: 0),
+        let noEvidence = PromptCacheReportStore.fold(nil, request(t0.addingTimeInterval(30), provider: "deepseek", model: "deepseek-v4", read: 0),
                                                      receivedAt: t0.addingTimeInterval(30))
         XCTAssertEqual(PromptCacheSources.resolve(transcript: read, report: noEvidence, now: t0.addingTimeInterval(40)), read)
         XCTAssertNil(PromptCacheSources.resolve(transcript: nil, report: noEvidence, now: t0.addingTimeInterval(40)))

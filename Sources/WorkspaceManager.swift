@@ -131,6 +131,13 @@ enum PanelOrdinalDisplaySettings {
     }
 }
 
+/// "Show Workspace Numbers in Sidebar": when on, each workspace card shows its
+/// `workspace:N` number in the title row's top-right corner.
+enum WorkspaceOrdinalDisplaySettings {
+    static let showWorkspaceIdsKey = "showWorkspaceIdsInSidebar"
+    static let defaultShowWorkspaceIds = true
+}
+
 /// KVO bridge so each `Workspace` (an `ObservableObject`, not an `NSObject`)
 /// can react to the "Show surface IDs in tab titles" toggle live, without an
 /// app restart. Mirrors `SurfaceAvailabilityObserver`.

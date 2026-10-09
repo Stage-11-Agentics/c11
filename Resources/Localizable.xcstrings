@@ -39745,6 +39745,147 @@
         }
       }
     },
+    "settings.app.showWorkspaceIdsInSidebar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Workspace Numbers in Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーにワークスペース番号を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在侧边栏中显示工作区编号"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在側邊欄中顯示工作區編號"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사이드바에 작업 공간 번호 표시"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать номера рабочих пространств в боковой панели"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати номери робочих просторів у бічній панелі"
+          }
+        }
+      }
+    },
+    "settings.app.showWorkspaceIdsInSidebar.subtitleOff": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace cards display their title only. Turn on to show each workspace's addressable number."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースのカードにはタイトルのみが表示されます。オンにすると、各ワークスペースのアドレス指定可能な番号が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作区卡片仅显示其标题。开启后，会显示每个工作区的可寻址编号。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作區卡片僅顯示其標題。開啟後，會顯示每個工作區的可定址編號。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 공간 카드에는 제목만 표시됩니다. 켜면 각 작업 공간의 주소로 지정할 수 있는 번호가 표시됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Карточки рабочих пространств показывают только заголовок. Включите, чтобы показать адресуемый номер каждого рабочего пространства."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Картки робочих просторів показують лише заголовок. Увімкніть, щоб показати адресний номер кожного робочого простору."
+          }
+        }
+      }
+    },
+    "settings.app.showWorkspaceIdsInSidebar.subtitleOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace cards display their workspace number in the top-right corner. Say the number to address a workspace; agents target it as workspace:N."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースのカードの右上にワークスペース番号が表示されます。番号を伝えてワークスペースを指定できます。エージェントは workspace:N として指定します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作区卡片的右上角会显示其工作区编号。说出编号即可指定某个工作区；代理以 workspace:N 定位它。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作區卡片的右上角會顯示其工作區編號。說出編號即可指定某個工作區；代理以 workspace:N 定位它。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 공간 카드의 오른쪽 위에 작업 공간 번호가 표시됩니다. 번호를 말해 작업 공간을 지정하세요. 에이전트는 workspace:N으로 대상을 지정합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Карточки рабочих пространств показывают номер рабочего пространства в правом верхнем углу. Назовите номер, чтобы указать рабочее пространство; агенты обращаются к нему как workspace:N."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Картки робочих просторів показують номер робочого простору у правому верхньому куті. Назвіть номер, щоб указати робочий простір; агенти адресують його як workspace:N."
+          }
+        }
+      }
+    },
     "settings.app.showWorkspaceTitlebar": {
       "extractionState": "manual",
       "localizations": {

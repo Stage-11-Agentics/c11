@@ -4469,6 +4469,8 @@ struct SettingsView: View {
     private var markdownSpawnButtonVisible = PanelTypeAvailability.defaultEnabled
     @AppStorage(PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey)
     private var showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
+    @AppStorage(WorkspaceOrdinalDisplaySettings.showWorkspaceIdsKey)
+    private var showWorkspaceIdsInSidebar = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
     @AppStorage(PanelLayoutSettings.modeKey)
     private var panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
     /// The picker's selection. An outside write can leave the stored value as the
@@ -5250,6 +5252,20 @@ struct SettingsView: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityIdentifier("SettingsShowSurfaceIdsToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.showWorkspaceIdsInSidebar", defaultValue: "Show Workspace Numbers in Sidebar"),
+                subtitle: showWorkspaceIdsInSidebar
+                    ? String(localized: "settings.app.showWorkspaceIdsInSidebar.subtitleOn", defaultValue: "Workspace cards display their workspace number in the top-right corner. Say the number to address a workspace; agents target it as workspace:N.")
+                    : String(localized: "settings.app.showWorkspaceIdsInSidebar.subtitleOff", defaultValue: "Workspace cards display their title only. Turn on to show each workspace's addressable number.")
+            ) {
+                Toggle("", isOn: $showWorkspaceIdsInSidebar)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsShowWorkspaceIdsToggle")
             }
 
             SettingsCardDivider()
@@ -6660,6 +6676,7 @@ struct SettingsView: View {
         internalBrowserEnabled = PanelTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = PanelTypeAvailability.defaultEnabled
         showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
+        showWorkspaceIdsInSidebar = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
         panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry

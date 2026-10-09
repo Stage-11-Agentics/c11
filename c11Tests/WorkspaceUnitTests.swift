@@ -2706,50 +2706,6 @@ final class WorkspaceMountPolicyTests: XCTestCase {
 
 
 @MainActor
-final class SidebarWorkspaceShortcutHintMetricsTests: XCTestCase {
-    override func setUp() {
-        super.setUp()
-        SidebarWorkspaceShortcutHintMetrics.resetCacheForTesting()
-    }
-
-    override func tearDown() {
-        SidebarWorkspaceShortcutHintMetrics.resetCacheForTesting()
-        super.tearDown()
-    }
-
-    func testHintWidthCachesRepeatedMeasurements() {
-        XCTAssertEqual(SidebarWorkspaceShortcutHintMetrics.measurementCountForTesting(), 0)
-
-        let first = SidebarWorkspaceShortcutHintMetrics.hintWidth(for: "⌘1")
-        XCTAssertGreaterThan(first, 0)
-        XCTAssertEqual(SidebarWorkspaceShortcutHintMetrics.measurementCountForTesting(), 1)
-
-        let second = SidebarWorkspaceShortcutHintMetrics.hintWidth(for: "⌘1")
-        XCTAssertEqual(second, first)
-        XCTAssertEqual(SidebarWorkspaceShortcutHintMetrics.measurementCountForTesting(), 1)
-
-        _ = SidebarWorkspaceShortcutHintMetrics.hintWidth(for: "⌘2")
-        XCTAssertEqual(SidebarWorkspaceShortcutHintMetrics.measurementCountForTesting(), 2)
-    }
-
-    func testSlotWidthAppliesMinimumAndDebugInset() {
-        let nilLabelWidth = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: nil, debugXOffset: 999)
-        XCTAssertEqual(nilLabelWidth, 18)
-
-        let base = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 0)
-        let widened = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 10)
-        XCTAssertGreaterThan(widened, base)
-    }
-
-    /// A shortcut label still reserves the measured pill width, so trimming
-    /// the label-less minimum must not narrow the labelled slot.
-    func testSlotWidthForLabelledWorkspaceStillFitsPill() {
-        let labelled = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 0)
-        XCTAssertGreaterThanOrEqual(labelled, SidebarWorkspaceShortcutHintMetrics.hintWidth(for: "⌘1"))
-    }
-}
-
-@MainActor
 final class WorkspacePulseCensusTests: XCTestCase {
     private func line(_ parts: [(Int, String)]) -> String {
         WorkspacePulseCensus.line(

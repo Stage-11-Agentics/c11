@@ -305,7 +305,7 @@ A turn end read from a transcript counts at the time the agent wrote it, not whe
 | Recipient agent state | Push behavior |
 |-----------------------|---------------|
 | at its prompt, nothing typed since the last submit | paste and submit now: the mail arrives as a new turn within about a second |
-| mid-turn | **buffer**; at the end of that turn, paste everything buffered and submit it as one turn |
+| mid-turn | **buffer**; at the next real idle, paste everything buffered and submit it as one turn, once. This is the same edge for every harness. Grok's idle is its wrapper `turn_ended` report or a verified transcript turn end. A drain that claimed the file first logs `skipped`, and the push types nothing |
 | the operator typed into its composer since the last submit, or text was placed there with `c11 send --no-submit` | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
 | no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
 

@@ -1749,3 +1749,57 @@ extension EventLogTests {
         }
     }
 }
+
+
+extension EventLogTests {
+    func testRecoveryBoundaryIsReservedWithinAnExactlyFullHistoryBudget() throws {
+        let current = logURL("events-synthetic-recovery-budget-7001.ndjson")
+        let budget = 2400
+        let log = EventLog(url: current, instance: "synthetic-recovery-budget-7001", totalSizeCap: budget)
+        try withExternalFileLocks(at: [tempDir.appendingPathComponent(".activity-history.lock")], exclusive: true) {
+            log.open(); log.flush()
+        }
+        let initial = try Data(contentsOf: current).count
+        let rolled = URL(fileURLWithPath: current.path + ".1")
+        try Data(repeating: 0x53, count: budget - initial).write(to: rolled)
+        XCTAssertEqual(try Data(contentsOf: current).count + Data(contentsOf: rolled).count, budget)
+        log.sampleForTesting()
+        let files = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+            .filter { EventLogLayout.isLogFileName($0.lastPathComponent) }
+        XCTAssertLessThanOrEqual(try files.reduce(0) { try $0 + Data(contentsOf: $1).count }, budget,
+                                 "The recovery marker is part of the shared byte target")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rolled.path), "The pending recovery marker requires pruning the exact-full roll")
+        let markers = readLines(current).map(parse).filter { $0["type"] as? String == "log.retention" }
+        XCTAssertEqual(markers.compactMap { ($0["payload"] as? [String: Any])?["state"] as? String }, ["degraded", "recovered"])
+    }
+
+    func testFailedRecoveryBoundaryRemainsPendingUntilSuccessfullyWritten() throws {
+        let current = logURL("events-synthetic-recovery-failure-7001.ndjson")
+        var writerFD: Int32 = -1
+        let log = EventLog(url: current, instance: "synthetic-recovery-failure-7001", acquireWriterLock: { fd in
+            writerFD = fd
+            return flock(fd, LOCK_SH | LOCK_NB) == 0 ? 0 : errno
+        })
+        try withExternalFileLocks(at: [tempDir.appendingPathComponent(".activity-history.lock")], exclusive: true) {
+            log.open(); log.flush()
+        }
+        log.onQueueBeforeWrite = {
+            // Replace only this isolated logger's descriptor with a read-only
+            // descriptor. The real FileHandle write then fails with EBADF.
+            let readOnly = Darwin.open(current.path, O_RDONLY | O_CLOEXEC)
+            XCTAssertGreaterThanOrEqual(readOnly, 0)
+            if readOnly >= 0 {
+                XCTAssertEqual(dup2(readOnly, writerFD), writerFD)
+                Darwin.close(readOnly)
+            }
+        }
+        log.sampleForTesting()
+        XCTAssertEqual(readLines(current).map(parse).filter { $0["type"] as? String == "log.retention" }.count, 1)
+        log.onQueueBeforeWrite = nil
+        log.sampleForTesting()
+        let events = readLines(current).map(parse)
+        let markers = events.filter { $0["type"] as? String == "log.retention" }
+        XCTAssertEqual(markers.compactMap { ($0["payload"] as? [String: Any])?["state"] as? String }, ["degraded", "recovered"])
+        XCTAssertEqual(events.filter { $0["type"] as? String == "log.dropped" }.count, 1)
+    }
+}

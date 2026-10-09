@@ -45,6 +45,7 @@ final class EventLog {
     private var writerLockError: Int32?
     private var retentionFailure: String?
     private var reportedRetentionDegraded = false
+    private var publishingRetentionBoundary = false
     private var sampleTimer: DispatchSourceTimer?
     private var nextSampleAt = Date.distantFuture
     private var nextPruneAt: Date
@@ -585,35 +586,57 @@ final class EventLog {
 
     private func pruneHistory() {
         onHistoryReconcile?()
+        // A failed write closes the handle. Re-establish its actual liveness
+        // state before deciding whether a recovery boundary is truthful.
+        if recordingEnabled, nextSeq > 0, fileHandle == nil { try? ensureHandle() }
         if writerLockError != nil, let fileHandle {
             let result = acquireWriterLock(fileHandle.fileDescriptor)
             writerLockError = result == 0 ? nil : result
         }
         let failure = acquireHistoryLock()
-        // Contention degrades the shared target to a bounded own-instance
-        // namespace. It must never stall or shed activity records.
-        pruneHistoryFiles(ownInstanceOnly: failure != nil)
-        if failure == nil { flock(historyLockFD, LOCK_UN) }
-        historyInitialized = true
-        nextPruneAt = now().addingTimeInterval(86_400)
         if let writerLockError, writerLockError != EWOULDBLOCK && writerLockError != EAGAIN {
             retentionFailure = "liveness_lock_unavailable"
         } else { retentionFailure = failure }
-        publishRetentionState()
+        let boundary = pendingRetentionBoundary()
+        let reservedBytes = boundary?.serialize(seq: nextSeq &+ 1).utf8.count ?? 0
+        // Reserve the exact boundary before reconciling. Publish it while the
+        // shared lock is still held, so another writer cannot reconcile against
+        // a total that omits the pending degraded/recovered record.
+        pruneHistoryFiles(ownInstanceOnly: failure != nil, reservedBytes: reservedBytes)
+        historyInitialized = true
+        nextPruneAt = now().addingTimeInterval(86_400)
+        if let boundary { publishRetentionState(boundary) }
+        if failure == nil { flock(historyLockFD, LOCK_UN) }
     }
 
-    private func publishRetentionState() {
-        // A retention boundary must never precede the instance's first record
-        // (log.opened in production), including first enable after off startup.
-        guard recordingEnabled, nextSeq > 0 else { return }
+    private func pendingRetentionBoundary() -> EventEnvelope? {
+        // Never precede log.opened or recurse while writing the boundary.
+        guard recordingEnabled, nextSeq > 0, !publishingRetentionBoundary else { return nil }
         if let failure = retentionFailure, !reportedRetentionDegraded {
-            reportedRetentionDegraded = true
-            writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
-                payload: ["state": "degraded", "reason": failure]), rotate: false)
+            return EventEnvelope(type: .logRetention, instance: instance, ts: now(),
+                payload: ["state": "degraded", "reason": failure])
         } else if retentionFailure == nil, reportedRetentionDegraded {
-            reportedRetentionDegraded = false
-            writeAssigningSeq(EventEnvelope(type: .logRetention, instance: instance, ts: now(),
-                payload: ["state": "recovered"]), rotate: false)
+            return EventEnvelope(type: .logRetention, instance: instance, ts: now(),
+                payload: ["state": "recovered"])
+        }
+        return nil
+    }
+
+    private func publishRetentionState(_ boundary: EventEnvelope? = nil) {
+        guard !publishingRetentionBoundary else { return }
+        guard let boundary else {
+            // A prior boundary write may have failed, or first enable may have
+            // deferred it until log.opened. Retry with budget reservation at a
+            // rare reconciliation, never as an unaccounted ordinary append.
+            if pendingRetentionBoundary() != nil { pruneHistory() }
+            return
+        }
+        publishingRetentionBoundary = true
+        defer { publishingRetentionBoundary = false }
+        // Commit the reported state only after successful disk delivery. An
+        // unavailable/oversized write remains pending for a later checkpoint.
+        if writeAssigningSeq(boundary, rotate: false) {
+            reportedRetentionDegraded = boundary.payload["state"] as? String == "degraded"
         }
     }
 
@@ -632,7 +655,7 @@ final class EventLog {
         return generation > 0
     }
 
-    private func pruneHistoryFiles(ownInstanceOnly: Bool) {
+    private func pruneHistoryFiles(ownInstanceOnly: Bool, reservedBytes: Int) {
         let fm = FileManager.default
         let cutoff = now().addingTimeInterval(-Double(retentionDays) * 86_400)
         let developmentCutoff = now().addingTimeInterval(-14 * 86_400)
@@ -687,11 +710,11 @@ final class EventLog {
             if removeIfInactive(entry.url, modified: entry.date) { removed.insert(entry.url.lastPathComponent) }
         }
         entries.removeAll { removed.contains($0.url.lastPathComponent) }
-        var total = entries.reduce(0) { $0 + $1.bytes }
+        var total = entries.reduce(reservedBytes) { $0 + $1.bytes }
         for entry in entries where total > totalSizeCap {
             if removeIfInactive(entry.url, modified: entry.date) { total -= entry.bytes }
         }
-        knownHistoryBytes = total
+        knownHistoryBytes = total - reservedBytes
         historyInitialized = true
     }
 }

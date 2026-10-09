@@ -167,6 +167,7 @@ function sanitize(html) {
     ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11md-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i});
 }
 const lineMapSkip='svg,button,.code-head,figcaption,.katex-mathml,.callout-title,.fn-back';
+let lineMetricEpoch=0;
 function lineTree(root) {
   return document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:n=>{
     if(n.nodeType===Node.ELEMENT_NODE) {
@@ -245,11 +246,38 @@ function lineForText(block,text) {
   const offset=textOffsetAt(block,text.node,text.offset),index=lineIndexAt(block._linePoints,offset);
   return index===null?null:(block._lineBase||+block.dataset.ls)+index;
 }
+function lineTops(root,points,sc) {
+  if(!root||!points?.length)return [];
+  const cached=root._lineTops;
+  if(cached&&cached.epoch===lineMetricEpoch&&cached.points===points)return cached.tops;
+  const tops=new Array(points.length).fill(null);
+  const walker=lineTree(root);let n,offset=0,index=0;
+  const range=document.createRange();
+  const box=sc.getBoundingClientRect(),base=sc.scrollTop-box.top;
+  const measure=()=>{const rect=range.getBoundingClientRect();return rect.height?rect.top+base:null;};
+  while((n=walker.nextNode())&&index<points.length) {
+    if(n.nodeType===Node.ELEMENT_NODE) {
+      const at=[...n.parentNode.childNodes].indexOf(n);
+      while(index<points.length&&points[index]<=offset) {range.setStart(n.parentNode,at);range.collapse(true);tops[index++]=measure();}
+      offset++;continue;
+    }
+    const end=offset+n.data.length;
+    while(index<points.length&&points[index]<end) {
+      const local=points[index]-offset,stop=Math.min(local+1,n.data.length);
+      if(stop>local)range.setStart(n,local),range.setEnd(n,stop);else range.setStart(n,local),range.collapse(true);
+      tops[index++]=measure();
+    }
+    offset=end;
+  }
+  root._lineTops={epoch:lineMetricEpoch,points,tops};
+  return tops;
+}
 function lineAtOrBefore(root,points,base,scrollY,sc) {
   if(!points?.length)return null;
+  const tops=lineTops(root,points,sc);
   let low=0,high=points.length;
   while(low<high) {
-    const mid=(low+high)>>1,top=pointTop(root,points[mid],sc);
+    const mid=(low+high)>>1,top=tops[mid];
     if(top!==null&&top<=scrollY+.25)low=mid+1;else high=mid;
   }
   return low?base+low-1:null;
@@ -710,15 +738,15 @@ function lineOrigin(line,block=null,sc=activeScroller()) {
   const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
   const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
   if(code) {
-    const index=line-code._sourceLineStart,point=code._linePoints[index],top=pointTop($('pre code',code),point,sc);
-    if(top!==null)return top;
+    const index=line-code._sourceLineStart,tops=lineTops($('pre code',code),code._linePoints,sc),top=tops[index];
+    if(top!==null&&top!==undefined)return top;
   } else if(block.matches('.code')) {
     if(line<block._sourceLineStart)return topIn(block,sc);
     if(line>=block._sourceLineStart+(block._linePoints?.length||0))return topIn(block,sc)+block.offsetHeight;
   }
   const base=block._lineBase||+block.dataset.ls,points=block._linePoints,index=line-base;
   if(index>=0&&index<points?.length) {
-    const top=pointTop(block,points[index],sc);if(top!==null)return top;
+    const top=lineTops(block,points,sc)[index];if(top!==null&&top!==undefined)return top;
   }
   return estimateLineOrigin(line,block,sc);
 }
@@ -744,14 +772,14 @@ function firstTextAt(block,y) {
   }
   return null;
 }
-function capture() {
+function capture(withText=true) {
   const sc=activeScroller();if(sc.scrollTop<1)return {atTop:true,line:1};
   if(S.mode==='source') {
     const rows=$$('.sl',source), row=rows.find(x=>topIn(x,sc)+x.offsetHeight>sc.scrollTop)||rows.at(-1);
     return row?{line:+row.dataset.line,dy:topIn(row,sc)-sc.scrollTop,lineOffset:sc.scrollTop-topIn(row,sc),source:true}:null;
   }
   const b=S.blocks.find(x=>topIn(x)+x.offsetHeight>sc.scrollTop)||S.blocks.at(-1);if(!b)return null;
-  const text=firstTextAt(b,sc.getBoundingClientRect().top);
+  const text=withText?firstTextAt(b,sc.getBoundingClientRect().top):null;
   const line=lineAtY(b,sc.scrollTop,sc)??lineForText(b,text)??+b.dataset.ls,origin=lineOrigin(line,b,sc);
   return {block:b,signature:b._signature,occurrence:S.blocks.filter(x=>x._signature===b._signature).indexOf(b),
     line,lineOffset:sc.scrollTop-origin,dy:topIn(b)-sc.scrollTop,frac:clamp((sc.scrollTop-topIn(b))/(b.offsetHeight||1),0,1),text};
@@ -824,6 +852,7 @@ function layoutAll() {
   }
   placeNotes();
   findTickMetrics='';renderFindTicks();
+  lineMetricEpoch++;
 }
 function placeNotes() {
   const aside=$('#sidenotes');aside.replaceChildren();if(!layout.classList.contains('with-sn'))return;
@@ -976,7 +1005,7 @@ function visibleLines() {
         first=start+Math.floor(clamp((top-firstOrigin)/Math.max(1,lastOrigin-firstOrigin),0,1)*(span-1));firstOffset=top-lineOrigin(first,b,sc);
       }
     }
-    const endText=firstTextAt(b,sc.getBoundingClientRect().bottom-1),endLine=lineForText(b,endText);
+    const endLine=lineAtY(b,bottom-1,sc);
     last=endLine===null?Math.min(end,start+Math.ceil(clamp((bottom-t)/height,0,1)*(span-1))):endLine;
   }
   first ||= 1;
@@ -997,7 +1026,8 @@ function visible() {
     diagram_open:S.diagram,selection:selection?selection.slice(0,120):null};
 }
 let stateFrame=0, stableAnchor=null;
-function publish() {if(!stateFrame)stateFrame=requestAnimationFrame(()=>{stateFrame=0;stableAnchor=capture();updateOutlineActive();updateOutlineSummary();post({type:'state',state:visible()});});}
+// Scroll path must not walk the fence.
+function publish() {if(!stateFrame)stateFrame=requestAnimationFrame(()=>{stateFrame=0;stableAnchor=capture(false);updateOutlineActive();updateOutlineSummary();post({type:'state',state:visible()});});}
 function enqueue(task,supersedes=true) {
   const generation=supersedes?++S.generation:null;
   const run=async()=>{if(supersedes&&generation!==S.generation)return visible();try {return await task(generation??S.generation);}catch(e){error('render_failed',e);return visible();}};
@@ -1294,8 +1324,10 @@ document.addEventListener('keydown',e=>{
 for(const sc of [scroller,srcScroller])sc.addEventListener('scroll',publish,{passive:true});
 document.addEventListener('selectionchange',publish);
 // Preserve the last settled anchor when an image or pane resize changes layout.
-new ResizeObserver(()=>{const a=stableAnchor;layoutAll();restore(a);publish();}).observe(surface);
-article.addEventListener('load',()=>{const a=stableAnchor;layoutAll();restore(a);publish();},true);
+// Scroll frames store a line only, so take the character anchor once before layout.
+const anchorBeforeLayout=()=>stableAnchor?.text?stableAnchor:capture();
+new ResizeObserver(()=>{const a=anchorBeforeLayout();layoutAll();restore(a);publish();}).observe(surface);
+article.addEventListener('load',()=>{const a=anchorBeforeLayout();layoutAll();restore(a);publish();},true);
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(S.theme==='system'&&!S.os)setSettings({});});
 window.c11md=Object.freeze({load,setSettings,scrollToHeading,navigateFragment,showBrokenAnchorSuggestions,scrollToLine,visible,outline:()=>S.tree,progress,showLinkPeek,hideLinkPeek,linkIndex,inspectMarkdowns,setCorpus,setCorpusJSON,openCorpusPalette,closeCorpusPalette,
   corpusSnapshot:()=>S.corpus,corpusBacklinks:()=>({path:S.corpus?.current||S.file,heading:currentHeading(),links:(S.corpus?.links||[]).filter(link=>link.target===(S.corpus?.current||S.file))}),

@@ -124,3 +124,67 @@ final class MarkdownRendererRetentionPolicyTests: XCTestCase {
         XCTAssertEqual(policy.evictionCandidates, [ids[1], ids[2]])
     }
 }
+
+final class MarkdownRendererRecoveryTests: XCTestCase {
+    func testSuccessfulRenderClearsFailureForTheCurrentRevisionOnly() {
+        var recovery = MarkdownRendererRecovery()
+        XCTAssertEqual(recovery.renderFailed(), .showFailure)
+        XCTAssertTrue(recovery.showsFailure)
+
+        XCTAssertEqual(recovery.rendered(revision: 1, currentRevision: 2), .none)
+        XCTAssertTrue(recovery.showsFailure, "a stale render must leave the error overlay up")
+
+        XCTAssertEqual(recovery.rendered(revision: 2, currentRevision: 2), .clearFailure)
+        XCTAssertFalse(recovery.showsFailure)
+        XCTAssertFalse(recovery.recoveringInPlace)
+    }
+
+    func testRenderFailureDoesNotRebuildTheWebViewOnTheNextEdit() {
+        var recovery = MarkdownRendererRecovery()
+        _ = recovery.renderFailed()
+        XCTAssertEqual(recovery.contentChanged(to: "repaired document"), .none)
+        XCTAssertNil(recovery.abandonedContent)
+    }
+
+    func testSecondTerminationWaitsForADifferentDocumentBeforeRebuilding() {
+        var recovery = MarkdownRendererRecovery()
+        XCTAssertEqual(recovery.webContentTerminated(content: "original"), .reloadPage)
+        XCTAssertTrue(recovery.recoveringInPlace)
+        XCTAssertFalse(recovery.showsFailure)
+
+        XCTAssertEqual(recovery.webContentTerminated(content: "original"), .showFailure)
+        XCTAssertTrue(recovery.showsFailure)
+        XCTAssertFalse(recovery.recoveringInPlace)
+        XCTAssertEqual(recovery.abandonedContent, "original")
+
+        XCTAssertEqual(recovery.contentChanged(to: "original"), .none)
+        XCTAssertEqual(recovery.contentChanged(to: "operator fixed the file"), .recreateRenderer)
+        XCTAssertNil(recovery.abandonedContent)
+        XCTAssertTrue(recovery.recoveringInPlace, "the rebuilt page is another in-place load")
+        XCTAssertTrue(recovery.showsFailure, "the overlay stays until that load renders")
+    }
+
+    func testRenderedAfterOneTerminationAllowsAnotherInPlaceReload() {
+        var recovery = MarkdownRendererRecovery()
+        XCTAssertEqual(recovery.webContentTerminated(content: "original"), .reloadPage)
+        XCTAssertEqual(recovery.rendered(revision: 4, currentRevision: 4), .none)
+        XCTAssertFalse(recovery.recoveringInPlace)
+        XCTAssertEqual(recovery.webContentTerminated(content: "original"), .reloadPage)
+        XCTAssertNil(recovery.abandonedContent)
+    }
+
+    func testReadyBootsWithoutClearingAnExistingFailure() {
+        var recovery = MarkdownRendererRecovery()
+        _ = recovery.renderFailed()
+        XCTAssertEqual(recovery.bridgeReady(version: 1), .boot)
+        XCTAssertTrue(recovery.showsFailure, "ready is not a successful render")
+        XCTAssertEqual(recovery.rendered(revision: 1, currentRevision: 1), .clearFailure)
+        XCTAssertFalse(recovery.showsFailure)
+
+        _ = recovery.webContentTerminated(content: "original")
+        XCTAssertEqual(recovery.bridgeReady(version: 1), .clearFailure)
+        XCTAssertTrue(recovery.recoveringInPlace, "ready is not the successful render")
+        XCTAssertEqual(recovery.bridgeReady(version: 2), .showFailure)
+        XCTAssertTrue(recovery.showsFailure)
+    }
+}

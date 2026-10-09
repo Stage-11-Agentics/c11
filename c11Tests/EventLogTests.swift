@@ -2271,6 +2271,9 @@ extension EventLogTests {
         log.sampleForTesting()
         XCTAssertFalse(holdsSecret())
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "The live file itself is never deleted")
+        let live = readLines(url).map(parse)
+        XCTAssertEqual(live.compactMap { $0["type"] as? String }, ["log.rotated"])
+        XCTAssertEqual(live.first?["seq"] as? Int, 3, "A file holding only the rotation marker does not roll again")
         log.stopSampling()
     }
 

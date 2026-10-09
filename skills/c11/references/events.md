@@ -229,7 +229,7 @@ Pruning runs at open, rotation, sample, policy changes and clean shutdown,
 plus a daily checkpoint. The daily checkpoint also runs with full recording
 disabled: nothing new is written, but retained history still ages out. The
 health-sample and daily checkpoints also roll a live file that has been written
-for a day (`log.rotated` as usual), so current-file protection cannot keep a long
+for a day and holds more than a rotation marker (`log.rotated` as usual), so current-file protection cannot keep a long
 session's text past the retention age. With recording off, the open file is not
 rolled; it is kept until the process quits. Nothing is pruned while no c11 runs
 or the Mac sleeps, and a production or nightly label that is never launched

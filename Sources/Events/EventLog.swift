@@ -48,8 +48,10 @@ final class EventLog {
     private var historyInitialized = false
     private var historyLockFD: Int32 = -1
     private var checkedInheritedCurrentFile = false
-    /// When this launch began writing the current file (open or rotation).
+    /// When this launch began writing the current file (open or rotation),
+    /// and whether it holds any record besides a rotation marker.
     private var currentFileStartedAt: Date?
+    private var currentFileHasRecords = false
     private var writerLockError: Int32?
     private var retentionFailure: String?
     private var reportedRetentionDegraded = false
@@ -335,9 +337,8 @@ final class EventLog {
     /// a rolled generation it ages out by its last write, like any other.
     /// rotate() ends with the reconciliation itself.
     private func reconcileAtCheckpoint() {
-        if recordingEnabled, let fileHandle, let started = currentFileStartedAt,
-           now().timeIntervalSince(started) >= Self.liveFileRollAge,
-           ((try? fileHandle.offset()) ?? 0) > 0, rotate() {
+        if recordingEnabled, fileHandle != nil, currentFileHasRecords, let started = currentFileStartedAt,
+           now().timeIntervalSince(started) >= Self.liveFileRollAge, rotate() {
             return
         }
         pruneHistory()
@@ -459,6 +460,7 @@ final class EventLog {
             return false
         }
         nextSeq = sequence
+        if envelope.type != EventEnvelope.EventType.logRotated.rawValue { currentFileHasRecords = true }
         if envelope.type == EventEnvelope.EventType.mailboxDelivered.rawValue,
            envelope.payload["via"] as? String == "drain", let id = envelope.payload["id"] as? String,
            confirmedDrainIDs.insert(id).inserted {
@@ -547,7 +549,7 @@ final class EventLog {
             writerLockError = lockError == 0 ? nil : lockError
             // Another writer's pruner may have unlinked a reused file between
             // open and lock. Never append to an orphan: reopen once.
-            if attempt == 1, !Self.pathNamesOpenFile(url.path, fd) {
+            if attempt == 1, !Self.pathNamesOpenFile(url.path, fd, followingSymlink: true) {
                 try? fh.close()
                 continue
             }
@@ -561,10 +563,12 @@ final class EventLog {
         }
     }
 
-    /// True when `path` still names the inode open on `fd`.
-    private static func pathNamesOpenFile(_ path: String, _ fd: Int32) -> Bool {
+    /// True when `path` still names the inode open on `fd`. The writer's open
+    /// follows a symlinked current path; the O_NOFOLLOW probes do not.
+    private static func pathNamesOpenFile(_ path: String, _ fd: Int32, followingSymlink: Bool = false) -> Bool {
         var opened = stat(), named = stat()
-        guard fstat(fd, &opened) == 0, lstat(path, &named) == 0 else { return false }
+        guard fstat(fd, &opened) == 0,
+              (followingSymlink ? stat(path, &named) : lstat(path, &named)) == 0 else { return false }
         return opened.st_dev == named.st_dev && opened.st_ino == named.st_ino
     }
 
@@ -591,6 +595,7 @@ final class EventLog {
         }
         try? previousHandle?.close()
         currentFileStartedAt = nil
+        currentFileHasRecords = false
         // Fresh current file starts with a rotation marker so a consumer that
         // re-reads from the top after detecting the shrink lands on the boundary.
         let marker = EventEnvelope(

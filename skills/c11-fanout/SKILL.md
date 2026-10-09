@@ -81,7 +81,7 @@ c11 send --panel "$PANEL" "You are a fork. Work only in $WT. Take approach <X>: 
 
 ## 4 · Fan in
 
-- **Receipts.** Each member mails DONE. While you're waiting, each receipt arrives as a new turn. Claude Code and Codex also pick up mail at every turn boundary. In other harnesses, run `c11 mailbox recv --drain` after each turn so nothing waits unread. Set `fanout.state` to `done` on the member's panel as each receipt lands.
+- **Receipts.** Each member mails DONE. While you're waiting, each receipt arrives as a new turn. Claude Code and Codex also pick up mail at every turn boundary. In other harnesses, run `c11 mailbox recv --drain --ack` after each turn so nothing waits unread. A drain from a tool call has a pipe for stdout even though you read it, so pass `--ack`. Set `fanout.state` to `done` on the member's panel as each receipt lands.
 - **Quiet members.** Stopping is not finishing. A member that asks a question, crashes or stalls never mails. For the ones you haven't heard from, check:
   - `c11 events tail --filter type=ask.opened`, matching each line's `panel` (a UUID) against your members' `PANEL_ID`s (blocked on a question);
   - `--filter type=panel.closed` (gone);

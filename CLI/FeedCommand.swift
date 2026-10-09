@@ -1,12 +1,23 @@
 import Foundation
 
 enum CLIHelpFlagScanner {
-    static func containsHelpFlag(in arguments: [String], valueOptions: Set<String> = []) -> Bool {
+    /// True when an argv token asks for help. `valueOptions` skip the
+    /// following token, so a message body is not help. `stopAtEndOfOptions`
+    /// treats a bare `--` as the end of flags; later tokens stay text.
+    static func containsHelpFlag(
+        in arguments: [String],
+        valueOptions: Set<String> = [],
+        stopAtEndOfOptions: Bool = false
+    ) -> Bool {
         var index = arguments.startIndex
         while index < arguments.endIndex {
-            if valueOptions.contains(arguments[index]) {
+            let argument = arguments[index]
+            if stopAtEndOfOptions, argument == "--" {
+                return false
+            }
+            if valueOptions.contains(argument) {
                 index = arguments.index(index, offsetBy: 2, limitedBy: arguments.endIndex) ?? arguments.endIndex
-            } else if arguments[index] == "--help" || arguments[index] == "-h" {
+            } else if argument == "--help" || argument == "-h" {
                 return true
             } else {
                 index = arguments.index(after: index)

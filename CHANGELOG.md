@@ -8,11 +8,11 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ### Changed
 
-- **The event log keeps 14 days of history by default.** It used to keep every launch's file forever. Each build now deletes event history 14 days after its last write, and keeps its total within 64 MiB, oldest first. The file the running c11 is writing is never deleted; it rolls daily so a long session's text ages out too. Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days (`c11.activityHistory.retentionDays`). Pruning runs at launch and at least once a day while c11 runs, including with recording off. A one-shot `c11 events tail --instance` notes on stderr when that instance's log is gone. ([#627](https://github.com/Stage-11-Agentics/c11/pull/627), PR_C11_348)
+- **The event log keeps 14 days of history by default.** It used to keep every launch's file forever. Each build now deletes event history 14 days after its last write, and keeps its total within 64 MiB, oldest first. The file the running c11 is writing is never deleted; it rolls daily so a long session's text ages out too. Settings → Data & Privacy → Keep history for selects 7, 14 or 30 days (`c11.activityHistory.retentionDays`). Pruning runs at launch and at least once a day while c11 runs, including with recording off. A one-shot `c11 events tail --instance` notes on stderr when that instance's log is gone. ([#627](https://github.com/Stage-11-Agentics/c11/pull/627), [#643](https://github.com/Stage-11-Agentics/c11/pull/643))
 
 ### Fixed
 
-- **Event log files are private to your account.** The event log records sent text, but 1.0 created its files `0644`. New files are `0600` in a `0700` directory, and launch tightens the files and directory 1.0 left behind. A launch that reuses an old process id no longer appends to that process's log, so the older history still ages out. (PR_C11_348)
+- **Event log files are private to your account.** The event log records sent text, but 1.0 created its files `0644`. New files are `0600` in a `0700` directory, and launch tightens the files and directory 1.0 left behind. A launch that reuses an old process id no longer appends to that process's log, so the older history still ages out. ([#643](https://github.com/Stage-11-Agentics/c11/pull/643))
 
 ## [1.0.0] - 2026-10-06
 

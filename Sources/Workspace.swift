@@ -5585,7 +5585,9 @@ final class Workspace: Identifiable, ObservableObject {
         // workspace UUIDs can survive across app restarts. Nil mints a fresh
         // UUID (the normal creation path); a supplied id is used as-is (the
         // restore path in `TabManager.restoreSessionSnapshot`).
-        self.id = id ?? UUID()
+        let workspaceID = id ?? UUID()
+        self.id = workspaceID
+        EventEmitter.shared.enrollTransientWorkspaceConstruction(workspaceID)
         self.portOrdinal = portOrdinal
         self.processTitle = title
         let trimmedStableDefaultTitle = stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

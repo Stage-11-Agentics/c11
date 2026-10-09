@@ -88,8 +88,30 @@ final class EventEmitter {
     private var appActive: Bool?
     private var screenLocked: Bool?
     private var sleeping: Bool?
+    // Only the synchronous early App.init getter enters this main-actor scope.
+    // Remember the resulting UUIDs beyond it: their callbacks can arrive later.
+    @MainActor private var transientWorkspaceConstructionDepth = 0
+    private var transientWorkspaceIDs: Set<UUID> = [] // protected by lock
 
     private init() {}
+
+    @MainActor
+    func withTransientWorkspaceConstruction<T>(_ construct: () throws -> T) rethrows -> T {
+        transientWorkspaceConstructionDepth += 1
+        defer { transientWorkspaceConstructionDepth -= 1 }
+        return try construct()
+    }
+
+    /// Workspace.init calls this before creating panels or emitting any edges.
+    /// Enrollment also happens while recording is off, so reenable cannot turn
+    /// delayed events from the same temporary graph into installed graph events.
+    @MainActor
+    func enrollTransientWorkspaceConstruction(_ workspace: UUID) {
+        guard transientWorkspaceConstructionDepth > 0 else { return }
+        lock.lock()
+        transientWorkspaceIDs.insert(workspace)
+        lock.unlock()
+    }
 
     // MARK: - Lifecycle
 
@@ -164,6 +186,7 @@ final class EventEmitter {
         instanceId = ""
         enabled = false
         hasOpened = false
+        transientWorkspaceIDs.removeAll()
         lock.unlock()
     }
 
@@ -640,8 +663,17 @@ final class EventEmitter {
             return false
         }
         let instance = instanceId
+        // Reuse the UUID and existing lock; nil subjects/empty enrollment skip
+        // the lookup. Normal events add no formatting, dictionary or I/O work.
+        let transient: Bool
+        if let workspace, !transientWorkspaceIDs.isEmpty {
+            transient = transientWorkspaceIDs.contains(workspace)
+        } else {
+            transient = false
+        }
         lock.unlock()
         var recordedPayload = payload()
+        if transient { recordedPayload["transient"] = true }
         let recordText = keepText && (recordedPayload["text_recorded"] as? Bool ?? true)
         textDecision?(recordText)
         if type == .mailboxAccepted { recordedPayload["text_recorded"] = recordText }

@@ -166,6 +166,19 @@ Panel closes remain structural events when analytics are off. On restore,
 until the restored title and root are known. Replay must join these edges by UUID
 without requiring their arrival order.
 
+Every workspace-scoped event from the temporary graph constructed by App.init's
+uninstalled StateObject getter carries `payload.transient: true`, including panel
+edges and delayed callbacks after that getter returns. The installed graph is
+constructed outside that synchronous scope and remains unmarked. This classifies
+real bootstrap events; it neither invents closes nor changes their ordering.
+Replay and activity reports exclude marked graphs from the installed workspace
+inventory. The classification survives analytics and recording toggle changes
+within the process; analytics-off structural panel edges still carry it.
+Classification checks the existing workspace UUID under the emitter's existing
+lock: nil subjects and an empty enrollment skip the lookup; otherwise it checks
+the small UUID set once. Normal events add no UUID formatting, dictionary, file
+I/O, dispatch or timer work. The native A/B gate measures the resulting cost.
+
 `hang.precursor` additionally carries `app_active`, `screen_locked` (null when
 not yet known), and current `rss_mb` while usage analytics are enabled. Turning
 analytics off preserves the original hang event without those fields or the

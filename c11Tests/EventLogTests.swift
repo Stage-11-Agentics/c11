@@ -1802,4 +1802,116 @@ extension EventLogTests {
         XCTAssertEqual(markers.compactMap { ($0["payload"] as? [String: Any])?["state"] as? String }, ["degraded", "recovered"])
         XCTAssertEqual(events.filter { $0["type"] as? String == "log.dropped" }.count, 1)
     }
+
+    // MARK: - Synthetic bootstrap graph classification
+
+    @MainActor
+    func testTransientConstructionLeavesNormalGraphUnmarkedBeforeAnyDelayedCallback() async throws {
+        let log = EventLog(url: logURL(), instance: "synthetic-bootstrap")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "synthetic-bootstrap")
+        let bootstrap = UUID(), bootstrapPanel = UUID(), normal = UUID(), normalPanel = UUID()
+        emitter.withTransientWorkspaceConstruction {
+            emitter.enrollTransientWorkspaceConstruction(bootstrap)
+            // Panel creation can precede workspace.created in real construction.
+            emitter.emitSurfaceCreated(workspace: bootstrap, surface: bootstrapPanel, kind: "terminal", title: "Synthetic bootstrap")
+            emitter.emitWorkspaceCreated(workspace: bootstrap, title: "Synthetic bootstrap", rootDirectory: nil)
+        }
+        emitter.enrollTransientWorkspaceConstruction(normal)
+        emitter.emitSurfaceCreated(workspace: normal, surface: normalPanel, kind: "terminal", title: "Synthetic installed")
+        emitter.emitWorkspaceCreated(workspace: normal, title: "Synthetic installed", rootDirectory: nil)
+        // No onAppear, activation or delayed callback has run. Classification
+        // already belongs to the construction UUID, not later UI attachment.
+        log.flush()
+        let initialEvents = readLines(logURL()).map(parse)
+        let initialNormal = initialEvents.filter { $0["workspace"] as? String == normal.uuidString }
+        XCTAssertEqual(initialNormal.compactMap { $0["type"] as? String }, ["panel.created", "workspace.created"])
+        XCTAssertTrue(initialNormal.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] == nil },
+                      "Normal graph creation must be unmarked before any later UI callback")
+        let initialBootstrap = initialEvents.filter { $0["workspace"] as? String == bootstrap.uuidString }
+        XCTAssertEqual(initialBootstrap.count, 2)
+        XCTAssertTrue(initialBootstrap.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] as? Bool == true })
+        await Task.detached {
+            EventEmitter.shared.emitMetadataChanged(scope: "panel", workspace: bootstrap, surface: bootstrapPanel,
+                                                    key: "status", value: "Synthetic delayed callback", prior: nil, source: "explicit")
+        }.value
+        emitter.emitWorkspaceClosed(workspace: bootstrap, title: "Synthetic bootstrap", remainingPanels: [bootstrapPanel])
+        emitter.emitWorkspaceClosed(workspace: normal, title: "Synthetic installed", remainingPanels: [normalPanel])
+        log.flush()
+
+        let events = readLines(logURL()).map(parse)
+        let bootstrapEvents = events.filter { $0["workspace"] as? String == bootstrap.uuidString }
+        let normalEvents = events.filter { $0["workspace"] as? String == normal.uuidString }
+        XCTAssertEqual(bootstrapEvents.compactMap { $0["type"] as? String },
+                       ["panel.created", "workspace.created", "metadata.changed", "panel.closed", "workspace.closed"])
+        XCTAssertEqual(normalEvents.compactMap { $0["type"] as? String },
+                       ["panel.created", "workspace.created", "panel.closed", "workspace.closed"])
+        XCTAssertTrue(bootstrapEvents.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] as? Bool == true })
+        XCTAssertTrue(normalEvents.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] == nil })
+    }
+
+    @MainActor
+    func testAnalyticsOffStillMarksTransientStructuralPanelEdges() {
+        let log = EventLog(url: logURL(), instance: "synthetic-bootstrap-analytics-off")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "synthetic-bootstrap-analytics-off",
+                                policy: ActivityHistoryPolicy(analyticsEnabled: false))
+        let workspace = UUID(), panel = UUID()
+        emitter.withTransientWorkspaceConstruction {
+            emitter.enrollTransientWorkspaceConstruction(workspace)
+            emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic bootstrap")
+            emitter.emitWorkspaceCreated(workspace: workspace, title: "Synthetic bootstrap", rootDirectory: nil)
+        }
+        emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic bootstrap", remainingPanels: [panel])
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["panel.created", "panel.closed"])
+        XCTAssertTrue(events.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] as? Bool == true })
+    }
+
+    @MainActor
+    func testTransientEnrollmentWhileRecordingOffSurvivesReenableAndLaterToggle() {
+        let policy = ActivityHistoryPolicy(enabled: false)
+        let log = EventLog(url: logURL(), instance: "synthetic-bootstrap-recording-off", policy: policy)
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "synthetic-bootstrap-recording-off", policy: policy, opened: false)
+        let workspace = UUID(), panel = UUID()
+        emitter.withTransientWorkspaceConstruction {
+            emitter.enrollTransientWorkspaceConstruction(workspace)
+            emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic bootstrap")
+        }
+        log.flush()
+        XCTAssertTrue(readLines(logURL()).isEmpty)
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic delayed bootstrap")
+        emitter.updatePolicy(ActivityHistoryPolicy(enabled: false))
+        emitter.updatePolicy(ActivityHistoryPolicy())
+        emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic bootstrap", remainingPanels: [panel])
+        log.flush()
+        let events = readLines(logURL()).map(parse).filter { $0["workspace"] as? String == workspace.uuidString }
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["panel.created", "panel.closed", "workspace.closed"])
+        XCTAssertTrue(events.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] as? Bool == true })
+    }
+
+    @MainActor
+    func testTransientConstructionThrowRestoresNormalConstructionScope() {
+        enum SyntheticFailure: Error { case expected }
+        let log = EventLog(url: logURL(), instance: "synthetic-bootstrap-throw")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "synthetic-bootstrap-throw")
+        let bootstrap = UUID(), normal = UUID()
+        XCTAssertThrowsError(try emitter.withTransientWorkspaceConstruction {
+            emitter.enrollTransientWorkspaceConstruction(bootstrap)
+            throw SyntheticFailure.expected
+        })
+        emitter.enrollTransientWorkspaceConstruction(normal)
+        emitter.emitWorkspaceCreated(workspace: bootstrap, title: "Synthetic bootstrap", rootDirectory: nil)
+        emitter.emitWorkspaceCreated(workspace: normal, title: "Synthetic installed", rootDirectory: nil)
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 2)
+        XCTAssertEqual((events.first?["payload"] as? [String: Any])?["transient"] as? Bool, true)
+        XCTAssertNil((events.last?["payload"] as? [String: Any])?["transient"])
+    }
+
 }

@@ -274,18 +274,26 @@ enum PromptCachePolicy {
     static func reportedBasis(provider: String?, model: String?, ttl: TimeInterval?) -> PromptCacheObservation.Basis {
         if let ttl { return .ttl(ttl) }
         if isAnthropic(provider: provider, model: model) { return .ttl(anthropicDefaultTTL) }
-        if provider?.lowercased() == "openai" { return .estimate(codexColdAfter) }
+        if isOpenAI(provider: provider) { return .estimate(codexColdAfter) }
         return .estimate(implicitColdAfter)
     }
 
-    /// Anthropic's API directly, or a router or cloud that passes its cache
-    /// through (OpenRouter `anthropic/…`, Bedrock `anthropic.…`, Vertex).
+    /// Anthropic's API directly (also Vertex's `google-vertex-anthropic`), or a
+    /// router or cloud serving an Anthropic model under its own id: OpenRouter
+    /// and the AI gateways `anthropic/…`, Bedrock `anthropic.…` or
+    /// `us.anthropic.…`. A bare `claude-…` id elsewhere (GitHub Copilot) is
+    /// another backend's cache.
     static func isAnthropic(provider: String?, model: String?) -> Bool {
-        let provider = provider?.lowercased() ?? ""
+        if provider?.lowercased().contains("anthropic") == true { return true }
         let model = model?.lowercased() ?? ""
-        if provider.contains("anthropic") { return true }
-        guard ["openrouter", "amazon-bedrock", "bedrock"].contains(provider) else { return false }
         return model.hasPrefix("anthropic/") || model.hasPrefix("anthropic.") || model.contains(".anthropic.")
+    }
+
+    /// OpenAI's own backends: the API, the Codex (ChatGPT login) backend, Azure.
+    static func isOpenAI(provider: String?) -> Bool {
+        let provider = provider?.lowercased() ?? ""
+        return provider == "openai" || provider.hasPrefix("openai-codex")
+            || provider == "azure" || provider.hasPrefix("azure-openai")
     }
 
     /// Replaces every estimated span (not a published TTL), so a validation
@@ -931,8 +939,11 @@ struct AgentModelProbe: Sendable {
     /// check. Moonshot caches implicitly and publishes no lifetime.
     private static func parseKimi(_ line: Data) -> ParsedTranscriptLine {
         let isRequest = hasType(line, "llm.request")
+        // The substring test only picks candidates; the parsed top-level type
+        // decides, so a line that merely mentions one is never read further.
         guard isRequest || hasType(line, "usage.record"),
               line.count <= maxParseBytes, let object = parseObject(line),
+              (object["type"] as? String) == (isRequest ? "llm.request" : "usage.record"),
               let ms = (object["time"] as? NSNumber)?.doubleValue, ms > 0 else { return ParsedTranscriptLine() }
         let at = Date(timeIntervalSince1970: ms / 1000)
         if isRequest {
@@ -940,6 +951,9 @@ struct AgentModelProbe: Sendable {
             if (object["kind"] as? String) == "compaction" {
                 return ParsedTranscriptLine(promptCacheReset: PromptCacheResetLine(reason: .compaction, at: at))
             }
+            // Only a turn's own steps carry `turnStep`; a side request (a
+            // title, say) uses another prefix.
+            guard object["turnStep"] != nil else { return ParsedTranscriptLine() }
             return ParsedTranscriptLine(promptCacheRequestSentAt: at)
         }
         // A `session` record totals a compaction's own usage, not a request.

@@ -44,7 +44,8 @@ export default function c11Lifecycle(pi: {
   const reportCache = (payload: Record<string, unknown>) => {
     if (panel) payload.panel_id = panel;
     try {
-      pi.exec(c11, ["--socket", socket, "rpc", "agent.prompt_cache.report", JSON.stringify(payload)], { timeout: 750 })
+      // Nothing waits on it, so a slow c11 under load still gets the report.
+      pi.exec(c11, ["--socket", socket, "rpc", "agent.prompt_cache.report", JSON.stringify(payload)], { timeout: 5000 })
         .catch(() => {});
     } catch {
       // Advisory, as above.
@@ -63,10 +64,14 @@ export default function c11Lifecycle(pi: {
     if (write > 0 && typeof usage.cacheWrite1h === "number") lastTTL = usage.cacheWrite1h >= write ? 3600 : 300;
     return lastTTL ?? (longRetention ? 3600 : 300);
   };
+  // Anthropic itself, or a router serving its model under an `anthropic/…`,
+  // `anthropic.…` or `….anthropic.…` id. Other providers on the
+  // anthropic-messages API (Kimi, MiniMax, GLM, Copilot) cache implicitly, so
+  // c11's policy table decides their lifetime.
   const usesAnthropicCache = (message: any) => {
     const provider = String(message.provider ?? "").toLowerCase();
     const model = String(message.model ?? "").toLowerCase();
-    return message.api === "anthropic-messages" || provider.includes("anthropic")
+    return provider.includes("anthropic")
       || model.startsWith("anthropic/") || model.startsWith("anthropic.") || model.includes(".anthropic.");
   };
 
@@ -92,10 +97,23 @@ export default function c11Lifecycle(pi: {
     reportCache({ request });
   });
 
-  // Pi 0.86+ can refresh the cache on its own ("cache warming"). After a
-  // refresh, the last request no longer says when the cache expires, so c11
-  // shows no cache state until the next real request.
+  // Pi 0.86+ can refresh the cache on its own ("cache warming"). A refresh
+  // replays the last request, which reads the cache and restarts its lifetime,
+  // so it is reported as a request; once warming stops, the cache goes cold
+  // one lifetime after the last refresh. The warmer's decision is never changed.
   pi.on("cache_warming_decision", async (event) => {
-    if (event?.action === "warm") reportCache({ unknown: { reason: "cache_warming" } });
+    if (event?.action === "warm") reportCache({ request: { at_ms: Date.now() } });
+  });
+
+  // A compaction or a model switch replaces the cached prefix: cold until the
+  // next request writes a new one.
+  pi.on("session_compact", async () => {
+    reportCache({ reset: { reason: "compaction", at_ms: Date.now() } });
+  });
+  pi.on("model_select", async (event) => {
+    const next = event?.model;
+    const previous = event?.previousModel;
+    if (!next || !previous || (next.provider === previous.provider && next.id === previous.id)) return;
+    reportCache({ reset: { reason: "model_switch", at_ms: Date.now() } });
   });
 }

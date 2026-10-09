@@ -9,8 +9,9 @@ import Foundation
 //   plugin can report the same way.
 // - The operator's own Claude Code statusline can report Claude's exact
 //   `prompt_cache` object. c11 documents that snippet and never writes it.
-// - A reporter that cannot tell (a harness cache warmer is refreshing the
-//   cache) reports `unknown`, and c11 shows no cache state rather than a wrong one.
+// - A reporter can say something replaced the cached prefix (`reset`: a
+//   compaction or model switch), or that it cannot tell (`unknown`), and c11
+//   shows that rather than a wrong state.
 //
 // Reports are parsed and validated on the socket worker and land in a
 // lock-guarded store, one slot per panel. The 10 s liveness sweep reads the
@@ -23,6 +24,8 @@ enum PromptCacheReport: Equatable, Sendable {
     case request(Request)
     /// The harness's own view of its cache (Claude Code's statusline `prompt_cache`).
     case state(ExactState)
+    /// Something replaced the cached prefix: cold from `at` until the next request.
+    case reset(PromptCacheObservation.Reset, at: Date)
     /// The reporter cannot tell; show no cache state for the panel.
     case unknown
 
@@ -71,8 +74,11 @@ enum PromptCacheReportParser {
     static let panelKeys = spellings(of: "surface_id")
     static let callerPanelKeys = spellings(of: "caller_surface_id")
 
+    static let payloadKeys = ["request", "prompt_cache", "reset", "unknown"]
     /// Top-level keys: the panel (any accepted spelling) and exactly one payload.
-    static let allowedKeys = Set(panelKeys + callerPanelKeys + ["request", "prompt_cache", "unknown"])
+    static let allowedKeys = Set(panelKeys + callerPanelKeys + payloadKeys)
+    /// Epoch milliseconds before 2001: a caller sent seconds.
+    static let minimumEpochMilliseconds: Double = 1_000_000_000_000
 
     private static func spellings(of canonical: String) -> [String] {
         [canonical] + (LegacyWireAliases.paramSources.first { $0.target == canonical }?.sources ?? [])
@@ -92,14 +98,15 @@ enum PromptCacheReportParser {
               let panelId = UUID(uuidString: panelString.trimmingCharacters(in: .whitespaces)) else {
             return .failure(Failure(message: "panel_id must be a panel UUID"))
         }
-        let payloads = ["request", "prompt_cache", "unknown"].filter { params[$0] != nil }
+        let payloads = payloadKeys.filter { params[$0] != nil }
         guard payloads.count == 1 else {
-            return .failure(Failure(message: "exactly one of request, prompt_cache or unknown is required"))
+            return .failure(Failure(message: "exactly one of request, prompt_cache, reset or unknown is required"))
         }
         let report: Result<PromptCacheReport, Failure>
         switch payloads[0] {
         case "request": report = parseRequest(params["request"], now: now)
         case "prompt_cache": report = parseExactState(params["prompt_cache"], now: now)
+        case "reset": report = parseReset(params["reset"], now: now)
         default: report = parseUnknown(params["unknown"])
         }
         return report.map { (panelId: panelId, report: $0) }
@@ -113,15 +120,9 @@ enum PromptCacheReportParser {
             return .failure(Failure(message: "unknown request field '\(unexpected)'"))
         }
         var request = PromptCacheReport.Request(at: now)
-        if let rawAt = object["at_ms"] {
-            guard let ms = number(rawAt), ms > 0 else {
-                return .failure(Failure(message: "request.at_ms must be epoch milliseconds"))
-            }
-            let at = Date(timeIntervalSince1970: ms / 1000)
-            guard at <= now.addingTimeInterval(futureTolerance) else {
-                return .failure(Failure(message: "request.at_ms is in the future"))
-            }
-            request.at = at
+        switch time(object["at_ms"], field: "request.at_ms", now: now) {
+        case .failure(let failure): return .failure(failure)
+        case .success(let at): request.at = at
         }
         let identifierFields: [(String, WritableKeyPath<PromptCacheReport.Request, String?>)] = [
             ("provider", \.provider), ("model", \.model),
@@ -192,6 +193,34 @@ enum PromptCacheReportParser {
             state[keyPath: path] = count
         }
         return .success(.state(state))
+    }
+
+    private static func parseReset(_ raw: Any?, now: Date) -> Result<PromptCacheReport, Failure> {
+        guard let object = raw as? [String: Any], Set(object.keys).isSubset(of: ["reason", "at_ms"]) else {
+            return .failure(Failure(message: "reset must be {\"reason\": …, \"at_ms\": …}"))
+        }
+        let reason: PromptCacheObservation.Reset
+        switch object["reason"] as? String {
+        case "compaction": reason = .compaction
+        case "model_switch": reason = .modelSwitch
+        case "effort_change": reason = .effortChange
+        default:
+            return .failure(Failure(message: "reset.reason must be compaction, model_switch or effort_change"))
+        }
+        return time(object["at_ms"], field: "reset.at_ms", now: now).map { .reset(reason, at: $0) }
+    }
+
+    /// An optional epoch-milliseconds field; absent means now.
+    private static func time(_ raw: Any?, field: String, now: Date) -> Result<Date, Failure> {
+        guard let raw else { return .success(now) }
+        guard let ms = number(raw), ms >= minimumEpochMilliseconds else {
+            return .failure(Failure(message: "\(field) must be epoch milliseconds"))
+        }
+        let at = Date(timeIntervalSince1970: ms / 1000)
+        guard at <= now.addingTimeInterval(futureTolerance) else {
+            return .failure(Failure(message: "\(field) is in the future"))
+        }
+        return .success(at)
     }
 
     private static func parseUnknown(_ raw: Any?) -> Result<PromptCacheReport, Failure> {
@@ -306,11 +335,19 @@ final class PromptCacheReportStore: @unchecked Sendable {
             slot.observation = nil
             slot.unknown = true
         case .state(let state):
-            // `expires_at` already counts any keepalive touch. A cold report
-            // without an expiry went cold no later than now.
-            let expiry = state.warm
-                ? state.expiresAt ?? receivedAt.addingTimeInterval(state.ttl)
-                : min(state.expiresAt ?? receivedAt, receivedAt)
+            // `expires_at` already counts any keepalive touch. Without one, a
+            // repeated report keeps the expiry it already established: a warm
+            // one does not extend it, a cold one does not move it to now.
+            let previousExpiry = slot.observation?.coldAt()
+            let expiry: Date
+            if state.warm {
+                expiry = state.expiresAt
+                    ?? previousExpiry.flatMap { $0 > receivedAt ? $0 : nil }
+                    ?? receivedAt.addingTimeInterval(state.ttl)
+            } else {
+                expiry = min(state.expiresAt ?? previousExpiry.flatMap { $0 <= receivedAt ? $0 : nil } ?? receivedAt,
+                             receivedAt)
+            }
             slot.observation = PromptCacheObservation(
                 requestAt: expiry.addingTimeInterval(-state.ttl),
                 basis: .ttl(state.ttl),
@@ -319,10 +356,20 @@ final class PromptCacheReportStore: @unchecked Sendable {
                 misses: state.misses
             )
             slot.unknown = false
+        case .reset(let reason, let at):
+            // Before any request there is no cache to reset; an older reset
+            // than the last request was already superseded by it.
+            guard var current = slot.observation, at >= current.requestAt else { break }
+            current.reset = reason
+            current.resetAt = at
+            slot.observation = current
+            slot.unknown = false
         case .request(let request):
             slot.unknown = false
-            // Reports can arrive out of order; an older one changes nothing.
-            if let current = slot.observation, request.at < current.requestAt { break }
+            // Reports can arrive out of order; one older than the last request
+            // or reset changes nothing.
+            if let current = slot.observation,
+               request.at < current.requestAt || current.resetAt.map({ request.at <= $0 }) == true { break }
             guard request.hasUsage else {
                 // A request went out and its usage is not in yet: it reads the
                 // cache, so an established cache counts from it.
@@ -389,6 +436,12 @@ enum PromptCacheSources {
             scannedAt: now.addingTimeInterval(-reportGrace)
         )
         guard let read = transcript?.observation else { return reported }
+        // Claude's statusline object does not see a `/model`, `/effort` or
+        // compaction reset; one after the statusline's last request belongs
+        // to the transcript until the next request.
+        if let resetAt = read.resetAt, let tap = report.observation, tap.source == .statusline, tap.requestAt < resetAt {
+            return transcript
+        }
         return evidenceAt(report) >= evidenceAt(read) ? reported : transcript
     }
 

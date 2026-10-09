@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Prompt cache reports from c11's runtime extensions for Pi and omp (C11-382).
 // Drives each extension through a fake extension API and checks the exact
-// `c11 rpc agent.prompt_cache.report` payloads it would send. Needs a Node that
-// strips TypeScript types (22.18+/23.6+).
+// `c11 rpc agent.prompt_cache.report` payloads it would send. Run it with Bun,
+// or a Node that strips TypeScript types (22.18+).
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -59,7 +59,7 @@ const assistant = (usage, extra = {}) => ({
 await withEnv(baseEnv, async () => {
   const host = fakeHost();
   piExtension(host.api);
-  for (const event of ["agent_start", "agent_settled", "message_end", "cache_warming_decision"]) {
+  for (const event of ["agent_start", "agent_settled", "message_end", "cache_warming_decision", "session_compact", "model_select"]) {
     assert(host.handlers.has(event), `pi registers ${event}`);
   }
   const end = host.handlers.get("message_end");
@@ -72,8 +72,16 @@ await withEnv(baseEnv, async () => {
   await end(assistant({ input: 70, output: 9, cacheRead: 2_000, cacheWrite: 0 },
     { api: "openai-responses", provider: "openai", model: "gpt-5.6", timestamp: 1_790_000_180_000 }));
 
+  await end(assistant({ input: 40, output: 9, cacheRead: 3_000, cacheWrite: 10 },
+    { provider: "kimi-coding", model: "k3", timestamp: 1_790_000_240_000 }));
+  await end(assistant({ input: 40, output: 9, cacheRead: 3_000, cacheWrite: 10 },
+    { api: "openai-completions", provider: "github-copilot", model: "claude-sonnet-4.5", timestamp: 1_790_000_300_000 }));
+  await end(assistant({ input: 40, output: 9, cacheRead: 3_000, cacheWrite: 0 },
+    { api: "openai-completions", provider: "openrouter", model: "anthropic/claude-sonnet-4.5", timestamp: 1_790_000_360_000 }));
+
   const reports = host.reports();
-  assert.equal(reports.length, 4, "user lines and requests that never reached the provider are not reported");
+  assert.equal(reports.length, 7, "user lines and requests that never reached the provider are not reported");
+  assert(host.calls.every(({ options }) => options?.timeout >= 5000), "a slow c11 still gets the report");
   assert.deepEqual(reports[0], {
     panel_id: PANEL,
     request: {
@@ -85,14 +93,31 @@ await withEnv(baseEnv, async () => {
   assert.equal(reports[2].request.ttl_seconds, 300, "a request with a 5-minute write is a 5-minute cache");
   assert.equal(reports[3].request.ttl_seconds, undefined, "c11's policy table decides a non-Anthropic lifetime");
   assert.equal(reports[3].request.provider, "openai");
+  assert.equal(reports[4].request.ttl_seconds, undefined, "another provider on the anthropic-messages API caches implicitly");
+  assert.equal(reports[5].request.ttl_seconds, undefined, "Copilot's Claude is not Anthropic's cache");
+  assert.equal(reports[6].request.ttl_seconds, 300, "OpenRouter's anthropic/ models are");
   assert(!JSON.stringify(host.calls).includes("PRIVATE-SENTINEL"), "no message text leaves Pi");
 
   const decide = host.handlers.get("cache_warming_decision");
   assert.equal(await decide({ type: "cache_warming_decision", action: "stop" }), undefined);
-  assert.equal(host.reports().length, 4, "a refresh that is not sent changes nothing");
+  assert.equal(host.reports().length, 7, "a refresh that is not sent changes nothing");
+  const beforeWarm = Date.now();
   assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }), undefined,
     "the extension never overrides the warmer's decision");
-  assert.deepEqual(host.reports().at(-1), { panel_id: PANEL, unknown: { reason: "cache_warming" } });
+  const warm = host.reports().at(-1);
+  assert.deepEqual(Object.keys(warm.request), ["at_ms"], "a refresh is a request without usage");
+  assert(warm.request.at_ms >= beforeWarm);
+
+  await host.handlers.get("session_compact")({ type: "session_compact", reason: "manual" });
+  assert.equal(host.reports().at(-1).reset.reason, "compaction");
+  const select = host.handlers.get("model_select");
+  const before = host.reports().length;
+  await select({ model: { provider: "anthropic", id: "claude-opus-4-8" }, previousModel: undefined });
+  await select({ model: { provider: "anthropic", id: "claude-opus-4-8" }, previousModel: { provider: "anthropic", id: "claude-opus-4-8" } });
+  assert.equal(host.reports().length, before, "the first model and a re-selection reset nothing");
+  await select({ model: { provider: "anthropic", id: "claude-sonnet-4-5" }, previousModel: { provider: "anthropic", id: "claude-opus-4-8" } });
+  assert.deepEqual(Object.keys(host.reports().at(-1)), ["reset", "panel_id"]);
+  assert.equal(host.reports().at(-1).reset.reason, "model_switch");
 });
 
 await withEnv({ ...baseEnv, PI_CACHE_RETENTION: "long" }, async () => {
@@ -136,8 +161,11 @@ await withEnv(baseEnv, async () => {
     const decide = after.handlers.get("cache_warming_decision");
     assert(decide, `omp ${version ?? "of unknown version"} may warm the cache`);
     assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }), undefined);
-    assert.deepEqual(after.reports(), [{ panel_id: PANEL, unknown: { reason: "cache_warming" } }]);
+    assert.deepEqual(after.reports().map((report) => Object.keys(report.request)), [["at_ms"]]);
   }
+  assert(before.handlers.has("session_compact"));
+  await before.handlers.get("session_compact")({ type: "session_compact" });
+  assert.equal(before.reports().at(-1).reset.reason, "compaction");
 });
 
-console.log("PASS: Pi and omp extensions report each request's prompt cache, and unknown once a warmer refreshes it");
+console.log("PASS: Pi and omp extensions report each request, warming refresh and reset of their prompt cache");

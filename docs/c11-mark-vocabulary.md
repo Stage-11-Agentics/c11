@@ -39,10 +39,10 @@ cold. A process that exits leaves no mark at all: the panel becomes a plain term
     it wins over the transcript estimate while it keeps reporting. c11 never writes it.
 
   A warm 1-hour agent stays an idle frame for the whole hour. A journal-backed agent (hooks,
-  a plugin's lifecycle or a transcript) never goes cold without cache data. While Pi 0.86+
-  or omp 18.3.5+ refreshes its own cache, the last request no longer says when it expires:
-  the extension reports `unknown`, and c11 has no cache data for that agent until its next
-  request.
+  a plugin's lifecycle or a transcript) never goes cold without cache data. Pi 0.86+ and
+  omp 18.3.5+ can refresh their own cache; each refresh restarts its lifetime, so the
+  extension reports it as a request and cold comes one lifetime after the last refresh. Pi,
+  omp and OpenCode also report a compaction (and Pi a model switch) as a reset.
 - **Dormancy: every other agent.** An agent outside the journal goes cold after the
   dormancy threshold: idle and untouched for `sidebarAgentColdThresholdSeconds` (default 10
   minutes, 1-60, env `C11_AGENT_COLD_SECONDS`). Where such an agent does have cache

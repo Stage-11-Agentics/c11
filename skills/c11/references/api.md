@@ -663,7 +663,7 @@ Every panel node also carries `prompt_cache`: the agent's prompt cache as of its
 | Custom kinds | Their own wrapper or plugin, through the same socket method | as reported |
 | GitHub Copilot | Unsupported: its hooks carry no usage and its backend cache is opaque | none |
 
-It is `null` for a non-agent panel, before the first request, and without cache evidence. When a reporter cannot tell (Pi 0.86+ or omp 18.3.5+ refreshing its cache on its own), it is `{"state": "unknown", "source": "report"}`, and the mark treats the agent as having no cache data. Otherwise:
+It is `null` for a non-agent panel, before the first request, and without cache evidence. When a reporter says it cannot tell, it is `{"state": "unknown", "source": "report"}`, and the mark treats the agent as having no cache data. Pi 0.86+ and omp 18.3.5+ can refresh their own cache ("cache warming"); their extensions report each refresh as a request, so the cache goes cold one lifetime after the last refresh. Otherwise:
 
 | Field | Meaning |
 |---|---|
@@ -671,7 +671,7 @@ It is `null` for a non-agent panel, before the first request, and without cache 
 | `basis` | `ttl`: the provider's published lifetime (Anthropic: 5 minutes, or 1 hour on a subscription within plan), counted from when the request went out. `estimate`: no published lifetime (Codex and other OpenAI 2 hours; Grok Build, Kimi and other implicit caches 1 hour, from measured reuse). |
 | `lifetime_seconds` | The TTL or estimated span in effect. |
 | `requested_at`, `cold_at` | ISO-8601. `cold_at` = `requested_at` + `lifetime_seconds`, or the moment of a reset. For the statusline tap, `cold_at` is Claude's own `expires_at`, keepalive touches included. |
-| `reset` | `model_switch`, `effort_change` or `compaction` when something replaced the cached prefix early (cold at once until the next prompt), else `null`. |
+| `reset` | `model_switch`, `effort_change` or `compaction` when something replaced the cached prefix early (cold at once until the next prompt), else `null`. Claude Code's comes from its transcript; Pi, omp and OpenCode report theirs. |
 | `prompt_tokens` | The prompt the next request re-caches once cold; `null` when the harness does not record it (Grok). |
 | `source` | `transcript` (c11 read the harness's files), `report` (a plugin or extension reported the request) or `statusline` (the harness's exact state). |
 | `misses` | Cache misses this session, from the statusline tap; else `null`. |
@@ -905,15 +905,19 @@ Params: `panel_id` (a panel UUID; defaults to the caller's panel) and exactly on
 | Payload | Shape | Meaning |
 |---|---|---|
 | `request` | `at_ms` (epoch ms the request went out; default: arrival), `provider`, `model` (≤ 128 chars), `input_tokens` (uncached input), `cache_read_tokens`, `cache_write_tokens` (non-negative integers), `ttl_seconds` (60-86400, the lifetime the harness asked for) | One model request. Send it per request, or at least for the last one before the agent rests. A request with no token fields says only that a request went out: it moves an established cache's anchor (an interrupted request still read the cache). |
-| `prompt_cache` | Claude Code's statusline object as is: `warm` (required), `expires_at` (epoch s), `ttl` (`"5m"`, `"1h"` or seconds), `misses`, `recache_tokens_if_cold`; other fields ignored | The harness's exact cache state. |
-| `unknown` | `true` or `{"reason": "…"}` (≤ 64 chars) | The reporter cannot tell when the cache expires (a cache warmer is refreshing it). c11 shows no cache state until the next `request`. |
+| `prompt_cache` | Claude Code's statusline object as is: `warm` (required), `expires_at` (epoch s), `ttl` (`"5m"`, `"1h"` or seconds), `misses`, `recache_tokens_if_cold`; other fields ignored | The harness's exact cache state. A report without `expires_at` keeps the expiry the panel already has. |
+| `reset` | `reason` (`compaction`, `model_switch` or `effort_change`), optional `at_ms` | Something replaced the cached prefix: cold from then until the next request. Ignored before any request, or when older than the last one. |
+| `unknown` | `true` or `{"reason": "…"}` (≤ 64 chars) | The reporter cannot tell when the cache expires. c11 shows no cache state until the next `request`. |
 
 The lifetime comes from `ttl_seconds` when given, else from the provider:
-Anthropic (also OpenRouter `anthropic/…`, Bedrock `…anthropic.…`, Vertex) is a
-5-minute TTL; `openai` is a 2-hour estimate; anything else is an implicit cache,
-a 1-hour estimate. An Anthropic request that reads and writes nothing (caching
-off) says nothing. An implicit cache counts once a request has read from it.
-Older reports never move the anchor back.
+Anthropic (a provider naming `anthropic`, or a model id `anthropic/…`,
+`anthropic.…` or `….anthropic.…` on a router or cloud) is a 5-minute TTL;
+OpenAI (`openai`, `openai-codex…`, `azure`, `azure-openai…`) is a 2-hour
+estimate; anything else is an implicit cache, a 1-hour estimate. A Claude model
+on another backend (GitHub Copilot's `claude-…`) is not Anthropic's cache. An
+Anthropic request that reads and writes nothing (caching off) says nothing. An
+implicit cache counts once a request has read from it. Older reports never move
+the anchor back. `at_ms` below 10^12 is rejected: it is seconds sent by mistake.
 
 The method validates and folds the report into one slot per panel on the socket
 worker, never the main thread; the 10-second liveness sweep reads the slot, so
@@ -939,14 +943,21 @@ reads stdin into `$input` (c11 never writes the file):
 
 ```bash
 # c11: report Claude Code's exact prompt cache to this panel's cold mark.
-if [ -n "${CMUX_SURFACE_ID:-}" ] && command -v c11 >/dev/null 2>&1; then
+c11_panel="${C11_PANEL_ID:-${CMUX_SURFACE_ID:-}}"
+if [ -n "$c11_panel" ] && command -v c11 >/dev/null 2>&1; then
     c11_pc=$(printf '%s' "$input" | jq -c '.prompt_cache // empty | {prompt_cache: .}' 2>/dev/null)
-    [ -n "$c11_pc" ] && (c11 rpc agent.prompt_cache.report "$c11_pc" >/dev/null 2>&1 &)
+    c11_last="${TMPDIR:-/tmp}/c11-prompt-cache-$c11_panel"
+    if [ -n "$c11_pc" ] && [ "$c11_pc" != "$(cat "$c11_last" 2>/dev/null)" ]; then
+        printf '%s' "$c11_pc" > "$c11_last"
+        (c11 rpc agent.prompt_cache.report "$c11_pc" >/dev/null 2>&1 &)
+    fi
 fi
 ```
 
-It runs in the background, so the statusline never waits, and does nothing
-outside c11 or before the first response. A statusline `refreshInterval` lets it
+It sends only when the object changes, in the background, so the statusline
+never waits, and does nothing outside c11 or before the first response. A
+`/model`, `/effort` or compaction after the statusline's last request still
+comes from the transcript, which sees it. A statusline `refreshInterval` lets it
 report keepalive touches while the agent is idle. Without the tap, c11 estimates
 from the transcript, which is accurate to seconds unless Claude Code's
 server-side keepalive is on.

@@ -56,16 +56,22 @@ export const C11NotifyPlugin = async ({ $ }) => {
     map.set(key, value);
   };
   const tokenCount = (value) => (Number.isFinite(value) && value >= 0 ? Math.round(value) : 0);
-  const reportPromptCache = (request) => {
+  const reportPromptCache = (payload) => {
     const panel = process.env.C11_PANEL_ID || process.env.C11_TAB_ID || process.env.CMUX_SURFACE_ID;
-    const payload = { request };
     if (panel) payload.panel_id = panel;
     return c11(["rpc", "agent.prompt_cache.report", JSON.stringify(payload)]);
   };
   const notePromptCache = async (message) => {
     if (message?.role !== "assistant" || typeof message.id !== "string") return;
-    // A compaction summary reads the prefix it replaces; the cache it leaves is not the next prompt's.
-    if (message.summary === true) return;
+    // A compaction summary replaces the cached prefix once it finishes: cold
+    // until the next request writes a new one.
+    if (message.summary === true) {
+      const finished = message.time?.completed;
+      if (!Number.isFinite(finished) || reportedSteps.get(message.id) === "reset") return;
+      remember(reportedSteps, message.id, "reset");
+      await reportPromptCache({ reset: { reason: "compaction", at_ms: finished } });
+      return;
+    }
     const at = stepStartedAt.get(message.id) ?? message.time?.created;
     if (!Number.isFinite(at)) return;
     const tokens = message.tokens ?? {};
@@ -87,7 +93,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
       request.cache_read_tokens = read;
       request.cache_write_tokens = write;
     }
-    await reportPromptCache(request);
+    await reportPromptCache({ request });
   };
 
   const statusTypeFrom = (status) => {

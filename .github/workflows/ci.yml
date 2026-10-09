@@ -64,6 +64,17 @@ jobs:
           python3 tests/test_omp_wrapper_hooks.py
           python3 tests/test_agent_wrapper_interactive_marker.py
 
+      # The OpenCode plugin, and the Pi and omp extensions (TypeScript, which
+      # Bun runs as is), driven through fake hosts: no harness, no network.
+      - name: Setup Bun for runtime plugin tests
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Validate runtime plugin lifecycle and prompt cache reports
+        run: |
+          set -euo pipefail
+          node tests/test_opencode_plugin_lifecycle.mjs
+          bun tests/test_pi_omp_prompt_cache_extensions.mjs
+
       # Offline, no token: exercises the alarm paths of the Sentry recurrence
       # detector, which are otherwise only reachable by actually exhausting a
       # quota or silencing a real client.

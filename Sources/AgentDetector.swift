@@ -125,10 +125,8 @@ final class AgentDetector: @unchecked Sendable {
                    AgentIdentityPolicy.isAgentKind(kind) {
                     modelTargets.append(.init(workspaceId: key.workspaceId, surfaceId: key.panelId, kind: kind,
                                               pid: kind == "kimi" ? self.foregroundPIDs[key] : nil))
-                } else if let type = self.detectedTerminalTypes[key] {
+                } else if self.detectedTerminalTypes[key] != nil {
                     plainSurfaces.append((key.workspaceId, key.panelId))
-                    // Back at its shell: cache reports described the agent that exited.
-                    if type == "shell" { PromptCacheReportStore.shared.remove(panelId: key.panelId) }
                 }
             }
             AgentModelDetector.shared.sweep(agents: modelTargets, plain: plainSurfaces)
@@ -165,9 +163,13 @@ final class AgentDetector: @unchecked Sendable {
                 args: info.args,
                 executablePath: info.executablePath
             ))
-            let detectionChanged = detectedTerminalTypes[key] != classification
+            let previousClassification = detectedTerminalTypes[key]
+            let detectionChanged = previousClassification != classification
             if detectionChanged {
                 detectedTerminalTypes[key] = classification
+                if Self.endsPromptCacheReports(from: previousClassification, to: classification) {
+                    PromptCacheReportStore.shared.remove(panelId: key.panelId)
+                }
             }
             let changed = PanelMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
@@ -194,6 +196,14 @@ final class AgentDetector: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// Prompt cache reports describe the agent that sent them. They end when
+    /// the panel returns to its shell or another agent takes the foreground,
+    /// not when a tool the agent opened (an editor) briefly does.
+    static func endsPromptCacheReports(from previous: String?, to next: String) -> Bool {
+        guard let previous, previous != next else { return false }
+        return next == "shell" || AgentIdentityPolicy.isAgentKind(next)
     }
 
     // MARK: - ps parsing

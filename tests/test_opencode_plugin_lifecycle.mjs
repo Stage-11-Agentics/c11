@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 
 // Executable producer boundary: capture what the plugin puts on stdin, never its source shape.
 const temporary = mkdtempSync(path.join(tmpdir(), "c11-opencode-journal-"));
-const fakeCLI = path.join(temporary, "c11");
+// `.mjs`: the fake CLI loads as ESM on every Node, with or without syntax detection.
+const fakeCLI = path.join(temporary, "c11.mjs");
 const log = path.join(temporary, "events.ndjson");
 writeFileSync(log, "");
 writeFileSync(fakeCLI, `#!${process.execPath}\nimport fs from 'node:fs';
@@ -87,9 +88,17 @@ try {
     info: assistant(step, { id: "msg_c", sessionID: "ses_child" }) } } });
   await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root",
     info: { id: "msg_u", sessionID: "ses_root", role: "user", time: { created: 1 } } } } });
+  assert.equal(cacheReports().length, 2, "subagent and user messages are not reported");
   await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root",
     info: assistant(step, { id: "msg_s", summary: true }) } } });
-  assert.equal(cacheReports().length, 2, "subagent, user and compaction summary messages are not reported");
+  assert.equal(cacheReports().length, 2, "a compaction summary still running reports nothing");
+  const compacted = assistant(step, { id: "msg_s", summary: true, time: { created: 1_790_000_040_000, completed: 1_790_000_050_000 } });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root", info: compacted } } });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_root", info: compacted } } });
+  assert.equal(cacheReports().length, 3, "a finished compaction reports one reset");
+  assert.deepEqual(cacheReports().at(-1), {
+    reset: { reason: "compaction", at_ms: 1_790_000_050_000 }, panel_id: "11111111-1111-4111-8111-111111111111",
+  });
   assert(!cacheReports().some((report) => JSON.stringify(report).includes("PRIVATE-SENTINEL")));
 
   process.env.JOURNAL_TEST_FAILURE = "storage_unavailable";

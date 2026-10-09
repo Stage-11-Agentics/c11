@@ -70,9 +70,9 @@ final class PromptCacheReportTests: XCTestCase {
         XCTAssertEqual(failure(["request": [String: Any]()]), "panel_id is required outside a c11 panel")
         XCTAssertEqual(failure(["panel_id": "panel:3", "request": [String: Any]()]), "panel_id must be a panel UUID")
         XCTAssertEqual(failure(["panel_id": id, "request": [String: Any](), "colour": "blue"]), "unknown parameter 'colour'")
-        XCTAssertEqual(failure(["panel_id": id]), "exactly one of request, prompt_cache or unknown is required")
+        XCTAssertEqual(failure(["panel_id": id]), "exactly one of request, prompt_cache, reset or unknown is required")
         XCTAssertEqual(failure(["panel_id": id, "request": [String: Any](), "unknown": true]),
-                       "exactly one of request, prompt_cache or unknown is required")
+                       "exactly one of request, prompt_cache, reset or unknown is required")
         XCTAssertEqual(failure(["panel_id": id, "request": ["prompt": "secret"]]), "unknown request field 'prompt'")
         XCTAssertEqual(failure(["panel_id": id, "request": ["cache_read_tokens": -1]]),
                        "request.cache_read_tokens must be a non-negative integer")
@@ -84,6 +84,8 @@ final class PromptCacheReportTests: XCTestCase {
                        "request.at_ms is in the future")
         XCTAssertEqual(failure(["panel_id": id, "request": ["at_ms": "yesterday"]]),
                        "request.at_ms must be epoch milliseconds")
+        XCTAssertEqual(failure(["panel_id": id, "request": ["at_ms": now.timeIntervalSince1970]]),
+                       "request.at_ms must be epoch milliseconds", "seconds sent by mistake would anchor in 1970")
         XCTAssertEqual(failure(["panel_id": id, "request": ["ttl_seconds": 5]]),
                        "request.ttl_seconds must be between 60 and 86400")
         XCTAssertEqual(failure(["panel_id": id, "request": ["model": String(repeating: "m", count: 129)]]),
@@ -111,6 +113,18 @@ final class PromptCacheReportTests: XCTestCase {
                        "prompt_cache.expires_at is further ahead than its ttl")
     }
 
+    func testAResetNamesWhatReplacedThePrefix() throws {
+        let at = now.addingTimeInterval(-5)
+        XCTAssertEqual(try parse(["panel_id": panel.uuidString, "reset": ["reason": "compaction", "at_ms": ms(at)]]).get().report,
+                       .reset(.compaction, at: at))
+        XCTAssertEqual(try parse(["panel_id": panel.uuidString, "reset": ["reason": "model_switch"]]).get().report,
+                       .reset(.modelSwitch, at: now))
+        XCTAssertEqual(failure(["panel_id": panel.uuidString, "reset": ["reason": "restart"]]),
+                       "reset.reason must be compaction, model_switch or effort_change")
+        XCTAssertEqual(failure(["panel_id": panel.uuidString, "reset": ["reason": "compaction", "why": "x"]]),
+                       "reset must be {\"reason\": …, \"at_ms\": …}")
+    }
+
     func testUnknownTakesTrueOrAReason() throws {
         XCTAssertEqual(try parse(["panel_id": panel.uuidString, "unknown": true]).get().report, .unknown)
         XCTAssertEqual(try parse(["panel_id": panel.uuidString, "unknown": ["reason": "cache_warming"]]).get().report, .unknown)
@@ -133,7 +147,12 @@ final class PromptCacheReportTests: XCTestCase {
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "openrouter", model: "anthropic/claude-sonnet-4.5", ttl: nil), .ttl(300))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "amazon-bedrock", model: "us.anthropic.claude-sonnet-4-5", ttl: nil), .ttl(300))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "google-vertex-anthropic", model: "claude", ttl: nil), .ttl(300))
+        XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "vercel-ai-gateway", model: "anthropic/claude-opus-4-8", ttl: nil), .ttl(300))
+        XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "kimi-coding", model: "k3", ttl: nil), .estimate(3600),
+                       "another provider behind the anthropic-messages API caches implicitly")
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "openai", model: "gpt-5.6", ttl: nil), .estimate(2 * 3600))
+        XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "openai-codex", model: "gpt-5.6", ttl: nil), .estimate(2 * 3600))
+        XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "azure-openai-responses", model: "gpt-5.6", ttl: nil), .estimate(2 * 3600))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "moonshotai", model: "kimi-k3", ttl: nil), .estimate(3600))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "openrouter", model: "deepseek/deepseek-v4", ttl: nil), .estimate(3600))
         XCTAssertEqual(PromptCachePolicy.reportedBasis(provider: "github-copilot", model: "claude-sonnet-4.5", ttl: nil), .estimate(3600),
@@ -205,6 +224,44 @@ final class PromptCacheReportTests: XCTestCase {
         XCTAssertEqual(longCold.observation?.coldAt(), now.addingTimeInterval(-600))
     }
 
+    func testAStatuslineReportWithoutAnExpiryKeepsTheOneItHas() {
+        let expires = now.addingTimeInterval(600)
+        var slot = PromptCacheReportStore.fold(nil, .state(.init(warm: true, expiresAt: expires, ttl: 3600)), receivedAt: now)
+        slot = PromptCacheReportStore.fold(slot, .state(.init(warm: true, expiresAt: nil, ttl: 3600)), receivedAt: now.addingTimeInterval(60))
+        XCTAssertEqual(slot.observation?.coldAt(), expires, "a warm report without an expiry does not extend it")
+        slot = PromptCacheReportStore.fold(slot, .state(.init(warm: false, expiresAt: nil, ttl: 3600)), receivedAt: now.addingTimeInterval(300))
+        XCTAssertEqual(slot.observation?.coldAt(), now.addingTimeInterval(300), "evicted before its expiry: cold from this report")
+        slot = PromptCacheReportStore.fold(slot, .state(.init(warm: false, expiresAt: nil, ttl: 3600)), receivedAt: now.addingTimeInterval(360))
+        XCTAssertEqual(slot.observation?.coldAt(), now.addingTimeInterval(300), "a repeated cold report does not move the expiry to now")
+        let lapsed = PromptCacheReportStore.fold(
+            PromptCacheReportStore.fold(nil, .state(.init(warm: true, expiresAt: expires, ttl: 3600)), receivedAt: now),
+            .state(.init(warm: false, expiresAt: nil, ttl: 3600)), receivedAt: now.addingTimeInterval(900)
+        )
+        XCTAssertEqual(lapsed.observation?.coldAt(), expires, "a cold report after the expiry keeps when it went cold")
+        let fresh = PromptCacheReportStore.fold(nil, .state(.init(warm: true, expiresAt: nil, ttl: 300)), receivedAt: now)
+        XCTAssertEqual(fresh.observation?.coldAt(), now.addingTimeInterval(300))
+    }
+
+    func testAResetIsColdUntilTheNextRequest() throws {
+        var slot = PromptCacheReportStore.fold(nil, .reset(.compaction, at: now), receivedAt: now)
+        XCTAssertNil(slot.observation, "before any request there is no cache to reset")
+        slot = PromptCacheReportStore.fold(slot, request(now, read: 900, ttl: 3600), receivedAt: now)
+        slot = PromptCacheReportStore.fold(slot, .reset(.modelSwitch, at: now.addingTimeInterval(60)), receivedAt: now.addingTimeInterval(60))
+        let reset = try XCTUnwrap(slot.observation)
+        XCTAssertEqual(reset.reset, .modelSwitch)
+        XCTAssertEqual(reset.coldAt(), now.addingTimeInterval(60))
+        XCTAssertEqual(PromptCacheReportStore.stateWord(slot, now: now.addingTimeInterval(61)), "cold")
+
+        let stale = PromptCacheReportStore.fold(slot, request(now.addingTimeInterval(30), read: 900, ttl: 3600), receivedAt: now.addingTimeInterval(70))
+        XCTAssertEqual(stale.observation?.reset, .modelSwitch, "a request sent before the reset does not undo it")
+        let ping = PromptCacheReportStore.fold(slot, .request(.init(at: now.addingTimeInterval(90))), receivedAt: now.addingTimeInterval(90))
+        XCTAssertNil(ping.observation?.reset, "the next request writes a new cache")
+        XCTAssertEqual(ping.observation?.requestAt, now.addingTimeInterval(90))
+
+        let olderReset = PromptCacheReportStore.fold(ping, .reset(.compaction, at: now.addingTimeInterval(80)), receivedAt: now.addingTimeInterval(95))
+        XCTAssertNil(olderReset.observation?.reset, "a reset older than the last request was already superseded")
+    }
+
     func testUnknownClearsTheCacheUntilTheNextRequest() {
         var slot = PromptCacheReportStore.fold(nil, request(now, read: 900, ttl: 300), receivedAt: now)
         slot = PromptCacheReportStore.fold(slot, .unknown, receivedAt: now.addingTimeInterval(250))
@@ -233,6 +290,14 @@ final class PromptCacheReportTests: XCTestCase {
             store.record(.unknown, panelId: UUID(), receivedAt: now.addingTimeInterval(TimeInterval(index)))
         }
         XCTAssertNil(store.slot(forPanel: first), "the oldest slot makes room")
+    }
+
+    func testReportsEndWhenTheAgentLeavesNotWhenAToolItOpenedTakesTheTerminal() {
+        XCTAssertTrue(AgentDetector.endsPromptCacheReports(from: "pi", to: "shell"))
+        XCTAssertTrue(AgentDetector.endsPromptCacheReports(from: "pi", to: "claude-code"))
+        XCTAssertFalse(AgentDetector.endsPromptCacheReports(from: "opencode", to: "unknown"), "an editor the agent opened")
+        XCTAssertFalse(AgentDetector.endsPromptCacheReports(from: nil, to: "opencode"), "a report can land before the first scan")
+        XCTAssertFalse(AgentDetector.endsPromptCacheReports(from: "omp", to: "omp"))
     }
 
     // MARK: - The socket method
@@ -280,6 +345,22 @@ final class PromptCacheReportTests: XCTestCase {
         let newer = transcript(t0.addingTimeInterval(60), scannedAt: t0.addingTimeInterval(70))
         XCTAssertEqual(PromptCacheSources.resolve(transcript: newer, report: tap, now: t0.addingTimeInterval(70)), newer,
                        "a request after the last statusline report is newer evidence")
+    }
+
+    func testATranscriptResetAfterTheStatuslinesLastRequestWins() throws {
+        let t0 = now
+        let tap = PromptCacheReportStore.fold(nil, .state(.init(warm: true, expiresAt: t0.addingTimeInterval(3_600), ttl: 3600)),
+                                              receivedAt: t0.addingTimeInterval(200))
+        var reset = PromptCacheObservation(requestAt: t0, basis: .ttl(3600), promptTokens: 1_000)
+        reset.reset = .modelSwitch
+        reset.resetAt = t0.addingTimeInterval(100)
+        let read = PromptCacheReading(observation: reset, scannedAt: t0.addingTimeInterval(110))
+        XCTAssertEqual(PromptCacheSources.resolve(transcript: read, report: tap, now: t0.addingTimeInterval(300)), read,
+                       "the statusline keeps reporting the old expiry after a /model; the transcript knows")
+        let later = PromptCacheReportStore.fold(tap, .state(.init(warm: true, expiresAt: t0.addingTimeInterval(3_900), ttl: 3600)),
+                                                receivedAt: t0.addingTimeInterval(310))
+        XCTAssertEqual(PromptCacheSources.resolve(transcript: read, report: later, now: t0.addingTimeInterval(320))?.observation?.source,
+                       .statusline, "a request after the reset brings the statusline back")
     }
 
     func testAPluginReportAndATranscriptCompareByRequestTime() {

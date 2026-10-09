@@ -115,6 +115,23 @@ def test_interactive_live_surface_loads_the_prompt_cache_extension() -> None:
     assert any("conversation claim --kind omp" in line for line in c11_log), c11_log
 
 
+def test_subcommands_reach_omp_unchanged() -> None:
+    # omp hoists a subcommand behind leading flags; older releases reject the
+    # extension flag there, so a subcommand never gets it.
+    for argv in (["commit", "--dry-run"], ["--model", "x", "commit"], ["grep", "needle"], ["wt", "list"]):
+        code, real_argv, _, _, stderr, _ = run_wrapper(True, argv)
+        assert code == 0, stderr
+        assert real_argv == argv, (argv, real_argv)
+
+
+def test_launches_with_prompts_and_flags_get_the_extension() -> None:
+    for argv in (["--model", "opus", "fix the commit message"], ["launch", "--model", "opus"], ["--", "commit"]):
+        code, real_argv, _, _, stderr, _ = run_wrapper(True, argv)
+        assert code == 0, stderr
+        assert real_argv[0] == "--extension" and real_argv[1].endswith("/omp-prompt-cache.ts"), (argv, real_argv)
+        assert real_argv[2:] == argv, (argv, real_argv)
+
+
 def test_missing_socket_passes_through() -> None:
     code, argv, env_log, c11_log, stderr, _ = run_wrapper(False, ["--model", "test"])
     assert code == 0, stderr
@@ -132,6 +149,8 @@ def test_noninteractive_command_passes_through() -> None:
 
 if __name__ == "__main__":
     test_interactive_live_surface_loads_the_prompt_cache_extension()
+    test_subcommands_reach_omp_unchanged()
+    test_launches_with_prompts_and_flags_get_the_extension()
     test_missing_socket_passes_through()
     test_noninteractive_command_passes_through()
     print("PASS: omp wrapper loads the prompt cache extension by flag, without persistent config")

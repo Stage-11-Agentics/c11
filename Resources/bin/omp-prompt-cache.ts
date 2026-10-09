@@ -7,9 +7,10 @@
 //
 // omp 18.3.5 added prompt-cache warming: shortly before a 5-minute entry
 // expires, omp replays its last request to keep the cache warm (setting
-// `providers.cacheWarming`, idle by default). After a refresh the last request
-// no longer says when the cache expires, so when a refresh is about to go out
-// this reports `unknown`, and c11 shows no cache state until the next request.
+// `providers.cacheWarming`, idle by default). The last request then no longer
+// says when the cache expires, so on releases that can warm, each refresh is
+// reported as a request: it reads the cache and restarts its lifetime, and once
+// warming stops the cache goes cold one lifetime after the last refresh.
 
 type Handler = (event: any) => unknown;
 
@@ -44,7 +45,8 @@ export default function c11OmpPromptCache(omp: {
   const reportCache = (payload: Record<string, unknown>) => {
     if (panel) payload.panel_id = panel;
     try {
-      omp.exec(c11, ["--socket", socket, "rpc", "agent.prompt_cache.report", JSON.stringify(payload)], { timeout: 750 })
+      // Nothing waits on it, so a slow c11 under load still gets the report.
+      omp.exec(c11, ["--socket", socket, "rpc", "agent.prompt_cache.report", JSON.stringify(payload)], { timeout: 5000 })
         .catch(() => {});
     } catch {
       // Cache telemetry is advisory. Never disturb omp if c11 exits.
@@ -63,10 +65,14 @@ export default function c11OmpPromptCache(omp: {
     else if (count(usage.cttl?.ephemeral1h) > 0) lastTTL = 3600;
     return lastTTL ?? (longRetention ? 3600 : 300);
   };
+  // Anthropic itself, or a router serving its model under an `anthropic/…`,
+  // `anthropic.…` or `….anthropic.…` id. Other providers on the
+  // anthropic-messages API (Kimi, MiniMax, GLM, Copilot) cache implicitly, so
+  // c11's policy table decides their lifetime.
   const usesAnthropicCache = (message: any) => {
     const provider = String(message.provider ?? "").toLowerCase();
     const model = String(message.model ?? "").toLowerCase();
-    return message.api === "anthropic-messages" || provider.includes("anthropic")
+    return provider.includes("anthropic")
       || model.startsWith("anthropic/") || model.startsWith("anthropic.") || model.includes(".anthropic.");
   };
 
@@ -91,11 +97,17 @@ export default function c11OmpPromptCache(omp: {
     reportCache({ request });
   });
 
-  // An unreadable version is treated as one that can warm.
+  // A compaction replaces the cached prefix: cold until the next request.
+  omp.on("session_compact", async () => {
+    reportCache({ reset: { reason: "compaction", at_ms: Date.now() } });
+  });
+
+  // An unreadable version is treated as one that can warm. The warmer's
+  // decision is never changed.
   const version = typeof omp.pi?.VERSION === "string" ? omp.pi.VERSION : undefined;
   if (version === undefined || versionAtLeast(version, CACHE_WARMING_SINCE)) {
     omp.on("cache_warming_decision", async (event) => {
-      if (event?.action === "warm") reportCache({ unknown: { reason: "cache_warming" } });
+      if (event?.action === "warm") reportCache({ request: { at_ms: Date.now() } });
     });
   }
 }

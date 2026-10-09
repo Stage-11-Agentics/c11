@@ -1220,6 +1220,20 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(state.signals.promptCache?.promptTokens, 4_882 + 19_200)
     }
 
+    func testKimiReadsOnlyTurnRequestsAndTheTwoLineTypes() throws {
+        let wire = try placeKimiWire([
+            kimiRequest("10:00:00"),
+            kimiUsage("10:00:10", other: 100, read: 5_000),
+            // A side request (no turnStep) uses another prefix.
+            #"{"type":"llm.request","kind":"loop","provider":"openai","model":"k3-256k","time":\#(kimiMs("10:30:00"))}"#,
+            // Another line type that quotes one is not read.
+            #"{"type":"context.append_message","message":{"type":"llm.request","time":\#(kimiMs("10:40:00")),"turnStep":"9.9"}}"#,
+        ])
+        var state = ModelTailState()
+        _ = probe.detectKimi(wirePath: wire.path, state: &state)
+        XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:00:00"))
+    }
+
     func testKimiCompactionResetsUntilTheNextRequestAndItsSessionTotalIsNotARequest() throws {
         let wire = try placeKimiWire([
             kimiRequest("10:00:00"),

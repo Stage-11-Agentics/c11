@@ -143,6 +143,8 @@ Never use `/tmp/c11-<tag>/...` app links in chat output. If the expected Derived
 
 Before launching a new tagged run, clean up any older tags you started in this session (quit the old tagged app, remove its `/tmp` socket / derived data).
 
+**In a fleet, one tag per seat, reused on every `remote-build.sh` call**, named for the seat (`md-358`), never a tag per attempt. The per-tag cache on Atlas is what makes the second build take seconds: measured 2026-10-08, a debug build is 15 s unchanged to about 5 min on a fresh tag, a narrowed test slice 15 s to 3 min, the landing gate (compile plus `c11LogicTests`) 5 to 10 min. Each tag costs about 4.7 GB on Atlas; seven seats with per-attempt tags filled the volume. Prune a seat's tag when its ticket completes (`scripts/prune-tags.sh --yes` on Atlas, or remove `~/c11-builds/<tag>`). A build loop slower than these numbers is a problem to raise, not a cost to absorb.
+
 **Prune stale tags periodically.** Each `reload.sh --tag` leaves ~3.5G behind in DerivedData and `/tmp` that nothing auto-cleans — across many iterations this consumes hundreds of GB:
 
 ```bash

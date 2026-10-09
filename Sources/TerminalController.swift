@@ -356,6 +356,8 @@ class TerminalController {
     private var clientHandlers: [Int32: Thread] = [:]
     var workspaceManager: WorkspaceManager?
     var accessMode: SocketControlMode = .c11Only
+    /// The password that password mode checks `auth` / `auth.login` against.
+    private nonisolated let socketPasswordSource: SocketControlPasswordStore.Source
     private let myPid = getpid()
     private nonisolated static let socketListenBacklog: Int32 = 128
     private nonisolated static let acceptFailureBaseBackoffMs = 10
@@ -578,7 +580,8 @@ class TerminalController {
     let v2BrowserUndefinedSentinel = V2BrowserUndefinedSentinel()
     var browserDownloadObserver: NSObjectProtocol?
 
-    private init() {
+    private init(socketPasswordSource: SocketControlPasswordStore.Source = .shipped) {
+        self.socketPasswordSource = socketPasswordSource
         // C11-209: `queue: .main` routed this through the main dispatch queue, so
         // the append could not land while a socket command held main in
         // `v2AwaitCallbackPumpingMainRunLoop`. That made this queue the *only*
@@ -653,9 +656,12 @@ class TerminalController {
     /// fields are at their default-init values. The production code path
     /// always uses `TerminalController.shared`; this exists only so C11-105
     /// regression tests can observe the default state without rebinding the
-    /// shared singleton mid-process.
-    static func makeForTesting() -> TerminalController {
-        TerminalController()
+    /// shared singleton mid-process. Password-mode tests (C11-347) pass a
+    /// `socketPasswordSource` so they never read this machine's real password.
+    static func makeForTesting(
+        socketPasswordSource: SocketControlPasswordStore.Source = .shipped
+    ) -> TerminalController {
+        TerminalController(socketPasswordSource: socketPasswordSource)
     }
 
     private nonisolated func shouldContinueAcceptLoop(generation: UInt64) -> Bool {
@@ -1855,7 +1861,7 @@ class TerminalController {
         guard lowered == "auth" || lowered.hasPrefix("auth ") else {
             return nil
         }
-        guard SocketControlPasswordStore.hasConfiguredPassword(allowLazyKeychainFallback: true) else {
+        guard socketPasswordSource.hasConfiguredPassword else {
             return "ERROR: Password mode is enabled but no socket password is configured in Settings."
         }
 
@@ -1868,7 +1874,7 @@ class TerminalController {
         guard !provided.isEmpty else {
             return "ERROR: Missing password. Usage: auth <password>"
         }
-        guard SocketControlPasswordStore.verify(password: provided, allowLazyKeychainFallback: true) else {
+        guard socketPasswordSource.verify(provided) else {
             return "ERROR: Invalid password"
         }
         authenticated = true
@@ -1892,7 +1898,7 @@ class TerminalController {
             return v2Error(id: id, code: "invalid_params", message: "auth.login requires params.password")
         }
 
-        guard SocketControlPasswordStore.hasConfiguredPassword(allowLazyKeychainFallback: true) else {
+        guard socketPasswordSource.hasConfiguredPassword else {
             return v2Error(
                 id: id,
                 code: "auth_unconfigured",
@@ -1900,7 +1906,7 @@ class TerminalController {
             )
         }
 
-        guard SocketControlPasswordStore.verify(password: provided, allowLazyKeychainFallback: true) else {
+        guard socketPasswordSource.verify(provided) else {
             return v2Error(id: id, code: "auth_failed", message: "Invalid password")
         }
         authenticated = true
@@ -2245,18 +2251,37 @@ class TerminalController {
             }
         }
 
-        let callerTTYDevice = socketCallerTTYDevice(peerPid: peerPid ?? getPeerPid(socket))
+        serveClientCommandLines(
+            socket: socket,
+            callerTTYDevice: socketCallerTTYDevice(peerPid: peerPid ?? getPeerPid(socket)),
+            shouldContinue: { withListenerState { isRunning } },
+            execute: { processCommandUsingSocketExecutionPolicy($0) }
+        )
+    }
+
+    /// Serves one accepted connection once `handleClient` has admitted its peer.
+    /// In password mode every command, including a streaming request, must pass
+    /// this connection's `auth` / `auth.login` before `execute` sees it, and the
+    /// login ends with the connection. The mode is read per command, so switching
+    /// to password mode also locks connections that are already open.
+    /// C11-347 tests drive this over a socketpair with a recording `execute`.
+    func serveClientCommandLines(
+        socket: Int32,
+        callerTTYDevice: UInt32?,
+        shouldContinue: () -> Bool,
+        execute: (String) -> String
+    ) {
         var authenticated = false
         Self.serveCommandLines(
             socket: socket,
-            shouldContinue: { withListenerState { isRunning } },
+            shouldContinue: shouldContinue,
             respond: { command in
                 if let authResponse = authResponseIfNeeded(for: command, authenticated: &authenticated) {
                     return authResponse
                 }
                 let connection = SocketCommandContext(method: "connection", allowsFocus: false, callerTTYDevice: callerTTYDevice)
                 return SocketCommandContext.withContext(connection) {
-                    processCommandUsingSocketExecutionPolicy(command)
+                    execute(command)
                 }
             },
             stream: { command, streamSocket, shouldContinue in

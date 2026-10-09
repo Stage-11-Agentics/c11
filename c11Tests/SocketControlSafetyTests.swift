@@ -498,3 +498,259 @@ final class SingleInstancePolicyTests: XCTestCase {
         return url
     }
 }
+
+/// C11-347: socket password mode through the connection loop `handleClient`
+/// runs, over a real socketpair. Each conversation is written in full and the
+/// client half-closes before the loop starts, so the loop serves every line and
+/// stops at EOF on the test thread: no listener, no second thread, no waiting.
+/// Every controller is a fresh one that reads only the password the test gives it.
+@MainActor
+final class SocketPasswordModeTests: XCTestCase {
+    private let authRequired = "ERROR: Authentication required — send auth <password> first"
+    private var tempDir: URL!
+
+    /// Counts Keychain reads; only touched on the test thread.
+    private final class KeychainStub: @unchecked Sendable {
+        let password: String?
+        var reads = 0
+        init(_ password: String?) { self.password = password }
+    }
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        // The lazy Keychain fallback is cached once per process.
+        SocketControlPasswordStore.resetLazyKeychainFallbackCacheForTests()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-socket-password-mode-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        SocketControlPasswordStore.resetLazyKeychainFallbackCacheForTests()
+        if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+        try super.tearDownWithError()
+    }
+
+    func testUnauthenticatedCommandsAreRejectedAndNeverExecuted() throws {
+        let controller = try makeController(filePassword: "hunter2")
+        let session = try converse(controller, [
+            "ping",
+            #"{"id":7,"method":"system.ping","params":{}}"#,
+            "new_workspace",
+            #"{"id":8,"method":"workspace.create","params":{}}"#,
+        ])
+        XCTAssertEqual(session.executed, [])
+        XCTAssertEqual(session.responses.count, 4)
+        XCTAssertEqual(session.responses.first, authRequired)
+        try assertV2Error(session.responses[1], id: 7, code: "auth_required")
+        XCTAssertEqual(session.responses[2], authRequired)
+        try assertV2Error(session.responses[3], id: 8, code: "auth_required")
+    }
+
+    func testWrongOrMissingPasswordIsRejectedAndLeavesTheConnectionLocked() throws {
+        let controller = try makeController(filePassword: "hunter2")
+        let session = try converse(controller, [
+            "auth not-the-password",
+            "auth HUNTER2",
+            "auth",
+            "ping",
+            #"{"id":3,"method":"auth.login","params":{"password":"hunter"}}"#,
+            #"{"id":4,"method":"auth.login","params":{}}"#,
+            #"{"id":5,"method":"system.ping","params":{}}"#,
+        ])
+        XCTAssertEqual(session.executed, [])
+        XCTAssertEqual(session.responses.count, 7)
+        XCTAssertEqual(Array(session.responses.prefix(4)), [
+            "ERROR: Invalid password",
+            "ERROR: Invalid password",
+            "ERROR: Missing password. Usage: auth <password>",
+            authRequired,
+        ])
+        try assertV2Error(session.responses[4], id: 3, code: "auth_failed")
+        try assertV2Error(session.responses[5], id: 4, code: "invalid_params")
+        try assertV2Error(session.responses[6], id: 5, code: "auth_required")
+    }
+
+    func testCorrectPasswordAuthenticatesTheRestOfTheConnection() throws {
+        let controller = try makeController(filePassword: "hunter2")
+
+        let v1 = try converse(controller, ["auth hunter2", "ping"])
+        XCTAssertEqual(v1.responses, ["OK: Authenticated", "PONG"])
+        XCTAssertEqual(v1.executed, ["ping"])
+
+        let ping = #"{"id":2,"method":"system.ping","params":{}}"#
+        let v2 = try converse(controller, [#"{"id":1,"method":"auth.login","params":{"password":"hunter2"}}"#, ping])
+        XCTAssertEqual(v2.executed, [ping])
+        XCTAssertEqual(v2.responses.count, 2)
+        let login = try jsonObject(v2.responses.first ?? "")
+        XCTAssertEqual(login["id"] as? Int, 1)
+        XCTAssertEqual(login["ok"] as? Bool, true)
+        XCTAssertEqual((login["result"] as? [String: Any])?["authenticated"] as? Bool, true)
+        let pong = try jsonObject(v2.responses[1])
+        XCTAssertEqual(pong["ok"] as? Bool, true, v2.responses[1])
+        XCTAssertEqual((pong["result"] as? [String: Any])?["pong"] as? Bool, true, v2.responses[1])
+    }
+
+    func testAuthenticationEndsWithItsConnection() throws {
+        let controller = try makeController(filePassword: "hunter2")
+        XCTAssertEqual(try converse(controller, ["auth hunter2", "ping"]).responses, ["OK: Authenticated", "PONG"])
+
+        let next = try converse(controller, ["ping"])
+        XCTAssertEqual(next.responses, [authRequired])
+        XCTAssertEqual(next.executed, [])
+    }
+
+    func testPasswordModeWithoutAPasswordRejectsEveryLogin() throws {
+        let keychain = KeychainStub(nil)
+        let controller = try makeController(keychain: keychain)
+        let session = try converse(controller, [
+            "auth anything",
+            #"{"id":6,"method":"auth.login","params":{"password":"anything"}}"#,
+            "ping",
+        ])
+        XCTAssertEqual(session.executed, [])
+        XCTAssertEqual(session.responses.count, 3)
+        XCTAssertEqual(session.responses.first, "ERROR: Password mode is enabled but no socket password is configured in Settings.")
+        try assertV2Error(session.responses[1], id: 6, code: "auth_unconfigured")
+        XCTAssertEqual(session.responses[2], authRequired)
+        XCTAssertEqual(keychain.reads, 1, "the legacy Keychain item is read once, then cached")
+    }
+
+    /// The shipped order: environment, then password file, then legacy Keychain.
+    func testExpectedPasswordFollowsTheShippedSourceOrder() throws {
+        let unusedKeychain = KeychainStub("keychain-secret")
+        let envFirst = try makeController(
+            environment: [SocketControlSettings.socketPasswordEnvKey: "env-secret"],
+            filePassword: "file-secret",
+            keychain: unusedKeychain
+        )
+        XCTAssertEqual(
+            try converse(envFirst, ["auth file-secret", "auth keychain-secret", "auth env-secret"]).responses,
+            ["ERROR: Invalid password", "ERROR: Invalid password", "OK: Authenticated"]
+        )
+
+        let fileSecond = try makeController(filePassword: "file-secret", keychain: unusedKeychain)
+        XCTAssertEqual(
+            try converse(fileSecond, ["auth keychain-secret", "auth file-secret"]).responses,
+            ["ERROR: Invalid password", "OK: Authenticated"]
+        )
+        XCTAssertEqual(unusedKeychain.reads, 0, "a configured environment or file never reaches the Keychain")
+
+        let keychain = KeychainStub("keychain-secret")
+        let keychainLast = try makeController(keychain: keychain)
+        XCTAssertEqual(
+            try converse(keychainLast, ["auth file-secret", "auth keychain-secret", "ping"]).responses,
+            ["ERROR: Invalid password", "OK: Authenticated", "PONG"]
+        )
+        XCTAssertEqual(keychain.reads, 1)
+    }
+
+    func testSwitchingToPasswordModeLocksAnOpenConnection() throws {
+        let controller = try makeController(mode: .automation, filePassword: "hunter2")
+        let session = try converse(controller, ["ping", "ping"]) { _ in
+            // The operator picks password mode while this connection is open.
+            controller.accessMode = .password
+        }
+        XCTAssertEqual(session.responses, ["PONG", authRequired])
+        XCTAssertEqual(session.executed, ["ping"])
+    }
+
+    func testUnauthenticatedMarkdownWatchStreamIsRejectedAndEndsTheConnection() throws {
+        let controller = try makeController(filePassword: "hunter2")
+        let session = try converse(controller, [
+            #"{"id":9,"method":"markdown.visible","params":{"watch":true}}"#,
+            "auth hunter2",
+        ])
+        XCTAssertEqual(session.executed, [])
+        XCTAssertEqual(session.responses.count, 1, "a refused stream closes the connection: \(session.responses)")
+        try assertV2Error(session.responses.first ?? "", id: 9, code: "auth_required")
+    }
+
+    // MARK: - Harness
+
+    private func makeController(
+        mode: SocketControlMode = .password,
+        environment: [String: String] = [:],
+        filePassword: String? = nil,
+        keychain: KeychainStub = KeychainStub(nil)
+    ) throws -> TerminalController {
+        let fileURL = tempDir.appendingPathComponent("socket-control-password-\(UUID().uuidString)", isDirectory: false)
+        if let filePassword {
+            try SocketControlPasswordStore.savePassword(filePassword, fileURL: fileURL)
+        }
+        let controller = TerminalController.makeForTesting(socketPasswordSource: .init(
+            environment: { environment },
+            fileURL: fileURL,
+            loadKeychainPassword: {
+                keychain.reads += 1
+                return keychain.password
+            }
+        ))
+        controller.accessMode = mode
+        return controller
+    }
+
+    /// One connection: sends `commands`, half-closes, serves to EOF, and returns
+    /// each response line plus every command that reached the real executor.
+    private func converse(
+        _ controller: TerminalController,
+        _ commands: [String],
+        onExecute: ((String) -> Void)? = nil
+    ) throws -> (responses: [String], executed: [String]) {
+        var fds: [Int32] = [-1, -1]
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0 else { throw posixError("socketpair") }
+        let client = fds[0]
+        let server = fds[1]
+        defer { close(client) }
+
+        let request = Array(commands.map { $0 + "\n" }.joined().utf8)
+        guard write(client, request, request.count) == request.count, shutdown(client, SHUT_WR) == 0 else {
+            close(server)
+            throw posixError("write")
+        }
+
+        var executed: [String] = []
+        controller.serveClientCommandLines(
+            socket: server,
+            callerTTYDevice: nil,
+            shouldContinue: { true },
+            execute: { command in
+                executed.append(command)
+                let response = controller.processCommandUsingSocketExecutionPolicy(command)
+                onExecute?(command)
+                return response
+            }
+        )
+        close(server)
+
+        var output = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = read(client, &buffer, buffer.count)
+            if count < 0 { throw posixError("read") }
+            if count == 0 { break }
+            output.append(contentsOf: buffer[0..<count])
+        }
+        var lines = String(decoding: output, as: UTF8.self).components(separatedBy: "\n")
+        XCTAssertEqual(lines.last, "", "every response ends with a newline")
+        lines.removeLast()
+        return (lines, executed)
+    }
+
+    private func jsonObject(_ line: String) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], line)
+    }
+
+    private func assertV2Error(_ line: String, id: Int, code: String, file: StaticString = #filePath, line sourceLine: UInt = #line) throws {
+        let object = try jsonObject(line)
+        XCTAssertEqual(object["id"] as? Int, id, line, file: file, line: sourceLine)
+        XCTAssertEqual(object["ok"] as? Bool, false, line, file: file, line: sourceLine)
+        XCTAssertEqual((object["error"] as? [String: Any])?["code"] as? String, code, line, file: file, line: sourceLine)
+    }
+
+    private func posixError(_ operation: String) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [
+            NSLocalizedDescriptionKey: "\(operation) failed: \(String(cString: strerror(errno)))"
+        ])
+    }
+}

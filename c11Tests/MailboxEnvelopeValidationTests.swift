@@ -272,4 +272,47 @@ final class MailboxEnvelopeValidationTests: XCTestCase {
             }
         }
     }
+
+    /// C11-347: the CLI-vs-raw-file byte-parity lock from the removed
+    /// tests_v2/test_mailbox_parity.py, without a live app. Each `raw` line is
+    /// what a raw-file sender writes: Python's
+    /// `json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`.
+    /// The CLI's envelope must encode to those bytes, and the dispatcher's
+    /// validate-then-encode of a raw envelope (its inbox copy) must keep them.
+    func testCLIAndRawFileSendersProduceIdenticalInboxBytes() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456J"
+        func ts(_ seq: Int) -> String { String(format: "2026-04-24T00:00:00.%03dZ", seq) }
+        func cli(_ seq: Int, body: String, topic: String? = nil, replyTo: String? = nil, inReplyTo: String? = nil,
+                 urgent: Bool? = nil, ttlSeconds: Int? = nil, bodyRef: String? = nil, contentType: String? = nil) throws -> MailboxEnvelope {
+            try MailboxEnvelope.build(
+                from: "sender", to: "receiver", topic: topic, body: body, id: id, ts: ts(seq),
+                replyTo: replyTo, inReplyTo: inReplyTo, urgent: urgent, ttlSeconds: ttlSeconds,
+                bodyRef: bodyRef, contentType: contentType
+            )
+        }
+        let cases: [(name: String, cli: MailboxEnvelope, raw: String)] = [
+            ("minimal", try cli(0, body: "build green"),
+             #"{"body":"build green","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","ts":"2026-04-24T00:00:00.000Z","version":1}"#),
+            ("urgent", try cli(1, body: "urgent payload", urgent: true),
+             #"{"body":"urgent payload","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","ts":"2026-04-24T00:00:00.001Z","urgent":true,"version":1}"#),
+            ("topic-and-to", try cli(2, body: "topic + to", topic: "ci.status"),
+             #"{"body":"topic + to","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","topic":"ci.status","ts":"2026-04-24T00:00:00.002Z","version":1}"#),
+            ("reply-chain", try cli(3, body: "reply body", replyTo: "sender", inReplyTo: "01K3A2B7X8PQRTVWYZ0123456K"),
+             #"{"body":"reply body","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","in_reply_to":"01K3A2B7X8PQRTVWYZ0123456K","reply_to":"sender","to":"receiver","ts":"2026-04-24T00:00:00.003Z","version":1}"#),
+            ("content-type-json", try cli(4, body: #"{"k":"v"}"#, contentType: "application/json"),
+             #"{"body":"{\"k\":\"v\"}","content_type":"application/json","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","ts":"2026-04-24T00:00:00.004Z","version":1}"#),
+            ("body-ref", try cli(5, body: "", bodyRef: "/tmp/c11-parity-blob"),
+             #"{"body":"","body_ref":"/tmp/c11-parity-blob","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","ts":"2026-04-24T00:00:00.005Z","version":1}"#),
+            ("ttl", try cli(6, body: "ephemeral", ttlSeconds: 600),
+             #"{"body":"ephemeral","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","ts":"2026-04-24T00:00:00.006Z","ttl_seconds":600,"version":1}"#),
+            ("unicode-multiline", try cli(7, body: "café ✓ 界\nline two\ttabbed"),
+             #"{"body":"café ✓ 界\nline two\ttabbed","from":"sender","id":"01K3A2B7X8PQRTVWYZ0123456J","to":"receiver","ts":"2026-04-24T00:00:00.007Z","version":1}"#),
+        ]
+        for (name, cliEnvelope, raw) in cases {
+            let rawBytes = Data(raw.utf8)
+            XCTAssertEqual(String(decoding: try cliEnvelope.encode(), as: UTF8.self), raw, "[\(name)] CLI bytes")
+            let delivered = try MailboxEnvelope.validate(data: rawBytes).encode()
+            XCTAssertEqual(String(decoding: delivered, as: UTF8.self), raw, "[\(name)] dispatcher re-encode of the raw file")
+        }
+    }
 }

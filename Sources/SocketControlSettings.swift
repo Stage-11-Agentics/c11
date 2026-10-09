@@ -290,6 +290,44 @@ enum SocketControlPasswordStore {
     }
 }
 
+extension SocketControlPasswordStore {
+    /// Where password mode looks for the expected password: the environment,
+    /// then the password file, then the legacy Keychain item, read lazily once
+    /// per process. `.shipped` reads this machine's real values. Tests pass a
+    /// temporary file and a stub Keychain loader (C11-347).
+    struct Source: Sendable {
+        var environment: @Sendable () -> [String: String]
+        /// nil reads the default file under Application Support.
+        var fileURL: URL?
+        var loadKeychainPassword: @Sendable () -> String?
+
+        static let shipped = Source(
+            environment: { ProcessInfo.processInfo.environment },
+            fileURL: nil,
+            loadKeychainPassword: { SocketControlPasswordStore.loadLegacyPasswordFromKeychain() }
+        )
+
+        var hasConfiguredPassword: Bool {
+            SocketControlPasswordStore.hasConfiguredPassword(
+                environment: environment(),
+                fileURL: fileURL,
+                allowLazyKeychainFallback: true,
+                loadKeychainPassword: loadKeychainPassword
+            )
+        }
+
+        func verify(_ candidate: String) -> Bool {
+            SocketControlPasswordStore.verify(
+                password: candidate,
+                environment: environment(),
+                fileURL: fileURL,
+                allowLazyKeychainFallback: true,
+                loadKeychainPassword: loadKeychainPassword
+            )
+        }
+    }
+}
+
 struct SocketControlSettings {
     static let appStorageKey = "socketControlMode"
     static let legacyEnabledKey = "socketControlEnabled"

@@ -5,10 +5,13 @@ C11_CLI=/path/to/tagged.app/Contents/Resources/bin/c11 python3 tests/test_cli_ac
 All inputs are synthetic and confined to a system temporary directory.
 """
 import json
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
+import re
 import tempfile
 import unittest
 
@@ -24,7 +27,7 @@ class ActivityCLI(unittest.TestCase):
         for path in (self.state / 'events', self.claude, self.codex):
             path.mkdir(parents=True)
         self.journal = self.root / 'lifecycle.sqlite3'
-        with sqlite3.connect(self.journal) as db:
+        with closing(sqlite3.connect(self.journal)) as db, db:
             db.execute('CREATE TABLE journal_events(tab_id TEXT,session_id TEXT,agent_kind TEXT,workspace_id TEXT,committed_at_ms INTEGER NOT NULL DEFAULT 0)')
         self.zone = 'UTC'
         self.cli = os.environ.get('C11_CLI_BIN', os.environ.get('C11_CLI', 'c11'))
@@ -41,7 +44,7 @@ class ActivityCLI(unittest.TestCase):
         path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
 
     def link(self, panel, session, kind, workspace='workspace-a', committed_at_ms=0):
-        with sqlite3.connect(self.journal) as db:
+        with closing(sqlite3.connect(self.journal)) as db, db:
             db.execute('INSERT INTO journal_events VALUES(?,?,?,?,?)', (panel, session, kind, workspace, committed_at_ms))
 
     def claude_row(self, msg='message-a', request='request-a', session='session-a', output=10, **usage):
@@ -684,7 +687,7 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['totals']['unknown_cost_tokens'], 300100)
 
     def test_journal_pruning_is_disclosed(self):
-        with sqlite3.connect(self.journal) as db:
+        with closing(sqlite3.connect(self.journal)) as db, db:
             db.execute('CREATE TABLE journal_meta(key TEXT PRIMARY KEY,value INTEGER)')
             db.execute("INSERT INTO journal_meta VALUES('coverage_low_water', 50)")
         self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
@@ -703,6 +706,227 @@ class ActivityCLI(unittest.TestCase):
         self.assertEqual(result['peak_open_per_instance'], 1)
         self.assertEqual(result['foreground_hours'], 1)
         self.assertEqual(result['load_unknown_hours'], 0)
+
+    def codex_row(self, ts, input, cached, output, last=None):
+        total = {'input_tokens': input, 'cached_input_tokens': cached,
+                 'output_tokens': output, 'reasoning_output_tokens': 0,
+                 'total_tokens': input + output}
+        return {'type': 'event_msg', 'timestamp': ts, 'payload': {'type': 'token_count',
+                'info': {'total_token_usage': total, 'last_token_usage': last or total}}}
+
+    def test_codex_shared_header_never_interleaves_independent_rollout_counters(self):
+        header = {'type': 'session_meta', 'payload': {'id': 'shared-header'}}
+        self.write(self.codex / 'a.jsonl', [header,
+            self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10),
+            self.codex_row('2026-01-02T00:00:02Z', 140, 110, 15,
+                           {'input_tokens': 40, 'cached_input_tokens': 30, 'output_tokens': 5})])
+        self.write(self.codex / 'b.jsonl', [header,
+            self.codex_row('2026-01-02T00:00:01Z', 1000, 900, 100),
+            self.codex_row('2026-01-02T00:00:03Z', 1100, 980, 130,
+                           {'input_tokens': 100, 'cached_input_tokens': 80, 'output_tokens': 30})])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 150)
+        self.assertEqual(result['totals']['cache_read_tokens'], 1090)
+        self.assertEqual(result['totals']['output_tokens'], 145)
+        self.assertEqual(result['totals']['calls'], 4)
+        self.assertNotIn('codex_counter_reset_last_usage_only', result['coverage_gaps'])
+
+    def test_codex_fork_uses_first_own_metadata_for_journal_join(self):
+        self.write(self.codex / 'fork.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'fork-own', 'forked_from_id': 'ancestor'}},
+            {'type': 'session_meta', 'payload': {'id': 'ancestor'}},
+            self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)])
+        self.link('panel-fork', 'fork-own', 'codex')
+        self.link('panel-ancestor', 'ancestor', 'codex')
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-fork')
+        self.assertEqual(result['analysis_counts']['codex_inherited_metadata_ignored'], 1)
+
+    def test_codex_copied_fork_records_dedup_globally_and_keep_origin(self):
+        first = self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)
+        second = self.codex_row('2026-01-02T00:00:01Z', 150, 100, 20,
+            {'input_tokens': 50, 'cached_input_tokens': 20, 'output_tokens': 10, 'total_tokens': 60})
+        final = self.codex_row('2026-01-02T00:00:03Z', 180, 120, 30,
+            {'input_tokens': 30, 'cached_input_tokens': 20, 'output_tokens': 10, 'total_tokens': 40})
+        self.write(self.codex / 'z-parent.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'parent'}}, first, second])
+        self.write(self.codex / 'a-fork.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'fork', 'forked_from_id': 'parent'}},
+            {'type': 'session_meta', 'payload': {'id': 'parent'}}, first, second, final])
+        self.link('panel-parent', 'parent', 'codex', committed_at_ms=0)
+        self.link('panel-fork', 'fork', 'codex', committed_at_ms=1767312002000)
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 60)
+        self.assertEqual(result['totals']['cache_read_tokens'], 120)
+        self.assertEqual(result['totals']['output_tokens'], 30)
+        self.assertEqual(result['totals']['calls'], 3)
+        groups = {g['key']: g for g in result['groups']}
+        self.assertEqual(groups['panel-parent']['calls'], 2)
+        self.assertEqual(groups['panel-fork']['calls'], 1)
+        self.assertEqual(result['analysis_counts']['codex_duplicate_candidate_records_removed'], 2)
+
+    def test_codex_copied_origins_with_tied_journals_remain_unattributed(self):
+        row = self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)
+        for name in ['parent', 'fork']:
+            payload = {'id': name}
+            if name == 'fork':
+                payload['forked_from_id'] = 'parent'
+            self.write(self.codex / (name + '.jsonl'), [
+                {'type': 'session_meta', 'payload': payload}, row])
+            self.link('panel-' + name, name, 'codex', committed_at_ms=0)
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+        self.assertEqual(result['unattributed']['cache_read_tokens'], 80)
+        self.assertIn('ambiguous_session_attribution', result['coverage_gaps'])
+
+    def test_codex_truncated_copy_prefers_observed_predecessor_delta(self):
+        first = self.codex_row('2026-01-01T23:00:00Z', 100, 80, 10)
+        second = self.codex_row('2026-01-02T00:00:01Z', 150, 100, 20,
+            {'input_tokens': 50, 'cached_input_tokens': 20, 'output_tokens': 10, 'total_tokens': 60})
+        final = self.codex_row('2026-01-02T00:00:03Z', 180, 120, 30,
+            {'input_tokens': 30, 'cached_input_tokens': 20, 'output_tokens': 10, 'total_tokens': 40})
+        self.write(self.codex / 'a-truncated.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'fork'}}, second, final])
+        self.write(self.codex / 'z-original.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'parent'}}, first, second])
+        result = self.run_cli('usage', '--since', '2026-01-02T00:00:00Z', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 40)
+        self.assertEqual(result['totals']['cache_read_tokens'], 40)
+        self.assertEqual(result['totals']['output_tokens'], 20)
+        self.assertEqual(result['totals']['calls'], 2)
+
+    def test_codex_global_copy_key_includes_full_last_usage_tuple(self):
+        first = self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)
+        other = json.loads(json.dumps(first))
+        other['payload']['info']['last_token_usage']['total_tokens'] = 111
+        for name, row in [('a', first), ('b', other)]:
+            self.write(self.codex / (name + '.jsonl'), [
+                {'type': 'session_meta', 'payload': {'id': name}}, row])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['totals']['cache_read_tokens'], 160)
+
+    def test_codex_conflicting_copy_predecessors_preserve_unknown_interval(self):
+        shared = self.codex_row('2026-01-02T00:00:01Z', 200, 150, 30,
+            {'input_tokens': 10, 'cached_input_tokens': 5, 'output_tokens': 5})
+        for name, baseline in [('a', 100), ('b', 120)]:
+            self.write(self.codex / (name + '.jsonl'), [
+                {'type': 'session_meta', 'payload': {'id': name}},
+                {'type': 'turn_context', 'payload': {'model': 'gpt-6.1-sol'}},
+                self.codex_row('2026-01-01T23:00:00Z', baseline, 80, 10), shared])
+        result = self.run_cli('usage', '--since', '2026-01-02T00:00:00Z', '--json')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertEqual(result['totals']['input_tokens'], 5)
+        self.assertEqual(result['totals']['cache_read_tokens'], 5)
+        self.assertEqual(result['totals']['output_tokens'], 5)
+        self.assertIn('codex_duplicate_delta_ambiguous', result['coverage_gaps'])
+        self.assertEqual(result['totals']['estimated_api_usd_lower_bound'], 0)
+        self.assertIsNone(result['totals']['estimated_api_usd_upper_bound'])
+
+    def test_codex_global_copy_key_preserves_full_total_tuple_and_native_timestamp(self):
+        original = self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)
+        for name, stamp, total in [('a', '2026-01-02T00:00:00Z', 110),
+                                   ('b', '2026-01-02T00:00:00Z', 111),
+                                   ('c', '2026-01-02T00:00:00.000Z', 110)]:
+            row = json.loads(json.dumps(original))
+            row['timestamp'] = stamp
+            row['payload']['info']['total_token_usage']['total_tokens'] = total
+            self.write(self.codex / (name + '.jsonl'), [
+                {'type': 'session_meta', 'payload': {'id': name}}, row])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['calls'], 3)
+        self.assertEqual(result['totals']['cache_read_tokens'], 240)
+
+    def test_claude_snapshot_upgrade_diagnostics_are_aggregate_only(self):
+        self.write(self.claude / 'snapshots.jsonl', [self.claude_row(output=1),
+            self.claude_row(output=10), self.claude_row(output=5)])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['output_tokens'], 10)
+        self.assertEqual(result['analysis_counts']['claude_output_upgrade_identities'], 1)
+        self.assertEqual(result['analysis_counts']['claude_output_upgrade_tokens'], 9)
+        self.assertEqual(result['analysis_counts']['claude_output_above_min_snapshot_tokens'], 9)
+
+    def test_scanner_type_prefilter_tolerates_spacing_and_key_order(self):
+        row = self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)
+        shuffled = {'padding': 'x' * 1024, 'payload': row['payload'],
+                    'timestamp': row['timestamp'], 'type': row['type']}
+        (self.codex / 'ordered.jsonl').write_text(json.dumps(shuffled, separators=(' , ', ' : ')) + '\n')
+        claude = self.claude_row()
+        shuffled_claude = {'padding': 'x' * 1024, **{k: v for k, v in claude.items() if k != 'type'}, 'type': 'assistant'}
+        self.write(self.claude / 'ordered.jsonl', [shuffled_claude])
+        result = self.run_cli('usage', '--by', 'harness', '--json')
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['totals']['output_tokens'], 20)
+
+    def test_utc_fraction_leap_day_and_offset_bounds(self):
+        rows = []
+        for name, stamp in [('before', '2024-02-29T23:59:59.999999Z'),
+                            ('exact', '2024-03-01T00:00:00Z'),
+                            ('offset', '2024-03-01T05:30:00+05:30'),
+                            ('after', '2024-03-01T00:00:00.0009Z')]:
+            row = self.claude_row(msg=name); row['timestamp'] = stamp; rows.append(row)
+        self.write(self.claude / 'dates.jsonl', rows)
+        result = self.run_cli('usage', '--since', '2024-03-01T00:00:00Z',
+                              '--until', '2024-03-01T00:00:00.0005Z', '--json')
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['totals']['output_tokens'], 20)
+
+    def test_codex_clock_regression_keeps_append_counter_chronology(self):
+        rows = [{'type': 'session_meta', 'payload': {'id': 'clock-a'}}]
+        for index, second in enumerate([0, 2, 1], 1):
+            rows.append(self.codex_row(f'2026-01-02T00:00:0{second}Z', index * 100, index * 80, index * 10,
+                {'input_tokens': 100, 'cached_input_tokens': 80, 'output_tokens': 10}))
+        self.write(self.codex / 'clock.jsonl', rows)
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 60)
+        self.assertEqual(result['totals']['cache_read_tokens'], 240)
+        self.assertEqual(result['totals']['output_tokens'], 30)
+        self.assertIn('codex_source_timestamp_regression', result['coverage_gaps'])
+
+    def test_codex_missing_timestamps_do_not_invent_copy_identity(self):
+        for name in ['a', 'b']:
+            self.write(self.codex / (name + '.jsonl'), [
+                {'type': 'session_meta', 'payload': {'id': name}},
+                self.codex_row(None, 100, 80, 10)])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['calls'], 2)
+        self.assertEqual(result['totals']['cache_read_tokens'], 160)
+        self.assertIn('codex_copy_identity_timestamp_missing', result['coverage_gaps'])
+
+    def test_codex_conflicting_nonfork_metadata_is_unattributed(self):
+        self.write(self.codex / 'conflict.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'first'}},
+            {'type': 'session_meta', 'payload': {'id': 'unproven-other'}},
+            self.codex_row('2026-01-02T00:00:00Z', 100, 80, 10)])
+        self.link('panel-first', 'first', 'codex')
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertIn('codex_session_metadata_conflict', result['coverage_gaps'])
+
+    @unittest.skipUnless(os.environ.get('C11_ACTIVITY_MEMORY_PROBE') == '1',
+                         'large-history RSS probe runs on CI or explicitly admitted Atlas job')
+    def test_large_pre_window_history_has_bounded_resident_memory(self):
+        if sys.platform != 'darwin':
+            self.skipTest('macOS packaged CLI memory gate')
+        with (self.codex / 'large-history.jsonl').open('w') as f:
+            f.write(json.dumps({'type': 'session_meta', 'payload': {'id': 'memory-a'}}) + '\n')
+            for index in range(1, 100001):
+                f.write(json.dumps(self.codex_row('2026-01-01T00:00:00Z', index, 0, index)) + '\n')
+            f.write(json.dumps(self.codex_row('2026-01-02T00:00:00Z', 100001, 0, 100001,
+                {'input_tokens': 1, 'output_tokens': 1})) + '\n')
+        proc = subprocess.run(['/usr/bin/time', '-l', self.cli, 'usage',
+            '--state-root', str(self.state), '--claude-root', str(self.claude),
+            '--codex-root', str(self.codex), '--journal', str(self.journal),
+            '--since', '2026-01-02T00:00:00Z', '--json'], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result['totals']['input_tokens'], 1)
+        self.assertEqual(result['totals']['output_tokens'], 1)
+        rss = int(re.search(r'(\d+)\s+maximum resident set size', proc.stderr).group(1))
+        print(json.dumps({'synthetic_pre_window_records': 100000, 'maximum_rss_bytes': rss}))
+        self.assertLess(rss, 128 * 1024 * 1024, 'historical samples must not remain resident')
 
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)

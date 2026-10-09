@@ -54,25 +54,53 @@ order. Missing message identity is
 counted rather than collapsing unrelated requests and is marked as a coverage
 gap. Explicit 5-minute and 1-hour cache creation are separate categories. A cache
 creation total without the TTL split stays `cache_write_unknown_ttl_tokens`;
-its price is unknown. Codex cumulative `total_token_usage` samples become deltas,
-including the baseline before `--since`. Cached input is a subset of input and
-reasoning output is a subset of output, so neither is double counted. Identical
-snapshots are ignored. A reset uses `last_token_usage` and marks the lost interval
-as uncertain; if that field is missing the reset interval's usage is unknown.
+its price is unknown.
+
+Codex cumulative `total_token_usage` samples become deltas within each rollout's
+append chain, including the baseline before `--since`. Files sharing a metadata
+ID never share counter continuity. The first valid native `session_meta` ID owns
+the file; later inherited headers in a fork do not replace it. Missing or
+conflicting non-fork metadata preserves tokens as unattributed. Timestamp
+regression marks a gap while retaining append chronology. Cached input is a
+subset of input and reasoning output is a subset of output, so neither is double
+counted. Unchanged cumulative counters add no usage. A reset uses
+`last_token_usage` and marks the lost interval as uncertain; if that field is
+missing the reset interval's usage is unknown.
+
+Across files, exact copies deduplicate by the full native timestamp and full
+`last_token_usage` plus `total_token_usage` tuples, including field presence and
+`total_tokens`, independently of session ID. Missing timestamps cannot establish
+a cross-source copy. Copies retain their source sessions and use the same
+provenance rules as Claude: earliest occurrence, then earliest journal
+registration, with ties remaining unattributed. New fork deltas retain the
+fork's own ID. If the same copied snapshot has conflicting deltas, a retained
+predecessor establishes the delta over a truncated first cumulative snapshot.
+Conflicting retained predecessors expose an ambiguity gap and retain only the
+last known request with unknown cost.
 
 JSON has `schema_version: 1`, `totals`, `unattributed`, `groups`, `coverage_gaps`
-and `skipped_counts`. Missing transcript timestamps are included with an explicit
+and `skipped_counts`, plus aggregate `analysis_counts` and `snapshot_basis`.
+Claude output diagnostics compare the selected most-complete snapshot with the
+first seen in sorted path/append order and the minimum observed output. Another
+scanner may encounter a different first snapshot. Codex diagnostics count
+inherited metadata and copied candidate records/tokens removed; candidate token
+volume includes truncated first cumulative snapshots before predecessor selection.
+These diagnostics contain no raw transcript identity. Missing transcript timestamps are included with an explicit
 gap because their time window cannot be proven. Malformed candidate lines,
 oversized lines and unreadable files are visible gaps. Bad-line counts are
 reported by kind. An oversized line is discarded through its newline, then the
-reader continues. Raw byte filters skip irrelevant lines before JSON decoding;
-Foundation temporaries drain per bounded chunk. Claude files with mtime before
+reader continues. A bounded root-type prefix filter and raw byte filters skip
+irrelevant lines before JSON decoding; unfamiliar key ordering or escaping falls
+back to decoding. Foundation temporaries drain per bounded chunk. Claude files with mtime before
 `--since` are skipped and counted, with `claude_file_mtime_filter_applied`:
 mtime filtering assumes native append-only transcripts, so imported files whose
 mtime predates their message timestamps can be omitted. Codex files always
-retain their pre-window counter baseline; samples sort by timestamp, file and
-line, including equal or unknown timestamps. Retention and unrecorded harness usage can never be proven
-complete by this command.
+retain their pre-window counter baseline in append order. Historical Codex samples
+are discarded after updating that baseline; only compact in-window identities
+and typed counters remain for deduplication. Session/model strings are interned,
+and parsed JSON objects are not retained. Memory still depends on requested-window
+unique identities and result groups. Retention and unrecorded harness usage can
+never be proven complete by this command.
 
 Report derives span, panel creation, per-instance peak open/working counts,
 observed agent hours, closed-panel lifetime percentiles, workspace names and

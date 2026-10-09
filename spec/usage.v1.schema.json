@@ -12,7 +12,9 @@
     "coverage_gaps",
     "skipped_counts",
     "unattributed_basis",
-    "until"
+    "until",
+    "analysis_counts",
+    "snapshot_basis"
   ],
   "properties": {
     "schema_version": {
@@ -101,6 +103,17 @@
         "type": "integer",
         "minimum": 0
       }
+    },
+    "analysis_counts": {
+      "type": "object",
+      "description": "Aggregate replay and snapshot diagnostics; copied candidate token volumes are measured before choosing the unique supported delta. No transcript identities are emitted.",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "snapshot_basis": {
+      "type": "string",
+      "description": "Counter chronology, copied-record identity, and snapshot comparison order used for analysis_counts."
     }
   },
   "$defs": {

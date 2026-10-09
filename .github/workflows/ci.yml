@@ -87,6 +87,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build
 
       - name: Exercise offline activity commands without an app
+        env:
+          C11_ACTIVITY_MEMORY_PROBE: "1"
         run: |
           set -euo pipefail
           C11_CLI_BIN="$RUNNER_TEMP/c11-activity-cli/Debug/c11" \

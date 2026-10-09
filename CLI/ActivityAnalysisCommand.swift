@@ -1,5 +1,7 @@
 import Foundation
 import SQLite3
+import Darwin
+import CoreFoundation
 
 /// File-only analytics. This file belongs to c11-cli, never the app target.
 enum ActivityAnalysisCommand {
@@ -21,7 +23,77 @@ enum ActivityAnalysisCommand {
     }()
     private static func date(_ raw: Any?) -> Date? {
         guard let s = raw as? String else { return nil }
-        return fractional.date(from: s) ?? iso.date(from: s)
+        return utcDate(s) ?? fractional.date(from: s) ?? iso.date(from: s)
+    }
+    /// Native logs use UTC ISO timestamps. Avoid ICU allocation for every sample;
+    /// other ISO forms still use the existing Foundation parser.
+    private static func utcDate(_ s: String) -> Date? {
+        let b = Array(s.utf8)
+        guard b.count >= 20, b.count <= 40, b[4] == 45, b[7] == 45,
+              b[10] == 84, b[13] == 58, b[16] == 58, b.last == 90 else { return nil }
+        func digits(_ start: Int, _ count: Int) -> Int? {
+            var result = 0
+            for i in start..<(start + count) { guard b[i] >= 48, b[i] <= 57 else { return nil }; result = result * 10 + Int(b[i] - 48) }
+            return result
+        }
+        guard var year = digits(0, 4), let month = digits(5, 2), let day = digits(8, 2),
+              let hour = digits(11, 2), let minute = digits(14, 2), let second = digits(17, 2),
+              year > 0, (1...12).contains(month), hour < 24, minute < 60, second < 60 else { return nil }
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        let days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        guard (1...days[month - 1]).contains(day) else { return nil }
+        var fraction = 0.0
+        if b.count > 20 {
+            guard b[19] == 46, b.count > 21 else { return nil }
+            var scale = 0.1
+            for i in 20..<(b.count - 1) { guard b[i] >= 48, b[i] <= 57 else { return nil }; fraction += Double(b[i] - 48) * scale; scale *= 0.1 }
+        } else { guard b[19] == 90 else { return nil } }
+        year -= month <= 2 ? 1 : 0
+        let era = year / 400, y = year - era * 400
+        let doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1
+        let epochDays = era * 146097 + y * 365 + y / 4 - y / 100 + doy - 719468
+        return Date(timeIntervalSince1970: Double(epochDays * 86400 + hour * 3600 + minute * 60 + second) + fraction)
+    }
+
+    /// Inspect only a bounded prefix. Unknown ordering/escaping falls back to
+    /// the full byte filter and JSON decoder, so this is never a schema guess.
+    private static func prefixType(_ data: Data) -> String? {
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> String? in
+            let bytes = raw.bindMemory(to: UInt8.self), end = min(bytes.count, 512)
+            var i = 0, depth = 0
+            while i < end {
+                let c = bytes[i]
+                if c == 123 || c == 91 { depth += 1; i += 1; continue }
+                if c == 125 || c == 93 { depth -= 1; i += 1; continue }
+                guard c == 34 else { i += 1; continue }
+                let start = i + 1; i += 1
+                var escaped = false
+                while i < end, bytes[i] != 34 {
+                    if bytes[i] == 92 { escaped = true; i += 1 }
+                    i += 1
+                }
+                guard i < end else { return nil }
+                let close = i; i += 1
+                guard depth == 1, !escaped, close - start == 4,
+                      bytes[start] == 116, bytes[start + 1] == 121, bytes[start + 2] == 112, bytes[start + 3] == 101 else { continue }
+                while i < end, [9, 10, 13, 32].contains(bytes[i]) { i += 1 }
+                guard i < end, bytes[i] == 58 else { continue }
+                i += 1
+                while i < end, [9, 10, 13, 32].contains(bytes[i]) { i += 1 }
+                guard i < end, bytes[i] == 34 else { return nil }
+                i += 1; let value = i
+                while i < end, bytes[i] != 34 { if bytes[i] == 92 { return nil }; i += 1 }
+                guard i < end else { return nil }
+                return String(decoding: bytes[value..<i], as: UTF8.self)
+            }
+            return nil
+        }
+    }
+    private static func contains(_ data: Data, needle: Data) -> Bool {
+        data.withUnsafeBytes { haystack in needle.withUnsafeBytes { value in
+            guard let h = haystack.baseAddress, let n = value.baseAddress else { return false }
+            return memmem(h, haystack.count, n, value.count) != nil
+        } }
     }
     private static func isGPT6(_ model: String) -> Bool { (model.lowercased().split(separator: "/").last.map(String.init) ?? model).hasPrefix("gpt-6") }
     private static func number(_ value: Any?) -> Int64 { max(0, (value as? NSNumber)?.int64Value ?? 0) }
@@ -113,7 +185,11 @@ enum ActivityAnalysisCommand {
             line += 1
             guard !data.isEmpty else { return }
             guard data.count <= limit else { skipped("oversize_jsonl_line"); return }
-            if !needles.isEmpty && !needles.contains(where: { data.range(of: $0) != nil }) {
+            if !needles.isEmpty, let kind = prefixType(data),
+               !(needles.count == 1 ? kind == "assistant" : ["session_meta", "turn_context", "event_msg"].contains(kind)) {
+                counts["filtered_lines", default: 0] += 1; return
+            }
+            if !needles.isEmpty && !needles.contains(where: { contains(data, needle: $0) }) {
                 counts["filtered_lines", default: 0] += 1; return
             }
             guard let row = (try? JSONSerialization.jsonObject(with: data)) as? Object else { skipped("malformed_jsonl"); return }
@@ -201,12 +277,13 @@ enum ActivityAnalysisCommand {
         }
         return result
     }
-    private struct Tokens {
+    private struct Tokens: Equatable {
         var input: Int64 = 0, output: Int64 = 0, read: Int64 = 0, write5: Int64 = 0, write1: Int64 = 0, writeUnknown: Int64 = 0, reasoning: Int64 = 0, calls: Int64 = 0
         mutating func add(_ t: Tokens) {
             input += t.input; output += t.output; read += t.read; write5 += t.write5; write1 += t.write1; writeUnknown += t.writeUnknown; reasoning += t.reasoning; calls += t.calls
         }
-        var json: Object { ["input_tokens": input, "output_tokens": output, "cache_read_tokens": read, "cache_write_5m_tokens": write5, "cache_write_1h_tokens": write1, "cache_write_unknown_ttl_tokens": writeUnknown, "reasoning_output_tokens": reasoning, "calls": calls, "total_tokens": input + output + read + write5 + write1 + writeUnknown] }
+        var totalTokens: Int64 { input + output + read + write5 + write1 + writeUnknown }
+        var json: Object { ["input_tokens": input, "output_tokens": output, "cache_read_tokens": read, "cache_write_5m_tokens": write5, "cache_write_1h_tokens": write1, "cache_write_unknown_ttl_tokens": writeUnknown, "reasoning_output_tokens": reasoning, "calls": calls, "total_tokens": totalTokens] }
     }
     private struct UsageRow {
         let session: String, harness: String, model: String
@@ -215,13 +292,78 @@ enum ActivityAnalysisCommand {
         var speed: String = "standard"
         var sessions: Set<String> = []
         var origins: [String: Date] = [:]
+        var originTimestamp: Date?
         var requestContextKnown = false
+        var attributionUnknown = false
+        var estimateUnknown = false
+        var firstOutput: Int64 = 0
+        var minimumOutput: Int64 = 0
     }
-    private static func claudeRow(_ d: Object, file: URL, line: Int) -> (String, UsageRow)? {
+    private struct StringPool {
+        private var strings: [String: String] = [:]
+        mutating func intern(_ raw: String) -> String {
+            if let stored = strings[raw] { return stored }
+            // Own native UTF-8 storage instead of retaining Foundation bridges.
+            let stored = String(decoding: raw.utf8, as: UTF8.self)
+            strings[stored] = stored
+            return stored
+        }
+    }
+    /// Full native counter tuple, including total_tokens and field presence.
+    /// Unexpected future fields/types retain only their canonical signature.
+    private struct CounterSnapshot: Hashable {
+        let input: Int64, cached: Int64, output: Int64, reasoning: Int64, total: Int64
+        let presence: UInt16
+        let extended: String?
+        init(_ raw: Object) {
+            let names = ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens"]
+            var values = [Int64](repeating: 0, count: 5), mask: UInt16 = 0
+            var unusual = raw.keys.contains { !names.contains($0) }
+            for (i, name) in names.enumerated() {
+                guard let value = raw[name] else { continue }
+                if let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue == Double(n.int64Value) {
+                    values[i] = n.int64Value; mask |= 1 << (i * 2)
+                } else if value is NSNull { mask |= 2 << (i * 2) }
+                else { mask |= 3 << (i * 2); unusual = true }
+            }
+            input = values[0]; cached = values[1]; output = values[2]; reasoning = values[3]; total = values[4]
+            presence = mask; extended = unusual ? try? ActivityAnalysisCommand.json(raw) : nil
+        }
+        func value(_ i: Int) -> Int64 {
+            switch i { case 0: return max(0, input); case 1: return max(0, cached); case 2: return max(0, output); default: return max(0, reasoning) }
+        }
+    }
+    private struct CodexIdentity: Hashable {
+        let timestamp: String?
+        let total: CounterSnapshot
+        let last: CounterSnapshot
+        let missingTimestampSource: Int
+        let missingTimestampLine: Int
+    }
+    private struct CodexCandidate {
+        var row: UsageRow
+        let hasPredecessor: Bool
+    }
+    private static func mergeOrigins(_ old: UsageRow, into row: inout UsageRow) {
+        let oldTime = old.originTimestamp ?? old.timestamp, rowTime = row.originTimestamp ?? row.timestamp
+        row.attributionUnknown = row.attributionUnknown || old.attributionUnknown
+        row.estimateUnknown = row.estimateUnknown || old.estimateUnknown
+        if old.session == row.session, old.sessions.isEmpty, row.sessions.isEmpty {
+            row.originTimestamp = [oldTime, rowTime].compactMap { $0 }.min()
+            return
+        }
+        row.sessions.formUnion(old.sessions.isEmpty ? [old.session] : old.sessions)
+        row.sessions.insert(row.session)
+        var origins = old.origins
+        if origins.isEmpty, let ts = oldTime { origins[old.session] = ts }
+        if row.origins.isEmpty, let ts = rowTime { row.origins[row.session] = ts }
+        row.origins.merge(origins, uniquingKeysWith: min)
+    }
+    private static func claudeRow(_ d: Object, file: URL, line: Int, pool: inout StringPool) -> (String, UsageRow)? {
         let m = object(d["message"])
         let u = object(m["usage"])
         guard d["type"] as? String == "assistant", !u.isEmpty, m["model"] as? String != "<synthetic>" else { return nil }
-        let session = text(d["sessionId"]) ?? file.deletingPathExtension().lastPathComponent
+        let session = pool.intern(text(d["sessionId"]) ?? file.deletingPathExtension().lastPathComponent)
         let id = text(m["id"]), request = text(d["requestId"])
         let key: String
         if let id { key = id + ":" + (request ?? "unknown") }
@@ -236,12 +378,20 @@ enum ActivityAnalysisCommand {
         tokens.write5 = w5; tokens.write1 = w1
         tokens.writeUnknown = max(0, number(u["cache_creation_input_tokens"]) - w5 - w1)
         tokens.calls = 1
-        let row = UsageRow(session: session, harness: "claude", model: text(m["model"]) ?? "unknown", timestamp: date(d["timestamp"]), tokens: tokens, speed: text(u["speed"]) ?? "standard")
+        var row = UsageRow(session: session, harness: "claude", model: pool.intern(text(m["model"]) ?? "unknown"), timestamp: date(d["timestamp"]), tokens: tokens, speed: pool.intern(text(u["speed"]) ?? "standard"))
+        row.firstOutput = tokens.output; row.minimumOutput = tokens.output
         return (key, row)
     }
     private static func usageResult(_ options: Options, gaps: inout Set<String>, until: Date? = nil) throws -> Object {
         let attribution = links(options, gaps: &gaps)
         var counts: [String: Int] = [:]
+        var analysis: [String: Int64] = ["codex_inherited_metadata_ignored": 0,
+            "codex_duplicate_candidate_records_removed": 0, "codex_duplicate_candidate_input_tokens_removed": 0,
+            "codex_duplicate_candidate_cache_read_tokens_removed": 0, "codex_duplicate_candidate_output_tokens_removed": 0,
+            "codex_duplicate_delta_conflicts": 0, "codex_cumulative_samples": 0,
+            "claude_output_upgrade_identities": 0, "claude_output_upgrade_tokens": 0,
+            "claude_output_above_min_snapshot_tokens": 0]
+        var pool = StringPool()
         let until = [until, options.until].compactMap { $0 }.min()
         var claude: [String: UsageRow] = [:]
         var missingIdentity = false
@@ -254,71 +404,129 @@ enum ActivityAnalysisCommand {
             }
             lines(file, gaps: &gaps, counts: &counts, matching: [Data("\"usage\"".utf8)]) { d, line in
                 if d["type"] as? String == "assistant", !object(object(d["message"])["usage"]).isEmpty, text(object(d["message"])["id"]) == nil { missingIdentity = true }
-                guard let (key, parsed) = claudeRow(d, file: file, line: line) else { return }
+                guard let (key, parsed) = claudeRow(d, file: file, line: line, pool: &pool) else { return }
                 var row = parsed
-                row.sessions = [row.session]
-                if let timestamp = row.timestamp { row.origins[row.session] = timestamp }
                 let tokens = row.tokens
                 // Streaming snapshots repeat identity; retain the most complete usage snapshot.
                 if var old = claude[key] {
-                    let sessions = old.sessions.union(row.sessions)
-                    let origins = old.origins.merging(row.origins, uniquingKeysWith: min)
-                    if number(old.tokens.json["total_tokens"]) > number(tokens.json["total_tokens"]) {
-                        old.sessions = sessions; old.origins = origins; claude[key] = old; return
+                    let firstOutput = old.firstOutput, minimumOutput = min(old.minimumOutput, row.minimumOutput)
+                    if old.tokens.totalTokens > tokens.totalTokens {
+                        mergeOrigins(row, into: &old); old.minimumOutput = minimumOutput; claude[key] = old; return
                     }
-                    row.sessions = sessions; row.origins = origins
+                    mergeOrigins(old, into: &row); row.firstOutput = firstOutput; row.minimumOutput = minimumOutput
                 }
                 claude[key] = row
             }
         }
         if missingIdentity { gaps.insert("claude_dedup_identity_missing") }
-        var rows = Array(claude.values)
-        var codex: [String: [(Date?, String, Object, Object, String, Int)]] = [:]
-        for file in files(options.codex, ext: "jsonl", gaps: &gaps) {
-            var session = file.deletingPathExtension().lastPathComponent, model = "unknown"
+        // Counter continuity belongs to a native rollout file. Forks contain
+        // inherited session_meta records; joining their counters by those IDs
+        // invents resets and recounts entire cumulative histories.
+        var codex: [CodexIdentity: CodexCandidate] = [:]
+        var candidateVolume = Tokens()
+        for (fileIndex, file) in files(options.codex, ext: "jsonl", gaps: &gaps).enumerated() {
+            var session = pool.intern(file.deletingPathExtension().lastPathComponent), model = pool.intern("unknown")
+            var ownID: String?, firstMetadataInvalid = false, forkProvenance = false, attributionUnknown = false
+            var previous: CounterSnapshot?, previousTimestamp: Date?
+            var fileKeys: [CodexIdentity] = []
+            var fileGaps = Set<String>()
             lines(file, gaps: &gaps, counts: &counts, matching: ["token_count", "session_meta", "turn_context"].map { Data($0.utf8) }) { d, line in
                 let p = object(d["payload"])
-                if d["type"] as? String == "session_meta" { session = text(p["id"]) ?? session }
-                if d["type"] as? String == "turn_context" { model = text(p["model"]) ?? model }
-                if d["type"] as? String == "event_msg", p["type"] as? String == "token_count" {
-                    let info = object(p["info"]), total = object(info["total_token_usage"])
-                    if !total.isEmpty { codex[session, default: []].append((date(d["timestamp"]), model, total, object(info["last_token_usage"]), file.path, line)) }
+                if d["type"] as? String == "session_meta" {
+                    if let id = text(p["id"]) {
+                        if ownID == nil {
+                            session = pool.intern(id); ownID = session
+                            forkProvenance = text(p["forked_from_id"]) != nil
+                            attributionUnknown = attributionUnknown || firstMetadataInvalid
+                        } else if id != ownID {
+                            analysis["codex_inherited_metadata_ignored", default: 0] += 1
+                            if !forkProvenance { attributionUnknown = true; fileGaps.insert("codex_session_metadata_conflict") }
+                        }
+                    } else if ownID == nil { firstMetadataInvalid = true; fileGaps.insert("codex_initial_session_metadata_missing") }
+                    return
                 }
-            }
-        }
-        for (session, samples) in codex {
-            var previous: Object = [:], seen = Set<String>()
-            for (timestamp, model, total, last, _, _) in samples.sorted(by: {
-                if $0.0 != $1.0 { return ($0.0 ?? .distantPast) < ($1.0 ?? .distantPast) }
-                return $0.4 == $1.4 ? $0.5 < $1.5 : $0.4 < $1.4
-            }) {
-                let signature = (timestamp.map(iso.string) ?? "unknown") + ((try? json(total)) ?? "")
-                if !seen.insert(signature).inserted { continue }
-                let keys = ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"]
-                if !previous.isEmpty && keys.allSatisfy({ number(total[$0]) == number(previous[$0]) }) { continue }
-                let reset = keys.contains { number(total[$0]) < number(previous[$0]) }
-                var delta: [String: Int64] = [:]
-                for key in keys { delta[key] = reset ? number(last[key]) : number(total[key]) - number(previous[key]) }
-                if reset { gaps.insert(last.isEmpty ? "codex_counter_reset_usage_unknown" : "codex_counter_reset_last_usage_only") }
+                if d["type"] as? String == "turn_context" { model = pool.intern(text(p["model"]) ?? model); return }
+                guard d["type"] as? String == "event_msg", p["type"] as? String == "token_count" else { return }
+                let info = object(p["info"]), rawTotal = object(info["total_token_usage"]), rawLast = object(info["last_token_usage"])
+                guard !rawTotal.isEmpty else { return }
+                analysis["codex_cumulative_samples", default: 0] += 1
+                let total = CounterSnapshot(rawTotal), last = CounterSnapshot(rawLast), timestamp = date(d["timestamp"])
+                if let previous, (0..<4).allSatisfy({ total.value($0) == previous.value($0) }) { return }
+                let hasPredecessor = previous != nil
+                let reset = previous.map { before in (0..<4).contains { total.value($0) < before.value($0) } } ?? false
+                let delta = (0..<4).map { reset ? last.value($0) : total.value($0) - (previous?.value($0) ?? 0) }
+                if reset { fileGaps.insert(rawLast.isEmpty ? "codex_counter_reset_usage_unknown" : "codex_counter_reset_last_usage_only") }
+                if let timestamp, let previousTimestamp, timestamp < previousTimestamp { fileGaps.insert("codex_source_timestamp_regression") }
                 previous = total
-                let input = delta["input_tokens"] ?? 0, cached = delta["cached_input_tokens"] ?? 0
-                if cached > input { gaps.insert("codex_cached_tokens_exceed_input") }
-                rows.append(UsageRow(session: session, harness: "codex", model: model, timestamp: timestamp,
-                                     tokens: Tokens(input: max(0, input - cached), output: delta["output_tokens"] ?? 0, read: cached, reasoning: delta["reasoning_output_tokens"] ?? 0, calls: 1),
-                                     requestContextKnown: !last.isEmpty && keys.allSatisfy { delta[$0] == number(last[$0]) }))
+                previousTimestamp = timestamp
+                // Baselines are processed even outside the requested window;
+                // only compact in-window usage identities survive this callback.
+                if let timestamp, let since = options.since, timestamp < since { return }
+                if let timestamp, let until, timestamp > until { return }
+                let input = delta[0], cached = delta[1]
+                if cached > input { fileGaps.insert("codex_cached_tokens_exceed_input") }
+                var row = UsageRow(session: session, harness: "codex", model: model, timestamp: timestamp,
+                    tokens: Tokens(input: max(0, input - cached), output: delta[2], read: cached, reasoning: delta[3], calls: 1),
+                    requestContextKnown: !rawLast.isEmpty && (0..<4).allSatisfy { delta[$0] == last.value($0) })
+                row.attributionUnknown = attributionUnknown || ownID == nil
+                row.estimateUnknown = reset && rawLast.isEmpty
+                if timestamp == nil { fileGaps.insert("codex_copy_identity_timestamp_missing") }
+                let timestampIdentity = timestamp == nil ? nil : text(d["timestamp"]).map { String(decoding: $0.utf8, as: UTF8.self) }
+                let key = CodexIdentity(timestamp: timestampIdentity, total: total, last: last,
+                    missingTimestampSource: timestamp == nil ? fileIndex : 0,
+                    missingTimestampLine: timestamp == nil ? line : 0)
+                fileKeys.append(key); candidateVolume.add(row.tokens)
+                if let old = codex[key] {
+                    if old.row.tokens != row.tokens {
+                        analysis["codex_duplicate_delta_conflicts", default: 0] += 1
+                        if hasPredecessor != old.hasPredecessor {
+                            // Same full native snapshot: one copy starts here,
+                            // while the other retains its observed predecessor.
+                            if !hasPredecessor { var chosen = old.row; mergeOrigins(row, into: &chosen); codex[key] = CodexCandidate(row: chosen, hasPredecessor: true); return }
+                        } else {
+                            // Conflicting retained predecessors do not establish
+                            // a unique delta. Keep only the last known request.
+                            fileGaps.insert("codex_duplicate_delta_ambiguous")
+                            row = UsageRow(session: session, harness: "codex", model: model, timestamp: timestamp,
+                                tokens: Tokens(input: max(0, last.value(0) - last.value(1)), output: last.value(2), read: last.value(1), reasoning: last.value(3), calls: 1))
+                            row.estimateUnknown = true
+                        }
+                    } else if old.hasPredecessor && !hasPredecessor {
+                        var chosen = old.row; mergeOrigins(row, into: &chosen); codex[key] = CodexCandidate(row: chosen, hasPredecessor: true); return
+                    }
+                    mergeOrigins(old.row, into: &row)
+                }
+                codex[key] = CodexCandidate(row: row, hasPredecessor: hasPredecessor)
             }
+            if ownID == nil, !fileKeys.isEmpty { fileGaps.insert("codex_session_metadata_missing") }
+            if attributionUnknown || ownID == nil {
+                for key in fileKeys { codex[key]?.row.attributionUnknown = true }
+            }
+            gaps.formUnion(fileGaps)
         }
+        var uniqueVolume = Tokens()
+        for candidate in codex.values { uniqueVolume.add(candidate.row.tokens) }
+        analysis["codex_duplicate_candidate_records_removed"] = candidateVolume.calls - uniqueVolume.calls
+        analysis["codex_duplicate_candidate_input_tokens_removed"] = candidateVolume.input - uniqueVolume.input
+        analysis["codex_duplicate_candidate_cache_read_tokens_removed"] = candidateVolume.read - uniqueVolume.read
+        analysis["codex_duplicate_candidate_output_tokens_removed"] = candidateVolume.output - uniqueVolume.output
         var total = Tokens(), unattributed = Tokens(), groups: [String: Tokens] = [:]
         var estimates: [String: Double] = [:], unknownCost = Set<String>()
         var unknownCostTokens: [String: Int64] = [:], unknownCostCalls: [String: Int64] = [:]
         var lowerCosts: [String: Double] = [:], upperCosts: [String: Double] = [:], unboundedCost = Set<String>()
         let catalog = ModelCostCatalogStore(directory: options.state).resolvedCatalog()
         let axis = options.value("--by") ?? "model"
-        for row in rows {
-            let usageTime = row.origins.values.min() ?? row.timestamp
+        func consume(_ row: UsageRow) {
+            let usageTime = row.origins.values.min() ?? row.originTimestamp ?? row.timestamp
             if usageTime == nil { gaps.insert("usage_timestamp_unknown_included") }
-            if let since = options.since, let ts = usageTime, ts < since { continue }
-            if let until, let ts = usageTime, ts > until { continue }
+            if let since = options.since, let ts = usageTime, ts < since { return }
+            if let until, let ts = usageTime, ts > until { return }
+            if row.harness == "claude" {
+                let upgrade = max(0, row.tokens.output - row.firstOutput)
+                analysis["claude_output_upgrade_identities", default: 0] += upgrade > 0 ? 1 : 0
+                analysis["claude_output_upgrade_tokens", default: 0] += upgrade
+                analysis["claude_output_above_min_snapshot_tokens", default: 0] += max(0, row.tokens.output - row.minimumOutput)
+            }
             var sessionIDs = row.sessions.isEmpty ? Set([row.session]) : row.sessions
             // A copied history keeps token identity, but ownership follows its earliest
             // occurrence. Identical copied timestamps use the first journal registration;
@@ -338,7 +546,7 @@ enum ActivityAnalysisCommand {
                 result.formUnion(attribution[row.harness + ":" + session] ?? [])
             }
             let sessionPanels = Set(candidates.map(\.panel))
-            let timestamp = row.origins.values.min() ?? row.timestamp
+            let timestamp = row.origins.values.min() ?? row.originTimestamp ?? row.timestamp
             if sessionIDs.count == 1, let timestamp, !candidates.isEmpty, candidates.allSatisfy({ $0.committedAt != nil }) {
                 let at = Int64(timestamp.timeIntervalSince1970 * 1000)
                 let eligible = candidates.filter { $0.committedAt! <= at }
@@ -348,7 +556,7 @@ enum ActivityAnalysisCommand {
             }
             let panels = Set(candidates.map(\.panel))
             let uniqueSessionPanel = sessionPanels.count == 1 && !(gaps.contains("journal_history_pruned") && candidates.isEmpty)
-            let panel = uniqueSessionPanel ? sessionPanels.first : panels.count == 1 ? panels.first : nil
+            let panel = row.attributionUnknown ? nil : uniqueSessionPanel ? sessionPanels.first : panels.count == 1 ? panels.first : nil
             let workspaceIDs = Set(candidates.compactMap(\.workspace))
             let workspace = panel != nil && workspaceIDs.count == 1 && candidates.allSatisfy({ $0.workspace != nil }) ? workspaceIDs.first : nil
             // On model/harness axes this aggregate still means no unique panel link.
@@ -381,7 +589,7 @@ enum ActivityAnalysisCommand {
                 } else { estimates[key, default: 0] += cost; lowerCosts[key, default: 0] += cost; upperCosts[key, default: 0] += cost }
             } else { unboundedCost.insert(key) }
             if baseCost == nil || unknownWrites {
-                unknownCost.insert(key); unknownCostTokens[key, default: 0] += number(row.tokens.json["total_tokens"])
+                unknownCost.insert(key); unknownCostTokens[key, default: 0] += row.tokens.totalTokens
                 unknownCostCalls[key, default: 0] += row.tokens.calls
                 if let price {
                     if (row.tokens.read > 0 && price.cacheReadUSD == nil) || (row.tokens.write5 > 0 && price.cacheWriteUSD == nil) || (row.tokens.write1 > 0 && price.cacheWrite1hUSD == nil) { gaps.insert("model_cache_rate_unavailable") }
@@ -389,6 +597,10 @@ enum ActivityAnalysisCommand {
                 if row.speed != "standard" { gaps.insert("nonstandard_speed_price_unknown") }
             }
         }
+        // Stream compact deduplicated rows into aggregates. No second combined
+        // row array or retained historical Foundation objects is required.
+        for row in claude.values { consume(row) }
+        for candidate in codex.values { consume(candidate.row) }
         gaps.insert("transcript_retention_and_unrecorded_usage_unknown")
         let groupRows: [Object] = groups.keys.sorted().map { key in
             var result = groups[key]!.json; result["key"] = key
@@ -409,12 +621,13 @@ enum ActivityAnalysisCommand {
         totalJSON["unknown_cost_calls"] = unknownCostCalls.values.reduce(0, +)
         return ["schema_version": 1, "by": axis, "since": options.since.map(iso.string) as Any? ?? null,
                 "totals": totalJSON, "unattributed": unattributed.json, "groups": groupRows,
-                "until": until.map(iso.string) as Any? ?? null, "skipped_counts": counts,
+                "until": until.map(iso.string) as Any? ?? null, "skipped_counts": counts, "analysis_counts": analysis,
+                "snapshot_basis": "Claude upgrades compare the selected most-complete snapshot with first seen in sorted transcript path/append order, and with minimum observed output. This order may differ from another scanner. Codex deltas follow each rollout's append chain; copies use full timestamp/last/total tuples across source sessions.",
                 "unattributed_basis": axis == "workspace" ? "No unique native panel link or no workspace mapping at usage time" : "No unique native session-to-panel link",
                 "coverage_gaps": gaps.sorted(), "pricing_basis": "Current catalog standard API list rates, not subscription spend or historical billing. Unknown Codex cache writes have explicit lower/upper bounds; missing rates, TTL or request context can leave the upper bound unknown."]
     }
     private static func estimate(_ row: UsageRow, catalog: [String: ModelCostEntry]) -> Double? {
-        guard row.speed == "standard", let price = ModelCostCatalogStore.entry(forModel: row.model, in: catalog), row.tokens.writeUnknown == 0, price.inUSD.isFinite, price.inUSD >= 0, price.outUSD.isFinite, price.outUSD >= 0 else { return nil }
+        guard !row.estimateUnknown, row.speed == "standard", let price = ModelCostCatalogStore.entry(forModel: row.model, in: catalog), row.tokens.writeUnknown == 0, price.inUSD.isFinite, price.inUSD >= 0, price.outUSD.isFinite, price.outUSD >= 0 else { return nil }
         let t = row.tokens
         var cost = Double(t.input) * price.inUSD + Double(t.output) * price.outUSD
         if t.read > 0 { guard let p = price.cacheReadUSD, p.isFinite, p >= 0 else { return nil }; cost += Double(t.read) * p }

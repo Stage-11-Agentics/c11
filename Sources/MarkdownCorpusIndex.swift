@@ -418,7 +418,8 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         return false
     }
 
-    private func ignoredEventPaths(_ absolutePaths: [String]) -> Set<String> {
+    /// Internal for tests: the stdin write must survive git exiting unread.
+    func ignoredEventPaths(_ absolutePaths: [String]) -> Set<String> {
         guard !absolutePaths.isEmpty else { return [] }
         let rootPrefix = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
         let eventPairs = absolutePaths.compactMap { path -> (absolute: String, relative: String)? in
@@ -446,8 +447,13 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             let inputBytes = bytes
             let writeFinished = DispatchSemaphore(value: 0)
             DispatchQueue.global(qos: .utility).async {
-                input.fileHandleForWriting.write(inputBytes)
-                try? input.fileHandleForWriting.close()
+                // git exits without reading stdin outside a repository. With
+                // SIGPIPE off for this fd, the throwing write reports EPIPE;
+                // write(_:) would raise an exception that ends the app.
+                let writer = input.fileHandleForWriting
+                _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
+                try? writer.write(contentsOf: inputBytes)
+                try? writer.close()
                 writeFinished.signal()
             }
             let ignoredData = output.fileHandleForReading.readDataToEndOfFile()

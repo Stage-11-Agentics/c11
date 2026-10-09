@@ -355,6 +355,26 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         indexer.stop()
     }
 
+    func testIgnoreCheckSurvivesGitExitingBeforeReadingALargeEventBatch() throws {
+        // `.git` here is an empty directory, so `git check-ignore --stdin` exits
+        // without reading. Event paths larger than the 64 KB pipe buffer block
+        // the stdin write until git exits, so the write fails with EPIPE every
+        // time. That must report "nothing ignored", not take the process down.
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let initial = root.appendingPathComponent("reader.md")
+        try Data("# Reader".utf8).write(to: initial)
+        let directory = root.resolvingSymlinksInPath().appendingPathComponent(String(repeating: "b", count: 200))
+        let stem = String(repeating: "n", count: 200)
+        let paths = (0..<800).map { directory.appendingPathComponent("\(stem)-\($0).md").path }
+        XCTAssertGreaterThan(paths.reduce(0) { $0 + $1.utf8.count }, 256 * 1024)
+
+        let indexer = MarkdownCorpusIndexer(fileURL: initial) { _ in }
+        XCTAssertEqual(indexer.ignoredEventPaths(paths), [])
+    }
+
     func testNonMarkdownFilesystemWriteAndUnchangedRescanDoNotPublish() async throws {
         final class Counter: @unchecked Sendable {
             private let lock = NSLock()

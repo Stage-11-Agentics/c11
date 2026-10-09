@@ -3738,8 +3738,12 @@ final class WorkspaceRemoteSessionController {
         try? stderrPipe.fileHandleForWriting.close()
 
         if let stdin, let pipe = process.standardInput as? Pipe {
-            pipe.fileHandleForWriting.write(stdin)
-            try? pipe.fileHandleForWriting.close()
+            // A child can exit before reading stdin. With SIGPIPE off for this
+            // fd, the throwing write reports EPIPE instead of ending the app.
+            let writer = pipe.fileHandleForWriting
+            _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
+            try? writer.write(contentsOf: stdin)
+            try? writer.close()
         }
 
         let didExitBeforeTimeout = exitSemaphore.wait(timeout: .now() + max(0, timeout)) == .success

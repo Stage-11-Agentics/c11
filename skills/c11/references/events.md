@@ -79,7 +79,7 @@ Five additional `type` values are **not taxonomy members** — they are structur
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `log.opened` | `{pid}` | First line of an instance's log. `seq` starts here. |
-| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). |
+| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). `rolled_to` is `null` when the live file was deleted out from under c11: nothing rolled, and records written to the deleted file since the last checkpoint are gone. |
 | `log.dropped` | `{count}` | Backpressure or failed writes shed `count` events. This marks incomplete coverage. |
 | `log.policy` | `{enabled, analytics_enabled, keep_text, retention_days}` | Recording policy boundary; disabled spans have unknown coverage. |
 | `log.retention` | `{state, reason?}` | `degraded` begins a retention-coordination episode; `recovered` ends it. This softens the shared byte cap without implying lost events. Failed boundary writes remain pending for retry and do not increment `log.dropped`. |
@@ -239,9 +239,17 @@ retention lock.
 
 Every checkpoint also removes group and other access from the history
 directory (its target, when the directory is a symlink) and from every event
-file in it, whichever build wrote it. It skips symlinked files, files owned by
-another user and non-event files, and never adds a permission bit, so it is
-idempotent. New files are created `0600` and new
+file in it, whichever build wrote it. Owner and special bits are left alone. It
+skips symlinked files, files owned by another user and non-event files, changes
+a mode only through an `O_NOFOLLOW` descriptor whose inode matches the listed
+path, and never adds a permission bit, so it is idempotent. Retention counts,
+ages and deletes regular files only (by `lstat`, with `unlink(2)`): a symlink or
+directory named like an event file is never followed, counted or removed.
+
+If the live file is deleted out from under a running c11, the next health or
+daily checkpoint, or the next size-cap roll, notices that the path no longer
+names the open file and starts a fresh current file with a `log.rotated`
+marker whose `rolled_to` is `null`. Records written in between are lost. New files are created `0600` and new
 directories `0700`. Instance ids end in the pid, so a launch can reuse a dead
 launch's current file name. At its first write, that launch rolls the inherited
 file into its numbered generations (a plain rename that keeps the file's mtime)

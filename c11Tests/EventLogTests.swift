@@ -2171,6 +2171,8 @@ extension EventLogTests {
             let outside = tempDir.appendingPathComponent("outside-\(recording).ndjson")
             let link = directory.appendingPathComponent("events-com.stage11.c11-4300.ndjson")
             for file in legacy + [unrelated, outside] { try seed(file, ageDays: 1) }
+            let executable = directory.appendingPathComponent("events-com.stage11.c11-4100.ndjson.2")
+            try seed(executable, ageDays: 1, mode: 0o754)
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
             XCTAssertEqual(permissions(directory), 0o755)
 
@@ -2188,6 +2190,7 @@ extension EventLogTests {
                 XCTAssertEqual(permissions(file), 0o600, file.lastPathComponent)
                 XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "legacy history", "Tightening never edits content")
             }
+            XCTAssertEqual(permissions(executable), 0o700, "Only group and other bits are cleared")
             XCTAssertEqual(permissions(unrelated), 0o644, "Only event history is tightened")
             XCTAssertEqual(permissions(outside), 0o644, "A symlink is never followed")
             XCTAssertEqual(FileManager.default.fileExists(atPath: url.path), recording)
@@ -2429,6 +2432,147 @@ extension EventLogTests {
         }
         XCTFail("bundled c11 CLI not found from \(Bundle(for: Self.self).bundleURL.path)")
         throw CocoaError(.fileNoSuchFile)
+    }
+
+    func testClockSkewNeverDeletesFutureFilesAndABackwardClockPrunesAndRollsNothing() throws {
+        var clock = Date()
+        let future = logURL("events-synthetic-skew-7000.ndjson.1")
+        let aged = logURL("events-synthetic-skew-6999.ndjson.1")
+        try seed(future, ageDays: -5)
+        try seed(aged, ageDays: 20)
+        let url = logURL("events-synthetic-skew-7001.ndjson")
+        let log = EventLog(url: url, instance: "synthetic-skew-7001", now: { clock })
+        log.open()
+        log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-skew-7001", ts: clock, payload: ["text": "kept"]))
+        log.flush()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: future.path), "A file stamped in the future is younger than any horizon")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: aged.path))
+
+        // The wall clock jumps back a month. Nothing is past the horizon, and
+        // the live file has not been written for a day, so nothing rolls.
+        try seed(aged, ageDays: 20)
+        clock.addTimeInterval(-30 * 86_400)
+        log.sampleForTesting()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aged.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: future.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".1"))
+        XCTAssertEqual(readLines(url).map(parse).compactMap { $0["type"] as? String }, ["log.opened", "panel.input_sent"])
+        log.stopSampling()
+    }
+
+    func testSymlinksNamedLikeHistoryAreNeitherPrunedNorFollowed() throws {
+        let targets = ["outside-a.ndjson", "outside-b.ndjson"].map { tempDir.appendingPathComponent($0) }
+        for target in targets { try seed(target, String(repeating: "z", count: 4096), ageDays: 30) }
+        let url = logURL("events-com.stage11.c11-7101.ndjson")
+        let foreignLink = logURL("events-com.stage11.c11-7100.ndjson.1")
+        let ownLink = URL(fileURLWithPath: url.path + ".2")
+        try FileManager.default.createSymbolicLink(at: foreignLink, withDestinationURL: targets[0])
+        try FileManager.default.createSymbolicLink(at: ownLink, withDestinationURL: targets[1])
+        // Followed, both targets would be past retention and over budget.
+        let log = EventLog(url: url, instance: "com.stage11.c11-7101", totalSizeCap: 2048)
+        log.open()
+        log.flush()
+        log.sampleForTesting()
+        for link in [foreignLink, ownLink] {
+            XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: link.path), link.lastPathComponent)
+        }
+        for target in targets {
+            XCTAssertEqual(try String(contentsOf: target, encoding: .utf8).count, 4096)
+            XCTAssertEqual(permissions(target), 0o644, "A link's target is never tightened")
+        }
+    }
+
+    func testWriterReopensWhenAPrunerUnlinksItsFileBetweenOpenAndLock() throws {
+        let url = logURL("events-synthetic-reopen-7001.ndjson")
+        var lockCalls = 0
+        let log = EventLog(url: url, instance: "synthetic-reopen-7001", acquireWriterLock: { fd in
+            lockCalls += 1
+            if lockCalls == 1 { Darwin.unlink(url.path) }
+            return flock(fd, LOCK_SH | LOCK_NB) == 0 ? 0 : errno
+        })
+        log.open()
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "synthetic-reopen-7001", ts: Date()))
+        log.flush()
+        XCTAssertEqual(lockCalls, 2)
+        XCTAssertEqual(readLines(url).map(parse).compactMap { $0["type"] as? String }, ["log.opened", "panel.created"],
+                       "No record went to the unlinked inode")
+    }
+
+    func testPruneNeverDeletesAFreshFileRenamedOntoTheLockedPath() throws {
+        let target = logURL("events-com.stage11.c11-7200.ndjson.1")
+        try seed(target, "stale", ageDays: 30)
+        let fresh = tempDir.appendingPathComponent("fresh.tmp")
+        var swapped = false
+        let log = EventLog(url: logURL("events-com.stage11.c11-7201.ndjson"), instance: "com.stage11.c11-7201",
+                           acquirePruneLock: { fd in
+            if !swapped {
+                swapped = true
+                try? Data("FRESH".utf8).write(to: fresh)
+                Darwin.rename(fresh.path, target.path)
+            }
+            return flock(fd, LOCK_EX | LOCK_NB) == 0 ? 0 : errno
+        })
+        log.open()
+        log.flush()
+        XCTAssertTrue(swapped, "The prune must have probed the aged file")
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "FRESH")
+    }
+
+    func testDeletedLiveFileRecoversAtTheNextCheckpointOrRoll() throws {
+        let url = logURL("events-synthetic-deleted-7001.ndjson")
+        let log = EventLog(url: url, instance: "synthetic-deleted-7001")
+        log.open()
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "synthetic-deleted-7001", ts: Date()))
+        log.flush()
+        try FileManager.default.removeItem(at: url)
+        log.sampleForTesting()
+        log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-deleted-7001", ts: Date(), payload: ["text": "AFTER"]))
+        log.flush()
+        let lines = readLines(url).map(parse)
+        XCTAssertEqual(lines.compactMap { $0["type"] as? String }, ["log.rotated", "panel.input_sent"])
+        XCTAssertTrue((lines.first?["payload"] as? [String: Any])?["rolled_to"] is NSNull, "Nothing was rolled")
+        XCTAssertEqual(lines.first?["seq"] as? Int, 3, "seq continues across the recovery")
+        XCTAssertEqual(permissions(url), 0o600)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".1"))
+
+        // The size-cap roll recovers the same way, without a checkpoint.
+        let capped = logURL("events-synthetic-deleted-7002.ndjson")
+        let cappedLog = EventLog(url: capped, instance: "synthetic-deleted-7002", sizeCap: 400, totalSizeCap: 64 * 1024)
+        cappedLog.open()
+        cappedLog.flush()
+        try FileManager.default.removeItem(at: capped)
+        // ~130-byte opener and marker, ~170-byte records: the second record
+        // crosses the 400-byte cap in the orphan and recovers; the third
+        // lands in the fresh file without another roll.
+        for index in 0..<3 {
+            cappedLog.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-deleted-7002", ts: Date(),
+                                           payload: ["n": index, "text": String(repeating: "x", count: 30)]))
+        }
+        cappedLog.flush()
+        let cappedTypes = readLines(capped).map(parse).compactMap { $0["type"] as? String }
+        XCTAssertEqual(cappedTypes.first, "log.rotated")
+        XCTAssertEqual(cappedTypes.last, "panel.input_sent")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: capped.path + ".1"))
+    }
+
+    func testDirectoriesNamedLikeHistoryAreNeverRemoved() throws {
+        let url = logURL("events-com.stage11.c11-7301.ndjson")
+        let ownDirectory = URL(fileURLWithPath: url.path + ".3", isDirectory: true)
+        let foreignDirectory = logURL("events-com.stage11.c11-7300.ndjson.1")
+        for directory in [ownDirectory, foreignDirectory] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("inside".utf8).write(to: directory.appendingPathComponent("keep.txt"))
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-30 * 86_400)],
+                                                  ofItemAtPath: directory.path)
+        }
+        let log = EventLog(url: url, instance: "com.stage11.c11-7301", totalSizeCap: 1024)
+        log.open()
+        log.flush()
+        log.sampleForTesting()
+        for directory in [ownDirectory, foreignDirectory] {
+            XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("keep.txt"), encoding: .utf8), "inside",
+                           directory.lastPathComponent)
+        }
     }
 
     func testRecordingOffStillRunsTheDailyRetentionCheckpoint() throws {

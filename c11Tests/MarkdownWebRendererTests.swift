@@ -2067,14 +2067,20 @@ extension MarkdownWebRendererTests {
 
         let panel = MarkdownPanel(workspaceId: UUID(), filePath: source.path)
         defer { panel.close() }
-        let slowRequestStarted = expectation(description: "slow request entered before the newer navigation")
+        // Both requests are queued on the main actor before either runs. The slow
+        // one reserves its navigation and suspends in its off-main file read; the
+        // newer one runs next, before that read can resume. Waiting on an
+        // expectation between them let a fast runner finish the slow read first.
+        let tokenBefore = panel.currentNavigationToken
         let slowRequest = Task { @MainActor in
-            slowRequestStarted.fulfill()
-            return await panel.navigate(to: slow, fragment: nil, origin: .agentCLI)
+            await panel.navigate(to: slow, fragment: nil, origin: .agentCLI)
         }
-        await fulfillment(of: [slowRequestStarted], timeout: 2)
+        let latestRequest = Task { @MainActor in
+            XCTAssertGreaterThan(panel.currentNavigationToken, tokenBefore, "the slow request must reserve its navigation first")
+            return await panel.navigate(to: fast, fragment: nil, origin: .agentCLI)
+        }
 
-        let latest = try await within("navigate") { await panel.navigate(to: fast, fragment: nil, origin: .agentCLI) }
+        let latest = try await within("the newer navigation", seconds: 30) { await latestRequest.value }
         let stale = try await within("the superseded navigation", seconds: 30) { await slowRequest.value }
         XCTAssertEqual(latest, .navigated)
         XCTAssertEqual(stale, .superseded)

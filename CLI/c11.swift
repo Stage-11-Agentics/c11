@@ -21391,8 +21391,8 @@ extension CMUXCLI {
 
           A drain marks mail read only when stdout is a terminal or --ack is
           passed. Otherwise it exits nonzero and leaves the inbox unchanged.
-          The error tells you to run c11 mailbox recv --drain --ack, and keeps
-          --panel, --tab, or --surface when you passed one.
+          The error repeats the command you ran and adds --ack, so --socket,
+          --window, --panel, --tab, and --surface stay.
         """
     }
 
@@ -21777,8 +21777,7 @@ extension CMUXCLI {
                 stdoutIsTTY: isatty(STDOUT_FILENO) != 0,
                 acknowledged: parsed.ack,
                 retryCommand: MailboxRecvAdmission.retryCommand(
-                    panelFlag: parsed.panelFlag,
-                    panel: parsed.panel
+                    arguments: CommandLine.arguments
                 )
             ) { message in
                 Self.writeStdout(message.text + "\n")

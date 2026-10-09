@@ -581,31 +581,41 @@ final class MailboxCLISeamTests: XCTestCase {
         assertSend(["--to", "--nope", "hello"], fails: .flagNeedsValue("--to"))
     }
 
-    func testRetryCommandKeepsTheExplicitRecipient() {
+    func testRetryCommandRepeatsArgvAndAppendsAck() {
         XCTAssertEqual(
-            MailboxRecvAdmission.retryCommand(panelFlag: nil, panel: nil),
+            MailboxRecvAdmission.retryCommand(arguments: ["/tmp/c11", "mailbox", "recv", "--drain"]),
             "c11 mailbox recv --drain --ack"
         )
         XCTAssertEqual(
-            MailboxRecvAdmission.retryCommand(panelFlag: "--panel", panel: "other"),
-            "c11 mailbox recv --panel other --drain --ack"
+            MailboxRecvAdmission.retryCommand(arguments: [
+                "/Applications/c11 DEV.app/Contents/MacOS/c11",
+                "--socket", "/tmp/target socket",
+                "mailbox", "recv", "--panel", "other", "--drain",
+            ]),
+            "c11 --socket '/tmp/target socket' mailbox recv --panel other --drain --ack"
         )
         XCTAssertEqual(
-            MailboxRecvAdmission.retryCommand(panelFlag: "--tab", panel: "other"),
-            "c11 mailbox recv --tab other --drain --ack"
+            MailboxRecvAdmission.retryCommand(arguments: [
+                "c11", "--socket", "/tmp/target socket", "--window", "window:1",
+                "mailbox", "recv", "--tab", "other", "--drain",
+            ]),
+            "c11 --socket '/tmp/target socket' --window window:1 mailbox recv --tab other --drain --ack"
         )
         XCTAssertEqual(
-            MailboxRecvAdmission.retryCommand(panelFlag: "--surface", panel: "watcher"),
-            "c11 mailbox recv --surface watcher --drain --ack"
-        )
-        XCTAssertEqual(
-            MailboxRecvAdmission.retryCommand(panelFlag: "--panel", panel: "other agent"),
-            "c11 mailbox recv --panel 'other agent' --drain --ack"
+            MailboxRecvAdmission.retryCommand(arguments: [
+                "c11", "--socket", "/tmp/target socket",
+                "mailbox", "recv", "--surface", "other agent's inbox", "--drain",
+            ]),
+            "c11 --socket '/tmp/target socket' mailbox recv --surface 'other agent'\\''s inbox' --drain --ack"
         )
         let refusal = MailboxRecvAdmission.Refusal(
-            retryCommand: MailboxRecvAdmission.retryCommand(panelFlag: "--panel", panel: "other")
+            retryCommand: MailboxRecvAdmission.retryCommand(arguments: [
+                "/tmp/c11", "--socket", "/tmp/target socket",
+                "mailbox", "recv", "--panel", "other", "--drain",
+            ])
         )
-        XCTAssertTrue(refusal.description.contains("c11 mailbox recv --panel other --drain --ack"))
+        XCTAssertTrue(refusal.description.contains("--socket '/tmp/target socket'"))
+        XCTAssertTrue(refusal.description.contains("--panel other --drain --ack"))
         XCTAssertTrue(MailboxRecvAdmission.Refusal().description.contains("recv --drain --ack"))
     }
 

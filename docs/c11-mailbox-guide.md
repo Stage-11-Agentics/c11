@@ -350,7 +350,7 @@ c11 mailbox recv --panel watcher --drain   # drain on someone else's behalf
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
 
-A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. The error tells you to run `c11 mailbox recv --drain --ack`. When you passed `--panel`, `--tab`, or `--surface`, that flag stays in the command, so the retry drains the same inbox. A drain from a tool call is that pipe case: the agent reads the pipe, and still must pass `--ack`. `--peek` never marks mail read.
+A drain marks mail read only when stdout is a terminal or `--ack` is passed. Redirecting it (`c11 mailbox recv --drain >/dev/null`, or any pipe) without `--ack` exits nonzero, prints nothing, and leaves every envelope unread. The error repeats the command you ran and adds `--ack`, so `--socket`, `--window`, and any `--panel`, `--tab`, or `--surface` stay. Running that command drains the same inbox. A drain from a tool call is that pipe case: the agent reads the pipe, and still must pass `--ack`. `--peek` never marks mail read.
 
 Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the panel's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. Both inboxes are merged into one ULID order, for `--peek` and `--drain` alike. `c11 mailbox inbox-dir` prints the UUID-keyed path.
 

@@ -6,8 +6,9 @@ The built CLI must:
     ``--help`` and ``-h``, as the envelope body;
   * still print help for ``mailbox send --help`` / ``-h`` and write nothing;
   * refuse an empty, conflicting, extra, or unknown send without an outbox write;
-  * name a retry for a redirected ``recv`` that keeps ``--panel``, ``--tab``,
-    and ``--surface``. Running that retry drains only the named inbox.
+  * repeat a refused ``recv`` as the original argv plus ``--ack``, including
+    ``--socket`` and ``--window``. Running that text, and only that text,
+    drains the inbox selected by the original command.
 """
 
 from __future__ import annotations
@@ -25,6 +26,50 @@ HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("drain", HERE / "test_mailbox_hook_drain_cli.py")
 drain = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(drain)
+
+
+class RoutingServer(drain.FakeC11):
+    """One socket, one inbox. The panel comes from which socket answered,
+    not from the recipient name, so a retry that drops ``--socket`` reads
+    the other inbox."""
+
+    def __init__(self, path: str, panel: str):
+        self.panel = panel
+        super().__init__(path, False)
+
+    def _serve(self, conn):
+        try:
+            with conn, conn.makefile("rb") as handle:
+                for line in handle:
+                    try:
+                        request = json.loads(line)
+                    except ValueError:
+                        conn.sendall(b"OK\n")
+                        continue
+                    self.requests.append(request)
+                    method = request.get("method")
+                    result = {}
+                    if method == "system.capabilities":
+                        result = {
+                            "methods": ["panel.list", "mailbox.resolve", "window.list"],
+                            "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}],
+                        }
+                    elif method == "mailbox.resolve":
+                        result = {
+                            "resolution": "unique",
+                            "target_workspace_id": drain.WORKSPACE,
+                            "panel_ids": [self.panel],
+                        }
+                    elif method == "panel.get_metadata":
+                        result = {"metadata": {"title": "watcher"}}
+                    elif method == "window.list":
+                        result = {"windows": [{"id": drain.MOVED_TO, "ref": "window:1", "index": 1}]}
+                    conn.sendall(
+                        json.dumps({"id": request.get("id"), "ok": True, "result": result}).encode()
+                        + b"\n"
+                    )
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
 
 class Server(drain.FakeC11):
@@ -146,40 +191,63 @@ def main() -> int:
             finally:
                 fixture.cleanup()
 
-        for flag in ("--panel", "--tab", "--surface"):
-            for name in ("other", "other agent"):
-                label = f"guidance {flag} {name}"
-                fixture = drain.Fixture()
-                try:
-                    own = fixture.deliver(drain.TAB.lower(), body="SELF")
-                    target = fixture.deliver(drain.SIBLING.lower(), body="TARGET", to=name)
-                    refused, _ = drain.run(
-                        cli,
-                        ["--socket", server.path, "mailbox", "recv", flag, name, "--drain"],
-                        fixture.env(server.path),
-                    )
-                    hint = refused.stderr.decode().split("Run ", 1)[-1].strip()
-                    if not hint.startswith("c11 "):
-                        check(False, label, f"hint={hint!r} stderr={refused.stderr.decode()!r}")
-                        continue
-                    retry, _ = drain.run(
-                        cli,
-                        ["--socket", server.path, *shlex.split(hint)[1:]],
-                        fixture.env(server.path),
-                    )
-                    own_state = fixture.listing(drain.TAB.lower())
-                    target_state = fixture.listing(drain.SIBLING.lower())
-                    check(
-                        retry.returncode == 0
-                        and own_state == ([own + ".msg"], [])
-                        and target_state == ([], [target + ".msg"])
-                        and flag in hint
-                        and name in hint,
-                        label,
-                        f"hint={hint!r} rc={retry.returncode} own={own_state} target={target_state} stdout={retry.stdout[:120]!r} stderr={retry.stderr[:200]!r}",
-                    )
-                finally:
-                    fixture.cleanup()
+        # The default socket and the command's --socket name different
+        # inboxes. The retry is the emitted text alone: no socket is added
+        # back around it.
+        route_tmp = tempfile.mkdtemp(prefix="c11-route-sock-")
+        target_server = RoutingServer(os.path.join(route_tmp, "target socket"), drain.SIBLING)
+        default_server = RoutingServer(os.path.join(route_tmp, "default socket"), drain.TAB)
+        try:
+            for flag in ("--panel", "--tab", "--surface"):
+                for routing in ("same default", "explicit socket", "explicit socket and window"):
+                    for name in ("other", "other agent's inbox"):
+                        label = f"guidance {flag} {routing} {name}"
+                        fixture = drain.Fixture()
+                        try:
+                            own = fixture.deliver(drain.TAB.lower(), body="SELF")
+                            target = fixture.deliver(drain.SIBLING.lower(), body="TARGET", to=name)
+                            default = target_server if routing == "same default" else default_server
+                            env = fixture.env(default.path)
+                            route = ["--socket", target_server.path]
+                            if routing == "explicit socket and window":
+                                route += ["--window", "window:1"]
+                            refused, _ = drain.run(
+                                cli,
+                                [*route, "mailbox", "recv", flag, name, "--drain"],
+                                env,
+                            )
+                            untouched = (
+                                refused.returncode != 0
+                                and refused.stdout == b""
+                                and fixture.listing(drain.TAB.lower()) == ([own + ".msg"], [])
+                                and fixture.listing(drain.SIBLING.lower()) == ([target + ".msg"], [])
+                            )
+                            hint = refused.stderr.decode().split("Run ", 1)[-1].strip()
+                            if not hint.startswith("c11 "):
+                                check(False, label, f"hint={hint!r} stderr={refused.stderr.decode()!r}")
+                                continue
+                            tokens = shlex.split(hint)
+                            retry, _ = drain.run(cli, tokens[1:], env)
+                            own_state = fixture.listing(drain.TAB.lower())
+                            target_state = fixture.listing(drain.SIBLING.lower())
+                            check(
+                                untouched
+                                and retry.returncode == 0
+                                and own_state == ([own + ".msg"], [])
+                                and target_state == ([], [target + ".msg"])
+                                and flag in tokens
+                                and name in tokens
+                                and "--socket" in tokens
+                                and ("--window" in tokens) == (routing == "explicit socket and window"),
+                                label,
+                                f"hint={hint!r} rc={retry.returncode} own={own_state} target={target_state} stdout={retry.stdout[:120]!r} stderr={retry.stderr[:200]!r}",
+                            )
+                        finally:
+                            fixture.cleanup()
+        finally:
+            target_server.close()
+            default_server.close()
+            shutil.rmtree(route_tmp, ignore_errors=True)
     finally:
         server.close()
         shutil.rmtree(tmp, ignore_errors=True)

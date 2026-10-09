@@ -555,12 +555,19 @@ enum MailboxRecvAdmission {
         }
     }
 
-    /// The command a refused drain tells the caller to run. `--ack` is added
-    /// and an explicit `--panel`, `--tab`, or `--surface` is kept, so the
-    /// retry reads the same inbox.
-    static func retryCommand(panelFlag: String?, panel: String?) -> String {
-        guard let panelFlag, let panel, !panel.isEmpty else { return defaultRetryCommand }
-        return "c11 mailbox recv \(panelFlag) \(shellToken(panel)) --drain --ack"
+    /// The command a refused drain tells the caller to run. It is this
+    /// process's argv, the program name shown as `c11`, each token
+    /// shell-quoted, with `--ack` appended. Replaying it keeps `--socket`,
+    /// `--window`, and the recipient flag instead of rebuilding a shorter
+    /// command that would read a different inbox.
+    static func retryCommand(arguments: [String]) -> String {
+        guard !arguments.isEmpty else { return defaultRetryCommand }
+        var tokens = arguments
+        tokens[0] = "c11"
+        if !tokens.contains("--ack") {
+            tokens.append("--ack")
+        }
+        return tokens.map(shellToken).joined(separator: " ")
     }
 
     private static func shellToken(_ value: String) -> String {

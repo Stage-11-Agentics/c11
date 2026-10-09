@@ -168,6 +168,9 @@ function sanitize(html) {
 }
 const lineMapSkip='svg,button,.code-head,figcaption,.katex-mathml,.callout-title,.fn-back';
 let lineMetricEpoch=0;
+// Layout or a text-node replacement. Cached marks point at those nodes; a detached
+// mark makes every later scroll frame walk the fence from the block root.
+function invalidateLineMetrics(){lineMetricEpoch++;}
 function lineTree(root) {
   return document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:n=>{
     if(n.nodeType===Node.ELEMENT_NODE) {
@@ -299,18 +302,21 @@ function lineAtY(block,scrollY,sc) {
   }
   return lineAtOrBefore(block,block._linePoints,block._lineBase||+block.dataset.ls,scrollY,sc)??+block.dataset.ls;
 }
+function liveMark(root,points,index,sc) {
+  if(!root||!points||index<0||index>=points.length)return null;
+  const read=()=>{lineTops(root,points,sc);return root._lineTops?.marks?.[index]?.node||null;};
+  const node=read();
+  // One rebuild. A detached mark must not send every scroll frame back to the block root.
+  if(!node||root.contains(node))return node;
+  root._lineTops=null;
+  return read();
+}
 function lineMark(block,line,sc) {
   if(line===null||line===undefined)return null;
   const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
   const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
-  if(code) {
-    const root=$('pre code',code);lineTops(root,code._linePoints,sc);
-    return root._lineTops?.marks?.[line-code._sourceLineStart]?.node||null;
-  }
-  const index=line-(block._lineBase||+block.dataset.ls);
-  if(index<0||index>=(block._linePoints?.length||0))return null;
-  lineTops(block,block._linePoints,sc);
-  return block._lineTops?.marks?.[index]?.node||null;
+  if(code)return liveMark($('pre code',code),code._linePoints,line-code._sourceLineStart,sc);
+  return liveMark(block,block._linePoints,line-(block._lineBase||+block.dataset.ls),sc);
 }
 function prepareBlock(node,tokens) {
   const headingTokens=tokens.filter(t=>t.type==='heading_open');
@@ -660,12 +666,14 @@ function setCorpusJSON(json,currentPath) {
 function decorateTicketReferences() {
   const card=$('#ticketCard');
   card.hidden=true;S.ticketCardPinned=false;
-  $$('.ticket-ref',article).forEach(button=>button.replaceWith(document.createTextNode(button.dataset.ticket||button.textContent||'')));
+  const buttons=$$('.ticket-ref',article);
+  for(const button of buttons)button.replaceWith(document.createTextNode(button.dataset.ticket||button.textContent||''));
+  let replaced=buttons.length>0;
   const tickets=S.corpus?.tickets||{};
-  if(!Object.keys(tickets).length)return;
+  if(!Object.keys(tickets).length){if(replaced)invalidateLineMetrics();return;}
   const ticketIds=Object.keys(tickets).filter(id=>/^[A-Z][A-Z0-9]{0,15}-[0-9]{1,9}$/.test(id))
     .sort((a,b)=>b.length-a.length||a.localeCompare(b));
-  if(!ticketIds.length)return;
+  if(!ticketIds.length){if(replaced)invalidateLineMetrics();return;}
   const pattern=new RegExp(`\\b(?:${ticketIds.map(escapeRegex).join('|')})\\b`,'g');
   const walker=document.createTreeWalker(article,NodeFilter.SHOW_TEXT,{acceptNode:node=>{
     const parent=node.parentElement;
@@ -686,8 +694,9 @@ function decorateTicketReferences() {
     }
     if(!changed)continue;
     if(last<text.length)fragment.append(document.createTextNode(text.slice(last)));
-    textNode.replaceWith(fragment);
+    textNode.replaceWith(fragment);replaced=true;
   }
+  if(replaced)invalidateLineMetrics();
 }
 function showTicketCard(button) {
   const data=S.corpus?.tickets?.[button?.dataset?.ticket];if(!data)return;
@@ -873,7 +882,7 @@ function layoutAll() {
   }
   placeNotes();
   findTickMetrics='';renderFindTicks();
-  lineMetricEpoch++;
+  invalidateLineMetrics();
 }
 function placeNotes() {
   const aside=$('#sidenotes');aside.replaceChildren();if(!layout.classList.contains('with-sn'))return;
@@ -956,6 +965,7 @@ function clearMarks() {
   for(const mark of $$('mark.hit',surface))mark.replaceWith(...mark.childNodes);
   for(const b of S.blocks)b.normalize();source.normalize();S.find.hits=[];S.find.index=-1;
   findTickMetrics='';
+  invalidateLineMetrics();
 }
 function search(query,{keepPlace=false}={}) {
   const a=capture();clearMarks();S.find.query=String(query||'');S.find.draft=S.find.query;

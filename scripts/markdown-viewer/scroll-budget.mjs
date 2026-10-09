@@ -10,6 +10,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const bundle = path.join(root, 'Resources/markdown-viewer');
 const assertBudget = process.argv.includes('--assert');
 const counts = [1000, 3000];
+const plainOnly = process.argv.includes('--plain-only');
+const afterFindOnly = process.argv.includes('--after-find-only');
+const variants = [
+  ...(!afterFindOnly ? [{ afterFind: false, label: 'SCROLL_BUDGET' }] : []),
+  ...(!plainOnly ? [{ afterFind: true, label: 'SCROLL_BUDGET_AFTER_FIND' }] : []),
+];
 
 function quantile(sorted, p) {
   if (!sorted.length) return null;
@@ -48,7 +54,7 @@ try {
   await page.goto(pathToFileURL(path.join(bundle, 'index.html')).href);
   await page.waitForFunction(() => window.testMessages.some((message) => message.type === 'ready'));
   await page.evaluate(() => c11md.setSettings({ theme: 'light', typeface: 'mono', scale: 1, outlineOpen: false }));
-  for (const lines of counts) {
+  for (const variant of variants) for (const lines of counts) {
     const markdown = fence(lines);
     await page.evaluate(async (markdown) => {
       await c11md.load({
@@ -86,6 +92,7 @@ try {
     const expected = interior;
     assert.equal(placed.first, expected, `scrollToLine(${expected}) reported ${placed.first}`);
     assert.ok(placed.textTop !== null && Math.abs(placed.textTop) < 1, `interior line textTop ${placed.textTop}`);
+    if (variant.afterFind) await page.evaluate(() => { c11md.find('const'); c11md.findClose(); });
     const samples = await page.evaluate(async () => {
       const scroller = document.querySelector('#scroller');
       scroller.scrollTop = 0;
@@ -134,7 +141,7 @@ try {
     assert.ok(samples.length >= 40, `${lines} lines: only ${samples.length} scroll frames`);
     const summary = summarize(samples);
     report.samples.push({ lines, ...summary, scrollToLine: placed });
-    const row = `SCROLL_BUDGET lines=${lines} median=${summary.median.toFixed(3)} p95=${summary.p95.toFixed(3)} max=${summary.max.toFixed(3)} n=${summary.n}`;
+    const row = `${variant.label} lines=${lines} median=${summary.median.toFixed(3)} p95=${summary.p95.toFixed(3)} max=${summary.max.toFixed(3)} n=${summary.n}`;
     console.log(row);
     if (assertBudget) assert.ok(summary.median < 16, `${row} exceeded 16 ms median`);
   }

@@ -8454,7 +8454,8 @@ struct WorkspaceSidebar: View {
     @Binding var selection: SidebarSelection
     @Binding var selectedWorkspaceIds: Set<UUID>
     @Binding var lastSidebarSelectionIndex: Int?
-    @StateObject private var modifierKeyMonitor = SidebarShortcutHintModifierMonitor()
+    @AppStorage(WorkspaceOrdinalDisplaySettings.showWorkspaceIdsKey)
+    private var showWorkspaceIds = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
     @StateObject private var dragAutoScrollController = SidebarDragAutoScrollController()
     @StateObject private var dragFailsafeMonitor = SidebarDragFailsafeMonitor()
     @StateObject private var horizontalScrollMonitor = SidebarHorizontalScrollWorkspaceMonitor()
@@ -8715,15 +8716,8 @@ struct WorkspaceSidebar: View {
         .accessibilityIdentifier("Sidebar")
         .ignoresSafeArea()
         .background(SidebarBackdrop().ignoresSafeArea())
-        .background(
-            WindowAccessor { window in
-                modifierKeyMonitor.setHostWindow(window)
-            }
-            .frame(width: 0, height: 0)
-        )
         .onAppear {
             groupCoordinator.attach(manager: workspaceManager, notificationStore: notificationStore)
-            modifierKeyMonitor.start()
             horizontalScrollMonitor.start { [workspaceManager] step in
                 if step > 0 {
                     workspaceManager.selectNextWorkspace(cause: "shortcut")
@@ -8741,7 +8735,6 @@ struct WorkspaceSidebar: View {
         }
         .onDisappear {
             groupCoordinator.detach()
-            modifierKeyMonitor.stop()
             horizontalScrollMonitor.stop()
             dragAutoScrollController.stop()
             dragFailsafeMonitor.stop()
@@ -9056,10 +9049,6 @@ struct WorkspaceSidebar: View {
             availableGroups: workspaceManager.workspaceGroups,
             isActive: isActive,
             worktreeChipRows: worktreeChipRows,
-            workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
-                at: index,
-                workspaceCount: workspaceCount
-            ),
             canCloseWorkspace: canCloseWorkspace,
             accessibilityWorkspaceCount: workspaceCount,
             unreadCount: unreadCount,
@@ -9068,7 +9057,7 @@ struct WorkspaceSidebar: View {
             setSelectionToTabs: { selection = .tabs },
             selectedWorkspaceIds: $selectedWorkspaceIds,
             lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-            showsModifierShortcutHints: modifierKeyMonitor.isModifierPressed,
+            showsWorkspaceId: showWorkspaceIds,
             dragAutoScrollController: dragAutoScrollController,
             draggedWorkspaceId: $draggedWorkspaceId,
             draggedGroupId: $draggedGroupId,
@@ -9137,8 +9126,6 @@ enum ShortcutHintModifierPolicy {
 }
 
 enum ShortcutHintDebugSettings {
-    static let sidebarHintXKey = "shortcutHintSidebarXOffset"
-    static let sidebarHintYKey = "shortcutHintSidebarYOffset"
     static let titlebarHintXKey = "shortcutHintTitlebarXOffset"
     static let titlebarHintYKey = "shortcutHintTitlebarYOffset"
     static let paneHintXKey = "shortcutHintPaneTabXOffset"
@@ -9146,8 +9133,6 @@ enum ShortcutHintDebugSettings {
     static let alwaysShowHintsKey = "shortcutHintAlwaysShow"
     static let showHintsOnCommandHoldKey = "shortcutHintShowOnCommandHold"
 
-    static let defaultSidebarHintX = 0.0
-    static let defaultSidebarHintY = 0.0
     static let defaultTitlebarHintX = 4.0
     static let defaultTitlebarHintY = 0.0
     static let defaultPaneHintX = 0.0
@@ -9988,166 +9973,6 @@ private struct SidebarExternalDropDelegate: DropDelegate {
     private func debugShortSidebarWorkspaceId(_ id: UUID?) -> String {
         guard let id else { return "nil" }
         return String(id.uuidString.prefix(5))
-    }
-}
-
-@MainActor
-private final class SidebarShortcutHintModifierMonitor: ObservableObject {
-    @Published private(set) var isModifierPressed = false
-
-    private weak var hostWindow: NSWindow?
-    private var hostWindowDidBecomeKeyObserver: NSObjectProtocol?
-    private var hostWindowDidResignKeyObserver: NSObjectProtocol?
-    private var flagsMonitor: Any?
-    private var keyDownMonitor: Any?
-    private var appResignObserver: NSObjectProtocol?
-    private var pendingShowWorkItem: DispatchWorkItem?
-
-    func setHostWindow(_ window: NSWindow?) {
-        guard hostWindow !== window else { return }
-        removeHostWindowObservers()
-        hostWindow = window
-        guard let window else {
-            cancelPendingHintShow(resetVisible: true)
-            return
-        }
-
-        hostWindowDidBecomeKeyObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.update(from: NSEvent.modifierFlags, eventWindow: nil)
-            }
-        }
-
-        hostWindowDidResignKeyObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.cancelPendingHintShow(resetVisible: true)
-            }
-        }
-
-        update(from: NSEvent.modifierFlags, eventWindow: nil)
-    }
-
-    func start() {
-        guard flagsMonitor == nil else {
-            update(from: NSEvent.modifierFlags, eventWindow: nil)
-            return
-        }
-
-        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.update(from: event.modifierFlags, eventWindow: event.window)
-            return event
-        }
-
-        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleKeyDown(event)
-            return event
-        }
-
-        appResignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.cancelPendingHintShow(resetVisible: true)
-            }
-        }
-
-        update(from: NSEvent.modifierFlags, eventWindow: nil)
-    }
-
-    func stop() {
-        if let flagsMonitor {
-            NSEvent.removeMonitor(flagsMonitor)
-            self.flagsMonitor = nil
-        }
-        if let keyDownMonitor {
-            NSEvent.removeMonitor(keyDownMonitor)
-            self.keyDownMonitor = nil
-        }
-        if let appResignObserver {
-            NotificationCenter.default.removeObserver(appResignObserver)
-            self.appResignObserver = nil
-        }
-        removeHostWindowObservers()
-        cancelPendingHintShow(resetVisible: true)
-    }
-
-    private func handleKeyDown(_ event: NSEvent) {
-        guard isCurrentWindow(eventWindow: event.window) else { return }
-        cancelPendingHintShow(resetVisible: true)
-    }
-
-    private func isCurrentWindow(eventWindow: NSWindow?) -> Bool {
-        ShortcutHintModifierPolicy.isCurrentWindow(
-            hostWindowNumber: hostWindow?.windowNumber,
-            hostWindowIsKey: hostWindow?.isKeyWindow ?? false,
-            eventWindowNumber: eventWindow?.windowNumber,
-            keyWindowNumber: NSApp.keyWindow?.windowNumber
-        )
-    }
-
-    private func update(from modifierFlags: NSEvent.ModifierFlags, eventWindow: NSWindow?) {
-        guard ShortcutHintModifierPolicy.shouldShowHints(
-            for: modifierFlags,
-            hostWindowNumber: hostWindow?.windowNumber,
-            hostWindowIsKey: hostWindow?.isKeyWindow ?? false,
-            eventWindowNumber: eventWindow?.windowNumber,
-            keyWindowNumber: NSApp.keyWindow?.windowNumber
-        ) else {
-            cancelPendingHintShow(resetVisible: true)
-            return
-        }
-
-        queueHintShow()
-    }
-
-    private func queueHintShow() {
-        guard !isModifierPressed else { return }
-        guard pendingShowWorkItem == nil else { return }
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.pendingShowWorkItem = nil
-            guard ShortcutHintModifierPolicy.shouldShowHints(
-                for: NSEvent.modifierFlags,
-                hostWindowNumber: self.hostWindow?.windowNumber,
-                hostWindowIsKey: self.hostWindow?.isKeyWindow ?? false,
-                eventWindowNumber: nil,
-                keyWindowNumber: NSApp.keyWindow?.windowNumber
-            ) else { return }
-            self.isModifierPressed = true
-        }
-
-        pendingShowWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + ShortcutHintModifierPolicy.intentionalHoldDelay, execute: workItem)
-    }
-
-    private func cancelPendingHintShow(resetVisible: Bool) {
-        pendingShowWorkItem?.cancel()
-        pendingShowWorkItem = nil
-        if resetVisible {
-            isModifierPressed = false
-        }
-    }
-
-    private func removeHostWindowObservers() {
-        if let hostWindowDidBecomeKeyObserver {
-            NotificationCenter.default.removeObserver(hostWindowDidBecomeKeyObserver)
-            self.hostWindowDidBecomeKeyObserver = nil
-        }
-        if let hostWindowDidResignKeyObserver {
-            NotificationCenter.default.removeObserver(hostWindowDidResignKeyObserver)
-            self.hostWindowDidResignKeyObserver = nil
-        }
     }
 }
 
@@ -12044,62 +11869,6 @@ enum WorkspacePulseDividerColorResolver {
     }
 }
 
-enum SidebarWorkspaceShortcutHintMetrics {
-    private static let measurementFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
-    /// Held for the close button (16pt) when the workspace has no ⌘-digit
-    /// shortcut to reserve pill width for. Everything wider than the button
-    /// here is title text the operator does not get to read.
-    private static let minimumSlotWidth: CGFloat = 18
-    private static let horizontalPadding: CGFloat = 12
-    private static let lock = NSLock()
-    private static var cachedHintWidths: [String: CGFloat] = [:]
-    #if DEBUG
-    private static var measurementCount = 0
-    #endif
-
-    static func slotWidth(label: String?, debugXOffset: Double) -> CGFloat {
-        guard let label else { return minimumSlotWidth }
-        let positiveDebugInset = max(0, CGFloat(ShortcutHintDebugSettings.clamped(debugXOffset))) + 2
-        return max(minimumSlotWidth, hintWidth(for: label) + positiveDebugInset)
-    }
-
-    static func hintWidth(for label: String) -> CGFloat {
-        lock.lock()
-        if let cached = cachedHintWidths[label] {
-            lock.unlock()
-            return cached
-        }
-        lock.unlock()
-
-        let textWidth = (label as NSString).size(withAttributes: [.font: measurementFont]).width
-        let measuredWidth = ceil(textWidth) + horizontalPadding
-
-        lock.lock()
-        cachedHintWidths[label] = measuredWidth
-        #if DEBUG
-        measurementCount += 1
-        #endif
-        lock.unlock()
-        return measuredWidth
-    }
-
-    #if DEBUG
-    static func resetCacheForTesting() {
-        lock.lock()
-        cachedHintWidths.removeAll()
-        measurementCount = 0
-        lock.unlock()
-    }
-
-    static func measurementCountForTesting() -> Int {
-        lock.lock()
-        let count = measurementCount
-        lock.unlock()
-        return count
-    }
-    #endif
-}
-
 /// C11-25: the focused surface's CPU/RSS readout inside a workspace card.
 ///
 /// The sampler's 2 Hz `revision` is observed HERE and never inside
@@ -12188,13 +11957,12 @@ private struct WorkspaceRowView: View, Equatable {
         lhs.availableGroups == rhs.availableGroups &&
         lhs.isActive == rhs.isActive &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
-        lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
         lhs.unreadCount == rhs.unreadCount &&
         lhs.workspacePulse == rhs.workspacePulse &&
         lhs.rowSpacing == rhs.rowSpacing &&
-        lhs.showsModifierShortcutHints == rhs.showsModifierShortcutHints &&
+        lhs.showsWorkspaceId == rhs.showsWorkspaceId &&
         lhs.themedBackgroundColor?.hexString(includeAlpha: true) == rhs.themedBackgroundColor?.hexString(includeAlpha: true) &&
         lhs.themedRailColor?.hexString(includeAlpha: true) == rhs.themedRailColor?.hexString(includeAlpha: true) &&
         lhs.remoteContextMenuWorkspaceIds == rhs.remoteContextMenuWorkspaceIds &&
@@ -12223,7 +11991,6 @@ private struct WorkspaceRowView: View, Equatable {
     /// not in a git directory. Keeping the projection upstream means
     /// the TabItemView body does zero IO/git work.
     let worktreeChipRows: [WorktreeChipRow]
-    let workspaceShortcutDigit: Int?
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
     let unreadCount: Int
@@ -12234,7 +12001,9 @@ private struct WorkspaceRowView: View, Equatable {
     let setSelectionToTabs: () -> Void
     @Binding var selectedWorkspaceIds: Set<UUID>
     @Binding var lastSidebarSelectionIndex: Int?
-    let showsModifierShortcutHints: Bool
+    /// Show the workspace's `workspace:N` number in the title row's trailing
+    /// slot. Passed in (not @AppStorage) so `==` sees the toggle.
+    let showsWorkspaceId: Bool
     let dragAutoScrollController: SidebarDragAutoScrollController
     @Binding var draggedWorkspaceId: UUID?
     @Binding var draggedGroupId: UUID?
@@ -12273,9 +12042,6 @@ private struct WorkspaceRowView: View, Equatable {
     @State private var rowHeight: CGFloat = 1
     @State private var sidebarFlashOpacity: Double = 0
     @State private var lastObservedSidebarFlashToken: Int = 0
-    @AppStorage(ShortcutHintDebugSettings.sidebarHintXKey) private var sidebarShortcutHintXOffset = ShortcutHintDebugSettings.defaultSidebarHintX
-    @AppStorage(ShortcutHintDebugSettings.sidebarHintYKey) private var sidebarShortcutHintYOffset = ShortcutHintDebugSettings.defaultSidebarHintY
-    @AppStorage(ShortcutHintDebugSettings.alwaysShowHintsKey) private var alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
     @AppStorage("sidebarShowGitBranch") private var sidebarShowGitBranch = true
     @AppStorage(SidebarBranchLayoutSettings.key) private var sidebarBranchVerticalLayout = SidebarBranchLayoutSettings.defaultVerticalLayout
     @AppStorage("sidebarShowBranchDirectory") private var sidebarShowBranchDirectory = true
@@ -12339,28 +12105,16 @@ private struct WorkspaceRowView: View, Equatable {
         usesInvertedActiveForeground ? Color.white.opacity(0.8) : cmuxAccentColor()
     }
 
-    private var shortcutHintEmphasis: Double {
-        usesInvertedActiveForeground ? 1.0 : 0.9
-    }
-
     private var showCloseButton: Bool {
-        isHovering && canCloseWorkspace && !(showsModifierShortcutHints || alwaysShowShortcutHints)
+        isHovering && canCloseWorkspace
     }
 
-    private var workspaceShortcutLabel: String? {
-        guard let workspaceShortcutDigit else { return nil }
-        return "⌘\(workspaceShortcutDigit)"
-    }
-
-    private var showsWorkspaceShortcutHint: Bool {
-        (showsModifierShortcutHints || alwaysShowShortcutHints) && workspaceShortcutLabel != nil
-    }
-
-    private var workspaceHintSlotWidth: CGFloat {
-        SidebarWorkspaceShortcutHintMetrics.slotWidth(
-            label: workspaceShortcutLabel,
-            debugXOffset: sidebarShortcutHintXOffset
-        )
+    /// Gold on the selected card, like the visible panel's number in the
+    /// panel bar; muted elsewhere. A custom-tinted selected card keeps its
+    /// inverted foreground so the number stays legible on the tint.
+    private var workspaceIdColor: Color {
+        guard isActive else { return activeSecondaryColor(0.55) }
+        return usesInvertedActiveForeground ? activePrimaryTextColor : Color(nsColor: BrandColors.gold)
     }
 
     private var remoteWorkspaceSidebarText: String? {
@@ -13034,7 +12788,27 @@ private struct WorkspaceRowView: View, Equatable {
                         .foregroundColor(.secondary.opacity(0.7))
                 }
 
+                // One fixed slot: the workspace number at rest, the close X
+                // on hover. The slot keeps its width across the swap so the
+                // title never shifts.
                 ZStack(alignment: .trailing) {
+                    if showsWorkspaceId {
+                        // "WS" is a fixed technical label for the
+                        // `workspace:N` ref (like the ref itself, not
+                        // localized); it keeps the number from reading as a
+                        // count or a ⌘-digit.
+                        (
+                            Text(verbatim: "WS ").foregroundColor(workspaceIdColor.opacity(0.6))
+                            + Text(verbatim: "\(workspace.displayOrdinal)").foregroundColor(workspaceIdColor)
+                        )
+                            .font(.system(size: chromeTokens.sidebarWorkspaceDetail, weight: .medium, design: .monospaced))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .opacity(showCloseButton ? 0 : 1)
+                            .accessibilityHidden(true)
+                    }
+
                     Button(action: {
                         #if DEBUG
                         dlog("sidebar.close workspace=\(workspace.id.uuidString.prefix(5)) method=button")
@@ -13048,28 +12822,10 @@ private struct WorkspaceRowView: View, Equatable {
                     .buttonStyle(.plain)
                     .safeHelp(KeyboardShortcutSettings.Action.closeWorkspace.tooltip(closeWorkspaceTooltip))
                     .frame(width: 16, height: 16, alignment: .center)
-                    .opacity(showCloseButton && !showsWorkspaceShortcutHint ? 1 : 0)
-                    .allowsHitTesting(showCloseButton && !showsWorkspaceShortcutHint)
-
-                    if showsWorkspaceShortcutHint, let workspaceShortcutLabel {
-                        Text(workspaceShortcutLabel)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .font(.system(size: chromeTokens.sidebarWorkspaceDetail, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundColor(activePrimaryTextColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(ShortcutHintPillBackground(emphasis: shortcutHintEmphasis))
-                            .offset(
-                                x: ShortcutHintDebugSettings.clamped(sidebarShortcutHintXOffset),
-                                y: ShortcutHintDebugSettings.clamped(sidebarShortcutHintYOffset)
-                            )
-                            .transition(.opacity)
-                    }
+                    .opacity(showCloseButton ? 1 : 0)
+                    .allowsHitTesting(showCloseButton)
                 }
-                .animation(.easeInOut(duration: 0.14), value: showsModifierShortcutHints || alwaysShowShortcutHints)
-                .frame(width: workspaceHintSlotWidth, height: 19, alignment: .trailing)
+                .frame(minWidth: 18, minHeight: 19, alignment: .trailing)
             }
 
             workspacePulseSummaries

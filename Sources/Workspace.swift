@@ -4810,6 +4810,11 @@ struct PanelShapeCounts: Equatable {
 @MainActor
 final class Workspace: Identifiable, ObservableObject {
     let id: UUID
+    /// The N of this workspace's `workspace:N` ref, shown on its sidebar card
+    /// as "WS N". Same number the CLI resolves; like every short ref it lasts
+    /// for the current c11 process only.
+    private(set) lazy var displayOrdinal: Int =
+        TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: id)
     @Published var title: String
     @Published var customTitle: String?
     @Published var isPinned: Bool = false

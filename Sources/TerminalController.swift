@@ -3040,6 +3040,14 @@ class TerminalController {
         return Int(ref.dropFirst("\(V2HandleKind.surface.rawValue):".count)) ?? 0
     }
 
+    /// The integer N of a workspace's `workspace:N` handle, minting the ref if
+    /// it doesn't exist yet. The sidebar card shows this number, so it must be
+    /// the same one the CLI targets.
+    func workspaceOrdinal(forWorkspaceUUID workspaceId: UUID) -> Int {
+        let ref = v2EnsureHandleRef(kind: .workspace, uuid: workspaceId)
+        return Int(ref.dropFirst("\(V2HandleKind.workspace.rawValue):".count)) ?? 0
+    }
+
     /// UI-facing handle lookup for the Surface Details panel.
     ///
     /// Mints (or returns) the friendly `surface:N` / `tab:N` / `pane:M` /

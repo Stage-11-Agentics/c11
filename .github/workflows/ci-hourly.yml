@@ -166,8 +166,8 @@ jobs:
 
       - name: Logic tests (gate)
         # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
-        # mailbox, theme). The password-store class stays excluded because its
-        # SSH execution path requires Keychain access on the runner.
+        # mailbox, theme, socket password mode). Nothing is excluded: the
+        # password-store tests inject their Keychain reads and password file.
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
@@ -176,7 +176,6 @@ jobs:
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \
-            -skip-testing:c11LogicTests/SocketControlPasswordStoreTests \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 60 \

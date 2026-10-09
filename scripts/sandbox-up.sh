@@ -29,8 +29,9 @@ Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
 clone headless, place one .app on the Tart host, copy it into the guest,
 and launch it with the automation socket. The golden image is never booted.
 A second running guest needs --allow-second and clones c11-sandbox-golden-b,
-which has its own serial, so neither guest shows Setup Assistant. A third
-running guest is always refused. If this command is cut
+which has its own serial. Both goldens must exist and be stopped, or this
+fails before upload (re-provision with docs/c11-sandbox-research.md step 9).
+A third running guest is always refused. If this command is cut
 off, scripts/sandbox-down.sh <run-id> removes the clone.
 
 --agents stages logged-in agent CLIs into the clone once the app is up
@@ -136,11 +137,30 @@ if [[ -n "$agents" ]]; then
 fi
 rel=".c11-sandbox/apps/${run_id}"
 
+# Check both serial-safe sources before a local app is uploaded to the Tart
+# host. The host script repeats this check under clone.lock before cloning.
+require_goldens_stopped() {
+  sandbox_on_host <<EOF
+set -eu
+setopt pipefail
+$(sandbox_host_prelude)
+require_stopped() {
+  local name="\$1" state
+  state="\$(vm_field "\$name" || true)"
+  [[ -n "\$state" ]] || die "golden image \$name is missing. Re-provision it using docs/c11-sandbox-research.md step 9."
+  [[ "\$state" == stopped ]] || die "golden image \$name is \$state; both goldens must be stopped. See docs/c11-sandbox-research.md step 9."
+}
+require_stopped "\$golden"
+require_stopped "\$golden_b"
+EOF
+}
+
 # The case is the seam. Add a source by staging one .app into $rel on the
 # Tart host. Do not teach the boot path about the source.
 case "$app_source" in
   local-app)
     [[ -n "$app" ]] || { usage >&2; exit 1; }
+    require_goldens_stopped
     stage_local_app "$app" "$rel"
     ;;
   atlas-build)
@@ -197,9 +217,14 @@ app_source=$(printf '%q' "$app_source")
 vm="c11-sb-\$run_id"
 refuse_protected "\$vm"
 tart="\$(tart_bin)" || die "tart is not installed on this host"
-golden_state="\$(vm_field "\$golden" || true)"
-[[ -n "\$golden_state" ]] || die "golden image \$golden is not on this host. See docs/c11-sandbox-research.md"
-[[ "\$golden_state" == stopped ]] || die "golden image \$golden is \$golden_state. It must stay stopped. Runs clone it; they do not boot it."
+require_stopped_golden() {
+  local name="\$1" state
+  state="\$(vm_field "\$name" || true)"
+  [[ -n "\$state" ]] || die "golden image \$name is missing. Re-provision it using docs/c11-sandbox-research.md step 9."
+  [[ "\$state" == stopped ]] || die "golden image \$name is \$state; both goldens must be stopped. See docs/c11-sandbox-research.md step 9."
+}
+require_stopped_golden "\$golden"
+require_stopped_golden "\$golden_b"
 [[ -f "\$key" ]] || die "missing \$key on the Tart host. Golden-image setup installs this key."
 lock="\$root/clone.lock"
 lock_held=0
@@ -253,6 +278,8 @@ cleanup() {
 trap 'failed=1; exit 1' INT HUP TERM
 trap cleanup EXIT
 acquire_lock
+require_stopped_golden "\$golden"
+require_stopped_golden "\$golden_b"
 existing="\$(vm_field "\$vm" || true)"
 if [[ -n "\$existing" ]]; then
   # This VM is already live. failed=0 keeps cleanup from stopping it or removing its app.
@@ -287,25 +314,15 @@ golden_in_use() {
   return 1
 }
 source_golden="\$golden"
-random_serial=0
 if golden_in_use "\$golden"; then
-  if [[ "\$(vm_field "\$golden_b" || true)" == stopped ]] && ! golden_in_use "\$golden_b"; then
-    source_golden="\$golden_b"
-  else
-    # No free golden: fall back to a new serial. Setup Assistant can show.
-    print -u2 -- "sandbox: \$golden_b is missing or in use; this guest gets a new serial and may show Setup Assistant"
-    random_serial=1
-  fi
+  golden_in_use "\$golden_b" && die "both golden images are already in use; no serial-safe source is available"
+  source_golden="\$golden_b"
 fi
 print -r -- "\$source_golden" > "\$root/runs/\$run_id/golden"
 clone_start="\$EPOCHSECONDS"
 "\$tart" clone "\$source_golden" "\$vm"
 clone_secs=\$((EPOCHSECONDS - clone_start))
-if (( random_serial )); then
-  "\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac --random-serial
-else
-  "\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac
-fi
+"\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac
 # setsid, then drop the ssh session's stdin and stdout, so tart outlives this script.
 /usr/bin/python3 -c 'import os,sys
 tart, log, vm, directory = sys.argv[1:5]

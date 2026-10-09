@@ -635,7 +635,9 @@ final class EventLog {
         defer { publishingRetentionBoundary = false }
         // Commit the reported state only after successful disk delivery. An
         // unavailable/oversized write remains pending for a later checkpoint.
-        if writeAssigningSeq(boundary, rotate: false) {
+        // This boundary stays pending and is retried; a failed attempt does
+        // not lose an activity record or contribute to log.dropped.
+        if writeAssigningSeq(boundary, countDrop: false, rotate: false) {
             reportedRetentionDegraded = boundary.payload["state"] as? String == "degraded"
         }
     }

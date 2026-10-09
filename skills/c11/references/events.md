@@ -80,7 +80,7 @@ Five additional `type` values are **not taxonomy members** — they are structur
 | `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). |
 | `log.dropped` | `{count}` | Backpressure or failed writes shed `count` events. This marks incomplete coverage. |
 | `log.policy` | `{enabled, analytics_enabled, keep_text, retention_days}` | Recording policy boundary; disabled spans have unknown coverage. |
-| `log.retention` | `{state, reason?}` | `degraded` begins a retention-coordination episode; `recovered` ends it. This softens the shared byte cap without implying lost events. |
+| `log.retention` | `{state, reason?}` | `degraded` begins a retention-coordination episode; `recovered` ends it. This softens the shared byte cap without implying lost events. Failed boundary writes remain pending for retry and do not increment `log.dropped`. |
 
 ## CLI
 
@@ -174,6 +174,13 @@ real bootstrap events; it neither invents closes nor changes their ordering.
 Replay and activity reports exclude marked graphs from the installed workspace
 inventory. The classification survives analytics and recording toggle changes
 within the process; analytics-off structural panel edges still carry it.
+Successful native Ghostty surface allocation immediately removes the workspace
+from transient enrollment, before runtime-ready callbacks, even while recording
+is off. A DEBUG assertion checks that a real runtime's workspace is un-enrolled.
+This guard keeps a real graph visible if SwiftUI's bootstrap behavior changes.
+Earlier marked and later unmarked events for one UUID are a classification
+conflict: readers preserve that graph and report the conflict rather than
+excluding it. Raw earlier events retain their original marker.
 Classification checks the existing workspace UUID under the emitter's existing
 lock: nil subjects and an empty enrollment skip the lookup; otherwise it checks
 the small UUID set once. Normal events add no UUID formatting, dictionary, file

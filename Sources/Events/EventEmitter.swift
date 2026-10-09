@@ -113,6 +113,18 @@ final class EventEmitter {
         lock.unlock()
     }
 
+    /// Native Ghostty allocation proves this graph is real, regardless of any
+    /// assumptions about SwiftUI's uninstalled StateObject construction. Clear
+    /// enrollment even while recording is off, before runtime-ready callbacks.
+    func noteWorkspaceRuntimeSurfaceCreated(_ workspace: UUID) {
+        lock.lock()
+        transientWorkspaceIDs.remove(workspace)
+        #if DEBUG
+        assert(!transientWorkspaceIDs.contains(workspace), "A workspace with a successfully allocated terminal runtime must not remain transient")
+        #endif
+        lock.unlock()
+    }
+
     // MARK: - Lifecycle
 
     /// Resolves the per-instance log path, mints the instance id, opens the log,

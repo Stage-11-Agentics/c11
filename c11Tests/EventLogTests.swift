@@ -1795,12 +1795,21 @@ extension EventLogTests {
         }
         log.sampleForTesting()
         XCTAssertEqual(readLines(current).map(parse).filter { $0["type"] as? String == "log.retention" }.count, 1)
+        // Keep the real EBADF fault active for one genuine activity record.
+        // Only that lost record counts; the pending boundary is still retried.
+        log.append(EventEnvelope(type: .surfaceClosed, instance: "synthetic-recovery-failure-7001", ts: Date()))
+        log.flush()
         log.onQueueBeforeWrite = nil
         log.sampleForTesting()
         let events = readLines(current).map(parse)
         let markers = events.filter { $0["type"] as? String == "log.retention" }
         XCTAssertEqual(markers.compactMap { ($0["payload"] as? [String: Any])?["state"] as? String }, ["degraded", "recovered"])
-        XCTAssertEqual(events.filter { $0["type"] as? String == "log.dropped" }.count, 1)
+        let drops = events.filter { $0["type"] as? String == "log.dropped" }
+        XCTAssertEqual(drops.count, 1)
+        XCTAssertEqual((drops.first?["payload"] as? [String: Any])?["count"] as? Int, 1)
+        XCTAssertFalse(events.contains { $0["type"] as? String == "panel.closed" })
+        log.sampleForTesting()
+        XCTAssertEqual(readLines(current).map(parse).filter { $0["type"] as? String == "log.dropped" }.count, 1)
     }
 
     // MARK: - Synthetic bootstrap graph classification
@@ -1914,4 +1923,85 @@ extension EventLogTests {
         XCTAssertNil((events.last?["payload"] as? [String: Any])?["transient"])
     }
 
+}
+
+
+extension EventLogTests {
+    @MainActor
+    func testSuccessfulTerminalRuntimeMakesEnrolledWorkspaceNonTransient() async {
+        let log = EventLog(url: logURL(), instance: "synthetic-runtime-guard")
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "synthetic-runtime-guard")
+        let workspace = UUID(), panel = UUID()
+        emitter.withTransientWorkspaceConstruction {
+            emitter.enrollTransientWorkspaceConstruction(workspace)
+            emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic bootstrap")
+        }
+        log.flush()
+        XCTAssertEqual((readLines(logURL()).map(parse).first?["payload"] as? [String: Any])?["transient"] as? Bool, true)
+        // Exercise the same success hook used only after ghostty_surface_new
+        // returns a real runtime. No Ghostty allocation occurs in this fixture.
+        emitter.noteWorkspaceRuntimeSurfaceCreated(workspace)
+        emitter.emitWorkspaceCreated(workspace: workspace, title: "Synthetic real graph", rootDirectory: nil)
+        await Task.detached {
+            EventEmitter.shared.emitMetadataChanged(scope: "panel", workspace: workspace, surface: panel,
+                                                    key: "status", value: "Synthetic later real runtime", prior: nil, source: "explicit")
+        }.value
+        emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic real graph", remainingPanels: [panel])
+        log.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String },
+                       ["panel.created", "workspace.created", "metadata.changed", "panel.closed", "workspace.closed"])
+        XCTAssertTrue(events.dropFirst().allSatisfy { ($0["payload"] as? [String: Any])?["transient"] == nil },
+                      "Real runtime allocation must preserve the graph even if construction assumptions change")
+    }
+
+    @MainActor
+    func testSuccessfulRuntimeWhileRecordingOffClearsEnrollmentBeforeReenable() {
+        let policy = ActivityHistoryPolicy(enabled: false)
+        let log = EventLog(url: logURL(), instance: "synthetic-runtime-guard-off", policy: policy)
+        let emitter = EventEmitter.shared
+        emitter.startForTesting(log: log, instance: "synthetic-runtime-guard-off", policy: policy, opened: false)
+        let workspace = UUID(), panel = UUID()
+        emitter.withTransientWorkspaceConstruction {
+            emitter.enrollTransientWorkspaceConstruction(workspace)
+        }
+        emitter.noteWorkspaceRuntimeSurfaceCreated(workspace)
+        emitter.updatePolicy(ActivityHistoryPolicy(analyticsEnabled: false))
+        emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic real runtime")
+        emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic real runtime", remainingPanels: [panel])
+        log.flush()
+        let edges = readLines(logURL()).map(parse).filter { $0["workspace"] as? String == workspace.uuidString }
+        XCTAssertEqual(edges.compactMap { $0["type"] as? String }, ["panel.created", "panel.closed"])
+        XCTAssertTrue(edges.allSatisfy { ($0["payload"] as? [String: Any])?["transient"] == nil })
+    }
+
+    func testFailedRetriedRetentionBoundaryDoesNotReportAnActivityDrop() throws {
+        let current = logURL("events-synthetic-boundary-retry-7001.ndjson")
+        var writerFD: Int32 = -1
+        let log = EventLog(url: current, instance: "synthetic-boundary-retry-7001", acquireWriterLock: { fd in
+            writerFD = fd
+            return flock(fd, LOCK_SH | LOCK_NB) == 0 ? 0 : errno
+        })
+        try withExternalFileLocks(at: [tempDir.appendingPathComponent(".activity-history.lock")], exclusive: true) {
+            log.open(); log.flush()
+        }
+        log.onQueueBeforeWrite = {
+            let readOnly = Darwin.open(current.path, O_RDONLY | O_CLOEXEC)
+            XCTAssertGreaterThanOrEqual(readOnly, 0)
+            if readOnly >= 0 {
+                XCTAssertEqual(dup2(readOnly, writerFD), writerFD)
+                Darwin.close(readOnly)
+            }
+        }
+        log.sampleForTesting()
+        XCTAssertEqual(readLines(current).map(parse).filter { $0["type"] as? String == "log.retention" }.count, 1)
+        log.onQueueBeforeWrite = nil
+        log.sampleForTesting()
+        log.sampleForTesting()
+        let events = readLines(current).map(parse)
+        XCTAssertEqual(events.filter { $0["type"] as? String == "log.retention" }
+            .compactMap { ($0["payload"] as? [String: Any])?["state"] as? String }, ["degraded", "recovered"])
+        XCTAssertFalse(events.contains { $0["type"] as? String == "log.dropped" }, "A retried control boundary never lost an activity record")
+    }
 }

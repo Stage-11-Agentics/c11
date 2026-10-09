@@ -221,7 +221,11 @@ struct cmuxApp: App {
         // terminal. Start recording before those lifecycle edges can be emitted.
         mirrorC11CmuxEnv()
         EventEmitter.shared.start()
-        _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
+        // Accessing a StateObject before SwiftUI installs it re-evaluates its
+        // autoclosure. Share one launch instance with the delegate instead of
+        // constructing an untracked workspace graph during early wiring.
+        let launchWorkspaceManager = WorkspaceManager()
+        _workspaceManager = StateObject(wrappedValue: launchWorkspaceManager)
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
         if let stored = defaults.string(forKey: SocketControlSettings.appStorageKey) {
@@ -246,7 +250,7 @@ struct cmuxApp: App {
 
         // UI tests depend on AppDelegate wiring happening even if SwiftUI view appearance
         // callbacks (e.g. `.onAppear`) are delayed or skipped.
-        appDelegate.configure(workspaceManager: workspaceManager, notificationStore: notificationStore, sidebarState: sidebarState)
+        appDelegate.configure(workspaceManager: launchWorkspaceManager, notificationStore: notificationStore, sidebarState: sidebarState)
     }
 
     private static func terminateForMissingLaunchTag() -> Never {

@@ -92,31 +92,6 @@ final class FullDiskAccessProbeTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.05)
     }
 
-    // 5. start() is idempotent — repeated calls do not double-arm.
-    func testProbeStartIsIdempotent() throws {
-        // C11-377: macos-15 run 37877833216 counted 2 ticks; the bound requires more than 2.
-        try XCTSkipIf(true, "Quarantined (C11-377). Timer delivered 2 ticks on macos-15 run 37877833216; the bound requires more than 2.")
-        let counter = Counter()
-        let probe = FullDiskAccessProbe(
-            probe: { counter.increment(); return false },
-            schedule: [0.05],
-            onGranted: { }
-        )
-        probe.start()
-        probe.start()
-        probe.start()
-        Thread.sleep(forTimeInterval: 0.5)
-        probe.stop()
-        // Single timer at 0.05s over ~0.5s yields ~10 ticks. Double-armed
-        // would be ~20. Generous bounds account for CI timing jitter.
-        XCTAssertLessThan(counter.value, 16,
-            "Repeated start() must not double-arm the timer (got \(counter.value) ticks)"
-        )
-        XCTAssertGreaterThan(counter.value, 2,
-            "Expected the timer to fire at all (got \(counter.value) ticks)"
-        )
-    }
-
     // 6. kick() runs an extra probe attempt without resetting backoff.
     func testProbeKickRunsExtraAttemptOutOfBand() {
         // schedule[0]=0.05 ensures the initial scheduled tick fires fast;

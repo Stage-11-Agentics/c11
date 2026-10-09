@@ -239,10 +239,12 @@ retention lock.
 
 Every checkpoint also removes group and other access from the history
 directory (its target, when the directory is a symlink) and from every event
-file in it, whichever build wrote it. Owner and special bits are left alone. It
-skips symlinked files, files owned by another user and non-event files, changes
-a mode only through an `O_NOFOLLOW` descriptor whose inode matches the listed
-path, and never adds a permission bit, so it is idempotent. Retention counts,
+file in it, whichever build wrote it. Owner and special bits are left alone,
+except that S_ISGID is cleared when the kernel refuses to keep it. It skips
+symlinked files, files owned by another user and non-event files. It changes a
+mode through an `O_NOFOLLOW` descriptor whose inode matches the listed path or,
+for a mode the owner cannot open, with `fchmodat` without following a symlink.
+It never adds a permission bit, so it is idempotent. Retention counts,
 ages and deletes regular files only (by `lstat`, with `unlink(2)`): a symlink or
 directory named like an event file is never followed, counted or removed.
 

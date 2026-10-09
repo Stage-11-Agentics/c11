@@ -324,9 +324,10 @@ final class EventLog {
     private func sampleNow() {
         guard recordingEnabled, !samplingAsleep else { return }
         flushTitles(expiredOnly: true)
-        reportDropsIfNeeded()
-        // Recover a deleted live file before the sample, not into the orphan.
+        // Recover a deleted live file before the drop marker and the sample,
+        // so neither lands in the orphan.
         if recordingEnabled, liveFileDetached() { reattachDetachedLiveFile() }
+        reportDropsIfNeeded()
         if recordingEnabled, analyticsEnabled, let event = sampleProvider?() { writeAssigningSeq(event) }
         reconcileAtCheckpoint()
         nextSampleAt = now().addingTimeInterval(600)
@@ -722,7 +723,9 @@ final class EventLog {
         let fd = Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC | (directory ? O_DIRECTORY : 0))
         guard fd >= 0 else {
             // An owner-unreadable mode (0244, 0311) cannot be opened; it still
-            // must lose group and other access. lstat already proved the type.
+            // must lose group and other access. This path-based change after
+            // lstat accepts the race the descriptor path closes: at worst it
+            // clears group and other bits on a same-owner swapped path.
             guard errno == EACCES else { return false }
             return Self.retryingWithoutSetGID(named.st_mode) {
                 fchmodat(AT_FDCWD, path, $0, AT_SYMLINK_NOFOLLOW)

@@ -2571,10 +2571,13 @@ extension EventLogTests {
         log.append(EventEnvelope(type: .surfaceCreated, instance: "synthetic-eacces-7001", ts: Date()))
         log.flush()
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        let types = readLines(url).map(parse).compactMap { $0["type"] as? String }
-        XCTAssertEqual(types.first, "log.opened")
-        XCTAssertFalse(types.contains("log.rotated"), "No recovery: the file was never deleted")
-        XCTAssertEqual(types.last, "panel.created", "The handle kept writing to the linked file")
+        // No recovery: the file was never deleted, and the handle kept writing.
+        // The unlistable directory also makes the shared retention lock
+        // unavailable, which is recorded truthfully as a degraded episode.
+        let events = readLines(url).map(parse)
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["log.opened", "log.retention", "panel.created"])
+        let boundary = events.count > 1 ? events[1] : [:]
+        XCTAssertEqual((boundary["payload"] as? [String: Any])?["state"] as? String, "degraded")
     }
 
     func testASymlinkedCurrentPathNeverHasItsTargetTightened() throws {

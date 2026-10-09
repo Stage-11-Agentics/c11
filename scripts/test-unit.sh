@@ -13,6 +13,22 @@ if [ "$#" -eq 0 ]; then
   set -- test
 fi
 
+# C11-371: same 60s hard case bound as test-unit-local.sh. XCTest rounds up
+# to a minute, so 60 is the effective bound.
+for arg in "$@"; do
+  case "$arg" in
+    test|test-without-building|-only-testing:*)
+      # Prepend. An empty array under `set -u` is an unbound variable on bash 3.2.
+      set -- \
+        -test-timeouts-enabled YES \
+        -default-test-execution-time-allowance 60 \
+        -maximum-test-execution-time-allowance 60 \
+        "$@"
+      break
+      ;;
+  esac
+done
+
 scripts/assert-ghosttykit.sh
 exec scripts/with-build-lock.sh xcodebuild \
   -project "$PROJECT" \

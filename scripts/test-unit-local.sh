@@ -41,6 +41,23 @@ if [ "$#" -eq 0 ]; then
   set -- test
 fi
 
+# C11-371: a hung case fails at 60s and the run continues. XCTest rounds the
+# allowance up to a minute, so 60 is the effective bound. Passed only for a
+# test action; a build invocation does not accept these flags.
+for arg in "$@"; do
+  case "$arg" in
+    test|test-without-building|-only-testing:*)
+      # Prepend. An empty array under `set -u` is an unbound variable on bash 3.2.
+      set -- \
+        -test-timeouts-enabled YES \
+        -default-test-execution-time-allowance 60 \
+        -maximum-test-execution-time-allowance 60 \
+        "$@"
+      break
+      ;;
+  esac
+done
+
 echo "[test-unit-local] C11_TAG=$C11_TAG"
 echo "[test-unit-local] C11_SOCKET_PATH=$C11_SOCKET_PATH"
 echo "[test-unit-local] derivedDataPath=$DERIVED_DATA"

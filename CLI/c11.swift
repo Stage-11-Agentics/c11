@@ -22184,6 +22184,9 @@ extension CMUXCLI {
             Thread.sleep(forTimeInterval: 0.25)
             guard FileManager.default.fileExists(atPath: logURL.path) else { continue }
             let currentInode = eventsInode(of: logURL)
+            // A follow that started before the log existed learns its inode
+            // here, so a later roll can be matched against `.1`.
+            if lastInode == 0, currentInode != 0, lastSize == 0 { lastInode = currentInode }
             let currentSize = eventsFileSize(of: logURL)
             // Rotation detection: the file shrank, or its inode changed → the log
             // rolled. A `0` inode means a transient stat failure (e.g. mid-rename);
@@ -22196,7 +22199,11 @@ extension CMUXCLI {
                 // the sub-second unread tail would live only in `.1` and the
                 // follower would skip it.
                 let rolled = EventLogLayout.rolledURL(for: logURL)
-                if let rh = try? FileHandle(forReadingFrom: rolled) {
+                // C11-348: only when `.1` is the file we were reading. After a
+                // recovery (`rolled_to: null`) the live file was deleted, and
+                // `.1` is an older, unrelated generation.
+                if lastInode != 0, eventsInode(of: rolled) == lastInode,
+                   let rh = try? FileHandle(forReadingFrom: rolled) {
                     try? rh.seek(toOffset: lastSize)
                     let tail = ((try? rh.readToEnd()) ?? nil) ?? Data()
                     if let text = String(data: tail, encoding: .utf8), !text.isEmpty { drainLines(text) }

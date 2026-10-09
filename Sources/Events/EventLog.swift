@@ -325,6 +325,8 @@ final class EventLog {
         guard recordingEnabled, !samplingAsleep else { return }
         flushTitles(expiredOnly: true)
         reportDropsIfNeeded()
+        // Recover a deleted live file before the sample, not into the orphan.
+        if recordingEnabled, liveFileDetached() { reattachDetachedLiveFile() }
         if recordingEnabled, analyticsEnabled, let event = sampleProvider?() { writeAssigningSeq(event) }
         reconcileAtCheckpoint()
         nextSampleAt = now().addingTimeInterval(600)
@@ -353,9 +355,14 @@ final class EventLog {
 
     /// The live path no longer names the open file: something deleted or
     /// replaced it. Writing on would grow an unlinked inode nobody can read.
+    /// Only a missing path or a different inode counts. Any other stat
+    /// failure (EACCES, EIO) keeps the still-linked handle writing.
     private func liveFileDetached() -> Bool {
         guard let fileHandle else { return false }
-        return !Self.pathNamesOpenFile(url.path, fileHandle.fileDescriptor, followingSymlink: true)
+        var opened = stat(), named = stat()
+        guard fstat(fileHandle.fileDescriptor, &opened) == 0 else { return false }
+        guard stat(url.path, &named) == 0 else { return errno == ENOENT || errno == ENOTDIR }
+        return named.st_dev != opened.st_dev || named.st_ino != opened.st_ino
     }
 
     /// Abandons a detached handle and starts a fresh current file. Its first
@@ -713,12 +720,27 @@ final class EventLog {
         guard lstat(path, &named) == 0, named.st_uid == geteuid(),
               named.st_mode & S_IFMT == type, named.st_mode & 0o077 != 0 else { return false }
         let fd = Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC | (directory ? O_DIRECTORY : 0))
-        guard fd >= 0 else { return false }
+        guard fd >= 0 else {
+            // An owner-unreadable mode (0244, 0311) cannot be opened; it still
+            // must lose group and other access. lstat already proved the type.
+            guard errno == EACCES else { return false }
+            return Self.retryingWithoutSetGID(named.st_mode) {
+                fchmodat(AT_FDCWD, path, $0, AT_SYMLINK_NOFOLLOW)
+            }
+        }
         defer { Darwin.close(fd) }
         var opened = stat()
         guard fstat(fd, &opened) == 0, opened.st_mode & S_IFMT == type, opened.st_uid == geteuid(),
               opened.st_dev == named.st_dev, opened.st_ino == named.st_ino else { return false }
-        return fchmod(fd, Self.withoutGroupAndOther(opened.st_mode)) == 0
+        return Self.retryingWithoutSetGID(opened.st_mode) { fchmod(fd, $0) }
+    }
+
+    /// A non-member owner may not keep S_ISGID (EPERM); privacy wins then.
+    private static func retryingWithoutSetGID(_ mode: mode_t, _ change: (mode_t) -> Int32) -> Bool {
+        let tightened = withoutGroupAndOther(mode)
+        if change(tightened) == 0 { return true }
+        guard errno == EPERM, tightened & S_ISGID != 0 else { return false }
+        return change(tightened & ~S_ISGID) == 0
     }
 
     /// Only a regular file still named by `path` (never a symlink's target)
@@ -728,7 +750,7 @@ final class EventLog {
         guard fstat(fd, &opened) == 0, opened.st_mode & S_IFMT == S_IFREG, opened.st_uid == geteuid(),
               opened.st_mode & 0o077 != 0, lstat(path, &named) == 0,
               named.st_dev == opened.st_dev, named.st_ino == opened.st_ino else { return }
-        _ = fchmod(fd, Self.withoutGroupAndOther(opened.st_mode))
+        _ = Self.retryingWithoutSetGID(opened.st_mode) { fchmod(fd, $0) }
     }
 
     /// Clears group and other bits only; owner bits and special bits stay.
@@ -750,7 +772,7 @@ final class EventLog {
         // directory itself before discovering retained generations.
         let directory = url.deletingLastPathComponent().resolvingSymlinksInPath()
         let files = (try? FileManager.default.contentsOfDirectory(at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])) ?? []
+            includingPropertiesForKeys: nil)) ?? []
         return files.filter { item in
             let name = item.lastPathComponent
             // Only event files in this dedicated directory. Custom test paths
@@ -767,10 +789,17 @@ final class EventLog {
     /// daily checkpoint reconcile files (and tighten their modes).
     /// Normal appends update cached bytes without directory scans or flock.
     private func acquireHistoryLock() -> String? {
+        let directory = url.deletingLastPathComponent()
+        let lockPath = directory.appendingPathComponent(".activity-history.lock").path
+        // A deleted history directory leaves our lock on an unlinked inode
+        // that other writers no longer share; reopen it at the path.
+        if historyLockFD >= 0, !Self.pathNamesOpenFile(lockPath, historyLockFD, followingSymlink: true) {
+            Darwin.close(historyLockFD)
+            historyLockFD = -1
+        }
         if historyLockFD < 0 {
-            let directory = url.deletingLastPathComponent()
             try? Self.createPrivateDirectory(directory)
-            historyLockFD = Darwin.open(directory.appendingPathComponent(".activity-history.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, Self.privateFileMode)
+            historyLockFD = Darwin.open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, Self.privateFileMode)
         }
         guard historyLockFD >= 0 else { return "lock_unavailable" }
         if flock(historyLockFD, LOCK_EX | LOCK_NB) == 0 { return nil }

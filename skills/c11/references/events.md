@@ -79,7 +79,7 @@ Five additional `type` values are **not taxonomy members** — they are structur
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `log.opened` | `{pid}` | First line of an instance's log. `seq` starts here. |
-| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). `rolled_to` is `null` when the live file was deleted out from under c11: nothing rolled, and records written to the deleted file since the last checkpoint are gone. |
+| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). `rolled_to` is `null` when the live file was deleted or replaced out from under c11: nothing rolled, and every record in the deleted file (including any written after the deletion, until c11 noticed) is gone. If the path was replaced rather than deleted, the marker follows the replacement's content instead of opening the file. |
 | `log.dropped` | `{count}` | Backpressure or failed writes shed `count` events. This marks incomplete coverage. |
 | `log.policy` | `{enabled, analytics_enabled, keep_text, retention_days}` | Recording policy boundary; disabled spans have unknown coverage. |
 | `log.retention` | `{state, reason?}` | `degraded` begins a retention-coordination episode; `recovered` ends it. This softens the shared byte cap without implying lost events. Failed boundary writes remain pending for retry and do not increment `log.dropped`. |
@@ -140,7 +140,7 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 - **Off-main and non-blocking.** Emission never blocks the UI or the writer's caller; serialization and the file write happen off the main actor.
 - **Low latency.** Ordinary events are readable **within ~1s** under normal disk conditions. C11-349 deliberately coalesces meaningful `source=osc` title changes into first/last/count windows: the final tail has a **60-second deadline** while awake, including with analytics off. Spinner-only changes are discarded. This is the sole EVT-6 exception.
 - **`seq` is the oracle.** Ordering within an instance is total and gap-free *except* where a `log.dropped` marker explicitly records a gap. Order by `seq`; `ts` is advisory.
-- **Rotation is observable.** The `log.rotated` marker (first line of the fresh file) plus the CLI's rotation-aware follow (it drains the rolled `.1` tail, then continues) means a follower doesn't silently lose events across a roll. A direct file reader that wants the same guarantee should watch for a size shrink / inode change and drain `.ndjson.1`.
+- **Rotation is observable.** The `log.rotated` marker (first line of the fresh file) plus the CLI's rotation-aware follow (it drains the rolled `.1` tail, then continues) means a follower doesn't silently lose events across a roll. A direct file reader that wants the same guarantee should watch for a size shrink / inode change and drain `.ndjson.1` only when `.1` has the inode it was reading. After a recovery (`log.rotated` with `rolled_to: null`), `.1` is an older, unrelated generation; `c11 events tail --follow` skips it.
 
 **Non-guarantees**
 
@@ -249,7 +249,9 @@ directory named like an event file is never followed, counted or removed.
 If the live file is deleted out from under a running c11, the next health or
 daily checkpoint, or the next size-cap roll, notices that the path no longer
 names the open file and starts a fresh current file with a `log.rotated`
-marker whose `rolled_to` is `null`. Records written in between are lost. New files are created `0600` and new
+marker whose `rolled_to` is `null`. Records in the deleted file, including any
+written before c11 noticed, are lost. Only a missing path or a different inode
+counts; any other stat error keeps the existing handle writing. New files are created `0600` and new
 directories `0700`. Instance ids end in the pid, so a launch can reuse a dead
 launch's current file name. At its first write, that launch rolls the inherited
 file into its numbered generations (a plain rename that keeps the file's mtime)

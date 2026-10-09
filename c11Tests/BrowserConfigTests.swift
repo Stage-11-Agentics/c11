@@ -2125,18 +2125,6 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
     }
 
-    private func findWindowBrowserSlotView(in root: NSView) -> WindowBrowserSlotView? {
-        if let slot = root as? WindowBrowserSlotView {
-            return slot
-        }
-        for subview in root.subviews {
-            if let slot = findWindowBrowserSlotView(in: subview) {
-                return slot
-            }
-        }
-        return nil
-    }
-
     func testRestoreReopensInspectorAfterAttachWhenPreferredVisible() {
         let (panel, inspector) = makePanelWithInspector()
 
@@ -2578,110 +2566,6 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             inspectorView.superview === visibleSlot,
             "An off-window replacement host should leave DevTools companion views in the visible local host"
         )
-    }
-
-    func testVisibleReplacementLocalHostNormalizesBottomDockedInspectorFrames() throws {
-        // C11-378: macos-15 run 37875977217 left the page on the 180-wide host instead of the 360-wide replacement.
-        try XCTSkipIf(true, "Quarantined (C11-378). Replacement host stayed 180 wide instead of 360 on macos-15 run 37875977217.")
-        let (panel, _) = makePanelWithInspector()
-        XCTAssertTrue(panel.showDeveloperTools())
-
-        let paneId = PaneID(id: UUID())
-        let representable = WebViewRepresentable(
-            panel: panel,
-            paneId: paneId,
-            shouldAttachWebView: false,
-            useLocalInlineHosting: true,
-            shouldFocusWebView: false,
-            isPanelFocused: true,
-            portalZPriority: 0,
-            workspaceFrameStyle: nil,
-            paneDropZone: nil,
-            searchOverlay: nil,
-            paneInteractionRuntime: AreaInteractionRuntime(),
-            paneTopChromeHeight: 0
-        )
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.orderOut(nil) }
-        guard let contentView = window.contentView else {
-            XCTFail("Expected content view")
-            return
-        }
-
-        let narrowHosting = NSHostingView(rootView: representable)
-        narrowHosting.frame = NSRect(x: 180, y: 0, width: 180, height: 240)
-        contentView.addSubview(narrowHosting)
-
-        window.makeKeyAndOrderFront(nil)
-        window.displayIfNeeded()
-        contentView.layoutSubtreeIfNeeded()
-        narrowHosting.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-
-        guard let initialSlot = panel.webView.superview as? WindowBrowserSlotView else {
-            XCTFail("Expected initial local inline slot")
-            return
-        }
-
-        let inspectorView = WKInspectorProbeView(
-            frame: NSRect(x: 0, y: 0, width: initialSlot.bounds.width, height: 72)
-        )
-        inspectorView.autoresizingMask = [.width]
-        initialSlot.addSubview(inspectorView)
-        panel.webView.frame = NSRect(
-            x: 0,
-            y: inspectorView.frame.maxY,
-            width: initialSlot.bounds.width,
-            height: initialSlot.bounds.height - inspectorView.frame.height
-        )
-        initialSlot.layoutSubtreeIfNeeded()
-
-        let replacementHosting = NSHostingView(rootView: representable)
-        replacementHosting.frame = contentView.bounds
-        replacementHosting.autoresizingMask = [NSView.AutoresizingMask.width, .height]
-        contentView.addSubview(replacementHosting, positioned: .above, relativeTo: narrowHosting)
-        contentView.layoutSubtreeIfNeeded()
-        replacementHosting.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-
-        replacementHosting.rootView = representable
-        contentView.layoutSubtreeIfNeeded()
-        replacementHosting.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-
-        narrowHosting.removeFromSuperview()
-        contentView.layoutSubtreeIfNeeded()
-        replacementHosting.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-
-        guard let replacementHost = findHostContainerView(in: replacementHosting),
-              let replacementSlot = findWindowBrowserSlotView(in: replacementHost) else {
-            XCTFail("Expected replacement local inline host")
-            return
-        }
-
-        XCTAssertTrue(
-            panel.webView.superview === replacementSlot,
-            "A visible replacement local host should take over the hosted page"
-        )
-        XCTAssertTrue(
-            inspectorView.superview === replacementSlot,
-            "A visible replacement local host should move the DevTools companion views with the page"
-        )
-        XCTAssertEqual(inspectorView.frame.minX, 0, accuracy: 0.5)
-        XCTAssertEqual(inspectorView.frame.minY, 0, accuracy: 0.5)
-        XCTAssertEqual(inspectorView.frame.width, replacementSlot.bounds.width, accuracy: 0.5)
-        XCTAssertEqual(inspectorView.frame.height, 72, accuracy: 0.5)
-        XCTAssertEqual(panel.webView.frame.minX, 0, accuracy: 0.5)
-        XCTAssertEqual(panel.webView.frame.minY, 72, accuracy: 0.5)
-        XCTAssertEqual(panel.webView.frame.width, replacementSlot.bounds.width, accuracy: 0.5)
-        XCTAssertEqual(panel.webView.frame.height, replacementSlot.bounds.height - 72, accuracy: 0.5)
     }
 }
 

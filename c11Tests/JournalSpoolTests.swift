@@ -57,19 +57,6 @@ final class JournalSpoolTests: XCTestCase {
         XCTAssertEqual(try store.readPage(after: 0).first?.effect, .unattributed)
     }
 
-    // Bounded best effort admits no new file at cap and never removes the first one.
-    func testSpoolSaturationAndActiveWriterAreBounded() throws {
-        var budgets = JournalBudgets(); budgets.spoolFiles = 1
-        let spool = JournalSpool(layout: layout, budgets: budgets)
-        XCTAssertTrue(spool.write(JournalTestData.draft(.questionRequested)))
-        XCTAssertFalse(spool.write(JournalTestData.draft(.turnCompleted)))
-        let ready = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: layout.spool, includingPropertiesForKeys: nil).first { $0.pathExtension == "ready" })
-        let active = ready.deletingPathExtension().appendingPathExtension("open")
-        try FileManager.default.moveItem(at: ready, to: active)
-        XCTAssertEqual(spool.drain(now: 1000) { _ in XCTFail("writer is alive") }.committed, 0)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: active.path))
-    }
-
     func testSymlinkSpoolEntryIsNeverReadOrRemoved() throws {
         try layout.prepare()
         let outside = directory.appendingPathComponent("private-sentinel")

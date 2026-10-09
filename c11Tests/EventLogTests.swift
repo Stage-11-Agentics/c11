@@ -2333,6 +2333,55 @@ extension EventLogTests {
         XCTAssertEqual(ActivityHistoryPolicy(defaults: defaults).retentionDays, 30)
     }
 
+    func testEventsTailExplainsAnInstanceLogThatRetentionRemoved() throws {
+        let cli = try bundledCLIForEventsTail()
+        let dead = logURL("events-synthetic-tail-7000.ndjson")
+        try seed(dead, "{\"v\":2,\"seq\":1,\"type\":\"log.opened\",\"instance\":\"synthetic-tail-7000\",\"ts\":\"2026-09-01T00:00:00.000Z\"}\n",
+                 ageDays: 20)
+        let live = EventLog(url: logURL("events-synthetic-tail-7001.ndjson"), instance: "synthetic-tail-7001")
+        live.open()
+        live.flush()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dead.path), "The live launch's retention removed the dead log")
+
+        func tail(_ instance: String) throws -> (status: Int32, out: String, err: String) {
+            let process = Process()
+            let out = Pipe(), err = Pipe()
+            process.executableURL = cli
+            process.arguments = ["events", "tail", "--instance", instance]
+            var environment = ProcessInfo.processInfo.environment
+            environment["C11_ACTIVITY_HISTORY_DIRECTORY"] = tempDir.path
+            process.environment = environment
+            process.standardOutput = out
+            process.standardError = err
+            try process.run()
+            let stdout = out.fileHandleForReading.readDataToEndOfFile()
+            let stderr = err.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return (process.terminationStatus, String(decoding: stdout, as: UTF8.self), String(decoding: stderr, as: UTF8.self))
+        }
+        let pruned = try tail("synthetic-tail-7000")
+        XCTAssertEqual(pruned.status, 0)
+        XCTAssertEqual(pruned.out, "")
+        XCTAssertTrue(pruned.err.contains("note: no event log for instance synthetic-tail-7000"), pruned.err)
+        let present = try tail("synthetic-tail-7001")
+        XCTAssertEqual(present.status, 0, present.err)
+        XCTAssertTrue(present.out.contains("\"log.opened\""), present.out)
+        XCTAssertFalse(present.err.contains("no event log"), present.err)
+    }
+
+    private func bundledCLIForEventsTail() throws -> URL {
+        var url = Bundle(for: Self.self).bundleURL
+        for _ in 0..<6 {
+            for name in ["c11 DEV.app", "c11.app"] {
+                let cli = url.appendingPathComponent(name + "/Contents/Resources/bin/c11")
+                if FileManager.default.isExecutableFile(atPath: cli.path) { return cli }
+            }
+            url.deleteLastPathComponent()
+        }
+        XCTFail("bundled c11 CLI not found from \(Bundle(for: Self.self).bundleURL.path)")
+        throw CocoaError(.fileNoSuchFile)
+    }
+
     func testRecordingOffStillRunsTheDailyRetentionCheckpoint() throws {
         var clock = Date()
         var timers = 0

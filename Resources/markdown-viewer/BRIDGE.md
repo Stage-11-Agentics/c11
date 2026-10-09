@@ -37,7 +37,9 @@ result is needed. Other methods return synchronously. Queries never mutate focus
   outlineOpen: `true|false|"auto"`; osAppearance: `light|dark` (optional host
   override; otherwise follows the c11 effective appearance, which follows the OS
   when c11 appearance is System). Invalid values restore the default for that
-  field (`system`, `theme`, `1`, `auto`). Returns settled `visible()`.
+  field (`system`, `theme`, `1`, `auto`). A theme or appearance change paints
+  the new text and highlight colours on the next frame, before Mermaid figures
+  settle. Returns settled `visible()` after those figures and scroll restoration.
   `strings` is an optional localized string map, merged over English defaults:
   `copy`, `copied`, `copyLink`, `expand`, `close`, `diagram`, `diagramError`,
   `imageBlocked`, `notes`, `back`, `source`, `frontmatter`, `outlineTitle`,

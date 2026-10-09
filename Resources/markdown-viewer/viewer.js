@@ -808,7 +808,9 @@ function layoutAll() {
   // Reserve the dock regardless of visibility; closing the outline never shifts text.
   const dockGutter=S.docked?(panel+gap)+'px':'';
   layout.style.paddingLeft=dockGutter;
-  srcScroller.style.paddingLeft=dockGutter;
+  // Source mode keeps the dock gutter only while the outline is open. A closed
+  // outline would otherwise leave the reserved reading gutter as a left indent.
+  srcScroller.style.paddingLeft=(S.docked&&S.outlineOpen)?dockGutter:'';
   layout.style.paddingRight='';
   updateOutlineVisibility();
   const colR=col.getBoundingClientRect(), layR=layout.getBoundingClientRect();
@@ -880,8 +882,37 @@ function cleanSVG(svg) {
   }
   el.removeAttribute('height');el.style.width='100%';el.style.maxWidth='100%';return el;
 }
-async function diagrams(generation) {
-  configureMermaid();let n=0;
+async function diagrams(generation, coalesce=false) {
+  configureMermaid();
+  if(coalesce) {
+    // Theme swaps bake new SVG colours, but laying out after every figure is what
+    // held the CSS colour change off the first frame. Draw them all, then anchor once.
+    const rendered=[];let n=0;
+    for(const fig of $$('figure.diagram',article)) {
+      n++;fig.dataset.n=n;$('.cap',fig).textContent=S.strings.diagram+' '+n;
+      if(fig._theme===S.resolved)continue;
+      if(generation!==S.generation)return;
+      const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
+      try {
+        const {svg}=await mermaid.render(id,diagramSource(fig._mermaid));
+        if(generation!==S.generation)return;
+        rendered.push({fig,node:cleanSVG(svg)});
+      } catch(e) {
+        if(generation!==S.generation)return;
+        const box=document.createElement('div');box.className='diagram-err';
+        const label=document.createElement('div');label.textContent=S.strings.diagramError;const pre=document.createElement('pre');pre.textContent=fig._mermaid;box.append(label,pre);
+        rendered.push({fig,node:box,error:e});
+      } finally {document.getElementById('d'+id)?.remove();}
+    }
+    if(generation!==S.generation||!rendered.length)return;
+    const anchor=capture();
+    for(const item of rendered) {
+      $('.diagram-stage',item.fig).replaceChildren(item.node);item.fig._theme=S.resolved;
+      if(item.error)error('diagram_failed',item.error);
+    }
+    layoutAll();restore(anchor);return;
+  }
+  let n=0;
   for(const fig of $$('figure.diagram',article)) {
     n++;fig.dataset.n=n;$('.cap',fig).textContent=S.strings.diagram+' '+n;
     if(fig._theme===S.resolved)continue;
@@ -1024,6 +1055,7 @@ async function setSettings(input={}) {
   const settings={...input};
   return enqueue(async generation=>{
     const a=capture();
+    const prevResolved=S.resolved, prevTypeface=S.typeface, prevScale=S.scale;
     let stringsChanged=false;
     if('theme'in settings)S.theme=settings.theme==='system'||C11MD.get(settings.theme)?settings.theme:'system';
     if('typeface'in settings)S.typeface=settings.typeface==='theme'||C11MD.getFace(settings.typeface)?settings.typeface:'theme';
@@ -1031,9 +1063,23 @@ async function setSettings(input={}) {
     if('outlineOpen'in settings)S.outlineChoice=[true,false,'auto'].includes(settings.outlineOpen)?settings.outlineOpen:'auto';
     if('osAppearance'in settings)S.os=['light','dark'].includes(settings.osAppearance)?settings.osAppearance:null;
     if(settings.strings && typeof settings.strings==='object')for(const k of Object.keys(defaults))if(typeof settings.strings[k]==='string'&&settings.strings[k]!==S.strings[k]){S.strings[k]=settings.strings[k];stringsChanged=true;}
-    applyTheme();if(stringsChanged){renderOutlineList();renderFindChrome();renderCorpusChrome();}layoutAll();restore(a);
-    await document.fonts.ready;if(generation!==S.generation)return visible();
-    layoutAll();restore(a);await diagrams(generation);if(generation!==S.generation)return visible();
+    const metricsChanged=S.typeface!==prevTypeface||S.scale!==prevScale;
+    applyTheme();if(stringsChanged){renderOutlineList();renderFindChrome();renderCorpusChrome();}
+    const colorsChanged=S.resolved!==prevResolved;
+    if(colorsChanged) {
+      // One layout keeps the anchor on the font-weight reflow. The frame yield
+      // is what lets that paint land before Mermaid and the rest of the measure.
+      layoutAll();restore(a);
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      if(generation!==S.generation)return visible();
+      if(metricsChanged){await document.fonts.ready;if(generation!==S.generation)return visible();layoutAll();restore(a);}
+      await diagrams(generation,true);
+    } else {
+      layoutAll();restore(a);
+      await document.fonts.ready;if(generation!==S.generation)return visible();
+      layoutAll();restore(a);await diagrams(generation);
+    }
+    if(generation!==S.generation)return visible();
     for(const x of $$('.copy',article))x.textContent=S.strings.copy;
     for(const x of $$('.expand',article))x.textContent=S.strings.expand;
     for(const x of $$('.h-anchor',article))x.title=S.strings.copyLink;

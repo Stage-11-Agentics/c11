@@ -272,8 +272,16 @@ try {
   }
   await settings({outlineOpen:false});
   const sourceTextAfterClose=await page.locator('#source .sl:first-child .t').boundingBox();
-  assert.ok(sourceTextAfterClose&&Math.abs(sourceTextBox.x-sourceTextAfterClose.x)<1,'closing a docked outline shifted source lines');
-  scenario('docked outline reserves its gutter over source line numbers and text');
+  const sourceClosedEdge=await page.evaluate(()=>{
+    const surfaceEl=document.querySelector('#surface');
+    const surface=surfaceEl.getBoundingClientRect();
+    const num=document.querySelector('#source .sl .n').getBoundingClientRect();
+    const pad=parseFloat(getComputedStyle(surfaceEl).getPropertyValue('--pad'));
+    return {numX:num.x-surface.x,pad};
+  });
+  assert.ok(sourceTextAfterClose&&sourceTextBox.x-sourceTextAfterClose.x>200,'closing the outline left source lines in the dock gutter');
+  assert.ok(Math.abs(sourceClosedEdge.numX-sourceClosedEdge.pad)<2,`closed source line numbers should sit on the pad, x=${sourceClosedEdge.numX} pad=${sourceClosedEdge.pad}`);
+  scenario('docked outline covers neither source line numbers nor text, and closing it returns source to the left pad');
 
   await load(long,'/synthetic/outline-threshold.md',1);await settings({outlineOpen:'auto'});
   let low=500,high=1600;
@@ -606,6 +614,96 @@ try {
   for(const name of ['article','source','target','target-1'])assert.equal(await page.evaluate(name=>c11md.scrollToHeading(name).ok,name),true);
   assert.equal(await page.locator('article#article').count(),1);assert.equal(await page.locator('#source.source').count(),1);
   scenario('heading slugs cannot collide with host DOM IDs; duplicate headings remain addressable');
+
+  await page.setViewportSize({width:1600,height:900});
+  await settings({theme:'light',typeface:'serif',scale:1,outlineOpen:false,osAppearance:'light'});
+  await load(messaging,'/synthetic/theme-frame.md',1);
+  const themeFrame=async(patch)=>{
+    const sample=await page.evaluate(patch=>new Promise(resolve=>{
+      const prose=document.querySelector('#article p');
+      const keyword=document.querySelector('.hljs-keyword');
+      const blocks=[...document.querySelectorAll('#article > *')];
+      const scroller=document.querySelector('#scroller');
+      const anchorEl=[...document.querySelectorAll('#article p')].find(el=>el.getBoundingClientRect().top>80);
+      const before={color:getComputedStyle(prose).color,kw:keyword?getComputedStyle(keyword).color:null,top:anchorEl?anchorEl.getBoundingClientRect().top-scroller.getBoundingClientRect().top:null,text:anchorEl?anchorEl.textContent.slice(0,48):''};
+      const t0=performance.now();
+      let settled=false;
+      const pending=c11md.setSettings(patch);
+      pending.then(()=>{settled=true;});
+      requestAnimationFrame(()=>{
+        const frameMs=performance.now()-t0;
+        const atFrame={settled,color:getComputedStyle(prose).color,kw:keyword&&keyword.isConnected?getComputedStyle(keyword).color:null,sameBlocks:blocks.every((node,i)=>document.querySelectorAll('#article > *')[i]===node),keywordSame:keyword?keyword.isConnected:false};
+        pending.then(state=>{
+          const svg=document.querySelector('figure.diagram svg');
+          const fills=svg?[...svg.querySelectorAll('rect,polygon,path,circle')].slice(0,48).map(el=>getComputedStyle(el).fill):[];
+          const afterTop=anchorEl&&anchorEl.isConnected?anchorEl.getBoundingClientRect().top-scroller.getBoundingClientRect().top:null;
+          resolve({frameMs,before,atFrame,resolved:state.theme.resolved,fills,anchorDelta:before.top===null||afterTop===null?null:Math.abs(before.top-afterTop),blockCount:blocks.length});
+        });
+      });
+    }),patch);
+    return sample;
+  };
+  const darkFrame=await themeFrame({theme:'dark',typeface:'serif',scale:1,outlineOpen:false,osAppearance:'dark'});
+  assert.ok(darkFrame.frameMs<250,`theme text waited ${darkFrame.frameMs}ms for the first frame`);
+  assert.equal(darkFrame.atFrame.settled,false,'theme text waited until Mermaid finished');
+  assert.notEqual(darkFrame.atFrame.color,darkFrame.before.color,'prose colour was unchanged on the first frame');
+  assert.notEqual(darkFrame.atFrame.kw,darkFrame.before.kw,'highlight colour was unchanged on the first frame');
+  assert.equal(darkFrame.atFrame.sameBlocks,true,'theme change replaced rendered blocks');
+  assert.equal(darkFrame.atFrame.keywordSame,true,'theme change replaced the highlighted code node');
+  assert.equal(darkFrame.resolved,'dark');
+  assert.ok(darkFrame.anchorDelta!==null&&darkFrame.anchorDelta<1,`theme change moved the prose anchor by ${darkFrame.anchorDelta}px`);
+  assert.ok(darkFrame.fills.includes('rgb(26, 26, 31)')||darkFrame.fills.includes('rgb(138, 135, 144)'),`Mermaid did not pick up the dark palette: ${darkFrame.fills.slice(0,6).join(', ')}`);
+  const systemFrame=await themeFrame({theme:'system',osAppearance:'light',typeface:'serif',scale:1,outlineOpen:false});
+  assert.equal(systemFrame.resolved,'light');
+  assert.ok(systemFrame.frameMs<250,`appearance text waited ${systemFrame.frameMs}ms for the first frame`);
+  assert.equal(systemFrame.atFrame.settled,false,'appearance text waited until Mermaid finished');
+  assert.notEqual(systemFrame.atFrame.color,systemFrame.before.color);
+  assert.equal(systemFrame.atFrame.sameBlocks,true);
+  scenario('theme and appearance repaint prose and highlight on the first frame without replacing blocks; Mermaid catches up',{darkFrameMs:Math.round(darkFrame.frameMs),appearanceFrameMs:Math.round(systemFrame.frameMs)});
+
+  const sourceShot=path.join(output,'c11-380-source-light-1600.png');
+  const readShot=path.join(output,'c11-380-read-light-1600.png');
+  const sourceDarkShot=path.join(output,'c11-380-source-dark-1600.png');
+  const readDarkShot=path.join(output,'c11-380-read-dark-1600.png');
+  await settings({theme:'light',osAppearance:'light',outlineOpen:false});
+  await page.evaluate(()=>c11md.setSourceMode(true));
+  const sourceEdge=(label)=>page.evaluate(label=>{
+    const surfaceEl=document.querySelector('#surface');
+    const surface=surfaceEl.getBoundingClientRect();
+    const num=document.querySelector('#source .sl .n').getBoundingClientRect();
+    const row=document.querySelector('#source .sl').getBoundingClientRect();
+    const pad=parseFloat(getComputedStyle(surfaceEl).getPropertyValue('--pad'));
+    return {label,numX:num.x-surface.x,rowRight:surface.right-row.right,rowW:row.width,surfaceW:surface.width,pad};
+  },label);
+  const sourceLight=await sourceEdge('light');
+  assert.ok(Math.abs(sourceLight.numX-sourceLight.pad)<2,`source light num x ${sourceLight.numX} pad ${sourceLight.pad}`);
+  assert.ok(Math.abs(sourceLight.rowRight-sourceLight.pad)<2,`source light right gap ${sourceLight.rowRight} pad ${sourceLight.pad}`);
+  assert.ok(sourceLight.rowW>sourceLight.surfaceW*0.8,`source row does not use the panel width: ${sourceLight.rowW}/${sourceLight.surfaceW}`);
+  await page.screenshot({path:sourceShot});
+  await settings({theme:'dark',osAppearance:'dark'});
+  const sourceDark=await sourceEdge('dark');
+  assert.ok(Math.abs(sourceDark.numX-sourceDark.pad)<2,`source dark num x ${sourceDark.numX}`);
+  assert.ok(Math.abs(sourceDark.rowRight-sourceDark.pad)<2,`source dark right gap ${sourceDark.rowRight}`);
+  await page.screenshot({path:sourceDarkShot});
+  await page.evaluate(()=>c11md.setSourceMode(false));
+  await settings({theme:'light',osAppearance:'light',outlineOpen:'auto'});
+  const readColumn=await page.evaluate(()=>{
+    const surface=document.querySelector('#surface').getBoundingClientRect();
+    const col=document.querySelector('#col').getBoundingClientRect();
+    return {x:col.x-surface.x,w:col.width,right:surface.right-col.right};
+  });
+  assert.ok(readColumn.w<800&&readColumn.x>200,`rendered column is no longer centered: ${JSON.stringify(readColumn)}`);
+  await page.screenshot({path:readShot});
+  await settings({theme:'dark',osAppearance:'dark'});
+  const readColumnDark=await page.evaluate(()=>{
+    const surface=document.querySelector('#surface').getBoundingClientRect();
+    const col=document.querySelector('#col').getBoundingClientRect();
+    return {x:col.x-surface.x,w:col.width};
+  });
+  assert.ok(readColumnDark.w<800&&readColumnDark.x>200,`dark rendered column is no longer centered: ${JSON.stringify(readColumnDark)}`);
+  await page.screenshot({path:readDarkShot});
+  report.screenshots.push('c11-380-source-light-1600.png','c11-380-source-dark-1600.png','c11-380-read-light-1600.png','c11-380-read-dark-1600.png');
+  scenario('source mode at 1600px starts on the pad and uses the panel width in both themes; rendered mode stays centered',{sourceLight,sourceDark,readColumn,readColumnDark});
 
   await load('# Error\n\n```mermaid\ninvalid diagram text\n```\n');assert.equal(await page.locator('.diagram-err').count(),1);assert.ok((await page.locator('.diagram-err').innerText()).includes('invalid diagram text'));
   scenario('malformed Mermaid produces quiet escaped-source fallback');

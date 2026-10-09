@@ -42,7 +42,13 @@
     "timezone",
     "instance_scope",
     "foreground_hours_range",
-    "skipped_counts"
+    "skipped_counts",
+    "observed_peak_open_per_instance",
+    "observed_peak_working_per_instance",
+    "hang_precursors",
+    "open_at_observed_end",
+    "usage_scope",
+    "closed_lifetimes_minutes"
   ],
   "properties": {
     "schema_version": {
@@ -165,7 +171,27 @@
           "observed_hours",
           "hangs",
           "hangs_per_hour"
-        ]
+        ],
+        "properties": {
+          "working_panels": {
+            "type": "string"
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hangs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hangs_per_hour": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
       }
     },
     "hang_rate_by_open_load": {
@@ -177,7 +203,27 @@
           "observed_hours",
           "hangs",
           "hangs_per_hour"
-        ]
+        ],
+        "properties": {
+          "open_panels": {
+            "type": "string"
+          },
+          "observed_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hangs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hangs_per_hour": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
       }
     },
     "kinds_created": {
@@ -458,6 +504,97 @@
       "additionalProperties": {
         "type": "integer",
         "minimum": 0
+      }
+    },
+    "panels_created": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "peak_open_per_instance": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "peak_working_per_instance": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "open_at_observed_end": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "observed_peak_open_per_instance": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_peak_working_per_instance": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hang_precursors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_agent_hours": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "usage_scope": {
+      "type": "string"
+    },
+    "closed_lifetimes_minutes": {
+      "type": "object",
+      "required": [
+        "count",
+        "p10",
+        "median",
+        "p90",
+        "censored_panels"
+      ],
+      "properties": {
+        "p10": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "median": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "p90": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "censored_panels": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     }
   }

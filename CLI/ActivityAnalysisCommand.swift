@@ -234,6 +234,7 @@ enum ActivityAnalysisCommand {
         let panel: String
         let workspace: String?
         let committedAt: Int64?
+        let historyPruned: Bool
     }
     private static func harness(_ raw: String) -> String {
         switch raw.lowercased() { case "claude", "claude-code", "claude_code": return "claude"; case "codex", "openai-codex": return "codex"; default: return raw.lowercased() }
@@ -261,15 +262,16 @@ enum ActivityAnalysisCommand {
                 gaps.insert("journal_attribution_time_unavailable")
             }
             var meta: OpaquePointer?
+            var historyPruned = false
             if sqlite3_prepare_v2(db, "SELECT value FROM journal_meta WHERE key='coverage_low_water'", -1, &meta, nil) == SQLITE_OK,
-               sqlite3_step(meta) == SQLITE_ROW, sqlite3_column_int64(meta, 0) > 1 { gaps.insert("journal_history_pruned") }
+               sqlite3_step(meta) == SQLITE_ROW, sqlite3_column_int64(meta, 0) > 1 { historyPruned = true; gaps.insert("journal_history_pruned") }
             if let meta { sqlite3_finalize(meta) }
             defer { sqlite3_finalize(stmt) }
             func column(_ n: Int32) -> String? { sqlite3_column_text(stmt, n).map { String(cString: $0) } }
             var code = sqlite3_step(stmt)
             while code == SQLITE_ROW {
                 if let panel = column(0), let session = column(1), let kind = column(2) {
-                    result[harness(kind) + ":" + session, default: []].insert(Link(panel: panel, workspace: column(3), committedAt: timed ? sqlite3_column_int64(stmt, 4) : nil))
+                    result[harness(kind) + ":" + session, default: []].insert(Link(panel: panel, workspace: column(3), committedAt: timed ? sqlite3_column_int64(stmt, 4) : nil, historyPruned: historyPruned))
                 }
                 code = sqlite3_step(stmt)
             }
@@ -390,7 +392,9 @@ enum ActivityAnalysisCommand {
             "codex_duplicate_candidate_cache_read_tokens_removed": 0, "codex_duplicate_candidate_output_tokens_removed": 0,
             "codex_duplicate_delta_conflicts": 0, "codex_cumulative_samples": 0,
             "claude_output_upgrade_identities": 0, "claude_output_upgrade_tokens": 0,
-            "claude_output_above_min_snapshot_tokens": 0]
+            "claude_output_above_min_snapshot_tokens": 0,
+            "codex_first_cumulative_without_matching_last_records": 0,
+            "codex_first_cumulative_without_matching_last_tokens": 0]
         var pool = StringPool()
         let until = [until, options.until].compactMap { $0 }.min()
         var claude: [String: UsageRow] = [:]
@@ -425,6 +429,12 @@ enum ActivityAnalysisCommand {
         var codex: [CodexIdentity: CodexCandidate] = [:]
         var candidateVolume = Tokens()
         for (fileIndex, file) in files(options.codex, ext: "jsonl", gaps: &gaps).enumerated() {
+            if let since = options.since,
+               let modified = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+               modified < since {
+                counts["codex_files_before_since_skipped", default: 0] += 1
+                gaps.insert("codex_file_mtime_filter_applied"); continue
+            }
             var session = pool.intern(file.deletingPathExtension().lastPathComponent), model = pool.intern("unknown")
             var ownID: String?, firstMetadataInvalid = false, forkProvenance = false, attributionUnknown = false
             var previous: CounterSnapshot?, previousTimestamp: Date?
@@ -463,6 +473,11 @@ enum ActivityAnalysisCommand {
                 // only compact in-window usage identities survive this callback.
                 if let timestamp, let since = options.since, timestamp < since { return }
                 if let timestamp, let until, timestamp > until { return }
+                if !hasPredecessor && total != last {
+                    analysis["codex_first_cumulative_without_matching_last_records", default: 0] += 1
+                    analysis["codex_first_cumulative_without_matching_last_tokens", default: 0] += total.value(0) + total.value(2)
+                    fileGaps.insert("codex_first_cumulative_baseline_unproven")
+                }
                 let input = delta[0], cached = delta[1]
                 if cached > input { fileGaps.insert("codex_cached_tokens_exceed_input") }
                 var row = UsageRow(session: session, harness: "codex", model: model, timestamp: timestamp,
@@ -533,7 +548,7 @@ enum ActivityAnalysisCommand {
             // tied/absent provenance stays ambiguous.
             if sessionIDs.count > 1, let earliest = row.origins.values.min(), row.origins.count == sessionIDs.count {
                 sessionIDs = Set(row.origins.filter { $0.value == earliest }.keys)
-                if sessionIDs.count > 1 && !gaps.contains("journal_history_pruned") {
+                if sessionIDs.count > 1 && !sessionIDs.contains(where: { attribution[row.harness + ":" + $0]?.contains(where: \.historyPruned) == true }) {
                     let firstLinks = sessionIDs.compactMap { session -> (String, Int64)? in
                         attribution[row.harness + ":" + session]?.compactMap(\.committedAt).min().map { (session, $0) }
                     }
@@ -546,6 +561,7 @@ enum ActivityAnalysisCommand {
                 result.formUnion(attribution[row.harness + ":" + session] ?? [])
             }
             let sessionPanels = Set(candidates.map(\.panel))
+            let sessionHistoryPruned = candidates.contains(where: \.historyPruned)
             let timestamp = row.origins.values.min() ?? row.originTimestamp ?? row.timestamp
             if sessionIDs.count == 1, let timestamp, !candidates.isEmpty, candidates.allSatisfy({ $0.committedAt != nil }) {
                 let at = Int64(timestamp.timeIntervalSince1970 * 1000)
@@ -555,7 +571,7 @@ enum ActivityAnalysisCommand {
                 } else { candidates.removeAll(); gaps.insert("usage_before_journal_attribution") }
             }
             let panels = Set(candidates.map(\.panel))
-            let uniqueSessionPanel = sessionPanels.count == 1 && !(gaps.contains("journal_history_pruned") && candidates.isEmpty)
+            let uniqueSessionPanel = sessionPanels.count == 1 && !(sessionHistoryPruned && candidates.isEmpty)
             let panel = row.attributionUnknown ? nil : uniqueSessionPanel ? sessionPanels.first : panels.count == 1 ? panels.first : nil
             let workspaceIDs = Set(candidates.compactMap(\.workspace))
             let workspace = panel != nil && workspaceIDs.count == 1 && candidates.allSatisfy({ $0.workspace != nil }) ? workspaceIDs.first : nil
@@ -645,15 +661,59 @@ enum ActivityAnalysisCommand {
         }
         return cost.isFinite ? cost / 1_000_000 : nil
     }
+    /// Compact native replay state. Never retain parsed payload dictionaries,
+    /// input/mail bodies, or per-hang Foundation arrays across reader chunks.
     private struct Event {
-        let raw: Object
+        struct Hang {
+            let cause: String
+            let samples: Int
+            let total: Double
+            let maximum: Double
+            let unknown: Bool
+        }
+        enum Detail {
+            case none, title(String), explicitTitle(String), kind(String), state(String), sender(String)
+            case hang(Hang), presence(Bool?, Bool?, Bool?), policy(Bool, Bool), retentionDegraded
+        }
         let seq: Int64
         let ts: Date
-        let instance: String
-        var type: String { EventEnvelope.canonicalType(raw["type"] as? String ?? "") }
-        var panel: String? { text(raw["panel"]) ?? text(raw["surface"]) }
-        var workspace: String? { text(raw["workspace"]) }
-        var payload: Object { object(raw["payload"]) }
+        let type: String
+        let panel: String?
+        let workspace: String?
+        let detail: Detail
+        init(raw: Object, seq: Int64, ts: Date, pool: inout StringPool) {
+            self.seq = seq; self.ts = ts
+            type = pool.intern(EventEnvelope.canonicalType(raw["type"] as? String ?? ""))
+            panel = (text(raw["panel"]) ?? text(raw["surface"])).map { pool.intern($0) }
+            workspace = text(raw["workspace"]).map { pool.intern($0) }
+            let p = object(raw["payload"])
+            func owned(_ value: String) -> String { String(decoding: value.utf8, as: UTF8.self) }
+            switch type {
+            case "workspace.created", "workspace.renamed", "workspace.closed":
+                detail = text(p["title"]).map { .title(owned($0)) } ?? .none
+            case "metadata.changed":
+                if p["key"] as? String == "title", ["explicit", "declare"].contains(p["source"] as? String ?? ""), let title = text(p["value"]) {
+                    detail = .explicitTitle(owned(title))
+                } else { detail = .none }
+            case "panel.created": detail = .kind(pool.intern(text(p["kind"]) ?? "unknown"))
+            case "liveness.derived": detail = .state(pool.intern(text(p["state"]) ?? "unknown"))
+            case "mailbox.accepted": detail = .sender(pool.intern(text(p["from"]) ?? "unknown"))
+            case "hang.precursor":
+                let durations = (p["durations_ms"] as? [NSNumber] ?? []).map(\.doubleValue)
+                let valid = durations.filter { $0.isFinite && $0 >= 0 }
+                let reported = (p["count"] as? NSNumber)?.intValue ?? durations.count
+                detail = .hang(Hang(cause: pool.intern(text(p["cause"]) ?? "unknown"), samples: valid.count,
+                    total: valid.reduce(0, +), maximum: valid.max() ?? 0,
+                    unknown: durations.isEmpty || valid.count != durations.count || reported > valid.count))
+            case "log.opened": detail = .presence(p["app_active"] as? Bool, p["screen_locked"] as? Bool, p["system_asleep"] as? Bool)
+            case "log.policy": detail = .policy(p["enabled"] as? Bool != false, p["analytics_enabled"] as? Bool != false)
+            case "log.retention": detail = p["state"] as? String == "degraded" ? .retentionDegraded : .none
+            default: detail = .none
+            }
+        }
+        var title: String? { if case .title(let value) = detail { return value }; return nil }
+        var explicitTitle: String? { if case .explicitTitle(let value) = detail { return value }; return nil }
+        var kind: String? { if case .kind(let value) = detail { return value }; return nil }
     }
     private static func reportResult(_ options: Options, gaps: inout Set<String>) throws -> Object {
         let directory = EventLogLayout.eventsDirectoryURL(state: options.state)
@@ -677,6 +737,7 @@ enum ActivityAnalysisCommand {
             return options.allInstances || production(name)
         }
         var events: [String: [Int64: Event]] = [:]
+        var eventPool = StringPool()
         var counts: [String: Int] = [:]
         var malformedEnvelope = false
         var invalidEnvelopes = 0
@@ -684,7 +745,7 @@ enum ActivityAnalysisCommand {
             lines(file, gaps: &gaps, counts: &counts) { row, _ in
                 guard let ts = date(row["ts"]), let id = text(row["instance"]), let seq = row["seq"] as? NSNumber,
                       let version = row["v"] as? Int, [1, 2].contains(version), text(row["type"]) != nil else { malformedEnvelope = true; invalidEnvelopes += 1; return }
-                events[id, default: [:]][seq.int64Value] = Event(raw: row, seq: seq.int64Value, ts: ts, instance: id)
+                events[eventPool.intern(id), default: [:]][seq.int64Value] = Event(raw: row, seq: seq.int64Value, ts: ts, pool: &eventPool)
             }
         }
         if malformedEnvelope { gaps.insert("invalid_event_envelope"); counts["invalid_event_envelope"] = invalidEnvelopes }
@@ -752,7 +813,8 @@ enum ActivityAnalysisCommand {
                 daily[key] = d; cursor = end
             }
         }
-        for id in events.keys.sorted() {
+        let instances = events.keys.sorted()
+        for id in instances {
             let ordered = events[id]!.values.sorted { $0.seq < $1.seq }
             guard let first = ordered.first, let last = ordered.last else { continue }
             let start = max(options.since ?? first.ts, first.ts), end = min(options.until ?? last.ts, last.ts)
@@ -818,12 +880,12 @@ enum ActivityAnalysisCommand {
                 if now > end { break }
                 previous = now
                 let inRange = event.ts >= start && event.ts <= end
-                let panel = event.panel, payload = event.payload
+                let panel = event.panel
                 if let w = event.workspace {
                     if let panel { panelWorkspaces[panel] = w }
                     var ws = workspaceRow(w)
-                    if event.type.hasPrefix("workspace."), let title = text(payload["title"]) { ws["name"] = title }
-                    if event.type == "metadata.changed", payload["key"] as? String == "title", let title = text(payload["value"]), ["explicit", "declare"].contains(payload["source"] as? String ?? "") {
+                    if let title = event.title { ws["name"] = title }
+                    if let title = event.explicitTitle {
                         var topics = ws["topics"] as? [String] ?? []; if !topics.contains(title), topics.count < 12 { topics.append(title) }; ws["topics"] = topics
                     }
                     if event.type == "panel.created", inRange { ws["panels_created"] = (ws["panels_created"] as? Int ?? 0) + 1 }
@@ -831,8 +893,8 @@ enum ActivityAnalysisCommand {
                 }
                 switch event.type {
                 case "panel.created":
-                    if let panel { open.insert(panel); births[panel] = event.ts; panelKinds[panel] = text(payload["kind"]) ?? "unknown" }
-                    if inRange { created += 1; kindsCreated[text(payload["kind"]) ?? "unknown", default: 0] += 1 }
+                    if let panel { open.insert(panel); births[panel] = event.ts; panelKinds[panel] = event.kind ?? "unknown" }
+                    if inRange { created += 1; kindsCreated[event.kind ?? "unknown", default: 0] += 1 }
                 case "panel.closed":
                     if let panel {
                         open.remove(panel); working.remove(panel)
@@ -853,12 +915,12 @@ enum ActivityAnalysisCommand {
                         } else { waitsUnattributed += 1 }
                     }
                 case "mailbox.accepted":
-                    if inRange { mailboxAccepted += 1; mailFrom[text(payload["from"]) ?? "unknown", default: 0] += 1 }
+                    if inRange { mailboxAccepted += 1; if case .sender(let sender) = event.detail { mailFrom[sender, default: 0] += 1 } }
                 case "mailbox.delivered": if inRange { mailboxDelivered += 1 }
                 case "flag.raised", "flag.lowered", "flag.suppressed", "flag.unsuppressed":
                     if inRange { flagCounts[event.type, default: 0] += 1 }
                 case "liveness.derived":
-                    if let panel { if payload["state"] as? String == "working" { working.insert(panel) } else { working.remove(panel) } }
+                    if let panel { if case .state("working") = event.detail { working.insert(panel) } else { working.remove(panel) } }
                 case "app.activated": active = true
                 case "app.deactivated": active = false
                 case "screen.locked": locked = true
@@ -866,7 +928,7 @@ enum ActivityAnalysisCommand {
                 case "system.sleep": asleep = true
                 case "system.wake": asleep = false
                 case "log.opened":
-                    active = payload["app_active"] as? Bool; locked = payload["screen_locked"] as? Bool; asleep = payload["system_asleep"] as? Bool
+                    if case .presence(let a, let l, let s) = event.detail { active = a; locked = l; asleep = s }
                 case "hang.precursor":
                     if inRange {
                         hangCount += 1
@@ -874,23 +936,19 @@ enum ActivityAnalysisCommand {
                             loadHangs[bucket(working.count), default: 0] += 1
                             openLoadHangs[openBucket(open.count), default: 0] += 1
                         } else { unknownLoadHangs += 1 }
-                        hangCauses[text(payload["cause"]) ?? "unknown", default: 0] += 1
-                        let durations = (payload["durations_ms"] as? [NSNumber] ?? []).map(\.doubleValue)
-                        let valid = durations.filter { $0.isFinite && $0 >= 0 }
-                        hangDurationSamples += valid.count; hangDurationTotal += valid.reduce(0, +)
-                        hangDurationMax = max(hangDurationMax, valid.max() ?? 0)
-                        let reportedCount = (payload["count"] as? NSNumber)?.intValue ?? durations.count
-                        if durations.isEmpty || valid.count != durations.count || reportedCount > valid.count {
-                            hangDurationUnknown += 1; gaps.insert("hang_durations_unknown")
+                        if case .hang(let hang) = event.detail {
+                            hangCauses[hang.cause, default: 0] += 1
+                            hangDurationSamples += hang.samples; hangDurationTotal += hang.total
+                            hangDurationMax = max(hangDurationMax, hang.maximum)
+                            if hang.unknown { hangDurationUnknown += 1; gaps.insert("hang_durations_unknown") }
                         }
                     }
                 case "log.policy":
-                    historyEnabled = payload["enabled"] as? Bool != false
-                    analyticsEnabled = historyEnabled && payload["analytics_enabled"] as? Bool != false
+                    if case .policy(let enabled, let analytics) = event.detail { historyEnabled = enabled; analyticsEnabled = enabled && analytics }
                     if !analyticsEnabled { active = nil; locked = nil; asleep = nil; gaps.insert("analytics_disabled_span") }
-                    if payload["enabled"] as? Bool == false { replayIncomplete = true; loadKnown = false; selectedWorkspace = nil; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
+                    if !historyEnabled { replayIncomplete = true; loadKnown = false; selectedWorkspace = nil; open.removeAll(); working.removeAll(); censored += births.count; births.removeAll() }
                 case "log.retention":
-                    if inRange && payload["state"] as? String == "degraded" { gaps.insert("retention_reconciliation_degraded") }
+                    if inRange, case .retentionDegraded = event.detail { gaps.insert("retention_reconciliation_degraded") }
                 case "log.dropped": gaps.insert("event_log_dropped_events")
                 default: break
                 }
@@ -906,6 +964,8 @@ enum ActivityAnalysisCommand {
             }
             openAtEnd += open.count; censored += births.count
         }
+        // Replay is complete. Release input event state before scanning transcripts.
+        events.removeAll(keepingCapacity: false); eventPool = StringPool()
         if starts.isEmpty { gaps.insert("event_history_unavailable") }
         if foregroundUnknown > 0 { gaps.insert("presence_state_unknown") }
         if unknownLoadSeconds > 0 || unknownLoadHangs > 0 { gaps.insert("load_state_unknown") }
@@ -933,7 +993,7 @@ enum ActivityAnalysisCommand {
             gaps.insert("usage_span_unavailable")
             tokens = nil // No span means no transcript or journal scan, not host-wide usage.
         }
-        return ["schema_version": 1, "instances": events.keys.sorted(), "start": starts.min().map(iso.string) as Any? ?? null,
+        return ["schema_version": 1, "instances": instances, "start": starts.min().map(iso.string) as Any? ?? null,
                 "end": ends.max().map(iso.string) as Any? ?? null, "span_hours": starts.min().flatMap { s in ends.max().map { $0.timeIntervalSince(s) / 3600 } } as Any? ?? null,
                 "panels_created": starts.isEmpty ? null : created as Any,
                 "observed_peak_open_per_instance": peakOpen, "observed_peak_working_per_instance": peakWorking,

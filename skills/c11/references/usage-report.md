@@ -39,7 +39,9 @@ workspace stays unknown. Pruned history cannot establish earlier panel ownership
 Workspace ownership follows
 the last journal mapping committed at or before the usage timestamp. Missing
 mapping time, missing usage time, tied mappings or pruned journal history remain
-visible gaps. No cwd or title heuristic guesses ownership. Missing/ambiguous
+visible gaps. Pruning provenance belongs to each source journal: a pruned file
+does not change the attribution rule for sessions linked only by other complete
+files. No cwd or title heuristic guesses ownership. Missing/ambiguous
 links preserve all tokens. `unattributed_basis` states the aggregate's meaning:
 on panel, model and harness axes it counts tokens with no unique panel link;
 on the workspace axis it also includes unknown workspace ownership. Other
@@ -83,23 +85,32 @@ and `skipped_counts`, plus aggregate `analysis_counts` and `snapshot_basis`.
 Claude output diagnostics compare the selected most-complete snapshot with the
 first seen in sorted path/append order and the minimum observed output. Another
 scanner may encounter a different first snapshot. Codex diagnostics count
-inherited metadata and copied candidate records/tokens removed; candidate token
+inherited metadata, first cumulative samples without a matching last request,
+and copied candidate records/tokens removed; candidate token
 volume includes truncated first cumulative snapshots before predecessor selection.
+First-sample diagnostic tokens are cumulative input plus output (cached input
+and reasoning are subsets), before global copy selection. They flag an unproven
+initial baseline without changing the documented first-cumulative counting rule.
 These diagnostics contain no raw transcript identity. Missing transcript timestamps are included with an explicit
 gap because their time window cannot be proven. Malformed candidate lines,
 oversized lines and unreadable files are visible gaps. Bad-line counts are
 reported by kind. An oversized line is discarded through its newline, then the
 reader continues. A bounded root-type prefix filter and raw byte filters skip
 irrelevant lines before JSON decoding; unfamiliar key ordering or escaping falls
-back to decoding. Foundation temporaries drain per bounded chunk. Claude files with mtime before
-`--since` are skipped and counted, with `claude_file_mtime_filter_applied`:
+back to decoding. Foundation temporaries drain per bounded chunk. Claude and
+Codex files with mtime before `--since` are skipped and counted, with
+`claude_file_mtime_filter_applied` / `codex_file_mtime_filter_applied`:
 mtime filtering assumes native append-only transcripts, so imported files whose
-mtime predates their message timestamps can be omitted. Codex files always
-retain their pre-window counter baseline in append order. Historical Codex samples
+mtime predates their message timestamps can be omitted. Each retained Codex
+file keeps its pre-window counter baseline in append order. Historical Codex samples
 are discarded after updating that baseline; only compact in-window identities
 and typed counters remain for deduplication. Session/model strings are interned,
-and parsed JSON objects are not retained. Memory still depends on requested-window
-unique identities and result groups. Retention and unrecorded harness usage can
+and parsed JSON objects are not retained. Memory depends on retained Codex
+window identities, every Claude identity in files that survive the mtime filter
+(including pre-window messages), and result groups. With no `--since`, all
+Claude identities and Codex usage identities remain eligible. Report retains
+compact typed events, excluding raw text/body dictionaries and duration arrays;
+its memory also depends on the retained event count. Retention and unrecorded harness usage can
 never be proven complete by this command.
 
 Report derives span, panel creation, per-instance peak open/working counts,

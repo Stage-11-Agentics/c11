@@ -694,6 +694,88 @@ class ActivityCLI(unittest.TestCase):
         result = self.run_cli('usage', '--json')
         self.assertIn('journal_history_pruned', result['coverage_gaps'])
 
+    def test_unrelated_pruned_journal_does_not_poison_complete_session_provenance(self):
+        self.write(self.claude / 'session-a.jsonl', [self.claude_row()])
+        self.link('panel-complete', 'session-a', 'claude', committed_at_ms=1767315660000)
+        other = self.root / 'tagged.sqlite3'
+        with closing(sqlite3.connect(other)) as db, db:
+            db.execute('CREATE TABLE journal_meta(key TEXT PRIMARY KEY,value INTEGER)')
+            db.execute("INSERT INTO journal_meta VALUES('coverage_low_water', 50)")
+            db.execute('CREATE TABLE journal_events(tab_id TEXT,session_id TEXT,agent_kind TEXT,workspace_id TEXT,committed_at_ms INTEGER)')
+            db.execute("INSERT INTO journal_events VALUES('other-panel','other-session','claude','other-workspace',0)")
+        result = self.run_cli('usage', '--journal', str(self.journal), '--journal', str(other), '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-complete')
+        self.assertEqual(result['unattributed']['calls'], 0)
+        self.assertIn('journal_history_pruned', result['coverage_gaps'])
+        self.assertIn('usage_before_journal_attribution', result['coverage_gaps'])
+        with closing(sqlite3.connect(self.journal)) as db, db:
+            db.execute('CREATE TABLE journal_meta(key TEXT PRIMARY KEY,value INTEGER)')
+            db.execute("INSERT INTO journal_meta VALUES('coverage_low_water', 50)")
+        result = self.run_cli('usage', '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'unattributed')
+
+    def test_unrelated_pruned_journal_does_not_hide_copied_origin_order(self):
+        for name in ['parent', 'fork']:
+            self.write(self.claude / (name + '.jsonl'), [self.claude_row(session=name)])
+        self.link('panel-parent', 'parent', 'claude', committed_at_ms=0)
+        self.link('panel-fork', 'fork', 'claude', committed_at_ms=1)
+        other = self.root / 'pruned-empty.sqlite3'
+        with closing(sqlite3.connect(other)) as db, db:
+            db.execute('CREATE TABLE journal_meta(key TEXT PRIMARY KEY,value INTEGER)')
+            db.execute("INSERT INTO journal_meta VALUES('coverage_low_water', 50)")
+            db.execute('CREATE TABLE journal_events(tab_id TEXT,session_id TEXT,agent_kind TEXT,workspace_id TEXT,committed_at_ms INTEGER)')
+        result = self.run_cli('usage', '--journal', str(self.journal), '--journal', str(other), '--by', 'panel', '--json')
+        self.assertEqual(result['groups'][0]['key'], 'panel-parent')
+        self.assertEqual(result['totals']['calls'], 1)
+
+    def test_codex_mtime_skip_is_disclosed_and_new_file_retains_baseline(self):
+        old = self.codex / 'old-import.jsonl'
+        self.write(old, [{'type': 'session_meta', 'payload': {'id': 'old'}},
+            self.codex_row('2026-01-02T00:00:01Z', 1000, 800, 100)])
+        os.utime(old, (1, 1))
+        self.write(self.codex / 'current.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'current'}},
+            self.codex_row('2026-01-01T23:59:59Z', 100, 80, 10),
+            self.codex_row('2026-01-02T00:00:01Z', 120, 90, 15,
+                {'input_tokens': 20, 'cached_input_tokens': 10, 'output_tokens': 5})])
+        result = self.run_cli('usage', '--since', '2026-01-02T00:00:00Z', '--json')
+        self.assertEqual(result['totals']['calls'], 1)
+        self.assertEqual(result['totals']['input_tokens'], 10)
+        self.assertEqual(result['totals']['cache_read_tokens'], 10)
+        self.assertEqual(result['skipped_counts']['codex_files_before_since_skipped'], 1)
+        self.assertIn('codex_file_mtime_filter_applied', result['coverage_gaps'])
+
+    def test_codex_first_cumulative_without_matching_last_is_quantified(self):
+        self.write(self.codex / 'carry.jsonl', [
+            {'type': 'session_meta', 'payload': {'id': 'carry'}},
+            self.codex_row('2026-01-02T00:00:00Z', 1000, 800, 100,
+                {'input_tokens': 10, 'cached_input_tokens': 5, 'output_tokens': 2}),
+            self.codex_row('2026-01-02T00:00:01Z', 1010, 805, 102,
+                {'input_tokens': 10, 'cached_input_tokens': 5, 'output_tokens': 2})])
+        result = self.run_cli('usage', '--json')
+        self.assertEqual(result['totals']['input_tokens'], 205)
+        self.assertEqual(result['totals']['output_tokens'], 102)
+        self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_records'], 1)
+        self.assertEqual(result['analysis_counts']['codex_first_cumulative_without_matching_last_tokens'], 1100)
+        self.assertIn('codex_first_cumulative_baseline_unproven', result['coverage_gaps'])
+
+    def test_report_compact_events_preserve_summaries_and_discard_irrelevant_text(self):
+        self.summary_events(missing_duration=True)
+        path = self.state / 'events/events-synthetic.ndjson'
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        for row in rows:
+            row['payload']['body'] = 'ignored synthetic body' * 100
+            row['payload']['text'] = 'ignored synthetic input' * 100
+            row['payload']['unrelated'] = {'nested': ['ignored'] * 100}
+        self.write(path, rows)
+        result = self.run_cli('report', '--instance', 'synthetic', '--format', 'json')
+        self.assertEqual(result['panels_created'], 2)
+        self.assertEqual(result['mail_from'], {'synthetic-sender': 1})
+        self.assertEqual(result['hang_causes'], {'main-thread': 1, 'unknown': 1})
+        self.assertEqual(result['hang_durations_ms']['observed_total'], 30)
+        self.assertIsNone(result['hang_durations_ms']['total'])
+        self.assertNotIn('ignored synthetic', json.dumps(result))
+
     def test_retention_coordination_gap_does_not_invalidate_replay(self):
         self.events()
         path = self.state / 'events/events-synthetic.ndjson'
@@ -927,6 +1009,33 @@ class ActivityCLI(unittest.TestCase):
         rss = int(re.search(r'(\d+)\s+maximum resident set size', proc.stderr).group(1))
         print(json.dumps({'synthetic_pre_window_records': 100000, 'maximum_rss_bytes': rss}))
         self.assertLess(rss, 128 * 1024 * 1024, 'historical samples must not remain resident')
+
+    @unittest.skipUnless(os.environ.get('C11_ACTIVITY_MEMORY_PROBE') == '1',
+                         'large report RSS probe runs on CI or explicitly admitted Atlas job')
+    def test_report_large_history_retains_compact_events_only(self):
+        if sys.platform != 'darwin':
+            self.skipTest('macOS packaged CLI memory gate')
+        path = self.state / 'events/events-synthetic.ndjson'
+        with path.open('w') as f:
+            for index in range(100000):
+                row = {'v': 2, 'instance': 'synthetic', 'seq': index + 1,
+                       'ts': '2026-01-02T00:00:00Z',
+                       'type': 'log.opened' if index == 0 else 'metadata.changed',
+                       'workspace': 'workspace-a', 'panel': 'panel-a',
+                       'payload': {'key': 'description', 'value': 'x' * 512, 'source': 'explicit'}}
+                f.write(json.dumps(row) + '\n')
+        proc = subprocess.run(['/usr/bin/time', '-l', self.cli, 'report',
+            '--instance', 'synthetic', '--state-root', str(self.state),
+            '--claude-root', str(self.claude), '--codex-root', str(self.codex),
+            '--journal', str(self.journal), '--format', 'json'],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result['daily'][0]['events'], 100000)
+        self.assertEqual(result['workspaces'][0]['topics'], [])
+        rss = int(re.search(r'(\d+)\s+maximum resident set size', proc.stderr).group(1))
+        print(json.dumps({'synthetic_report_records': 100000, 'maximum_rss_bytes': rss}))
+        self.assertLess(rss, 128 * 1024 * 1024, 'report must retain typed events, not raw JSON payloads')
 
     def test_bad_input_is_rejected(self):
         self.run_cli('usage', '--by', 'account', ok=False)

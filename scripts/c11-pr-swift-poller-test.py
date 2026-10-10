@@ -1584,6 +1584,27 @@ class ReviewRegressionTests(unittest.TestCase):
         supervisor.poll_once()
         self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B, SHA_A])
 
+    def test_missing_ghosttykit_requeues_updated_sha(self):
+        """Review probe: a new buildable head replaces one waiting on a missing kit."""
+        missing = "e" * 40
+        world = World(body=[pr()])
+        world.gitlinks[SHA_A] = missing
+        world.missing_kits.add(missing)
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+        self.assertIn((7, SHA_A), supervisor.awaiting_kit)
+        fetched_before = len(world.git_args)
+        world.body = [pr(sha=SHA_B)]
+        world.tip = SHA_B
+        world.now += 26
+        supervisor.poll_once()
+        fetched = [args for args, _cwd in world.git_args[fetched_before:] if args[0] == "fetch" and poller.PARENT_URL in args]
+        self.assertEqual(fetched, [["fetch", "--no-tags", "--no-recurse-submodules", poller.PARENT_URL, SHA_B]])
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B])
+        self.assertEqual(supervisor.awaiting_kit, {})
+        self.assertIn("requeued", [item.get("decision") for item in _decisions(self.root)])
+
     def test_a_head_that_cannot_be_fetched_goes_to_the_back(self):
         world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other")])
         world.tips["other"] = SHA_B
@@ -1874,6 +1895,25 @@ class RuntimeIntegrationTests(RuntimeHarness):
         decisions = [item.get("decision") for item in _decisions(self.root)]
         self.assertEqual(decisions.count("cache-fault"), 1)
         self.assertFalse(any(item.get("state") == "failure" for item in _decisions(self.root)))
+
+    def test_stale_module_status_retries_delivery_without_rebuilding(self):
+        """Review probe: the error POST misses three times, then lands; xcodebuild ran once."""
+        self._enable()
+        self.build("""
+            print("error: file '/x/Sparkle.framework/Headers/SPUUpdater.h' has been modified since the module file '/x/Sparkle.pcm' was built")
+            sys.exit(65)
+        """)
+        busy = {"status": 503, "headers": {"Retry-After": "0"}, "body": {}}
+        ok = {"status": 201, "body": {}}
+        self.github.put("POST", "/statuses/", ok, busy, busy, busy, ok)
+        result = self._supervise(cycles=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len((self.root / "argv.jsonl").read_text().splitlines()), 1)
+        self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "error", "error", "error", "error"])
+        decisions = [item.get("decision") for item in _decisions(self.root)]
+        self.assertLess(decisions.index("status_undelivered"), decisions.index("result"))
+        delivered = [item for item in _decisions(self.root) if item.get("decision") == "result"]
+        self.assertEqual([(item["state"], item["description"]) for item in delivered], [("error", "cache: stale module")])
 
     def test_ghosttykit_links_from_the_ghostty_gitlink(self):
         self._enable()

@@ -1213,6 +1213,7 @@ class Supervisor:
         self.stopped = None
         self.credential_skipped = False
         self.awaiting_kit = {}
+        self.status_owed = {}
         self.derived = self.root / "cache" / "DerivedData"
 
     def state(self):
@@ -1354,6 +1355,7 @@ class Supervisor:
             return "backoff"
         self._remember_queue(admitted)
         self._resolve_absent(body)
+        self._deliver_owed()
         self.not_before = self.world.time() + (wait or self.cadence)
         return self.maybe_start()
 
@@ -1411,14 +1413,35 @@ class Supervisor:
         return chosen
 
     def _remember_queue(self, admitted):
-        """Queue admitted heads that are not queued and not already reported."""
-        known = {item["pr"] for item in self.queue}
+        """Reconcile the queue with the freshly admitted heads.
+
+        A new PR is appended. A queued PR whose admitted SHA or ref changed is
+        replaced by the new head (at the back), and its old head's awaiting-kit record is dropped, so a
+        head stuck on a missing GhosttyKit never hides a newer buildable one. The
+        exact-SHA revalidation before fetch and in the child is unchanged.
+        """
         for captured in admitted:
-            if captured["pr"] in known or self.reported.get(captured["pr"]) == captured["sha"]:
+            number = captured["pr"]
+            index = next((i for i, item in enumerate(self.queue) if item["pr"] == number), None)
+            done = self.reported.get(number) == captured["sha"] or (number, captured["sha"]) in self.status_owed
+            if index is not None and (self.queue[index]["sha"] != captured["sha"] or self.queue[index]["ref"] != captured["ref"]):
+                stale = self.queue.pop(index)
+                self.awaiting_kit.pop((number, stale["sha"]), None)
+                self.log(decision="requeued", pr=number, sha=captured["sha"], previous=stale["sha"])
+                index = None
+            if index is not None or done:
                 continue
             item = dict(captured)
             item["queued_at"] = self.world.time()
             self.queue.append(item)
+
+    def _deliver_owed(self):
+        """Status-only retry for a cache fault whose error POST missed. Never rebuilds."""
+        for key, owed in list(self.status_owed.items()):
+            number, sha = key
+            if self._post(sha, owed["state"], owed["description"], pr=number, deps=owed.get("deps")):
+                del self.status_owed[key]
+                self.reported[number] = sha
 
     def _resolve_absent(self, body):
         present = set()
@@ -1640,14 +1663,19 @@ class Supervisor:
         return "started"
 
     def _cache_fault(self, item, invocation):
-        """A stale precompiled module is the cache's fault: error, never failure, no retry.
+        """A stale precompiled module is the cache's fault: error, never failure, no rebuild.
 
-        The head counts as reported for this process, so it is not rebuilt until
-        a new push or a restart.
+        The head counts as reported once the error POST is accepted. Until then it
+        is a status-only debt: each cycle retries the POST and never reruns the build.
         """
-        self.reported[item["pr"]] = item["sha"]
         self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
         self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
+        if self.delivered:
+            self.reported[item["pr"]] = item["sha"]
+        else:
+            self.status_owed[(item["pr"], item["sha"])] = {
+                "state": "error", "description": "cache: stale module", "deps": item["deps"],
+            }
         return "cache-fault"
 
     def _spawn_one(self, item, invocation):

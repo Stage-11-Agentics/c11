@@ -2129,6 +2129,24 @@ class GhModeTests(RuntimeHarness):
         self.assertFalse(cache.exists())
         self.assertFalse((self.root / "state").exists())
 
+    def test_teardown_keeps_stages_when_the_state_directory_cannot_be_removed(self):
+        """Review probe: the poller root at 0500 blocks the final rmdir of state/."""
+        self._stages(["gh_configured"])
+        record = self.root / "state" / "stages.json"
+        before = record.read_text()
+        self.root.chmod(0o500)
+        try:
+            result = self._teardown()
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)["reason"], "local-state")
+            self.assertTrue((self.root / "state").is_dir())
+            self.assertEqual(record.read_text(), before)
+        finally:
+            self.root.chmod(0o700)
+        result = self._teardown()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "state").exists())
+
     def test_child_with_a_failing_gh_refuses_before_pending(self):
         state = self.root / "state"
         state.mkdir()

@@ -2140,14 +2140,22 @@ class InstallationActor:
         stages.json in place, so a later teardown can retry.
         """
         state = self.root / "state"
+        record = state / "stages.json"
         try:
             _remove_path(self.root / "cache")
             if state.is_dir():
                 for child in state.iterdir():
                     if child.name != "stages.json":
                         _remove_path(child)
-                _remove_path(state / "stages.json")
-                state.rmdir()
+                saved = record.read_bytes() if record.exists() else None
+                _remove_path(record)
+                try:
+                    state.rmdir()
+                except OSError:
+                    # The directory stays, so its stage record must stay too.
+                    if saved is not None:
+                        record.write_bytes(saved)
+                    raise
         except OSError as error:
             sys.stderr.write("teardown: local state not removed: %s\n" % error)
             return False

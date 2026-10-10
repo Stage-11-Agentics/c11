@@ -59,6 +59,14 @@ final class WorkspaceCloseOverlayHost: NSView {
 
     // MARK: - Hit testing / focus
 
+    override var frame: NSRect {
+        get { super.frame }
+        set {
+            super.frame = newValue
+            publishConfirmVisibility()
+        }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden else { return nil }
         return super.hitTest(point) ?? self
@@ -114,6 +122,7 @@ final class WorkspaceCloseOverlayHost: NSView {
             if wasHidden {
                 fadeIn()
             }
+            publishConfirmVisibility()
         } else {
             fadeOut { [weak self] in
                 guard let self else { return }
@@ -128,12 +137,15 @@ final class WorkspaceCloseOverlayHost: NSView {
                     }
                 }
                 self.priorFirstResponder = nil
+                self.publishConfirmVisibility()
             }
+            self.publishConfirmVisibility()
         }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        publishConfirmVisibility()
         guard window != nil, !isHidden, runtime.active != nil else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else { return }
@@ -178,6 +190,15 @@ final class WorkspaceCloseOverlayHost: NSView {
             window.makeFirstResponder(nil)
             _ = window.makeFirstResponder(self)
         }
+    }
+
+    private func publishConfirmVisibility() {
+        let visible = !isHidden
+            && window != nil
+            && bounds.width >= 1
+            && bounds.height >= 1
+            && runtime.active != nil
+        runtime.noteConfirmVisible(visible)
     }
 
     private func capturePriorFirstResponderIfNeeded(in window: NSWindow) {

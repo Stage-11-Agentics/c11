@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 /// Workspace-scoped presenter for a single close-confirmation interaction.
 ///
@@ -21,6 +22,15 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
     /// tabs takes a deliberate move to confirm.
     @Published public internal(set) var selection: ConfirmSelectionField = .cancel
     private var dedupeToken: String?
+    /// Unknown until a host reports. Return accepts only `.visible`. An
+    /// `.unmounted` card does not keep the dedupe token.
+    private var confirmVisibility: ConfirmVisibility = .unknown
+
+    private enum ConfirmVisibility {
+        case unknown
+        case visible
+        case unmounted
+    }
 
     public init() {}
 
@@ -28,11 +38,21 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
         if let token = dedupeToken,
            self.dedupeToken == token,
            active != nil {
-            // Dedupe collision: a workspace-close prompt with this token is
-            // already live. Resolve the new one with `.dismissed` so any caller
-            // awaiting `withCheckedContinuation` unblocks.
-            content.completion(.dismissed)
-            return
+            if confirmVisibility == .unmounted {
+                // The live card was reported unmounted. Drop it and show this
+                // request so a missing anchor cannot lock the X.
+                let previous = active
+                active = nil
+                self.dedupeToken = nil
+                confirmVisibility = .unknown
+                previous?.completion(.dismissed)
+            } else {
+                // Dedupe collision: a workspace-close prompt with this token is
+                // already live. Resolve the new one with `.dismissed` so any caller
+                // awaiting `withCheckedContinuation` unblocks.
+                content.completion(.dismissed)
+                return
+            }
         }
         if let existing = active {
             existing.completion(.dismissed)
@@ -40,6 +60,30 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
         active = content
         selection = content.defaultSelection ?? .cancel
         self.dedupeToken = dedupeToken
+        confirmVisibility = .unknown
+    }
+
+    /// Hosts call this once they know whether the card is on screen.
+    public func noteConfirmVisible(_ visible: Bool) {
+        guard active != nil else {
+            confirmVisibility = .unknown
+            return
+        }
+        confirmVisibility = visible ? .visible : .unmounted
+    }
+
+    public var isConfirmCardVisible: Bool { confirmVisibility == .visible }
+
+    /// Resume the waiter with `.dismissed` and clear the dedupe token.
+    /// Used when a panel confirm cannot be shown, so the pending-close guard
+    /// does not outlive the missing card.
+    public func releaseUnmounted() {
+        guard let content = active else { return }
+        active = nil
+        selection = .cancel
+        dedupeToken = nil
+        confirmVisibility = .unknown
+        content.completion(.dismissed)
     }
 
     public func resolve(result: ConfirmResult, ifInteractionId interactionId: UUID? = nil) {
@@ -48,6 +92,7 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
         active = nil
         selection = .cancel
         dedupeToken = nil
+        confirmVisibility = .unknown
         content.completion(result)
     }
 
@@ -62,6 +107,7 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
         active = nil
         selection = .cancel
         dedupeToken = nil
+        confirmVisibility = .unknown
         content.completion(.confirmed)
         return true
     }
@@ -73,6 +119,7 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
         active = nil
         selection = .cancel
         dedupeToken = nil
+        confirmVisibility = .unknown
     }
 
     public var hasActive: Bool { active != nil }
@@ -111,6 +158,8 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
         case 48: // tab
             moveSelection(.toggle)
         case 36, 76, 49: // return / numpad enter / space
+            // A card that is not on screen must not close anything.
+            guard isConfirmCardVisible else { return false }
             acceptSelected()
         case 53: // escape
             cancel()
@@ -118,5 +167,36 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
             return false
         }
         return true
+    }
+}
+
+/// Production close diagnostics. `dlog` is DEBUG-only; this logger is notice
+/// level so a Release build still records the lines `log show` reads.
+enum CloseLog {
+    private static let logger = Logger(subsystem: "com.stage11.c11", category: "close")
+
+    static func request(
+        panel: UUID?,
+        workspace: UUID,
+        explicit: Bool,
+        lastSurface: Bool,
+        needsConfirm: Bool,
+        route: String
+    ) {
+        logger.notice(
+            "close.request panel=\(panel?.uuidString ?? "-", privacy: .public) ws=\(workspace.uuidString, privacy: .public) explicit=\(explicit ? "1" : "0", privacy: .public) lastSurface=\(lastSurface ? "1" : "0", privacy: .public) needsConfirm=\(needsConfirm ? "1" : "0", privacy: .public) route=\(route, privacy: .public)"
+        )
+    }
+
+    static func overlayUnmounted(scope: String, workspace: UUID?, reason: String) {
+        logger.notice(
+            "close.overlay.unmounted scope=\(scope, privacy: .public) ws=\(workspace?.uuidString ?? "-", privacy: .public) reason=\(reason, privacy: .public)"
+        )
+    }
+
+    static func fallback(scope: String, workspace: UUID?) {
+        logger.notice(
+            "close.overlay.fallback scope=\(scope, privacy: .public) ws=\(workspace?.uuidString ?? "-", privacy: .public)"
+        )
     }
 }

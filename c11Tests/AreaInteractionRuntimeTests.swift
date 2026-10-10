@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 #if canImport(c11_DEV)
@@ -290,6 +291,7 @@ final class AreaInteractionRuntimeTests: XCTestCase {
         var result: ConfirmResult?
 
         runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
         let accepted = runtime.acceptActive(panelId: panelId)
 
         XCTAssertTrue(accepted)
@@ -381,6 +383,7 @@ final class AreaInteractionRuntimeTests: XCTestCase {
         var result: ConfirmResult?
 
         runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
 
         XCTAssertEqual(runtime.confirmSelection[panelId], .cancel)
         XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 124)) // right
@@ -437,6 +440,7 @@ final class AreaInteractionRuntimeTests: XCTestCase {
             source: .local,
             completion: { result = $0 }
         )))
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
         XCTAssertFalse(runtime.hasActiveDestructiveConfirm(panelId: panelId))
         XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
 
@@ -450,6 +454,7 @@ final class AreaInteractionRuntimeTests: XCTestCase {
         var result: ConfirmResult?
 
         runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
         XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
 
         XCTAssertEqual(result, .cancelled)
@@ -470,6 +475,7 @@ final class AreaInteractionRuntimeTests: XCTestCase {
             source: .local,
             completion: { result = $0 }
         )))
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
         XCTAssertEqual(runtime.confirmSelection[panelId], .confirm)
         // Still destructive, so Cmd+D never accepts it.
         XCTAssertTrue(runtime.hasActiveDestructiveConfirm(panelId: panelId))
@@ -484,6 +490,7 @@ final class AreaInteractionRuntimeTests: XCTestCase {
         var result: ConfirmResult?
 
         runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
 
         XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 126)) // up
         XCTAssertEqual(runtime.confirmSelection[panelId], .cancel)
@@ -643,6 +650,308 @@ final class AreaInteractionRuntimeTests: XCTestCase {
             confirmLabel: "OK",
             cancelLabel: "Cancel",
             validate: { _ in nil },
+            source: .local,
+            completion: completion
+        )
+    }
+}
+
+/// Close-confirm mount invariant: a live card is on screen, or the next
+/// request is not swallowed and Return does not accept it.
+@MainActor
+final class CloseConfirmMountTests: XCTestCase {
+
+    func testStaleWorkspaceAnchorDismantleKeepsTheNewerOwner() {
+        _ = NSApplication.shared
+        let controller = WorkspaceCloseOverlayController(
+            runtime: WorkspaceCloseInteractionRuntime(),
+            workspaceId: UUID()
+        )
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        let older = WorkspaceCloseOverlayHostView.AnchorView()
+        let newer = WorkspaceCloseOverlayHostView.AnchorView()
+        let frame = NSRect(x: 10, y: 12, width: 200, height: 120)
+
+        controller.updateAnchor(frameInWindow: frame, window: window, owner: older)
+        controller.updateAnchor(frameInWindow: frame, window: window, owner: newer)
+        controller.removeAnchor(owner: older)
+
+        XCTAssertEqual(controller.debugAnchorOwner, ObjectIdentifier(newer))
+
+        controller.removeAnchor(owner: newer)
+        XCTAssertNil(controller.debugAnchorOwner)
+    }
+
+    func testWindowNilReportDoesNotClearTheWorkspaceAnchor() {
+        _ = NSApplication.shared
+        let controller = WorkspaceCloseOverlayController(
+            runtime: WorkspaceCloseInteractionRuntime(),
+            workspaceId: UUID()
+        )
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        let owner = WorkspaceCloseOverlayHostView.AnchorView()
+        owner.controller = controller
+        controller.updateAnchor(
+            frameInWindow: NSRect(x: 0, y: 0, width: 180, height: 90),
+            window: window,
+            owner: owner
+        )
+
+        owner.reportFrame()
+
+        XCTAssertEqual(controller.debugAnchorOwner, ObjectIdentifier(owner))
+    }
+
+    func testWorkspaceConfirmWithNoAnchorMountsOnTheFallbackWindow() {
+        _ = NSApplication.shared
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        controller.fallbackWindowProvider = { window }
+        var result: ConfirmResult?
+
+        runtime.present(content: makeConfirm(title: "Close workspace?", completion: { result = $0 }))
+        spinMain()
+
+        guard let content = window.contentView, let theme = content.superview else {
+            XCTFail("window has no theme frame")
+            return
+        }
+        let hosts = theme.subviews.compactMap { $0 as? WorkspaceCloseOverlayHost }
+        XCTAssertEqual(hosts.count, 1)
+        guard let host = hosts.first else { return }
+        let expected = content.convert(content.bounds, to: nil)
+        XCTAssertEqual(host.frame, expected)
+        XCTAssertTrue(host.superview === theme)
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        XCTAssertNil(result)
+    }
+
+    func testUnmountedWorkspaceConfirmDoesNotSwallowTheNextPresent() {
+        _ = NSApplication.shared
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        controller.fallbackWindowProvider = { nil }
+        var first: ConfirmResult?
+        var second: ConfirmResult?
+
+        runtime.present(
+            content: makeConfirm(title: "First", completion: { first = $0 }),
+            dedupeToken: "workspace.close"
+        )
+        spinMain()
+        XCTAssertFalse(runtime.isConfirmCardVisible)
+        XCTAssertNotNil(runtime.active)
+
+        runtime.present(
+            content: makeConfirm(title: "Second", completion: { second = $0 }),
+            dedupeToken: "workspace.close"
+        )
+
+        XCTAssertEqual(first, .dismissed)
+        XCTAssertNil(second)
+        XCTAssertEqual(runtime.active?.title, "Second")
+        _ = controller
+    }
+
+    func testAreaMissingAnchorFallsBackOntoTheKeyWindow() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        controller.fallbackWindowProvider = { window }
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close area?") { _ in }),
+            dedupeToken: "workspace.closePane"
+        )
+        spinMain()
+
+        let hosts = window.contentView?.superview?.subviews.compactMap { $0 as? AreaInteractionOverlayHost } ?? []
+        XCTAssertEqual(hosts.count, 1)
+        guard let host = hosts.first else { return }
+        XCTAssertEqual(host.panelId, panelId)
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        _ = controller
+    }
+
+    func testAreaZeroAnchorWithoutFallbackNotesUnmountedAndAdmitsTheNextPresent() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        controller.fallbackWindowProvider = { nil }
+        var first: ConfirmResult?
+        var second: ConfirmResult?
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "First") { first = $0 }),
+            dedupeToken: "workspace.closePane"
+        )
+        spinMain()
+        controller.updateAnchor(paneIdentity: panelId, frameInWindow: .zero, window: window)
+
+        XCTAssertFalse(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Second") { second = $0 }),
+            dedupeToken: "workspace.closePane"
+        )
+
+        XCTAssertEqual(first, .dismissed)
+        XCTAssertNil(second)
+        if case .confirm(let content)? = runtime.active[panelId] {
+            XCTAssertEqual(content.title, "Second")
+        } else {
+            XCTFail("Replacement confirm should be active")
+        }
+    }
+
+    func testPaneInteractionSlotRebindsWhenTheRuntimeChanges() {
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 160))
+        let other = NSView(frame: host.frame)
+        let panelId = UUID()
+        let runtimeA = AreaInteractionRuntime()
+        let runtimeB = AreaInteractionRuntime()
+
+        let first = PaneInteractionOverlaySlot.attach(
+            existing: nil,
+            to: host,
+            runtime: runtimeA,
+            panelId: panelId,
+            workspaceId: nil
+        )
+        let again = PaneInteractionOverlaySlot.attach(
+            existing: first,
+            to: host,
+            runtime: runtimeA,
+            panelId: panelId,
+            workspaceId: nil
+        )
+
+        XCTAssertTrue(first === again)
+        XCTAssertEqual(host.subviews.count, 1)
+
+        let moved = PaneInteractionOverlaySlot.attach(
+            existing: again,
+            to: other,
+            runtime: runtimeA,
+            panelId: panelId,
+            workspaceId: nil
+        )
+        XCTAssertTrue(moved === first)
+        XCTAssertEqual(host.subviews.count, 0)
+        XCTAssertEqual(other.subviews.count, 1)
+
+        let replaced = PaneInteractionOverlaySlot.attach(
+            existing: moved,
+            to: other,
+            runtime: runtimeB,
+            panelId: panelId,
+            workspaceId: UUID()
+        )
+        XCTAssertFalse(replaced === first)
+        XCTAssertTrue(replaced.runtime === runtimeB)
+        XCTAssertEqual(other.subviews.count, 1)
+    }
+
+    func testReturnWithoutAVisibleCardDoesNotConfirm() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close?", defaultSelection: .confirm) { result = $0 })
+        )
+
+        XCTAssertFalse(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertNil(result)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+    }
+
+    func testWorkspaceReturnWithoutAVisibleCardDoesNotClose() {
+        let runtime = WorkspaceCloseInteractionRuntime()
+        var result: ConfirmResult?
+        runtime.present(content: makeConfirm(title: "Close workspace?", defaultSelection: .confirm) { result = $0 })
+
+        XCTAssertFalse(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertNil(result)
+        XCTAssertNotNil(runtime.active)
+
+        runtime.noteConfirmVisible(true)
+        XCTAssertTrue(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+    }
+
+    func testVisibleDedupeStillSuppressesTheNextPresent() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var first: ConfirmResult?
+        var second: ConfirmResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "First") { first = $0 }),
+            dedupeToken: "workspace.closePane"
+        )
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Second") { second = $0 }),
+            dedupeToken: "workspace.closePane"
+        )
+
+        XCTAssertEqual(second, .dismissed)
+        XCTAssertNil(first)
+        if case .confirm(let content)? = runtime.active[panelId] {
+            XCTAssertEqual(content.title, "First")
+        } else {
+            XCTFail("The visible card should stay active")
+        }
+    }
+
+    private func spinMain() {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+
+    private func makeWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.frame = NSRect(x: 0, y: 0, width: 480, height: 320)
+        return window
+    }
+
+    private func makeConfirm(
+        title: String,
+        defaultSelection: ConfirmSelectionField? = nil,
+        completion: @escaping (ConfirmResult) -> Void
+    ) -> ConfirmContent {
+        ConfirmContent(
+            title: title,
+            message: nil,
+            confirmLabel: "Close",
+            cancelLabel: "Cancel",
+            role: .destructive,
+            defaultSelection: defaultSelection,
             source: .local,
             completion: completion
         )

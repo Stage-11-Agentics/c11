@@ -2908,8 +2908,18 @@ class WorkspaceManager: ObservableObject {
         closeWorkspaceWithConfirmation(workspace)
     }
 
-    func closeWorkspaceWithConfirmation(_ workspace: Workspace) {
-        closeWorkspaceIfRunningProcess(workspace)
+    func closeWorkspaceWithConfirmation(
+        _ workspace: Workspace,
+        panelId: UUID? = nil,
+        explicit: Bool = true,
+        lastSurface: Bool = false
+    ) {
+        closeWorkspaceIfRunningProcess(
+            workspace,
+            panelId: panelId,
+            explicit: explicit,
+            lastSurface: lastSurface
+        )
     }
 
     func closeWorkspaceWithConfirmation(workspaceId: UUID) {
@@ -2951,6 +2961,14 @@ class WorkspaceManager: ObservableObject {
         // at all.
         let host: Workspace? = selectedWorkspace ?? workspaces.first
         guard let host else { return }
+        CloseLog.request(
+            panel: nil,
+            workspace: host.id,
+            explicit: true,
+            lastSurface: false,
+            needsConfirm: true,
+            route: "workspaceConfirm"
+        )
         Task { @MainActor [weak self] in
             let accepted = await host.presentConfirmCloseWorkspace(
                 title: plan.title,
@@ -3134,8 +3152,22 @@ class WorkspaceManager: ObservableObject {
         return String(localized: "workspace.displayName.fallback", defaultValue: "Workspace")
     }
 
-    private func closeWorkspaceIfRunningProcess(_ workspace: Workspace, requiresConfirmation: Bool = true) {
+    private func closeWorkspaceIfRunningProcess(
+        _ workspace: Workspace,
+        requiresConfirmation: Bool = true,
+        panelId: UUID? = nil,
+        explicit: Bool = true,
+        lastSurface: Bool = false
+    ) {
         if requiresConfirmation, workspaceNeedsConfirmClose(workspace) {
+            CloseLog.request(
+                panel: panelId,
+                workspace: workspace.id,
+                explicit: explicit,
+                lastSurface: lastSurface,
+                needsConfirm: true,
+                route: "workspaceConfirm"
+            )
             let title = String(
                 localized: "dialog.closeWorkspace.title",
                 defaultValue: "Close workspace?"
@@ -3182,6 +3214,16 @@ class WorkspaceManager: ObservableObject {
                 self.finishCloseWorkspace(workspace)
             }
             return
+        }
+        if requiresConfirmation {
+            CloseLog.request(
+                panel: panelId,
+                workspace: workspace.id,
+                explicit: explicit,
+                lastSurface: lastSurface,
+                needsConfirm: false,
+                route: "direct"
+            )
         }
         finishCloseWorkspace(workspace)
     }

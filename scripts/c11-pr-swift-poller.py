@@ -74,6 +74,7 @@ DISARMED_SLEEP_S = 3600
 TERMINAL_STATES = frozenset(("success", "failure"))
 KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed", "gh_configured"))
 GH_FALLBACK = "/opt/homebrew/bin/gh"
+CREDENTIAL_UNAVAILABLE = "credential-unavailable"
 GH_ENV_DROP = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST")
 BUILD_ENV_DROP = (
     "C11_BUILD_LOCK",
@@ -310,6 +311,8 @@ def revalidate(captured, fetch_pr, ls_remote):
     """
     try:
         body = fetch_pr(captured["pr"])
+    except CredentialUnavailable:
+        return False, CREDENTIAL_UNAVAILABLE, None
     except Exception as error:
         return False, "revoked", str(error)
     if body is None:
@@ -1078,7 +1081,7 @@ class GhClient:
         try:
             return self._request(method, url, body, etag)
         except CredentialUnavailable:
-            return {"status": 0, "headers": {}, "body": None, "error": "credential-unavailable"}
+            return {"status": 0, "headers": {}, "body": None, "error": CREDENTIAL_UNAVAILABLE}
 
     def verify_scope(self):
         response = self._request("GET", "%s/repos/%s" % (API, REPO_NAME))
@@ -1112,6 +1115,7 @@ class GhClient:
         if SHA_RE.fullmatch(sha or "") is None:
             raise ScopeStop("sha")
         response = self._call("GET", "%s/repos/%s/commits/%s/status" % (API, REPO_NAME, sha))
+        raise_if_unavailable(response)
         body = response.get("body")
         if response.get("status") != 200 or type(body) is not dict or type(body.get("statuses")) is not list:
             return None
@@ -1127,6 +1131,12 @@ class GhClient:
             raise ScopeStop("sha")
         payload = {"state": body["state"], "context": STATUS_CONTEXT, "description": body["description"]}
         return self._call("POST", "%s/repos/%s/statuses/%s" % (API, REPO_NAME, sha), payload)
+
+
+def raise_if_unavailable(response):
+    """A skipped gh request is its own outcome, never "missing" or "no status"."""
+    if type(response) is dict and response.get("error") == CREDENTIAL_UNAVAILABLE:
+        raise CredentialUnavailable(CREDENTIAL_UNAVAILABLE)
 
 
 def make_client(config_dir=None):
@@ -1182,6 +1192,7 @@ class Supervisor:
         self.build_end = None
         self.delivered = False
         self.stopped = None
+        self.credential_skipped = False
 
     def state(self):
         path = self.root / "state"
@@ -1362,7 +1373,7 @@ class Supervisor:
                 return "no-build"
             if status == 0:
                 self.not_before = self.world.time() + self.cadence
-                self.log(decision="timeout")
+                self.log(decision=page.get("error") or "timeout")
                 return "no-build"
             if status != 200:
                 self.log(decision="rate-or-error", status=status)
@@ -1398,7 +1409,12 @@ class Supervisor:
             if item["pr"] in present:
                 kept.append(item)
                 continue
-            looked = self.world.pull(item["pr"])
+            try:
+                looked = self.world.pull(item["pr"])
+            except CredentialUnavailable:
+                self.log(decision=CREDENTIAL_UNAVAILABLE, pr=item["pr"], sha=item["sha"])
+                kept.append(item)
+                continue
             if looked is None or (type(looked) is dict and looked.get("status") == 404):
                 self.log(decision="revoked", pr=item["pr"], reason="absent")
                 continue
@@ -1427,18 +1443,30 @@ class Supervisor:
                 lambda number: self.world.pull(number),
                 lambda ref: self.world.ls_remote(ref),
             )
+            if reason == CREDENTIAL_UNAVAILABLE:
+                return self._credential_skip(item)
             if not ok:
                 # The captured SHA stays what the list admitted. A moved tip is not
                 # written into this attempt and is not fetched.
                 self.log(decision=reason, pr=item["pr"], sha=item["sha"])
                 self.queue.pop(0)
                 continue
-            if self.world.head_status(item["sha"]) in TERMINAL_STATES:
+            try:
+                prior = self.world.head_status(item["sha"])
+            except CredentialUnavailable:
+                return self._credential_skip(item)
+            if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
                 self.queue.pop(0)
                 continue
             return item
+        return None
+
+    def _credential_skip(self, item):
+        """The head stays queued; this cycle starts nothing."""
+        self.credential_skipped = True
+        self.log(decision=CREDENTIAL_UNAVAILABLE, pr=item["pr"], sha=item["sha"])
         return None
 
     def maybe_start(self):
@@ -1456,9 +1484,10 @@ class Supervisor:
         if self.world.slot_held(1) or self.world.slot_held(2):
             self.log(decision="no-start", reason="slot")
             return "no-start"
+        self.credential_skipped = False
         item = self._next_item()
         if item is None:
-            return "idle"
+            return CREDENTIAL_UNAVAILABLE if self.credential_skipped else "idle"
         if not self._fetch(item):
             return "fetch_failed"
         if not self._prepare_tree(item):
@@ -1648,7 +1677,10 @@ class Supervisor:
                 lambda number: self.world.pull(number),
                 lambda ref: self.world.ls_remote(ref),
             )
-            if not ok:
+            if reason == CREDENTIAL_UNAVAILABLE:
+                # Unknown, not revoked: keep the build and check again next tick.
+                self.log(decision=CREDENTIAL_UNAVAILABLE, pr=record["pr"], sha=record["sha"], during="watch")
+            elif not ok:
                 return reason
         our = record.get("slot")
         other = None
@@ -1749,7 +1781,8 @@ def teardown(stages, actor):
     if "gh_configured" in stages:
         actor.remove_gh_config()
         removed.append("gh_configured")
-    actor.remove_local_state()
+    if not actor.remove_local_state():
+        return {"action": "stop", "removed": removed, "reason": "local-state"}
     return {"action": "done", "removed": removed}
 
 
@@ -1796,6 +1829,7 @@ def _revalidate_with_client(root, client):
 
     def fetch_pr(number):
         response = client.pull(number)
+        raise_if_unavailable(response)
         if response.get("status") != 200:
             return None
         return response.get("body")
@@ -1914,6 +1948,7 @@ class ProductionWorld:
 
     def pull(self, number):
         response = self.client.pull(number)
+        raise_if_unavailable(response)
         if response.get("status") != 200:
             return None
         return response.get("body")
@@ -2099,9 +2134,35 @@ class InstallationActor:
             pass
 
     def remove_local_state(self):
-        """The poller's state and cache directories, after every recorded stage is gone."""
-        for name in ("state", "cache"):
-            shutil.rmtree(self.root / name, ignore_errors=True)
+        """Remove cache/, then state/ with stages.json last. True only when both are gone.
+
+        An absent path is already removed. Any other error is reported and leaves
+        stages.json in place, so a later teardown can retry.
+        """
+        state = self.root / "state"
+        try:
+            _remove_path(self.root / "cache")
+            if state.is_dir():
+                for child in state.iterdir():
+                    if child.name != "stages.json":
+                        _remove_path(child)
+                _remove_path(state / "stages.json")
+                state.rmdir()
+        except OSError as error:
+            sys.stderr.write("teardown: local state not removed: %s\n" % error)
+            return False
+        return not (self.root / "cache").exists() and not state.exists()
+
+
+def _remove_path(path):
+    path = Path(path)
+    try:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def supervise_cli(root, cycles=None):

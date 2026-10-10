@@ -1080,6 +1080,7 @@ class Actor:
 
     def remove_local_state(self):
         self.calls.append("remove_local_state")
+        return True
 
     def remove_gh_config(self):
         self.calls.append("remove_gh_config")
@@ -2047,6 +2048,7 @@ class GhModeTests(RuntimeHarness):
         bodies = {
             "no-push": {"id": poller.REPO_ID, "full_name": poller.REPO_NAME, "permissions": {"push": False}},
             "other-id": {"id": 1, "full_name": poller.REPO_NAME, "permissions": {"push": True}},
+            "other-name": {"id": poller.REPO_ID, "full_name": "someone/c11", "permissions": {"push": True}},
         }
         for name, body in bodies.items():
             with self.subTest(name=name):
@@ -2057,6 +2059,75 @@ class GhModeTests(RuntimeHarness):
                 self.assertEqual(_decisions(self.root)[-1]["decision"], "scope-stop")
                 self.assertEqual(len(self.github.requests()), 1)
         self.assertFalse((self.root / "argv.jsonl").exists())
+
+    def fail_gh_when(self, condition):
+        """Add a failure condition to the fake gh only; no production code is patched."""
+        path = self.bin / "gh"
+        text = path.read_text()
+        path.write_text(text.replace("used = sum(1 for _ in open(calls))",
+                                     "used = sum(1 for _ in open(calls))\n" + condition))
+
+    def test_gh_failure_reading_combined_status_skips_build(self):
+        """Review probe: the fourth gh call (the combined status) fails once."""
+        self._enable()
+        self.fail_gh_when("if used == 4:\n    sys.stderr.write('gh: temporary failure\\n')\n    raise SystemExit(1)")
+        result = self._supervise(cycles=1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "argv.jsonl").exists())
+        self.assertEqual(self.github.statuses(), [])
+        self.assertIn("credential-unavailable", [item.get("decision") for item in _decisions(self.root)])
+
+    def test_gh_failure_reading_the_pr_keeps_it_queued(self):
+        """The third gh call (PR detail before the build) fails: skip, not revoke."""
+        self._enable()
+        self.fail_gh_when("if used == 3:\n    raise SystemExit(1)")
+        result = self._supervise(cycles=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decisions = [item.get("decision") for item in _decisions(self.root)]
+        self.assertIn("credential-unavailable", decisions)
+        self.assertNotIn("revoked", decisions)
+        self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "success"])
+
+    def test_gh_failure_during_watch_is_not_revocation(self):
+        """Review probe: one gh failure after pending, while the build runs."""
+        self._enable()
+        requests = self.github.dir / "requests.jsonl"
+        marker = self.root / "gh-failed-once"
+        self.fail_gh_when(
+            "import pathlib, json\n"
+            "request_file = pathlib.Path(%r)\nmarker = pathlib.Path(%r)\n" % (str(requests), str(marker)) +
+            "if request_file.exists() and not marker.exists():\n"
+            "    records = [json.loads(line) for line in request_file.read_text().splitlines()]\n"
+            "    if any(r['method'] == 'POST' and (r.get('body') or {}).get('state') == 'pending' for r in records):\n"
+            "        marker.write_text('failed')\n"
+            "        raise SystemExit(1)")
+        self.build("time.sleep(12)\n" + SUCCESS_BUILD)
+        result = self._supervise(cycles=1, timeout=40)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(marker.exists(), "failure not injected")
+        self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "success"])
+        self.assertTrue(any(item.get("decision") == "credential-unavailable" and item.get("during") == "watch"
+                            for item in _decisions(self.root)))
+
+    def test_teardown_does_not_claim_success_when_cache_removal_fails(self):
+        """Review probe: an unwritable cache keeps the stage record and exits 2."""
+        self._stages(["gh_configured"])
+        cache = self.root / "cache"
+        cache.mkdir()
+        (cache / "retained").write_text("fixture")
+        cache.chmod(0o500)
+        try:
+            result = self._teardown()
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertEqual(json.loads(result.stdout)["reason"], "local-state")
+            self.assertTrue((self.root / "state" / "stages.json").exists())
+            self.assertIn("local state not removed", result.stderr)
+        finally:
+            cache.chmod(0o700)
+        result = self._teardown()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(cache.exists())
+        self.assertFalse((self.root / "state").exists())
 
     def test_child_with_a_failing_gh_refuses_before_pending(self):
         state = self.root / "state"

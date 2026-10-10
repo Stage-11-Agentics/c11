@@ -4986,9 +4986,16 @@ final class Workspace: Identifiable, ObservableObject {
     /// themeFrame so they render above the `WindowTerminalPortal` host (and
     /// thus above terminal/browser portal content). Driven by anchor frames
     /// pushed in from `PaneInteractionOverlayHostView` per pane.
-    lazy var areaCloseOverlayController = AreaCloseOverlayController(
-        runtime: areaCloseInteractionRuntime
-    )
+    lazy var areaCloseOverlayController: AreaCloseOverlayController = {
+        let controller = AreaCloseOverlayController(
+            runtime: areaCloseInteractionRuntime,
+            workspaceId: id
+        )
+        controller.ownerWindow = { [weak self] in
+            CloseOverlayFallback.ownerState(of: self?.owningWorkspaceManager?.window)
+        }
+        return controller
+    }()
 
     /// Workspace-scoped close-confirmation runtime. Distinct keyspace from
     /// `paneInteractionRuntime` (panel-keyed) and `paneCloseInteractionRuntime`
@@ -5002,9 +5009,16 @@ final class Workspace: Identifiable, ObservableObject {
     /// frame pushed in from `WorkspaceCloseOverlayHostView` rendered inside
     /// `WorkspaceContentView` so the cover excludes the sidebar by
     /// construction.
-    lazy var workspaceCloseOverlayController = WorkspaceCloseOverlayController(
-        runtime: workspaceCloseInteractionRuntime
-    )
+    lazy var workspaceCloseOverlayController: WorkspaceCloseOverlayController = {
+        let controller = WorkspaceCloseOverlayController(
+            runtime: workspaceCloseInteractionRuntime,
+            workspaceId: id
+        )
+        controller.ownerWindow = { [weak self] in
+            CloseOverlayFallback.ownerState(of: self?.owningWorkspaceManager?.window)
+        }
+        return controller
+    }()
 
 
     // Closing tabs mutates split layout immediately; terminal views handle their own AppKit
@@ -11771,6 +11785,52 @@ extension Workspace: BonsplitDelegate {
         return alert.runModal() == .alertSecondButtonReturn
     }
 
+    /// Two yields let a host that is already mounting mark the card visible.
+    /// If it never does, mount on the window that owns this workspace. If that
+    /// window is not on screen, release the confirm as cancel so the
+    /// pending-close guard cannot swallow the next X.
+    private func reconcileUnmountedPanelConfirm(panelId: UUID) async {
+        await Task.yield()
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        guard paneInteractionRuntime.active[panelId] != nil else { return }
+        guard !paneInteractionRuntime.isConfirmCardVisible(panelId: panelId) else { return }
+        CloseLog.overlayUnmounted(scope: "panel", workspace: id, reason: "no_anchor")
+        if mountPanelConfirmFallback(panelId: panelId) {
+            await Task.yield()
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            if paneInteractionRuntime.isConfirmCardVisible(panelId: panelId) { return }
+        } else {
+            CloseLog.overlayUnmounted(
+                scope: "panel",
+                workspace: id,
+                reason: "owner_window_not_visible"
+            )
+        }
+        guard !Task.isCancelled else { return }
+        guard paneInteractionRuntime.active[panelId] != nil else { return }
+        paneInteractionRuntime.releaseUnmounted(panelId: panelId)
+    }
+
+    /// Owning-window card for a panel confirm whose own host never appeared.
+    /// The host removes itself once the interaction goes idle. A window that
+    /// is not on screen is not a mount target.
+    @discardableResult
+    private func mountPanelConfirmFallback(panelId: UUID) -> Bool {
+        guard case .onScreen(let window) = CloseOverlayFallback.ownerState(of: owningWorkspaceManager?.window),
+              let placement = CloseOverlayFallback.themePlacement(in: window) else {
+            return false
+        }
+        let host = AreaInteractionOverlayHost(panelId: panelId, runtime: paneInteractionRuntime)
+        host.removesFromSuperviewWhenIdle = true
+        host.frame = placement.frame
+        host.autoresizingMask = [.width, .height]
+        placement.theme.addSubview(host, positioned: .above, relativeTo: nil)
+        CloseLog.fallback(scope: "panel", workspace: id)
+        return true
+    }
+
     /// Present a .confirm pane interaction on the given panel and await the
     /// user's decision. Returns `true` only on explicit accept — .cancelled and
     /// .dismissed both map to `false` so callers don't fire close actions on a
@@ -12310,6 +12370,14 @@ extension Workspace: BonsplitDelegate {
 
         if let panelId = tabIdFromBonsplitTabId(bonsplitTab.id),
            pinnedPanelIds.contains(panelId) {
+            CloseLog.request(
+                panel: panelId,
+                workspace: id,
+                explicit: explicitUserClose,
+                lastSurface: shouldCloseWorkspaceOnLastSurface(for: bonsplitTab.id),
+                needsConfirm: false,
+                route: "pinned"
+            )
             clearStagedClosedBrowserRestoreSnapshot(for: bonsplitTab.id)
             NSSound.beep()
             return false
@@ -12317,7 +12385,14 @@ extension Workspace: BonsplitDelegate {
 
         if explicitUserClose && shouldCloseWorkspaceOnLastSurface(for: bonsplitTab.id) {
             clearStagedClosedBrowserRestoreSnapshot(for: bonsplitTab.id)
-            owningWorkspaceManager?.closeWorkspaceWithConfirmation(self)
+            // The workspace-confirm path logs this request. Logging here too
+            // would record two routes for one click.
+            owningWorkspaceManager?.closeWorkspaceWithConfirmation(
+                self,
+                panelId: tabIdFromBonsplitTabId(bonsplitTab.id),
+                explicit: true,
+                lastSurface: true
+            )
             return false
         }
 
@@ -12335,9 +12410,25 @@ extension Workspace: BonsplitDelegate {
         if panelNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()) {
             clearStagedClosedBrowserRestoreSnapshot(for: bonsplitTab.id)
             if pendingCloseConfirmBonsplitTabIds.contains(bonsplitTab.id) {
+                CloseLog.request(
+                    panel: panelId,
+                    workspace: id,
+                    explicit: explicitUserClose,
+                    lastSurface: false,
+                    needsConfirm: true,
+                    route: "pendingSkip"
+                )
                 return false
             }
 
+            CloseLog.request(
+                panel: panelId,
+                workspace: id,
+                explicit: explicitUserClose,
+                lastSurface: false,
+                needsConfirm: true,
+                route: "panelConfirm"
+            )
             pendingCloseConfirmBonsplitTabIds.insert(bonsplitTab.id)
             let bonsplitTabId = bonsplitTab.id
             DispatchQueue.main.async { [weak self] in
@@ -12346,7 +12437,7 @@ extension Workspace: BonsplitDelegate {
                     defer { self.pendingCloseConfirmBonsplitTabIds.remove(bonsplitTabId) }
 
                     // If the tab disappeared while we were scheduling, do nothing.
-                    guard self.tabIdFromBonsplitTabId(bonsplitTabId) != nil else { return }
+                    guard let livePanelId = self.tabIdFromBonsplitTabId(bonsplitTabId) else { return }
 
                     // C11-117: clicking X on a background pane-tab anchors the
                     // confirm overlay on a panel that isn't on-screen (the pane
@@ -12358,7 +12449,11 @@ extension Workspace: BonsplitDelegate {
                         self.bonsplitController.selectTab(bonsplitTabId)
                     }
 
+                    let watchdog = Task { @MainActor [weak self] in
+                        await self?.reconcileUnmountedPanelConfirm(panelId: livePanelId)
+                    }
                     let confirmed = await self.confirmClosePanel(for: bonsplitTabId)
+                    watchdog.cancel()
                     guard confirmed else { return }
 
                     self.forceCloseBonsplitTabIds.insert(bonsplitTabId)
@@ -12369,6 +12464,14 @@ extension Workspace: BonsplitDelegate {
             return false
         }
 
+        CloseLog.request(
+            panel: panelId,
+            workspace: id,
+            explicit: explicitUserClose,
+            lastSurface: shouldCloseWorkspaceOnLastSurface(for: bonsplitTab.id),
+            needsConfirm: false,
+            route: "direct"
+        )
         clearStagedClosedBrowserRestoreSnapshot(for: bonsplitTab.id)
         recordPostCloseSelection()
         return true
@@ -13452,6 +13555,15 @@ extension Workspace: BonsplitDelegate {
         let bonsplitTabs = controller.tabs(inPane: pane)
         let paneCount = controller.allPaneIds.count
         let isOnlyPane = paneCount <= 1
+
+        CloseLog.request(
+            panel: pane.id,
+            workspace: id,
+            explicit: true,
+            lastSurface: isOnlyPane,
+            needsConfirm: true,
+            route: "areaConfirm"
+        )
 
         let panelTitles = bonsplitTabs.map { Self.paneClosePanelTitle(for: $0) }
         let title = Self.closePaneConfirmationTitle(panelCount: bonsplitTabs.count, isOnlyPane: isOnlyPane)

@@ -8523,20 +8523,19 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    /// Attach (idempotently) the pane-interaction overlay for a given panel. The host lives
-    /// inside this portal-hosted AppKit view so it sits ABOVE the Ghostty surface (per
-    /// CLAUDE.md:143 — SwiftUI panel-level overlays fall behind the portal-hosted terminal).
-    /// The overlay observes runtime.$active itself and shows/hides automatically; we only
-    /// ever create it, never tear it down — a panel's runtime and id are stable for the
-    /// lifetime of its scroll view.
+    /// Attach the pane-interaction overlay for this panel. The host lives inside
+    /// this portal-hosted AppKit view so it sits above the Ghostty surface
+    /// (SwiftUI panel-level overlays fall behind the portal-hosted terminal).
+    /// A moved terminal keeps this scroll view; the overlay has to follow the
+    /// runtime passed in, or the card watches the workspace the panel left.
     func attachPaneInteraction(runtime: AreaInteractionRuntime, panelId: UUID) {
-        if paneInteractionOverlay != nil { return }
-        let overlay = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
-        overlay.frame = bounds
-        overlay.autoresizingMask = [.width, .height]
-        // Always position above everything else (search overlay included) — it's modal.
-        addSubview(overlay)
-        paneInteractionOverlay = overlay
+        paneInteractionOverlay = PaneInteractionOverlaySlot.attach(
+            existing: paneInteractionOverlay,
+            to: self,
+            runtime: runtime,
+            panelId: panelId,
+            workspaceId: surfaceView.terminalSurface?.workspaceId
+        )
     }
 
     /// True while a pane interaction is currently presented on this panel. Callers

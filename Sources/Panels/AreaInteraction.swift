@@ -232,6 +232,12 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// the tab again" lockout (synthesis-critical §1.2).
     private var tokenToInteractionIds: [UUID: [String: Set<UUID>]] = [:]
     private var interactionIdToToken: [UUID: String] = [:]
+    /// Confirm cards a host has reported on screen. Return and Cmd+D accept
+    /// only these. Absence means the host has not reported yet.
+    private var confirmVisibleIds: Set<UUID> = []
+    /// Confirm cards a host has reported as not on screen. A dedupe token
+    /// whose holders are all in this set does not swallow the next present.
+    private var confirmUnmountedIds: Set<UUID> = []
     /// Live text-input values keyed by the interaction's id. Bridged from
     /// `TextInputCard` so `acceptActive` (Cmd+D) can submit the edited value
     /// instead of the default (synthesis-critical §1.1).
@@ -256,12 +262,19 @@ public final class AreaInteractionRuntime: ObservableObject {
         if let token = dedupeToken {
             var byToken = tokenToInteractionIds[panelId, default: [:]]
             if let existing = byToken[token], !existing.isEmpty {
-                // Dedupe collision: an interaction with this token is already
-                // live on this panel. Resolve the new interaction with
-                // `.dismissed` so any caller awaiting a `withCheckedContinuation`
-                // unblocks — dropping on the floor leaks continuations.
-                dismissEvicted(interaction)
-                return
+                let heldByLiveCard = existing.contains { !confirmUnmountedIds.contains($0) }
+                if heldByLiveCard {
+                    // Dedupe collision: an interaction with this token is already
+                    // live on this panel. Resolve the new interaction with
+                    // `.dismissed` so any caller awaiting a `withCheckedContinuation`
+                    // unblocks — dropping on the floor leaks continuations.
+                    dismissEvicted(interaction)
+                    return
+                }
+                // Every holder was reported unmounted. Drop them so this
+                // present is not a silent no-op.
+                dismissUnmountedTokenHolders(panelId: panelId, ids: existing)
+                byToken = tokenToInteractionIds[panelId, default: [:]]
             }
             byToken[token, default: []].insert(interaction.id)
             tokenToInteractionIds[panelId] = byToken
@@ -350,6 +363,7 @@ public final class AreaInteractionRuntime: ObservableObject {
         if let interactionId, interaction.id != interactionId { return false }
         switch interaction {
         case .confirm(let c):
+            guard confirmVisibleIds.contains(c.id) else { return false }
 #if DEBUG
             dlog("pane.interaction.accept panel=\(panelId.uuidString.prefix(5)) id=\(c.id.uuidString.prefix(5)) kind=confirm")
 #endif
@@ -428,6 +442,7 @@ public final class AreaInteractionRuntime: ObservableObject {
             case 48:
                 moveConfirmSelection(panelId: panelId, direction: .toggle)
             case 36, 76, 49: // return / numpad enter / space
+                guard isConfirmCardVisible(panelId: panelId) else { return false }
                 acceptSelectedConfirm(panelId: panelId)
             case 53:
                 cancelActive(panelId: panelId)
@@ -552,6 +567,40 @@ public final class AreaInteractionRuntime: ObservableObject {
 #endif
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
+
+    /// Hosts report whether the confirm card is actually on screen.
+    public func noteConfirmVisible(panelId: UUID, visible: Bool) {
+        guard case .confirm(let content)? = active[panelId] else { return }
+        if visible {
+            confirmVisibleIds.insert(content.id)
+            confirmUnmountedIds.remove(content.id)
+        } else {
+            confirmVisibleIds.remove(content.id)
+            confirmUnmountedIds.insert(content.id)
+        }
+    }
+
+    public func isConfirmCardVisible(panelId: UUID) -> Bool {
+        guard case .confirm(let content)? = active[panelId] else { return false }
+        return confirmVisibleIds.contains(content.id)
+    }
+
+    /// Resume an unseen confirm with `.cancelled` and drop its dedupe token.
+    /// Nothing closes. The pending-close guard's task ends, so a later X can
+    /// present. Text input has no destructive default and stays `.dismissed`.
+    public func releaseUnmounted(panelId: UUID) {
+        guard let interaction = active[panelId] else { return }
+        confirmVisibleIds.remove(interaction.id)
+        confirmUnmountedIds.remove(interaction.id)
+        retireToken(forInteractionId: interaction.id, panelId: panelId)
+        switch interaction {
+        case .confirm(let content): content.completion(.cancelled)
+        case .textInput(let content):
+            pendingTextInputValues.removeValue(forKey: content.id)
+            content.completion(.dismissed)
+        }
+        advance(panelId: panelId)
+    }
     /// A destructive card starts on Cancel so a reflexive Return keeps things
     /// open, and a standard question starts on its confirm button, unless the
     /// card names its own default.
@@ -600,6 +649,32 @@ public final class AreaInteractionRuntime: ObservableObject {
         }
     }
 
+    /// Drop interactions that were reported unmounted so a repeat of their
+    /// dedupe token can present. Queued work that does not hold the token stays.
+    private func dismissUnmountedTokenHolders(panelId: UUID, ids: Set<UUID>) {
+        if let current = active[panelId], ids.contains(current.id) {
+            confirmVisibleIds.remove(current.id)
+            confirmUnmountedIds.remove(current.id)
+            retireToken(forInteractionId: current.id, panelId: panelId)
+            dismissEvicted(current)
+            active[panelId] = nil
+        }
+        if var queue = queues[panelId] {
+            queue.removeAll { item in
+                guard ids.contains(item.id) else { return false }
+                confirmVisibleIds.remove(item.id)
+                confirmUnmountedIds.remove(item.id)
+                retireToken(forInteractionId: item.id, panelId: panelId)
+                dismissEvicted(item)
+                return true
+            }
+            queues[panelId] = queue.isEmpty ? nil : queue
+        }
+        if active[panelId] == nil {
+            advance(panelId: panelId)
+        }
+    }
+
     private func dismissEvicted(_ interaction: AreaInteraction) {
         switch interaction {
         case .confirm(let c): c.completion(.dismissed)
@@ -608,6 +683,8 @@ public final class AreaInteractionRuntime: ObservableObject {
     }
 
     private func retireToken(forInteractionId interactionId: UUID, panelId: UUID) {
+        confirmVisibleIds.remove(interactionId)
+        confirmUnmountedIds.remove(interactionId)
         guard let token = interactionIdToToken.removeValue(forKey: interactionId) else { return }
         var byToken = tokenToInteractionIds[panelId] ?? [:]
         if var ids = byToken[token] {

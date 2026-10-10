@@ -23,14 +23,20 @@ final class AreaCloseOverlayController {
     // the reflow, when convert(bounds, to: nil) can return transient
     // half-applied coordinates that the system never corrects.
     private let liveAnchorViews = NSHashTable<AreaInteractionOverlayHostView.AnchorView>.weakObjects()
+    let workspaceId: UUID
+    /// Tests inject an owner. Production resolves the workspace's window.
+    /// The default refuses to mount, so an unwired controller cannot fall
+    /// through to `NSApp.keyWindow`.
+    var ownerWindow: @MainActor () -> CloseOverlayOwner = { .missing }
 
     private struct AnchorRecord {
         var frameInWindow: NSRect
         weak var window: NSWindow?
     }
 
-    init(runtime: AreaInteractionRuntime) {
+    init(runtime: AreaInteractionRuntime, workspaceId: UUID) {
         self.runtime = runtime
+        self.workspaceId = workspaceId
         subscription = runtime.$active
             .receive(on: RunLoop.main)
             .sink { [weak self] active in
@@ -96,36 +102,66 @@ final class AreaCloseOverlayController {
         }
 
         for id in activeIds {
-            guard let anchor = anchors[id],
-                  let window = anchor.window,
-                  let themeFrame = window.contentView?.superview
-            else {
-#if DEBUG
-                let reason: String
-                if anchors[id] == nil { reason = "no_anchor" }
-                else if anchors[id]?.window == nil { reason = "anchor_window_nil" }
-                else { reason = "no_themeFrame" }
-                dlog("paneClose.sync skip pane=\(id.uuidString.prefix(5)) reason=\(reason)")
-#endif
+            if let placement = usablePlacement(for: id) {
+                mount(id: id, frame: placement.frame, theme: placement.theme)
                 continue
             }
 
-            let host: AreaInteractionOverlayHost
-            if let existing = hosts[id] {
-                host = existing
-            } else {
-                host = AreaInteractionOverlayHost(panelId: id, runtime: runtime)
-                hosts[id] = host
+            let reason = unmountReason(for: id)
+            CloseLog.overlayUnmounted(scope: "area", workspace: workspaceId, reason: reason)
+#if DEBUG
+            dlog("paneClose.sync skip pane=\(id.uuidString.prefix(5)) reason=\(reason)")
+#endif
+            if case .onScreen(let window) = ownerWindow(),
+               let placement = CloseOverlayFallback.themePlacement(in: window) {
+                CloseLog.fallback(scope: "area", workspace: workspaceId)
+                mount(id: id, frame: placement.frame, theme: placement.theme)
+                continue
             }
 
-            // themeFrame and the window share the same coordinate system (themeFrame
-            // is the window's outermost view at origin (0,0), full window size).
-            // `convert(_:to: nil)` from any descendant gives window-coords directly.
-            host.frame = anchor.frameInWindow
-
-            // Re-add as the topmost subview so we sit above the portal hostView,
-            // the file-drop overlay, and any SwiftUI hosting view.
-            themeFrame.addSubview(host, positioned: .above, relativeTo: nil)
+            if let host = hosts.removeValue(forKey: id) {
+                host.removeFromSuperview()
+            }
+            // The owning window is not a place to draw. Cancel so nothing
+            // closes and the next X can present again.
+            CloseLog.overlayUnmounted(
+                scope: "area",
+                workspace: workspaceId,
+                reason: "owner_window_not_visible"
+            )
+            runtime.releaseUnmounted(panelId: id)
         }
+    }
+
+    private func usablePlacement(for id: UUID) -> (frame: NSRect, theme: NSView)? {
+        guard let anchor = anchors[id],
+              let window = anchor.window,
+              let theme = window.contentView?.superview,
+              anchor.frameInWindow.width >= 1,
+              anchor.frameInWindow.height >= 1 else { return nil }
+        return (anchor.frameInWindow, theme)
+    }
+
+    /// A zero frame draws nothing, so it is logged as `no_anchor`.
+    private func unmountReason(for id: UUID) -> String {
+        guard let anchor = anchors[id] else { return "no_anchor" }
+        if anchor.window == nil { return "anchor_window_nil" }
+        if anchor.frameInWindow.width < 1 || anchor.frameInWindow.height < 1 { return "no_anchor" }
+        return "no_themeFrame"
+    }
+
+    private func mount(id: UUID, frame: NSRect, theme: NSView) {
+        let host: AreaInteractionOverlayHost
+        if let existing = hosts[id] {
+            host = existing
+        } else {
+            host = AreaInteractionOverlayHost(panelId: id, runtime: runtime)
+            hosts[id] = host
+        }
+        // themeFrame and the window share the same coordinate system (themeFrame
+        // is the window's outermost view at origin (0,0), full window size).
+        // `convert(_:to: nil)` from any descendant gives window-coords directly.
+        host.frame = frame
+        theme.addSubview(host, positioned: .above, relativeTo: nil)
     }
 }

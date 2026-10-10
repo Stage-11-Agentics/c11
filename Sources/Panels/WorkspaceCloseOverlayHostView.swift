@@ -39,7 +39,10 @@ struct WorkspaceCloseOverlayHostView: View {
         }
 
         static func dismantleNSView(_ nsView: AnchorView, coordinator: ()) {
-            nsView.controller?.removeAnchor()
+            // A zoom identity change rebuilds this anchor. The old view's
+            // dismantle can run after the new view has registered. Only the
+            // current owner may clear the anchor.
+            nsView.controller?.removeAnchor(owner: nsView)
         }
     }
 
@@ -66,12 +69,12 @@ struct WorkspaceCloseOverlayHostView: View {
 
         func reportFrame() {
             guard let controller else { return }
-            guard let window else {
-                controller.removeAnchor()
-                return
-            }
+            // A nil window during SwiftUI reparenting is transient. Removing
+            // the anchor here orphans the card; the next report fills it in.
+            // C11-40 dropped the same removal on the area anchor.
+            guard let window else { return }
             let frameInWindow = convert(bounds, to: nil)
-            controller.updateAnchor(frameInWindow: frameInWindow, window: window)
+            controller.updateAnchor(frameInWindow: frameInWindow, window: window, owner: self)
         }
     }
 }

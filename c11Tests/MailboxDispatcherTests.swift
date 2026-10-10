@@ -625,4 +625,293 @@ final class MailboxDispatcherTests: XCTestCase {
         let expired = handlerEvents.first { ($0["outcome"] as? String) == "expired" }
         XCTAssertNil(expired?["bytes"])
     }
+
+    // MARK: - C11-381 stdin flush seam
+
+    /// Drives `MailboxStdinDelivery`, the sequence `Workspace` calls.
+    /// `ownsTerminal` stands in for the kernel check; there is no PTY here.
+    private final class StdinSeat: @unchecked Sendable {
+        let state = MailboxStdinBufferStore()
+        var ownsTerminal = true
+        var lastOperatorKeyAt: Date?
+        private(set) var pasted: [String] = []
+        let dispatcher: MailboxDispatcher
+        let stateURL: URL
+        let workspaceId: UUID
+        var buffer: MailboxStdinBuffer { state.buffer }
+
+        init(dispatcher: MailboxDispatcher, stateURL: URL, workspaceId: UUID) {
+            self.dispatcher = dispatcher
+            self.stateURL = stateURL
+            self.workspaceId = workspaceId
+        }
+
+        func inbox(_ surfaceId: UUID) -> URL {
+            MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: surfaceId)
+        }
+
+        func beginTurn(surfaceId: UUID, at: Date) {
+            state.buffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: true, at: at)
+            state.buffer.noteSubmit(surfaceId: surfaceId, at: at.addingTimeInterval(1))
+        }
+
+        func noteIdle(surfaceId: UUID, at: Date) {
+            noteReported(surfaceId: surfaceId, activity: .idle, at: at, agentPid: nil, processStartTime: nil)
+        }
+
+        func noteWrapperIdle(surfaceId: UUID, at: Date) {
+            ownsTerminal = true
+            noteReported(surfaceId: surfaceId, activity: .idle, at: at, agentPid: 1, processStartTime: 1)
+        }
+
+        func admit(
+            surfaceId: UUID,
+            envelopeId: String,
+            recipient: String,
+            block: String
+        ) -> MailboxDispatcher.HandlerInvocationResult {
+            let entry = MailboxStdinBuffer.Entry(
+                id: envelopeId,
+                recipientName: recipient,
+                block: block,
+                bufferedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+            let admitted = MailboxStdinDelivery.deliver(
+                state: state,
+                surfaceId: surfaceId,
+                entry: entry,
+                gate: gate(),
+                logEvicted: { [dispatcher] evicted in
+                    dispatcher.logStdinLifecycle(
+                        id: evicted.id,
+                        recipient: evicted.recipientName,
+                        outcome: .evicted
+                    )
+                },
+                push: { [self] immediateId in
+                    self.perform(
+                        surfaceId: surfaceId,
+                        immediateId: immediateId,
+                        now: Date(timeIntervalSince1970: 1_700_000_100)
+                    )
+                }
+            )
+            switch admitted {
+            case .ok(let bytes):
+                return .init(outcome: .ok, bytes: bytes, elapsedMs: 0)
+            case .buffered(let bytes):
+                return .init(outcome: .buffered, bytes: bytes, elapsedMs: 0)
+            }
+        }
+
+        private func gate() -> MailboxStdinDelivery.Gate {
+            MailboxStdinDelivery.Gate(
+                panelPresent: true,
+                isAgentKind: true,
+                ownsTerminal: ownsTerminal,
+                lastOperatorKeyAt: lastOperatorKeyAt,
+                inputTransactionActive: false,
+                inputTransactionEpoch: 0,
+                surfaceAttached: true
+            )
+        }
+
+        private func noteReported(
+            surfaceId: UUID,
+            activity: SidebarActivityState,
+            at: Date,
+            agentPid: pid_t?,
+            processStartTime: UInt64?
+        ) {
+            MailboxStdinDelivery.noteReported(
+                state: state,
+                surfaceId: surfaceId,
+                activity: activity,
+                at: at,
+                agentPid: agentPid,
+                processStartTime: processStartTime,
+                flush: { [self] in
+                    self.perform(
+                        surfaceId: surfaceId,
+                        immediateId: nil,
+                        now: at.addingTimeInterval(0.2)
+                    )
+                }
+            )
+        }
+
+        private func perform(surfaceId: UUID, immediateId: String?, now: Date) {
+            MailboxStdinDelivery.perform(
+                state: state,
+                surfaceId: surfaceId,
+                trigger: .agentPrompt,
+                immediateId: immediateId,
+                now: now,
+                gate: gate(),
+                inbox: inbox(surfaceId),
+                log: { [dispatcher] line in
+                    dispatcher.logStdinLifecycle(
+                        id: line.entry.id,
+                        recipient: line.entry.recipientName,
+                        outcome: line.outcome,
+                        bytes: line.bytes
+                    )
+                },
+                logFailed: { [dispatcher] entry, code in
+                    dispatcher.logStdinClaimFailed(
+                        id: entry.id,
+                        recipient: entry.recipientName,
+                        errno: code
+                    )
+                },
+                paste: { [self] block in
+                    pasted.append(block)
+                    return true
+                }
+            )
+        }
+    }
+
+    private func t381(_ seconds: TimeInterval) -> Date {
+        Date(timeIntervalSince1970: 1_700_000_000 + seconds)
+    }
+
+    private func makeStdinSeat() -> (UUID, StdinSeat) {
+        let surface = seedSurface(name: "grok-seat", delivery: "stdin")
+        let dispatcher = makeDispatcher(surfaces: [surface])
+        let seat = StdinSeat(dispatcher: dispatcher, stateURL: tempState, workspaceId: workspaceId)
+        dispatcher.registerHandler(name: "stdin") { envelope, surfaceId, name in
+            let block = StdinMailboxHandler.formatFramedBlock(envelope: envelope)
+            return seat.admit(surfaceId: surfaceId, envelopeId: envelope.id, recipient: name, block: block)
+        }
+        return (surface, seat)
+    }
+
+    private func dispatchToSeat(id: String, body: String) throws {
+        let envelope = try MailboxEnvelope.build(
+            from: "orch",
+            to: "grok-seat",
+            body: body,
+            id: id,
+            ts: "2026-10-09T22:00:00Z"
+        )
+        try writeEnvelope(envelope)
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        dispatcher?.dispatchOne(url: outbox)
+        dispatcher?.log.flush()
+    }
+
+    private func handlerOutcomes() throws -> [String] {
+        try readLog().compactMap { event in
+            guard (event["event"] as? String) == "handler" else { return nil }
+            return event["outcome"] as? String
+        }
+    }
+
+    private func envelopeIsInInboxRoot(surface: UUID, id: String) -> Bool {
+        let inbox = MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: surface)
+        return FileManager.default.fileExists(
+            atPath: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)).path
+        )
+    }
+
+    private func envelopeIsClaimed(surface: UUID, id: String) -> Bool {
+        let inbox = MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: surface)
+        let claimed = MailboxLayout.readURL(inbox: inbox)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        return FileManager.default.fileExists(atPath: claimed.path)
+    }
+
+    /// Mail admitted while the agent is mid-turn stays in the inbox, then one
+    /// idle claims it once and logs `flushed` once. A second idle does not.
+    func testBufferedStdinFlushesOnceOnIdle() throws {
+        let (surface, seat) = makeStdinSeat()
+        let id = "01K3A2B7X8PQRTVWYZ0123456A"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "flush-once")
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertTrue(seat.pasted.isEmpty)
+
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        dispatcher?.log.flush()
+        XCTAssertEqual(try handlerOutcomes(), ["buffered", "flushed"])
+        XCTAssertEqual(seat.pasted.count, 1)
+        XCTAssertFalse(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
+
+        seat.noteIdle(surfaceId: surface, at: t381(30))
+        dispatcher?.log.flush()
+        XCTAssertEqual(try handlerOutcomes(), ["buffered", "flushed"])
+        XCTAssertEqual(seat.pasted.count, 1)
+    }
+
+    /// A busy turn does not claim. The inbox file stays where a drain can find it.
+    func testBusyStdinStaysBuffered() throws {
+        let (surface, seat) = makeStdinSeat()
+        let id = "01K3A2B7X8PQRTVWYZ0123456B"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "still-busy")
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
+        XCTAssertTrue(seat.pasted.isEmpty)
+    }
+
+    /// An idle edge does not type over an operator draft, and does not claim.
+    func testDraftIsNotTypedOver() throws {
+        let (surface, seat) = makeStdinSeat()
+        let id = "01K3A2B7X8PQRTVWYZ0123456C"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "behind-draft")
+        seat.lastOperatorKeyAt = t381(5)
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        dispatcher?.log.flush()
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
+        XCTAssertTrue(seat.pasted.isEmpty)
+    }
+
+    /// A drain that claimed the file first wins. The push logs `skipped` and does not paste.
+    func testDrainClaimSkipsPush() throws {
+        let (surface, seat) = makeStdinSeat()
+        let id = "01K3A2B7X8PQRTVWYZ0123456D"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "drain-first")
+        let claimed = try XCTUnwrap(try MailboxIO.claim(id: id, inbox: seat.inbox(surface)))
+        XCTAssertEqual(claimed.deletingLastPathComponent().lastPathComponent, "_read")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        dispatcher?.log.flush()
+        XCTAssertEqual(try handlerOutcomes(), ["buffered", "skipped"])
+        XCTAssertTrue(seat.pasted.isEmpty)
+        XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
+    }
+
+    /// A transcript idle does not pin a process. The later wrapper idle does, and claims once.
+    func testTranscriptIdleThenWrapperIdleClaimsOnce() throws {
+        let (surface, seat) = makeStdinSeat()
+        let id = "01K3A2B7X8PQRTVWYZ0123456E"
+        seat.ownsTerminal = false
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "after-pin")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        dispatcher?.log.flush()
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertNil(seat.buffer.agentProcess(surfaceId: surface))
+
+        seat.noteWrapperIdle(surfaceId: surface, at: t381(21))
+        dispatcher?.log.flush()
+        XCTAssertEqual(try handlerOutcomes(), ["buffered", "flushed"])
+        XCTAssertEqual(seat.pasted.count, 1)
+        XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
+        XCTAssertEqual(seat.buffer.agentProcess(surfaceId: surface)?.pid, 1)
+
+        seat.noteWrapperIdle(surfaceId: surface, at: t381(40))
+        dispatcher?.log.flush()
+        XCTAssertEqual(seat.pasted.count, 1)
+        XCTAssertEqual(try handlerOutcomes().filter { $0 == "flushed" }.count, 1)
+    }
 }

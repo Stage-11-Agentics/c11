@@ -399,6 +399,327 @@ struct MailboxStdinBuffer {
     }
 }
 
+/// Class box so the delivery sequence can mutate the buffer and then flush
+/// without an `inout` that overlaps the flush. Workspace holds one of these.
+final class MailboxStdinBufferStore {
+    var buffer = MailboxStdinBuffer()
+}
+
+/// The stdin delivery sequence Workspace runs: admit, idle flush, claim, and
+/// the post-claim verdict. Tests call these functions; they do not restage them.
+enum MailboxStdinDelivery {
+    struct Gate: Equatable {
+        var panelPresent: Bool = true
+        var isAgentKind: Bool = true
+        var ownsTerminal: Bool = false
+        var lastOperatorKeyAt: Date? = nil
+        var inputTransactionActive: Bool = false
+        var inputTransactionEpoch: UInt64 = 0
+        var surfaceAttached: Bool = true
+    }
+
+    struct LogLine {
+        var entry: MailboxStdinBuffer.Entry
+        var outcome: MailboxDispatchLog.HandlerOutcome
+        var bytes: Int?
+    }
+
+    enum AdmitResult: Equatable {
+        case ok(bytes: Int)
+        case buffered(bytes: Int)
+    }
+
+    struct Prepared {
+        var fresh: [MailboxStdinBuffer.Entry]
+        var expired: [MailboxStdinBuffer.Entry]
+        var admittedTurn: MailboxStdinBuffer.AgentTurn?
+        /// `beginPush` ran because there is something to claim.
+        var started: Bool
+    }
+
+    enum Step {
+        case finished(retry: Bool)
+        case undo(entries: [MailboxStdinBuffer.Entry], lines: [LogLine], retry: Bool)
+        case paste(entries: [MailboxStdinBuffer.Entry], block: String)
+    }
+
+    struct PasteRecord {
+        var lines: [LogLine]
+        var retry: Bool
+    }
+
+    /// A reported lifecycle edge. An idle edge is the only one that flushes.
+    static func noteReported(
+        state: MailboxStdinBufferStore,
+        surfaceId: UUID,
+        activity: SidebarActivityState,
+        at eventAt: Date,
+        agentPid: pid_t?,
+        processStartTime: UInt64?,
+        flush: () -> Void
+    ) {
+        if let agentPid {
+            state.buffer.noteAgentProcess(
+                surfaceId: surfaceId,
+                process: .init(pid: agentPid, startTime: processStartTime)
+            )
+        }
+        state.buffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: activity == .idle, at: eventAt)
+        if activity == .idle {
+            flush()
+        }
+    }
+
+    /// Admit one block: enqueue, and push immediately when the gate is open.
+    static func deliver(
+        state: MailboxStdinBufferStore,
+        surfaceId: UUID,
+        entry: MailboxStdinBuffer.Entry,
+        gate: Gate,
+        logEvicted: (MailboxStdinBuffer.Entry) -> Void,
+        push: (_ immediateId: String?) -> Void
+    ) -> AdmitResult {
+        var decision = state.buffer.decide(
+            surfaceId: surfaceId,
+            isAgentKind: gate.isAgentKind,
+            agentOwnsTerminal: gate.ownsTerminal,
+            lastOperatorKeyAt: gate.lastOperatorKeyAt
+        )
+        if gate.inputTransactionActive { decision = .buffer }
+        let immediate = decision == .injectNow
+            && state.buffer.pendingCount(surfaceId: surfaceId) == 0
+        if let evicted = state.buffer.enqueue(surfaceId: surfaceId, entry: entry) {
+            logEvicted(evicted)
+        }
+        if decision == .injectNow {
+            push(immediate ? entry.id : nil)
+        }
+        let bytes = entry.block.utf8.count
+        return immediate ? .ok(bytes: bytes) : .buffered(bytes: bytes)
+    }
+
+    /// Gate check, drain, and `beginPush`. Nil means the push did not start
+    /// and the queue was left in place. `started == false` means the queue
+    /// was drained into `expired` only.
+    static func prepare(
+        state: MailboxStdinBufferStore,
+        surfaceId: UUID,
+        trigger: MailboxStdinBuffer.FlushTrigger,
+        now: Date,
+        gate: Gate
+    ) -> Prepared? {
+        guard gate.panelPresent,
+              state.buffer.pendingCount(surfaceId: surfaceId) > 0,
+              !state.buffer.isPushInFlight(surfaceId: surfaceId) else { return nil }
+        if trigger == .agentPrompt {
+            guard !gate.inputTransactionActive,
+                  state.buffer.decide(
+                      surfaceId: surfaceId,
+                      isAgentKind: true,
+                      agentOwnsTerminal: gate.ownsTerminal,
+                      lastOperatorKeyAt: gate.lastOperatorKeyAt
+                  ) == .injectNow else { return nil }
+        }
+        let flush = state.buffer.drainForFlush(surfaceId: surfaceId, now: now, trigger: trigger)
+        let started = !flush.fresh.isEmpty
+        if started {
+            state.buffer.beginPush(surfaceId: surfaceId)
+        }
+        return Prepared(
+            fresh: flush.fresh,
+            expired: flush.expired,
+            admittedTurn: state.buffer.agentTurn(surfaceId: surfaceId),
+            started: started
+        )
+    }
+
+    /// Claim each fresh envelope. A `.gone` result is a drain that already
+    /// owns the file: it is logged and not pasted.
+    static func claim(
+        entries: [MailboxStdinBuffer.Entry],
+        inbox: URL,
+        logSkipped: (MailboxStdinBuffer.Entry) -> Void,
+        logFailed: (MailboxStdinBuffer.Entry, Int32) -> Void
+    ) -> [MailboxStdinBuffer.Entry] {
+        var claimed: [MailboxStdinBuffer.Entry] = []
+        for entry in entries {
+            switch MailboxIO.claimResult(id: entry.id, inbox: inbox) {
+            case .claimed:
+                claimed.append(entry)
+            case .gone:
+                // A drain took it first: nothing to type for it.
+                logSkipped(entry)
+            case .failed(let code):
+                logFailed(entry, code)
+            }
+        }
+        return claimed
+    }
+
+    /// Verdict after the claims. `.paste` has not ended the push; the caller
+    /// records the terminal's submit through `notePasteResult`.
+    static func complete(
+        state: MailboxStdinBufferStore,
+        surfaceId: UUID,
+        claimed: [MailboxStdinBuffer.Entry],
+        trigger: MailboxStdinBuffer.FlushTrigger,
+        admittedTurn: MailboxStdinBuffer.AgentTurn?,
+        admittedInputEpoch: UInt64,
+        gate: Gate
+    ) -> Step {
+        guard !claimed.isEmpty else {
+            state.buffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return .finished(retry: true)
+        }
+        guard gate.panelPresent else {
+            state.buffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return .undo(entries: claimed, lines: entries(claimed, outcome: .closed), retry: false)
+        }
+        var verdict = state.buffer.pushVerdict(
+            surfaceId: surfaceId,
+            admittedAs: trigger,
+            admittedTurn: admittedTurn,
+            lastOperatorKeyAt: gate.lastOperatorKeyAt,
+            surfaceAttached: gate.surfaceAttached,
+            agentOwnsTerminal: trigger == .agentPrompt ? gate.ownsTerminal : true
+        )
+        if verdict == .paste,
+           gate.inputTransactionActive || gate.inputTransactionEpoch != admittedInputEpoch {
+            verdict = .requeue
+        }
+        switch verdict {
+        case .drop:
+            state.buffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return .undo(entries: claimed, lines: entries(claimed, outcome: .expired), retry: true)
+        case .requeue:
+            let evicted = state.buffer.requeueFront(surfaceId: surfaceId, entries: claimed)
+            state.buffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return .undo(entries: claimed, lines: requeueLines(claimed, evicted: evicted), retry: true)
+        case .paste:
+            return .paste(entries: claimed, block: MailboxStdinBuffer.joinedBlock(claimed))
+        }
+    }
+
+    /// The terminal reported whether the submit Return was dispatched.
+    static func notePasteResult(
+        state: MailboxStdinBufferStore,
+        surfaceId: UUID,
+        entries: [MailboxStdinBuffer.Entry],
+        immediateId: String?,
+        dispatched: Bool,
+        typedAt: Date,
+        preReturnVerdict: MailboxStdinBuffer.PushVerdict,
+        panelPresent: Bool
+    ) -> PasteRecord {
+        if dispatched {
+            state.buffer.endPush(surfaceId: surfaceId, typedAt: typedAt)
+            let lines = entries.compactMap { entry -> LogLine? in
+                guard entry.id != immediateId else { return nil }
+                return LogLine(entry: entry, outcome: .flushed, bytes: entry.block.utf8.count)
+            }
+            return PasteRecord(lines: lines, retry: false)
+        }
+        if panelPresent, preReturnVerdict == .requeue {
+            let evicted = state.buffer.requeueFront(surfaceId: surfaceId, entries: entries)
+            state.buffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return PasteRecord(lines: requeueLines(entries, evicted: evicted), retry: true)
+        }
+        let outcome: MailboxDispatchLog.HandlerOutcome =
+            panelPresent && preReturnVerdict == .drop ? .expired : .closed
+        state.buffer.endPush(surfaceId: surfaceId, typedAt: nil)
+        return PasteRecord(lines: entries.map { LogLine(entry: $0, outcome: outcome, bytes: nil) }, retry: true)
+    }
+
+    /// Synchronous push used by logic tests. Workspace's push is this same
+    /// order with the claim hop off the main actor and the paste on the terminal.
+    static func perform(
+        state: MailboxStdinBufferStore,
+        surfaceId: UUID,
+        trigger: MailboxStdinBuffer.FlushTrigger,
+        immediateId: String?,
+        now: Date,
+        gate: Gate,
+        inbox: URL,
+        log: (LogLine) -> Void,
+        logFailed: (MailboxStdinBuffer.Entry, Int32) -> Void,
+        paste: (_ block: String) -> Bool
+    ) {
+        guard let prepared = prepare(
+            state: state,
+            surfaceId: surfaceId,
+            trigger: trigger,
+            now: now,
+            gate: gate
+        ) else { return }
+        for entry in prepared.expired {
+            log(LogLine(entry: entry, outcome: .expired, bytes: nil))
+        }
+        guard prepared.started else { return }
+        let claimed = claim(
+            entries: prepared.fresh,
+            inbox: inbox,
+            logSkipped: { log(LogLine(entry: $0, outcome: .skipped, bytes: nil)) },
+            logFailed: logFailed
+        )
+        switch complete(
+            state: state,
+            surfaceId: surfaceId,
+            claimed: claimed,
+            trigger: trigger,
+            admittedTurn: prepared.admittedTurn,
+            admittedInputEpoch: gate.inputTransactionEpoch,
+            gate: gate
+        ) {
+        case .finished(_):
+            break
+        case .undo(let entries, let lines, _):
+            for entry in entries {
+                _ = MailboxIO.unclaim(id: entry.id, inbox: inbox)
+            }
+            for line in lines { log(line) }
+        case .paste(let entries, let block):
+            let dispatched = paste(block)
+            let recorded = notePasteResult(
+                state: state,
+                surfaceId: surfaceId,
+                entries: entries,
+                immediateId: immediateId,
+                dispatched: dispatched,
+                typedAt: now,
+                preReturnVerdict: dispatched ? .paste : .drop,
+                panelPresent: gate.panelPresent
+            )
+            if !dispatched {
+                for entry in entries {
+                    _ = MailboxIO.unclaim(id: entry.id, inbox: inbox)
+                }
+            }
+            for line in recorded.lines { log(line) }
+        }
+    }
+
+    private static func entries(
+        _ claimed: [MailboxStdinBuffer.Entry],
+        outcome: MailboxDispatchLog.HandlerOutcome
+    ) -> [LogLine] {
+        claimed.map { LogLine(entry: $0, outcome: outcome, bytes: nil) }
+    }
+
+    private static func requeueLines(
+        _ claimed: [MailboxStdinBuffer.Entry],
+        evicted: [MailboxStdinBuffer.Entry]
+    ) -> [LogLine] {
+        var lines: [LogLine] = []
+        for entry in claimed where !evicted.contains(entry) {
+            lines.append(LogLine(entry: entry, outcome: .buffered, bytes: nil))
+        }
+        for entry in evicted {
+            lines.append(LogLine(entry: entry, outcome: .evicted, bytes: nil))
+        }
+        return lines
+    }
+}
+
 /// Who the kernel says is reading a terminal. The mailbox push types into an
 /// agent tab only while the agent's own process group is the foreground
 /// process group of the agent's controlling terminal, and that terminal is

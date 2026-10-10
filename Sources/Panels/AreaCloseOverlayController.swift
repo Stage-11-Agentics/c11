@@ -24,8 +24,10 @@ final class AreaCloseOverlayController {
     // half-applied coordinates that the system never corrects.
     private let liveAnchorViews = NSHashTable<AreaInteractionOverlayHostView.AnchorView>.weakObjects()
     let workspaceId: UUID
-    /// Tests inject a window. Production uses the key window.
-    var fallbackWindowProvider: @MainActor () -> NSWindow? = { NSApp.keyWindow }
+    /// Tests inject an owner. Production resolves the workspace's window.
+    /// The default refuses to mount, so an unwired controller cannot fall
+    /// through to `NSApp.keyWindow`.
+    var ownerWindow: @MainActor () -> CloseOverlayOwner = { .missing }
 
     private struct AnchorRecord {
         var frameInWindow: NSRect
@@ -110,7 +112,7 @@ final class AreaCloseOverlayController {
 #if DEBUG
             dlog("paneClose.sync skip pane=\(id.uuidString.prefix(5)) reason=\(reason)")
 #endif
-            if let window = fallbackWindowProvider(),
+            if case .onScreen(let window) = ownerWindow(),
                let placement = CloseOverlayFallback.themePlacement(in: window) {
                 CloseLog.fallback(scope: "area", workspace: workspaceId)
                 mount(id: id, frame: placement.frame, theme: placement.theme)
@@ -120,10 +122,14 @@ final class AreaCloseOverlayController {
             if let host = hosts.removeValue(forKey: id) {
                 host.removeFromSuperview()
             }
-            // Leave the interaction active so a close that outlives the window
-            // can still resolve. Mark it unmounted so the next present is not
-            // swallowed by the dedupe token, and Return does not accept it.
-            runtime.noteConfirmVisible(panelId: id, visible: false)
+            // The owning window is not a place to draw. Cancel so nothing
+            // closes and the next X can present again.
+            CloseLog.overlayUnmounted(
+                scope: "area",
+                workspace: workspaceId,
+                reason: "owner_window_not_visible"
+            )
+            runtime.releaseUnmounted(panelId: id)
         }
     }
 

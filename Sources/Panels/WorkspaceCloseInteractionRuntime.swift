@@ -74,16 +74,17 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
 
     public var isConfirmCardVisible: Bool { confirmVisibility == .visible }
 
-    /// Resume the waiter with `.dismissed` and clear the dedupe token.
-    /// Used when a panel confirm cannot be shown, so the pending-close guard
-    /// does not outlive the missing card.
+    /// Resume the waiter with `.cancelled` and clear the dedupe token.
+    /// An unseen confirm must not resolve to Close. Callers treat anything
+    /// other than `.confirmed` as "keep it open", and the cleared token lets
+    /// the next X present again.
     public func releaseUnmounted() {
         guard let content = active else { return }
         active = nil
         selection = .cancel
         dedupeToken = nil
         confirmVisibility = .unknown
-        content.completion(.dismissed)
+        content.completion(.cancelled)
     }
 
     public func resolve(result: ConfirmResult, ifInteractionId interactionId: UUID? = nil) {

@@ -2,8 +2,29 @@ import AppKit
 import Combine
 import Foundation
 
-/// Key-window content rect, in window coordinates, for a close card that has
-/// no usable anchor. Shared by the workspace and area overlay controllers.
+/// Where a close card may mount when its own anchor cannot be drawn.
+/// `.onScreen` is the window that owns the workspace or panel. A hidden,
+/// miniaturized, or missing window is not a place to mount: the confirm is
+/// released instead of landing on whichever window happens to be key.
+enum CloseOverlayOwner: Equatable {
+    case onScreen(NSWindow)
+    case notOnScreen
+    case missing
+
+    static func == (lhs: CloseOverlayOwner, rhs: CloseOverlayOwner) -> Bool {
+        switch (lhs, rhs) {
+        case (.missing, .missing), (.notOnScreen, .notOnScreen):
+            return true
+        case (.onScreen(let left), .onScreen(let right)):
+            return left === right
+        default:
+            return false
+        }
+    }
+}
+
+/// Owning-window content rect, in window coordinates, for a close card that
+/// has no usable anchor. Shared by the workspace and area overlay controllers.
 @MainActor
 enum CloseOverlayFallback {
     static func themePlacement(in window: NSWindow) -> (frame: NSRect, theme: NSView)? {
@@ -12,6 +33,14 @@ enum CloseOverlayFallback {
               content.bounds.width >= 1,
               content.bounds.height >= 1 else { return nil }
         return (content.convert(content.bounds, to: nil), theme)
+    }
+
+    static func ownerState(of window: NSWindow?) -> CloseOverlayOwner {
+        guard let window else { return .missing }
+        guard window.isVisible, !window.isMiniaturized, window.screen != nil else {
+            return .notOnScreen
+        }
+        return .onScreen(window)
     }
 }
 
@@ -35,8 +64,10 @@ final class WorkspaceCloseOverlayController {
     private var host: WorkspaceCloseOverlayHost?
     private var hasActive: Bool = false
     private var subscription: AnyCancellable?
-    /// Tests inject a window. Production uses the key window.
-    var fallbackWindowProvider: @MainActor () -> NSWindow? = { NSApp.keyWindow }
+    /// Tests inject an owner. Production resolves the workspace's window.
+    /// The default refuses to mount, so an unwired controller cannot fall
+    /// through to `NSApp.keyWindow`.
+    var ownerWindow: @MainActor () -> CloseOverlayOwner = { .missing }
 
     private struct AnchorRecord {
         var frameInWindow: NSRect
@@ -100,7 +131,7 @@ final class WorkspaceCloseOverlayController {
 
         let reason = unmountReason()
         CloseLog.overlayUnmounted(scope: "workspace", workspace: workspaceId, reason: reason)
-        if let window = fallbackWindowProvider(),
+        if case .onScreen(let window) = ownerWindow(),
            let placement = CloseOverlayFallback.themePlacement(in: window) {
             CloseLog.fallback(scope: "workspace", workspace: workspaceId)
             mount(frame: placement.frame, theme: placement.theme)
@@ -109,7 +140,12 @@ final class WorkspaceCloseOverlayController {
 
         host?.removeFromSuperview()
         host = nil
-        runtime.noteConfirmVisible(false)
+        CloseLog.overlayUnmounted(
+            scope: "workspace",
+            workspace: workspaceId,
+            reason: "owner_window_not_visible"
+        )
+        runtime.releaseUnmounted()
     }
 
     private func usableAnchorPlacement() -> (frame: NSRect, theme: NSView)? {

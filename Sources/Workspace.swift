@@ -4986,10 +4986,16 @@ final class Workspace: Identifiable, ObservableObject {
     /// themeFrame so they render above the `WindowTerminalPortal` host (and
     /// thus above terminal/browser portal content). Driven by anchor frames
     /// pushed in from `PaneInteractionOverlayHostView` per pane.
-    lazy var areaCloseOverlayController = AreaCloseOverlayController(
-        runtime: areaCloseInteractionRuntime,
-        workspaceId: id
-    )
+    lazy var areaCloseOverlayController: AreaCloseOverlayController = {
+        let controller = AreaCloseOverlayController(
+            runtime: areaCloseInteractionRuntime,
+            workspaceId: id
+        )
+        controller.ownerWindow = { [weak self] in
+            CloseOverlayFallback.ownerState(of: self?.owningWorkspaceManager?.window)
+        }
+        return controller
+    }()
 
     /// Workspace-scoped close-confirmation runtime. Distinct keyspace from
     /// `paneInteractionRuntime` (panel-keyed) and `paneCloseInteractionRuntime`
@@ -5003,10 +5009,16 @@ final class Workspace: Identifiable, ObservableObject {
     /// frame pushed in from `WorkspaceCloseOverlayHostView` rendered inside
     /// `WorkspaceContentView` so the cover excludes the sidebar by
     /// construction.
-    lazy var workspaceCloseOverlayController = WorkspaceCloseOverlayController(
-        runtime: workspaceCloseInteractionRuntime,
-        workspaceId: id
-    )
+    lazy var workspaceCloseOverlayController: WorkspaceCloseOverlayController = {
+        let controller = WorkspaceCloseOverlayController(
+            runtime: workspaceCloseInteractionRuntime,
+            workspaceId: id
+        )
+        controller.ownerWindow = { [weak self] in
+            CloseOverlayFallback.ownerState(of: self?.owningWorkspaceManager?.window)
+        }
+        return controller
+    }()
 
 
     // Closing tabs mutates split layout immediately; terminal views handle their own AppKit
@@ -11774,9 +11786,9 @@ extension Workspace: BonsplitDelegate {
     }
 
     /// Two yields let a host that is already mounting mark the card visible.
-    /// If it never does, mount on the key window. If that also fails, release
-    /// the interaction so `pendingCloseConfirmBonsplitTabIds` cannot swallow
-    /// the next X.
+    /// If it never does, mount on the window that owns this workspace. If that
+    /// window is not on screen, release the confirm as cancel so the
+    /// pending-close guard cannot swallow the next X.
     private func reconcileUnmountedPanelConfirm(panelId: UUID) async {
         await Task.yield()
         await Task.yield()
@@ -11789,16 +11801,24 @@ extension Workspace: BonsplitDelegate {
             await Task.yield()
             guard !Task.isCancelled else { return }
             if paneInteractionRuntime.isConfirmCardVisible(panelId: panelId) { return }
+        } else {
+            CloseLog.overlayUnmounted(
+                scope: "panel",
+                workspace: id,
+                reason: "owner_window_not_visible"
+            )
         }
         guard !Task.isCancelled else { return }
+        guard paneInteractionRuntime.active[panelId] != nil else { return }
         paneInteractionRuntime.releaseUnmounted(panelId: panelId)
     }
 
-    /// Key-window card for a panel confirm whose own host never appeared.
-    /// The host removes itself once the interaction goes idle.
+    /// Owning-window card for a panel confirm whose own host never appeared.
+    /// The host removes itself once the interaction goes idle. A window that
+    /// is not on screen is not a mount target.
     @discardableResult
     private func mountPanelConfirmFallback(panelId: UUID) -> Bool {
-        guard let window = NSApp.keyWindow,
+        guard case .onScreen(let window) = CloseOverlayFallback.ownerState(of: owningWorkspaceManager?.window),
               let placement = CloseOverlayFallback.themePlacement(in: window) else {
             return false
         }

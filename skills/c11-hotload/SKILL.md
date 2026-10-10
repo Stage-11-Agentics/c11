@@ -191,4 +191,4 @@ Close routing is recorded in Debug and Release with `Logger(subsystem: "com.stag
 log show --last 2h --style compact --predicate 'subsystem == "com.stage11.c11" AND category == "close"'
 ```
 
-`close.request` names the route (`workspaceConfirm`, `panelConfirm`, `areaConfirm`, `pendingSkip`, `pinned`, `direct`). `close.overlay.unmounted` names why the card had no host (`no_anchor`, `anchor_window_nil`, `no_themeFrame`, `stale_runtime`). `close.overlay.fallback` means the card was mounted on the key window instead.
+`close.request` names the route (`workspaceConfirm`, `panelConfirm`, `areaConfirm`, `pendingSkip`, `pinned`, `direct`). `close.overlay.unmounted` names why the card had no host (`no_anchor`, `anchor_window_nil`, `no_themeFrame`, `stale_runtime`, `owner_window_not_visible`). `owner_window_not_visible` releases the confirm as cancel. `close.overlay.fallback` means the card was mounted on the window that owns the workspace or panel.

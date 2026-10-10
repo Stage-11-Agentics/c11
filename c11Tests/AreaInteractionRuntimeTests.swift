@@ -704,23 +704,30 @@ final class CloseConfirmMountTests: XCTestCase {
         XCTAssertEqual(controller.debugAnchorOwner, ObjectIdentifier(owner))
     }
 
-    func testWorkspaceConfirmWithNoAnchorMountsOnTheFallbackWindow() {
+    func testWorkspaceConfirmWithNoAnchorMountsOnTheOwningWindow() {
         _ = NSApplication.shared
         let runtime = WorkspaceCloseInteractionRuntime()
         let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
-        let window = makeWindow()
-        defer { window.orderOut(nil) }
-        controller.fallbackWindowProvider = { window }
+        let key = makeWindow()
+        let owner = makeWindow()
+        defer {
+            key.orderOut(nil)
+            owner.orderOut(nil)
+        }
+        key.makeKeyAndOrderFront(nil)
+        controller.ownerWindow = { .onScreen(owner) }
         var result: ConfirmResult?
 
         runtime.present(content: makeConfirm(title: "Close workspace?", completion: { result = $0 }))
         spinMain()
 
-        guard let content = window.contentView, let theme = content.superview else {
+        guard let content = owner.contentView, let theme = content.superview else {
             XCTFail("window has no theme frame")
             return
         }
         let hosts = theme.subviews.compactMap { $0 as? WorkspaceCloseOverlayHost }
+        let keyHosts = key.contentView?.superview?.subviews.compactMap { $0 as? WorkspaceCloseOverlayHost } ?? []
+        XCTAssertEqual(keyHosts.count, 0)
         XCTAssertEqual(hosts.count, 1)
         guard let host = hosts.first else { return }
         let expected = content.convert(content.bounds, to: nil)
@@ -730,11 +737,32 @@ final class CloseConfirmMountTests: XCTestCase {
         XCTAssertNil(result)
     }
 
-    func testUnmountedWorkspaceConfirmDoesNotSwallowTheNextPresent() {
+    func testMountedWorkspaceCardAcceptsReturn() {
         _ = NSApplication.shared
         let runtime = WorkspaceCloseInteractionRuntime()
         let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
-        controller.fallbackWindowProvider = { nil }
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        controller.ownerWindow = { .onScreen(window) }
+        var result: ConfirmResult?
+
+        runtime.present(
+            content: makeConfirm(title: "Close workspace?", defaultSelection: .confirm) { result = $0 }
+        )
+        spinMain()
+
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        XCTAssertTrue(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+        XCTAssertNil(runtime.active)
+        _ = controller
+    }
+
+    func testOffscreenWorkspaceConfirmCancelsAndAdmitsTheNextPresent() {
+        _ = NSApplication.shared
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        controller.ownerWindow = { .notOnScreen }
         var first: ConfirmResult?
         var second: ConfirmResult?
 
@@ -743,28 +771,33 @@ final class CloseConfirmMountTests: XCTestCase {
             dedupeToken: "workspace.close"
         )
         spinMain()
+        XCTAssertEqual(first, .cancelled)
+        XCTAssertFalse(runtime.hasActive)
         XCTAssertFalse(runtime.isConfirmCardVisible)
-        XCTAssertNotNil(runtime.active)
 
         runtime.present(
             content: makeConfirm(title: "Second", completion: { second = $0 }),
             dedupeToken: "workspace.close"
         )
 
-        XCTAssertEqual(first, .dismissed)
         XCTAssertNil(second)
         XCTAssertEqual(runtime.active?.title, "Second")
         _ = controller
     }
 
-    func testAreaMissingAnchorFallsBackOntoTheKeyWindow() {
+    func testAreaMissingAnchorMountsOnTheOwningWindow() {
         _ = NSApplication.shared
         let runtime = AreaInteractionRuntime()
         let panelId = UUID()
-        let window = makeWindow()
-        defer { window.orderOut(nil) }
+        let key = makeWindow()
+        let owner = makeWindow()
+        defer {
+            key.orderOut(nil)
+            owner.orderOut(nil)
+        }
+        key.makeKeyAndOrderFront(nil)
         let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
-        controller.fallbackWindowProvider = { window }
+        controller.ownerWindow = { .onScreen(owner) }
 
         runtime.present(
             panelId: panelId,
@@ -773,7 +806,9 @@ final class CloseConfirmMountTests: XCTestCase {
         )
         spinMain()
 
-        let hosts = window.contentView?.superview?.subviews.compactMap { $0 as? AreaInteractionOverlayHost } ?? []
+        let hosts = owner.contentView?.superview?.subviews.compactMap { $0 as? AreaInteractionOverlayHost } ?? []
+        let keyHosts = key.contentView?.superview?.subviews.compactMap { $0 as? AreaInteractionOverlayHost } ?? []
+        XCTAssertEqual(keyHosts.count, 0)
         XCTAssertEqual(hosts.count, 1)
         guard let host = hosts.first else { return }
         XCTAssertEqual(host.panelId, panelId)
@@ -781,14 +816,38 @@ final class CloseConfirmMountTests: XCTestCase {
         _ = controller
     }
 
-    func testAreaZeroAnchorWithoutFallbackNotesUnmountedAndAdmitsTheNextPresent() {
+    func testMountedAreaCardAcceptsReturn() {
         _ = NSApplication.shared
         let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         let window = makeWindow()
         defer { window.orderOut(nil) }
         let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
-        controller.fallbackWindowProvider = { nil }
+        controller.ownerWindow = { .onScreen(window) }
+        var result: ConfirmResult?
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close area?", defaultSelection: .confirm) { result = $0 })
+        )
+        spinMain()
+
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+        XCTAssertFalse(runtime.hasActive(panelId: panelId))
+        _ = controller
+    }
+
+    func testAreaOffscreenOwnerCancelsAndAdmitsTheNextPresent() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        controller.ownerWindow = { .missing }
+        controller.updateAnchor(paneIdentity: panelId, frameInWindow: .zero, window: window)
         var first: ConfirmResult?
         var second: ConfirmResult?
 
@@ -798,10 +857,10 @@ final class CloseConfirmMountTests: XCTestCase {
             dedupeToken: "workspace.closePane"
         )
         spinMain()
-        controller.updateAnchor(paneIdentity: panelId, frameInWindow: .zero, window: window)
 
+        XCTAssertEqual(first, .cancelled)
         XCTAssertFalse(runtime.isConfirmCardVisible(panelId: panelId))
-        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+        XCTAssertFalse(runtime.hasActive(panelId: panelId))
 
         runtime.present(
             panelId: panelId,
@@ -809,13 +868,20 @@ final class CloseConfirmMountTests: XCTestCase {
             dedupeToken: "workspace.closePane"
         )
 
-        XCTAssertEqual(first, .dismissed)
         XCTAssertNil(second)
         if case .confirm(let content)? = runtime.active[panelId] {
             XCTAssertEqual(content.title, "Second")
         } else {
             XCTFail("Replacement confirm should be active")
         }
+    }
+
+    func testOwnerStateOfAHiddenWindowIsNotOnScreen() {
+        _ = NSApplication.shared
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        XCTAssertEqual(CloseOverlayFallback.ownerState(of: nil), .missing)
+        XCTAssertEqual(CloseOverlayFallback.ownerState(of: window), .notOnScreen)
     }
 
     func testPaneInteractionSlotRebindsWhenTheRuntimeChanges() {

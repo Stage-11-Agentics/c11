@@ -585,15 +585,16 @@ public final class AreaInteractionRuntime: ObservableObject {
         return confirmVisibleIds.contains(content.id)
     }
 
-    /// Resume the active interaction with `.dismissed` and drop its dedupe
-    /// token. The pending-close guard's task ends, so a later X can present.
+    /// Resume an unseen confirm with `.cancelled` and drop its dedupe token.
+    /// Nothing closes. The pending-close guard's task ends, so a later X can
+    /// present. Text input has no destructive default and stays `.dismissed`.
     public func releaseUnmounted(panelId: UUID) {
         guard let interaction = active[panelId] else { return }
         confirmVisibleIds.remove(interaction.id)
         confirmUnmountedIds.remove(interaction.id)
         retireToken(forInteractionId: interaction.id, panelId: panelId)
         switch interaction {
-        case .confirm(let content): content.completion(.dismissed)
+        case .confirm(let content): content.completion(.cancelled)
         case .textInput(let content):
             pendingTextInputValues.removeValue(forKey: content.id)
             content.completion(.dismissed)

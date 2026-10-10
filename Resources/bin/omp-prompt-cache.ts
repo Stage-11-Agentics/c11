@@ -6,9 +6,9 @@
 // the cache. omp's session files are never opened, and no lifecycle is reported.
 //
 // omp hands its launch extensions to the task subagents it runs in-process.
-// Their requests use their own prefix, so only the session with a UI (the
-// interactive one, or `--mode rpc-ui`) reports; a subagent, like a headless
-// `--mode rpc` host, runs with `hasUI === false` and reports nothing.
+// Their requests use their own prefix, so only a session with a UI reports:
+// interactive, `--mode rpc` and `rpc-ui` do; a task subagent, print mode, or
+// `--no-ui` runs with `hasUI === false` and reports nothing.
 //
 // omp 18.3.5 added prompt-cache warming: shortly before a 5-minute entry
 // expires, omp replays its last request to keep the cache warm (setting
@@ -85,7 +85,7 @@ export default function c11OmpPromptCache(omp: {
       || count(message.usage?.cttl?.ephemeral5m) + count(message.usage?.cttl?.ephemeral1h) > 0;
   };
 
-  // The parent session's panel is the only one c11 knows.
+  // The session the operator sees owns the panel; a subagent's cache is its own.
   const isSubagent = (ctx: any) => ctx?.hasUI === false;
 
   omp.on("message_end", async (event, ctx) => {

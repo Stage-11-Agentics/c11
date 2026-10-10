@@ -951,7 +951,7 @@ if [ -n "$c11_panel" ] && command -v c11 >/dev/null 2>&1 && command -v jq >/dev/
     if [ -n "$c11_pc" ] && [ "$c11_pc" != "$(cat "$c11_last" 2>/dev/null || true)" ]; then
         # Mark it sent first, so a redraw during the send does not send again;
         # a failed send clears the mark, so the next redraw retries.
-        printf '%s' "$c11_pc" > "$c11_last" 2>/dev/null || true
+        { printf '%s' "$c11_pc" > "$c11_last"; } 2>/dev/null || true
         (C11_DEFAULT_SOCKET_DEADLINE_MS=1500 c11 rpc agent.prompt_cache.report "$c11_pc" || rm -f "$c11_last") >/dev/null 2>&1 &
     fi
 fi

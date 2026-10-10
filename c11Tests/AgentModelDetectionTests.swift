@@ -1240,6 +1240,11 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(AgentModelProbe.int(NSNumber(value: Double.infinity)), 0)
         XCTAssertEqual(AgentModelProbe.int(NSNumber(value: -5)), 0)
         XCTAssertEqual(AgentModelProbe.int(NSNumber(value: 123_456)), 123_456)
+        var signals = TranscriptSignals()
+        signals.turnTokens = .max - 1
+        signals.apply(.agent(at: nil, tools: 0, tokens: 3 * cap, messageKey: nil))
+        XCTAssertEqual(signals.turnTokens, .max, "a turn's total saturates rather than trapping")
+        XCTAssertEqual(TranscriptSignals.saturatingAdd(.max, 1), .max)
 
         let huge = "1e30"
         // Claude Code: the prompt sums three counts.

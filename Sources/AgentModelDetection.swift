@@ -93,17 +93,23 @@ struct TranscriptSignals: Equatable, Sendable {
         case .agent(let at, let tools, let tokens, let messageKey):
             if let at { lastEventAt = max(lastEventAt ?? at, at) }
             turnToolCalls += tools
+            // Each count is clamped, but a turn can add many: saturate.
             if let messageKey {
                 messageTokens[messageKey] = tokens
-                turnTokens = messageTokens.values.reduce(0, +)
+                turnTokens = messageTokens.values.reduce(0, Self.saturatingAdd)
             } else {
-                turnTokens += tokens
+                turnTokens = Self.saturatingAdd(turnTokens, tokens)
             }
             noteLine(at)
         case .toolResult(let at):
             if let at { lastEventAt = max(lastEventAt ?? at, at) }
             noteLine(at)
         }
+    }
+
+    static func saturatingAdd(_ a: Int, _ b: Int) -> Int {
+        let (sum, overflow) = a.addingReportingOverflow(b)
+        return overflow ? .max : sum
     }
 
     /// Record one request's cache use. Call before `apply` for the same line,

@@ -23,6 +23,8 @@ The one exception is the **session-resume wrappers** in `Resources/bin/` (`claud
 
 The same wrapper may attach optional lifecycle or attention observations that the journal already allows. Delivery is best-effort: a dead socket may spool or drop an observation, and the agent is never held for an answer. `PermissionRequest` is observe-only. The wrapper still does not write tenant config, store a tool body, prompt, answer, or permission decision, or broaden trust. Upstream's blocking `hooks feed` `PermissionRequest` bridge is outside this exception.
 
+A wrapper may also load a bundled c11 extension or plugin into that one process by launch flag, never through tenant config, to report the agent's prompt cache use (request times, provider and model ids, token counts, never text) through `agent.prompt_cache.report`, fire-and-forget with a timeout.
+
 Outside that bounded wrapper exception, lifecycle remains agent-reported: agents that read the c11 skill call `c11 set-metadata` / `c11 set-status` for the state they own. The wrapper contributes only optional, allowlisted observations at launch; it does not install or configure hooks in a tenant's environment.
 
 ## Vocabulary

@@ -92,6 +92,12 @@ class World:
         self.toolchain = True
         self.kit = "ok"
         self.reported = {}
+        self.head = SHA_A
+        self.sub_heads = {}
+        self.gitlinks = {}
+        self.missing_kits = set()
+        self.tips = {}
+        self.fail_fetch = set()
 
     def time(self):
         return self.now
@@ -122,7 +128,7 @@ class World:
         return None
 
     def ls_remote(self, ref):
-        return "%s\trefs/heads/%s\n" % (self.tip, ref)
+        return "%s\trefs/heads/%s\n" % (self.tips.get(ref, self.tip), ref)
 
     def guests(self):
         return list(self.guest_names)
@@ -148,12 +154,20 @@ class World:
     def git(self, args, cwd):
         poller.assert_git_args(args)
         self.git_args.append((list(args), str(cwd)))
+        if args[0] == "fetch" and self.fail_fetch.intersection(args):
+            return Result(1, "")
+        if args[0] == "checkout":
+            self.head = args[-1]
+        if args[0] == "reset" and len(args) > 2:
+            self.sub_heads[str(cwd)] = args[2]
         if args[0] == "rev-parse" and args[1] == "HEAD":
             if str(cwd) != str(self.worktree):
-                return Result(0, GITLINK + "\n")
-            return Result(0, SHA_A + "\n")
+                return Result(0, self.sub_heads.get(str(cwd), GITLINK) + "\n")
+            return Result(0, self.head + "\n")
         if args[0] == "rev-parse" and ":" in args[1]:
-            return Result(0, GITLINK + "\n")
+            sha, path = args[1].split(":", 1)
+            gitlink = self.gitlinks.get(sha, GITLINK) if path == "ghostty" else GITLINK
+            return Result(0, gitlink + "\n")
         if args[0] == "status":
             return Result(0, self.statuses.get(str(cwd), ""))
         return Result(0, "")
@@ -161,8 +175,13 @@ class World:
     def status(self, cwd):
         return self.statuses.get(str(cwd), "")
 
-    def ghosttykit(self, sha):
+    def ghosttykit(self, gitlink):
+        if gitlink in self.missing_kits:
+            return "ghosttykit_missing"
         return self.kit
+
+    def kit_available(self, gitlink):
+        return gitlink not in self.missing_kits
 
     def toolchain_ok(self):
         return self.toolchain
@@ -814,6 +833,10 @@ class PollingAndCredentialTests(unittest.TestCase):
         self.assertIn("@HOME@", text)
         rendered = poller.render_plist("/Users/example")
         self.assertNotIn("@HOME@", rendered)
+        import plistlib
+        launch_path = plistlib.loads(rendered.encode())["EnvironmentVariables"]["PATH"].split(":")
+        self.assertEqual(launch_path[0], "/opt/homebrew/bin")
+        self.assertIn("/usr/bin", launch_path)
         self.assertIn("com.stage11.c11-pr-swift-poller", rendered)
         self.assertIn("/Users/example/c11-poller", rendered)
         result = subprocess.run(
@@ -1530,6 +1553,44 @@ class ReviewRegressionTests(unittest.TestCase):
         finally:
             _kill(child.pid)
             child.wait(timeout=3)
+
+    def test_missing_ghosttykit_does_not_block_the_queue(self):
+        """Live on Atlas: one head without a GhosttyKit cache entry starved the rest."""
+        missing = "e" * 40
+        world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other")])
+        world.tips["other"] = SHA_B
+        world.gitlinks[SHA_A] = missing
+        world.missing_kits.add(missing)
+        supervisor = poller.Supervisor(self.root, world)
+
+        def parent_fetches(sha):
+            return [args for args, _cwd in world.git_args if args[0] == "fetch" and poller.PARENT_URL in args and sha in args]
+
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+        self.assertEqual(_decisions(self.root)[-1]["gitlink"], missing)
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B])
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual(len(supervisor.spawns), 1)
+        self.assertEqual(len(parent_fetches(SHA_A)), 1)
+        world.missing_kits.clear()
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B, SHA_A])
+
+    def test_a_head_that_cannot_be_fetched_goes_to_the_back(self):
+        world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other")])
+        world.tips["other"] = SHA_B
+        world.fail_fetch.add(SHA_A)
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B])
 
     def test_decisions_keep_the_last_two_hundred_lines(self):
         world = World()

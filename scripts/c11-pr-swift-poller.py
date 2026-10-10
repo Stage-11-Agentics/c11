@@ -1193,6 +1193,7 @@ class Supervisor:
         self.delivered = False
         self.stopped = None
         self.credential_skipped = False
+        self.awaiting_kit = {}
 
     def state(self):
         path = self.root / "state"
@@ -1434,10 +1435,16 @@ class Supervisor:
         """The first queued head that still revalidates and has no terminal status.
 
         A head whose c11/pr-swift status is already success or failure is
-        recorded and skipped, so a restarted process does not rebuild it.
+        recorded and skipped, so a restarted process does not rebuild it. A head
+        waiting for its GhosttyKit cache entry is passed over, with no network
+        call, until that entry exists.
         """
-        while self.queue:
-            item = self.queue[0]
+        for item in list(self.queue):
+            key = (item["pr"], item["sha"])
+            if key in self.awaiting_kit:
+                if not self.world.kit_available(self.awaiting_kit[key]):
+                    continue
+                del self.awaiting_kit[key]
             ok, reason, _detail = revalidate(
                 item,
                 lambda number: self.world.pull(number),
@@ -1449,7 +1456,7 @@ class Supervisor:
                 # The captured SHA stays what the list admitted. A moved tip is not
                 # written into this attempt and is not fetched.
                 self.log(decision=reason, pr=item["pr"], sha=item["sha"])
-                self.queue.pop(0)
+                self.queue.remove(item)
                 continue
             try:
                 prior = self.world.head_status(item["sha"])
@@ -1458,10 +1465,16 @@ class Supervisor:
             if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
-                self.queue.pop(0)
+                self.queue.remove(item)
                 continue
             return item
         return None
+
+    def _rotate(self, item):
+        """A head that could not be prepared goes to the back, so it never blocks the rest."""
+        if item in self.queue:
+            self.queue.remove(item)
+            self.queue.append(item)
 
     def _credential_skip(self, item):
         """The head stays queued; this cycle starts nothing."""
@@ -1489,8 +1502,10 @@ class Supervisor:
         if item is None:
             return CREDENTIAL_UNAVAILABLE if self.credential_skipped else "idle"
         if not self._fetch(item):
+            self._rotate(item)
             return "fetch_failed"
         if not self._prepare_tree(item):
+            self._rotate(item)
             return "residue"
         if self.world.guests() or self.world.slot_held(1) or self.world.slot_held(2):
             self.log(decision="no-start", reason="raced")
@@ -1523,6 +1538,8 @@ class Supervisor:
         sub_status = [porcelain_paths(self.world.status(Path(self.world.worktree) / path)) for path, _url in GITLINKS]
         gitlink = self._ghostty_gitlink(item)
         if gitlink is None or self.world.ghosttykit(gitlink) == "ghosttykit_missing":
+            if gitlink is not None:
+                self.awaiting_kit[(item["pr"], item["sha"])] = gitlink
             self.log(decision="ghosttykit_missing", pr=item["pr"], gitlink=gitlink)
             return False
         parent = porcelain_paths(self.world.status(self.world.worktree))
@@ -1986,12 +2003,16 @@ class ProductionWorld:
         result = self.git(["status", "--porcelain=v1", "--ignored"], cwd)
         return result.stdout or ""
 
+    def _kit_cache(self):
+        cache = os.environ.get("C11_POLLER_KIT_CACHE") or os.environ.get("CMUX_GHOSTTYKIT_CACHE_DIR")
+        return cache or str(Path.home() / ".cache" / "cmux" / "ghosttykit")
+
     def ghosttykit(self, gitlink):
         """Link the cache entry for the Ghostty gitlink, never the parent SHA."""
-        cache = os.environ.get("C11_POLLER_KIT_CACHE") or os.environ.get("CMUX_GHOSTTYKIT_CACHE_DIR")
-        if not cache:
-            cache = str(Path.home() / ".cache" / "cmux" / "ghosttykit")
-        return link_ghosttykit(cache, gitlink, self.worktree)
+        return link_ghosttykit(self._kit_cache(), gitlink, self.worktree)
+
+    def kit_available(self, gitlink):
+        return (Path(self._kit_cache()) / gitlink / "GhosttyKit.xcframework").is_dir()
 
     def toolchain_ok(self):
         zig = os.environ.get("C11_POLLER_ZIG") or str(Path.home() / "zig-0.15.2" / "zig")

@@ -92,6 +92,13 @@ class World:
         self.toolchain = True
         self.kit = "ok"
         self.reported = {}
+        self.head = SHA_A
+        self.sub_heads = {}
+        self.gitlinks = {}
+        self.missing_kits = set()
+        self.tips = {}
+        self.fail_fetch = set()
+        self.resolved = {}
 
     def time(self):
         return self.now
@@ -122,7 +129,7 @@ class World:
         return None
 
     def ls_remote(self, ref):
-        return "%s\trefs/heads/%s\n" % (self.tip, ref)
+        return "%s\trefs/heads/%s\n" % (self.tips.get(ref, self.tip), ref)
 
     def guests(self):
         return list(self.guest_names)
@@ -148,12 +155,22 @@ class World:
     def git(self, args, cwd):
         poller.assert_git_args(args)
         self.git_args.append((list(args), str(cwd)))
+        if args[0] == "fetch" and self.fail_fetch.intersection(args):
+            return Result(1, "")
+        if args[0] == "show":
+            return Result(0, self.resolved.get(args[1].split(":", 1)[0], ""))
+        if args[0] == "checkout":
+            self.head = args[-1]
+        if args[0] == "reset" and len(args) > 2:
+            self.sub_heads[str(cwd)] = args[2]
         if args[0] == "rev-parse" and args[1] == "HEAD":
             if str(cwd) != str(self.worktree):
-                return Result(0, GITLINK + "\n")
-            return Result(0, SHA_A + "\n")
+                return Result(0, self.sub_heads.get(str(cwd), GITLINK) + "\n")
+            return Result(0, self.head + "\n")
         if args[0] == "rev-parse" and ":" in args[1]:
-            return Result(0, GITLINK + "\n")
+            sha, path = args[1].split(":", 1)
+            gitlink = self.gitlinks.get(sha, GITLINK) if path == "ghostty" else GITLINK
+            return Result(0, gitlink + "\n")
         if args[0] == "status":
             return Result(0, self.statuses.get(str(cwd), ""))
         return Result(0, "")
@@ -161,8 +178,13 @@ class World:
     def status(self, cwd):
         return self.statuses.get(str(cwd), "")
 
-    def ghosttykit(self, sha):
+    def ghosttykit(self, gitlink):
+        if gitlink in self.missing_kits:
+            return "ghosttykit_missing"
         return self.kit
+
+    def kit_available(self, gitlink):
+        return gitlink not in self.missing_kits
 
     def toolchain_ok(self):
         return self.toolchain
@@ -814,6 +836,10 @@ class PollingAndCredentialTests(unittest.TestCase):
         self.assertIn("@HOME@", text)
         rendered = poller.render_plist("/Users/example")
         self.assertNotIn("@HOME@", rendered)
+        import plistlib
+        launch_path = plistlib.loads(rendered.encode())["EnvironmentVariables"]["PATH"].split(":")
+        self.assertEqual(launch_path[0], "/opt/homebrew/bin")
+        self.assertIn("/usr/bin", launch_path)
         self.assertIn("com.stage11.c11-pr-swift-poller", rendered)
         self.assertIn("/Users/example/c11-poller", rendered)
         result = subprocess.run(
@@ -1531,6 +1557,107 @@ class ReviewRegressionTests(unittest.TestCase):
             _kill(child.pid)
             child.wait(timeout=3)
 
+    def test_missing_ghosttykit_does_not_block_the_queue(self):
+        """Live on Atlas: one head without a GhosttyKit cache entry starved the rest."""
+        missing = "e" * 40
+        world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other")])
+        world.tips["other"] = SHA_B
+        world.gitlinks[SHA_A] = missing
+        world.missing_kits.add(missing)
+        supervisor = poller.Supervisor(self.root, world)
+
+        def parent_fetches(sha):
+            return [args for args, _cwd in world.git_args if args[0] == "fetch" and poller.PARENT_URL in args and sha in args]
+
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+        self.assertEqual(_decisions(self.root)[-1]["gitlink"], missing)
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B])
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual(len(supervisor.spawns), 1)
+        self.assertEqual(len(parent_fetches(SHA_A)), 1)
+        world.missing_kits.clear()
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B, SHA_A])
+
+    def test_missing_ghosttykit_requeues_updated_sha(self):
+        """Review probe: a new buildable head replaces one waiting on a missing kit."""
+        missing = "e" * 40
+        world = World(body=[pr()])
+        world.gitlinks[SHA_A] = missing
+        world.missing_kits.add(missing)
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+        self.assertIn((7, SHA_A), supervisor.awaiting_kit)
+        fetched_before = len(world.git_args)
+        world.body = [pr(sha=SHA_B)]
+        world.tip = SHA_B
+        world.now += 26
+        supervisor.poll_once()
+        fetched = [args for args, _cwd in world.git_args[fetched_before:] if args[0] == "fetch" and poller.PARENT_URL in args]
+        self.assertEqual(fetched, [["fetch", "--no-tags", "--no-recurse-submodules", poller.PARENT_URL, SHA_B]])
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B])
+        self.assertEqual(supervisor.awaiting_kit, {})
+        self.assertIn("requeued", [item.get("decision") for item in _decisions(self.root)])
+
+    def test_a_head_that_cannot_be_fetched_goes_to_the_back(self):
+        world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other")])
+        world.tips["other"] = SHA_B
+        world.fail_fetch.add(SHA_A)
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual([item["sha"] for item in supervisor.spawns], [SHA_B])
+
+    def _derived_paths(self, supervisor):
+        return [Path(spawn["command"][spawn["command"].index("-derivedDataPath") + 1]) for spawn in supervisor.spawns]
+
+    def test_derived_data_is_keyed_by_the_dependency_set(self):
+        """Live on Atlas: Sparkle 2.9.3 (main) and 2.8.1 (old heads) shared one DerivedData."""
+        world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other"), pr(number=9, sha="f" * 40, ref="third")])
+        world.tips.update({"other": SHA_B, "third": "f" * 40})
+        world.resolved = {SHA_A: "sparkle 2.9.3", SHA_B: "sparkle 2.8.1", "f" * 40: "sparkle 2.9.3"}
+        supervisor = poller.Supervisor(self.root, world)
+        for _ in range(3):
+            supervisor.poll_once()
+            world.now += 26
+        paths = self._derived_paths(supervisor)
+        expected_new = poller.dependency_key(["sparkle 2.9.3"] * 2, [GITLINK, GITLINK])
+        expected_old = poller.dependency_key(["sparkle 2.8.1"] * 2, [GITLINK, GITLINK])
+        self.assertEqual(paths, [
+            self.root / "cache" / ("DerivedData-" + expected_new),
+            self.root / "cache" / ("DerivedData-" + expected_old),
+            self.root / "cache" / ("DerivedData-" + expected_new),
+        ])
+        self.assertNotEqual(expected_new, expected_old)
+        self.assertNotEqual(poller.dependency_key(["x"], ["c" * 40]), poller.dependency_key(["x"], ["d" * 40]))
+        self.assertEqual([item["deps"] for item in _decisions(self.root) if item.get("decision") == "result"],
+                         [expected_new, expected_old, expected_new])
+
+    def test_derived_data_keeps_the_three_most_recent_and_logs_the_prune(self):
+        cache = self.root / "cache"
+        names = ["DerivedData", "DerivedData-000000000001", "DerivedData-000000000002", "DerivedData-000000000003"]
+        for age, name in enumerate(reversed(names)):
+            (cache / name / "Build").mkdir(parents=True)
+            stamp = 1_000_000 - 100 * (age + 1)
+            os.utime(cache / name, (stamp, stamp))
+        world = World(body=[pr()])
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        current = self._derived_paths(supervisor)[0].name
+        left = sorted(path.name for path in cache.iterdir())
+        self.assertEqual(left, sorted([current, "DerivedData-000000000003", "DerivedData-000000000002"]))
+        pruned = [item for item in _decisions(self.root) if item.get("decision") == "cache-pruned"]
+        self.assertEqual(sorted(pruned[-1]["removed"]), ["DerivedData", "DerivedData-000000000001"])
+        self.assertEqual(pruned[-1]["kept"][0], current)
+
     def test_decisions_keep_the_last_two_hundred_lines(self):
         world = World()
         supervisor = poller.Supervisor(self.root, world)
@@ -1733,6 +1860,9 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertEqual(bundle.parent, self.root / "state" / "results")
         self.assertIn("** TEST SUCCEEDED **", (bundle.parent / (bundle.name + ".log")).read_text())
         self.assertIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
+        key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
+        self.assertEqual(Path(argv[argv.index("-derivedDataPath") + 1]), self.root / "cache" / ("DerivedData-" + key))
+        self.assertEqual(decided["deps"], key)
         requests = self.github.requests()
         self.assertTrue(all(item["auth"] == "jwt" for item in requests if item["url"].endswith("/access_tokens")))
         self.assertTrue(all(item["auth"] == "token" for item in requests if "/statuses/" in item["url"]))
@@ -1749,6 +1879,41 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertTrue(paths[0].endswith("-1") and paths[1].endswith("-2"))
         self.assertEqual(paths[0][:-2], paths[1][:-2])
         self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "pending", "failure"])
+
+    def test_stale_module_posts_error_without_a_retry(self):
+        """Belt: the stale-module signature is the cache's fault, never the PR's."""
+        self._enable()
+        self.build("""
+            print("<unknown>:0: error: file '/x/Sparkle.framework/Headers/SPUUpdater.h' has been modified since the module file '/x/Sparkle.pcm' was built: size changed")
+            print("** TEST FAILED **")
+            sys.exit(65)
+        """)
+        result = self._supervise(cycles=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len((self.root / "argv.jsonl").read_text().splitlines()), 1)
+        self.assertEqual(self.github.statuses(), [("pending", "build started"), ("error", "cache: stale module")])
+        decisions = [item.get("decision") for item in _decisions(self.root)]
+        self.assertEqual(decisions.count("cache-fault"), 1)
+        self.assertFalse(any(item.get("state") == "failure" for item in _decisions(self.root)))
+
+    def test_stale_module_status_retries_delivery_without_rebuilding(self):
+        """Review probe: the error POST misses three times, then lands; xcodebuild ran once."""
+        self._enable()
+        self.build("""
+            print("error: file '/x/Sparkle.framework/Headers/SPUUpdater.h' has been modified since the module file '/x/Sparkle.pcm' was built")
+            sys.exit(65)
+        """)
+        busy = {"status": 503, "headers": {"Retry-After": "0"}, "body": {}}
+        ok = {"status": 201, "body": {}}
+        self.github.put("POST", "/statuses/", ok, busy, busy, busy, ok)
+        result = self._supervise(cycles=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len((self.root / "argv.jsonl").read_text().splitlines()), 1)
+        self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "error", "error", "error", "error"])
+        decisions = [item.get("decision") for item in _decisions(self.root)]
+        self.assertLess(decisions.index("status_undelivered"), decisions.index("result"))
+        delivered = [item for item in _decisions(self.root) if item.get("decision") == "result"]
+        self.assertEqual([(item["state"], item["description"]) for item in delivered], [("error", "cache: stale module")])
 
     def test_ghosttykit_links_from_the_ghostty_gitlink(self):
         self._enable()

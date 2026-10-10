@@ -70,6 +70,12 @@ HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
 POST_TRIES = 3
+PACKAGE_RESOLVED = (
+    "GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "Package.resolved",
+)
+DERIVED_KEEP = 3
+STALE_MODULE = "has been modified since the module file"
 DISARMED_SLEEP_S = 3600
 TERMINAL_STATES = frozenset(("success", "failure"))
 KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed", "gh_configured"))
@@ -407,6 +413,19 @@ def residue_ok(parent_status, submodule_statuses, symlink_ready):
         if status:
             return False
     return True
+
+
+def dependency_key(resolved_texts, gitlinks):
+    """12 hex of SHA-256 over the Package.resolved files and the submodule gitlinks.
+
+    Heads with different package graphs get different DerivedData, so a module
+    precompiled for one Sparkle version is never reused for another.
+    """
+    digest = hashlib.sha256()
+    for text in list(resolved_texts) + list(gitlinks):
+        digest.update(text.encode())
+        digest.update(b"\0")
+    return digest.hexdigest()[:12]
 
 
 def result_directory(state, attempt_id, invocation):
@@ -1193,6 +1212,9 @@ class Supervisor:
         self.delivered = False
         self.stopped = None
         self.credential_skipped = False
+        self.awaiting_kit = {}
+        self.status_owed = {}
+        self.derived = self.root / "cache" / "DerivedData"
 
     def state(self):
         path = self.root / "state"
@@ -1333,6 +1355,7 @@ class Supervisor:
             return "backoff"
         self._remember_queue(admitted)
         self._resolve_absent(body)
+        self._deliver_owed()
         self.not_before = self.world.time() + (wait or self.cadence)
         return self.maybe_start()
 
@@ -1390,14 +1413,35 @@ class Supervisor:
         return chosen
 
     def _remember_queue(self, admitted):
-        """Queue admitted heads that are not queued and not already reported."""
-        known = {item["pr"] for item in self.queue}
+        """Reconcile the queue with the freshly admitted heads.
+
+        A new PR is appended. A queued PR whose admitted SHA or ref changed is
+        replaced by the new head (at the back), and its old head's awaiting-kit record is dropped, so a
+        head stuck on a missing GhosttyKit never hides a newer buildable one. The
+        exact-SHA revalidation before fetch and in the child is unchanged.
+        """
         for captured in admitted:
-            if captured["pr"] in known or self.reported.get(captured["pr"]) == captured["sha"]:
+            number = captured["pr"]
+            index = next((i for i, item in enumerate(self.queue) if item["pr"] == number), None)
+            done = self.reported.get(number) == captured["sha"] or (number, captured["sha"]) in self.status_owed
+            if index is not None and (self.queue[index]["sha"] != captured["sha"] or self.queue[index]["ref"] != captured["ref"]):
+                stale = self.queue.pop(index)
+                self.awaiting_kit.pop((number, stale["sha"]), None)
+                self.log(decision="requeued", pr=number, sha=captured["sha"], previous=stale["sha"])
+                index = None
+            if index is not None or done:
                 continue
             item = dict(captured)
             item["queued_at"] = self.world.time()
             self.queue.append(item)
+
+    def _deliver_owed(self):
+        """Status-only retry for a cache fault whose error POST missed. Never rebuilds."""
+        for key, owed in list(self.status_owed.items()):
+            number, sha = key
+            if self._post(sha, owed["state"], owed["description"], pr=number, deps=owed.get("deps")):
+                del self.status_owed[key]
+                self.reported[number] = sha
 
     def _resolve_absent(self, body):
         present = set()
@@ -1434,10 +1478,16 @@ class Supervisor:
         """The first queued head that still revalidates and has no terminal status.
 
         A head whose c11/pr-swift status is already success or failure is
-        recorded and skipped, so a restarted process does not rebuild it.
+        recorded and skipped, so a restarted process does not rebuild it. A head
+        waiting for its GhosttyKit cache entry is passed over, with no network
+        call, until that entry exists.
         """
-        while self.queue:
-            item = self.queue[0]
+        for item in list(self.queue):
+            key = (item["pr"], item["sha"])
+            if key in self.awaiting_kit:
+                if not self.world.kit_available(self.awaiting_kit[key]):
+                    continue
+                del self.awaiting_kit[key]
             ok, reason, _detail = revalidate(
                 item,
                 lambda number: self.world.pull(number),
@@ -1449,7 +1499,7 @@ class Supervisor:
                 # The captured SHA stays what the list admitted. A moved tip is not
                 # written into this attempt and is not fetched.
                 self.log(decision=reason, pr=item["pr"], sha=item["sha"])
-                self.queue.pop(0)
+                self.queue.remove(item)
                 continue
             try:
                 prior = self.world.head_status(item["sha"])
@@ -1458,10 +1508,16 @@ class Supervisor:
             if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
-                self.queue.pop(0)
+                self.queue.remove(item)
                 continue
             return item
         return None
+
+    def _rotate(self, item):
+        """A head that could not be prepared goes to the back, so it never blocks the rest."""
+        if item in self.queue:
+            self.queue.remove(item)
+            self.queue.append(item)
 
     def _credential_skip(self, item):
         """The head stays queued; this cycle starts nothing."""
@@ -1489,9 +1545,12 @@ class Supervisor:
         if item is None:
             return CREDENTIAL_UNAVAILABLE if self.credential_skipped else "idle"
         if not self._fetch(item):
+            self._rotate(item)
             return "fetch_failed"
         if not self._prepare_tree(item):
+            self._rotate(item)
             return "residue"
+        item["deps"] = self._dependency_key(item)
         if self.world.guests() or self.world.slot_held(1) or self.world.slot_held(2):
             self.log(decision="no-start", reason="raced")
             return "no-start"
@@ -1523,6 +1582,8 @@ class Supervisor:
         sub_status = [porcelain_paths(self.world.status(Path(self.world.worktree) / path)) for path, _url in GITLINKS]
         gitlink = self._ghostty_gitlink(item)
         if gitlink is None or self.world.ghosttykit(gitlink) == "ghosttykit_missing":
+            if gitlink is not None:
+                self.awaiting_kit[(item["pr"], item["sha"])] = gitlink
             self.log(decision="ghosttykit_missing", pr=item["pr"], gitlink=gitlink)
             return False
         parent = porcelain_paths(self.world.status(self.world.worktree))
@@ -1533,6 +1594,42 @@ class Supervisor:
             self.log(decision="toolchain", pr=item["pr"])
             return False
         return True
+
+    def _dependency_key(self, item):
+        texts = []
+        for path in PACKAGE_RESOLVED:
+            shown = self.world.git(["show", "%s:%s" % (item["sha"], path)], self.world.worktree)
+            texts.append(shown.stdout if shown.returncode == 0 else "")
+        links = []
+        for path, _url in GITLINKS:
+            shown = self.world.git(["rev-parse", "%s:%s" % (item["sha"], path)], self.world.worktree)
+            links.append(shown.stdout.strip() if shown.returncode == 0 else "")
+        return dependency_key(texts, links)
+
+    def _derived_data(self, key):
+        """cache/DerivedData-<key>, marked most recent; keep DERIVED_KEEP, prune the rest by mtime."""
+        cache = self.root / "cache"
+        current = cache / ("DerivedData-" + key)
+        current.mkdir(parents=True, exist_ok=True)
+        os.utime(current, None)
+        entries = [path for path in cache.iterdir()
+                   if path.is_dir() and not path.is_symlink()
+                   and (path.name == "DerivedData" or path.name.startswith("DerivedData-"))]
+        entries.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        keep = [current] + [path for path in entries if path != current][:DERIVED_KEEP - 1]
+        removed = []
+        for path in entries:
+            if path in keep:
+                continue
+            try:
+                shutil.rmtree(path)
+            except OSError as error:
+                self.log(decision="cache-prune-failed", entry=path.name, error=str(error)[:200])
+                continue
+            removed.append(path.name)
+        if removed:
+            self.log(decision="cache-pruned", removed=removed, kept=[path.name for path in keep])
+        return current
 
     def _spawn(self, item):
         """One attempt: a fresh attempt id, then at most one cache retry.
@@ -1547,6 +1644,9 @@ class Supervisor:
         self.stopped = None
         self.delivered = False
         self._drop(item)
+        if not item.get("deps"):
+            item["deps"] = self._dependency_key(item)
+        self.derived = self._derived_data(item["deps"])
         for invocation in (1, 2):
             code = self._spawn_one(item, invocation)
             self.build_end = self.world.time()
@@ -1557,8 +1657,26 @@ class Supervisor:
                 return "stopped"
             if self.world.last_exit == 0:
                 break
+            if STALE_MODULE in (self.world.build_log or ""):
+                return self._cache_fault(item, invocation)
         self._finish(item, self.world.last_exit)
         return "started"
+
+    def _cache_fault(self, item, invocation):
+        """A stale precompiled module is the cache's fault: error, never failure, no rebuild.
+
+        The head counts as reported once the error POST is accepted. Until then it
+        is a status-only debt: each cycle retries the POST and never reruns the build.
+        """
+        self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
+        self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
+        if self.delivered:
+            self.reported[item["pr"]] = item["sha"]
+        else:
+            self.status_owed[(item["pr"], item["sha"])] = {
+                "state": "error", "description": "cache: stale module", "deps": item["deps"],
+            }
+        return "cache-fault"
 
     def _spawn_one(self, item, invocation):
         attempt_id = item["attempt_id"]
@@ -1574,7 +1692,7 @@ class Supervisor:
             "log": str(log_path),
         }
         (self.state() / "current.json").write_text(json.dumps(current) + "\n")
-        argv = self.world.build_argv(self.world.worktree, self.root / "cache" / "DerivedData", result)
+        argv = self.world.build_argv(self.world.worktree, self.derived, result)
         command = slot_command(self.root, argv)
         self.spawns.append({"command": command, "sha": item["sha"], "result": str(result), "invocation": invocation})
         append_event(self.root, {"event": "spawn", "sha": item["sha"], "invocation": invocation, "result": str(result)})
@@ -1609,7 +1727,8 @@ class Supervisor:
         state, description = classify_result(self.world.build_log, seconds)
         if exit_code != 0 and state == "success":
             state, description = "failure", "failed %ss" % int(seconds)
-        self.delivered = self._post(item["sha"], state, description, pr=item["pr"], build_seconds=round(seconds, 3))
+        self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
+                                    build_seconds=round(seconds, 3), deps=item.get("deps"))
         if self.delivered:
             self.reported[item["pr"]] = item["sha"]
 
@@ -1986,12 +2105,16 @@ class ProductionWorld:
         result = self.git(["status", "--porcelain=v1", "--ignored"], cwd)
         return result.stdout or ""
 
+    def _kit_cache(self):
+        cache = os.environ.get("C11_POLLER_KIT_CACHE") or os.environ.get("CMUX_GHOSTTYKIT_CACHE_DIR")
+        return cache or str(Path.home() / ".cache" / "cmux" / "ghosttykit")
+
     def ghosttykit(self, gitlink):
         """Link the cache entry for the Ghostty gitlink, never the parent SHA."""
-        cache = os.environ.get("C11_POLLER_KIT_CACHE") or os.environ.get("CMUX_GHOSTTYKIT_CACHE_DIR")
-        if not cache:
-            cache = str(Path.home() / ".cache" / "cmux" / "ghosttykit")
-        return link_ghosttykit(cache, gitlink, self.worktree)
+        return link_ghosttykit(self._kit_cache(), gitlink, self.worktree)
+
+    def kit_available(self, gitlink):
+        return (Path(self._kit_cache()) / gitlink / "GhosttyKit.xcframework").is_dir()
 
     def toolchain_ok(self):
         zig = os.environ.get("C11_POLLER_ZIG") or str(Path.home() / "zig-0.15.2" / "zig")

@@ -8562,6 +8562,23 @@ struct WorkspaceSidebar: View {
         }
     }
 
+    /// Centers the workspace's card, or its folder header when the folder is collapsed.
+    private func revealInSidebar(workspaceId: UUID, using scrollProxy: ScrollViewProxy) {
+        let rows = groupCoordinator.projection.rows
+        let rowId: WorkspaceGroupSidebarRow.ID
+        if rows.contains(where: { $0.id == .workspace(workspaceId) }) {
+            rowId = .workspace(workspaceId)
+        } else if let groupId = workspaceManager.workspaces.first(where: { $0.id == workspaceId })?.groupId,
+                  rows.contains(where: { $0.id == .group(groupId) }) {
+            rowId = .group(groupId)
+        } else {
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            scrollProxy.scrollTo(rowId, anchor: .center)
+        }
+    }
+
     var body: some View {
         let workspacesById = Dictionary(uniqueKeysWithValues: workspaceManager.workspaces.map { ($0.id, $0) })
         // Compute chrome-scale tokens once per parent eval. Threaded as a
@@ -8577,122 +8594,132 @@ struct WorkspaceSidebar: View {
 
         VStack(spacing: 0) {
             GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // Space for traffic lights / fullscreen controls.
-                        // Includes `firstRowTopInset` so the first row's
-                        // highlight rounded-rect clears the `SidebarTopScrim`
-                        // gradient below — without it the scrim is still
-                        // ~40% opaque where the top corner lands and the
-                        // highlight reads as if the corner is cut off.
-                        Spacer()
-                            .frame(height: trafficLightPadding + firstRowTopInset)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            // Space for traffic lights / fullscreen controls.
+                            // Includes `firstRowTopInset` so the first row's
+                            // highlight rounded-rect clears the `SidebarTopScrim`
+                            // gradient below — without it the scrim is still
+                            // ~40% opaque where the top corner lands and the
+                            // highlight reads as if the corner is cut off.
+                            Spacer()
+                                .frame(height: trafficLightPadding + firstRowTopInset)
 
-                        groupControls
+                            groupControls
 
-                        LazyVStack(spacing: tabRowSpacing) {
-                            ForEach(groupCoordinator.projection.rows) { row in
-                                switch row {
-                                case .group(let header):
-                                    groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette)
-                                        .overlay(alignment: .topLeading) {
-                                            groupColorBar(
-                                                groupId: header.group.id,
-                                                continuesBelow: !header.group.isCollapsed && header.summary.memberCount > 0
-                                            )
-                                        }
-                                case .workspace(let item):
-                                    if let ws = workspacesById[item.workspaceId] {
-                                        workspaceRow(ws, item: item, chromeTokens: chromeTokens)
-                                            .padding(.leading, item.groupId == nil ? 0 : 12)
+                            LazyVStack(spacing: tabRowSpacing) {
+                                ForEach(groupCoordinator.projection.rows) { row in
+                                    switch row {
+                                    case .group(let header):
+                                        groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette)
                                             .overlay(alignment: .topLeading) {
                                                 groupColorBar(
-                                                    groupId: item.groupId,
-                                                    continuesBelow: !item.isLastGroupMember
+                                                    groupId: header.group.id,
+                                                    continuesBelow: !header.group.isCollapsed && header.summary.memberCount > 0
                                                 )
                                             }
-                                            .overlay(alignment: .bottom) {
-                                                if item.isLastGroupMember, draggedGroupId != nil,
-                                                   dropIndicator?.groupId == item.groupId,
-                                                   dropIndicator?.isGroupBody == false, dropIndicator?.edge == .bottom {
-                                                    Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 6)
+                                    case .workspace(let item):
+                                        if let ws = workspacesById[item.workspaceId] {
+                                            workspaceRow(ws, item: item, chromeTokens: chromeTokens)
+                                                .padding(.leading, item.groupId == nil ? 0 : 12)
+                                                .overlay(alignment: .topLeading) {
+                                                    groupColorBar(
+                                                        groupId: item.groupId,
+                                                        continuesBelow: !item.isLastGroupMember
+                                                    )
                                                 }
-                                            }
+                                                .overlay(alignment: .bottom) {
+                                                    if item.isLastGroupMember, draggedGroupId != nil,
+                                                       dropIndicator?.groupId == item.groupId,
+                                                       dropIndicator?.isGroupBody == false, dropIndicator?.edge == .bottom {
+                                                        Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 6)
+                                                    }
+                                                }
+                                        }
                                     }
                                 }
                             }
-                        }
-                        .padding(.vertical, 8)
-                        // Structural guarantee for the card metaphor.
-                        //
-                        // A vertical ScrollView does not clamp its rows to the
-                        // viewport. Any descendant whose *minimum* width beats
-                        // the sidebar — a fixed-slot row, a `fixedSize` label,
-                        // anything that cannot truncate — widens the whole
-                        // stack, and centre alignment then shifts every card
-                        // left until its border, its inset, and the first
-                        // characters of every line are outside the window.
-                        //
-                        // Individual offenders get fixed where they live (the
-                        // pulse mark row measures and compresses). This is the
-                        // backstop that keeps the next one from breaking the
-                        // card at all: pinned to the viewport and leading
-                        // aligned, an over-wide row can only clip its own
-                        // right edge.
-                        .frame(width: proxy.size.width, alignment: .leading)
-                        .clipped()
+                            .padding(.vertical, 8)
+                            // Structural guarantee for the card metaphor.
+                            //
+                            // A vertical ScrollView does not clamp its rows to the
+                            // viewport. Any descendant whose *minimum* width beats
+                            // the sidebar — a fixed-slot row, a `fixedSize` label,
+                            // anything that cannot truncate — widens the whole
+                            // stack, and centre alignment then shifts every card
+                            // left until its border, its inset, and the first
+                            // characters of every line are outside the window.
+                            //
+                            // Individual offenders get fixed where they live (the
+                            // pulse mark row measures and compresses). This is the
+                            // backstop that keeps the next one from breaking the
+                            // card at all: pinned to the viewport and leading
+                            // aligned, an over-wide row can only clip its own
+                            // right edge.
+                            .frame(width: proxy.size.width, alignment: .leading)
+                            .clipped()
 
-                        SidebarEmptyArea(
-                            rowSpacing: tabRowSpacing,
-                            selection: $selection,
-                            selectedWorkspaceIds: $selectedWorkspaceIds,
-                            lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                            dragAutoScrollController: dragAutoScrollController,
-                            draggedWorkspaceId: $draggedWorkspaceId,
-                            draggedGroupId: $draggedGroupId,
-                            dropIndicator: $dropIndicator
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            SidebarEmptyArea(
+                                rowSpacing: tabRowSpacing,
+                                selection: $selection,
+                                selectedWorkspaceIds: $selectedWorkspaceIds,
+                                lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+                                dragAutoScrollController: dragAutoScrollController,
+                                draggedWorkspaceId: $draggedWorkspaceId,
+                                draggedGroupId: $draggedGroupId,
+                                dropIndicator: $dropIndicator
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        .frame(minHeight: proxy.size.height, alignment: .top)
                     }
-                    .frame(minHeight: proxy.size.height, alignment: .top)
-                }
-                // The sidebar is a card rail, not a document; the overlay
-                // scroller renders as a grey bar over the cards (and the
-                // traffic-light strip) whenever the workspace list overflows.
-                .scrollIndicators(.never)
-                .background(SidebarHorizontalScrollAnchor(monitor: horizontalScrollMonitor))
-                .background(
-                    SidebarScrollViewResolver { scrollView in
-                        dragAutoScrollController.attach(scrollView: scrollView)
-                        // Backstop for the .scrollIndicators modifier: SwiftUI's
-                        // ScrollView is NSScrollView-backed here, and AppKit can
-                        // still materialize an overlay scroller on scroll.
-                        scrollView?.hasVerticalScroller = false
-                        scrollView?.hasHorizontalScroller = false
-                        scrollView?.verticalScroller = nil
-                        scrollView?.horizontalScroller = nil
+                    // The sidebar is a card rail, not a document; the overlay
+                    // scroller renders as a grey bar over the cards (and the
+                    // traffic-light strip) whenever the workspace list overflows.
+                    .scrollIndicators(.never)
+                    .background(SidebarHorizontalScrollAnchor(monitor: horizontalScrollMonitor))
+                    .background(
+                        SidebarScrollViewResolver { scrollView in
+                            dragAutoScrollController.attach(scrollView: scrollView)
+                            // Backstop for the .scrollIndicators modifier: SwiftUI's
+                            // ScrollView is NSScrollView-backed here, and AppKit can
+                            // still materialize an overlay scroller on scroll.
+                            scrollView?.hasVerticalScroller = false
+                            scrollView?.hasHorizontalScroller = false
+                            scrollView?.verticalScroller = nil
+                            scrollView?.horizontalScroller = nil
+                        }
+                        .frame(width: 0, height: 0)
+                    )
+                    .overlay(alignment: .top) {
+                        SidebarTopScrim(height: trafficLightPadding + 20)
+                            .allowsHitTesting(false)
                     }
-                    .frame(width: 0, height: 0)
-                )
-                .overlay(alignment: .top) {
-                    SidebarTopScrim(height: trafficLightPadding + 20)
-                        .allowsHitTesting(false)
-                }
-                .overlay(alignment: .top) {
-                    // Match native titlebar behavior in the sidebar top strip:
-                    // drag-to-move and double-click action (zoom/minimize).
-                    WindowDragHandleView()
-                        .frame(height: trafficLightPadding)
-                }
-                .overlay(alignment: .topLeading) {
-                    if isMinimalMode {
-                        HiddenTitlebarSidebarControlsView(notificationStore: notificationStore)
-                            .padding(.leading, hiddenTitlebarControlsLeadingInset)
-                            .padding(.top, 2)
+                    .overlay(alignment: .top) {
+                        // Match native titlebar behavior in the sidebar top strip:
+                        // drag-to-move and double-click action (zoom/minimize).
+                        WindowDragHandleView()
+                            .frame(height: trafficLightPadding)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if isMinimalMode {
+                            HiddenTitlebarSidebarControlsView(notificationStore: notificationStore)
+                                .padding(.leading, hiddenTitlebarControlsLeadingInset)
+                                .padding(.top, 2)
+                        }
+                    }
+                    .background(Color.clear)
+                    .modifier(ClearScrollBackground())
+                    .onReceive(NotificationCenter.default.publisher(for: .sidebarRevealWorkspaceRequested)) { note in
+                        guard (note.object as AnyObject?) === workspaceManager,
+                              let workspaceId = note.userInfo?["workspaceId"] as? UUID else { return }
+                        // Next turn: let the selection change land in the projection first.
+                        DispatchQueue.main.async {
+                            revealInSidebar(workspaceId: workspaceId, using: scrollProxy)
+                        }
                     }
                 }
-                .background(Color.clear)
-                .modifier(ClearScrollBackground())
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // The footer floats over the scroll area: cards slide beneath

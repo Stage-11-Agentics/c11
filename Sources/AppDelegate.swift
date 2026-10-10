@@ -13797,6 +13797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         workspace.clearSplitZoom()
         guard selectFeedTarget(target, cause: cause) else { return false }
         context.sidebarSelectionState.selection = .tabs
+        manager.requestSidebarReveal(workspaceId: target.workspaceID)
         // Only the explicit user jump raises the owning window, after validating both IDs.
         bringToFront(window)
         if let notificationID, let notificationStore {

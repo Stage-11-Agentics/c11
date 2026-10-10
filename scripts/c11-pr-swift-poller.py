@@ -4,10 +4,12 @@
 Phase 2 of C11-371. This process is not a GitHub Actions runner. Nothing in
 this file bootstraps a LaunchAgent. `supervise` is one long-running process
 that runs only when state/enabled.json sets enabled to true. It holds the
-queue, the rate-limit deadline and the App token in memory; a restart rebuilds
-them from the GitHub API plus R2 recovery. The LaunchAgent template does not
-create enabled.json. Arming waits for an implementation review PASS and for
-Atin to create the GitHub App.
+queue, the rate-limit deadline and the credential client in memory; a restart
+rebuilds them from the GitHub API plus R2 recovery. The LaunchAgent template
+does not create enabled.json. Arming waits for Atin's GO-LIVE.
+
+Credentials: gh mode (the Atlas gh login, credential.json {"mode": "gh"}) is
+active; App mode (app.json plus private-key.pem) is the config-only upgrade.
 
 Status delivery (orchestrator ruling): no outbox. A status POST gets three
 tries that honour Retry-After; if all fail the poller logs status_undelivered
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -69,7 +72,10 @@ DECISION_LIMIT = 200
 POST_TRIES = 3
 DISARMED_SLEEP_S = 3600
 TERMINAL_STATES = frozenset(("success", "failure"))
-KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed"))
+KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed", "gh_configured"))
+GH_FALLBACK = "/opt/homebrew/bin/gh"
+CREDENTIAL_UNAVAILABLE = "credential-unavailable"
+GH_ENV_DROP = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST")
 BUILD_ENV_DROP = (
     "C11_BUILD_LOCK",
     "C11_SOCKET",
@@ -91,6 +97,10 @@ class OriginRefused(Exception):
 
 class ScopeStop(Exception):
     pass
+
+
+class CredentialUnavailable(Exception):
+    """The credential could not be read this time. Skip and retry; never a scope pass."""
 
 
 def admit(obj):
@@ -301,6 +311,8 @@ def revalidate(captured, fetch_pr, ls_remote):
     """
     try:
         body = fetch_pr(captured["pr"])
+    except CredentialUnavailable:
+        return False, CREDENTIAL_UNAVAILABLE, None
     except Exception as error:
         return False, "revoked", str(error)
     if body is None:
@@ -816,6 +828,7 @@ def fixture_transport(directory):
                     "body": body,
                     "route": chosen,
                     "auth": "jwt" if bearer.count(".") == 2 else "token",
+                    "bearer_sha256": hashlib.sha256(bearer.encode()).hexdigest(),
                 }) + "\n")
         if response.get("delay"):
             time.sleep(response["delay"])
@@ -925,6 +938,10 @@ class AppClient:
         url = "%s/repos/%s/pulls/%s" % (API, REPO_NAME, number)
         return self._authed("GET", url, self.narrowed_token, remint=self._remint_narrowed)
 
+    def get_url(self, url):
+        self._require_scope()
+        return self._authed("GET", url, self.narrowed_token, remint=self._remint_narrowed)
+
     def post_status_body(self, body):
         self._require_scope()
         sha = body.get("sha") if type(body) is dict else None
@@ -1012,6 +1029,130 @@ class AppClient:
             return {"status": 0, "headers": {}, "body": None}
 
 
+class GhClient:
+    """The Atlas gh login as the credential (Atin's decision; the active mode).
+
+    The token is read with `gh auth token` at each request, held only for that
+    request, and never logged or written. GH_TOKEN and GITHUB_TOKEN are removed
+    from gh's environment so the stored login is what answers. The calls and the
+    admission are the App mode's; only the bearer differs. Scope: GET
+    /repos/Stage-11-Agentics/c11 must return repo id 1212901838 with push.
+    """
+
+    def __init__(self, transport, gh=None):
+        self.transport = transport
+        self.gh = gh or shutil.which("gh") or GH_FALLBACK
+        self.scoped = False
+
+    @classmethod
+    def from_config(cls, data, transport=None):
+        gh = data.get("gh")
+        if gh is not None and (type(gh) is not str or gh == ""):
+            raise ScopeStop("credential-config")
+        return cls(transport or default_transport(), gh)
+
+    def _token(self):
+        env = {key: value for key, value in os.environ.items() if key not in GH_ENV_DROP}
+        try:
+            result = subprocess.run([self.gh, "auth", "token", "--hostname", "github.com"],
+                                    capture_output=True, text=True, timeout=15, env=env)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise CredentialUnavailable("gh-token") from error
+        token = result.stdout.strip()
+        if result.returncode != 0 or token == "" or any(char.isspace() for char in token):
+            raise CredentialUnavailable("gh-token")
+        return token
+
+    def _request(self, method, url, body=None, etag=None):
+        headers = {
+            "Authorization": "Bearer " + self._token(),
+            "Accept": "application/vnd.github+json",
+            "User-Agent": USER_AGENT,
+        }
+        if etag:
+            headers["If-None-Match"] = etag
+        try:
+            return self.transport(method, url, headers, body)
+        except TimeoutError:
+            return {"status": 0, "headers": {}, "body": None}
+
+    def _call(self, method, url, body=None, etag=None):
+        """A token that cannot be read is a skipped request, not a crash."""
+        try:
+            return self._request(method, url, body, etag)
+        except CredentialUnavailable:
+            return {"status": 0, "headers": {}, "body": None, "error": CREDENTIAL_UNAVAILABLE}
+
+    def verify_scope(self):
+        response = self._request("GET", "%s/repos/%s" % (API, REPO_NAME))
+        body = response.get("body")
+        permissions = body.get("permissions") if type(body) is dict else None
+        if (response.get("status") != 200 or type(body) is not dict or type(body.get("id")) is not int
+                or body.get("id") != REPO_ID or body.get("full_name") != REPO_NAME
+                or type(permissions) is not dict or permissions.get("push") is not True):
+            raise ScopeStop("scope")
+        self.scoped = True
+        return True
+
+    def _require_scope(self):
+        if not self.scoped:
+            raise ScopeStop("status-before-scope")
+
+    def list_pulls(self, headers):
+        self._require_scope()
+        return self._call("GET", LIST_URL, etag=(headers or {}).get("If-None-Match"))
+
+    def get_url(self, url):
+        self._require_scope()
+        return self._call("GET", url)
+
+    def pull(self, number):
+        self._require_scope()
+        return self._call("GET", "%s/repos/%s/pulls/%s" % (API, REPO_NAME, number))
+
+    def head_status(self, sha):
+        self._require_scope()
+        if SHA_RE.fullmatch(sha or "") is None:
+            raise ScopeStop("sha")
+        response = self._call("GET", "%s/repos/%s/commits/%s/status" % (API, REPO_NAME, sha))
+        raise_if_unavailable(response)
+        body = response.get("body")
+        if response.get("status") != 200 or type(body) is not dict or type(body.get("statuses")) is not list:
+            return None
+        for item in body["statuses"]:
+            if type(item) is dict and item.get("context") == STATUS_CONTEXT:
+                return item.get("state")
+        return None
+
+    def post_status_body(self, body):
+        self._require_scope()
+        sha = body.get("sha") if type(body) is dict else None
+        if SHA_RE.fullmatch(sha or "") is None:
+            raise ScopeStop("sha")
+        payload = {"state": body["state"], "context": STATUS_CONTEXT, "description": body["description"]}
+        return self._call("POST", "%s/repos/%s/statuses/%s" % (API, REPO_NAME, sha), payload)
+
+
+def raise_if_unavailable(response):
+    """A skipped gh request is its own outcome, never "missing" or "no status"."""
+    if type(response) is dict and response.get("error") == CREDENTIAL_UNAVAILABLE:
+        raise CredentialUnavailable(CREDENTIAL_UNAVAILABLE)
+
+
+def make_client(config_dir=None):
+    """app.json means App mode. Otherwise credential.json {"mode": "gh"} means gh mode."""
+    directory = Path(config_dir) if config_dir else config_directory()
+    if (directory / "app.json").exists():
+        return AppClient.from_config(directory)
+    try:
+        data = json.loads((directory / "credential.json").read_text())
+    except (OSError, ValueError) as error:
+        raise ScopeStop("credential-config") from error
+    if type(data) is not dict or data.get("mode") != "gh":
+        raise ScopeStop("credential-config")
+    return GhClient.from_config(data)
+
+
 def status_body(sha, state, description):
     if len(description) > 140:
         raise ValueError("description longer than 140")
@@ -1051,6 +1192,7 @@ class Supervisor:
         self.build_end = None
         self.delivered = False
         self.stopped = None
+        self.credential_skipped = False
 
     def state(self):
         path = self.root / "state"
@@ -1114,7 +1256,12 @@ class Supervisor:
             self.log(decision="backoff", seconds=waited)
             return "backoff"
         if not self.scoped:
-            if not self.world.scope_ok():
+            scoped = self.world.scope_ok()
+            if scoped is None:
+                self.not_before = self.world.time() + self.cadence
+                self.log(decision="credential-unavailable")
+                return "no-build"
+            if not scoped:
                 self.disarmed = True
                 self.log(decision="scope-stop")
                 return "scope-stop"
@@ -1132,7 +1279,7 @@ class Supervisor:
             body = saved["body"]
         elif status == 0:
             self.not_before = self.world.time() + self.cadence
-            self.log(decision="timeout")
+            self.log(decision=response.get("error") or "timeout")
             return "no-build"
         elif status == 401:
             self.disarmed = True
@@ -1226,7 +1373,7 @@ class Supervisor:
                 return "no-build"
             if status == 0:
                 self.not_before = self.world.time() + self.cadence
-                self.log(decision="timeout")
+                self.log(decision=page.get("error") or "timeout")
                 return "no-build"
             if status != 200:
                 self.log(decision="rate-or-error", status=status)
@@ -1262,7 +1409,12 @@ class Supervisor:
             if item["pr"] in present:
                 kept.append(item)
                 continue
-            looked = self.world.pull(item["pr"])
+            try:
+                looked = self.world.pull(item["pr"])
+            except CredentialUnavailable:
+                self.log(decision=CREDENTIAL_UNAVAILABLE, pr=item["pr"], sha=item["sha"])
+                kept.append(item)
+                continue
             if looked is None or (type(looked) is dict and looked.get("status") == 404):
                 self.log(decision="revoked", pr=item["pr"], reason="absent")
                 continue
@@ -1291,18 +1443,30 @@ class Supervisor:
                 lambda number: self.world.pull(number),
                 lambda ref: self.world.ls_remote(ref),
             )
+            if reason == CREDENTIAL_UNAVAILABLE:
+                return self._credential_skip(item)
             if not ok:
                 # The captured SHA stays what the list admitted. A moved tip is not
                 # written into this attempt and is not fetched.
                 self.log(decision=reason, pr=item["pr"], sha=item["sha"])
                 self.queue.pop(0)
                 continue
-            if self.world.head_status(item["sha"]) in TERMINAL_STATES:
+            try:
+                prior = self.world.head_status(item["sha"])
+            except CredentialUnavailable:
+                return self._credential_skip(item)
+            if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
                 self.queue.pop(0)
                 continue
             return item
+        return None
+
+    def _credential_skip(self, item):
+        """The head stays queued; this cycle starts nothing."""
+        self.credential_skipped = True
+        self.log(decision=CREDENTIAL_UNAVAILABLE, pr=item["pr"], sha=item["sha"])
         return None
 
     def maybe_start(self):
@@ -1320,9 +1484,10 @@ class Supervisor:
         if self.world.slot_held(1) or self.world.slot_held(2):
             self.log(decision="no-start", reason="slot")
             return "no-start"
+        self.credential_skipped = False
         item = self._next_item()
         if item is None:
-            return "idle"
+            return CREDENTIAL_UNAVAILABLE if self.credential_skipped else "idle"
         if not self._fetch(item):
             return "fetch_failed"
         if not self._prepare_tree(item):
@@ -1512,7 +1677,10 @@ class Supervisor:
                 lambda number: self.world.pull(number),
                 lambda ref: self.world.ls_remote(ref),
             )
-            if not ok:
+            if reason == CREDENTIAL_UNAVAILABLE:
+                # Unknown, not revoked: keep the build and check again next tick.
+                self.log(decision=CREDENTIAL_UNAVAILABLE, pr=record["pr"], sha=record["sha"], during="watch")
+            elif not ok:
                 return reason
         our = record.get("slot")
         other = None
@@ -1610,7 +1778,11 @@ def teardown(stages, actor):
     if "key_placed" in stages:
         actor.remove_key()
         removed.append("key_placed")
-    actor.remove_local_state()
+    if "gh_configured" in stages:
+        actor.remove_gh_config()
+        removed.append("gh_configured")
+    if not actor.remove_local_state():
+        return {"action": "stop", "removed": removed, "reason": "local-state"}
     return {"action": "done", "removed": removed}
 
 
@@ -1657,6 +1829,7 @@ def _revalidate_with_client(root, client):
 
     def fetch_pr(number):
         response = client.pull(number)
+        raise_if_unavailable(response)
         if response.get("status") != 200:
             return None
         return response.get("body")
@@ -1672,12 +1845,20 @@ def post_build_pending(client, current):
 
 
 def run_child_cli(root, exec_argv):
-    """The build child: its own App client, the second revalidation, pending, exec."""
+    """The build child: its own client, the second revalidation, pending, exec.
+
+    A credential or scope failure is a refusal before pending (exit 3), so the
+    supervisor neither posts nor retries it.
+    """
     holder = {}
 
     def revalidate_fn(root):
-        client = AppClient.from_config()
-        client.verify_scope()
+        try:
+            client = make_client()
+            client.verify_scope()
+        except (ScopeStop, CredentialUnavailable) as error:
+            append_event(root, {"event": "child-credential-failed", "reason": str(error)})
+            return False, "credential", str(error)
         holder["client"] = client
         return _revalidate_with_client(root, client)
 
@@ -1747,9 +1928,13 @@ class ProductionWorld:
         time.sleep(max(0.0, seconds))
 
     def scope_ok(self):
+        """True, False (a scope or config refusal: disarm), or None (credential unavailable: retry)."""
         try:
-            self.client = AppClient.from_config()
+            self.client = make_client()
             self.client.verify_scope()
+        except CredentialUnavailable:
+            self.client = None
+            return None
         except ScopeStop:
             self.client = None
             return False
@@ -1759,10 +1944,11 @@ class ProductionWorld:
         return self.client.list_pulls(headers)
 
     def list_page_url(self, url):
-        return self.client._authed("GET", url, self.client.narrowed_token, remint=self.client._remint_narrowed)
+        return self.client.get_url(url)
 
     def pull(self, number):
         response = self.client.pull(number)
+        raise_if_unavailable(response)
         if response.get("status") != 200:
             return None
         return response.get("body")
@@ -1940,13 +2126,51 @@ class InstallationActor:
         except FileNotFoundError:
             pass
 
+    def remove_gh_config(self):
+        """Only the poller's own credential.json. The gh login itself is not touched."""
+        try:
+            (self.config_dir / "credential.json").unlink()
+        except FileNotFoundError:
+            pass
+
     def remove_local_state(self):
+        """Remove cache/, then state/ with stages.json last. True only when both are gone.
+
+        An absent path is already removed. Any other error is reported and leaves
+        stages.json in place, so a later teardown can retry.
+        """
         state = self.root / "state"
-        for name in ("enabled.json", "current.json", "running.json", "list.json"):
-            try:
-                (state / name).unlink()
-            except FileNotFoundError:
-                pass
+        record = state / "stages.json"
+        try:
+            _remove_path(self.root / "cache")
+            if state.is_dir():
+                for child in state.iterdir():
+                    if child.name != "stages.json":
+                        _remove_path(child)
+                saved = record.read_bytes() if record.exists() else None
+                _remove_path(record)
+                try:
+                    state.rmdir()
+                except OSError:
+                    # The directory stays, so its stage record must stay too.
+                    if saved is not None:
+                        record.write_bytes(saved)
+                    raise
+        except OSError as error:
+            sys.stderr.write("teardown: local state not removed: %s\n" % error)
+            return False
+        return not (self.root / "cache").exists() and not state.exists()
+
+
+def _remove_path(path):
+    path = Path(path)
+    try:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def supervise_cli(root, cycles=None):

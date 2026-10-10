@@ -2,8 +2,10 @@
 """Advisory Atlas poller for same-repo c11 pull requests.
 
 Phase 2 of C11-371. This process is not a GitHub Actions runner. Nothing in
-this file bootstraps a LaunchAgent. Arming waits for an implementation review
-PASS and for Atin to create the GitHub App.
+this file bootstraps a LaunchAgent. `supervise` runs one cycle only when
+state/enabled.json sets enabled to true. The LaunchAgent template does not
+create that file. Arming waits for an implementation review PASS and for Atin
+to create the GitHub App.
 
 R2 amendment (orchestrator, comment on C11-371): a free running.lock is not
 proof that the build is gone. Recovery, and the check before every start,
@@ -55,6 +57,7 @@ KILL_BUDGET_S = 60
 BUDGET_S = 120
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
+DECISION_LIMIT = 200
 KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed"))
 BUILD_ENV_DROP = (
     "C11_BUILD_LOCK",
@@ -147,6 +150,17 @@ def link_next(header):
     return None
 
 
+def header_get(headers, name):
+    """Case-insensitive lookup. Probes and urllib both hand us plain dicts."""
+    if not headers or type(name) is not str:
+        return None
+    wanted = name.lower()
+    for key, value in headers.items():
+        if type(key) is str and key.lower() == wanted:
+            return value
+    return None
+
+
 def parse_retry_after(value, now):
     if value is None:
         return None
@@ -160,7 +174,7 @@ def parse_retry_after(value, now):
 
 
 def reset_wait(headers, now):
-    raw = None if headers is None else headers.get("X-RateLimit-Reset")
+    raw = header_get(headers, "X-RateLimit-Reset")
     if raw is None:
         return None
     try:
@@ -174,9 +188,10 @@ def rate_wait(status, headers, now, needed):
 
     Retry-After and the reset time are honored in full. There is no ceiling.
     A Remaining below what this cycle needs waits until reset instead of polling.
+    Header names are matched without regard to case.
     """
     headers = headers or {}
-    retry = parse_retry_after(headers.get("Retry-After"), now)
+    retry = parse_retry_after(header_get(headers, "Retry-After"), now)
     reset = reset_wait(headers, now)
     if status in (403, 429):
         waits = [item for item in (retry, reset) if item is not None]
@@ -185,7 +200,7 @@ def rate_wait(status, headers, now, needed):
         return max(waits)
     if status == 0:
         return None
-    remaining = headers.get("X-RateLimit-Remaining")
+    remaining = header_get(headers, "X-RateLimit-Remaining")
     if remaining is not None:
         try:
             left = int(remaining)
@@ -452,29 +467,44 @@ def read_running(root):
 
 
 def group_alive(pgid):
-    """True when the recorded group still has a member.
+    """True when the recorded group still has a live member.
 
     killpg(pgid, 0) is the probe. On macOS it can return ESRCH for an
-    orphaned group that ps still lists, so a process-table hit keeps the
-    group alive. A free lock is never enough on its own.
+    orphaned group that ps still lists, so a live process-table hit keeps
+    the group alive. The same call returns EPERM when the only member is an
+    unreaped zombie; a zombie is not a running build. A free lock is never
+    enough on its own.
     """
     if type(pgid) is not int or pgid <= 1:
         return False
     try:
         os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return _pgid_listed(pgid)
-    except PermissionError:
-        return True
+    except (ProcessLookupError, PermissionError):
+        return _pgid_live(pgid)
     return True
 
 
-def _pgid_listed(pgid):
-    listed = subprocess.run(["ps", "-axo", "pgid="], capture_output=True, text=True)
+def _pgid_live(pgid):
+    """True when ps shows a non-zombie member of this process group."""
+    listed = subprocess.run(["ps", "-axo", "pgid=,state="], capture_output=True, text=True)
     if listed.returncode != 0:
         return False
     wanted = str(pgid)
-    return any(line.strip() == wanted for line in listed.stdout.splitlines())
+    for line in listed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0] != wanted:
+            continue
+        if not parts[1].startswith("Z"):
+            return True
+    return False
+
+
+def _signal_group(pgid, sig):
+    """Signal a recorded group. A zombie or a gone group is not an error."""
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def lock_is_free(path):
@@ -531,7 +561,7 @@ def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=
     running.json is removed only after killpg confirms ESRCH.
     """
     alive = alive or group_alive
-    kill = kill or (lambda pgid, sig: os.killpg(pgid, sig))
+    kill = kill or _signal_group
     sleep = sleep or time.sleep
     monotonic = monotonic or time.monotonic
     state = Path(root) / "state"
@@ -664,12 +694,12 @@ def collect_pages(fetch):
         pages.append(response)
         if response.get("status") in (304, 403, 429, 0):
             return pages, False
-        nxt = link_next((response.get("headers") or {}).get("Link"))
+        nxt = link_next(header_get(response.get("headers") or {}, "Link"))
         if not nxt:
             return pages, False
         url = nxt
     last = pages[-1]
-    truncated = link_next((last.get("headers") or {}).get("Link")) is not None
+    truncated = link_next(header_get(last.get("headers") or {}, "Link")) is not None
     return pages, truncated
 
 
@@ -733,8 +763,10 @@ def urllib_transport(method, url, headers, body, timeout=HTTP_TIMEOUT_S):
 class AppClient:
     """GitHub App client. Scope inventory is un-narrowed; status uses a narrowed token.
 
-    A 401 mints once and retries once. There is no fallback to gh, GITHUB_TOKEN,
-    netrc, or the gh config. GET /app/installations/{id} is not called.
+    A 401 mints once for that request and retries once. A later request may mint
+    again. A second 401 on the fresh credential stops that request. There is no
+    fallback to gh, GITHUB_TOKEN, netrc, or the gh config. GET
+    /app/installations/{id} is not called.
     """
 
     def __init__(self, app_id, installation_id, key_path, transport, now=None, sign=None):
@@ -745,7 +777,6 @@ class AppClient:
         self.now = now or time.time
         self.sign = sign or openssl_sign
         self.scoped = False
-        self.refreshed = False
         self.mints = []
         self.unscoped_token = None
         self.narrowed_token = None
@@ -842,15 +873,13 @@ class AppClient:
     def _authed(self, method, url, token, body=None, extra=None, remint=None):
         headers = extra or self._bearer(token)
         response = self._send(method, url, headers, body)
-        if response.get("status") != 401:
+        if response.get("status") != 401 or remint is None:
             return response
-        if self.refreshed or remint is None:
-            return response
-        self.refreshed = True
         fresh = remint()
         headers = dict(headers)
         headers["Authorization"] = "Bearer " + fresh
-        return self._send(method, url, headers, body)
+        retried = self._send(method, url, headers, body)
+        return retried
 
     def _send(self, method, url, headers, body):
         if "/app/installations/" in url and not url.endswith("/access_tokens"):
@@ -895,6 +924,9 @@ class Supervisor:
         self.fetches = []
         self.posts = []
         self.attempt_clock = None
+        self.acquired_at = None
+        self.delivered = False
+        self.stopped = None
 
     def state(self):
         path = self.root / "state"
@@ -908,8 +940,20 @@ class Supervisor:
                 raise ValueError(key)
         record = dict(fields)
         record["ts"] = self.world.time()
-        with (self.state() / "decisions.jsonl").open("a") as handle:
+        path = self.state() / "decisions.jsonl"
+        with path.open("a") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
+        self._trim_decisions(path)
+
+    def _trim_decisions(self, path):
+        """Keep the last DECISION_LIMIT lines. Result directories are not swept."""
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            return
+        if len(lines) <= DECISION_LIMIT:
+            return
+        path.write_text("\n".join(lines[-DECISION_LIMIT:]) + "\n")
 
     def hold_supervisor_lock(self):
         path = self.state() / "supervisor.lock"
@@ -980,9 +1024,9 @@ class Supervisor:
             return "no-build"
         else:
             pages, truncated = self._pages_from(response)
-            if any(page.get("status") in (403, 429, 0) for page in pages):
-                self.log(decision="rate-or-error", status=status)
-                return "no-build"
+            stopped = self._stop_for_later_page(pages)
+            if stopped is not None:
+                return stopped
             body = []
             for page in pages:
                 chunk = page.get("body")
@@ -991,11 +1035,12 @@ class Supervisor:
                     self.log(decision="malformed-list")
                     return "no-build"
                 body.extend(chunk)
-            etag = headers.get("ETag")
+            etag = header_get(headers, "ETag")
             if etag:
                 save_list_store(store, etag, body)
             if truncated:
                 self.log(decision="pr_list_truncated")
+            headers = self._latest_quota(pages, headers)
         admitted = []
         for obj in body:
             ok, reason, captured = admit(obj)
@@ -1028,19 +1073,51 @@ class Supervisor:
 
     def _pages_from(self, first):
         pages = [first]
-        url = link_next((first.get("headers") or {}).get("Link"))
+        url = link_next(header_get(first.get("headers") or {}, "Link"))
         while url and len(pages) < MAX_PAGES:
             page = self.world.list_page_url(url)
             pages.append(page)
             if page.get("status") != 200:
                 break
-            url = link_next((page.get("headers") or {}).get("Link"))
+            url = link_next(header_get(page.get("headers") or {}, "Link"))
         else:
             url = None
         truncated = False
         if len(pages) == MAX_PAGES:
-            truncated = link_next((pages[-1].get("headers") or {}).get("Link")) is not None
+            truncated = link_next(header_get(pages[-1].get("headers") or {}, "Link")) is not None
         return pages, truncated
+
+    def _stop_for_later_page(self, pages):
+        """A page after the first carries its own deadline. It does not disarm on timeout."""
+        for page in pages[1:]:
+            status = page.get("status", 0)
+            page_headers = page.get("headers") or {}
+            if status in (403, 429):
+                wait = rate_wait(status, page_headers, self.world.time(), 1)
+                if wait is None:
+                    self.disarmed = True
+                    self.log(decision="rate-limited-no-deadline", status=status)
+                    return "no-build"
+                self.not_before = self.world.time() + (wait if wait > 0 else CADENCE_S)
+                self.log(decision="rate-or-error", status=status, seconds=wait)
+                return "no-build"
+            if status == 0:
+                self.not_before = self.world.time() + CADENCE_S
+                self.log(decision="timeout")
+                return "no-build"
+            if status != 200:
+                self.log(decision="rate-or-error", status=status)
+                return "no-build"
+        return None
+
+    def _latest_quota(self, pages, fallback):
+        """The newest page that carries Remaining or Reset is this cycle's quota."""
+        chosen = fallback
+        for page in pages:
+            page_headers = page.get("headers") or {}
+            if header_get(page_headers, "X-RateLimit-Remaining") is not None or header_get(page_headers, "X-RateLimit-Reset") is not None:
+                chosen = page_headers
+        return chosen
 
     def _remember_queue(self, admitted):
         known = {item["pr"] for item in self.queue}
@@ -1083,6 +1160,9 @@ class Supervisor:
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
+        redelivered = self._redeliver()
+        if redelivered is not None:
+            return redelivered
         if not self.queue:
             return "idle"
         if self.world.guests():
@@ -1146,16 +1226,35 @@ class Supervisor:
         return True
 
     def _spawn(self, item):
-        invocation = 1
+        self.acquired_at = None
         self.attempt_clock = self.world.time()
-        started = self._spawn_one(item, invocation)
-        if started != "ran":
-            return started
-        if self.world.last_exit == 0 and self._within_budget():
-            return "started"
-        if invocation == 1 and self.world.last_exit != 0:
-            invocation = 2
-            self._spawn_one(item, invocation)
+        self.stopped = None
+        self.delivered = False
+        code = self._spawn_one(item, 1)
+        self._note_acquired()
+        if code == "rejected":
+            self._drop(item)
+            return "rejected"
+        if code != "ran":
+            return code
+        if self.stopped:
+            if self.delivered:
+                self._drop(item)
+            return "stopped"
+        if self.world.last_exit != 0:
+            code = self._spawn_one(item, 2)
+            if code == "rejected":
+                self._drop(item)
+                return "rejected"
+            if code != "ran":
+                return code
+            if self.stopped:
+                if self.delivered:
+                    self._drop(item)
+                return "stopped"
+        self._finish(item, self.world.last_exit)
+        if self.delivered:
+            self._drop(item)
         return "started"
 
     def _spawn_one(self, item, invocation):
@@ -1176,54 +1275,166 @@ class Supervisor:
         self.spawns.append({"command": command, "sha": item["sha"], "result": str(result), "invocation": invocation})
         append_event(self.root, {"event": "spawn", "sha": item["sha"], "invocation": invocation, "result": str(result)})
         exit_code = self.world.spawn(command)
-        self._finish(item, exit_code)
+        self.world.last_exit = exit_code
+        if exit_code in (3, 4):
+            self.log(decision="child-rejected", pr=item["pr"], sha=item["sha"], invocation=invocation, exit=exit_code)
+            return "rejected"
         return "ran"
 
-    def _within_budget(self):
-        return (self.world.time() - self.attempt_clock) <= BUDGET_S
+    def _note_acquired(self):
+        """The child writes acquired_at when it takes the slot. Queue time is earlier."""
+        if self.acquired_at is not None:
+            return
+        recorded = read_running(self.root)
+        if recorded is None:
+            return
+        stamp = recorded.get("acquired_at")
+        if type(stamp) is int or type(stamp) is float:
+            self.acquired_at = stamp
 
-    def _finish(self, item, exit_code):
-        self.world.last_exit = exit_code
-        seconds = self.world.time() - (self.attempt_clock or self.world.time())
+    def _elapsed(self):
+        start = self.acquired_at if self.acquired_at is not None else self.attempt_clock
+        if start is None:
+            return 0
+        return self.world.time() - start
+
+    def _classify(self, exit_code):
+        seconds = self._elapsed()
         state, description = classify_result(self.world.build_log, seconds)
         if exit_code != 0 and state == "success":
             state, description = "failure", "failed %ss" % int(seconds)
-        self._post(item["sha"], state, description)
+        return state, description
 
-    def _post(self, sha, state, description):
+    def _finish(self, item, exit_code):
+        self.world.last_exit = exit_code
+        state, description = self._classify(exit_code)
+        self.delivered = self._post(item["sha"], state, description, pr=item.get("pr"), attempt_id=item.get("attempt_id"))
+        state2, description2 = self._classify(exit_code)
+        if (state2, description2) != (state, description):
+            self.delivered = self._post(item["sha"], state2, description2, pr=item.get("pr"), attempt_id=item.get("attempt_id"))
+
+    def _post(self, sha, state, description, pr=None, attempt_id=None):
         body = status_body(sha, state, description)
         body["sha"] = sha
         self.posts.append(body)
-        self.world.post_status(body)
+        response = self.world.post_status(body)
+        failed = type(response) is dict and response.get("status") not in (200, 201)
+        if failed:
+            self._save_undelivered(sha, state, description, pr, attempt_id)
+            self.log(decision="undelivered", sha=sha, state=state, description=description, status=response.get("status"))
+            return False
         self.log(decision="result", sha=sha, state=state, description=description)
+        return True
 
-    def watch(self, record):
-        """Every 5s while a build runs. Kill our group and post error on yield."""
-        guests = self.world.guests()
+    def _save_undelivered(self, sha, state, description, pr, attempt_id):
+        payload = {
+            "sha": sha,
+            "state": state,
+            "description": description,
+            "pr": pr,
+            "attempt_id": attempt_id,
+        }
+        (self.state() / "undelivered.json").write_text(json.dumps(payload) + "\n")
+
+    def _redeliver(self):
+        """Retry a terminal POST that did not land. Do not start another build for it."""
+        path = self.state() / "undelivered.json"
+        if not path.exists():
+            return None
+        try:
+            saved = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        if type(saved) is not dict or type(saved.get("sha")) is not str:
+            return None
+        if self._post(saved["sha"], saved["state"], saved["description"], pr=saved.get("pr"), attempt_id=saved.get("attempt_id")):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            self._drop_pr(saved.get("pr"))
+            return "redelivered"
+        return "undelivered"
+
+    def _drop(self, item):
+        self._drop_pr(item.get("pr"))
+
+    def _drop_pr(self, number):
+        for index, queued in enumerate(self.queue):
+            if queued.get("pr") == number:
+                self.queue.pop(index)
+                return
+
+    def _pace(self, seconds):
+        """Advance the world's clock, and a real slice when that clock is fake.
+
+        A fake sleep finishes in the same instant, which would SIGKILL a process
+        that is still dying from SIGTERM. A real sleep already covers the slice.
+        """
+        before = time.monotonic()
+        self.world.sleep(seconds)
+        elapsed = time.monotonic() - before
+        floor = min(float(seconds), 0.05)
+        if elapsed < floor:
+            time.sleep(floor - elapsed)
+
+    def _stop_group(self, record):
+        pgid = record.get("pgid")
+        if type(pgid) is not int or pgid <= 1:
+            return False
+        return kill_until_esrch(
+            pgid,
+            self.world.group_alive,
+            self.world.killpg,
+            self._pace,
+            self.world.monotonic,
+            TERM_GRACE_S,
+            KILL_BUDGET_S,
+        )
+
+    def _watch_reason(self, record):
+        if record.get("pr") is not None and record.get("sha") and record.get("ref"):
+            ok, reason, _detail = revalidate(
+                {"pr": record["pr"], "sha": record["sha"], "ref": record["ref"]},
+                lambda number: self.world.pull(number),
+                lambda ref: self.world.ls_remote(ref),
+            )
+            if not ok:
+                return reason
         our = record.get("slot")
         other = None
         if our in (1, 2):
             other = 1 if our == 2 else 2
         other_held = False if other is None else self.world.slot_held(other)
-        reason = yield_reason(guests, our, other_held)
+        return yield_reason(self.world.guests(), our, other_held)
+
+    def watch(self, record):
+        """Every 5s while a build runs. Revalidate, then kill until the group is gone."""
+        reason = self._watch_reason(record)
         if reason is None:
             return None
-        pgid = record.get("pgid")
-        if type(pgid) is int and pgid > 1:
-            try:
-                self.world.killpg(pgid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        self._post(record.get("sha") or "", "error", "yielded to Atlas work")
-        self.log(decision="yielded", reason=reason, pr=record.get("pr"))
+        self.stopped = reason
+        self._stop_group(record)
+        sha = record.get("sha") or ""
+        if reason in ("guest", "slot"):
+            self.delivered = self._post(sha, "error", "yielded to Atlas work", pr=record.get("pr"))
+            self.log(decision="yielded", reason=reason, pr=record.get("pr"))
+        elif reason == "superseded":
+            self.delivered = self._post(sha, "failure", "superseded", pr=record.get("pr"))
+            self.log(decision="superseded", pr=record.get("pr"), sha=sha)
+        elif reason == "revoked":
+            self.delivered = self._post(sha, "failure", "revoked", pr=record.get("pr"))
+            self.log(decision="revoked", pr=record.get("pr"), sha=sha)
+        else:
+            self.delivered = self._post(sha, "failure", reason, pr=record.get("pr"))
+            self.log(decision=reason, pr=record.get("pr"), sha=sha)
         return reason
 
     def watch_while(self, running, record):
-        """Every 5s while running() is true. Returns the yield reason, or None.
+        """Every 5s while running() is true. Returns the stop reason, or None.
 
-        `supervise` does not enter this loop. It stays disarmed until arming
-        is authorized. An armed supervisor passes a running() that is true
-        while its slot process is still alive.
+        An enabled supervise enters this loop after the child writes running.json.
+        An unconfigured supervise never gets here: it exits 2.
         """
         while running():
             reason = self.watch(record)
@@ -1235,7 +1446,7 @@ class Supervisor:
 
 def _remaining(headers):
     try:
-        return int(headers.get("X-RateLimit-Remaining"))
+        return int(header_get(headers, "X-RateLimit-Remaining"))
     except (TypeError, ValueError):
         return 0
 
@@ -1394,6 +1605,323 @@ def run_child_cli(root, exec_argv):
     return child_main(root, exec_argv, revalidate_fn, post_pending)
 
 
+def service_enabled(root):
+    """True only when state/enabled.json sets enabled to the boolean true.
+
+    The LaunchAgent template does not create that file. Bootstrapping the
+    template still exits 2.
+    """
+    path = Path(root) / "state" / "enabled.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if type(data) is not dict or data.get("enabled") is not True:
+        return None
+    return data
+
+
+class ProductionWorld:
+    """Adapters the supervise command uses. Tests inject harness.json and shims.
+
+    C11_POLLER_TEST is never set here. A caller that exports it gets the harness
+    instead of GitHub. Git, tart, zig, and the slot directory follow their env
+    overrides or the real tools.
+    """
+
+    def __init__(self, root, worktree):
+        self.root = Path(root)
+        self.worktree = str(worktree)
+        self.supervisor = None
+        self.client = None
+        self.last_exit = 0
+
+    def bind(self, supervisor):
+        self.supervisor = supervisor
+
+    def _harness(self):
+        try:
+            data = json.loads((self.root / "harness.json").read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if type(data) is dict else {}
+
+    def _test_mode(self):
+        return os.environ.get("C11_POLLER_TEST") == "1"
+
+    def time(self):
+        return time.time()
+
+    def monotonic(self):
+        return time.monotonic()
+
+    def sleep(self, seconds):
+        time.sleep(seconds)
+
+    def scope_ok(self):
+        if self._test_mode():
+            return self._harness().get("scope_ok", True) is True
+        try:
+            self.client = AppClient.from_config()
+            self.client.verify_scope()
+        except ScopeStop:
+            return False
+        return True
+
+    def list_page(self, headers):
+        if self._test_mode():
+            listed = self._harness().get("list")
+            if type(listed) is dict:
+                return listed
+            return {"status": 200, "headers": {}, "body": []}
+        return self.client.list_pulls(headers)
+
+    def list_page_url(self, url):
+        if self._test_mode():
+            pages = self._harness().get("pages")
+            if type(pages) is dict and type(pages.get(url)) is dict:
+                return pages[url]
+            return {"status": 200, "headers": {}, "body": []}
+        return self.client._authed("GET", url, self.client.narrowed_token, remint=self.client._remint_narrowed)
+
+    def pull(self, number):
+        if self._test_mode():
+            harness = self._harness()
+            pulls = harness.get("pulls")
+            if type(pulls) is dict and str(number) in pulls:
+                return pulls[str(number)]
+            if "pr" in harness:
+                return harness["pr"]
+            return None
+        response = self.client.pull(number)
+        if response.get("status") != 200:
+            return None
+        return response.get("body")
+
+    def ls_remote(self, ref):
+        if self._test_mode():
+            text = self._harness().get("ls_remote")
+            if type(text) is str:
+                return text
+        result = run_git(["ls-remote", PARENT_URL, "refs/heads/%s" % ref], self.worktree)
+        if result.returncode != 0:
+            raise ScopeStop("ls-remote")
+        return result.stdout
+
+    def guests(self):
+        tart = os.environ.get("C11_POLLER_TART", "tart")
+        try:
+            result = subprocess.run([tart, "list"], capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            return ["tart-unavailable"]
+        if result.returncode != 0:
+            return ["tart-unavailable"]
+        return running_guests(result.stdout)
+
+    def slot_held(self, number, _probe=slot_held):
+        slots = os.environ.get("C11_ATLAS_SLOTS_DIR", "/tmp/c11-atlas-build-slots")
+        return _probe(slots, number)
+
+    def group_alive(self, pgid, _probe=group_alive):
+        return _probe(pgid)
+
+    def killpg(self, pgid, sig):
+        _signal_group(pgid, sig)
+
+    def git(self, args, cwd):
+        assert_git_args(args)
+        override = os.environ.get("C11_POLLER_GIT")
+        if override:
+            env = git_base_env()
+            spec = os.environ.get("C11_POLLER_GIT_SPEC")
+            if spec:
+                env["C11_POLLER_GIT_SPEC"] = spec
+            return subprocess.run([override, *args], cwd=str(cwd), env=env, capture_output=True, text=True)
+        return run_git(args, cwd)
+
+    def status(self, cwd):
+        result = self.git(["status", "--porcelain=v1", "--ignored"], cwd)
+        return result.stdout or ""
+
+    def ghosttykit(self, sha):
+        cache = os.environ.get("C11_POLLER_KIT_CACHE")
+        if not cache:
+            cache = str(Path.home() / ".cache" / "cmux" / "ghosttykit")
+        return link_ghosttykit(cache, sha, self.worktree)
+
+    def toolchain_ok(self):
+        zig = os.environ.get("C11_POLLER_ZIG") or str(Path.home() / "zig-0.15.2" / "zig")
+        try:
+            result = subprocess.run([zig, "version"], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0 and result.stdout.strip() == "0.15.2"
+
+    def build_argv(self, worktree, derived, result):
+        if self._test_mode():
+            argv = self._harness().get("exec")
+            if type(argv) is list and argv and all(type(item) is str for item in argv):
+                return list(argv)
+        return xcodebuild_argv(worktree, derived, result)
+
+    @property
+    def build_log(self):
+        path = self.root / "state" / "build.log"
+        if path.is_file():
+            return path.read_text()
+        if self._test_mode():
+            text = self._harness().get("build_log")
+            if type(text) is str:
+                return text
+        return ""
+
+    def post_status(self, body):
+        if self._test_mode():
+            status = self._harness().get("post_status", 201)
+            append_event(self.root, {"event": "status-post", "state": body.get("state"), "status": status})
+            if type(status) is int:
+                return {"status": status, "headers": {}, "body": {}}
+            return None
+        if self.client is None:
+            return {"status": 503, "headers": {}, "body": None}
+        try:
+            return self.client.post_status_body(body)
+        except ScopeStop:
+            return {"status": 503, "headers": {}, "body": None}
+
+    def spawn(self, command):
+        proc = subprocess.Popen(command, start_new_session=True)
+        deadline = time.monotonic() + 30
+        while proc.poll() is None and read_running(self.root) is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        record = read_running(self.root)
+        if proc.poll() is None and record is not None and self.supervisor is not None:
+            self.supervisor.watch_while(lambda: proc.poll() is None, record)
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                _signal_group(proc.pid, signal.SIGKILL)
+                proc.wait(timeout=5)
+        self.last_exit = 1 if proc.returncode is None else proc.returncode
+        return self.last_exit
+
+
+class InstallationActor:
+    """Recorded-stage teardown. Test mode never touches the home config or LaunchAgents."""
+
+    def __init__(self, root):
+        self.root = Path(root)
+        override = os.environ.get("C11_POLLER_CONFIG_DIR")
+        if override:
+            self.config_dir = Path(override)
+        elif os.environ.get("C11_POLLER_TEST") == "1":
+            self.config_dir = self.root / "config"
+        else:
+            self.config_dir = Path.home() / ".config" / "c11-pr-swift"
+
+    def _harness(self):
+        try:
+            data = json.loads((self.root / "harness.json").read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if type(data) is dict else {}
+
+    def _plist_path(self):
+        override = os.environ.get("C11_POLLER_PLIST")
+        if override:
+            return Path(override)
+        if os.environ.get("C11_POLLER_TEST") == "1":
+            return self.root / "Library" / "LaunchAgents" / (LABEL + ".plist")
+        return Path.home() / "Library" / "LaunchAgents" / (LABEL + ".plist")
+
+    def bootout(self):
+        launchctl = os.environ.get("C11_POLLER_LAUNCHCTL")
+        if launchctl:
+            subprocess.run([launchctl], capture_output=True)
+            return
+        if os.environ.get("C11_POLLER_TEST") == "1":
+            return
+        subprocess.run(["launchctl", "bootout", "gui/%s/%s" % (os.getuid(), LABEL)], capture_output=True)
+
+    def processes_gone(self):
+        launchctl = os.environ.get("C11_POLLER_LAUNCHCTL")
+        if launchctl:
+            result = subprocess.run([launchctl], capture_output=True)
+            return result.returncode != 0
+        if os.environ.get("C11_POLLER_TEST") == "1":
+            return True
+        result = subprocess.run(
+            ["launchctl", "print", "gui/%s/%s" % (os.getuid(), LABEL)],
+            capture_output=True,
+        )
+        return result.returncode != 0
+
+    def remove_plist(self):
+        try:
+            self._plist_path().unlink()
+        except FileNotFoundError:
+            pass
+
+    def uninstall_app(self):
+        append_event(self.root, {"event": "uninstall_app"})
+
+    def absence_ok(self):
+        if os.environ.get("C11_POLLER_TEST") == "1":
+            status = self._harness().get("app_status", 404)
+            return type(status) is int and status in (401, 404)
+        try:
+            client = AppClient.from_config(self.config_dir)
+            response = client._send("GET", API + "/app", client._bearer(client._jwt()), None)
+        except ScopeStop:
+            return False
+        return response.get("status") in (401, 404)
+
+    def remove_key(self):
+        key = self.config_dir / "private-key.pem"
+        try:
+            key.unlink()
+        except FileNotFoundError:
+            pass
+
+    def remove_local_state(self):
+        state = self.root / "state"
+        for name in ("enabled.json", "current.json", "running.json", "list.json", "undelivered.json"):
+            try:
+                (state / name).unlink()
+            except FileNotFoundError:
+                pass
+
+
+def supervise_cli(root):
+    enabled = service_enabled(root)
+    if enabled is None:
+        sys.stderr.write("supervise is not armed; launchd bootstrap is not authorized\n")
+        return 2
+    worktree = enabled.get("worktree")
+    if type(worktree) is not str or worktree == "":
+        worktree = str(Path(root) / "worktree")
+    if layout_inside_worktree(Path(__file__).resolve(), worktree):
+        sys.stderr.write("supervise refuses to run inside the worktree\n")
+        return 2
+    world = ProductionWorld(root, worktree)
+    supervisor = Supervisor(root, world)
+    world.bind(supervisor)
+    supervisor.poll_once()
+    return 0
+
+
+def teardown_cli(root):
+    path = Path(root) / "state" / "stages.json"
+    try:
+        stages = json.loads(path.read_text())
+    except (OSError, ValueError):
+        stages = []
+    result = teardown(stages, InstallationActor(root))
+    sys.stdout.write(json.dumps(result) + "\n")
+    return 0 if result.get("action") == "done" else 2
+
+
 def hold_supervisor(root):
     """Hold supervisor.lock until SIGTERM. Used so a restart can see a dead supervisor."""
     path = Path(root) / "state"
@@ -1409,7 +1937,7 @@ def hold_supervisor(root):
 def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         sys.stdout.write(
-            "usage: c11-pr-swift-poller.py child|recover|supervise|render-plist|hold-supervisor ...\n"
+            "usage: c11-pr-swift-poller.py child|recover|supervise|teardown|render-plist|hold-supervisor ...\n"
             "Does not bootstrap launchd. See docs/c11-pr-swift-poller.md.\n"
         )
         return 0
@@ -1433,8 +1961,9 @@ def main(argv):
         exec_argv = argv[argv.index("--exec") + 1:]
         return run_child_cli(root, exec_argv)
     if command == "supervise":
-        sys.stderr.write("supervise is not armed; launchd bootstrap is not authorized\n")
-        return 2
+        return supervise_cli(root)
+    if command == "teardown":
+        return teardown_cli(root)
     sys.stderr.write("unknown command\n")
     return 2
 

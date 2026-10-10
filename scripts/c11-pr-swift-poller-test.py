@@ -137,7 +137,10 @@ class World:
         if pgid in self.alive and sig == signal.SIGKILL:
             self.alive[pgid] = False
         elif pgid not in self.alive:
-            os.killpg(pgid, sig)
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
 
     def git(self, args, cwd):
         poller.assert_git_args(args)
@@ -225,11 +228,20 @@ class AdmissionTests(unittest.TestCase):
     def test_force_push_after_ls_remote_still_fetches_captured_sha(self):
         world = World(body=[pr(sha=SHA_A)])
         world.tip = SHA_A
+
+        def ls_remote(ref, _world=world):
+            text = "%s\trefs/heads/%s\n" % (_world.tip, ref)
+            _world.tip = SHA_B
+            return text
+
+        world.ls_remote = ls_remote
         supervisor, _outcome = run(world, self.root)
+        self.assertEqual(world.tip, SHA_B)
         fetched = [args for args, _cwd in world.git_args if args[0] == "fetch"]
         parent = [args for args in fetched if poller.PARENT_URL in args]
         self.assertEqual(len(parent), 1)
         self.assertIn(SHA_A, parent[0])
+        self.assertNotIn(SHA_B, parent[0])
         for args in fetched:
             self.assertNotIn(SHA_B, args)
         self.assertEqual(supervisor.spawns[0]["sha"], SHA_A)
@@ -406,10 +418,12 @@ class CapacityAndRecoveryTests(unittest.TestCase):
 
         reason = supervisor.watch_while(running, {"pgid": 4242, "slot": 1, "sha": SHA_A, "pr": 7})
         self.assertEqual(reason, "guest")
-        self.assertEqual(world.sleeps, [5])
+        self.assertEqual(world.sleeps[0], 5)
         self.assertEqual(world.posts[-1]["state"], "error")
         self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
-        self.assertEqual(world.kill_log[-1], (4242, signal.SIGTERM))
+        self.assertEqual(world.kill_log[0], (4242, signal.SIGTERM))
+        self.assertEqual(world.kill_log[-1], (4242, signal.SIGKILL))
+        self.assertFalse(world.group_alive(4242))
 
     def test_free_lock_clears_a_dead_group_only(self):
         dead = subprocess.Popen(["sleep", "30"], start_new_session=True)
@@ -1029,7 +1043,11 @@ class PollingAndCredentialTests(unittest.TestCase):
         self.assertEqual(seen["mints"], 1)
         second = client.pull(7)
         self.assertEqual(second["status"], 401)
-        self.assertEqual(seen["mints"], 1)
+        self.assertEqual(seen["mints"], 2)
+        self.assertEqual(seen["lists"], 4)
+        third = client.pull(7)
+        self.assertEqual(third["status"], 401)
+        self.assertEqual(seen["mints"], 3)
 
 
 class Actor:
@@ -1129,6 +1147,592 @@ def _git_pair(tmp):
     )
     subprocess.check_call(["git", "commit", "-m", "sub"], cwd=parent, stdout=subprocess.DEVNULL)
     return parent, sub
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    """The review probes, plus the inventory cases those probes do not spell out."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_queue_advances_after_success(self):
+        world = World(body=[pr(), pr(number=8)])
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        world.now += 26
+        supervisor.poll_once()
+        current = json.loads((self.root / "state" / "current.json").read_text())
+        self.assertEqual(current["pr"], 8)
+
+    def test_next_cycle_does_not_reuse_result_path(self):
+        world = World(body=[pr()])
+        spawn = world.spawn
+
+        def run_spawn(command):
+            current = json.loads((self.root / "state" / "current.json").read_text())
+            Path(current["result"]).mkdir(parents=True)
+            return spawn(command)
+
+        world.spawn = run_spawn
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        world.now += 26
+        supervisor.poll_once()
+
+    def test_budget_includes_terminal_post(self):
+        world = World(body=[pr()])
+        spawn = world.spawn
+        post = world.post_status
+
+        def run_spawn(command):
+            world.now += 119
+            return spawn(command)
+
+        def deliver(body):
+            world.now += 5
+            return post(body)
+
+        world.spawn = run_spawn
+        world.post_status = deliver
+        poller.Supervisor(self.root, world).poll_once()
+        self.assertEqual(world.posts[-1]["state"], "failure", str(world.posts[-1]))
+
+    def test_budget_excludes_slot_queue(self):
+        world = World(body=[pr()])
+        spawn = world.spawn
+
+        def run_spawn(command):
+            world.now += 130
+            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
+            world.now += 5
+            return spawn(command)
+
+        world.spawn = run_spawn
+        poller.Supervisor(self.root, world).poll_once()
+        self.assertEqual(world.posts[-1]["state"], "success", str(world.posts[-1]))
+
+    def test_failed_terminal_post_is_not_a_delivered_result(self):
+        world = World(body=[pr()])
+        world.post_status = lambda _body: {"status": 503, "body": {}, "headers": {}}
+        poller.Supervisor(self.root, world).poll_once()
+        events = _decisions(self.root)
+        self.assertFalse(any(item.get("decision") == "result" and item.get("state") == "success" for item in events), str(events[-1]))
+        self.assertTrue(any(item.get("decision") == "undelivered" for item in events))
+
+    def test_second_page_retry_after(self):
+        url = "https://example.test/page2"
+        world = World(body=[pr()], headers={"Link": "<%s>; rel=\"next\"" % url})
+        world.pages[url] = {"status": 429, "headers": {"Retry-After": "7200"}, "body": {}}
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertGreaterEqual(supervisor.not_before, world.now + 7200)
+
+    def test_last_page_remaining(self):
+        url = "https://example.test/page2"
+        world = World(body=[pr()], headers={"Link": "<%s>; rel=\"next\"" % url, "X-RateLimit-Remaining": "10"})
+        world.pages[url] = {
+            "status": 200,
+            "headers": {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1007200"},
+            "body": [],
+        }
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_lowercase_rate_headers(self):
+        world = World(body=[pr()], headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "1007200"})
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_later_page_timeout_backs_off_without_disarming(self):
+        url = "https://example.test/page2"
+        world = World(body=[pr()], headers={"Link": "<%s>; rel=\"next\"" % url})
+        world.pages[url] = {"status": 0, "headers": {}, "body": None}
+        supervisor = poller.Supervisor(self.root, world)
+        outcome = supervisor.poll_once()
+        self.assertEqual(outcome, "no-build")
+        self.assertFalse(supervisor.disarmed)
+        self.assertEqual(supervisor.spawns, [])
+        self.assertGreaterEqual(supervisor.not_before, world.now + poller.CADENCE_S)
+
+    def test_wide_installation_stops_before_narrowed_token(self):
+        self._assert_scope_stops({
+            "total_count": 2,
+            "repositories": [
+                {"id": poller.REPO_ID, "full_name": poller.REPO_NAME},
+                {"id": 1, "full_name": "other/repo"},
+            ],
+        }, 200)
+
+    def test_wrong_repo_id_stops_before_narrowed_token(self):
+        self._assert_scope_stops({
+            "total_count": 1,
+            "repositories": [{"id": 1, "full_name": "other/repo"}],
+        }, 200)
+
+    def test_malformed_inventory_stops_before_narrowed_token(self):
+        self._assert_scope_stops(["not-a-repository-list"], 200)
+
+    def test_inventory_error_stops_before_narrowed_token(self):
+        self._assert_scope_stops({}, 500)
+
+    def _assert_scope_stops(self, body, status):
+        calls = []
+
+        def transport(method, url, headers, payload):
+            calls.append((method, url, payload))
+            if url.endswith("/access_tokens"):
+                return {"status": 201, "body": {"token": "fake"}, "headers": {}}
+            return {"status": status, "body": body, "headers": {}}
+
+        client = poller.AppClient(1, 2, self.root / "unused", transport, sign=lambda *_: b"sig")
+        with self.assertRaises(poller.ScopeStop):
+            client.verify_scope()
+        self.assertEqual(len([item for item in calls if item[1].endswith("/access_tokens")]), 1)
+        self.assertFalse(any(item[1].endswith("/statuses/" + SHA_A) for item in calls))
+
+    def test_second_token_expiry_refreshes(self):
+        seen = {"mints": 0, "pulls": 0}
+
+        def transport(method, url, headers, body):
+            if url.endswith("/access_tokens"):
+                seen["mints"] += 1
+                return {"status": 201, "body": {"token": "tok-%s" % seen["mints"]}, "headers": {}}
+            seen["pulls"] += 1
+            return {"status": 401 if seen["pulls"] % 2 else 200, "body": pr(), "headers": {}}
+
+        client = poller.AppClient(1, 2, self.root / "unused", transport, sign=lambda *_: b"sig")
+        client.scoped = True
+        client.narrowed_token = "initial"
+        self.assertEqual(client.pull(7)["status"], 200)
+        self.assertEqual(client.pull(7)["status"], 200)
+        self.assertEqual(seen["mints"], 2)
+
+    def test_revoked_child_does_not_post_or_retry(self):
+        world = World(body=[pr()])
+        (self.root / "harness.json").write_text(json.dumps({
+            "pr": pr(sha=SHA_B),
+            "ls_remote": SHA_B + "\trefs/heads/feature\n",
+        }))
+
+        def spawn(command):
+            world.spawned.append(command)
+            return subprocess.run(
+                command[3:],
+                env={**os.environ, "C11_POLLER_TEST": "1"},
+                capture_output=True,
+                text=True,
+                timeout=3,
+            ).returncode
+
+        world.spawn = spawn
+        poller.Supervisor(self.root, world).poll_once()
+        self.assertEqual(world.posts, [], str(world.posts))
+        self.assertEqual(len(world.spawned), 1)
+
+    def test_running_sha_change_cancels_group(self):
+        world = World(body=[pr(sha=SHA_B)])
+        world.pull_body = pr(sha=SHA_B)
+        world.alive[4242] = True
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.watch({"pgid": 4242, "slot": 1, "sha": SHA_A, "ref": "feature", "pr": 7})
+        self.assertTrue(world.kill_log)
+        self.assertFalse(world.group_alive(4242))
+
+    def test_yield_waits_for_group_absence(self):
+        marker = self.root / "ready"
+        child = subprocess.Popen(
+            [sys.executable, "-c",
+             "import pathlib,signal,sys,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); pathlib.Path(sys.argv[1]).touch(); time.sleep(30)",
+             str(marker)],
+            start_new_session=True,
+        )
+        try:
+            deadline = time.monotonic() + 3
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(marker.exists())
+            world = World()
+            world.guest_names = ["c11-sb-review"]
+            supervisor = poller.Supervisor(self.root, world)
+            supervisor.watch({"pgid": child.pid, "slot": 1, "sha": SHA_A, "pr": 7})
+            self.assertFalse(poller.group_alive(child.pid), str(world.posts))
+        finally:
+            _kill(child.pid)
+            child.wait(timeout=3)
+
+    def test_decisions_keep_the_last_two_hundred_lines(self):
+        world = World()
+        supervisor = poller.Supervisor(self.root, world)
+        for number in range(205):
+            supervisor.log(decision="note", n=number)
+        lines = (self.root / "state" / "decisions.jsonl").read_text().splitlines()
+        self.assertEqual(len(lines), 200)
+        self.assertEqual(json.loads(lines[0])["n"], 5)
+        self.assertEqual(json.loads(lines[-1])["n"], 204)
+
+
+def _write_exec(path, text):
+    path.write_text(textwrap.dedent(text).lstrip("\n"))
+    path.chmod(0o755)
+
+
+class RuntimeIntegrationTests(unittest.TestCase):
+    """The real supervise and teardown commands. Fake HTTP, real short-lived processes."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.slots = self.root / "slots"
+        self.slots.mkdir()
+        self.work = self.root / "work"
+        (self.work / "ghostty").mkdir(parents=True)
+        (self.work / "vendor" / "bonsplit").mkdir(parents=True)
+        self.kit = self.root / "kit" / SHA_A / "GhosttyKit.xcframework"
+        self.kit.mkdir(parents=True)
+        self.load = self.root / "load.txt"
+        self.load.write_text("1\n")
+        self._shims()
+        self.home_key = Path.home() / ".config" / "c11-pr-swift" / "private-key.pem"
+        self.home_key_existed = self.home_key.exists()
+
+    def tearDown(self):
+        self.assertEqual(self.home_key.exists(), self.home_key_existed)
+        self.tmp.cleanup()
+
+    def _shims(self):
+        self.git_spec = self.root / "git-spec.json"
+        self.git_spec.write_text(json.dumps({
+            "worktree": str(self.work),
+            "sha": SHA_A,
+            "gitlink": GITLINK,
+        }))
+        self.git_bin = self.root / "git-shim"
+        _write_exec(self.git_bin, """
+            #!/usr/bin/env python3
+            import json, os, sys
+            from pathlib import Path
+            spec = json.loads(Path(os.environ["C11_POLLER_GIT_SPEC"]).read_text())
+            args = sys.argv[1:]
+            cwd = str(Path(os.getcwd()).resolve())
+            work = str(Path(spec["worktree"]).resolve())
+            if args[:1] == ["rev-parse"] and len(args) > 1 and args[1] == "HEAD":
+                sys.stdout.write((spec["sha"] if cwd == work else spec["gitlink"]) + "\\n")
+            elif args[:1] == ["rev-parse"] and len(args) > 1 and ":" in args[1]:
+                sys.stdout.write(spec["gitlink"] + "\\n")
+            elif args[:1] == ["status"] and cwd == work:
+                sys.stdout.write("?? GhosttyKit.xcframework\\n")
+            raise SystemExit(0)
+        """)
+        self.tart_bin = self.root / "tart-shim"
+        _write_exec(self.tart_bin, """
+            #!/usr/bin/env python3
+            import os, sys
+            flag = os.environ.get("C11_POLLER_GUEST_FLAG")
+            if flag and os.path.exists(flag):
+                sys.stdout.write("local c11-sb-demo running\\n")
+            elif os.environ.get("C11_POLLER_TART_MODE") == "guest":
+                sys.stdout.write("local c11-sb-demo running\\n")
+            else:
+                sys.stdout.write("local c11-sb-demo stopped\\n")
+            raise SystemExit(0)
+        """)
+        self.zig_bin = self.root / "zig-shim"
+        _write_exec(self.zig_bin, """
+            #!/usr/bin/env python3
+            import sys
+            if sys.argv[1:] == ["version"]:
+                sys.stdout.write("0.15.2\\n")
+            raise SystemExit(0)
+        """)
+
+    def _enable(self):
+        state = self.root / "state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "enabled.json").write_text(json.dumps({"enabled": True, "worktree": str(self.work)}) + "\n")
+
+    def _env(self, **extra):
+        env = os.environ.copy()
+        env["C11_POLLER_TEST"] = "1"
+        env["C11_POLLER_TART"] = str(self.tart_bin)
+        env["C11_POLLER_GIT"] = str(self.git_bin)
+        env["C11_POLLER_GIT_SPEC"] = str(self.git_spec)
+        env["C11_POLLER_ZIG"] = str(self.zig_bin)
+        env["C11_POLLER_KIT_CACHE"] = str(self.root / "kit")
+        env["C11_ATLAS_SLOTS_DIR"] = str(self.slots)
+        env["C11_ATLAS_LOAD_FILE"] = str(self.load)
+        env["C11_ATLAS_SLOT_POLL_SECONDS"] = "0.05"
+        env["HOME"] = str(self.root)
+        env.pop("C11_BUILD_LOCK", None)
+        env.update(extra)
+        return env
+
+    def _harness(self, exec_argv, **extra):
+        payload = {
+            "list": {
+                "status": 200,
+                "headers": {"X-RateLimit-Remaining": "4000", "ETag": "\"list\""},
+                "body": [pr()],
+            },
+            "pr": pr(),
+            "ls_remote": "%s\trefs/heads/feature\n" % SHA_A,
+            "build_log": "HealthFlagsTests\n** TEST SUCCEEDED **\nExecuted 1 test\n",
+            "exec": exec_argv,
+            "scope_ok": True,
+            "post_status": 201,
+        }
+        payload.update(extra)
+        (self.root / "harness.json").write_text(json.dumps(payload) + "\n")
+
+    def _supervise(self, env, timeout):
+        return subprocess.run(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    def test_disabled_file_still_exits_2(self):
+        state = self.root / "state"
+        state.mkdir()
+        (state / "enabled.json").write_text('{"enabled": false}\n')
+        result = self._supervise(self._env(), 10)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("not armed", result.stderr)
+        self.assertFalse((state / "decisions.jsonl").exists())
+
+    def test_layout_inside_the_worktree_exits_2(self):
+        state = self.root / "state"
+        state.mkdir()
+        (state / "enabled.json").write_text(json.dumps({
+            "enabled": True,
+            "worktree": str(ROOT.parent),
+        }) + "\n")
+        result = self._supervise(self._env(), 10)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("worktree", result.stderr)
+        self.assertFalse((state / "decisions.jsonl").exists())
+
+    def test_guest_at_start_does_not_fetch(self):
+        self._enable()
+        ran = self.root / "should-not-run"
+        self._harness([sys.executable, "-c", "open(%r,'w').write('ran')" % str(ran)])
+        result = self._supervise(self._env(C11_POLLER_TART_MODE="guest"), 15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(ran.exists())
+        self.assertTrue(any(item.get("decision") == "no-start" and item.get("reason") == "guest" for item in _decisions(self.root)))
+        self.assertNotIn("spawn", _events(self.root))
+
+    def test_held_slot_at_start_does_not_fetch(self):
+        self._enable()
+        ran = self.root / "should-not-run"
+        self._harness([sys.executable, "-c", "open(%r,'w').write('ran')" % str(ran)])
+        lock = self.slots / "slot-1.lock"
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600); fcntl.flock(fd, fcntl.LOCK_EX); time.sleep(30)",
+             str(lock)],
+        )
+        try:
+            deadline = time.time() + 3
+            while time.time() < deadline and not poller.slot_held(self.slots, 1):
+                time.sleep(0.05)
+            self.assertTrue(poller.slot_held(self.slots, 1))
+            result = self._supervise(self._env(), 15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(ran.exists())
+            self.assertTrue(any(item.get("decision") == "no-start" and item.get("reason") == "slot" for item in _decisions(self.root)))
+            self.assertNotIn("spawn", _events(self.root))
+        finally:
+            holder.kill()
+            holder.wait(timeout=5)
+
+    def test_spawn_posts_through_the_real_entrypoint(self):
+        self._enable()
+        flag = self.root / "child-ran"
+        self._harness([sys.executable, "-c", "open(%r,'w').write('ok')" % str(flag)])
+        result = self._supervise(self._env(), 20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(flag.exists())
+        self.assertTrue(any(
+            item.get("decision") == "result" and item.get("state") == "success"
+            for item in _decisions(self.root)
+        ), _decisions(self.root))
+        self.assertIn("status-post", _events(self.root))
+
+    def test_guest_during_the_build_stops_the_group(self):
+        self._enable()
+        flag = self.root / "guest-flag"
+        ready = self.root / "child-ready"
+        self._harness([
+            sys.executable, "-c",
+            "import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); pathlib.Path(sys.argv[2]).write_text('up'); time.sleep(40)",
+            str(flag), str(ready),
+        ])
+        proc = subprocess.Popen(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
+            env=self._env(C11_POLLER_GUEST_FLAG=str(flag)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            _wait_for(ready, timeout=20)
+            out, err = proc.communicate(timeout=20)
+        except Exception:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "guest" for item in _decisions(self.root)))
+        self.assertTrue(any(item.get("state") == "error" for item in _decisions(self.root) if item.get("decision") == "result"))
+
+    def test_other_slot_during_the_build_stops_the_group(self):
+        self._enable()
+        ready = self.root / "child-ready"
+        self._harness([
+            sys.executable, "-c",
+            "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('up'); time.sleep(40)",
+            str(ready),
+        ])
+        proc = subprocess.Popen(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
+            env=self._env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        lock = None
+        try:
+            _wait_for(ready, timeout=20)
+            lock_path = self.slots / "slot-2.lock"
+            lock = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            out, err = proc.communicate(timeout=20)
+        except Exception:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise
+        finally:
+            if lock is not None:
+                os.close(lock)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "slot" for item in _decisions(self.root)))
+
+    def test_sha_change_kills_until_the_group_is_absent(self):
+        self._enable()
+        ready = self.root / "child-ready"
+        script = (
+            "import json,os,pathlib,signal,sys,time\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "path = pathlib.Path(sys.argv[1])\n"
+            "data = json.loads(path.read_text())\n"
+            "data['pr']['head']['sha'] = '%s'\n"
+            "data['ls_remote'] = '%s\\trefs/heads/feature\\n'\n"
+            "temporary = path.with_suffix('.tmp')\n"
+            "temporary.write_text(json.dumps(data))\n"
+            "os.replace(temporary, path)\n"
+            "pathlib.Path(sys.argv[2]).write_text(str(os.getpgrp()))\n"
+            "time.sleep(60)\n"
+        ) % (SHA_B, SHA_B)
+        self._harness([sys.executable, "-c", script, str(self.root / "harness.json"), str(ready)])
+        proc = subprocess.Popen(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
+            env=self._env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            _wait_for(ready, timeout=20)
+            pgid = int(ready.read_text())
+            out, err = proc.communicate(timeout=30)
+        except Exception:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertFalse(poller.group_alive(pgid), _decisions(self.root))
+        self.assertTrue(any(item.get("description") == "superseded" for item in _decisions(self.root)))
+
+    def test_partial_teardown_keeps_the_key_when_the_app_remains(self):
+        config = self.root / "config"
+        config.mkdir()
+        key = config / "private-key.pem"
+        key.write_text("not-a-real-key\n")
+        state = self.root / "state"
+        state.mkdir()
+        (state / "stages.json").write_text(json.dumps(["app_installed", "key_placed"]) + "\n")
+        (self.root / "harness.json").write_text(json.dumps({"app_status": 200}) + "\n")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
+            env=self._env(C11_POLLER_CONFIG_DIR=str(config)),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        body = json.loads(result.stdout)
+        self.assertEqual(body["action"], "stop")
+        self.assertNotIn("key_placed", body["removed"])
+        self.assertTrue(key.exists())
+        self.assertNotIn("remove_key", result.stdout)
+
+    def test_teardown_removes_the_key_only_after_absence(self):
+        config = self.root / "config"
+        config.mkdir()
+        key = config / "private-key.pem"
+        key.write_text("not-a-real-key\n")
+        state = self.root / "state"
+        state.mkdir()
+        (state / "stages.json").write_text(json.dumps(["app_installed", "key_placed"]) + "\n")
+        (self.root / "harness.json").write_text(json.dumps({"app_status": 404}) + "\n")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
+            env=self._env(C11_POLLER_CONFIG_DIR=str(config)),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        body = json.loads(result.stdout)
+        self.assertEqual(body["action"], "done")
+        self.assertIn("key_placed", body["removed"])
+        self.assertFalse(key.exists())
+
+    def test_loaded_plist_stops_before_the_key_is_removed(self):
+        config = self.root / "config"
+        config.mkdir()
+        key = config / "private-key.pem"
+        key.write_text("not-a-real-key\n")
+        plist = self.root / "agent.plist"
+        plist.write_text("plist\n")
+        launch = self.root / "launchctl-shim"
+        _write_exec(launch, "#!/bin/sh\nexit 0\n")
+        state = self.root / "state"
+        state.mkdir()
+        (state / "stages.json").write_text(json.dumps(["plist_installed", "key_placed"]) + "\n")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
+            env=self._env(
+                C11_POLLER_CONFIG_DIR=str(config),
+                C11_POLLER_LAUNCHCTL=str(launch),
+                C11_POLLER_PLIST=str(plist),
+            ),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(key.exists())
+        self.assertTrue(plist.exists())
 
 
 if __name__ == "__main__":

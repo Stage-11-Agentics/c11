@@ -375,6 +375,149 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertEqual(indexer.ignoredEventPaths(paths), [])
     }
 
+    func testRepositoryConfigCannotRunCommandsWhenTheIndexListsOrChecksIgnores() async throws {
+        // A hostile `.git/config` (an extracted archive can ship one) names two
+        // programs git starts on its own during read-only listing: an fsmonitor
+        // hook, run on every index read, and an `ext::` transport, run by a lazy
+        // fetch for the missing blob of a skip-worktree `.gitignore` in a
+        // partial clone. Each writes a marker file when it runs.
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        let elsewhere = temp.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("docs"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("ignored"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try Data("# Reader\n".utf8).write(to: root.appendingPathComponent("reader.md"))
+        try Data("ignored/\n".utf8).write(to: root.appendingPathComponent(".gitignore"))
+        try Data("hidden.md\n".utf8).write(to: root.appendingPathComponent("sub/.gitignore"))
+        let commit = ["-c", "user.name=c11", "-c", "user.email=c11@example.invalid", "-c", "commit.gpgsign=false"]
+        try runGit(root, ["init", "-q"])
+        try runGit(root, ["add", "-A"])
+        try runGit(root, commit + ["commit", "-q", "--no-verify", "-m", "init"])
+        let blob = try gitOutput(root, ["rev-parse", "HEAD:sub/.gitignore"])
+        try runGit(root, ["update-index", "--skip-worktree", "sub/.gitignore"])
+        try FileManager.default.removeItem(at: root.appendingPathComponent("sub/.gitignore"))
+        try FileManager.default.removeItem(at: root.appendingPathComponent(
+            ".git/objects/\(blob.prefix(2))/\(blob.dropFirst(2))"
+        ))
+        try runGit(root, ["config", "core.repositoryformatversion", "1"])
+        try Data("# Untracked\n".utf8).write(to: root.appendingPathComponent("docs/untracked.md"))
+        try Data("# Noise\n".utf8).write(to: root.appendingPathComponent("ignored/noise.md"))
+        try Data("# Hidden\n".utf8).write(to: root.appendingPathComponent("sub/hidden.md"))
+
+        let fsmonitorMarker = temp.appendingPathComponent("fsmonitor-ran")
+        let transportMarker = temp.appendingPathComponent("transport-ran")
+        let fsmonitor = try markerScript(temp.appendingPathComponent("fsmonitor.sh"), touching: fsmonitorMarker)
+        let transport = try markerScript(temp.appendingPathComponent("transport.sh"), touching: transportMarker)
+        // `protocol.ext.allow` outranks a command-line `protocol.allow=never`.
+        try appendConfig(root, """
+        [core]
+        \tfsmonitor = \(fsmonitor.path)
+        \tuntrackedCache = true
+        [protocol "ext"]
+        \tallow = always
+        [remote "origin"]
+        \turl = ext::\(transport.path) %S
+        \tpromisor = true
+        [extensions]
+        \tpartialClone = origin
+
+        """)
+
+        // The fixture is live: plain git runs both programs.
+        _ = try? gitOutput(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fsmonitorMarker.path), "fixture: fsmonitor hook should run under plain git")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: transportMarker.path), "fixture: lazy fetch should run the ext:: transport under plain git")
+        try? FileManager.default.removeItem(at: fsmonitorMarker)
+        try? FileManager.default.removeItem(at: transportMarker)
+
+        // core.worktree would move the listing and the ignore rules elsewhere.
+        try appendConfig(root, "[core]\n\tworktree = \(elsewhere.path)\n")
+
+        let reader = root.appendingPathComponent("reader.md")
+        let indexer = MarkdownCorpusIndexer(fileURL: reader) { _ in }
+        let snapshot = await scan(indexer)
+        let listed = Set(snapshot.documents.map(\.relativePath))
+        XCTAssertTrue(listed.isSuperset(of: ["reader.md", "docs/untracked.md"]), "listed: \(listed.sorted())")
+        XCTAssertFalse(listed.contains("ignored/noise.md"), "the listing comes from git, which honors .gitignore; the fallback walk does not")
+
+        let canonicalRoot = indexer.rootURL
+        let noise = canonicalRoot.appendingPathComponent("ignored/noise.md").path
+        let ignored = indexer.ignoredEventPaths([
+            noise,
+            canonicalRoot.appendingPathComponent("reader.md").path,
+            canonicalRoot.appendingPathComponent("sub/hidden.md").path,
+        ])
+        XCTAssertEqual(ignored, [noise])
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fsmonitorMarker.path), "repository core.fsmonitor ran")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: transportMarker.path), "repository promisor remote ran its transport")
+        indexer.stop()
+
+        // Git without the GIT_NO_LAZY_FETCH backport still starts the fetch.
+        // GIT_ALLOW_PROTOCOL alone must stop the transport there; without it,
+        // the transport runs.
+        func listWithoutLazyFetchGuard(keepingProtocolAllowList: Bool) throws {
+            let process = UntrustedRepositoryGit.process(in: canonicalRoot, arguments: [
+                "ls-files", "--cached", "--others", "--exclude-standard", "-z"
+            ])
+            process.environment?["GIT_NO_LAZY_FETCH"] = "0"
+            if !keepingProtocolAllowList { process.environment?["GIT_ALLOW_PROTOCOL"] = nil }
+            process.standardOutput = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+        }
+        try listWithoutLazyFetchGuard(keepingProtocolAllowList: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: transportMarker.path), "GIT_ALLOW_PROTOCOL did not stop the lazy-fetch transport")
+        try listWithoutLazyFetchGuard(keepingProtocolAllowList: false)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: transportMarker.path), "fixture: without both guards the transport should run")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fsmonitorMarker.path), "repository core.fsmonitor ran")
+    }
+
+    func testGitBlockedOnAFIFOIsKilledAtTheTimeout() throws {
+        // A FIFO named .gitignore blocks git's read until a writer appears.
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try runGit(root, ["init", "-q"])
+        try Data("# Reader\n".utf8).write(to: root.appendingPathComponent("reader.md"))
+        XCTAssertEqual(mkfifo(root.appendingPathComponent(".gitignore").path, 0o644), 0)
+
+        let started = Date()
+        let result = UntrustedRepositoryGit.run(
+            in: root.resolvingSymlinksInPath(),
+            arguments: ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            timeout: 1
+        )
+        XCTAssertNil(result)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+    }
+
+    func testIgnoreCheckSkipsPathsGitWouldReadAsPathspecMagic() throws {
+        // `check-ignore --stdin` parses a leading `:` as pathspec magic and
+        // fails the whole batch; one such filename must not hide the others.
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("ignored"), withIntermediateDirectories: true)
+        try runGit(root, ["init", "-q"])
+        try Data("ignored/\n".utf8).write(to: root.appendingPathComponent(".gitignore"))
+        let reader = root.appendingPathComponent("reader.md")
+        try Data("# Reader\n".utf8).write(to: reader)
+
+        let indexer = MarkdownCorpusIndexer(fileURL: reader) { _ in }
+        let canonicalRoot = indexer.rootURL
+        let noise = canonicalRoot.appendingPathComponent("ignored/noise.md").path
+        let ignored = indexer.ignoredEventPaths([
+            canonicalRoot.appendingPathComponent(":(glob)odd.md").path,
+            noise,
+        ])
+        XCTAssertEqual(ignored, [noise])
+    }
+
     func testNonMarkdownFilesystemWriteAndUnchangedRescanDoNotPublish() async throws {
         final class Counter: @unchecked Sendable {
             private let lock = NSLock()
@@ -442,5 +585,32 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         try process.run()
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0, "git \(arguments.joined(separator: " "))")
+    }
+
+    private func gitOutput(_ directory: URL, _ arguments: [String]) throws -> String {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory.path] + arguments
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func appendConfig(_ repository: URL, _ text: String) throws {
+        let handle = try FileHandle(forWritingTo: repository.appendingPathComponent(".git/config"))
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(text.utf8))
+    }
+
+    private func markerScript(_ script: URL, touching marker: URL) throws -> URL {
+        try Data("#!/bin/sh\n/usr/bin/touch '\(marker.path)'\nexit 0\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        return script
     }
 }

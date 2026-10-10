@@ -427,46 +427,25 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             guard standardized.hasPrefix(rootPrefix) else { return nil }
             return (standardized, String(standardized.dropFirst(rootPrefix.count)))
         }
-        guard !eventPairs.isEmpty else { return [] }
+        // git reads each stdin path as a pathspec, so a leading `:` is magic
+        // and fails the whole batch. Such a path counts as not ignored.
+        let queryPairs = eventPairs.filter { !$0.relative.hasPrefix(":") }
+        guard !queryPairs.isEmpty else { return [] }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", rootURL.path, "check-ignore", "-z", "--stdin"]
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            var bytes = Data()
-            for pair in eventPairs {
-                bytes.append(contentsOf: pair.relative.utf8)
-                bytes.append(0)
-            }
-            let inputBytes = bytes
-            let writeFinished = DispatchSemaphore(value: 0)
-            DispatchQueue.global(qos: .utility).async {
-                // git exits without reading stdin outside a repository. With
-                // SIGPIPE off for this fd, the throwing write reports EPIPE;
-                // write(_:) would raise an exception that ends the app.
-                let writer = input.fileHandleForWriting
-                _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
-                try? writer.write(contentsOf: inputBytes)
-                try? writer.close()
-                writeFinished.signal()
-            }
-            let ignoredData = output.fileHandleForReading.readDataToEndOfFile()
-            writeFinished.wait()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return [] }
-            let ignored = Set(ignoredData.split(separator: 0).map { String(decoding: $0, as: UTF8.self) })
-            return Set(eventPairs.compactMap { pair in
-                ignored.contains(pair.relative) ? pair.absolute : nil
-            })
-        } catch {
-            return []
+        var input = Data()
+        for pair in queryPairs {
+            input.append(contentsOf: pair.relative.utf8)
+            input.append(0)
         }
+        guard let result = UntrustedRepositoryGit.run(
+            in: rootURL,
+            arguments: ["check-ignore", "-z", "--stdin"],
+            input: input
+        ), result.status == 0 else { return [] }
+        let ignored = Set(result.output.split(separator: 0).map { String(decoding: $0, as: UTF8.self) })
+        return Set(queryPairs.compactMap { pair in
+            ignored.contains(pair.relative) ? pair.absolute : nil
+        })
     }
 
     private func stopWatcherOnQueue() {
@@ -697,27 +676,16 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     }
 
     private func repositoryPaths(rootURL: URL) -> [String]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = [
-            "-C", rootURL.path, "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+        // A listing that runs out of time falls back to the capped walk, which
+        // ignores .gitignore, so give a very large checkout room to finish.
+        guard let result = UntrustedRepositoryGit.run(in: rootURL, arguments: [
+            "ls-files", "--cached", "--others", "--exclude-standard", "-z",
             "--", "*.md", "*.markdown", "*.mdown"
-        ]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            return data.split(separator: 0).compactMap { bytes in
-                let path = String(decoding: bytes, as: UTF8.self)
-                guard !path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { return nil }
-                return path
-            }
-        } catch {
-            return nil
+        ], timeout: 30), result.status == 0 else { return nil }
+        return result.output.split(separator: 0).compactMap { bytes in
+            let path = String(decoding: bytes, as: UTF8.self)
+            guard !path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { return nil }
+            return path
         }
     }
 

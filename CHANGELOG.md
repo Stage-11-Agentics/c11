@@ -14,6 +14,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 - **Event log files are private to your account.** The event log records sent text, but 1.0 created its files `0644`. New files are `0600` in a `0700` directory, and launch tightens the files and directory 1.0 left behind. A launch that reuses an old process id no longer appends to that process's log, so the older history still ages out. ([#643](https://github.com/Stage-11-Agentics/c11/pull/643))
 
+### Security
+
+- **Opening a markdown file no longer runs programs named in its repository's git config.** The reader's search index runs git with the repository's fsmonitor hook, hooks, lazy fetches and network transports switched off. A `.git/config` shipped inside an extracted archive can no longer run a command as you when you open or restore a markdown file there. ([#647](https://github.com/Stage-11-Agentics/c11/pull/647))
+
 ## [1.0.0] - 2026-10-06
 
 Headline: **c11 1.0. The vocabulary settles on window → workspace → area → panel. Agents get a Feed, a lifecycle journal and mail that arrives. A full fleet no longer hangs the app or costs you a session.**

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -13,6 +14,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -1079,6 +1081,9 @@ class Actor:
     def remove_local_state(self):
         self.calls.append("remove_local_state")
 
+    def remove_gh_config(self):
+        self.calls.append("remove_gh_config")
+
 
 def _decisions(root):
     path = Path(root) / "state" / "decisions.jsonl"
@@ -1536,7 +1541,7 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(json.loads(lines[-1])["n"], 204)
 
 
-class RuntimeIntegrationTests(unittest.TestCase):
+class RuntimeHarness(unittest.TestCase):
     """The real supervise and teardown commands.
 
     Fake GitHub at the HTTP transport (real AppClient, real JWT signing with a
@@ -1660,6 +1665,9 @@ class RuntimeIntegrationTests(unittest.TestCase):
         state.mkdir(exist_ok=True)
         (state / "stages.json").write_text(json.dumps(stages) + "\n")
 
+
+
+class RuntimeIntegrationTests(RuntimeHarness):
     # B1: gates.
 
     def test_disabled_file_still_exits_2(self):
@@ -1944,6 +1952,155 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.github.config / "private-key.pem").exists())
         self.assertFalse(plist.exists())
+
+
+
+GH_TOKEN_FIXTURE = "gho_fixture0token0not0real"
+
+
+class GhModeTests(RuntimeHarness):
+    """gh mode: the Atlas gh login, read through a fake `gh` on PATH."""
+
+    def setUp(self):
+        super().setUp()
+        (self.github.config / "app.json").unlink()
+        (self.github.config / "credential.json").write_text(json.dumps({"mode": "gh"}))
+        self.github.put("GET", "/repos/Stage-11-Agentics/c11", {"status": 200, "body": {
+            "id": poller.REPO_ID, "full_name": poller.REPO_NAME, "permissions": {"push": True},
+        }}, suffix=True)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.gh_calls = self.root / "gh-calls"
+        self.fake_gh(ok_calls=None)
+        self.gh_login = self.root / ".config" / "gh" / "hosts.yml"
+        self.gh_login.parent.mkdir(parents=True)
+        self.gh_login.write_text("github.com:\n    user: fixture\n")
+
+    def fake_gh(self, ok_calls):
+        """Answers `gh auth token` with the fixture token; after ok_calls answers, fails."""
+        _write_exec(self.bin / "gh", """
+            #!/usr/bin/env python3
+            import os, sys
+            calls = %r
+            with open(calls, "a") as handle:
+                handle.write(" ".join(sys.argv[1:]) + " env=" + str(bool(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))) + "\\n")
+            used = sum(1 for _ in open(calls))
+            limit = %r
+            if sys.argv[1:3] != ["auth", "token"] or (limit is not None and used > limit):
+                sys.stderr.write("gh: not logged in\\n")
+                raise SystemExit(1)
+            sys.stdout.write(%r + "\\n")
+        """ % (str(self.gh_calls), ok_calls, GH_TOKEN_FIXTURE))
+
+    def _env(self, **extra):
+        env = super()._env(**extra)
+        env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
+        env["GH_TOKEN"] = "env-token-must-not-be-used"
+        return env
+
+    def _all_text(self):
+        texts = []
+        for path in self.root.rglob("*"):
+            if path.is_file() and path.name != "gh" and path.suffix != ".pem":
+                texts.append(path.read_text(errors="replace"))
+        return "\n".join(texts)
+
+    def test_gh_mode_posts_with_the_login_token(self):
+        self._enable()
+        result = self._supervise(cycles=1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "success"])
+        requests = self.github.requests()
+        self.assertFalse(any("/access_tokens" in item["url"] for item in requests))
+        digest = hashlib.sha256(GH_TOKEN_FIXTURE.encode()).hexdigest()
+        self.assertTrue(requests)
+        self.assertTrue(all(item["bearer_sha256"] == digest for item in requests), requests)
+        self.assertEqual(requests[0]["url"], "https://api.github.com/repos/Stage-11-Agentics/c11")
+        calls = self.gh_calls.read_text().splitlines()
+        self.assertTrue(all(line == "auth token --hostname github.com env=False" for line in calls), calls)
+        self.assertGreaterEqual(len(calls), len(requests))
+        self.assertNotIn(GH_TOKEN_FIXTURE, self._all_text() + result.stdout + result.stderr)
+        self.assertEqual(self.gh_login.read_text(), "github.com:\n    user: fixture\n")
+
+    def test_gh_failure_skips_and_logs_without_disarming(self):
+        self._enable()
+        self.fake_gh(ok_calls=0)
+        result = self._supervise(cycles=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decisions = [item.get("decision") for item in _decisions(self.root)]
+        self.assertEqual(decisions.count("credential-unavailable"), 2, decisions)
+        self.assertNotIn("scope-stop", decisions)
+        self.assertEqual(self.github.requests(), [])
+        self.assertFalse((self.root / "argv.jsonl").exists())
+
+    def test_gh_failure_after_scope_skips_the_cycle(self):
+        self._enable()
+        self.fake_gh(ok_calls=1)
+        result = self._supervise(cycles=1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("credential-unavailable", [item.get("decision") for item in _decisions(self.root)])
+        self.assertEqual([item["url"] for item in self.github.requests()], ["https://api.github.com/repos/Stage-11-Agentics/c11"])
+        self.assertFalse((self.root / "argv.jsonl").exists())
+
+    def test_gh_scope_needs_c11_with_push(self):
+        self._enable()
+        bodies = {
+            "no-push": {"id": poller.REPO_ID, "full_name": poller.REPO_NAME, "permissions": {"push": False}},
+            "other-id": {"id": 1, "full_name": poller.REPO_NAME, "permissions": {"push": True}},
+        }
+        for name, body in bodies.items():
+            with self.subTest(name=name):
+                self.github.put("GET", "/repos/Stage-11-Agentics/c11", {"status": 200, "body": body}, suffix=True)
+                (self.github.dir / "requests.jsonl").unlink(missing_ok=True)
+                result = self._supervise(cycles=1)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(_decisions(self.root)[-1]["decision"], "scope-stop")
+                self.assertEqual(len(self.github.requests()), 1)
+        self.assertFalse((self.root / "argv.jsonl").exists())
+
+    def test_child_with_a_failing_gh_refuses_before_pending(self):
+        state = self.root / "state"
+        state.mkdir()
+        (state / "current.json").write_text(json.dumps({
+            "attempt_id": "attempt", "invocation": 1, "pr": 7, "sha": SHA_A, "ref": "feature",
+        }))
+        self.fake_gh(ok_calls=0)
+        sentinel = self.root / "should-not-run"
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "child", "--root", str(self.root),
+             "--exec", sys.executable, "-c", "open(%r,'w').write('ran')" % str(sentinel)],
+            env=self._env(), capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertFalse(sentinel.exists())
+        self.assertIn("child-credential-failed", _events(self.root))
+        self.assertEqual(self.github.statuses(), [])
+
+    def test_gh_teardown_is_bootout_plus_state_removal(self):
+        plist = self.root / "agent.plist"
+        plist.write_text("plist\n")
+        launch = self.root / "launchctl-shim"
+        _write_exec(launch, "#!/bin/sh\n[ \"$1\" = print ] && exit 113\nexit 0\n")
+        self._stages(["plist_installed", "gh_configured"])
+        (self.root / "cache" / "DerivedData").mkdir(parents=True)
+        result = self._teardown(C11_POLLER_LAUNCHCTL=str(launch), C11_POLLER_PLIST=str(plist))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["removed"], ["plist_installed", "gh_configured"])
+        self.assertFalse(plist.exists())
+        self.assertFalse((self.github.config / "credential.json").exists())
+        self.assertFalse((self.root / "state").exists())
+        self.assertFalse((self.root / "cache").exists())
+        self.assertEqual(self.github.requests(), [])
+        self.assertEqual(self.gh_login.read_text(), "github.com:\n    user: fixture\n")
+
+    def test_app_json_selects_app_mode(self):
+        (self.github.config / "app.json").write_text(json.dumps({"app_id": APP_ID, "installation_id": INSTALLATION_ID}))
+        with unittest.mock.patch.dict(os.environ, {"C11_POLLER_CONFIG_DIR": str(self.github.config)}):
+            self.assertIsInstance(poller.make_client(), poller.AppClient)
+            (self.github.config / "app.json").unlink()
+            self.assertIsInstance(poller.make_client(), poller.GhClient)
+            (self.github.config / "credential.json").unlink()
+            self.assertRaises(poller.ScopeStop, poller.make_client)
 
 
 if __name__ == "__main__":

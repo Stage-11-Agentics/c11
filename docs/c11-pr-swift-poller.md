@@ -4,11 +4,11 @@ Advisory commit status `c11/pr-swift` for open pull requests whose head and base
 
 The poller runs as the existing Atlas user, the same trust boundary as `remote-build.sh`. It yields when a `c11-sb-*` guest is running or an Atlas build slot is held, and while a build is running it checks again every 5 seconds. A new guest or the other slot's lock kills that build's process group and posts status `error` with description `yielded to Atlas work`. Pending (`build started`) is posted only after the second revalidation, immediately before exec. It does not reserve memory and it does not change `atlas_build_slots.py` or `remote_build.py`.
 
-Nothing in this tree bootstraps the LaunchAgent. Arming waits for an implementation review PASS and for Atin to create the GitHub App. `c11-pr-swift-poller.py supervise` exits 2 unless `state/enabled.json` sets `enabled` to true, and exits 2 when the script sits inside the build worktree. The LaunchAgent template does not create that file, and this tree does not install it.
+Nothing in this tree bootstraps the LaunchAgent. Arming waits for Atin's GO-LIVE. `c11-pr-swift-poller.py supervise` exits 2 unless `state/enabled.json` sets `enabled` to true, and exits 2 when the script sits inside the build worktree. The LaunchAgent template does not create that file, and this tree does not install it.
 
 ## The service
 
-`supervise` is one long-running process under launchd. It holds `supervisor.lock` for its lifetime and keeps the queue, the rate-limit deadline, the App token and the heads it has already reported in memory. Between cycles it sleeps until the next allowed poll (25 s, or the full `Retry-After` / reset deadline). On restart it rebuilds that state from the GitHub API: before building a head it reads the commit's combined status, and a head whose `c11/pr-swift` status is already `success` or `failure` is recorded and skipped. `error` (yielded) and `pending` (a crashed attempt) are built again. The only cross-invocation state is R2's `running.lock` and `running.json`. A disarmed supervisor (scope stop, `stuck`, 401) stays alive and idle so KeepAlive does not restart it into polling; a human clears the cause and restarts the service.
+`supervise` is one long-running process under launchd. It holds `supervisor.lock` for its lifetime and keeps the queue, the rate-limit deadline, the credential client and the heads it has already reported in memory. Between cycles it sleeps until the next allowed poll (25 s, or the full `Retry-After` / reset deadline). On restart it rebuilds that state from the GitHub API: before building a head it reads the commit's combined status, and a head whose `c11/pr-swift` status is already `success` or `failure` is recorded and skipped. `error` (yielded) and `pending` (a crashed attempt) are built again. The only cross-invocation state is R2's `running.lock` and `running.json`. A disarmed supervisor (scope stop, `stuck`, 401) stays alive and idle so KeepAlive does not restart it into polling; a human clears the cause and restarts the service.
 
 Each attempt gets a fresh attempt id. The build runs through `atlas_build_slots.py`; its stdout and stderr go to `state/results/<attempt>-<n>.log` beside the result bundle `state/results/<attempt>-<n>`, and that log decides the result. GhosttyKit is linked from `~/.cache/cmux/ghosttykit/<ghostty gitlink>/` (the commit's `ghostty` gitlink, never the parent SHA).
 
@@ -22,7 +22,13 @@ There is no outbox. Each status POST gets three tries, waiting `Retry-After` whe
 
 `running.lock` is held by the build process and inherited across `exec`. A free lock is not proof the build is gone: a descendant started with `close_fds=True` drops the fd and keeps the process group. On startup, and before every start, the supervisor probes the recorded pgid with `killpg(pgid, 0)`. If the group exists it sends TERM, then KILL after 10 seconds, and it does not clear `running.json` or admit a build until the probe returns ESRCH. If the group is still there after 60 seconds, or the lock is held and there is no pgid, it logs `stuck` and does not poll.
 
-## Key rotation (by hand)
+## Credentials
+
+**gh mode is the active credential** (Atin's decision): the poller posts with the GitHub login Atlas already has (`gh` as BenevolentFutures, `~/.config/gh/hosts.yml`). That token is already readable by every build on Atlas, so an App adds no protection on this host; it would only narrow the poller's own identity. `~/.config/c11-pr-swift/credential.json` containing `{"mode": "gh"}` (optionally `"gh": "<path>"`; otherwise `gh` on PATH, then `/opt/homebrew/bin/gh`, since launchd's PATH has no Homebrew) selects it. Each request runs `gh auth token --hostname github.com` with `GH_TOKEN` and `GITHUB_TOKEN` removed from its environment, uses the token as the Bearer for that request only, and never logs or writes it. Scope: `GET /repos/Stage-11-Agentics/c11` must return id `1212901838`, that full name, and `permissions.push` true, or the poller disarms. If `gh` cannot produce a token, the cycle is skipped and logged as `credential-unavailable` and retried after the cadence; in the build child it is a refusal before pending (exit 3), so nothing is posted. The same calls, admission, status context and rate-limit handling apply in both modes (a gh token gets 5000 requests an hour).
+
+**GitHub App mode is the upgrade path** and needs only config: place `app.json` (`app_id`, `installation_id`) and `private-key.pem` in `~/.config/c11-pr-swift/`. When `app.json` exists it wins over `credential.json`. The App-mode scope check and key rotation are below.
+
+## App key rotation (by hand)
 
 No automated rotation. The previous key stays on disk until it has been shown to fail.
 
@@ -38,21 +44,24 @@ No automated rotation. The previous key stays on disk until it has been shown to
 
 ## Teardown
 
-`stages.json` lists what was done (`plist_installed`, `app_installed`, `key_placed`). Teardown removes local state for every recorded stage, in order, and exits 2 at the first check that fails.
+`stages.json` lists what was done (`plist_installed`, `gh_configured`, and in App mode `app_installed`, `key_placed`). Teardown removes local state for every recorded stage, in order, and exits 2 at the first check that fails.
 
 - `plist_installed`: `launchctl bootout`, then the plist is removed only when `launchctl print` no longer finds the service, the group recorded in `running.json` is ESRCH, and no process holds `supervisor.lock`.
 - `app_installed`: `DELETE /app/installations/{id}` with the App JWT, then the authenticated absence check: `GET /app` must return this App's id (the key still works), and `GET /app/installations` must not list the installation. A rejected key is not absence.
 - `key_placed`: the key is destroyed only after the checks above pass.
+- `gh_configured`: removes the poller's `credential.json`. The gh login itself is not touched.
+
+In gh mode, teardown is the bootout plus removing the poller's `state/` and `cache/` directories (there is no App to uninstall). Every completed teardown removes those two directories last.
 
 An unknown stage is reconciled by hand and removes nothing.
 
-## Scope
+## App-mode scope
 
-Before any status post, an installation token minted without repository narrowing must see `GET /installation/repositories` return exactly repository id `1212901838`. Anything else stops the poller. Runtime status posts use a token narrowed to that repository only after the check passes. `GET /app/installations/{id}` is not the repository inventory. A missing key does not fall back to `gh`, `GITHUB_TOKEN`, `~/.netrc`, or `~/.config/gh`.
+Before any status post, an installation token minted without repository narrowing must see `GET /installation/repositories` return exactly repository id `1212901838`. Anything else stops the poller. Runtime status posts use a token narrowed to that repository only after the check passes. `GET /app/installations/{id}` is not the repository inventory. In App mode a missing key does not fall back to `gh`, `GITHUB_TOKEN`, `~/.netrc`, or `~/.config/gh`; gh mode is chosen only by `credential.json`.
 
 ## Budget measurements
 
-Before the App exists, the 120 second budget is measured by hand with `scripts/remote-build.sh`, not by this process. The poller build, once armed, is Debug scheme `c11-logic`, class `HealthFlagsTests`, with both 60 second XCTest allowances. The hand command goes through `scripts/test-unit-local.sh`, whose scheme is `c11-unit`. On 2026-10-09, tag `fu-371r`, after one pre-warm (xcodebuild log 119 s, not a row), the three rows were 24 s (unchanged), 16 s (one line in `HealthFlagsTests.swift`), and 29 s (one line in `ContentView.swift`). Each executed 33 tests and logged `** TEST SUCCEEDED **`. Those spans are the xcodebuild log, after the slot was held. `/usr/bin/time` walls were 35 s, 268 s, and 78 s; the longer walls include waiting for an Atlas slot, which is outside the 120 s. They are a hand-run compile and test portion on that source base (scheme `c11-unit` via `remote-build.sh`), not this unarmed poller's measurement from slot acquisition to build end. At the C11-371 ship head (same command, warm tag, an incremental compile after rebasing on newer `main`), the slot-held span from build log creation to `result.json` was 44 s, with 33 tests and `** TEST SUCCEEDED **`; total wall was 55 s.
+Until GO-LIVE, the 120 second budget is measured by hand with `scripts/remote-build.sh`, not by this process. The poller build, once armed, is Debug scheme `c11-logic`, class `HealthFlagsTests`, with both 60 second XCTest allowances. The hand command goes through `scripts/test-unit-local.sh`, whose scheme is `c11-unit`. On 2026-10-09, tag `fu-371r`, after one pre-warm (xcodebuild log 119 s, not a row), the three rows were 24 s (unchanged), 16 s (one line in `HealthFlagsTests.swift`), and 29 s (one line in `ContentView.swift`). Each executed 33 tests and logged `** TEST SUCCEEDED **`. Those spans are the xcodebuild log, after the slot was held. `/usr/bin/time` walls were 35 s, 268 s, and 78 s; the longer walls include waiting for an Atlas slot, which is outside the 120 s. They are a hand-run compile and test portion on that source base (scheme `c11-unit` via `remote-build.sh`), not this unarmed poller's measurement from slot acquisition to build end. At the C11-371 ship head (same command, warm tag, an incremental compile after rebasing on newer `main`), the slot-held span from build log creation to `result.json` was 44 s, with 33 tests and `** TEST SUCCEEDED **`; total wall was 55 s.
 
 ## Retention
 
@@ -60,4 +69,4 @@ Before the App exists, the 120 second budget is measured by hand with `scripts/r
 
 ## Fixtures
 
-`scripts/c11-pr-swift-poller-test.py` runs the real `supervise`, `child` and `teardown` commands. Tools are swapped, not code paths: `C11_POLLER_FAKE_HTTP` points the real `AppClient` (real JWT signing with a disposable key) at a file-driven fake GitHub, and `C11_POLLER_GIT`, `C11_POLLER_TART`, `C11_POLLER_ZIG`, `C11_POLLER_XCODEBUILD`, `C11_POLLER_KIT_CACHE`, `C11_POLLER_LAUNCHCTL`, `C11_POLLER_PLIST`, `C11_ATLAS_SLOTS_DIR` and `C11_POLLER_CADENCE_S` name the stand-ins. `supervise --cycles N` stops after N cycles. The LaunchAgent sets none of these.
+`scripts/c11-pr-swift-poller-test.py` runs the real `supervise`, `child` and `teardown` commands. Tools are swapped, not code paths: `C11_POLLER_FAKE_HTTP` points the real `AppClient` (real JWT signing with a disposable key) or `GhClient` (a fake `gh` on PATH) at a file-driven fake GitHub, and `C11_POLLER_GIT`, `C11_POLLER_TART`, `C11_POLLER_ZIG`, `C11_POLLER_XCODEBUILD`, `C11_POLLER_KIT_CACHE`, `C11_POLLER_LAUNCHCTL`, `C11_POLLER_PLIST`, `C11_ATLAS_SLOTS_DIR` and `C11_POLLER_CADENCE_S` name the stand-ins. `supervise --cycles N` stops after N cycles. The LaunchAgent sets none of these.

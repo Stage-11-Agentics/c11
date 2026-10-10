@@ -2,10 +2,18 @@
 """Advisory Atlas poller for same-repo c11 pull requests.
 
 Phase 2 of C11-371. This process is not a GitHub Actions runner. Nothing in
-this file bootstraps a LaunchAgent. `supervise` runs one cycle only when
-state/enabled.json sets enabled to true. The LaunchAgent template does not
-create that file. Arming waits for an implementation review PASS and for Atin
-to create the GitHub App.
+this file bootstraps a LaunchAgent. `supervise` is one long-running process
+that runs only when state/enabled.json sets enabled to true. It holds the
+queue, the rate-limit deadline and the App token in memory; a restart rebuilds
+them from the GitHub API plus R2 recovery. The LaunchAgent template does not
+create enabled.json. Arming waits for an implementation review PASS and for
+Atin to create the GitHub App.
+
+Status delivery (orchestrator ruling): no outbox. A status POST gets three
+tries that honour Retry-After; if all fail the poller logs status_undelivered
+and the next cycle builds that head again and posts a fresh result. The budget
+is classified once, from slot acquisition to build end. Posting time is
+excluded and logged separately as post_seconds.
 
 R2 amendment (orchestrator, comment on C11-371): a free running.lock is not
 proof that the build is gone. Recovery, and the check before every start,
@@ -58,6 +66,9 @@ BUDGET_S = 120
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
+POST_TRIES = 3
+DISARMED_SLEEP_S = 3600
+TERMINAL_STATES = frozenset(("success", "failure"))
 KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed"))
 BUILD_ENV_DROP = (
     "C11_BUILD_LOCK",
@@ -264,7 +275,15 @@ def assert_git_args(args):
 
 
 def run_git(args, cwd):
+    """C11_POLLER_GIT replaces git for fixtures; the argv guard runs either way."""
     assert_git_args(args)
+    override = os.environ.get("C11_POLLER_GIT")
+    if override:
+        env = git_base_env()
+        spec = os.environ.get("C11_POLLER_GIT_SPEC")
+        if spec:
+            env["C11_POLLER_GIT_SPEC"] = spec
+        return subprocess.run([override, *args], cwd=str(cwd), env=env, capture_output=True, text=True)
     cmd = ["git", "-c", "protocol.file.allow=never", "-c", "core.hooksPath=/dev/null", *args]
     return subprocess.run(cmd, cwd=cwd, env=git_base_env(), capture_output=True, text=True)
 
@@ -387,7 +406,7 @@ def result_directory(state, attempt_id, invocation):
 
 def xcodebuild_argv(worktree, derived, result_path):
     return [
-        XCODEBUILD,
+        os.environ.get("C11_POLLER_XCODEBUILD") or XCODEBUILD,
         "-project", str(Path(worktree) / "GhosttyTabs.xcodeproj"),
         "-scheme", "c11-logic",
         "-configuration", "Debug",
@@ -760,13 +779,77 @@ def urllib_transport(method, url, headers, body, timeout=HTTP_TIMEOUT_S):
         return {"status": 0, "headers": {}, "body": None}
 
 
+def fixture_transport(directory):
+    """Fake GitHub at the HTTP boundary, shared by the supervisor and its child.
+
+    routes.json is a list of {method, url (substring) or suffix, responses}.
+    The n-th matching request gets responses[n], then the last one repeats.
+    requests.jsonl records method, url, body and the bearer kind, never a token.
+    """
+    base = Path(directory)
+
+    def transport(method, url, headers, body, timeout=HTTP_TIMEOUT_S):
+        log = base / "requests.jsonl"
+        with (base / "transport.lock").open("a+") as guard:
+            fcntl.flock(guard, fcntl.LOCK_EX)
+            routes = json.loads((base / "routes.json").read_text())
+            prior = []
+            if log.exists():
+                prior = [json.loads(line) for line in log.read_text().splitlines() if line]
+            chosen, response = None, {"status": 404, "headers": {}, "body": None}
+            for index, route in enumerate(routes):
+                if route.get("method", method) != method:
+                    continue
+                if "suffix" in route and not url.endswith(route["suffix"]):
+                    continue
+                if "url" in route and route["url"] not in url:
+                    continue
+                used = sum(1 for item in prior if item.get("route") == index)
+                responses = route["responses"]
+                chosen, response = index, responses[min(used, len(responses) - 1)]
+                break
+            bearer = (headers or {}).get("Authorization", "")[len("Bearer "):]
+            with log.open("a") as handle:
+                handle.write(json.dumps({
+                    "method": method,
+                    "url": url,
+                    "body": body,
+                    "route": chosen,
+                    "auth": "jwt" if bearer.count(".") == 2 else "token",
+                }) + "\n")
+        if response.get("delay"):
+            time.sleep(response["delay"])
+        return {
+            "status": response.get("status", 200),
+            "headers": dict(response.get("headers") or {}),
+            "body": response.get("body"),
+        }
+
+    return transport
+
+
+def config_directory():
+    override = os.environ.get("C11_POLLER_CONFIG_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".config" / "c11-pr-swift"
+
+
+def default_transport():
+    fixture = os.environ.get("C11_POLLER_FAKE_HTTP")
+    if fixture:
+        return fixture_transport(fixture)
+    return urllib_transport
+
+
 class AppClient:
     """GitHub App client. Scope inventory is un-narrowed; status uses a narrowed token.
 
     A 401 mints once for that request and retries once. A later request may mint
     again. A second 401 on the fresh credential stops that request. There is no
     fallback to gh, GITHUB_TOKEN, netrc, or the gh config. GET
-    /app/installations/{id} is not called.
+    /app/installations/{id} is never the inventory and is not called; teardown
+    DELETEs that URL and proves absence from the GET /app/installations list.
     """
 
     def __init__(self, app_id, installation_id, key_path, transport, now=None, sign=None):
@@ -783,7 +866,7 @@ class AppClient:
 
     @classmethod
     def from_config(cls, config_dir=None, transport=None):
-        directory = Path(config_dir) if config_dir else Path.home() / ".config" / "c11-pr-swift"
+        directory = Path(config_dir) if config_dir else config_directory()
         try:
             app = json.loads((directory / "app.json").read_text())
         except (OSError, ValueError) as error:
@@ -795,7 +878,7 @@ class AppClient:
         key_path = directory / "private-key.pem"
         if not key_path.is_file():
             raise ScopeStop("key")
-        return cls(app["app_id"], app["installation_id"], key_path, transport or urllib_transport)
+        return cls(app["app_id"], app["installation_id"], key_path, transport or default_transport())
 
     def _jwt(self):
         return mint_jwt(self.app_id, self.key_path, self.now(), self.sign)
@@ -855,6 +938,39 @@ class AppClient:
         }
         return self._authed("POST", url, self.narrowed_token, body=payload, remint=self._remint_narrowed)
 
+    def head_status(self, sha):
+        """The latest c11/pr-swift state on this commit, or None."""
+        self._require_scope()
+        if SHA_RE.fullmatch(sha or "") is None:
+            raise ScopeStop("sha")
+        url = "%s/repos/%s/commits/%s/status" % (API, REPO_NAME, sha)
+        response = self._authed("GET", url, self.narrowed_token, remint=self._remint_narrowed)
+        body = response.get("body")
+        if response.get("status") != 200 or type(body) is not dict or type(body.get("statuses")) is not list:
+            return None
+        for item in body["statuses"]:
+            if type(item) is dict and item.get("context") == STATUS_CONTEXT:
+                return item.get("state")
+        return None
+
+    def app_identity(self):
+        """GET /app with the App JWT. The id must be this App's."""
+        response = self._send("GET", API + "/app", self._bearer(self._jwt()), None)
+        body = response.get("body")
+        return response.get("status") == 200 and type(body) is dict and body.get("id") == self.app_id
+
+    def installation_listed(self):
+        """True, False, or None when the list could not be read."""
+        response = self._send("GET", API + "/app/installations?per_page=100", self._bearer(self._jwt()), None)
+        body = response.get("body")
+        if response.get("status") != 200 or type(body) is not list:
+            return None
+        return any(type(item) is dict and item.get("id") == self.installation_id for item in body)
+
+    def delete_installation(self):
+        url = "%s/app/installations/%s" % (API, self.installation_id)
+        return self._send("DELETE", url, self._bearer(self._jwt()), None)
+
     def _require_scope(self):
         if not self.scoped or not self.narrowed_token:
             raise ScopeStop("status-before-scope")
@@ -882,7 +998,7 @@ class AppClient:
         return retried
 
     def _send(self, method, url, headers, body):
-        if "/app/installations/" in url and not url.endswith("/access_tokens"):
+        if "/app/installations/" in url and not url.endswith("/access_tokens") and method != "DELETE":
             raise ScopeStop("installation-get")
         leaked = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         auth = headers.get("Authorization", "")
@@ -911,20 +1027,28 @@ def status_body(sha, state, description):
 
 
 class Supervisor:
-    """One poll cycle. Launchd is what keeps a single process; the flock is the second lock."""
+    """The poll loop's state. `supervise` keeps one instance for the process lifetime.
 
-    def __init__(self, root, world):
+    The queue, the rate-limit deadline, the App client and the set of heads
+    already reported live here, in memory. Launchd keeps one process; the
+    supervisor.lock flock is the second lock.
+    """
+
+    def __init__(self, root, world, cadence=CADENCE_S):
         self.root = Path(root)
         self.world = world
+        self.cadence = cadence
         self.not_before = 0
         self.disarmed = False
         self.scoped = False
         self.queue = []
+        self.reported = {}
         self.spawns = []
         self.fetches = []
         self.posts = []
         self.attempt_clock = None
         self.acquired_at = None
+        self.build_end = None
         self.delivered = False
         self.stopped = None
 
@@ -966,16 +1090,17 @@ class Supervisor:
         return fd
 
     def poll_once(self):
+        """One cycle under its own supervisor.lock. `supervise` holds the lock itself."""
         lock = self.hold_supervisor_lock()
         if lock is None:
             self.log(decision="supervisor-busy")
             return "busy"
         try:
-            return self._poll_locked()
+            return self.cycle()
         finally:
             os.close(lock)
 
-    def _poll_locked(self):
+    def cycle(self):
         if self.disarmed:
             return "disarmed"
         if recover(self.root, alive=self.world.group_alive, kill=self.world.killpg,
@@ -1006,7 +1131,7 @@ class Supervisor:
                 return "etag-cleared"
             body = saved["body"]
         elif status == 0:
-            self.not_before = self.world.time() + CADENCE_S
+            self.not_before = self.world.time() + self.cadence
             self.log(decision="timeout")
             return "no-build"
         elif status == 401:
@@ -1019,7 +1144,7 @@ class Supervisor:
                 self.disarmed = True
                 self.log(decision="rate-limited-no-deadline", status=status)
                 return "no-build"
-            self.not_before = self.world.time() + (wait if wait > 0 else CADENCE_S)
+            self.not_before = self.world.time() + (wait if wait > 0 else self.cadence)
             self.log(decision="rate-or-error", status=status, seconds=wait)
             return "no-build"
         else:
@@ -1061,7 +1186,7 @@ class Supervisor:
             return "backoff"
         self._remember_queue(admitted)
         self._resolve_absent(body)
-        self.not_before = self.world.time() + (wait or CADENCE_S)
+        self.not_before = self.world.time() + (wait or self.cadence)
         return self.maybe_start()
 
     def _list_headers(self):
@@ -1080,8 +1205,6 @@ class Supervisor:
             if page.get("status") != 200:
                 break
             url = link_next(header_get(page.get("headers") or {}, "Link"))
-        else:
-            url = None
         truncated = False
         if len(pages) == MAX_PAGES:
             truncated = link_next(header_get(pages[-1].get("headers") or {}, "Link")) is not None
@@ -1098,11 +1221,11 @@ class Supervisor:
                     self.disarmed = True
                     self.log(decision="rate-limited-no-deadline", status=status)
                     return "no-build"
-                self.not_before = self.world.time() + (wait if wait > 0 else CADENCE_S)
+                self.not_before = self.world.time() + (wait if wait > 0 else self.cadence)
                 self.log(decision="rate-or-error", status=status, seconds=wait)
                 return "no-build"
             if status == 0:
-                self.not_before = self.world.time() + CADENCE_S
+                self.not_before = self.world.time() + self.cadence
                 self.log(decision="timeout")
                 return "no-build"
             if status != 200:
@@ -1120,12 +1243,14 @@ class Supervisor:
         return chosen
 
     def _remember_queue(self, admitted):
+        """Queue admitted heads that are not queued and not already reported."""
         known = {item["pr"] for item in self.queue}
         for captured in admitted:
-            if captured["pr"] not in known:
-                item = dict(captured)
-                item["queued_at"] = self.world.time()
-                self.queue.append(item)
+            if captured["pr"] in known or self.reported.get(captured["pr"]) == captured["sha"]:
+                continue
+            item = dict(captured)
+            item["queued_at"] = self.world.time()
+            self.queue.append(item)
 
     def _resolve_absent(self, body):
         present = set()
@@ -1153,6 +1278,33 @@ class Supervisor:
             kept.append(item)
         self.queue = kept
 
+    def _next_item(self):
+        """The first queued head that still revalidates and has no terminal status.
+
+        A head whose c11/pr-swift status is already success or failure is
+        recorded and skipped, so a restarted process does not rebuild it.
+        """
+        while self.queue:
+            item = self.queue[0]
+            ok, reason, _detail = revalidate(
+                item,
+                lambda number: self.world.pull(number),
+                lambda ref: self.world.ls_remote(ref),
+            )
+            if not ok:
+                # The captured SHA stays what the list admitted. A moved tip is not
+                # written into this attempt and is not fetched.
+                self.log(decision=reason, pr=item["pr"], sha=item["sha"])
+                self.queue.pop(0)
+                continue
+            if self.world.head_status(item["sha"]) in TERMINAL_STATES:
+                self.reported[item["pr"]] = item["sha"]
+                self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
+                self.queue.pop(0)
+                continue
+            return item
+        return None
+
     def maybe_start(self):
         """Before every start, recover again. A live recorded group admits nothing."""
         if recover(self.root, alive=self.world.group_alive, kill=self.world.killpg,
@@ -1160,9 +1312,6 @@ class Supervisor:
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
-        redelivered = self._redeliver()
-        if redelivered is not None:
-            return redelivered
         if not self.queue:
             return "idle"
         if self.world.guests():
@@ -1171,18 +1320,9 @@ class Supervisor:
         if self.world.slot_held(1) or self.world.slot_held(2):
             self.log(decision="no-start", reason="slot")
             return "no-start"
-        item = self.queue[0]
-        ok, reason, _detail = revalidate(
-            item,
-            lambda number: self.world.pull(number),
-            lambda ref: self.world.ls_remote(ref),
-        )
-        if not ok:
-            # The captured SHA stays what the list admitted. A moved tip is not
-            # written into this attempt and is not fetched.
-            self.log(decision=reason, pr=item["pr"], sha=item["sha"])
-            self.queue.pop(0)
-            return reason
+        item = self._next_item()
+        if item is None:
+            return "idle"
         if not self._fetch(item):
             return "fetch_failed"
         if not self._prepare_tree(item):
@@ -1206,15 +1346,19 @@ class Supervisor:
             self.log(decision=reason, pr=item["pr"], sha=item["sha"])
         return ok
 
+    def _ghostty_gitlink(self, item):
+        shown = self.world.git(["rev-parse", "%s:ghostty" % item["sha"]], self.world.worktree)
+        gitlink = (shown.stdout or "").strip() if shown.returncode == 0 else ""
+        return gitlink if SHA_RE.fullmatch(gitlink) else None
+
     def _prepare_tree(self, item):
         if not clean_worktree(self.world.git, self.world.worktree):
             self.log(decision="residue", pr=item["pr"])
             return False
-        parent = porcelain_paths(self.world.status(self.world.worktree))
         sub_status = [porcelain_paths(self.world.status(Path(self.world.worktree) / path)) for path, _url in GITLINKS]
-        linked = self.world.ghosttykit(item["sha"])
-        if linked == "ghosttykit_missing":
-            self.log(decision="ghosttykit_missing", pr=item["pr"])
+        gitlink = self._ghostty_gitlink(item)
+        if gitlink is None or self.world.ghosttykit(gitlink) == "ghosttykit_missing":
+            self.log(decision="ghosttykit_missing", pr=item["pr"], gitlink=gitlink)
             return False
         parent = porcelain_paths(self.world.status(self.world.worktree))
         if not residue_ok(parent, sub_status, symlink_ready=True):
@@ -1226,41 +1370,35 @@ class Supervisor:
         return True
 
     def _spawn(self, item):
+        """One attempt: a fresh attempt id, then at most one cache retry.
+
+        The item leaves the queue whatever happens. A later list re-admits it
+        unless a success or failure for that head was delivered.
+        """
+        item["attempt_id"] = uuid.uuid4().hex
         self.acquired_at = None
+        self.build_end = None
         self.attempt_clock = self.world.time()
         self.stopped = None
         self.delivered = False
-        code = self._spawn_one(item, 1)
-        self._note_acquired()
-        if code == "rejected":
-            self._drop(item)
-            return "rejected"
-        if code != "ran":
-            return code
-        if self.stopped:
-            if self.delivered:
-                self._drop(item)
-            return "stopped"
-        if self.world.last_exit != 0:
-            code = self._spawn_one(item, 2)
+        self._drop(item)
+        for invocation in (1, 2):
+            code = self._spawn_one(item, invocation)
+            self.build_end = self.world.time()
+            self._note_acquired()
             if code == "rejected":
-                self._drop(item)
                 return "rejected"
-            if code != "ran":
-                return code
             if self.stopped:
-                if self.delivered:
-                    self._drop(item)
                 return "stopped"
+            if self.world.last_exit == 0:
+                break
         self._finish(item, self.world.last_exit)
-        if self.delivered:
-            self._drop(item)
         return "started"
 
     def _spawn_one(self, item, invocation):
-        attempt_id = item.get("attempt_id") or uuid.uuid4().hex
-        item["attempt_id"] = attempt_id
+        attempt_id = item["attempt_id"]
         result = result_directory(self.state(), attempt_id, invocation)
+        log_path = result.parent / ("%s-%s.log" % (attempt_id, invocation))
         current = {
             "attempt_id": attempt_id,
             "invocation": invocation,
@@ -1268,13 +1406,14 @@ class Supervisor:
             "sha": item["sha"],
             "ref": item["ref"],
             "result": str(result),
+            "log": str(log_path),
         }
         (self.state() / "current.json").write_text(json.dumps(current) + "\n")
         argv = self.world.build_argv(self.world.worktree, self.root / "cache" / "DerivedData", result)
         command = slot_command(self.root, argv)
         self.spawns.append({"command": command, "sha": item["sha"], "result": str(result), "invocation": invocation})
         append_event(self.root, {"event": "spawn", "sha": item["sha"], "invocation": invocation, "result": str(result)})
-        exit_code = self.world.spawn(command)
+        exit_code = self.world.spawn(command, log_path)
         self.world.last_exit = exit_code
         if exit_code in (3, 4):
             self.log(decision="child-rejected", pr=item["pr"], sha=item["sha"], invocation=invocation, exit=exit_code)
@@ -1282,7 +1421,7 @@ class Supervisor:
         return "ran"
 
     def _note_acquired(self):
-        """The child writes acquired_at when it takes the slot. Queue time is earlier."""
+        """The child writes acquired_at when it holds the slot. Queue time is earlier."""
         if self.acquired_at is not None:
             return
         recorded = read_running(self.root)
@@ -1292,76 +1431,50 @@ class Supervisor:
         if type(stamp) is int or type(stamp) is float:
             self.acquired_at = stamp
 
-    def _elapsed(self):
+    def build_seconds(self):
+        """Slot acquisition (first invocation) to the end of the last build."""
         start = self.acquired_at if self.acquired_at is not None else self.attempt_clock
+        end = self.build_end if self.build_end is not None else self.world.time()
         if start is None:
             return 0
-        return self.world.time() - start
+        return max(0.0, end - start)
 
-    def _classify(self, exit_code):
-        seconds = self._elapsed()
+    def _finish(self, item, exit_code):
+        seconds = self.build_seconds()
         state, description = classify_result(self.world.build_log, seconds)
         if exit_code != 0 and state == "success":
             state, description = "failure", "failed %ss" % int(seconds)
-        return state, description
+        self.delivered = self._post(item["sha"], state, description, pr=item["pr"], build_seconds=round(seconds, 3))
+        if self.delivered:
+            self.reported[item["pr"]] = item["sha"]
 
-    def _finish(self, item, exit_code):
-        self.world.last_exit = exit_code
-        state, description = self._classify(exit_code)
-        self.delivered = self._post(item["sha"], state, description, pr=item.get("pr"), attempt_id=item.get("attempt_id"))
-        state2, description2 = self._classify(exit_code)
-        if (state2, description2) != (state, description):
-            self.delivered = self._post(item["sha"], state2, description2, pr=item.get("pr"), attempt_id=item.get("attempt_id"))
-
-    def _post(self, sha, state, description, pr=None, attempt_id=None):
+    def _post(self, sha, state, description, pr=None, **fields):
+        """Three tries, honouring Retry-After. No outbox: a miss is logged and dropped."""
         body = status_body(sha, state, description)
         body["sha"] = sha
         self.posts.append(body)
-        response = self.world.post_status(body)
-        failed = type(response) is dict and response.get("status") not in (200, 201)
-        if failed:
-            self._save_undelivered(sha, state, description, pr, attempt_id)
-            self.log(decision="undelivered", sha=sha, state=state, description=description, status=response.get("status"))
-            return False
-        self.log(decision="result", sha=sha, state=state, description=description)
-        return True
-
-    def _save_undelivered(self, sha, state, description, pr, attempt_id):
-        payload = {
-            "sha": sha,
-            "state": state,
-            "description": description,
-            "pr": pr,
-            "attempt_id": attempt_id,
-        }
-        (self.state() / "undelivered.json").write_text(json.dumps(payload) + "\n")
-
-    def _redeliver(self):
-        """Retry a terminal POST that did not land. Do not start another build for it."""
-        path = self.state() / "undelivered.json"
-        if not path.exists():
-            return None
-        try:
-            saved = json.loads(path.read_text())
-        except (OSError, ValueError):
-            return None
-        if type(saved) is not dict or type(saved.get("sha")) is not str:
-            return None
-        if self._post(saved["sha"], saved["state"], saved["description"], pr=saved.get("pr"), attempt_id=saved.get("attempt_id")):
-            try:
-                path.unlink()
-            except OSError:
-                pass
-            self._drop_pr(saved.get("pr"))
-            return "redelivered"
-        return "undelivered"
+        started = self.world.time()
+        last = None
+        for attempt in range(1, POST_TRIES + 1):
+            response = self.world.post_status(body)
+            last = response.get("status") if type(response) is dict else None
+            if last in (200, 201):
+                self.log(decision="result", pr=pr, sha=sha, state=state, description=description,
+                         post_seconds=round(self.world.time() - started, 3), **fields)
+                return True
+            retryable = last in (0, 403, 429) or (type(last) is int and last >= 500)
+            if attempt == POST_TRIES or not retryable:
+                break
+            headers = response.get("headers") if type(response) is dict else None
+            wait = parse_retry_after(header_get(headers or {}, "Retry-After"), self.world.time())
+            self.world.sleep(2 ** (attempt - 1) if wait is None else wait)
+        self.log(decision="status_undelivered", pr=pr, sha=sha, state=state, description=description,
+                 status=last, post_seconds=round(self.world.time() - started, 3), **fields)
+        return False
 
     def _drop(self, item):
-        self._drop_pr(item.get("pr"))
-
-    def _drop_pr(self, number):
         for index, queued in enumerate(self.queue):
-            if queued.get("pr") == number:
+            if queued.get("pr") == item.get("pr"):
                 self.queue.pop(index)
                 return
 
@@ -1431,11 +1544,7 @@ class Supervisor:
         return reason
 
     def watch_while(self, running, record):
-        """Every 5s while running() is true. Returns the stop reason, or None.
-
-        An enabled supervise enters this loop after the child writes running.json.
-        An unconfigured supervise never gets here: it exits 2.
-        """
+        """Every 5s while running() is true. Returns the stop reason, or None."""
         while running():
             reason = self.watch(record)
             if reason is not None:
@@ -1536,6 +1645,13 @@ def rotate_drop_old(key_dir, authenticates):
     return "dropped"
 
 
+def ls_remote_tip(ref, cwd):
+    result = run_git(["ls-remote", PARENT_URL, "refs/heads/%s" % ref], cwd)
+    if result.returncode != 0:
+        raise ScopeStop("ls-remote")
+    return result.stdout
+
+
 def _revalidate_with_client(root, client):
     current = json.loads((Path(root) / "state" / "current.json").read_text())
 
@@ -1545,13 +1661,7 @@ def _revalidate_with_client(root, client):
             return None
         return response.get("body")
 
-    def ls_remote(ref):
-        result = run_git(["ls-remote", PARENT_URL, "refs/heads/%s" % ref], root)
-        if result.returncode != 0:
-            raise ScopeStop("ls-remote")
-        return result.stdout
-
-    return revalidate(current, fetch_pr, ls_remote)
+    return revalidate(current, fetch_pr, lambda ref: ls_remote_tip(ref, root))
 
 
 def post_build_pending(client, current):
@@ -1561,31 +1671,17 @@ def post_build_pending(client, current):
     return client.post_status_body(body)
 
 
-def child_revalidate_from_root(root):
-    current = json.loads((Path(root) / "state" / "current.json").read_text())
-    if os.environ.get("C11_POLLER_TEST") == "1":
-        harness = json.loads((Path(root) / "harness.json").read_text())
-        return revalidate(current, lambda _number: harness["pr"], lambda _ref: harness["ls_remote"])
-    client = AppClient.from_config()
-    client.verify_scope()
-    return _revalidate_with_client(root, client)
-
-
 def run_child_cli(root, exec_argv):
+    """The build child: its own App client, the second revalidation, pending, exec."""
     holder = {}
 
     def revalidate_fn(root):
-        if os.environ.get("C11_POLLER_TEST") == "1":
-            return child_revalidate_from_root(root)
         client = AppClient.from_config()
         client.verify_scope()
         holder["client"] = client
         return _revalidate_with_client(root, client)
 
     def post_pending(current):
-        if os.environ.get("C11_POLLER_TEST") == "1":
-            append_event(root, {"event": "pending", "sha": current["sha"]})
-            return True
         client = holder.get("client")
         if client is None:
             append_event(root, {"event": "pending-failed", "reason": "no-client"})
@@ -1622,11 +1718,12 @@ def service_enabled(root):
 
 
 class ProductionWorld:
-    """Adapters the supervise command uses. Tests inject harness.json and shims.
+    """The real adapters: AppClient over HTTP, git, tart, the slot locks, processes.
 
-    C11_POLLER_TEST is never set here. A caller that exports it gets the harness
-    instead of GitHub. Git, tart, zig, and the slot directory follow their env
-    overrides or the real tools.
+    Fixtures swap tools, not code paths: C11_POLLER_FAKE_HTTP replaces the
+    HTTP transport, and C11_POLLER_GIT, C11_POLLER_TART, C11_POLLER_ZIG,
+    C11_POLLER_XCODEBUILD, C11_POLLER_KIT_CACHE and C11_ATLAS_SLOTS_DIR name
+    the tools and directories. The plist sets none of them.
     """
 
     def __init__(self, root, worktree):
@@ -1635,19 +1732,10 @@ class ProductionWorld:
         self.supervisor = None
         self.client = None
         self.last_exit = 0
+        self.log_path = None
 
     def bind(self, supervisor):
         self.supervisor = supervisor
-
-    def _harness(self):
-        try:
-            data = json.loads((self.root / "harness.json").read_text())
-        except (OSError, ValueError):
-            return {}
-        return data if type(data) is dict else {}
-
-    def _test_mode(self):
-        return os.environ.get("C11_POLLER_TEST") == "1"
 
     def time(self):
         return time.time()
@@ -1656,57 +1744,34 @@ class ProductionWorld:
         return time.monotonic()
 
     def sleep(self, seconds):
-        time.sleep(seconds)
+        time.sleep(max(0.0, seconds))
 
     def scope_ok(self):
-        if self._test_mode():
-            return self._harness().get("scope_ok", True) is True
         try:
             self.client = AppClient.from_config()
             self.client.verify_scope()
         except ScopeStop:
+            self.client = None
             return False
         return True
 
     def list_page(self, headers):
-        if self._test_mode():
-            listed = self._harness().get("list")
-            if type(listed) is dict:
-                return listed
-            return {"status": 200, "headers": {}, "body": []}
         return self.client.list_pulls(headers)
 
     def list_page_url(self, url):
-        if self._test_mode():
-            pages = self._harness().get("pages")
-            if type(pages) is dict and type(pages.get(url)) is dict:
-                return pages[url]
-            return {"status": 200, "headers": {}, "body": []}
         return self.client._authed("GET", url, self.client.narrowed_token, remint=self.client._remint_narrowed)
 
     def pull(self, number):
-        if self._test_mode():
-            harness = self._harness()
-            pulls = harness.get("pulls")
-            if type(pulls) is dict and str(number) in pulls:
-                return pulls[str(number)]
-            if "pr" in harness:
-                return harness["pr"]
-            return None
         response = self.client.pull(number)
         if response.get("status") != 200:
             return None
         return response.get("body")
 
+    def head_status(self, sha):
+        return self.client.head_status(sha)
+
     def ls_remote(self, ref):
-        if self._test_mode():
-            text = self._harness().get("ls_remote")
-            if type(text) is str:
-                return text
-        result = run_git(["ls-remote", PARENT_URL, "refs/heads/%s" % ref], self.worktree)
-        if result.returncode != 0:
-            raise ScopeStop("ls-remote")
-        return result.stdout
+        return ls_remote_tip(ref, self.root)
 
     def guests(self):
         tart = os.environ.get("C11_POLLER_TART", "tart")
@@ -1729,25 +1794,18 @@ class ProductionWorld:
         _signal_group(pgid, sig)
 
     def git(self, args, cwd):
-        assert_git_args(args)
-        override = os.environ.get("C11_POLLER_GIT")
-        if override:
-            env = git_base_env()
-            spec = os.environ.get("C11_POLLER_GIT_SPEC")
-            if spec:
-                env["C11_POLLER_GIT_SPEC"] = spec
-            return subprocess.run([override, *args], cwd=str(cwd), env=env, capture_output=True, text=True)
         return run_git(args, cwd)
 
     def status(self, cwd):
         result = self.git(["status", "--porcelain=v1", "--ignored"], cwd)
         return result.stdout or ""
 
-    def ghosttykit(self, sha):
-        cache = os.environ.get("C11_POLLER_KIT_CACHE")
+    def ghosttykit(self, gitlink):
+        """Link the cache entry for the Ghostty gitlink, never the parent SHA."""
+        cache = os.environ.get("C11_POLLER_KIT_CACHE") or os.environ.get("CMUX_GHOSTTYKIT_CACHE_DIR")
         if not cache:
             cache = str(Path.home() / ".cache" / "cmux" / "ghosttykit")
-        return link_ghosttykit(cache, sha, self.worktree)
+        return link_ghosttykit(cache, gitlink, self.worktree)
 
     def toolchain_ok(self):
         zig = os.environ.get("C11_POLLER_ZIG") or str(Path.home() / "zig-0.15.2" / "zig")
@@ -1758,43 +1816,40 @@ class ProductionWorld:
         return result.returncode == 0 and result.stdout.strip() == "0.15.2"
 
     def build_argv(self, worktree, derived, result):
-        if self._test_mode():
-            argv = self._harness().get("exec")
-            if type(argv) is list and argv and all(type(item) is str for item in argv):
-                return list(argv)
         return xcodebuild_argv(worktree, derived, result)
 
     @property
     def build_log(self):
-        path = self.root / "state" / "build.log"
-        if path.is_file():
-            return path.read_text()
-        if self._test_mode():
-            text = self._harness().get("build_log")
-            if type(text) is str:
-                return text
-        return ""
+        if self.log_path is None:
+            return ""
+        try:
+            return Path(self.log_path).read_text(errors="replace")
+        except OSError:
+            return ""
 
     def post_status(self, body):
-        if self._test_mode():
-            status = self._harness().get("post_status", 201)
-            append_event(self.root, {"event": "status-post", "state": body.get("state"), "status": status})
-            if type(status) is int:
-                return {"status": status, "headers": {}, "body": {}}
-            return None
         if self.client is None:
-            return {"status": 503, "headers": {}, "body": None}
+            return {"status": 0, "headers": {}, "body": None}
         try:
             return self.client.post_status_body(body)
         except ScopeStop:
-            return {"status": 503, "headers": {}, "body": None}
+            return {"status": 0, "headers": {}, "body": None}
 
-    def spawn(self, command):
-        proc = subprocess.Popen(command, start_new_session=True)
+    def spawn(self, command, log_path):
+        """Run the slot wrapper, collecting stdout and stderr into the attempt log."""
+        self.log_path = Path(log_path)
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        stale = read_running(self.root)
+        with self.log_path.open("wb") as log:
+            proc = subprocess.Popen(command, start_new_session=True, stdout=log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 30
-        while proc.poll() is None and read_running(self.root) is None and time.monotonic() < deadline:
+        record = None
+        while proc.poll() is None and time.monotonic() < deadline:
+            record = read_running(self.root)
+            if record is not None and record != stale:
+                break
+            record = None
             time.sleep(0.05)
-        record = read_running(self.root)
         if proc.poll() is None and record is not None and self.supervisor is not None:
             self.supervisor.watch_while(lambda: proc.poll() is None, record)
         if proc.poll() is None:
@@ -1808,54 +1863,40 @@ class ProductionWorld:
 
 
 class InstallationActor:
-    """Recorded-stage teardown. Test mode never touches the home config or LaunchAgents."""
+    """Recorded-stage teardown against launchd, the process table and the App API."""
 
     def __init__(self, root):
         self.root = Path(root)
-        override = os.environ.get("C11_POLLER_CONFIG_DIR")
-        if override:
-            self.config_dir = Path(override)
-        elif os.environ.get("C11_POLLER_TEST") == "1":
-            self.config_dir = self.root / "config"
-        else:
-            self.config_dir = Path.home() / ".config" / "c11-pr-swift"
+        self.config_dir = config_directory()
 
-    def _harness(self):
-        try:
-            data = json.loads((self.root / "harness.json").read_text())
-        except (OSError, ValueError):
-            return {}
-        return data if type(data) is dict else {}
+    def _launchctl(self, *args):
+        tool = os.environ.get("C11_POLLER_LAUNCHCTL") or "launchctl"
+        target = "gui/%s/%s" % (os.getuid(), LABEL)
+        return subprocess.run([tool, *args, target], capture_output=True, text=True)
 
     def _plist_path(self):
         override = os.environ.get("C11_POLLER_PLIST")
         if override:
             return Path(override)
-        if os.environ.get("C11_POLLER_TEST") == "1":
-            return self.root / "Library" / "LaunchAgents" / (LABEL + ".plist")
         return Path.home() / "Library" / "LaunchAgents" / (LABEL + ".plist")
 
     def bootout(self):
-        launchctl = os.environ.get("C11_POLLER_LAUNCHCTL")
-        if launchctl:
-            subprocess.run([launchctl], capture_output=True)
-            return
-        if os.environ.get("C11_POLLER_TEST") == "1":
-            return
-        subprocess.run(["launchctl", "bootout", "gui/%s/%s" % (os.getuid(), LABEL)], capture_output=True)
+        self._launchctl("bootout")
 
     def processes_gone(self):
-        launchctl = os.environ.get("C11_POLLER_LAUNCHCTL")
-        if launchctl:
-            result = subprocess.run([launchctl], capture_output=True)
-            return result.returncode != 0
-        if os.environ.get("C11_POLLER_TEST") == "1":
-            return True
-        result = subprocess.run(
-            ["launchctl", "print", "gui/%s/%s" % (os.getuid(), LABEL)],
-            capture_output=True,
-        )
-        return result.returncode != 0
+        """The service is unloaded, the recorded build group is ESRCH, and no supervisor holds its lock."""
+        if self._launchctl("print").returncode == 0:
+            append_event(self.root, {"event": "teardown-blocked", "reason": "service-loaded"})
+            return False
+        recorded = read_running(self.root)
+        if recorded is not None and group_alive(recorded["pgid"]):
+            append_event(self.root, {"event": "teardown-blocked", "reason": "build-group", "pgid": recorded["pgid"]})
+            return False
+        lock = self.root / "state" / "supervisor.lock"
+        if lock.exists() and not lock_is_free(lock):
+            append_event(self.root, {"event": "teardown-blocked", "reason": "supervisor-lock"})
+            return False
+        return True
 
     def remove_plist(self):
         try:
@@ -1864,18 +1905,33 @@ class InstallationActor:
             pass
 
     def uninstall_app(self):
-        append_event(self.root, {"event": "uninstall_app"})
+        """DELETE the installation with the App JWT. Absence is proven separately."""
+        try:
+            response = AppClient.from_config(self.config_dir).delete_installation()
+        except ScopeStop as error:
+            append_event(self.root, {"event": "uninstall-failed", "reason": str(error)})
+            return False
+        append_event(self.root, {"event": "uninstall", "status": response.get("status")})
+        return response.get("status") in (204, 404)
 
     def absence_ok(self):
-        if os.environ.get("C11_POLLER_TEST") == "1":
-            status = self._harness().get("app_status", 404)
-            return type(status) is int and status in (401, 404)
+        """The key still authenticates as this App, and the installation is not listed.
+
+        A rejected key proves nothing about the installation, so it is not absence.
+        """
         try:
             client = AppClient.from_config(self.config_dir)
-            response = client._send("GET", API + "/app", client._bearer(client._jwt()), None)
-        except ScopeStop:
+            if not client.app_identity():
+                append_event(self.root, {"event": "absence-unproven", "reason": "app-identity"})
+                return False
+            listed = client.installation_listed()
+        except ScopeStop as error:
+            append_event(self.root, {"event": "absence-unproven", "reason": str(error)})
             return False
-        return response.get("status") in (401, 404)
+        if listed is not False:
+            append_event(self.root, {"event": "absence-unproven", "reason": "listed" if listed else "list"})
+            return False
+        return True
 
     def remove_key(self):
         key = self.config_dir / "private-key.pem"
@@ -1886,14 +1942,19 @@ class InstallationActor:
 
     def remove_local_state(self):
         state = self.root / "state"
-        for name in ("enabled.json", "current.json", "running.json", "list.json", "undelivered.json"):
+        for name in ("enabled.json", "current.json", "running.json", "list.json"):
             try:
                 (state / name).unlink()
             except FileNotFoundError:
                 pass
 
 
-def supervise_cli(root):
+def supervise_cli(root, cycles=None):
+    """The long-running service. `--cycles N` stops after N cycles, for fixtures.
+
+    A disarmed supervisor stays alive and idle, so launchd's KeepAlive does not
+    restart it into polling. A human clears the cause and restarts the service.
+    """
     enabled = service_enabled(root)
     if enabled is None:
         sys.stderr.write("supervise is not armed; launchd bootstrap is not authorized\n")
@@ -1904,10 +1965,36 @@ def supervise_cli(root):
     if layout_inside_worktree(Path(__file__).resolve(), worktree):
         sys.stderr.write("supervise refuses to run inside the worktree\n")
         return 2
+    try:
+        cadence = float(os.environ.get("C11_POLLER_CADENCE_S", CADENCE_S))
+    except ValueError:
+        cadence = CADENCE_S
     world = ProductionWorld(root, worktree)
-    supervisor = Supervisor(root, world)
+    supervisor = Supervisor(root, world, cadence=cadence)
     world.bind(supervisor)
-    supervisor.poll_once()
+    lock = supervisor.hold_supervisor_lock()
+    if lock is None:
+        sys.stderr.write("another supervisor holds supervisor.lock\n")
+        return 2
+    try:
+        count = 0
+        while cycles is None or count < cycles:
+            if supervisor.disarmed:
+                if cycles is not None:
+                    break
+                world.sleep(DISARMED_SLEEP_S)
+                continue
+            supervisor.cycle()
+            count += 1
+            if cycles is not None and count >= cycles:
+                break
+            wait = supervisor.not_before - world.time()
+            if wait > cadence:
+                supervisor.log(decision="sleep", seconds=round(wait, 3))
+            if wait > 0:
+                world.sleep(wait)
+    finally:
+        os.close(lock)
     return 0
 
 
@@ -1961,7 +2048,8 @@ def main(argv):
         exec_argv = argv[argv.index("--exec") + 1:]
         return run_child_cli(root, exec_argv)
     if command == "supervise":
-        return supervise_cli(root)
+        cycles = int(argv[argv.index("--cycles") + 1]) if "--cycles" in argv else None
+        return supervise_cli(root, cycles)
     if command == "teardown":
         return teardown_cli(root)
     sys.stderr.write("unknown command\n")

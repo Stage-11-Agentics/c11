@@ -89,6 +89,7 @@ class World:
         self.scope = True
         self.toolchain = True
         self.kit = "ok"
+        self.reported = {}
 
     def time(self):
         return self.now
@@ -167,13 +168,17 @@ class World:
     def build_argv(self, worktree, derived, result):
         return poller.xcodebuild_argv(worktree, derived, result)
 
-    def spawn(self, command):
+    def spawn(self, command, log_path=None):
         self.spawned.append(command)
         code = self.exits.pop(0) if self.exits else 0
         return code
 
     def post_status(self, body):
         self.posts.append(body)
+        return {"status": 201, "headers": {}, "body": {}}
+
+    def head_status(self, sha):
+        return self.reported.get(sha)
 
     def scope_ok(self):
         return self.scope
@@ -218,7 +223,8 @@ class AdmissionTests(unittest.TestCase):
         world.pull_body = pr(sha=SHA_A)
         world.tip = SHA_B
         supervisor, outcome = run(world, self.root)
-        self.assertEqual(outcome, "superseded")
+        self.assertEqual(outcome, "idle")
+        self.assertIn("superseded", [item.get("decision") for item in _decisions(self.root)])
         self.assertEqual(supervisor.fetches, [])
         self.assertEqual(supervisor.spawns, [])
         logged = (self.root / "state" / "decisions.jsonl").read_text()
@@ -501,10 +507,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             "ref": "feature",
         }
         (state / "current.json").write_text(json.dumps(current))
-        (self.root / "harness.json").write_text(json.dumps({
-            "pr": pr(),
-            "ls_remote": "%s\trefs/heads/feature\n" % SHA_A,
-        }))
+        github = FakeGitHub(self.root)
         launcher = self.root / "launcher.py"
         grandchild = self.root / "grandchild.py"
         marker = self.root / "held.json"
@@ -537,8 +540,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             while True:
                 time.sleep(30)
         """))
-        env = dict(os.environ)
-        env["C11_POLLER_TEST"] = "1"
+        env = child_env(self.root, github)
         child = subprocess.Popen(
             [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "child",
              "--root", str(self.root), "--exec", sys.executable, str(launcher), str(state / "running.lock"), str(marker), str(grandchild), str(grand_pid)],
@@ -626,21 +628,18 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         (state / "current.json").write_text(json.dumps({
             "attempt_id": "attempt", "invocation": 1, "pr": 7, "sha": SHA_A, "ref": "feature",
         }))
-        (self.root / "harness.json").write_text(json.dumps({
-            "pr": pr(sha=SHA_A),
-            "ls_remote": "%s\trefs/heads/feature\n" % SHA_B,
-        }))
+        github = FakeGitHub(self.root)
+        env = child_env(self.root, github, tip=SHA_B)
         sentinel = self.root / "should-not-run"
-        env = dict(os.environ)
-        env["C11_POLLER_TEST"] = "1"
         result = subprocess.run(
             [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "child", "--root", str(self.root),
              "--exec", sys.executable, "-c", "open(%r,'w').write('ran')" % str(sentinel)],
             env=env, capture_output=True, text=True,
         )
-        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.returncode, 3, result.stderr)
         self.assertFalse(sentinel.exists())
         self.assertNotIn("pending", _events(self.root))
+        self.assertEqual(github.statuses(), [])
 
     def test_spawn_goes_through_atlas_build_slots(self):
         world = World(body=[pr()])
@@ -869,7 +868,7 @@ class PollingAndCredentialTests(unittest.TestCase):
         self.assertEqual(supervisor.spawns, [])
         self.assertTrue(supervisor.disarmed)
 
-    def test_child_without_the_harness_does_not_exec(self):
+    def test_child_without_credentials_does_not_exec(self):
         state = self.root / "state"
         state.mkdir()
         (state / "current.json").write_text(json.dumps({
@@ -877,7 +876,8 @@ class PollingAndCredentialTests(unittest.TestCase):
         }))
         sentinel = self.root / "should-not-run"
         env = dict(os.environ)
-        env.pop("C11_POLLER_TEST", None)
+        env.pop("C11_POLLER_CONFIG_DIR", None)
+        env.pop("C11_POLLER_FAKE_HTTP", None)
         env["HOME"] = str(self.root)
         result = subprocess.run(
             [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "child", "--root", str(self.root),
@@ -1149,6 +1149,134 @@ def _git_pair(tmp):
     return parent, sub
 
 
+APP_ID = 99
+INSTALLATION_ID = 7
+SUCCESS_BUILD = 'print("HealthFlagsTests"); print("Executed 1 test"); print("** TEST SUCCEEDED **")'
+_KEY = {}
+
+
+def _write_exec(path, text):
+    path.write_text(textwrap.dedent(text).lstrip("\n"))
+    path.chmod(0o755)
+
+
+def disposable_key(dest):
+    """One throwaway RSA key per test run, copied where the App config expects it."""
+    if "pem" not in _KEY:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "key.pem"
+            subprocess.check_call(
+                ["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(path)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            _KEY["pem"] = path.read_bytes()
+    dest.write_bytes(_KEY["pem"])
+    dest.chmod(0o600)
+
+
+def route(method, match, *responses, suffix=False):
+    entry = {"method": method, "responses": list(responses)}
+    entry["suffix" if suffix else "url"] = match
+    return entry
+
+
+class FakeGitHub:
+    """A disposable App config under HOME plus routes for poller.fixture_transport."""
+
+    def __init__(self, root, prs=None):
+        self.root = Path(root)
+        self.dir = self.root / "http"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.config = self.root / ".config" / "c11-pr-swift"
+        self.config.mkdir(parents=True, exist_ok=True)
+        disposable_key(self.config / "private-key.pem")
+        (self.config / "app.json").write_text(json.dumps({"app_id": APP_ID, "installation_id": INSTALLATION_ID}))
+        self.routes = []
+        self.set_prs([pr()] if prs is None else prs)
+
+    def set_prs(self, prs, list_headers=None):
+        headers = {"X-RateLimit-Remaining": "4000", "ETag": "\"list\""} if list_headers is None else list_headers
+        self.routes = [
+            route("POST", "/access_tokens", {"status": 201, "body": {"token": "fixture-installation-token"}}),
+            route("GET", "/installation/repositories", {"status": 200, "body": {
+                "total_count": 1,
+                "repositories": [{"id": poller.REPO_ID, "full_name": poller.REPO_NAME}],
+            }}),
+            route("GET", "/pulls?state", {"status": 200, "headers": headers, "body": prs}),
+        ]
+        for obj in prs:
+            self.routes.append(route("GET", "/pulls/%s" % obj["number"], {"status": 200, "body": obj}, suffix=True))
+        self.routes += [
+            route("GET", "/status", {"status": 200, "body": {"state": "pending", "statuses": []}}, suffix=True),
+            route("POST", "/statuses/", {"status": 201, "body": {}}),
+            route("GET", "/app", {"status": 200, "body": {"id": APP_ID}}, suffix=True),
+            route("GET", "/app/installations?", {"status": 200, "body": [{"id": INSTALLATION_ID}]}),
+            route("DELETE", "/app/installations/%s" % INSTALLATION_ID, {"status": 204, "body": None}, suffix=True),
+        ]
+        self.write()
+
+    def put(self, method, match, *responses, suffix=False):
+        """Replace the route with this method and match, or add it first."""
+        key = "suffix" if suffix else "url"
+        for index, item in enumerate(self.routes):
+            if item.get("method") == method and item.get(key) == match:
+                self.routes[index] = route(method, match, *responses, suffix=suffix)
+                break
+        else:
+            self.routes.insert(0, route(method, match, *responses, suffix=suffix))
+        self.write()
+
+    def write(self):
+        temporary = self.dir / "routes.json.tmp"
+        temporary.write_text(json.dumps(self.routes))
+        os.replace(temporary, self.dir / "routes.json")
+
+    def requests(self):
+        path = self.dir / "requests.jsonl"
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    def statuses(self):
+        return [(item["body"]["state"], item["body"]["description"])
+                for item in self.requests() if item["method"] == "POST" and "/statuses/" in item["url"]]
+
+
+def git_shim(root, worktree, tip=SHA_A):
+    """A git stand-in for fetch, rev-parse, status and ls-remote. Returns its env."""
+    spec = Path(root) / "git-spec.json"
+    spec.write_text(json.dumps({"worktree": str(worktree), "sha": SHA_A, "gitlink": GITLINK, "tip": tip}))
+    shim = Path(root) / "git-shim"
+    _write_exec(shim, """
+        #!/usr/bin/env python3
+        import json, os, sys
+        from pathlib import Path
+        spec = json.loads(Path(os.environ["C11_POLLER_GIT_SPEC"]).read_text())
+        args = sys.argv[1:]
+        cwd = str(Path(os.getcwd()).resolve())
+        work = str(Path(spec["worktree"]).resolve())
+        if args[:1] == ["ls-remote"]:
+            sys.stdout.write(spec["tip"] + "\\t" + args[-1] + "\\n")
+        elif args[:1] == ["rev-parse"] and len(args) > 1 and args[1] == "HEAD":
+            sys.stdout.write((spec["sha"] if cwd == work else spec["gitlink"]) + "\\n")
+        elif args[:1] == ["rev-parse"] and len(args) > 1 and ":" in args[1]:
+            sys.stdout.write(spec["gitlink"] + "\\n")
+        elif args[:1] == ["status"] and cwd == work:
+            sys.stdout.write("?? GhosttyKit.xcframework\\n")
+        raise SystemExit(0)
+    """)
+    return {"C11_POLLER_GIT": str(shim), "C11_POLLER_GIT_SPEC": str(spec)}
+
+
+def child_env(root, github, tip=SHA_A):
+    env = dict(os.environ)
+    env.pop("C11_POLLER_CONFIG_DIR", None)
+    env["HOME"] = str(root)
+    env["C11_POLLER_FAKE_HTTP"] = str(github.dir)
+    env.update(git_shim(root, Path(root) / "work", tip=tip))
+    return env
+
+
 class ReviewRegressionTests(unittest.TestCase):
     """The review probes, plus the inventory cases those probes do not spell out."""
 
@@ -1172,7 +1300,7 @@ class ReviewRegressionTests(unittest.TestCase):
         world = World(body=[pr()])
         spawn = world.spawn
 
-        def run_spawn(command):
+        def run_spawn(command, log_path=None):
             current = json.loads((self.root / "state" / "current.json").read_text())
             Path(current["result"]).mkdir(parents=True)
             return spawn(command)
@@ -1183,12 +1311,14 @@ class ReviewRegressionTests(unittest.TestCase):
         world.now += 26
         supervisor.poll_once()
 
-    def test_budget_includes_terminal_post(self):
+    def test_budget_excludes_terminal_post(self):
+        """Orchestrator ruling: slot acquisition to build end; posting is reported apart."""
         world = World(body=[pr()])
         spawn = world.spawn
         post = world.post_status
 
-        def run_spawn(command):
+        def run_spawn(command, log_path=None):
+            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
             world.now += 119
             return spawn(command)
 
@@ -1199,13 +1329,45 @@ class ReviewRegressionTests(unittest.TestCase):
         world.spawn = run_spawn
         world.post_status = deliver
         poller.Supervisor(self.root, world).poll_once()
-        self.assertEqual(world.posts[-1]["state"], "failure", str(world.posts[-1]))
+        self.assertEqual(len(world.posts), 1)
+        self.assertEqual((world.posts[-1]["state"], world.posts[-1]["description"]), ("success", "119s"))
+        result = [item for item in _decisions(self.root) if item.get("decision") == "result"][-1]
+        self.assertEqual(result["build_seconds"], 119)
+        self.assertEqual(result["post_seconds"], 5)
+
+    def test_build_over_budget_fails_once(self):
+        world = World(body=[pr()])
+        spawn = world.spawn
+
+        def run_spawn(command, log_path=None):
+            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
+            world.now += 121
+            return spawn(command)
+
+        world.spawn = run_spawn
+        poller.Supervisor(self.root, world).poll_once()
+        self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("failure", "budget 121s")])
+
+    def test_status_post_retries_honour_retry_after(self):
+        world = World(body=[pr()])
+        replies = [
+            {"status": 503, "headers": {"retry-after": "30"}, "body": {}},
+            {"status": 503, "headers": {"Retry-After": "45"}, "body": {}},
+            {"status": 201, "headers": {}, "body": {}},
+        ]
+        post = world.post_status
+        world.post_status = lambda body: (post(body), replies.pop(0))[1]
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(world.sleeps[-2:], [30, 45])
+        self.assertTrue(supervisor.delivered)
+        self.assertEqual(supervisor.reported, {7: SHA_A})
 
     def test_budget_excludes_slot_queue(self):
         world = World(body=[pr()])
         spawn = world.spawn
 
-        def run_spawn(command):
+        def run_spawn(command, log_path=None):
             world.now += 130
             poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
             world.now += 5
@@ -1218,10 +1380,14 @@ class ReviewRegressionTests(unittest.TestCase):
     def test_failed_terminal_post_is_not_a_delivered_result(self):
         world = World(body=[pr()])
         world.post_status = lambda _body: {"status": 503, "body": {}, "headers": {}}
-        poller.Supervisor(self.root, world).poll_once()
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
         events = _decisions(self.root)
         self.assertFalse(any(item.get("decision") == "result" and item.get("state") == "success" for item in events), str(events[-1]))
-        self.assertTrue(any(item.get("decision") == "undelivered" for item in events))
+        self.assertEqual([item.get("decision") for item in events].count("status_undelivered"), 1)
+        self.assertEqual(world.sleeps[-2:], [1, 2])
+        self.assertEqual(supervisor.reported, {})
+        self.assertFalse((self.root / "state" / "undelivered.json").exists())
 
     def test_second_page_retry_after(self):
         url = "https://example.test/page2"
@@ -1315,24 +1481,17 @@ class ReviewRegressionTests(unittest.TestCase):
 
     def test_revoked_child_does_not_post_or_retry(self):
         world = World(body=[pr()])
-        (self.root / "harness.json").write_text(json.dumps({
-            "pr": pr(sha=SHA_B),
-            "ls_remote": SHA_B + "\trefs/heads/feature\n",
-        }))
+        github = FakeGitHub(self.root, prs=[pr(sha=SHA_B)])
+        env = child_env(self.root, github, tip=SHA_B)
 
-        def spawn(command):
+        def spawn(command, log_path=None):
             world.spawned.append(command)
-            return subprocess.run(
-                command[3:],
-                env={**os.environ, "C11_POLLER_TEST": "1"},
-                capture_output=True,
-                text=True,
-                timeout=3,
-            ).returncode
+            return subprocess.run(command[3:], env=env, capture_output=True, text=True, timeout=10).returncode
 
         world.spawn = spawn
         poller.Supervisor(self.root, world).poll_once()
         self.assertEqual(world.posts, [], str(world.posts))
+        self.assertEqual(github.statuses(), [])
         self.assertEqual(len(world.spawned), 1)
 
     def test_running_sha_change_cancels_group(self):
@@ -1377,13 +1536,13 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(json.loads(lines[-1])["n"], 204)
 
 
-def _write_exec(path, text):
-    path.write_text(textwrap.dedent(text).lstrip("\n"))
-    path.chmod(0o755)
-
-
 class RuntimeIntegrationTests(unittest.TestCase):
-    """The real supervise and teardown commands. Fake HTTP, real short-lived processes."""
+    """The real supervise and teardown commands.
+
+    Fake GitHub at the HTTP transport (real AppClient, real JWT signing with a
+    disposable key), shims for git, tart and zig, a harmless xcodebuild
+    stand-in, private slot locks, and real short-lived processes.
+    """
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1393,42 +1552,27 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.work = self.root / "work"
         (self.work / "ghostty").mkdir(parents=True)
         (self.work / "vendor" / "bonsplit").mkdir(parents=True)
-        self.kit = self.root / "kit" / SHA_A / "GhosttyKit.xcframework"
+        self.kit = self.root / "kit" / GITLINK / "GhosttyKit.xcframework"
         self.kit.mkdir(parents=True)
         self.load = self.root / "load.txt"
         self.load.write_text("1\n")
+        self.github = FakeGitHub(self.root)
+        self.git_env = git_shim(self.root, self.work)
         self._shims()
+        self.build(SUCCESS_BUILD)
         self.home_key = Path.home() / ".config" / "c11-pr-swift" / "private-key.pem"
         self.home_key_existed = self.home_key.exists()
+        self.procs = []
 
     def tearDown(self):
+        for proc in self.procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
         self.assertEqual(self.home_key.exists(), self.home_key_existed)
         self.tmp.cleanup()
 
     def _shims(self):
-        self.git_spec = self.root / "git-spec.json"
-        self.git_spec.write_text(json.dumps({
-            "worktree": str(self.work),
-            "sha": SHA_A,
-            "gitlink": GITLINK,
-        }))
-        self.git_bin = self.root / "git-shim"
-        _write_exec(self.git_bin, """
-            #!/usr/bin/env python3
-            import json, os, sys
-            from pathlib import Path
-            spec = json.loads(Path(os.environ["C11_POLLER_GIT_SPEC"]).read_text())
-            args = sys.argv[1:]
-            cwd = str(Path(os.getcwd()).resolve())
-            work = str(Path(spec["worktree"]).resolve())
-            if args[:1] == ["rev-parse"] and len(args) > 1 and args[1] == "HEAD":
-                sys.stdout.write((spec["sha"] if cwd == work else spec["gitlink"]) + "\\n")
-            elif args[:1] == ["rev-parse"] and len(args) > 1 and ":" in args[1]:
-                sys.stdout.write(spec["gitlink"] + "\\n")
-            elif args[:1] == ["status"] and cwd == work:
-                sys.stdout.write("?? GhosttyKit.xcframework\\n")
-            raise SystemExit(0)
-        """)
         self.tart_bin = self.root / "tart-shim"
         _write_exec(self.tart_bin, """
             #!/usr/bin/env python3
@@ -1451,6 +1595,19 @@ class RuntimeIntegrationTests(unittest.TestCase):
             raise SystemExit(0)
         """)
 
+    def build(self, body):
+        """The xcodebuild stand-in. It gets the real argv and the build env."""
+        shim = self.root / "xcodebuild-shim"
+        shim.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, signal, sys, time\n"
+            "ROOT = pathlib.Path(%r)\n"
+            "with open(ROOT / 'argv.jsonl', 'a') as handle: handle.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            % str(self.root) + textwrap.dedent(body).strip() + "\n"
+        )
+        shim.chmod(0o755)
+        self.xcodebuild = shim
+
     def _enable(self):
         state = self.root / "state"
         state.mkdir(parents=True, exist_ok=True)
@@ -1458,281 +1615,335 @@ class RuntimeIntegrationTests(unittest.TestCase):
 
     def _env(self, **extra):
         env = os.environ.copy()
-        env["C11_POLLER_TEST"] = "1"
+        for key in ("C11_POLLER_CONFIG_DIR", "C11_BUILD_LOCK", "GITHUB_TOKEN", "GH_TOKEN"):
+            env.pop(key, None)
+        env.update(self.git_env)
+        env["HOME"] = str(self.root)
+        env["C11_POLLER_FAKE_HTTP"] = str(self.github.dir)
         env["C11_POLLER_TART"] = str(self.tart_bin)
-        env["C11_POLLER_GIT"] = str(self.git_bin)
-        env["C11_POLLER_GIT_SPEC"] = str(self.git_spec)
         env["C11_POLLER_ZIG"] = str(self.zig_bin)
+        env["C11_POLLER_XCODEBUILD"] = str(self.xcodebuild)
         env["C11_POLLER_KIT_CACHE"] = str(self.root / "kit")
+        env["C11_POLLER_CADENCE_S"] = "0.05"
         env["C11_ATLAS_SLOTS_DIR"] = str(self.slots)
         env["C11_ATLAS_LOAD_FILE"] = str(self.load)
         env["C11_ATLAS_SLOT_POLL_SECONDS"] = "0.05"
-        env["HOME"] = str(self.root)
-        env.pop("C11_BUILD_LOCK", None)
         env.update(extra)
         return env
 
-    def _harness(self, exec_argv, **extra):
-        payload = {
-            "list": {
-                "status": 200,
-                "headers": {"X-RateLimit-Remaining": "4000", "ETag": "\"list\""},
-                "body": [pr()],
-            },
-            "pr": pr(),
-            "ls_remote": "%s\trefs/heads/feature\n" % SHA_A,
-            "build_log": "HealthFlagsTests\n** TEST SUCCEEDED **\nExecuted 1 test\n",
-            "exec": exec_argv,
-            "scope_ok": True,
-            "post_status": 201,
-        }
-        payload.update(extra)
-        (self.root / "harness.json").write_text(json.dumps(payload) + "\n")
+    def _argv(self, cycles):
+        argv = [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)]
+        if cycles is not None:
+            argv += ["--cycles", str(cycles)]
+        return argv
 
-    def _supervise(self, env, timeout):
+    def _supervise(self, env=None, timeout=30, cycles=1):
+        return subprocess.run(self._argv(cycles), env=env or self._env(), capture_output=True, text=True, timeout=timeout)
+
+    def _start(self, env=None, cycles=1):
+        proc = subprocess.Popen(self._argv(cycles), env=env or self._env(),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.procs.append(proc)
+        return proc
+
+    def _results(self):
+        return [item for item in _decisions(self.root) if item.get("decision") == "result"]
+
+    def _teardown(self, **extra):
         return subprocess.run(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
+            env=self._env(**extra), capture_output=True, text=True, timeout=20,
         )
+
+    def _stages(self, stages):
+        state = self.root / "state"
+        state.mkdir(exist_ok=True)
+        (state / "stages.json").write_text(json.dumps(stages) + "\n")
+
+    # B1: gates.
 
     def test_disabled_file_still_exits_2(self):
         state = self.root / "state"
         state.mkdir()
         (state / "enabled.json").write_text('{"enabled": false}\n')
-        result = self._supervise(self._env(), 10)
+        result = self._supervise()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("not armed", result.stderr)
         self.assertFalse((state / "decisions.jsonl").exists())
+        self.assertEqual(self.github.requests(), [])
 
     def test_layout_inside_the_worktree_exits_2(self):
         state = self.root / "state"
         state.mkdir()
-        (state / "enabled.json").write_text(json.dumps({
-            "enabled": True,
-            "worktree": str(ROOT.parent),
-        }) + "\n")
-        result = self._supervise(self._env(), 10)
+        (state / "enabled.json").write_text(json.dumps({"enabled": True, "worktree": str(ROOT.parent)}) + "\n")
+        result = self._supervise()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("worktree", result.stderr)
         self.assertFalse((state / "decisions.jsonl").exists())
+        self.assertEqual(self.github.requests(), [])
 
     def test_guest_at_start_does_not_fetch(self):
         self._enable()
-        ran = self.root / "should-not-run"
-        self._harness([sys.executable, "-c", "open(%r,'w').write('ran')" % str(ran)])
-        result = self._supervise(self._env(C11_POLLER_TART_MODE="guest"), 15)
+        result = self._supervise(self._env(C11_POLLER_TART_MODE="guest"))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(ran.exists())
+        self.assertFalse((self.root / "argv.jsonl").exists())
         self.assertTrue(any(item.get("decision") == "no-start" and item.get("reason") == "guest" for item in _decisions(self.root)))
         self.assertNotIn("spawn", _events(self.root))
 
     def test_held_slot_at_start_does_not_fetch(self):
         self._enable()
-        ran = self.root / "should-not-run"
-        self._harness([sys.executable, "-c", "open(%r,'w').write('ran')" % str(ran)])
         lock = self.slots / "slot-1.lock"
         holder = subprocess.Popen(
             [sys.executable, "-c",
              "import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600); fcntl.flock(fd, fcntl.LOCK_EX); time.sleep(30)",
              str(lock)],
         )
-        try:
-            deadline = time.time() + 3
-            while time.time() < deadline and not poller.slot_held(self.slots, 1):
-                time.sleep(0.05)
-            self.assertTrue(poller.slot_held(self.slots, 1))
-            result = self._supervise(self._env(), 15)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse(ran.exists())
-            self.assertTrue(any(item.get("decision") == "no-start" and item.get("reason") == "slot" for item in _decisions(self.root)))
-            self.assertNotIn("spawn", _events(self.root))
-        finally:
-            holder.kill()
-            holder.wait(timeout=5)
-
-    def test_spawn_posts_through_the_real_entrypoint(self):
-        self._enable()
-        flag = self.root / "child-ran"
-        self._harness([sys.executable, "-c", "open(%r,'w').write('ok')" % str(flag)])
-        result = self._supervise(self._env(), 20)
+        self.procs.append(holder)
+        deadline = time.time() + 3
+        while time.time() < deadline and not poller.slot_held(self.slots, 1):
+            time.sleep(0.05)
+        self.assertTrue(poller.slot_held(self.slots, 1))
+        result = self._supervise()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(flag.exists())
-        self.assertTrue(any(
-            item.get("decision") == "result" and item.get("state") == "success"
-            for item in _decisions(self.root)
-        ), _decisions(self.root))
-        self.assertIn("status-post", _events(self.root))
+        self.assertFalse((self.root / "argv.jsonl").exists())
+        self.assertTrue(any(item.get("decision") == "no-start" and item.get("reason") == "slot" for item in _decisions(self.root)))
+
+    # B1: build output, budget fields, GhosttyKit.
+
+    def test_build_output_becomes_the_status(self):
+        self._enable()
+        result = self._supervise()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.github.statuses(), [("pending", "build started"), ("success", self._results()[-1]["description"])])
+        decided = self._results()[-1]
+        self.assertEqual(decided["state"], "success")
+        self.assertEqual(decided["description"], "%ss" % int(decided["build_seconds"]))
+        self.assertIn("post_seconds", decided)
+        argv = json.loads((self.root / "argv.jsonl").read_text().splitlines()[0])
+        bundle = Path(argv[argv.index("-resultBundlePath") + 1])
+        self.assertEqual(bundle.parent, self.root / "state" / "results")
+        self.assertIn("** TEST SUCCEEDED **", (bundle.parent / (bundle.name + ".log")).read_text())
+        self.assertIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
+        requests = self.github.requests()
+        self.assertTrue(all(item["auth"] == "jwt" for item in requests if item["url"].endswith("/access_tokens")))
+        self.assertTrue(all(item["auth"] == "token" for item in requests if "/statuses/" in item["url"]))
+        self.assertNotIn("fixture-installation-token", (self.root / "state" / "decisions.jsonl").read_text())
+
+    def test_failed_build_retries_once_then_posts_failure(self):
+        self._enable()
+        self.build('print("** TEST FAILED **"); sys.exit(65)')
+        result = self._supervise()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bundles = [json.loads(line) for line in (self.root / "argv.jsonl").read_text().splitlines()]
+        paths = [argv[argv.index("-resultBundlePath") + 1] for argv in bundles]
+        self.assertEqual(len(paths), 2)
+        self.assertTrue(paths[0].endswith("-1") and paths[1].endswith("-2"))
+        self.assertEqual(paths[0][:-2], paths[1][:-2])
+        self.assertEqual([state for state, _ in self.github.statuses()], ["pending", "pending", "failure"])
+
+    def test_ghosttykit_links_from_the_ghostty_gitlink(self):
+        self._enable()
+        self.kit.rmdir()
+        (self.root / "kit" / SHA_A / "GhosttyKit.xcframework").mkdir(parents=True)
+        result = self._supervise()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "argv.jsonl").exists())
+        self.assertTrue(any(item.get("decision") == "ghosttykit_missing" and item.get("gitlink") == GITLINK
+                            for item in _decisions(self.root)))
+        self.kit.mkdir(parents=True)
+        result = self._supervise()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "argv.jsonl").exists())
+        self.assertEqual((self.work / "GhosttyKit.xcframework").resolve(), self.kit.resolve())
+
+    # B1 and B3: the running build stops on a guest, the other slot, or a new head.
 
     def test_guest_during_the_build_stops_the_group(self):
         self._enable()
         flag = self.root / "guest-flag"
         ready = self.root / "child-ready"
-        self._harness([
-            sys.executable, "-c",
-            "import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); pathlib.Path(sys.argv[2]).write_text('up'); time.sleep(40)",
-            str(flag), str(ready),
-        ])
-        proc = subprocess.Popen(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
-            env=self._env(C11_POLLER_GUEST_FLAG=str(flag)),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        try:
-            _wait_for(ready, timeout=20)
-            out, err = proc.communicate(timeout=20)
-        except Exception:
-            proc.kill()
-            proc.wait(timeout=5)
-            raise
+        self.build("pathlib.Path(%r).touch(); pathlib.Path(%r).write_text(str(os.getpgrp())); time.sleep(40)" % (str(flag), str(ready)))
+        proc = self._start(self._env(C11_POLLER_GUEST_FLAG=str(flag)))
+        _wait_for(ready, timeout=20)
+        _out, err = proc.communicate(timeout=30)
         self.assertEqual(proc.returncode, 0, err)
+        self.assertFalse(poller.group_alive(int(ready.read_text())))
         self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "guest" for item in _decisions(self.root)))
-        self.assertTrue(any(item.get("state") == "error" for item in _decisions(self.root) if item.get("decision") == "result"))
+        self.assertEqual(self.github.statuses()[-1], ("error", "yielded to Atlas work"))
 
     def test_other_slot_during_the_build_stops_the_group(self):
         self._enable()
         ready = self.root / "child-ready"
-        self._harness([
-            sys.executable, "-c",
-            "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('up'); time.sleep(40)",
-            str(ready),
-        ])
-        proc = subprocess.Popen(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
-            env=self._env(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        lock = None
+        self.build("pathlib.Path(%r).write_text(str(os.getpgrp())); time.sleep(40)" % str(ready))
+        proc = self._start()
+        _wait_for(ready, timeout=20)
+        import fcntl
+        lock = os.open(self.slots / "slot-2.lock", os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            _wait_for(ready, timeout=20)
-            lock_path = self.slots / "slot-2.lock"
-            lock = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-            import fcntl
             fcntl.flock(lock, fcntl.LOCK_EX)
-            out, err = proc.communicate(timeout=20)
-        except Exception:
-            proc.kill()
-            proc.wait(timeout=5)
-            raise
+            _out, err = proc.communicate(timeout=30)
         finally:
-            if lock is not None:
-                os.close(lock)
+            os.close(lock)
         self.assertEqual(proc.returncode, 0, err)
+        self.assertFalse(poller.group_alive(int(ready.read_text())))
         self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "slot" for item in _decisions(self.root)))
 
     def test_sha_change_kills_until_the_group_is_absent(self):
         self._enable()
         ready = self.root / "child-ready"
-        script = (
-            "import json,os,pathlib,signal,sys,time\n"
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            "path = pathlib.Path(sys.argv[1])\n"
-            "data = json.loads(path.read_text())\n"
-            "data['pr']['head']['sha'] = '%s'\n"
-            "data['ls_remote'] = '%s\\trefs/heads/feature\\n'\n"
-            "temporary = path.with_suffix('.tmp')\n"
-            "temporary.write_text(json.dumps(data))\n"
-            "os.replace(temporary, path)\n"
-            "pathlib.Path(sys.argv[2]).write_text(str(os.getpgrp()))\n"
-            "time.sleep(60)\n"
-        ) % (SHA_B, SHA_B)
-        self._harness([sys.executable, "-c", script, str(self.root / "harness.json"), str(ready)])
-        proc = subprocess.Popen(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)],
-            env=self._env(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        try:
-            _wait_for(ready, timeout=20)
-            pgid = int(ready.read_text())
-            out, err = proc.communicate(timeout=30)
-        except Exception:
-            proc.kill()
-            proc.wait(timeout=5)
-            raise
+        routes = self.github.dir / "routes.json"
+        spec = Path(self.git_env["C11_POLLER_GIT_SPEC"])
+        self.build("""
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            routes = json.loads(pathlib.Path(%r).read_text())
+            for item in routes:
+                if item.get("suffix") == "/pulls/7":
+                    item["responses"][0]["body"]["head"]["sha"] = %r
+            pathlib.Path(%r).with_suffix(".tmp").write_text(json.dumps(routes))
+            os.replace(pathlib.Path(%r).with_suffix(".tmp"), %r)
+            spec = json.loads(pathlib.Path(%r).read_text())
+            spec["tip"] = %r
+            pathlib.Path(%r).write_text(json.dumps(spec))
+            pathlib.Path(%r).write_text(str(os.getpgrp()))
+            time.sleep(60)
+        """ % (str(routes), SHA_B, str(routes), str(routes), str(routes), str(spec), SHA_B, str(spec), str(ready)))
+        proc = self._start()
+        _wait_for(ready, timeout=20)
+        _out, err = proc.communicate(timeout=40)
         self.assertEqual(proc.returncode, 0, err)
-        self.assertFalse(poller.group_alive(pgid), _decisions(self.root))
-        self.assertTrue(any(item.get("description") == "superseded" for item in _decisions(self.root)))
+        self.assertFalse(poller.group_alive(int(ready.read_text())))
+        self.assertEqual(self.github.statuses()[-1], ("failure", "superseded"))
 
-    def test_partial_teardown_keeps_the_key_when_the_app_remains(self):
-        config = self.root / "config"
-        config.mkdir()
-        key = config / "private-key.pem"
-        key.write_text("not-a-real-key\n")
-        state = self.root / "state"
-        state.mkdir()
-        (state / "stages.json").write_text(json.dumps(["app_installed", "key_placed"]) + "\n")
-        (self.root / "harness.json").write_text(json.dumps({"app_status": 200}) + "\n")
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
-            env=self._env(C11_POLLER_CONFIG_DIR=str(config)),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        self.assertEqual(result.returncode, 2, result.stderr)
-        body = json.loads(result.stdout)
-        self.assertEqual(body["action"], "stop")
-        self.assertNotIn("key_placed", body["removed"])
-        self.assertTrue(key.exists())
-        self.assertNotIn("remove_key", result.stdout)
+    # B2: the queue and reported heads live in one process; a restart asks GitHub.
 
-    def test_teardown_removes_the_key_only_after_absence(self):
-        config = self.root / "config"
-        config.mkdir()
-        key = config / "private-key.pem"
-        key.write_text("not-a-real-key\n")
-        state = self.root / "state"
-        state.mkdir()
-        (state / "stages.json").write_text(json.dumps(["app_installed", "key_placed"]) + "\n")
-        (self.root / "harness.json").write_text(json.dumps({"app_status": 404}) + "\n")
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
-            env=self._env(C11_POLLER_CONFIG_DIR=str(config)),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+    def test_queue_advances_between_cycles_in_one_process(self):
+        self._enable()
+        self.github.set_prs([pr(), pr(number=8, ref="other")])
+        trace = self.root / "trace"
+        self.build("""
+            current = json.loads((ROOT / "state" / "current.json").read_text())
+            with open(%r, "a") as handle: handle.write(str(current["pr"]) + "\\n")
+            %s
+        """ % (str(trace), SUCCESS_BUILD))
+        result = self._supervise(cycles=3)
         self.assertEqual(result.returncode, 0, result.stderr)
-        body = json.loads(result.stdout)
-        self.assertEqual(body["action"], "done")
-        self.assertIn("key_placed", body["removed"])
-        self.assertFalse(key.exists())
+        self.assertEqual(trace.read_text().splitlines(), ["7", "8"])
+        results = self._results()
+        self.assertEqual([(item["pr"], item["state"]) for item in results], [(7, "success"), (8, "success")])
 
-    def test_loaded_plist_stops_before_the_key_is_removed(self):
-        config = self.root / "config"
-        config.mkdir()
-        key = config / "private-key.pem"
-        key.write_text("not-a-real-key\n")
+    def test_restart_skips_a_head_already_reported(self):
+        self._enable()
+        self.github.put("GET", "/status", {"status": 200, "body": {"state": "success", "statuses": [
+            {"context": "c11/pr-swift", "state": "success", "description": "21s"},
+        ]}}, suffix=True)
+        result = self._supervise(cycles=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "argv.jsonl").exists())
+        self.assertEqual(self.github.statuses(), [])
+        self.assertEqual([item.get("decision") for item in _decisions(self.root)].count("already-reported"), 1)
+
+    # B4: no outbox. Three tries, then the next cycle builds the head again.
+
+    def test_undelivered_status_is_rebuilt_next_cycle(self):
+        self._enable()
+        busy = {"status": 503, "headers": {"Retry-After": "0"}, "body": {}}
+        ok = {"status": 201, "body": {}}
+        self.github.put("POST", "/statuses/", ok, busy, busy, busy, ok, ok)
+        result = self._supervise(cycles=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decisions = [item.get("decision") for item in _decisions(self.root)]
+        self.assertLess(decisions.index("status_undelivered"), decisions.index("result"))
+        self.assertEqual([state for state, _ in self.github.statuses()],
+                         ["pending", "success", "success", "success", "pending", "success"])
+        bundles = [json.loads(line) for line in (self.root / "argv.jsonl").read_text().splitlines()]
+        paths = {argv[argv.index("-resultBundlePath") + 1] for argv in bundles}
+        self.assertEqual(len(paths), 2)
+        self.assertFalse((self.root / "state" / "undelivered.json").exists())
+
+    # B6: the deadline is held by the running process.
+
+    def test_retry_after_holds_the_running_process(self):
+        self._enable()
+        self.github.put("GET", "/pulls?state", {"status": 429, "headers": {"retry-after": "7200"}, "body": {}})
+        proc = self._start(cycles=None)
+        deadline = time.time() + 15
+        while time.time() < deadline and not any(item.get("decision") == "sleep" for item in _decisions(self.root)):
+            time.sleep(0.05)
+        slept = [item for item in _decisions(self.root) if item.get("decision") == "sleep"]
+        self.assertTrue(slept, _decisions(self.root))
+        self.assertGreaterEqual(slept[0]["seconds"], 7199)
+        time.sleep(1.0)
+        self.assertIsNone(proc.poll())
+        lists = [item for item in self.github.requests() if "/pulls?state" in item["url"]]
+        self.assertEqual(len(lists), 1)
+        proc.terminate()
+        proc.wait(timeout=5)
+
+    # B1: teardown against the App API and the process table.
+
+    def test_teardown_deletes_the_installation_then_removes_the_key(self):
+        self._stages(["app_installed", "key_placed"])
+        self.github.put("GET", "/app/installations?", {"status": 200, "body": []})
+        result = self._teardown()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["removed"], ["app_installed", "key_placed"])
+        self.assertFalse((self.github.config / "private-key.pem").exists())
+        calls = [(item["method"], item["url"].split("api.github.com")[-1], item["auth"]) for item in self.github.requests()]
+        self.assertEqual(calls, [
+            ("DELETE", "/app/installations/7", "jwt"),
+            ("GET", "/app", "jwt"),
+            ("GET", "/app/installations?per_page=100", "jwt"),
+        ])
+
+    def test_teardown_keeps_the_key_while_the_installation_is_listed(self):
+        self._stages(["app_installed", "key_placed"])
+        result = self._teardown()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"action": "stop", "removed": []})
+        self.assertTrue((self.github.config / "private-key.pem").exists())
+
+    def test_rejected_key_or_other_app_is_not_proof_of_absence(self):
+        """An empty installation list proves nothing unless GET /app shows this App."""
+        self._stages(["app_installed", "key_placed"])
+        self.github.put("GET", "/app/installations?", {"status": 200, "body": []})
+        for identity in ({"status": 401, "body": {}}, {"status": 200, "body": {"id": APP_ID + 1}}):
+            with self.subTest(identity=identity["status"]):
+                self.github.put("GET", "/app", identity, suffix=True)
+                result = self._teardown()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertTrue((self.github.config / "private-key.pem").exists())
+
+    def test_loaded_service_stops_before_the_key(self):
         plist = self.root / "agent.plist"
         plist.write_text("plist\n")
         launch = self.root / "launchctl-shim"
         _write_exec(launch, "#!/bin/sh\nexit 0\n")
-        state = self.root / "state"
-        state.mkdir()
-        (state / "stages.json").write_text(json.dumps(["plist_installed", "key_placed"]) + "\n")
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
-            env=self._env(
-                C11_POLLER_CONFIG_DIR=str(config),
-                C11_POLLER_LAUNCHCTL=str(launch),
-                C11_POLLER_PLIST=str(plist),
-            ),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        self._stages(["plist_installed", "key_placed"])
+        result = self._teardown(C11_POLLER_LAUNCHCTL=str(launch), C11_POLLER_PLIST=str(plist))
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertTrue(key.exists())
+        self.assertTrue((self.github.config / "private-key.pem").exists())
         self.assertTrue(plist.exists())
+
+    def test_unloaded_service_with_a_live_build_group_stops(self):
+        plist = self.root / "agent.plist"
+        plist.write_text("plist\n")
+        launch = self.root / "launchctl-shim"
+        _write_exec(launch, "#!/bin/sh\n[ \"$1\" = print ] && exit 113\nexit 0\n")
+        self._stages(["plist_installed", "key_placed"])
+        build = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.procs.append(build)
+        poller.write_running(self.root, {"pgid": build.pid})
+        env = dict(C11_POLLER_LAUNCHCTL=str(launch), C11_POLLER_PLIST=str(plist))
+        result = self._teardown(**env)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue((self.github.config / "private-key.pem").exists())
+        self.assertTrue(plist.exists())
+        build.kill()
+        build.wait(timeout=5)
+        result = self._teardown(**env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.github.config / "private-key.pem").exists())
+        self.assertFalse(plist.exists())
 
 
 if __name__ == "__main__":

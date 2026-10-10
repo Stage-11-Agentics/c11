@@ -5710,7 +5710,7 @@ struct SettingsView: View {
                 ),
                 subtitle: String(
                     localized: "settings.app.sidebarAgentColdThreshold.subtitle",
-                    defaultValue: "Claude Code, Codex and Grok Build go Cold when their prompt cache expires. Other agents go Cold after this long without a submitted task or lifecycle activity."
+                    defaultValue: "An agent whose prompt cache c11 can see goes Cold when the cache expires. Other agents go Cold after this long without a submitted task or lifecycle activity."
                 )
             ) {
                 HStack(spacing: 8) {

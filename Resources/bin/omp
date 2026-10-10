@@ -7,7 +7,11 @@
 #      and
 #   2. wrapper-claims a placeholder ConversationRef at launch, and
 #   3. watches OMP's tty-scoped pointer until its JSONL actually exists,
-#      then pushes the exact UUID, effective cwd, and path as causal evidence.
+#      then pushes the exact UUID, effective cwd, and path as causal evidence,
+#      and
+#   4. loads a bundled runtime extension (omp-prompt-cache.ts) that reports
+#      each model request's prompt cache use, never text. Nothing is written
+#      to omp's config.
 #
 # Outside c11 (or when the socket is unreachable), it passes through to the
 # real omp binary unchanged.
@@ -192,4 +196,28 @@ if [[ -n "$c11_bin" ]]; then
     fi
 fi
 
+# (4) Runtime extension for prompt cache reports, by flag only, and only for an
+#     agent session. omp hoists a subcommand that follows leading flags, and
+#     releases before 18 hand it those flags, which it rejects ("Unknown option
+#     '--extension'"). So any argument before `--` that names a subcommand
+#     (omp 16.2 through 18.8; later releases drop launch flags themselves)
+#     runs omp unchanged. `launch` is the agent session itself.
+omp_runs_agent_session() {
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --) return 0 ;;
+            __complete|acp|agents|auth-broker|auth-gateway|bench|browser-relay|cleanse|clip|collab|commit|\
+            completions|compress|config|dry-balance|find|gallery|gc|git|grep|grievances|if-bench|images|img|\
+            install|join|login|models|play|plugin|plugins|predict|ps|q|read|render|say|search|setup|share|\
+            shell|skill|skills|ssh|stats|stream|tiny-models|token|toks|ttsr|update|usage|web-search|worktree|wt)
+                return 1 ;;
+        esac
+    done
+    return 0
+}
+if [[ -n "$c11_bin" && -f "$self_dir/omp-prompt-cache.ts" ]] && omp_runs_agent_session "$@"; then
+    export C11_AGENT_HOOK_CLI="$c11_bin"
+    exec "$REAL_OMP" --extension "$self_dir/omp-prompt-cache.ts" "$@"
+fi
 exec "$REAL_OMP" "$@"

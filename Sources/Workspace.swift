@@ -6903,7 +6903,7 @@ final class Workspace: Identifiable, ObservableObject {
             suppressed: attention.suppressed,
             journal: journalByPanel[panelId],
             promptCache: state == .cold || state == .waiting
-                ? AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache
+                ? PromptCacheSources.observation(forPanel: panelId)
                 : nil
         )
     }

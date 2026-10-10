@@ -41234,43 +41234,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code, Codex and Grok Build go Cold when their prompt cache expires. Other agents go Cold after this long without a submitted task or lifecycle activity."
+            "value": "An agent whose prompt cache c11 can see goes Cold when the cache expires. Other agents go Cold after this long without a submitted task or lifecycle activity."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code、Codex、Grok Build は、プロンプトキャッシュの期限が切れるとコールドになります。その他のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
+            "value": "c11 がプロンプトキャッシュを確認できるエージェントは、キャッシュの期限が切れるとコールドになります。その他のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code、Codex 和 Grok Build 会在提示词缓存过期时进入冷态。其他代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
+            "value": "c11 能看到提示词缓存的代理，会在缓存过期时进入冷态。其他代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code、Codex 和 Grok Build 會在提示詞快取過期時進入冷態。其他代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
+            "value": "c11 能看到提示詞快取的代理，會在快取過期時進入冷態。其他代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code, Codex, Grok Build는 프롬프트 캐시가 만료되면 콜드 상태가 됩니다. 다른 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
+            "value": "c11에서 프롬프트 캐시를 확인할 수 있는 에이전트는 캐시가 만료되면 콜드 상태가 됩니다. 다른 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code, Codex и Grok Build переходят в состояние «Холодная», когда истекает их кэш промпта. Остальные агенты переходят в это состояние, если за это время не было ни новых задач, ни событий жизненного цикла."
+            "value": "Агент, чей кэш промпта виден c11, переходит в состояние «Холодная», когда кэш истекает. Остальные агенты переходят в это состояние, если за это время не было ни новых задач, ни событий жизненного цикла."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code, Codex і Grok Build переходять у стан «Холодна», коли спливає їхній кеш промпту. Інші агенти переходять у цей стан, якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
+            "value": "Агент, чий кеш промпту бачить c11, переходить у стан «Холодна», коли кеш спливає. Інші агенти переходять у цей стан, якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
           }
         }
       }

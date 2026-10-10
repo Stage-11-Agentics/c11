@@ -444,7 +444,7 @@ extension Workspace {
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
                 : nil,
             promptCache: AgentIdentityPolicy.isAgentKind(terminalKind)
-                ? AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache
+                ? PromptCacheSources.observation(forPanel: panelId)
                 : nil
         ))
     }

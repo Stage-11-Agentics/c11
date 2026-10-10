@@ -335,7 +335,8 @@ enum PanelLivenessDeriver {
 
     private static func reconcileOnQueue(surfaceId: UUID, workspaceId: UUID,
         detectedTerminalType: String?, now: Date, coldAfterSeconds: TimeInterval) {
-        let promptCache = AgentModelDetector.shared.promptCacheReading(forSurface: surfaceId)
+        // The transcript c11 reads or a report over the socket, whichever is newer.
+        let promptCache = PromptCacheSources.reading(forPanel: surfaceId, now: now)
         if let journal = JournalCoordinator.shared.snapshot(panelID: surfaceId), journal.connection == .live {
             // The journal owns a live agent's activity and has no dormancy
             // rule: only prompt cache evidence can make it cold.

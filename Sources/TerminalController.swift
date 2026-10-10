@@ -2447,6 +2447,9 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        // Cache telemetry: validated and folded into a lock-guarded store on
+        // the worker; the liveness sweep reads it, so no main-thread hop.
+        "agent.prompt_cache.report",
         "agents.list",
         "journal.clear",
         "journal.status",

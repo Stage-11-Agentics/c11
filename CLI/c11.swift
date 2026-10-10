@@ -1658,7 +1658,9 @@ final class SocketClient {
            ["workspace.select", "workspace.next", "workspace.previous", "workspace.last",
             "workspace.close", "workspace.move_to_window", "workspace.group.focus",
             "browser.focus_webview", "history.back", "history.forward", "feed.open",
-            "snapshot.restore", "snapshot.restore_set", "config.launch", "window.create"].contains(method) {
+            "snapshot.restore", "snapshot.restore_set", "config.launch", "window.create",
+            // A cache report describes the caller's own panel unless it names one.
+            "agent.prompt_cache.report"].contains(method) {
             if let caller = CMUXCLI.callerPanelEnv(), UUID(uuidString: caller) != nil {
                 params["caller_panel_id"] = caller
             }

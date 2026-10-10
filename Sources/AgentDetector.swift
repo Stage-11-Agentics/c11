@@ -28,6 +28,9 @@ final class AgentDetector: @unchecked Sendable {
 
     private var ttyNames: [PanelKey: String] = [:]
     private var detectedTerminalTypes: [PanelKey: String] = [:]
+    /// Foreground pid per panel from the last scan. Only Kimi uses it: its
+    /// session file is found from the process (`KimiWireLocator`).
+    private var foregroundPIDs: [PanelKey: Int32] = [:]
     private var pendingKicks: Set<PanelKey> = []
     private var coalesceTimer: DispatchSourceTimer?
     private var scanInFlight = false
@@ -50,6 +53,7 @@ final class AgentDetector: @unchecked Sendable {
             let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
             detectedTerminalTypes.removeValue(forKey: key)
+            foregroundPIDs.removeValue(forKey: key)
             pendingKicks.remove(key)
         }
     }
@@ -108,7 +112,9 @@ final class AgentDetector: @unchecked Sendable {
                     detectedTerminalType: self.detectedTerminalTypes[key]
                 )
             }
-            PanelLivenessDeriver.retainPromptCacheState(forLiveSurfaces: Set(self.ttyNames.keys.map(\.panelId)))
+            let livePanels = Set(self.ttyNames.keys.map(\.panelId))
+            PanelLivenessDeriver.retainPromptCacheState(forLiveSurfaces: livePanels)
+            PromptCacheReportStore.shared.retain(livePanels: livePanels)
             // Live model detection rides the same sweep: tail each agent's own
             // session file off-main; surfaces with no agent in front clear any
             // derived model left by a session that ended.
@@ -117,7 +123,8 @@ final class AgentDetector: @unchecked Sendable {
             for key in self.ttyNames.keys {
                 if let kind = AgentIdentityPolicy.normalizedKind(self.detectedTerminalTypes[key]),
                    AgentIdentityPolicy.isAgentKind(kind) {
-                    modelTargets.append(.init(workspaceId: key.workspaceId, surfaceId: key.panelId, kind: kind))
+                    modelTargets.append(.init(workspaceId: key.workspaceId, surfaceId: key.panelId, kind: kind,
+                                              pid: kind == "kimi" ? self.foregroundPIDs[key] : nil))
                 } else if self.detectedTerminalTypes[key] != nil {
                     plainSurfaces.append((key.workspaceId, key.panelId))
                 }
@@ -147,16 +154,22 @@ final class AgentDetector: @unchecked Sendable {
             guard let tty = snapshot[key] else { continue }
             guard let info = foregroundPerTTY[tty] else {
                 // TTY exists but no foreground process — skip (no-op).
+                foregroundPIDs.removeValue(forKey: key)
                 continue
             }
+            foregroundPIDs[key] = Int32(truncatingIfNeeded: info.pid)
             let classification = Self.classify(ProcessFacts(
                 comm: info.comm,
                 args: info.args,
                 executablePath: info.executablePath
             ))
-            let detectionChanged = detectedTerminalTypes[key] != classification
+            let previousClassification = detectedTerminalTypes[key]
+            let detectionChanged = previousClassification != classification
             if detectionChanged {
                 detectedTerminalTypes[key] = classification
+                if Self.endsPromptCacheReports(from: previousClassification, to: classification) {
+                    PromptCacheReportStore.shared.remove(panelId: key.panelId)
+                }
             }
             let changed = PanelMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
@@ -183,6 +196,14 @@ final class AgentDetector: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// Prompt cache reports describe the agent that sent them. They end when
+    /// the panel returns to its shell or another agent takes the foreground,
+    /// not when a tool the agent opened (an editor) briefly does.
+    static func endsPromptCacheReports(from previous: String?, to next: String) -> Bool {
+        guard let previous, previous != next else { return false }
+        return next == "shell" || AgentIdentityPolicy.isAgentKind(next)
     }
 
     // MARK: - ps parsing

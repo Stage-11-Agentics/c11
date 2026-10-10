@@ -25,11 +25,14 @@ extension TerminalController {
         item["being_seen"] = tracker.isBeingSeen(panelId: panelId)
     }
 
-    /// Set `prompt_cache` on a surface item from the last transcript sweep.
+    /// Set `prompt_cache` on a surface item from the newest source: the last
+    /// transcript sweep or a socket report.
     func v2SetPromptCacheField(_ item: inout [String: Any], panelId: UUID) {
+        let now = Date()
         item["prompt_cache"] = Self.promptCacheField(
-            AgentModelDetector.shared.signals(forSurface: panelId)?.promptCache,
-            now: Date()
+            PromptCacheSources.observation(forPanel: panelId, now: now),
+            reportedUnknown: PromptCacheSources.reportsUnknown(forPanel: panelId),
+            now: now
         )
     }
 
@@ -38,8 +41,16 @@ extension TerminalController {
     /// whose files say nothing). `basis` is `ttl` for a provider-published
     /// lifetime (Anthropic) and `estimate` for an idle span c11 measured;
     /// `reset` names what replaced the cached prefix early, if anything.
-    static func promptCacheField(_ cache: PromptCacheObservation?, now: Date) -> Any {
-        guard let cache else { return NSNull() }
+    /// `source` is `transcript` (c11 read the harness's files), `report` (a
+    /// plugin or extension reported the request) or `statusline` (the
+    /// operator's statusline reported the harness's exact state, with `misses`).
+    /// A reporter that cannot tell (a cache warmer is running) gives
+    /// `{"state": "unknown", "source": "report"}`.
+    static func promptCacheField(_ cache: PromptCacheObservation?, reportedUnknown: Bool = false, now: Date) -> Any {
+        guard let cache else {
+            guard reportedUnknown else { return NSNull() }
+            return ["state": "unknown", "source": PromptCacheObservation.Source.report.rawValue] as [String: Any]
+        }
         let coldAt = cache.coldAt()
         let seconds: TimeInterval
         switch cache.basis {
@@ -59,7 +70,9 @@ extension TerminalController {
                 case .compaction: return "compaction"
                 }
             } ?? NSNull(),
-            "prompt_tokens": cache.promptTokens.map { $0 as Any } ?? NSNull()
+            "prompt_tokens": cache.promptTokens.map { $0 as Any } ?? NSNull(),
+            "source": cache.source.rawValue,
+            "misses": cache.misses.map { $0 as Any } ?? NSNull()
         ] as [String: Any]
     }
 

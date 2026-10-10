@@ -1264,8 +1264,18 @@ struct AgentModelProbe: Sendable {
         try? JSONSerialization.jsonObject(with: line) as? [String: Any]
     }
 
-    private static func int(_ value: Any?) -> Int {
-        (value as? NSNumber)?.intValue ?? 0
+    /// The largest token count c11 takes from a session file: far above any
+    /// real prompt, and small enough that adding a few never overflows.
+    static let maxTokenCount = 1_000_000_000_000
+
+    /// A token count from JSON, clamped to `0...maxTokenCount`. A file can
+    /// claim any number (`1e30`), and `intValue` saturates, so summing two
+    /// would trap and take c11 down.
+    static func int(_ value: Any?) -> Int {
+        guard let number = value as? NSNumber else { return 0 }
+        let double = number.doubleValue
+        guard double.isFinite, double > 0 else { return 0 }
+        return double >= Double(maxTokenCount) ? maxTokenCount : Int(double)
     }
 
     /// Journal identifiers are opaque but must stay printable and bounded.

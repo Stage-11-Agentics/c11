@@ -74,6 +74,7 @@ jobs:
           set -euo pipefail
           node tests/test_opencode_plugin_lifecycle.mjs
           bun tests/test_pi_omp_prompt_cache_extensions.mjs
+          bash tests/test_statusline_prompt_cache_snippet.sh
 
       # Offline, no token: exercises the alarm paths of the Sentry recurrence
       # detector, which are otherwise only reachable by actually exhausting a

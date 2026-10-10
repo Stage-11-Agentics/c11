@@ -180,9 +180,19 @@ await withEnv(baseEnv, async () => {
     ompExtension(after.api);
     const decide = after.handlers.get("cache_warming_decision");
     assert(decide, `omp ${version ?? "of unknown version"} may warm the cache`);
+    assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }, { hasUI: false }), undefined);
+    assert.equal(after.reports().length, 0, "a subagent's warmer is not the panel's");
     assert.equal(await decide({ type: "cache_warming_decision", action: "warm" }), undefined);
     assert.deepEqual(after.reports().map((report) => Object.keys(report.request)), [["at_ms"]]);
   }
+  // A task subagent runs in-process with hasUI false: its cache is not the panel's.
+  const sub = { hasUI: false };
+  const beforeSubagent = before.reports().length;
+  await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 0 }, { provider: "minimax", model: "MiniMax-M3" }), sub);
+  await before.handlers.get("session_compact")({ type: "session_compact" }, sub);
+  assert.equal(before.reports().length, beforeSubagent, "a subagent reports nothing");
+  await end(assistant({ input: 3, cacheRead: 800, cacheWrite: 0 }), { hasUI: true });
+  assert.equal(before.reports().length, beforeSubagent + 1, "the session with a UI reports");
   assert(before.handlers.has("session_compact"));
   await before.handlers.get("session_compact")({ type: "session_compact" });
   assert.equal(before.reports().at(-1).reset.reason, "compaction");

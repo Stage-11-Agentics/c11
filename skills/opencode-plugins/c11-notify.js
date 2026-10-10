@@ -61,7 +61,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
     if (panel) payload.panel_id = panel;
     return c11(["rpc", "agent.prompt_cache.report", JSON.stringify(payload)]);
   };
-  const notePromptCache = async (message) => {
+  const notePromptCache = (message) => {
     if (message?.role !== "assistant" || typeof message.id !== "string") return;
     // A compaction summary replaces the cached prefix once it finishes: cold
     // until the next request writes a new one.
@@ -69,7 +69,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
       const finished = message.time?.completed;
       if (!Number.isFinite(finished) || reportedSteps.get(message.id) === "reset") return;
       remember(reportedSteps, message.id, "reset");
-      await reportPromptCache({ reset: { reason: "compaction", at_ms: finished } });
+      void reportPromptCache({ reset: { reason: "compaction", at_ms: finished } });
       return;
     }
     const at = stepStartedAt.get(message.id) ?? message.time?.created;
@@ -93,7 +93,8 @@ export const C11NotifyPlugin = async ({ $ }) => {
       request.cache_read_tokens = read;
       request.cache_write_tokens = write;
     }
-    await reportPromptCache({ request });
+    // Fire and forget: OpenCode's event loop never waits on c11.
+    void reportPromptCache({ request });
   };
 
   const statusTypeFrom = (status) => {
@@ -185,7 +186,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
       const sessionID = sessionIDFrom(properties);
       const info = properties.info;
       // Only a session's parentID marks a child; a message's names its prompt.
-      if (event.type.startsWith("session.") && info?.id && info.parentID) {
+      if (typeof event.type === "string" && event.type.startsWith("session.") && info?.id && info.parentID) {
         childSessions.add(info.id);
       }
       if (sessionID && childSessions.has(sessionID)) {
@@ -274,7 +275,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
           break;
         }
         case "message.updated":
-          if (!childSessions.has(info?.sessionID)) await notePromptCache(info);
+          if (!childSessions.has(info?.sessionID)) notePromptCache(info);
           break;
       }
     },

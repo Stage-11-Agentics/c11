@@ -5,6 +5,11 @@
 // provider, model and token counts, never text) so the cold mark can follow
 // the cache. omp's session files are never opened, and no lifecycle is reported.
 //
+// omp hands its launch extensions to the task subagents it runs in-process.
+// Their requests use their own prefix, so only the session with a UI (the
+// interactive one, or `--mode rpc-ui`) reports; a subagent, like a headless
+// `--mode rpc` host, runs with `hasUI === false` and reports nothing.
+//
 // omp 18.3.5 added prompt-cache warming: shortly before a 5-minute entry
 // expires, omp replays its last request to keep the cache warm (setting
 // `providers.cacheWarming`, idle by default). The last request then no longer
@@ -12,7 +17,7 @@
 // reported as a request: it reads the cache and restarts its lifetime, and once
 // warming stops the cache goes cold one lifetime after the last refresh.
 
-type Handler = (event: any) => unknown;
+type Handler = (event: any, ctx?: any) => unknown;
 
 /** The first omp release that can warm the cache on its own. */
 const CACHE_WARMING_SINCE = [18, 3, 5];
@@ -80,7 +85,11 @@ export default function c11OmpPromptCache(omp: {
       || count(message.usage?.cttl?.ephemeral5m) + count(message.usage?.cttl?.ephemeral1h) > 0;
   };
 
-  omp.on("message_end", async (event) => {
+  // The parent session's panel is the only one c11 knows.
+  const isSubagent = (ctx: any) => ctx?.hasUI === false;
+
+  omp.on("message_end", async (event, ctx) => {
+    if (isSubagent(ctx)) return;
     const message = event?.message;
     if (message?.role !== "assistant") return;
     const usage = message.usage ?? {};
@@ -102,7 +111,8 @@ export default function c11OmpPromptCache(omp: {
   });
 
   // A compaction replaces the cached prefix: cold until the next request.
-  omp.on("session_compact", async () => {
+  omp.on("session_compact", async (_event, ctx) => {
+    if (isSubagent(ctx)) return;
     reportCache({ reset: { reason: "compaction", at_ms: Date.now() } });
   });
 
@@ -110,8 +120,8 @@ export default function c11OmpPromptCache(omp: {
   // decision is never changed.
   const version = typeof omp.pi?.VERSION === "string" ? omp.pi.VERSION : undefined;
   if (version === undefined || versionAtLeast(version, CACHE_WARMING_SINCE)) {
-    omp.on("cache_warming_decision", async (event) => {
-      if (event?.action === "warm") reportCache({ request: { at_ms: Date.now() } });
+    omp.on("cache_warming_decision", async (event, ctx) => {
+      if (event?.action === "warm" && !isSubagent(ctx)) reportCache({ request: { at_ms: Date.now() } });
     });
   }
 }

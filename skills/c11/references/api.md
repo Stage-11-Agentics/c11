@@ -945,18 +945,22 @@ reads stdin into `$input` (c11 never writes the file):
 ```bash
 # c11: report Claude Code's exact prompt cache to this panel's cold mark.
 c11_panel="${C11_PANEL_ID:-${CMUX_SURFACE_ID:-}}"
-if [ -n "$c11_panel" ] && command -v c11 >/dev/null 2>&1; then
-    c11_pc=$(printf '%s' "$input" | jq -c '.prompt_cache // empty | {prompt_cache: .}' 2>/dev/null)
+if [ -n "$c11_panel" ] && command -v c11 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    c11_pc=$(printf '%s' "${input:-}" | jq -c '.prompt_cache // empty | {prompt_cache: .}' 2>/dev/null) || c11_pc=""
     c11_last="${TMPDIR:-/tmp}/c11-prompt-cache-$c11_panel"
-    if [ -n "$c11_pc" ] && [ "$c11_pc" != "$(cat "$c11_last" 2>/dev/null)" ]; then
-        (c11 rpc agent.prompt_cache.report "$c11_pc" && printf '%s' "$c11_pc" > "$c11_last") >/dev/null 2>&1 &
+    if [ -n "$c11_pc" ] && [ "$c11_pc" != "$(cat "$c11_last" 2>/dev/null || true)" ]; then
+        # Mark it sent first, so a redraw during the send does not send again;
+        # a failed send clears the mark, so the next redraw retries.
+        printf '%s' "$c11_pc" > "$c11_last" 2>/dev/null || true
+        (C11_DEFAULT_SOCKET_DEADLINE_MS=1500 c11 rpc agent.prompt_cache.report "$c11_pc" || rm -f "$c11_last") >/dev/null 2>&1 &
     fi
 fi
 ```
 
-It sends only when the object changes (a failed send is retried on the next
-redraw), in the background, so the statusline
-never waits, and does nothing outside c11 or before the first response. A
+It is safe under `set -euo pipefail`. It sends only when the object changes and
+gives up after 1.5 s, in the background, so the statusline never waits or
+fails, and it does nothing outside c11, without `jq`, or before the first
+response. A
 `/model`, `/effort` or compaction after the statusline's last request still
 comes from the transcript, which sees it. A statusline `refreshInterval` lets it
 report keepalive touches while the agent is idle. Without the tap, c11 estimates

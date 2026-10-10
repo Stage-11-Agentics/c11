@@ -1234,6 +1234,41 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(state.signals.promptCache?.requestAt, t("10:00:00"))
     }
 
+    func testHugeTokenCountsAreClampedRatherThanOverflowing() throws {
+        let cap = AgentModelProbe.maxTokenCount
+        XCTAssertEqual(AgentModelProbe.int(NSNumber(value: 1e30)), cap)
+        XCTAssertEqual(AgentModelProbe.int(NSNumber(value: Double.infinity)), 0)
+        XCTAssertEqual(AgentModelProbe.int(NSNumber(value: -5)), 0)
+        XCTAssertEqual(AgentModelProbe.int(NSNumber(value: 123_456)), 123_456)
+
+        let huge = "1e30"
+        // Claude Code: the prompt sums three counts.
+        try place(Data((#"{"type":"user","timestamp":"2026-01-01T10:00:00.000Z","message":{"role":"user","content":"hi"}}"# + "\n"
+            + #"{"type":"assistant","timestamp":"2026-01-01T10:00:05.000Z","message":{"model":"claude-opus-5-5","id":"m1","content":[],"usage":{"input_tokens":\#(huge),"cache_read_input_tokens":\#(huge),"cache_creation_input_tokens":\#(huge),"output_tokens":\#(huge),"cache_creation":{"ephemeral_1h_input_tokens":\#(huge)}}}}"# + "\n").utf8),
+                  at: claudePath())
+        var claude = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &claude)
+        XCTAssertEqual(claude.signals.promptCache?.promptTokens, 3 * cap)
+        XCTAssertEqual(claude.signals.turnTokens, 3 * cap)
+
+        // Pi: a message's tokens sum three counts.
+        let pid = "019b0000-0000-7000-8000-000000000009"
+        try place(Data((#"{"type":"message","id":"a1","timestamp":"2026-01-01T10:00:05.000Z","message":{"role":"assistant","content":[],"usage":{"input":\#(huge),"output":\#(huge),"cacheWrite":\#(huge)}}}"# + "\n").utf8),
+                  at: ".pi/agent/sessions/\(PiScraper.sessionSlug(forCwd: "/work/demo"))/2026-01-01T00-00-00-000Z_\(pid).jsonl")
+        var pi = ModelTailState()
+        _ = detect("pi", ref("pi", id: pid), &pi)
+        XCTAssertEqual(pi.signals.turnTokens, 3 * cap)
+
+        // Kimi: the prompt sums three counts.
+        let wire = try placeKimiWire([
+            kimiRequest("10:00:00"),
+            #"{"type":"usage.record","usage":{"inputOther":\#(huge),"output":1,"inputCacheRead":\#(huge),"inputCacheCreation":\#(huge)},"usageScope":"turn","time":\#(kimiMs("10:00:05"))}"#,
+        ])
+        var kimi = ModelTailState()
+        _ = probe.detectKimi(wirePath: wire.path, state: &kimi)
+        XCTAssertEqual(kimi.signals.promptCache?.promptTokens, 3 * cap)
+    }
+
     func testKimiCompactionResetsUntilTheNextRequestAndItsSessionTotalIsNotARequest() throws {
         let wire = try placeKimiWire([
             kimiRequest("10:00:00"),

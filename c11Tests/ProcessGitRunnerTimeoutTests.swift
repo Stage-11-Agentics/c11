@@ -5,11 +5,10 @@ import XCTest
 /// subprocess timeout returns nil + the process is reaped + the
 /// background queue does not hang.
 ///
-/// `ProcessGitRunner` is parameterized in C11-106 over `executable`
-/// and `argPrefix` so the test can substitute a deterministic slow
-/// command without modifying the production code path. Defaults
-/// (`/usr/bin/env git`) and the production 5-second timeout are
-/// unchanged.
+/// `ProcessGitRunner` takes an optional `executable` and `argPrefix` so
+/// the test can substitute a deterministic slow command. With neither,
+/// it runs hardened git (`UntrustedRepositoryGit`) with a 5-second
+/// timeout.
 ///
 /// **API decision recorded for the PR body (per C11-106 plan I1):**
 /// `GitRunner.run` continues to return `String?` and timeout collapses
@@ -82,13 +81,41 @@ final class ProcessGitRunnerTimeoutTests: XCTestCase {
             "three sequential 0.2s timeouts should complete in well under 3s; elapsed=\(elapsed)s")
     }
 
-    /// Default constructor is unchanged from C11-104 — the production
-    /// runner still invokes `/usr/bin/env git` with a 5-second
-    /// timeout. Defends against a future "drop the defaults" change.
-    func testDefaultConstructorMatchesProductionShape() {
+    /// The default runner runs hardened git, discovering the repository
+    /// upward from `cwd` the way a shell does, and returns what plain git
+    /// prints for an ordinary repository.
+    func testDefaultRunnerMatchesPlainGitFromASubdirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("process-git-runner-\(UUID().uuidString)", isDirectory: true)
+            .resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let nested = root.appendingPathComponent("a/b", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        XCTAssertEqual(plainGit(root, ["init", "-q"]), "")
+        XCTAssertEqual(plainGit(root, ["symbolic-ref", "HEAD", "refs/heads/feature"]), "")
+
         let runner = ProcessGitRunner()
-        XCTAssertEqual(runner.executable, "/usr/bin/env")
-        XCTAssertEqual(runner.argPrefix, ["git"])
         XCTAssertEqual(runner.timeout, 5.0)
+        for args in [["rev-parse", "--show-toplevel"], ["rev-parse", "--git-dir"], ["symbolic-ref", "--short", "HEAD"]] {
+            let expected = plainGit(nested, args)
+            XCTAssertNotNil(expected)
+            XCTAssertEqual(runner.run(cwd: nested.path, args: args), expected, "git \(args.joined(separator: " "))")
+        }
+    }
+
+    private func plainGit(_ directory: URL, _ arguments: [String]) -> String? {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.currentDirectoryURL = directory
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

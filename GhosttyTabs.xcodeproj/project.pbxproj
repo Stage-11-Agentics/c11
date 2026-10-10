@@ -332,6 +332,7 @@
 		C11104B03 /* WorktreeChipModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F03 /* WorktreeChipModel.swift */; };
 		C11104B04 /* WorktreeChipsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F04 /* WorktreeChipsRow.swift */; };
 		C11104B05 /* GitContextResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F05 /* GitContextResolverTests.swift */; };
+		C76B564EEE833C41C8F0EF57 /* WorkspaceGitProbeHardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9986096E69E27C5E83CEB8A8 /* WorkspaceGitProbeHardeningTests.swift */; };
 		C11104B06 /* WorktreeChipProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F06 /* WorktreeChipProjectorTests.swift */; };
 		C11104B07 /* MetadataDerivedPrecedenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F07 /* MetadataDerivedPrecedenceTests.swift */; };
 		C11105B2C3D4E5F6071802 /* SocketControlSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11105B2C3D4E5F6071801 /* SocketControlSafetyTests.swift */; };
@@ -950,6 +951,7 @@
 		C11104F03 /* WorktreeChipModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeChipModel.swift; sourceTree = "<group>"; };
 		C11104F04 /* WorktreeChipsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeChipsRow.swift; sourceTree = "<group>"; };
 		C11104F05 /* GitContextResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitContextResolverTests.swift; sourceTree = "<group>"; };
+		9986096E69E27C5E83CEB8A8 /* WorkspaceGitProbeHardeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceGitProbeHardeningTests.swift; sourceTree = "<group>"; };
 		C11104F06 /* WorktreeChipProjectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeChipProjectorTests.swift; sourceTree = "<group>"; };
 		C11104F07 /* MetadataDerivedPrecedenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataDerivedPrecedenceTests.swift; sourceTree = "<group>"; };
 		C11105B2C3D4E5F6071801 /* SocketControlSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketControlSafetyTests.swift; sourceTree = "<group>"; };
@@ -1874,6 +1876,7 @@
 				8F39832E954005AB276046A4 /* DefaultAgentResolverTests.swift */,
 				C9B78D8232EFC5CF6A718EA7 /* StateDirectoryMigrationTests.swift */,
 				C11104F05 /* GitContextResolverTests.swift */,
+				9986096E69E27C5E83CEB8A8 /* WorkspaceGitProbeHardeningTests.swift */,
 				C11104F06 /* WorktreeChipProjectorTests.swift */,
 				C11104F07 /* MetadataDerivedPrecedenceTests.swift */,
 				C11106F01 /* GitContextResolverCacheWiringTests.swift */,
@@ -2280,6 +2283,7 @@
 				629F9C54FEC34F811A25CC65 /* DefaultAgentResolverTests.swift in Sources */,
 				EC224F7B0F7E77A981DFEC5A /* StateDirectoryMigrationTests.swift in Sources */,
 				C11104B05 /* GitContextResolverTests.swift in Sources */,
+				C76B564EEE833C41C8F0EF57 /* WorkspaceGitProbeHardeningTests.swift in Sources */,
 				C11104B06 /* WorktreeChipProjectorTests.swift in Sources */,
 				C11104B07 /* MetadataDerivedPrecedenceTests.swift in Sources */,
 				C11106B01 /* GitContextResolverCacheWiringTests.swift in Sources */,

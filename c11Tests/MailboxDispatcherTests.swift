@@ -628,16 +628,17 @@ final class MailboxDispatcherTests: XCTestCase {
 
     // MARK: - C11-381 stdin flush seam
 
-    /// Gate plus claim plus dispatch log, in the order `Workspace.startMailboxPush` uses.
+    /// Drives `MailboxStdinDelivery`, the sequence `Workspace` calls.
     /// `ownsTerminal` stands in for the kernel check; there is no PTY here.
     private final class StdinSeat: @unchecked Sendable {
-        var buffer = MailboxStdinBuffer()
+        let state = MailboxStdinBufferStore()
         var ownsTerminal = true
         var lastOperatorKeyAt: Date?
         private(set) var pasted: [String] = []
         let dispatcher: MailboxDispatcher
         let stateURL: URL
         let workspaceId: UUID
+        var buffer: MailboxStdinBuffer { state.buffer }
 
         init(dispatcher: MailboxDispatcher, stateURL: URL, workspaceId: UUID) {
             self.dispatcher = dispatcher
@@ -650,19 +651,17 @@ final class MailboxDispatcherTests: XCTestCase {
         }
 
         func beginTurn(surfaceId: UUID, at: Date) {
-            buffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: true, at: at)
-            buffer.noteSubmit(surfaceId: surfaceId, at: at.addingTimeInterval(1))
+            state.buffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: true, at: at)
+            state.buffer.noteSubmit(surfaceId: surfaceId, at: at.addingTimeInterval(1))
         }
 
         func noteIdle(surfaceId: UUID, at: Date) {
-            buffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: true, at: at)
-            push(surfaceId: surfaceId, immediateId: nil, typedAt: at.addingTimeInterval(0.2))
+            noteReported(surfaceId: surfaceId, activity: .idle, at: at, agentPid: nil, processStartTime: nil)
         }
 
         func noteWrapperIdle(surfaceId: UUID, at: Date) {
-            buffer.noteAgentProcess(surfaceId: surfaceId, process: .init(pid: 1, startTime: 1))
             ownsTerminal = true
-            noteIdle(surfaceId: surfaceId, at: at)
+            noteReported(surfaceId: surfaceId, activity: .idle, at: at, agentPid: 1, processStartTime: 1)
         }
 
         func admit(
@@ -677,79 +676,99 @@ final class MailboxDispatcherTests: XCTestCase {
                 block: block,
                 bufferedAt: Date(timeIntervalSince1970: 1_700_000_000)
             )
-            let decision = decide(surfaceId)
-            let immediate = decision == .injectNow && buffer.pendingCount(surfaceId: surfaceId) == 0
-            _ = buffer.enqueue(surfaceId: surfaceId, entry: entry)
-            if decision == .injectNow {
-                push(surfaceId: surfaceId, immediateId: immediate ? envelopeId : nil, typedAt: Date(timeIntervalSince1970: 1_700_000_100))
+            let admitted = MailboxStdinDelivery.deliver(
+                state: state,
+                surfaceId: surfaceId,
+                entry: entry,
+                gate: gate(),
+                logEvicted: { [dispatcher] evicted in
+                    dispatcher.logStdinLifecycle(
+                        id: evicted.id,
+                        recipient: evicted.recipientName,
+                        outcome: .evicted
+                    )
+                },
+                push: { [self] immediateId in
+                    self.perform(
+                        surfaceId: surfaceId,
+                        immediateId: immediateId,
+                        now: Date(timeIntervalSince1970: 1_700_000_100)
+                    )
+                }
+            )
+            switch admitted {
+            case .ok(let bytes):
+                return .init(outcome: .ok, bytes: bytes, elapsedMs: 0)
+            case .buffered(let bytes):
+                return .init(outcome: .buffered, bytes: bytes, elapsedMs: 0)
             }
-            let outcome: MailboxDispatchLog.HandlerOutcome = immediate ? .ok : .buffered
-            return .init(outcome: outcome, bytes: block.utf8.count, elapsedMs: 0)
         }
 
-        private func decide(_ surfaceId: UUID) -> MailboxStdinBuffer.Decision {
-            buffer.decide(
-                surfaceId: surfaceId,
+        private func gate() -> MailboxStdinDelivery.Gate {
+            MailboxStdinDelivery.Gate(
+                panelPresent: true,
                 isAgentKind: true,
-                agentOwnsTerminal: ownsTerminal,
-                lastOperatorKeyAt: lastOperatorKeyAt
+                ownsTerminal: ownsTerminal,
+                lastOperatorKeyAt: lastOperatorKeyAt,
+                inputTransactionActive: false,
+                inputTransactionEpoch: 0,
+                surfaceAttached: true
             )
         }
 
-        private func push(surfaceId: UUID, immediateId: String?, typedAt: Date) {
-            guard buffer.pendingCount(surfaceId: surfaceId) > 0,
-                  !buffer.isPushInFlight(surfaceId: surfaceId) else { return }
-            guard decide(surfaceId) == .injectNow else { return }
-            let admitted = buffer.agentTurn(surfaceId: surfaceId)
-            let flush = buffer.drainForFlush(surfaceId: surfaceId, now: typedAt, trigger: .agentPrompt)
-            buffer.beginPush(surfaceId: surfaceId)
-            let inbox = inbox(surfaceId)
-            var claimed: [MailboxStdinBuffer.Entry] = []
-            for entry in flush.fresh {
-                switch MailboxIO.claimResult(id: entry.id, inbox: inbox) {
-                case .claimed:
-                    claimed.append(entry)
-                case .gone:
-                    dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .skipped)
-                case .failed(let code):
-                    dispatcher.logStdinClaimFailed(id: entry.id, recipient: entry.recipientName, errno: code)
-                }
-            }
-            guard !claimed.isEmpty else {
-                buffer.endPush(surfaceId: surfaceId, typedAt: nil)
-                return
-            }
-            let verdict = buffer.pushVerdict(
+        private func noteReported(
+            surfaceId: UUID,
+            activity: SidebarActivityState,
+            at: Date,
+            agentPid: pid_t?,
+            processStartTime: UInt64?
+        ) {
+            MailboxStdinDelivery.noteReported(
+                state: state,
                 surfaceId: surfaceId,
-                admittedAs: .agentPrompt,
-                admittedTurn: admitted,
-                lastOperatorKeyAt: lastOperatorKeyAt,
-                surfaceAttached: true,
-                agentOwnsTerminal: ownsTerminal
+                activity: activity,
+                at: at,
+                agentPid: agentPid,
+                processStartTime: processStartTime,
+                flush: { [self] in
+                    self.perform(
+                        surfaceId: surfaceId,
+                        immediateId: nil,
+                        now: at.addingTimeInterval(0.2)
+                    )
+                }
             )
-            guard verdict == .paste else {
-                for entry in claimed {
-                    _ = MailboxIO.unclaim(id: entry.id, inbox: inbox)
+        }
+
+        private func perform(surfaceId: UUID, immediateId: String?, now: Date) {
+            MailboxStdinDelivery.perform(
+                state: state,
+                surfaceId: surfaceId,
+                trigger: .agentPrompt,
+                immediateId: immediateId,
+                now: now,
+                gate: gate(),
+                inbox: inbox(surfaceId),
+                log: { [dispatcher] line in
+                    dispatcher.logStdinLifecycle(
+                        id: line.entry.id,
+                        recipient: line.entry.recipientName,
+                        outcome: line.outcome,
+                        bytes: line.bytes
+                    )
+                },
+                logFailed: { [dispatcher] entry, code in
+                    dispatcher.logStdinClaimFailed(
+                        id: entry.id,
+                        recipient: entry.recipientName,
+                        errno: code
+                    )
+                },
+                paste: { [self] block in
+                    pasted.append(block)
+                    return true
                 }
-                if verdict == .requeue {
-                    _ = buffer.requeueFront(surfaceId: surfaceId, entries: claimed)
-                    for entry in claimed {
-                        dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .buffered)
-                    }
-                }
-                buffer.endPush(surfaceId: surfaceId, typedAt: nil)
-                return
-            }
-            pasted.append(MailboxStdinBuffer.joinedBlock(claimed))
-            for entry in claimed where entry.id != immediateId {
-                dispatcher.logStdinLifecycle(
-                    id: entry.id,
-                    recipient: entry.recipientName,
-                    outcome: .flushed,
-                    bytes: entry.block.utf8.count
-                )
-            }
-            buffer.endPush(surfaceId: surfaceId, typedAt: typedAt)
+            )
         }
     }
 

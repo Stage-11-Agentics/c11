@@ -776,14 +776,14 @@ fileprivate func cmuxVsyncIOSurfaceTimelineCallback(
 
 @MainActor
 class WorkspaceManager: ObservableObject {
-    private enum WorkspacePullRequestSnapshot: Equatable {
+    enum WorkspacePullRequestSnapshot: Equatable {
         case unsupportedRepository
         case notFound
         case resolved(SidebarPullRequestState)
         case transientFailure
     }
 
-    private struct InitialWorkspaceGitMetadataSnapshot: Equatable {
+    struct InitialWorkspaceGitMetadataSnapshot: Equatable {
         let branch: String?
         let isDirty: Bool
         let pullRequest: WorkspacePullRequestSnapshot
@@ -1918,7 +1918,8 @@ class WorkspaceManager: ObservableObject {
         }
     }
 
-    private nonisolated static func initialWorkspaceGitMetadataSnapshot(
+    /// Internal for tests: the real off-main workspace git probe.
+    nonisolated static func initialWorkspaceGitMetadataSnapshot(
         for directory: String
     ) -> InitialWorkspaceGitMetadataSnapshot {
         // C11-104 — resolve the worktree/branch chip context first.
@@ -1948,7 +1949,11 @@ class WorkspaceManager: ObservableObject {
             )
         }
 
-        let statusOutput = runGitCommand(directory: directory, arguments: ["status", "--porcelain", "-uno"])
+        let statusOutput = runGitCommand(
+            directory: directory,
+            arguments: ["status", "--porcelain", "-uno"],
+            readsFileContent: true
+        )
         let isDirty = !(statusOutput?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let pullRequest = workspacePullRequestSnapshot(directory: directory, branch: branch)
         return InitialWorkspaceGitMetadataSnapshot(
@@ -1959,12 +1964,22 @@ class WorkspaceManager: ObservableObject {
         )
     }
 
-    private nonisolated static func runGitCommand(directory: String, arguments: [String]) -> String? {
-        runCommand(
-            directory: directory,
-            executable: "git",
-            arguments: arguments
-        )
+    /// The workspace directory can sit in a checkout whose `.git/config` c11
+    /// did not write, so git runs hardened, discovering the repository upward
+    /// from it. A command that hashes working-tree files (`status`) passes
+    /// `readsFileContent` so the repository's filter drivers are switched off.
+    private nonisolated static func runGitCommand(
+        directory: String,
+        arguments: [String],
+        readsFileContent: Bool = false
+    ) -> String? {
+        guard let result = UntrustedRepositoryGit.run(
+            in: URL(fileURLWithPath: directory, isDirectory: true),
+            arguments: arguments,
+            discovery: .enclosingRepository,
+            readsFileContent: readsFileContent
+        ), result.status == 0 else { return nil }
+        return String(data: result.output, encoding: .utf8)
     }
 
     private nonisolated static func workspacePullRequestSnapshot(

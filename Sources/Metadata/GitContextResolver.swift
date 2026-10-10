@@ -189,21 +189,21 @@ public struct DefaultFileSystemProbe: FileSystemProbe {
 /// Process-backed runner. Bounded by a soft timeout to avoid stalling
 /// the background queue if git ever hangs.
 ///
-/// (C11-106) Defaults remain unchanged from C11-104 — `/usr/bin/env`
-/// invokes the real `git` binary on PATH with a 5-second timeout. The
-/// `executable` + `argPrefix` constructor params exist purely so AC14
-/// tests can substitute a deterministic slow command (e.g.
-/// `/bin/sh -c 'sleep …'`) without forking the production code path.
-/// The 5-second timeout is the v2 SPEC's amended value — see PR body
-/// for the SPEC-amendment note replacing the original 2s suggestion.
+/// By default it runs git through `UntrustedRepositoryGit`, discovering the
+/// repository upward from `cwd` as a shell would: a terminal's working
+/// directory can sit in a checkout whose `.git/config` c11 did not write.
+/// `executable` + `argPrefix` substitute another command (e.g.
+/// `/bin/sh -c 'sleep …'`) so the timeout tests can run a deterministic slow
+/// child; production never sets them.
 public struct ProcessGitRunner: GitRunner {
-    public let executable: String
+    /// Nil runs hardened git; a path runs that command with `argPrefix`.
+    public let executable: String?
     public let argPrefix: [String]
     public let timeout: TimeInterval
 
     public init(
-        executable: String = "/usr/bin/env",
-        argPrefix: [String] = ["git"],
+        executable: String? = nil,
+        argPrefix: [String] = [],
         timeout: TimeInterval = 5.0
     ) {
         self.executable = executable
@@ -212,6 +212,18 @@ public struct ProcessGitRunner: GitRunner {
     }
 
     public func run(cwd: String, args: [String]) -> String? {
+        guard let executable else {
+            guard let result = UntrustedRepositoryGit.run(
+                in: URL(fileURLWithPath: cwd, isDirectory: true),
+                arguments: args,
+                timeout: timeout,
+                discovery: .enclosingRepository
+            ), result.status == 0 else { return nil }
+            let trimmed = String(decoding: result.output, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
         let process = Process()
         let stdout = Pipe()
         let stderr = Pipe()

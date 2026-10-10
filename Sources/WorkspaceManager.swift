@@ -3832,7 +3832,19 @@ class WorkspaceManager: ObservableObject {
             workspace.triggerNotificationFocusFlash(panelId: targetPanelId, requiresSplit: false, shouldFocus: true)
             notificationStore.markRead(forWorkspaceId: workspaceId, surfaceId: targetPanelId)
         }
+        requestSidebarReveal(workspaceId: workspaceId)
         return true
+    }
+
+    /// Asks this window's sidebar to scroll the workspace's card to the vertical
+    /// center. Jumps to a waiting or flagged agent post this so the operator can
+    /// see which workspace they landed in, even with dozens open.
+    func requestSidebarReveal(workspaceId: UUID) {
+        NotificationCenter.default.post(
+            name: .sidebarRevealWorkspaceRequested,
+            object: self,
+            userInfo: ["workspaceId": workspaceId]
+        )
     }
 
     func focusSurface(workspaceId: UUID, surfaceId: UUID) {
@@ -6064,6 +6076,7 @@ extension Notification.Name {
     static let webViewDidReceiveClick = Notification.Name("webViewDidReceiveClick")
     static let terminalPortalVisibilityDidChange = Notification.Name("cmux.terminalPortalVisibilityDidChange")
     static let browserPortalRegistryDidChange = Notification.Name("cmux.browserPortalRegistryDidChange")
+    static let sidebarRevealWorkspaceRequested = Notification.Name("c11.sidebarRevealWorkspaceRequested")
 }
 
 // MARK: - Window-local workspace folders

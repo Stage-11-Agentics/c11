@@ -70,6 +70,12 @@ HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
 POST_TRIES = 3
+PACKAGE_RESOLVED = (
+    "GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "Package.resolved",
+)
+DERIVED_KEEP = 3
+STALE_MODULE = "has been modified since the module file"
 DISARMED_SLEEP_S = 3600
 TERMINAL_STATES = frozenset(("success", "failure"))
 KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed", "gh_configured"))
@@ -407,6 +413,19 @@ def residue_ok(parent_status, submodule_statuses, symlink_ready):
         if status:
             return False
     return True
+
+
+def dependency_key(resolved_texts, gitlinks):
+    """12 hex of SHA-256 over the Package.resolved files and the submodule gitlinks.
+
+    Heads with different package graphs get different DerivedData, so a module
+    precompiled for one Sparkle version is never reused for another.
+    """
+    digest = hashlib.sha256()
+    for text in list(resolved_texts) + list(gitlinks):
+        digest.update(text.encode())
+        digest.update(b"\0")
+    return digest.hexdigest()[:12]
 
 
 def result_directory(state, attempt_id, invocation):
@@ -1194,6 +1213,7 @@ class Supervisor:
         self.stopped = None
         self.credential_skipped = False
         self.awaiting_kit = {}
+        self.derived = self.root / "cache" / "DerivedData"
 
     def state(self):
         path = self.root / "state"
@@ -1507,6 +1527,7 @@ class Supervisor:
         if not self._prepare_tree(item):
             self._rotate(item)
             return "residue"
+        item["deps"] = self._dependency_key(item)
         if self.world.guests() or self.world.slot_held(1) or self.world.slot_held(2):
             self.log(decision="no-start", reason="raced")
             return "no-start"
@@ -1551,6 +1572,42 @@ class Supervisor:
             return False
         return True
 
+    def _dependency_key(self, item):
+        texts = []
+        for path in PACKAGE_RESOLVED:
+            shown = self.world.git(["show", "%s:%s" % (item["sha"], path)], self.world.worktree)
+            texts.append(shown.stdout if shown.returncode == 0 else "")
+        links = []
+        for path, _url in GITLINKS:
+            shown = self.world.git(["rev-parse", "%s:%s" % (item["sha"], path)], self.world.worktree)
+            links.append(shown.stdout.strip() if shown.returncode == 0 else "")
+        return dependency_key(texts, links)
+
+    def _derived_data(self, key):
+        """cache/DerivedData-<key>, marked most recent; keep DERIVED_KEEP, prune the rest by mtime."""
+        cache = self.root / "cache"
+        current = cache / ("DerivedData-" + key)
+        current.mkdir(parents=True, exist_ok=True)
+        os.utime(current, None)
+        entries = [path for path in cache.iterdir()
+                   if path.is_dir() and not path.is_symlink()
+                   and (path.name == "DerivedData" or path.name.startswith("DerivedData-"))]
+        entries.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        keep = [current] + [path for path in entries if path != current][:DERIVED_KEEP - 1]
+        removed = []
+        for path in entries:
+            if path in keep:
+                continue
+            try:
+                shutil.rmtree(path)
+            except OSError as error:
+                self.log(decision="cache-prune-failed", entry=path.name, error=str(error)[:200])
+                continue
+            removed.append(path.name)
+        if removed:
+            self.log(decision="cache-pruned", removed=removed, kept=[path.name for path in keep])
+        return current
+
     def _spawn(self, item):
         """One attempt: a fresh attempt id, then at most one cache retry.
 
@@ -1564,6 +1621,9 @@ class Supervisor:
         self.stopped = None
         self.delivered = False
         self._drop(item)
+        if not item.get("deps"):
+            item["deps"] = self._dependency_key(item)
+        self.derived = self._derived_data(item["deps"])
         for invocation in (1, 2):
             code = self._spawn_one(item, invocation)
             self.build_end = self.world.time()
@@ -1574,8 +1634,21 @@ class Supervisor:
                 return "stopped"
             if self.world.last_exit == 0:
                 break
+            if STALE_MODULE in (self.world.build_log or ""):
+                return self._cache_fault(item, invocation)
         self._finish(item, self.world.last_exit)
         return "started"
+
+    def _cache_fault(self, item, invocation):
+        """A stale precompiled module is the cache's fault: error, never failure, no retry.
+
+        The head counts as reported for this process, so it is not rebuilt until
+        a new push or a restart.
+        """
+        self.reported[item["pr"]] = item["sha"]
+        self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
+        self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
+        return "cache-fault"
 
     def _spawn_one(self, item, invocation):
         attempt_id = item["attempt_id"]
@@ -1591,7 +1664,7 @@ class Supervisor:
             "log": str(log_path),
         }
         (self.state() / "current.json").write_text(json.dumps(current) + "\n")
-        argv = self.world.build_argv(self.world.worktree, self.root / "cache" / "DerivedData", result)
+        argv = self.world.build_argv(self.world.worktree, self.derived, result)
         command = slot_command(self.root, argv)
         self.spawns.append({"command": command, "sha": item["sha"], "result": str(result), "invocation": invocation})
         append_event(self.root, {"event": "spawn", "sha": item["sha"], "invocation": invocation, "result": str(result)})
@@ -1626,7 +1699,8 @@ class Supervisor:
         state, description = classify_result(self.world.build_log, seconds)
         if exit_code != 0 and state == "success":
             state, description = "failure", "failed %ss" % int(seconds)
-        self.delivered = self._post(item["sha"], state, description, pr=item["pr"], build_seconds=round(seconds, 3))
+        self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
+                                    build_seconds=round(seconds, 3), deps=item.get("deps"))
         if self.delivered:
             self.reported[item["pr"]] = item["sha"]
 

@@ -14,19 +14,21 @@ The layout sits outside any other checkout:
 |---|---|
 | `~/c11-poller/bin/` | `c11-pr-swift-poller.py` and `atlas_build_slots.py`, copied byte for byte from `origin/main` |
 | `~/c11-poller/worktree/` | the poller's own clone of c11 with `ghostty` and `vendor/bonsplit` initialized; it builds there |
-| `~/c11-poller/cache/DerivedData/` | warm build cache |
+| `~/c11-poller/cache/DerivedData-<key>/` | warm build caches, one per dependency set (see below), at most 3 |
 | `~/c11-poller/state/` | `enabled.json`, `stages.json`, `decisions.jsonl`, `events.jsonl`, `supervisor.log`, `results/` |
 | `~/.config/c11-pr-swift/credential.json` | `{"mode": "gh", "gh": "/opt/homebrew/bin/gh"}`, mode 600 |
 | `~/Library/LaunchAgents/com.stage11.c11-pr-swift-poller.plist` | `render-plist --home ~` output; its PATH puts `/opt/homebrew/bin` first so `tart` and `git` resolve under launchd |
 
-Steps: copy `bin/`, clone the worktree, write `credential.json` and record `gh_configured` in `stages.json`, pre-warm DerivedData with one `c11-logic` build through `atlas_build_slots.py` (a cold first build would otherwise post a false budget failure), write `enabled.json` with the worktree path, install the plist, record `plist_installed`, then `launchctl bootstrap gui/$(id -u) <plist>`.
+Steps: copy `bin/`, clone the worktree, write `credential.json` and record `gh_configured` in `stages.json`, pre-warm `cache/DerivedData-<key>` for `main`'s key with one `c11-logic` build through `atlas_build_slots.py` (a cold first build would otherwise post a false budget failure; `dependency_key` in the script computes the key), write `enabled.json` with the worktree path, install the plist, record `plist_installed`, then `launchctl bootstrap gui/$(id -u) <plist>`.
 
 ## Maintenance
 
 - **Health:** `launchctl print gui/$(id -u)/com.stage11.c11-pr-swift-poller` (state running, `runs` stays 1); `tail ~/c11-poller/state/decisions.jsonl` (one `result` per build, with `build_seconds` and `post_seconds`); `~/c11-poller/state/supervisor.log` for tracebacks.
 - **Update after a merge:** copy the two scripts from a fresh `origin/main` into `bin/`, compare SHA-256 against `git show origin/main:<path>`, then `launchctl kickstart -k gui/$(id -u)/com.stage11.c11-pr-swift-poller`. The restart rebuilds its queue from GitHub and skips heads that already carry `success` or `failure`.
 - **Disarmed** (`scope-stop`, `stuck`, `unauthorized` in the decisions): the process idles on purpose. Fix the cause (for example `gh auth status` as atinwoodard), then kickstart.
-- **`ghosttykit_missing`:** the head's Ghostty commit has no `~/.cache/cmux/ghosttykit/<gitlink>/` entry on Atlas. The poller passes over that head without network calls and builds it once the entry exists; other heads are not held up. Building the missing GhosttyKit is a human or ticket decision.
+- **Build caches:** DerivedData is keyed by dependency set: `cache/DerivedData-<key>`, where `<key>` is the first 12 hex of SHA-256 over both `Package.resolved` files (the xcodeproj one and the root one) and the `ghostty` and `vendor/bonsplit` gitlinks. One shared DerivedData broke live on 2026-10-10: `main` pins Sparkle 2.9.3 and older heads pin 2.8.1, and Xcode reused a precompiled Sparkle module across them. Before each build the poller marks its key most recent and removes all but the 3 most recently used caches (`cache-pruned` in the decisions). The first build of a new key is cold (about 115 s).
+- **`cache: stale module`:** if a build log still says `has been modified since the module file`, the poller posts `error` "cache: stale module" (never `failure`), does not retry, and does not rebuild that head until a new push or a restart. Delete that key's `cache/DerivedData-<key>` and kickstart if it recurs.
+- **`ghosttykit_missing`:** the head's Ghostty commit has no `~/.cache/cmux/ghosttykit/<gitlink>/` entry on Atlas. The poller passes over that head without network calls and builds it once the entry exists; other heads are not held up. When `scripts/ghosttykit-checksums.txt` on `main` pins that gitlink, fetch it with `scripts/download-prebuilt-ghosttykit.sh` (`GHOSTTY_SHA=<gitlink>`, extracted into a staging directory and then moved to `~/.cache/cmux/ghosttykit/<gitlink>/`); otherwise building it is a human or ticket decision.
 - **Stop now** (a wrong PR built, a fork touched, a crash loop): `launchctl bootout gui/$(id -u)/com.stage11.c11-pr-swift-poller`, then teardown if it should stay off.
 
 ## The service

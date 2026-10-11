@@ -926,14 +926,15 @@ class WorkspaceManager: ObservableObject {
             return false
         }
         let runtime = workspace.paneInteractionRuntime
+        // The focused panel's confirm owns Return and Space. A hidden card
+        // refuses the key, and that key must not accept a different panel's card.
         if let focusedPanelId = workspace.focusedPanelId,
-           runtime.hasActive(panelId: focusedPanelId),
-           runtime.handleKeyDown(
-               panelId: focusedPanelId,
-               keyCode: Int(event.keyCode),
-               shift: flags.contains(.shift)
-           ) {
-            return true
+           runtime.hasActive(panelId: focusedPanelId) {
+            return runtime.handleKeyDown(
+                panelId: focusedPanelId,
+                keyCode: Int(event.keyCode),
+                shift: flags.contains(.shift)
+            )
         }
         for panelId in runtime.activePanelIds where runtime.handleKeyDown(
             panelId: panelId,

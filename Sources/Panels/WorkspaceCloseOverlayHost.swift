@@ -143,6 +143,16 @@ final class WorkspaceCloseOverlayHost: NSView {
         }
     }
 
+    override func viewDidHide() {
+        super.viewDidHide()
+        publishConfirmVisibility()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        publishConfirmVisibility()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         publishConfirmVisibility()
@@ -193,11 +203,7 @@ final class WorkspaceCloseOverlayHost: NSView {
     }
 
     private func publishConfirmVisibility() {
-        let visible = !isHidden
-            && window != nil
-            && bounds.width >= 1
-            && bounds.height >= 1
-            && runtime.active != nil
+        let visible = CloseOverlayFallback.cardIsOnScreen(self, active: runtime.active != nil)
         runtime.noteConfirmVisible(visible)
     }
 

@@ -11793,10 +11793,13 @@ extension Workspace: BonsplitDelegate {
         await Task.yield()
         await Task.yield()
         guard !Task.isCancelled else { return }
-        guard paneInteractionRuntime.active[panelId] != nil else { return }
-        guard !paneInteractionRuntime.isConfirmCardVisible(panelId: panelId) else { return }
-        CloseLog.overlayUnmounted(scope: "panel", workspace: id, reason: "no_anchor")
-        if mountPanelConfirmFallback(panelId: panelId) {
+        guard let window = PanelConfirmUnmountedWatch.begin(
+            panelId: panelId,
+            runtime: paneInteractionRuntime,
+            workspaceId: id,
+            owner: { CloseOverlayFallback.ownerState(of: self.owningWorkspaceManager?.window) }
+        ) else { return }
+        if mountPanelConfirmFallback(panelId: panelId, window: window) {
             await Task.yield()
             await Task.yield()
             guard !Task.isCancelled else { return }
@@ -11809,17 +11812,18 @@ extension Workspace: BonsplitDelegate {
             )
         }
         guard !Task.isCancelled else { return }
-        guard paneInteractionRuntime.active[panelId] != nil else { return }
-        paneInteractionRuntime.releaseUnmounted(panelId: panelId)
+        PanelConfirmUnmountedWatch.releaseIfStillUnmounted(
+            panelId: panelId,
+            runtime: paneInteractionRuntime
+        )
     }
 
     /// Owning-window card for a panel confirm whose own host never appeared.
     /// The host removes itself once the interaction goes idle. A window that
     /// is not on screen is not a mount target.
     @discardableResult
-    private func mountPanelConfirmFallback(panelId: UUID) -> Bool {
-        guard case .onScreen(let window) = CloseOverlayFallback.ownerState(of: owningWorkspaceManager?.window),
-              let placement = CloseOverlayFallback.themePlacement(in: window) else {
+    private func mountPanelConfirmFallback(panelId: UUID, window: NSWindow) -> Bool {
+        guard let placement = CloseOverlayFallback.themePlacement(in: window) else {
             return false
         }
         let host = AreaInteractionOverlayHost(panelId: panelId, runtime: paneInteractionRuntime)
@@ -12410,6 +12414,22 @@ extension Workspace: BonsplitDelegate {
         if panelNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()) {
             clearStagedClosedBrowserRestoreSnapshot(for: bonsplitTab.id)
             if pendingCloseConfirmBonsplitTabIds.contains(bonsplitTab.id) {
+                // The card stayed armed while its tab was hidden (review 2,
+                // option a). Bring that tab forward so the same card is on
+                // screen. A visible card still ignores the repeat click.
+                if !paneInteractionRuntime.isConfirmCardVisible(panelId: panelId),
+                   bonsplitController.selectedTab(inPane: pane)?.id != bonsplitTab.id {
+                    bonsplitController.selectTab(bonsplitTab.id)
+                    CloseLog.request(
+                        panel: panelId,
+                        workspace: id,
+                        explicit: explicitUserClose,
+                        lastSurface: false,
+                        needsConfirm: true,
+                        route: "panelReveal"
+                    )
+                    return false
+                }
                 CloseLog.request(
                     panel: panelId,
                     workspace: id,

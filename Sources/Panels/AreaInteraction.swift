@@ -716,3 +716,39 @@ public final class AreaInteractionRuntime: ObservableObject {
     }
 #endif
 }
+
+/// Panel-confirm watchdog decision, without a `Workspace`. The yields stay at
+/// the call site. A no-op here leaves an unseen confirm active, which the
+/// logic test rejects.
+@MainActor
+enum PanelConfirmUnmountedWatch {
+    /// Logs `no_anchor`. Returns the owning window when it is on screen so
+    /// the caller can mount. Otherwise releases the confirm as cancel.
+    static func begin(
+        panelId: UUID,
+        runtime: AreaInteractionRuntime,
+        workspaceId: UUID?,
+        owner: () -> CloseOverlayOwner
+    ) -> NSWindow? {
+        guard runtime.active[panelId] != nil else { return nil }
+        guard !runtime.isConfirmCardVisible(panelId: panelId) else { return nil }
+        CloseLog.overlayUnmounted(scope: "panel", workspace: workspaceId, reason: "no_anchor")
+        if case .onScreen(let window) = owner() {
+            return window
+        }
+        CloseLog.overlayUnmounted(
+            scope: "panel",
+            workspace: workspaceId,
+            reason: "owner_window_not_visible"
+        )
+        runtime.releaseUnmounted(panelId: panelId)
+        return nil
+    }
+
+    /// The fallback mount did not become visible. Release whatever is left.
+    static func releaseIfStillUnmounted(panelId: UUID, runtime: AreaInteractionRuntime) {
+        guard runtime.active[panelId] != nil else { return }
+        guard !runtime.isConfirmCardVisible(panelId: panelId) else { return }
+        runtime.releaseUnmounted(panelId: panelId)
+    }
+}

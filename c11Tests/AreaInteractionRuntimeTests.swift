@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 #if canImport(c11_DEV)
@@ -715,6 +716,7 @@ final class CloseConfirmMountTests: XCTestCase {
             owner.orderOut(nil)
         }
         key.makeKeyAndOrderFront(nil)
+        owner.orderFront(nil)
         controller.ownerWindow = { .onScreen(owner) }
         var result: ConfirmResult?
 
@@ -743,6 +745,7 @@ final class CloseConfirmMountTests: XCTestCase {
         let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
         let window = makeWindow()
         defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
         controller.ownerWindow = { .onScreen(window) }
         var result: ConfirmResult?
 
@@ -796,6 +799,7 @@ final class CloseConfirmMountTests: XCTestCase {
             owner.orderOut(nil)
         }
         key.makeKeyAndOrderFront(nil)
+        owner.orderFront(nil)
         let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
         controller.ownerWindow = { .onScreen(owner) }
 
@@ -822,6 +826,7 @@ final class CloseConfirmMountTests: XCTestCase {
         let panelId = UUID()
         let window = makeWindow()
         defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
         let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
         controller.ownerWindow = { .onScreen(window) }
         var result: ConfirmResult?
@@ -989,6 +994,101 @@ final class CloseConfirmMountTests: XCTestCase {
         } else {
             XCTFail("The visible card should stay active")
         }
+    }
+
+    func testHiddenAncestorHidesTheCardUntilTheTabReturns() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+        window.contentView?.addSubview(container)
+        let host = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        host.frame = container.bounds
+        host.autoresizingMask = [.width, .height]
+        container.addSubview(host)
+        var result: ConfirmResult?
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close panel?", defaultSelection: .confirm) { result = $0 })
+        )
+        spinMain()
+
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        container.isHidden = true
+        XCTAssertFalse(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertFalse(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertNil(result)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        container.isHidden = false
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+        _ = host
+    }
+
+    func testSwiftUIConfirmReportsVisibleAndAcceptsReturn() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        var result: ConfirmResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Q", defaultSelection: .confirm) { result = $0 })
+        )
+        let card = NSHostingView(
+            rootView: AreaInteractionCardView(
+                panelId: panelId,
+                interaction: runtime.active[panelId]!,
+                runtime: runtime
+            )
+        )
+        card.frame = NSRect(x: 0, y: 0, width: 480, height: 320)
+        window.contentView?.addSubview(card)
+        window.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+        XCTAssertFalse(runtime.hasActive(panelId: panelId))
+    }
+
+    func testPanelWatchReleasesWhenTheOwnerIsOffScreen() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close panel?") { result = $0 }),
+            dedupeToken: "panel.close"
+        )
+
+        let window = PanelConfirmUnmountedWatch.begin(
+            panelId: panelId,
+            runtime: runtime,
+            workspaceId: nil,
+            owner: { .missing }
+        )
+
+        XCTAssertNil(window)
+        XCTAssertEqual(result, .cancelled)
+        XCTAssertFalse(runtime.hasActive(panelId: panelId))
+
+        var second: ConfirmResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Again") { second = $0 }),
+            dedupeToken: "panel.close"
+        )
+        XCTAssertNil(second)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
     }
 
     private func spinMain() {

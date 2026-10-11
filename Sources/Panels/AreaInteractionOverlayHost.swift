@@ -126,7 +126,8 @@ final class AreaInteractionOverlayHost: NSView {
             let rootView = AreaInteractionCardView(
                 panelId: panelId,
                 interaction: interaction,
-                runtime: runtime
+                runtime: runtime,
+                reportsVisibility: false
             )
             if let hostingView {
                 hostingView.rootView = rootView
@@ -176,6 +177,16 @@ final class AreaInteractionOverlayHost: NSView {
                 removeFromSuperview()
             }
         }
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        publishConfirmVisibility()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        publishConfirmVisibility()
     }
 
     override func viewDidMoveToWindow() {
@@ -294,14 +305,13 @@ final class AreaInteractionOverlayHost: NSView {
         return nil
     }
 
-    /// Visible only when this panel's card is shown, in a window, and large
-    /// enough to draw. A zero frame is the same as no card.
+    /// On screen only when no ancestor is hidden. A tab switch hides the
+    /// scroll view around this host and leaves `isHidden` false.
     private func publishConfirmVisibility() {
-        let visible = !isHidden
-            && window != nil
-            && bounds.width >= 1
-            && bounds.height >= 1
-            && runtime.active[panelId] != nil
+        let visible = CloseOverlayFallback.cardIsOnScreen(
+            self,
+            active: runtime.active[panelId] != nil
+        )
         runtime.noteConfirmVisible(panelId: panelId, visible: visible)
     }
 

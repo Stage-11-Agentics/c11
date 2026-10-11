@@ -11,6 +11,10 @@ struct AreaInteractionCardView: View {
     let panelId: UUID
     let interaction: AreaInteraction
     @ObservedObject var runtime: AreaInteractionRuntime
+    /// SwiftUI-only mounts (markdown, empty browser) have no AppKit host to
+    /// publish visibility. The AppKit host passes false so its hidden-ancestor
+    /// report cannot be overwritten by this view's `onAppear`.
+    var reportsVisibility: Bool = true
 
     var body: some View {
         ZStack {
@@ -32,7 +36,12 @@ struct AreaInteractionCardView: View {
     private var card: some View {
         switch interaction {
         case .confirm(let content):
-            ConfirmCard(panelId: panelId, content: content, runtime: runtime)
+            ConfirmCard(
+                panelId: panelId,
+                content: content,
+                runtime: runtime,
+                reportsVisibility: reportsVisibility
+            )
         case .textInput(let content):
             TextInputCard(panelId: panelId, content: content, runtime: runtime)
         }
@@ -45,6 +54,7 @@ private struct ConfirmCard: View {
     let panelId: UUID
     let content: ConfirmContent
     @ObservedObject var runtime: AreaInteractionRuntime
+    var reportsVisibility: Bool = true
     @State private var pulse: Bool = false
 
     private var selected: ConfirmSelectionField {
@@ -176,6 +186,14 @@ private struct ConfirmCard: View {
         .accessibilityIdentifier("AreaInteraction.confirm.card")
         .onAppear {
             if isCritical { pulse = true }
+            if reportsVisibility {
+                runtime.noteConfirmVisible(panelId: panelId, visible: true)
+            }
+        }
+        .onDisappear {
+            if reportsVisibility {
+                runtime.noteConfirmVisible(panelId: panelId, visible: false)
+            }
         }
     }
 

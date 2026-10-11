@@ -42,6 +42,16 @@ enum CloseOverlayFallback {
         }
         return .onScreen(window)
     }
+
+    /// A card inside a hidden tab is not on screen. `isHidden` on the host
+    /// itself stays false when an ancestor scroll view is hidden.
+    static func cardIsOnScreen(_ view: NSView, active: Bool) -> Bool {
+        active
+            && view.window?.isVisible == true
+            && !view.isHiddenOrHasHiddenAncestor
+            && view.bounds.width >= 1
+            && view.bounds.height >= 1
+    }
 }
 
 /// Owns the AppKit overlay layer that renders the workspace-close

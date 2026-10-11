@@ -522,7 +522,8 @@ struct BrowserPanelView: View {
         // Pane-interaction overlay (empty-new-tab state only). WebView-backed
         // cases mount the overlay from the AppKit portal host for the same
         // layering reason that BrowserSearchOverlay above does.
-        if !panel.shouldRenderWebView,
+        if isVisibleInUI,
+           !panel.shouldRenderWebView,
            let interaction = paneInteractionRuntime.active[panel.id] {
             AreaInteractionCardView(
                 panelId: panel.id,

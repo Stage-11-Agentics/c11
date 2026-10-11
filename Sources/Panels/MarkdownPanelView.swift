@@ -59,7 +59,7 @@ struct MarkdownPanelView: View {
             }
         }
         .overlay {
-            if let interaction = paneInteractionRuntime.active[panel.id] {
+            if isVisibleInUI, let interaction = paneInteractionRuntime.active[panel.id] {
                 AreaInteractionCardView(
                     panelId: panel.id,
                     interaction: interaction,

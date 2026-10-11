@@ -224,6 +224,9 @@ struct PanelTitleBarView: View {
         // the workspace, and the presenter holds this closure.
         let open = $isDrawerOpen
         drawerPresenter.onDismiss = { open.wrappedValue = false }
+        // Opening is a reason to recount: a hand-dropped file would otherwise
+        // wait for the reconcile while the drawer already lists it.
+        MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: panelId)
         isDrawerOpen = true
         drawerPresenter.present(rootView: AnyView(drawer))
         if !drawerPresenter.isPresented { isDrawerOpen = false }

@@ -347,6 +347,20 @@ Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mai
 
 **Why you still pull.** The inbox copy is written before any push is attempted. Mail to an agent with no turn signal, mail behind an operator draft, and evicted mail are all still in the inbox, so `c11 mailbox recv --drain` at turn boundaries remains the floor that always works.
 
+### Doorbell
+
+An idle Claude Code or OpenCode panel whose mail is sitting in that buffer gets one invitation instead of waiting for a prompt edge that may not open. A live agent TUI keeps the shell command-running for the whole session, and without a prompt edge today's gate holds the block. c11 types:
+
+`You have mail: run c11 mailbox recv when you want to receive it.`
+
+The panel has to be a confirmed live journal snapshot, phase idle, turn outcome `completed`, with `mailbox.delivery` including `stdin`. Claude Code (`claude_hook`) and OpenCode (`opencode_plugin`) report `blocked`, so idle-after-a-finished-turn is distinct from a permission prompt. Grok (`grok_transcript`), Codex (`codex_notify` and `codex_transcript`), and Pi (`pi_plugin`) do not report `blocked`. They are not rung. Their mail stays on today's prompt-edge paste.
+
+The invitation uses the same empty-or-suggestion prompt check as `c11 feed answer`. A draft, a dialog, or an unreadable prompt is not typed into. A working agent is not rung. Its mail still flushes as `<c11-msg>` at the next prompt edge. Mail buffered during the turn is rung once when the agent goes idle if that flush left it queued. The stop hook does not always deliver first.
+
+The focused panel waits 3 seconds after an operator key, then rings if it is still idle and the mail is unread. An unfocused panel does not wait. One ring per idle period. Three attempts per 10 minutes per panel. Reaching the paste counts even when the submit fails, and that idle period is not retried. Waiting out the operator does not count. `mailbox.doorbell=off` (trimmed, any case) keeps today's paste. A flagged panel is not rung. Suppression is not a skip.
+
+A submitted invitation drops those blocks from the flush queue so they are not pasted again. The inbox still holds them, and `c11 mailbox recv` reads it. A failed invitation leaves the queue for the next prompt edge. Nothing here changes focus or activates c11.
+
 ### Explicit inbox drain
 
 ```bash
@@ -508,13 +522,13 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | `received`  | `id`, `from`, `to?`, `topic?`                                       |
 | `resolved`  | `id`, `recipients[]` (panel names; can be empty)                  |
 | `copied`    | `id`, `recipient`                                                   |
-| `handler`   | `id`, `recipient`, `handler`, `outcome`, `bytes?`, `elapsed_ms?`    |
+| `handler`   | `id`, `recipient`, `handler`, `outcome`, `bytes?`, `elapsed_ms?`, `reason?` |
 | `rejected`  | `id?`, `reason`                                                     |
 | `cleaned`   | `id`                                                                |
 | `gc`        | `temp_files_removed`                                                |
 | `replayed`  | `id` (declared in the event enum; not emitted in Stage 2)           |
 
-Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted`, `skipped`, `claim_failed` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted`, `skipped`, `claim_failed`, and the doorbell outcomes `doorbell`, `doorbell_skipped`, `doorbell_capped`, `doorbell_failed` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). A doorbell line carries `reason`. (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
 
 | stdin outcome | Meaning |
 |---------------|---------|
@@ -525,6 +539,10 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safe
 | `skipped`     | the push found the envelope already claimed by a drain; nothing typed |
 | `claim_failed` | the push could not claim the envelope (`errno` on the line); it stays in the inbox, nothing typed |
 | `closed`      | after `ok`/`buffered`: the panel closed or detached before the submit Return; the claim was undone |
+| `doorbell`    | the invitation was `started` or `submitted`. `bytes` is the invitation, not the envelope |
+| `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `draft`, `dialog`, `unknown_prompt`, `unavailable`, or `waiting` |
+| `doorbell_capped` | this panel already used 3 attempts in the last 10 minutes. `reason` is `rate_capped` |
+| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `pasted_not_submitted`, or `submit_unconfirmed`. The blocks stay queued |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows

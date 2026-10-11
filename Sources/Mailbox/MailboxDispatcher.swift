@@ -173,7 +173,8 @@ final class MailboxDispatcher {
         id: String,
         recipient: String,
         outcome: MailboxDispatchLog.HandlerOutcome,
-        bytes: Int? = nil
+        bytes: Int? = nil,
+        reason: String? = nil
     ) {
         log.append(
             .handler(
@@ -182,7 +183,8 @@ final class MailboxDispatcher {
                 handler: "stdin",
                 outcome: outcome,
                 bytes: bytes,
-                elapsedMs: nil
+                elapsedMs: nil,
+                reason: reason
             )
         )
     }
@@ -482,7 +484,8 @@ final class MailboxDispatcher {
                     handler: "_copy",
                     outcome: .eio,
                     bytes: nil,
-                    elapsedMs: nil
+                    elapsedMs: nil,
+                    reason: nil
                 )
             )
         }
@@ -506,7 +509,8 @@ final class MailboxDispatcher {
                             handler: handlerName,
                             outcome: .eio,
                             bytes: nil,
-                            elapsedMs: nil
+                            elapsedMs: nil,
+                            reason: nil
                         )
                     )
                     continue
@@ -558,7 +562,8 @@ final class MailboxDispatcher {
                 handler: name,
                 outcome: result.outcome,
                 bytes: result.bytes,
-                elapsedMs: result.elapsedMs ?? elapsedMs
+                elapsedMs: result.elapsedMs ?? elapsedMs,
+                reason: nil
             )
         )
     }

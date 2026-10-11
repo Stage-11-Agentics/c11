@@ -367,6 +367,30 @@ struct MailboxStdinBuffer {
         entries.map(\.block).joined()
     }
 
+    func queuedEntries(surfaceId: UUID) -> [Entry] {
+        queues[surfaceId] ?? []
+    }
+
+    /// Drop the flush queue only. Turn edges stay, so a later prompt can
+    /// still open the gate. Used when a submitted doorbell must not paste
+    /// the same blocks again.
+    mutating func takeQueue(surfaceId: UUID) -> [Entry] {
+        queues.removeValue(forKey: surfaceId) ?? []
+    }
+
+    /// Remove one queued block. The inbox copy is untouched.
+    mutating func removeQueued(surfaceId: UUID, id: String) -> Entry? {
+        guard var queue = queues[surfaceId],
+              let index = queue.firstIndex(where: { $0.id == id }) else { return nil }
+        let removed = queue.remove(at: index)
+        if queue.isEmpty {
+            queues.removeValue(forKey: surfaceId)
+        } else {
+            queues[surfaceId] = queue
+        }
+        return removed
+    }
+
     /// Drop a surface's queue outright (surface closed). Returns any entries
     /// that were pending so the caller can log the drop; the inbox floor still
     /// holds them for `recv --drain`.
@@ -403,6 +427,7 @@ struct MailboxStdinBuffer {
 /// without an `inout` that overlaps the flush. Workspace holds one of these.
 final class MailboxStdinBufferStore {
     var buffer = MailboxStdinBuffer()
+    var doorbell = MailboxDoorbell.Ledgers()
 }
 
 /// The stdin delivery sequence Workspace runs: admit, idle flush, claim, and
@@ -427,6 +452,9 @@ enum MailboxStdinDelivery {
     enum AdmitResult: Equatable {
         case ok(bytes: Int)
         case buffered(bytes: Int)
+        /// The block stayed out of the ordinary push. `effect` says ring,
+        /// wait, or drop this entry. `.push` and `.keep` stay `.buffered`.
+        case doorbell(bytes: Int, effect: MailboxDoorbell.Arrival)
     }
 
     struct Prepared {
@@ -471,13 +499,21 @@ enum MailboxStdinDelivery {
     }
 
     /// Admit one block: enqueue, and push immediately when the gate is open.
+    ///
+    /// The doorbell is the other branch. A live agent TUI keeps the shell
+    /// `.commandRunning` for life, and without a prompt edge this gate
+    /// buffers. `ringInput` is called only on that buffer branch, so an
+    /// open prompt edge still pastes today's `<c11-msg>`. The Bool asks for
+    /// a prompt-screen read; callers pass false first.
     static func deliver(
         state: MailboxStdinBufferStore,
         surfaceId: UUID,
         entry: MailboxStdinBuffer.Entry,
         gate: Gate,
         logEvicted: (MailboxStdinBuffer.Entry) -> Void,
-        push: (_ immediateId: String?) -> Void
+        push: (_ immediateId: String?) -> Void,
+        ringInput: ((Bool) -> MailboxDoorbell.Input)? = nil,
+        noteRing: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil
     ) -> AdmitResult {
         var decision = state.buffer.decide(
             surfaceId: surfaceId,
@@ -491,11 +527,30 @@ enum MailboxStdinDelivery {
         if let evicted = state.buffer.enqueue(surfaceId: surfaceId, entry: entry) {
             logEvicted(evicted)
         }
+        let bytes = entry.block.utf8.count
         if decision == .injectNow {
             push(immediate ? entry.id : nil)
+            return immediate ? .ok(bytes: bytes) : .buffered(bytes: bytes)
         }
-        let bytes = entry.block.utf8.count
-        return immediate ? .ok(bytes: bytes) : .buffered(bytes: bytes)
+        if let ringInput {
+            var input = ringInput(false)
+            if MailboxDoorbell.needsPrompt(input) {
+                input = ringInput(true)
+            }
+            let ring = MailboxDoorbell.decide(input)
+            let effect = MailboxDoorbell.arrival(for: ring)
+            noteRing?(ring, effect)
+            switch effect {
+            case .push, .keep(_):
+                break
+            case .drop(_, _):
+                _ = state.buffer.removeQueued(surfaceId: surfaceId, id: entry.id)
+                return .doorbell(bytes: bytes, effect: effect)
+            case .ring, .deferRing(_):
+                return .doorbell(bytes: bytes, effect: effect)
+            }
+        }
+        return .buffered(bytes: bytes)
     }
 
     /// Gate check, drain, and `beginPush`. Nil means the push did not start

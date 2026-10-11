@@ -699,7 +699,7 @@ final class MailboxDispatcherTests: XCTestCase {
             switch admitted {
             case .ok(let bytes):
                 return .init(outcome: .ok, bytes: bytes, elapsedMs: 0)
-            case .buffered(let bytes):
+            case .buffered(let bytes), .doorbell(let bytes, _):
                 return .init(outcome: .buffered, bytes: bytes, elapsedMs: 0)
             }
         }

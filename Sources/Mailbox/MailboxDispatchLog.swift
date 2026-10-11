@@ -49,7 +49,8 @@ final class MailboxDispatchLog {
             handler: String,
             outcome: HandlerOutcome,
             bytes: Int?,
-            elapsedMs: Int?
+            elapsedMs: Int?,
+            reason: String?
         )
         case rejected(id: String?, reason: String)
         case cleaned(id: String)
@@ -100,6 +101,15 @@ final class MailboxDispatchLog {
         case skipped
         /// The push could not claim the envelope (see `Event.claimFailed`).
         case claimFailed = "claim_failed"
+        /// The invitation was started or submitted. `reason` is `started`
+        /// or `submitted`.
+        case doorbell
+        /// The ring did not happen. `reason` says why.
+        case doorbellSkipped = "doorbell_skipped"
+        /// The panel already used its ring attempts for this window.
+        case doorbellCapped = "doorbell_capped"
+        /// The invitation was not submitted. `reason` is the feed-answer code.
+        case doorbellFailed = "doorbell_failed"
     }
 
     // MARK: - File I/O
@@ -154,7 +164,7 @@ final class MailboxDispatchLog {
             payload["event"] = "copied"
             payload["id"] = id
             payload["recipient"] = recipient
-        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs):
+        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -162,6 +172,7 @@ final class MailboxDispatchLog {
             payload["outcome"] = outcome.rawValue
             if let bytes { payload["bytes"] = bytes }
             if let elapsedMs { payload["elapsed_ms"] = elapsedMs }
+            if let reason { payload["reason"] = reason }
         case .rejected(let id, let reason):
             payload["event"] = "rejected"
             if let id { payload["id"] = id }

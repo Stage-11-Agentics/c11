@@ -334,10 +334,7 @@ extension TerminalController {
                 )))
             }
             let observation = PromptInputObservation.activeScreen(region)
-            guard case .deliver(.checked) = SendInputGuard.decide(
-                state: observation.classification.state,
-                allowUnguarded: false
-            ) else {
+            guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
                 return .error(feedAnswerInputRefusal(
                     observation.classification.state,
                     data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe"),
@@ -399,10 +396,7 @@ extension TerminalController {
             )))
         }
         let observation = PromptInputObservation.activeScreen(region)
-        guard case .deliver(.checked) = SendInputGuard.decide(
-            state: observation.classification.state,
-            allowUnguarded: false
-        ) else {
+        guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
             return .error(feedAnswerInputRefusal(
                 observation.classification.state,
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe"),

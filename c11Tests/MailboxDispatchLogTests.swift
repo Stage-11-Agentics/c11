@@ -76,7 +76,8 @@ final class MailboxDispatchLogTests: XCTestCase {
             handler: "stdin",
             outcome: .ok,
             bytes: 67,
-            elapsedMs: 12
+            elapsedMs: 12,
+            reason: nil
         ))
         log.append(.rejected(id: "B", reason: "invalid ULID"))
         log.append(.cleaned(id: "A"))
@@ -159,7 +160,7 @@ final class MailboxDispatchLogTests: XCTestCase {
 
     func testHandlerOmitsNilBytesAndElapsed() throws {
         let str = MailboxDispatchLog.serialize(
-            event: .handler(id: "A", recipient: "w", handler: "silent", outcome: .ok, bytes: nil, elapsedMs: nil),
+            event: .handler(id: "A", recipient: "w", handler: "silent", outcome: .ok, bytes: nil, elapsedMs: nil, reason: nil),
             at: Date(timeIntervalSince1970: 0)
         )
         let data = Data(str.dropLast().utf8)

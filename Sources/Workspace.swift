@@ -12426,7 +12426,7 @@ extension Workspace: BonsplitDelegate {
                         explicit: explicitUserClose,
                         lastSurface: false,
                         needsConfirm: true,
-                        route: "panelReveal"
+                        route: "pendingReveal"
                     )
                     return false
                 }

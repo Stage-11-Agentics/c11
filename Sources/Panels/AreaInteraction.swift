@@ -238,6 +238,9 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// Confirm cards a host has reported as not on screen. A dedupe token
     /// whose holders are all in this set does not swallow the next present.
     private var confirmUnmountedIds: Set<UUID> = []
+    /// AppKit hosts whose latest report for this confirm id is hidden.
+    /// A later SwiftUI `onAppear` cannot mark that card visible.
+    private var hostHiddenConfirmIds: Set<UUID> = []
     /// Live text-input values keyed by the interaction's id. Bridged from
     /// `TextInputCard` so `acceptActive` (Cmd+D) can submit the edited value
     /// instead of the default (synthesis-critical §1.1).
@@ -568,9 +571,21 @@ public final class AreaInteractionRuntime: ObservableObject {
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
 
-    /// Hosts report whether the confirm card is actually on screen.
-    public func noteConfirmVisible(panelId: UUID, visible: Bool) {
+    /// Hosts and SwiftUI cards report whether the confirm card is on screen.
+    /// A host report is authoritative for that interaction: a later card
+    /// `onAppear` cannot override a host that reported the card hidden.
+    /// A card with no host report still accepts its own `onAppear`.
+    public func noteConfirmVisible(panelId: UUID, visible: Bool, fromHost: Bool = false) {
         guard case .confirm(let content)? = active[panelId] else { return }
+        if fromHost {
+            if visible {
+                hostHiddenConfirmIds.remove(content.id)
+            } else {
+                hostHiddenConfirmIds.insert(content.id)
+            }
+        } else if visible, hostHiddenConfirmIds.contains(content.id) {
+            return
+        }
         if visible {
             confirmVisibleIds.insert(content.id)
             confirmUnmountedIds.remove(content.id)
@@ -588,10 +603,14 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// Resume an unseen confirm with `.cancelled` and drop its dedupe token.
     /// Nothing closes. The pending-close guard's task ends, so a later X can
     /// present. Text input has no destructive default and stays `.dismissed`.
-    public func releaseUnmounted(panelId: UUID) {
+    /// `ifInteractionId` no-ops when a different card, such as Rename, is the
+    /// one on screen. Callers that mean "whatever is mounted" omit it.
+    public func releaseUnmounted(panelId: UUID, ifInteractionId interactionId: UUID? = nil) {
         guard let interaction = active[panelId] else { return }
+        if let interactionId, interaction.id != interactionId { return }
         confirmVisibleIds.remove(interaction.id)
         confirmUnmountedIds.remove(interaction.id)
+        hostHiddenConfirmIds.remove(interaction.id)
         retireToken(forInteractionId: interaction.id, panelId: panelId)
         switch interaction {
         case .confirm(let content): content.completion(.cancelled)
@@ -609,6 +628,11 @@ public final class AreaInteractionRuntime: ObservableObject {
         return content.role == .destructive ? .cancel : .confirm
     }
 
+    public func hasActiveConfirm(panelId: UUID) -> Bool {
+        if case .confirm? = active[panelId] { return true }
+        return false
+    }
+
     public func hasActiveDestructiveConfirm(panelId: UUID) -> Bool {
         if case .confirm(let c)? = active[panelId], c.role == .destructive { return true }
         return false
@@ -619,12 +643,14 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// Panel/workspace teardown: resolve every pending (active + queued) with `.dismissed`.
     public func clear(panelId: UUID) {
         if let interaction = active[panelId] {
+            hostHiddenConfirmIds.remove(interaction.id)
             pendingTextInputValues.removeValue(forKey: interaction.id)
             dismissEvicted(interaction)
         }
         active[panelId] = nil
         if let queue = queues[panelId] {
             for interaction in queue {
+                hostHiddenConfirmIds.remove(interaction.id)
                 pendingTextInputValues.removeValue(forKey: interaction.id)
                 dismissEvicted(interaction)
             }
@@ -655,6 +681,7 @@ public final class AreaInteractionRuntime: ObservableObject {
         if let current = active[panelId], ids.contains(current.id) {
             confirmVisibleIds.remove(current.id)
             confirmUnmountedIds.remove(current.id)
+            hostHiddenConfirmIds.remove(current.id)
             retireToken(forInteractionId: current.id, panelId: panelId)
             dismissEvicted(current)
             active[panelId] = nil
@@ -664,6 +691,7 @@ public final class AreaInteractionRuntime: ObservableObject {
                 guard ids.contains(item.id) else { return false }
                 confirmVisibleIds.remove(item.id)
                 confirmUnmountedIds.remove(item.id)
+                hostHiddenConfirmIds.remove(item.id)
                 retireToken(forInteractionId: item.id, panelId: panelId)
                 dismissEvicted(item)
                 return true
@@ -685,6 +713,7 @@ public final class AreaInteractionRuntime: ObservableObject {
     private func retireToken(forInteractionId interactionId: UUID, panelId: UUID) {
         confirmVisibleIds.remove(interactionId)
         confirmUnmountedIds.remove(interactionId)
+        hostHiddenConfirmIds.remove(interactionId)
         guard let token = interactionIdToToken.removeValue(forKey: interactionId) else { return }
         var byToken = tokenToInteractionIds[panelId] ?? [:]
         if var ids = byToken[token] {
@@ -723,14 +752,16 @@ public final class AreaInteractionRuntime: ObservableObject {
 @MainActor
 enum PanelConfirmUnmountedWatch {
     /// Logs `no_anchor`. Returns the owning window when it is on screen so
-    /// the caller can mount. Otherwise releases the confirm as cancel.
+    /// the caller can mount. Otherwise releases that confirm as cancel.
+    /// A Rename text-input, or any other active card, is left alone: the
+    /// watch is keyed on the close confirm's interaction id.
     static func begin(
         panelId: UUID,
         runtime: AreaInteractionRuntime,
         workspaceId: UUID?,
         owner: () -> CloseOverlayOwner
     ) -> NSWindow? {
-        guard runtime.active[panelId] != nil else { return nil }
+        guard case .confirm(let content)? = runtime.active[panelId] else { return nil }
         guard !runtime.isConfirmCardVisible(panelId: panelId) else { return nil }
         CloseLog.overlayUnmounted(scope: "panel", workspace: workspaceId, reason: "no_anchor")
         if case .onScreen(let window) = owner() {
@@ -741,14 +772,14 @@ enum PanelConfirmUnmountedWatch {
             workspace: workspaceId,
             reason: "owner_window_not_visible"
         )
-        runtime.releaseUnmounted(panelId: panelId)
+        runtime.releaseUnmounted(panelId: panelId, ifInteractionId: content.id)
         return nil
     }
 
-    /// The fallback mount did not become visible. Release whatever is left.
+    /// The fallback mount did not become visible. Release that confirm only.
     static func releaseIfStillUnmounted(panelId: UUID, runtime: AreaInteractionRuntime) {
-        guard runtime.active[panelId] != nil else { return }
+        guard case .confirm(let content)? = runtime.active[panelId] else { return }
         guard !runtime.isConfirmCardVisible(panelId: panelId) else { return }
-        runtime.releaseUnmounted(panelId: panelId)
+        runtime.releaseUnmounted(panelId: panelId, ifInteractionId: content.id)
     }
 }

@@ -1091,6 +1091,76 @@ final class CloseConfirmMountTests: XCTestCase {
         XCTAssertTrue(runtime.hasActive(panelId: panelId))
     }
 
+    func testHostHiddenReportRejectsALaterCardAppear() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close panel?", defaultSelection: .confirm) { result = $0 })
+        )
+
+        runtime.noteConfirmVisible(panelId: panelId, visible: false, fromHost: true)
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
+
+        XCTAssertFalse(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertFalse(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertNil(result)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        runtime.noteConfirmVisible(panelId: panelId, visible: true, fromHost: true)
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+    }
+
+    func testPanelWatchLeavesATextInputAlone() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: TextInputResult?
+        runtime.present(
+            panelId: panelId,
+            interaction: .textInput(makeTextInput(title: "Rename") { result = $0 })
+        )
+
+        let window = PanelConfirmUnmountedWatch.begin(
+            panelId: panelId,
+            runtime: runtime,
+            workspaceId: nil,
+            owner: { .missing }
+        )
+        PanelConfirmUnmountedWatch.releaseIfStillUnmounted(panelId: panelId, runtime: runtime)
+
+        XCTAssertNil(window)
+        XCTAssertNil(result)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+        if case .textInput(let content)? = runtime.active[panelId] {
+            XCTAssertEqual(content.title, "Rename")
+        } else {
+            XCTFail("The rename card should stay active")
+        }
+    }
+
+    func testAttachPaneInteractionFollowsTheRuntime() {
+        let surface = GhosttyNSView(frame: NSRect(x: 0, y: 0, width: 80, height: 50))
+        let scroll = GhosttySurfaceScrollView(surfaceView: surface)
+        scroll.frame = NSRect(x: 0, y: 0, width: 240, height: 160)
+        let panelId = UUID()
+        let runtimeA = AreaInteractionRuntime()
+        let runtimeB = AreaInteractionRuntime()
+
+        scroll.attachPaneInteraction(runtime: runtimeA, panelId: panelId)
+        let first = scroll.subviews.compactMap { $0 as? AreaInteractionOverlayHost }
+        XCTAssertEqual(first.count, 1)
+        XCTAssertTrue(first[0].runtime === runtimeA)
+
+        scroll.attachPaneInteraction(runtime: runtimeB, panelId: panelId)
+        let second = scroll.subviews.compactMap { $0 as? AreaInteractionOverlayHost }
+        XCTAssertEqual(second.count, 1)
+        XCTAssertTrue(second[0].runtime === runtimeB)
+        XCTAssertFalse(second[0] === first[0])
+    }
+
     private func spinMain() {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
     }
@@ -1118,6 +1188,23 @@ final class CloseConfirmMountTests: XCTestCase {
             cancelLabel: "Cancel",
             role: .destructive,
             defaultSelection: defaultSelection,
+            source: .local,
+            completion: completion
+        )
+    }
+
+    private func makeTextInput(
+        title: String,
+        completion: @escaping (TextInputResult) -> Void
+    ) -> TextInputContent {
+        TextInputContent(
+            title: title,
+            message: nil,
+            placeholder: nil,
+            defaultValue: "",
+            confirmLabel: "Rename",
+            cancelLabel: "Cancel",
+            validate: { _ in nil },
             source: .local,
             completion: completion
         )

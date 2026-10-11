@@ -312,7 +312,7 @@ final class AreaInteractionOverlayHost: NSView {
             self,
             active: runtime.active[panelId] != nil
         )
-        runtime.noteConfirmVisible(panelId: panelId, visible: visible)
+        runtime.noteConfirmVisible(panelId: panelId, visible: visible, fromHost: true)
     }
 
     // MARK: - Lifecycle

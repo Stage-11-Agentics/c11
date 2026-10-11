@@ -887,8 +887,11 @@ class WorkspaceManager: ObservableObject {
 
     /// Accept the topmost pane interaction in the currently selected workspace,
     /// preferring the focused panel when it has an active interaction. Used by the
-    /// Cmd+D dispatcher (plan §4.8). Returns true when an interaction resolved —
-    /// caller should also return true from its key-equivalent handler.
+    /// Cmd+D dispatcher (plan §4.8). Returns true when the key is consumed.
+    /// A focused confirm consumes the key even when the card is hidden and the
+    /// accept is refused. A destructive confirm is consumed without accepting
+    /// when `includingDestructiveConfirms` is false. A focused text input
+    /// returns its own accept result.
     @MainActor
     @discardableResult
     func acceptActivePaneInteractionInKeyWorkspace(includingDestructiveConfirms: Bool) -> Bool {
@@ -897,19 +900,29 @@ class WorkspaceManager: ObservableObject {
             return false
         }
         let runtime = workspace.paneInteractionRuntime
-        // Prefer the focused panel — Cmd+D naturally targets "the dialog the user is
-        // looking at," which is the one anchored on the currently focused panel.
-        // Otherwise take any active interaction — there's only ever one per panel,
-        // and multiple-panel-with-active-interaction is rare.
-        let targetPanelId: UUID? = {
-            if let focusedPanelId = workspace.focusedPanelId,
-               runtime.hasActive(panelId: focusedPanelId) {
-                return focusedPanelId
+        // Prefer the focused panel. Cmd+D targets the card the operator is
+        // looking at. A focused confirm is checked before accept, because a
+        // successful accept clears it. A hidden card refuses the accept, and
+        // the key is still consumed so it cannot land on another panel.
+        // A destructive confirm is consumed without accepting when the caller
+        // excludes those. A focused text input keeps its own accept result.
+        if let focusedPanelId = workspace.focusedPanelId,
+           runtime.hasActive(panelId: focusedPanelId) {
+            if runtime.hasActiveConfirm(panelId: focusedPanelId) {
+                if !includingDestructiveConfirms,
+                   runtime.hasActiveDestructiveConfirm(panelId: focusedPanelId) {
+                    return true
+                }
+                _ = runtime.acceptActive(panelId: focusedPanelId)
+                return true
             }
-            return runtime.activePanelIds.first
-        }()
-        guard let targetPanelId else { return false }
-        if !includingDestructiveConfirms, runtime.hasActiveDestructiveConfirm(panelId: targetPanelId) { return false }
+            return runtime.acceptActive(panelId: focusedPanelId)
+        }
+        guard let targetPanelId = runtime.activePanelIds.first else { return false }
+        if !includingDestructiveConfirms,
+           runtime.hasActiveDestructiveConfirm(panelId: targetPanelId) {
+            return false
+        }
         return runtime.acceptActive(panelId: targetPanelId)
     }
 
@@ -927,14 +940,23 @@ class WorkspaceManager: ObservableObject {
         }
         let runtime = workspace.paneInteractionRuntime
         // The focused panel's confirm owns Return and Space. A hidden card
-        // refuses the key, and that key must not accept a different panel's card.
+        // refuses the key, and that refusal is still a consume: the key must
+        // not reach another panel's card or the terminal. A text input still
+        // receives its own Return through handleKeyDown.
         if let focusedPanelId = workspace.focusedPanelId,
            runtime.hasActive(panelId: focusedPanelId) {
-            return runtime.handleKeyDown(
+            if runtime.handleKeyDown(
                 panelId: focusedPanelId,
                 keyCode: Int(event.keyCode),
                 shift: flags.contains(.shift)
-            )
+            ) {
+                return true
+            }
+            if runtime.hasActiveConfirm(panelId: focusedPanelId),
+               event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 49 {
+                return true
+            }
+            return false
         }
         for panelId in runtime.activePanelIds where runtime.handleKeyDown(
             panelId: panelId,

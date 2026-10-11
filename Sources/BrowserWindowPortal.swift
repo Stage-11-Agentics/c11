@@ -2408,6 +2408,8 @@ final class WindowBrowserSlotView: NSView {
                 refreshInteractionLayersAndFocus(reason: "paneInteractionReraise")
                 return
             }
+            // The portal kept a host for a runtime this panel no longer uses.
+            CloseLog.overlayUnmounted(scope: "panel", workspace: nil, reason: "stale_runtime")
             existing.removeFromSuperview()
             paneInteractionOverlay = nil
         }

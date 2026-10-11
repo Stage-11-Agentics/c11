@@ -182,3 +182,13 @@ tail -f "$(cat /tmp/c11-last-debug-log-path 2>/dev/null || echo /tmp/c11-debug.l
 ### Adding a log call
 
 The `dlog("message")` free function lives in `vendor/bonsplit/Sources/Bonsplit/Public/DebugEventLog.swift`. The whole file is `#if DEBUG`, so every call site must also be wrapped in `#if DEBUG` / `#endif`. Existing event names include `focus.*`, `tab.*`, `pane.*`, and `divider.*`; grep for a nearby category before inventing a new one.
+
+## Close confirmation diagnostics
+
+Close routing is recorded in Debug and Release with `Logger(subsystem: "com.stage11.c11", category: "close")`. `dlog` is absent from Release, so use this after a close attempt on a tagged Release app:
+
+```bash
+log show --last 2h --style compact --predicate 'subsystem == "com.stage11.c11" AND category == "close"'
+```
+
+`close.request` names the route (`workspaceConfirm`, `panelConfirm`, `areaConfirm`, `pendingSkip`, `pendingReveal`, `pinned`, `direct`). `pendingReveal` is a repeat X on a panel whose confirm is still armed but hidden behind another tab: that tab is selected so the same card is on screen. A hidden ancestor is not on screen, so Return does not accept the card until the tab is showing again. `close.overlay.unmounted` names why the card had no host (`no_anchor`, `anchor_window_nil`, `no_themeFrame`, `stale_runtime`, `owner_window_not_visible`). `owner_window_not_visible` releases the confirm as cancel. `close.overlay.fallback` means the card was mounted on the window that owns the workspace or panel. A SwiftUI confirm card (markdown, empty browser) reports its own visibility, so Return works once it appears. That report cannot override an AppKit host that already reported the same card hidden.

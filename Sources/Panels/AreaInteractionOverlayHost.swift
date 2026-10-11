@@ -32,6 +32,9 @@ final class AreaInteractionOverlayHost: NSView {
     /// Last textInput selection we acted on — used to detect `.field` transitions
     /// so we don't repeatedly call `makeFirstResponder` on the same target.
     private var lastTextInputSelection: TextInputSelectionField?
+    /// Panel-confirm fallback hosts are not owned by a controller. Once the
+    /// card goes idle they leave the key window instead of staying put.
+    var removesFromSuperviewWhenIdle = false
 
     init(panelId: UUID, runtime: AreaInteractionRuntime) {
         self.panelId = panelId
@@ -59,6 +62,14 @@ final class AreaInteractionOverlayHost: NSView {
     }
 
     // MARK: - Hit testing / focus
+
+    override var frame: NSRect {
+        get { super.frame }
+        set {
+            super.frame = newValue
+            publishConfirmVisibility()
+        }
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         // While hidden, pass through entirely so the underlying terminal / WebView
@@ -115,7 +126,8 @@ final class AreaInteractionOverlayHost: NSView {
             let rootView = AreaInteractionCardView(
                 panelId: panelId,
                 interaction: interaction,
-                runtime: runtime
+                runtime: runtime,
+                reportsVisibility: false
             )
             if let hostingView {
                 hostingView.rootView = rootView
@@ -138,6 +150,7 @@ final class AreaInteractionOverlayHost: NSView {
                 }
                 requestKeyboardFocus(reason: "apply")
             }
+            publishConfirmVisibility()
         } else {
             // Every host receives the shared active dictionary, including its
             // initial empty value and changes for other panels. A hidden host
@@ -159,11 +172,26 @@ final class AreaInteractionOverlayHost: NSView {
             }
             priorFirstResponder = nil
             lastTextInputSelection = nil
+            publishConfirmVisibility()
+            if removesFromSuperviewWhenIdle {
+                removeFromSuperview()
+            }
         }
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        publishConfirmVisibility()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        publishConfirmVisibility()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        publishConfirmVisibility()
         guard window != nil, !isHidden, runtime.active[panelId] != nil else { return }
         DispatchQueue.main.async { [weak self] in
             self?.requestKeyboardFocus(reason: "viewDidMoveToWindow")
@@ -277,10 +305,56 @@ final class AreaInteractionOverlayHost: NSView {
         return nil
     }
 
+    /// On screen only when no ancestor is hidden. A tab switch hides the
+    /// scroll view around this host and leaves `isHidden` false.
+    private func publishConfirmVisibility() {
+        let visible = CloseOverlayFallback.cardIsOnScreen(
+            self,
+            active: runtime.active[panelId] != nil
+        )
+        runtime.noteConfirmVisible(panelId: panelId, visible: visible, fromHost: true)
+    }
+
     // MARK: - Lifecycle
 
     deinit {
         cancellable?.cancel()
         textInputSelectionCancellable?.cancel()
+    }
+}
+
+/// Rebinds a panel's interaction host when the scroll view outlives the runtime.
+/// A cross-workspace move keeps the terminal view and only changes the runtime
+/// the card must watch. The browser portal already replaces on mismatch; this
+/// is the same rule for the terminal portal.
+@MainActor
+enum PaneInteractionOverlaySlot {
+    static func attach(
+        existing: AreaInteractionOverlayHost?,
+        to host: NSView,
+        runtime: AreaInteractionRuntime,
+        panelId: UUID,
+        workspaceId: UUID?
+    ) -> AreaInteractionOverlayHost {
+        if let existing,
+           existing.panelId == panelId,
+           existing.runtime === runtime {
+            if existing.superview !== host {
+                existing.removeFromSuperview()
+                existing.frame = host.bounds
+                existing.autoresizingMask = [.width, .height]
+                host.addSubview(existing)
+            }
+            return existing
+        }
+        if existing != nil {
+            CloseLog.overlayUnmounted(scope: "panel", workspace: workspaceId, reason: "stale_runtime")
+            existing?.removeFromSuperview()
+        }
+        let overlay = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        overlay.frame = host.bounds
+        overlay.autoresizingMask = [.width, .height]
+        host.addSubview(overlay)
+        return overlay
     }
 }

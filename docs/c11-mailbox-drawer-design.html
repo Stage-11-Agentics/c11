@@ -13,8 +13,8 @@
   --sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
-main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 12.5px/1.45 var(--sans); }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
 h1 { font-size: 20px; margin: 0 0 4px; }
 h2 { font-size: 15px; margin: 32px 0 8px; color: var(--gold); letter-spacing: .02em; }
 h3 { font-size: 14px; margin: 18px 0 6px; }
@@ -41,14 +41,14 @@ th { color: var(--dim); font-weight: 600; }
 .sbar .desc { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #d5d8de; }
 .sbar .desc.empty { color: transparent; }
 .chev { width: 14px; color: var(--dim); font-size: 10px; text-align: center; flex: none; }
-/* the mailbox cell: fixed width, never moves */
-.mail { flex: none; width: 92px; height: 20px; display: grid; grid-template-columns: 16px 34px 34px; align-items: center; gap: 4px; padding: 0 4px; border-radius: 4px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--dim); cursor: pointer; }
+/* the mailbox cell: [unread] icon [received], fixed width, never moves */
+.mail { flex: none; height: 20px; display: grid; grid-template-columns: 28px 14px 28px; align-items: center; gap: 4px; padding: 0 4px; border-radius: 4px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--dim); cursor: pointer; }
 .mail:hover, .mail.open { background: #2a2d33; }
 .mail svg { width: 14px; height: 14px; }
-.mail .u, .mail .h { text-align: right; white-space: nowrap; }
-.mail .u.zero, .mail .h.zero { color: var(--faint); }
-.mail .u.live { color: var(--gold); }
-.mail .u.stale { color: #16171a; background: var(--amber); border-radius: 3px; padding: 0 3px; }
+.mail .u { justify-self: end; color: var(--amber); padding: 0 3px; border-radius: 3px; }
+.mail .u.fresh { color: #16171a; background: var(--amber); }
+.mail .r { justify-self: start; color: var(--dim); }
+.mail .r.zero { color: var(--faint); }
 .term { padding: 10px 12px; font: 12px/1.6 var(--mono); color: #9aa0a8; min-height: 54px; }
 .term .p { color: var(--green); }
 
@@ -93,29 +93,27 @@ ol li { margin-bottom: 4px; }
 <body>
 <main>
 <h1>Mailbox badge and drawer</h1>
-<p class="sub">C11-397 · design proposal for Atin · Mailbox Drawer (panel:88) · 2026-10-11</p>
+<p class="sub">C11-397 · design, revised after Atin's cell feedback · Mailbox Drawer (panel:88) · 2026-10-11</p>
 
 <p>The 2026-10-10 incident: Board Move mailed Import Flow Design twice; both sat in its inbox about 37 hours because a restored session never reported idle, so push never fired. The fix this proposes is to make every panel's mail visible where its description already lives, and to make stuck mail look different from fresh mail.</p>
 
 <h2>THE MOCKUP</h2>
 
-<h3>The mailbox cell, in every state</h3>
-<p>A fixed 92pt cell at the right end of the subtitle bar: icon, unread count, last-hour count. Both counts are right-aligned tabular numerals with room for <code>99+</code>, so nothing in the bar moves when counts change. Long descriptions truncate before the cell.</p>
+<h3>The mailbox cell</h3>
+<p><code>[unread] ✉ [received]</code>. Unread is orange; it gets an orange backdrop for 3 minutes after the newest unread lands. Received is the gray total. Each number has a fixed slot (up to <code>99+</code>), so the icon never moves. Descriptions truncate before the cell.</p>
 <div class="states">
-  <div class="row"><div class="lbl">No mail this hour, none unread</div>
-    <div class="area"><div class="sbar"><div class="desc">Auditing retry admission against the shipped tests; next, verify cancellation.</div>
-      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u zero">0</span><span class="h zero">0/h</span></div><div class="chev">›</div></div></div></div>
-  <div class="row"><div class="lbl">2 unread, 5 this hour</div>
-    <div class="area"><div class="sbar"><div class="desc">Implementing the crate view filter row against DESIGN.md; next, the empty state and keyboard focus order for the filter chips.</div>
-      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u live">2</span><span class="h">5/h</span></div><div class="chev">›</div></div></div></div>
-  <div class="row"><div class="lbl">Stuck: oldest unread &gt; 10 min</div>
-    <div class="area"><div class="sbar"><div class="desc">Import flow design, waiting on Atin's call on the merge preview.</div>
-      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u stale">2</span><span class="h zero">0/h</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">No mail yet</div>
+    <div class="area"><div class="sbar"><div class="desc">Auditing retry admission against the shipped tests; next, verify cancellation.</div><div class="mail"><span class="u "></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="r zero">0</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">14 received, all taken</div>
+    <div class="area"><div class="sbar"><div class="desc">Implementing the crate view filter row against DESIGN.md; next, the empty state and keyboard focus order for the filter chips.</div><div class="mail"><span class="u "></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="r">14</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">1 unread, landed &lt; 3 min ago</div>
+    <div class="area"><div class="sbar"><div class="desc">Implementing the crate view filter row against DESIGN.md; next, the empty state.</div><div class="mail"><span class="u fresh">1</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="r">15</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">2 unread, older (stuck)</div>
+    <div class="area"><div class="sbar"><div class="desc">Import flow design, waiting on Atin's call on the merge preview.</div><div class="mail"><span class="u ">2</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="r">14</span></div><div class="chev">›</div></div></div></div>
   <div class="row"><div class="lbl">No description, has mail</div>
-    <div class="area"><div class="sbar"><div class="desc empty">.</div>
-      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u live">1</span><span class="h">1/h</span></div><div class="chev" style="visibility:hidden">›</div></div></div></div>
+    <div class="area"><div class="sbar"><div class="desc empty">.</div><div class="mail"><span class="u ">1</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="r">3</span></div><div class="chev" style="visibility:hidden">›</div></div></div></div>
 </div>
-<p class="cap">Tooltip on the cell: "2 unread (the agent has not taken them yet), oldest 37h ago · 5 received in the last hour · click to read".</p>
+<p class="cap">Tooltip: "2 unread, the agent has not taken them (oldest 37h ago) · 14 received · click to read".</p>
 
 <h3>The drawer, open</h3>
 <p>Same presenter as the panel sheet (child panel, 120 ms unroll, Esc or click-outside to close, area-wide with a 320pt minimum), hung under the subtitle bar instead of the panel bar. Newest first. Every message shows in full; a body over about 12 lines starts folded with "Show all".</p>
@@ -127,9 +125,9 @@ ol li { margin-bottom: 4px; }
     <div class="ptab"><span class="n">55</span>Board Move</div>
   </div>
   <div class="sbar"><div class="desc">Import flow design, waiting on Atin's call on the merge preview.</div>
-    <div class="mail open"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u stale">2</span><span class="h zero">0/h</span></div><div class="chev">›</div></div>
+    <div class="mail open"><span class="u ">2</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="r">14</span></div><div class="chev">›</div></div>
   <div class="drawer">
-    <div class="dhead"><b>Mail for Import Flow Design</b><span class="addr" style="font:11px var(--mono)">import-flow-design · panel 57</span><span class="sp"></span><span>2 unread · 0 this hour · 14 total</span></div>
+    <div class="dhead"><b>Mail for Import Flow Design</b><span class="addr" style="font:11px var(--mono)">import-flow-design · panel 57</span><span class="sp"></span><span>2 unread · 14 received</span></div>
 
     <div class="msg unread">
       <div class="mh"><span class="state unread">unread</span><span class="topic">lattice.unfreeze</span><span class="age">Oct 10 09:07 · 37h ago</span></div>
@@ -165,27 +163,15 @@ Open questions for you: …</div>
 </div>
 <p class="cap">Mock data is the real incident traffic, with the unfreeze file's contents invented (that file is gone now).</p>
 
-<h2>DECISIONS (YOUR CALL, MY RECOMMENDATION FIRST)</h2>
-<ol class="qs">
-<li><b>What "unread" means.</b>
-  <div class="rec"><b>Recommended: the agent has not taken it.</b> Unread = the envelope is still in the inbox root, not yet claimed into <code>_read/</code>. That is exactly the signal that would have caught the incident. The count turns amber when the oldest unread is over 10 minutes old, so stuck mail looks different from mail that just landed.</div>
-  Alternative: also track "the operator has opened it" as a second, per-message state (a dot in the drawer, persisted by c11). It adds a store and a third number people have to learn, and it does not catch stuck mail. I'd leave it out of v1.</li>
-<li><b>Does the mailbox force the bar to appear, and is it shown at zero?</b>
-  <div class="rec"><b>Recommended:</b> the bar renders when the panel has a description, <i>or</i> a <code>mailbox.address</code>, <i>or</i> any mail on disk. The cell shows dim zeros rather than disappearing. A panel that declared an address therefore gets its bar at orientation, before mail arrives, so the content never jumps down when the first message lands. Panels with no address and no mail ever (plain shells, browsers) stay barless.</div></li>
-<li><b>Placement.</b>
-  <div class="rec"><b>Recommended:</b> description (flexes, truncates) · mailbox cell (fixed 92pt) · expand chevron (rightmost, unchanged). When the description is expanded to several lines, the cell stays pinned to the first line.</div>
-  Alternative: mailbox rightmost, chevron inside. It reads as more "right end", but moves a control people already know.</li>
-<li><b>Live updates and cost.</b>
-  <div class="rec"><b>Recommended: no file watchers.</b> The app already sees every delivery (its dispatcher writes the inbox), every push claim (in-process), and every drain (CLI and hook drains drop a receipt into <code>_receipts/</code>, which the app already records). Each of those bumps a per-panel count in memory. Message times come from the ULID file names, so counts need directory listings, never file reads. A 60 s reconcile lists the two directories for panels whose bar is on screen, which catches hand-dropped files and late receipts and lets "last hour" decay. Bodies are read only when the drawer opens.</div>
-  Alternative: a vnode watcher on every inbox. Exact and instant, but two file descriptors per panel across hundreds of panels, plus re-arming when directories are created. Following the events stream is also possible, but under the privacy defaults it may not carry body text, so the drawer would still read files.</li>
-<li><b>Sent mail.</b>
-  <div class="rec"><b>Recommended: received only in v1</b>, with a follow-up ticket for a Sent view.</div>
-  Why: the sender's <code>from</code> is a title or an address, not a panel id, so mapping sent mail back to a panel is guesswork, and the event log may hold no text. A Sent view done properly wants the dispatcher to stamp the sending panel's UUID, which is a protocol change worth its own ticket.</li>
-<li><b>How a message reads in the drawer.</b>
-  <div class="rec"><b>Recommended: a feed of full messages</b> (the mock above). Each card shows everything; long bodies fold at about 12 lines with "Show all". Text is selectable for copying. It works at the 320pt minimum and at full width with one layout.</div>
-  Alternative: list on the left, reader on the right. Better for long bodies when the area is wide, but needs a separate narrow mode and adds a click per message.</li>
+<h2>SETTLED</h2>
+<ol>
+<li><b>Unread</b> = the agent has not taken it (still in the inbox root, not in <code>_read/</code>). Operator-opened state is not tracked in v1.</li>
+<li><b>Bar</b> renders when the panel has a description, a <code>mailbox.address</code>, or any mail. Zero shows a dim <code>0</code>.</li>
+<li><b>Placement:</b> description (truncates) · mailbox cell (fixed) · expand chevron.</li>
+<li><b>Live updates</b> from the app's own delivery, push and receipt paths; a 60 s reconcile for panels on screen; bodies read only when the drawer opens. No file watchers.</li>
+<li><b>Received only</b> in v1; Sent is a follow-up ticket.</li>
+<li><b>Feed of full messages</b>, newest first, bodies over about 12 lines fold behind "Show all".</li>
 </ol>
-
 <h2>OUR ASSUMPTIONS (SAY IF ANY IS WRONG)</h2>
 <ul>
 <li>Bodies and <code>body_ref</code> files render as plain text in a non-editable text view. No Markdown, no links, nothing loaded. <code>body_ref</code> reads only regular files, at most 256 KB (then "truncated"), never FIFOs or devices, off the main thread. Missing, unreadable, too large and not-text each get their own plain sentence.</li>

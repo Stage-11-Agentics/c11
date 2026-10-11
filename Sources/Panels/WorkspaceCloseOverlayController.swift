@@ -32,7 +32,37 @@ enum CloseOverlayFallback {
               let theme = content.superview,
               content.bounds.width >= 1,
               content.bounds.height >= 1 else { return nil }
+        if let contentFrame = workspaceContentFrame(in: content) {
+            return (contentFrame, theme)
+        }
         return (content.convert(content.bounds, to: nil), theme)
+    }
+
+    /// On-screen owner with no drawable content rect. Hidden, minimized, and
+    /// missing windows stay `owner_window_not_visible`.
+    static func unmountedOwnerReason(owner: CloseOverlayOwner, hasUsableContent: Bool) -> String {
+        if case .onScreen = owner, !hasUsableContent {
+            return "no_content_rect"
+        }
+        return "owner_window_not_visible"
+    }
+
+    /// The workspace content anchor excludes the sidebar. A fallback that
+    /// ignores it covers the sidebar with the scrim.
+    private static func workspaceContentFrame(in view: NSView) -> NSRect? {
+        if let anchor = view as? WorkspaceCloseOverlayHostView.AnchorView,
+           anchor.bounds.width >= 1,
+           anchor.bounds.height >= 1,
+           anchor.window != nil,
+           !anchor.isHiddenOrHasHiddenAncestor {
+            return anchor.convert(anchor.bounds, to: nil)
+        }
+        for subview in view.subviews {
+            if let frame = workspaceContentFrame(in: subview) {
+                return frame
+            }
+        }
+        return nil
     }
 
     static func ownerState(of window: NSWindow?) -> CloseOverlayOwner {
@@ -141,7 +171,8 @@ final class WorkspaceCloseOverlayController {
 
         let reason = unmountReason()
         CloseLog.overlayUnmounted(scope: "workspace", workspace: workspaceId, reason: reason)
-        if case .onScreen(let window) = ownerWindow(),
+        let owner = ownerWindow()
+        if case .onScreen(let window) = owner,
            let placement = CloseOverlayFallback.themePlacement(in: window) {
             CloseLog.fallback(scope: "workspace", workspace: workspaceId)
             mount(frame: placement.frame, theme: placement.theme)
@@ -153,7 +184,7 @@ final class WorkspaceCloseOverlayController {
         CloseLog.overlayUnmounted(
             scope: "workspace",
             workspace: workspaceId,
-            reason: "owner_window_not_visible"
+            reason: CloseOverlayFallback.unmountedOwnerReason(owner: owner, hasUsableContent: false)
         )
         runtime.releaseUnmounted()
     }

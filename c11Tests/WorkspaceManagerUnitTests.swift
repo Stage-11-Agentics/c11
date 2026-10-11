@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -1800,5 +1801,251 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
             history: FocusHistorySnapshot(entries: [], index: nil)), neighbour.id)
         manager.closeWorkspace(original)
         XCTAssertTrue(manager.workspaces.contains { $0.id == neighbour.id })
+    }
+}
+
+/// Call-site proof for the panel-confirm watchdog, pending reveal, focused-key
+/// consume, and the Ghostty close path. These construct a Workspace.
+@MainActor
+final class CloseConfirmHardeningHostTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        executionTimeAllowance = 30
+    }
+
+    func testPanelWatchdogReleasesAnUnmountedConfirmAndAdmitsTheNextX() {
+        withPaneDialogEnabled {
+            let manager = WorkspaceManager()
+            guard let workspace = manager.selectedWorkspace,
+                  let panelId = workspace.focusedPanelId,
+                  let terminal = workspace.terminalPanel(for: panelId),
+                  let pane = workspace.paneIdForPanel(panelId),
+                  let tab = tab(panelId, in: workspace, pane: pane) else {
+                XCTFail("Expected a focused terminal tab")
+                return
+            }
+            defer { workspace.teardownAllPanels() }
+            terminal.surface.setNeedsConfirmCloseOverrideForTesting(false)
+            workspace.updatePanelShellActivityState(panelId: panelId, state: .commandRunning)
+
+            let runtime = workspace.paneInteractionRuntime
+            var phase = 1
+            var firstId: UUID?
+            var secondId: UUID?
+            let updates = runtime.$active.sink { active in
+                guard let id = active[panelId]?.id else { return }
+                if phase == 1 {
+                    firstId = id
+                } else if id != firstId {
+                    secondId = id
+                }
+            }
+            defer { updates.cancel() }
+
+            XCTAssertFalse(workspace.splitTabBar(workspace.bonsplitController, shouldCloseTab: tab, inPane: pane))
+            XCTAssertTrue(waitUntil(2) { firstId != nil && !runtime.hasActive(panelId: panelId) },
+                          "The unseen confirm should appear and then release")
+            let seen = firstId
+
+            phase = 2
+            XCTAssertFalse(workspace.splitTabBar(workspace.bonsplitController, shouldCloseTab: tab, inPane: pane))
+            XCTAssertTrue(waitUntil(2) { secondId != nil }, "The next X should present again")
+            XCTAssertNotEqual(secondId, seen)
+        }
+    }
+
+    func testHiddenFocusedConfirmConsumesReturnSpaceAndKeypadEnter() {
+        let manager = WorkspaceManager()
+        guard let workspace = manager.selectedWorkspace,
+              let focused = workspace.focusedPanelId else {
+            XCTFail("Expected a focused panel")
+            return
+        }
+        defer { workspace.teardownAllPanels() }
+        let other = UUID()
+        var focusedResult: ConfirmResult?
+        var otherResult: ConfirmResult?
+        let runtime = workspace.paneInteractionRuntime
+        runtime.present(
+            panelId: focused,
+            interaction: .confirm(confirm(title: "Focused", selection: .confirm) { focusedResult = $0 })
+        )
+        runtime.present(
+            panelId: other,
+            interaction: .confirm(confirm(title: "Other", selection: .confirm) { otherResult = $0 })
+        )
+        runtime.noteConfirmVisible(panelId: other, visible: true)
+
+        for (code, characters) in [(UInt16(36), "\r"), (UInt16(76), "\r"), (UInt16(49), " ")] {
+            guard let event = keyDown(code: code, characters: characters) else {
+                XCTFail("Failed to build key \(code)")
+                return
+            }
+            XCTAssertTrue(manager.handleActivePaneInteractionKeyEventInKeyWorkspace(event))
+        }
+
+        XCTAssertNil(focusedResult)
+        XCTAssertNil(otherResult)
+        XCTAssertTrue(runtime.hasActive(panelId: focused))
+        XCTAssertTrue(runtime.hasActive(panelId: other))
+        XCTAssertFalse(runtime.isConfirmCardVisible(panelId: focused))
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: other))
+    }
+
+    func testPendingRevealSelectsTheHiddenConfirmTab() {
+        withPaneDialogEnabled {
+            let manager = WorkspaceManager()
+            guard let workspace = manager.selectedWorkspace,
+                  let panelId = workspace.focusedPanelId,
+                  let terminal = workspace.terminalPanel(for: panelId),
+                  let pane = workspace.paneIdForPanel(panelId),
+                  let tab = tab(panelId, in: workspace, pane: pane) else {
+                XCTFail("Expected a focused terminal tab")
+                return
+            }
+            defer { workspace.teardownAllPanels() }
+            terminal.surface.setNeedsConfirmCloseOverrideForTesting(false)
+            workspace.updatePanelShellActivityState(panelId: panelId, state: .commandRunning)
+            let second = workspace.createReplacementTerminalPanel()
+            guard let secondTab = workspace.bonsplitTabIdFromTabId(second.id) else {
+                XCTFail("Expected a second tab")
+                return
+            }
+
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            defer { window.orderOut(nil) }
+            window.makeKeyAndOrderFront(nil)
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+            window.contentView?.addSubview(container)
+            let host = AreaInteractionOverlayHost(panelId: panelId, runtime: workspace.paneInteractionRuntime)
+            host.frame = container.bounds
+            container.addSubview(host)
+
+            XCTAssertFalse(workspace.splitTabBar(workspace.bonsplitController, shouldCloseTab: tab, inPane: pane))
+            XCTAssertTrue(
+                waitUntil(2) { workspace.paneInteractionRuntime.isConfirmCardVisible(panelId: panelId) },
+                "The pre-mounted host should report the confirm"
+            )
+            // The watchdog yields twice after present. Leave the card up through
+            // that window so it returns instead of cancelling, then hide.
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
+            XCTAssertTrue(workspace.paneInteractionRuntime.isConfirmCardVisible(panelId: panelId))
+            let confirmId = workspace.paneInteractionRuntime.active[panelId]?.id
+
+            container.isHidden = true
+            XCTAssertFalse(workspace.paneInteractionRuntime.isConfirmCardVisible(panelId: panelId))
+            workspace.bonsplitController.selectTab(secondTab)
+            XCTAssertFalse(workspace.splitTabBar(workspace.bonsplitController, shouldCloseTab: tab, inPane: pane))
+
+            XCTAssertEqual(workspace.bonsplitController.selectedTab(inPane: pane)?.id, tab.id)
+            XCTAssertEqual(workspace.paneInteractionRuntime.active[panelId]?.id, confirmId)
+            XCTAssertTrue(workspace.paneInteractionRuntime.hasActive(panelId: panelId))
+            _ = host
+        }
+    }
+
+    func testGhosttyCloseWatchdogReleasesAnUnseenConfirmAndAdmitsTheNext() {
+        withPaneDialogEnabled {
+            let manager = WorkspaceManager()
+            guard let workspace = manager.selectedWorkspace,
+                  let panelId = workspace.focusedPanelId,
+                  let terminal = workspace.terminalPanel(for: panelId) else {
+                XCTFail("Expected a focused terminal")
+                return
+            }
+            defer { workspace.teardownAllPanels() }
+            terminal.surface.setNeedsConfirmCloseOverrideForTesting(false)
+            workspace.updatePanelShellActivityState(panelId: panelId, state: .commandRunning)
+
+            let runtime = workspace.paneInteractionRuntime
+            var phase = 1
+            var firstId: UUID?
+            var secondId: UUID?
+            let updates = runtime.$active.sink { active in
+                guard let id = active[panelId]?.id else { return }
+                if phase == 1 {
+                    firstId = id
+                } else if id != firstId {
+                    secondId = id
+                }
+            }
+            defer { updates.cancel() }
+
+            manager.closeRuntimeSurfaceWithConfirmation(workspaceId: workspace.id, surfaceId: panelId)
+            XCTAssertTrue(waitUntil(2) { firstId != nil && !runtime.hasActive(panelId: panelId) },
+                          "Ghostty's unseen confirm should appear and then release")
+            let seen = firstId
+
+            phase = 2
+            manager.closeRuntimeSurfaceWithConfirmation(workspaceId: workspace.id, surfaceId: panelId)
+            XCTAssertTrue(waitUntil(2) { secondId != nil }, "The next runtime close should present again")
+            XCTAssertNotEqual(secondId, seen)
+            XCTAssertNotNil(workspace.panels[panelId])
+        }
+    }
+
+    private func withPaneDialogEnabled(_ body: () -> Void) {
+        let key = AreaInteractionFeatureFlag.userDefaultsKey
+        let old = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.removeObject(forKey: key)
+        defer {
+            if let old {
+                UserDefaults.standard.set(old, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        body()
+    }
+
+    private func tab(_ panelId: UUID, in workspace: Workspace, pane: PaneID) -> Bonsplit.Tab? {
+        guard let bonsplitId = workspace.bonsplitTabIdFromTabId(panelId) else { return nil }
+        return workspace.bonsplitController.tabs(inPane: pane).first { $0.id == bonsplitId }
+    }
+
+    private func confirm(
+        title: String,
+        selection: ConfirmSelectionField,
+        completion: @escaping (ConfirmResult) -> Void
+    ) -> ConfirmContent {
+        ConfirmContent(
+            title: title,
+            message: nil,
+            confirmLabel: "Close",
+            cancelLabel: "Cancel",
+            role: .destructive,
+            defaultSelection: selection,
+            source: .local,
+            completion: completion
+        )
+    }
+
+    private func keyDown(code: UInt16, characters: String) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: code
+        )
+    }
+
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() >= deadline { return false }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        return true
     }
 }

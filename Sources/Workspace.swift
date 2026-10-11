@@ -11789,7 +11789,7 @@ extension Workspace: BonsplitDelegate {
     /// If it never does, mount on the window that owns this workspace. If that
     /// window is not on screen, release the confirm as cancel so the
     /// pending-close guard cannot swallow the next X.
-    private func reconcileUnmountedPanelConfirm(panelId: UUID) async {
+    func reconcileUnmountedPanelConfirm(panelId: UUID) async {
         await Task.yield()
         await Task.yield()
         guard !Task.isCancelled else { return }
@@ -11808,7 +11808,10 @@ extension Workspace: BonsplitDelegate {
             CloseLog.overlayUnmounted(
                 scope: "panel",
                 workspace: id,
-                reason: "owner_window_not_visible"
+                reason: CloseOverlayFallback.unmountedOwnerReason(
+                    owner: .onScreen(window),
+                    hasUsableContent: false
+                )
             )
         }
         guard !Task.isCancelled else { return }

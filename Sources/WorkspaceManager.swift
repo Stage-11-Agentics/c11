@@ -885,6 +885,29 @@ class WorkspaceManager: ObservableObject {
         return true
     }
 
+    /// Keys for a workspace-close card that is already on screen. Ghostty
+    /// keeps first responder, so the overlay host never sees Return. This
+    /// does not run when the card is absent or has not reported visible,
+    /// and it does not move first responder.
+    @MainActor
+    @discardableResult
+    func handleVisibleWorkspaceCloseKeyInKeyWorkspace(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown else { return false }
+        guard let selectedWorkspaceId,
+              let workspace = workspaces.first(where: { $0.id == selectedWorkspaceId }) else {
+            return false
+        }
+        let runtime = workspace.workspaceCloseInteractionRuntime
+        guard runtime.isConfirmCardVisible else { return false }
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.numericPad, .function, .capsLock])
+        return runtime.handleKeyDown(
+            keyCode: Int(event.keyCode),
+            shift: flags.contains(.shift)
+        )
+    }
+
     /// Accept the topmost pane interaction in the currently selected workspace,
     /// preferring the focused panel when it has an active interaction. Used by the
     /// Cmd+D dispatcher (plan §4.8). Returns true when the key is consumed.
@@ -3359,6 +3382,11 @@ class WorkspaceManager: ObservableObject {
         // card anchors on the surface being closed. Ghostty can fire this
         // callback twice during a close race — dedupeToken collapses that.
         Task { @MainActor [weak self] in
+            // Same watch as the panel X path. Without it, a host that never
+            // reports leaves the dedupe token holding every later close.
+            let watchdog = Task { @MainActor [weak workspace] in
+                await workspace?.reconcileUnmountedPanelConfirm(panelId: surfaceId)
+            }
             let accepted = await workspace.presentConfirmClose(
                 panelId: surfaceId,
                 title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
@@ -3366,6 +3394,7 @@ class WorkspaceManager: ObservableObject {
                 source: .local,
                 dedupeToken: "ghostty.close_surface_cb.\(surfaceId.uuidString)"
             )
+            watchdog.cancel()
             guard accepted, let self else { return }
             // Acceptance-time revalidation: the user can take arbitrarily long
             // to accept. If the tab or panel was torn down in the meantime,

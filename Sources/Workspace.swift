@@ -6304,6 +6304,12 @@ final class Workspace: Identifiable, ObservableObject {
             for entry in entries {
                 MailboxIO.unclaim(id: entry.id, inbox: inbox)
             }
+            // The unclaimed mail is unread again; the inbox directory is the
+            // recipient panel's UUID.
+            if let panelId = UUID(uuidString: inbox.lastPathComponent),
+               let workspaceId = UUID(uuidString: inbox.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent) {
+                MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: panelId)
+            }
         }
     }
 
@@ -7945,17 +7951,24 @@ final class Workspace: Identifiable, ObservableObject {
         let snapshot = PanelMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
-            keys: [MetadataKey.title, MetadataKey.description]
+            keys: [MetadataKey.title, MetadataKey.description, MetadataKey.mailboxAddress]
         )
         let title = snapshot.metadata[MetadataKey.title] as? String
         let description = snapshot.metadata[MetadataKey.description] as? String
+        let mailboxAddress = (snapshot.metadata[MetadataKey.mailboxAddress] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // C11-397: a panel that declared an address, or has any mail, shows
+        // its mailbox cell, so the bar is there before the first message lands.
+        let hasMail = MailboxBadgeStore.shared.summary(workspace: self, panelId: panelId).hasMail
         return PanelTitleBarState(
             title: title,
             description: description,
             titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
             descriptionSource: Self.extractSource(snapshot.sources[MetadataKey.description]),
             visible: titleBarVisible,
-            collapsed: titleBarCollapsed[panelId] ?? true
+            collapsed: titleBarCollapsed[panelId] ?? true,
+            mailboxAddress: (mailboxAddress?.isEmpty ?? true) ? nil : mailboxAddress,
+            showsMailbox: hasMail || !(mailboxAddress?.isEmpty ?? true)
         )
     }
 
@@ -12620,6 +12633,7 @@ extension Workspace: BonsplitDelegate {
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
+        MailboxBadgeStore.shared.forget(panelId: panelId)
         panelSheetStatusEntered.removeValue(forKey: panelId)
         PanelAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)

@@ -3488,6 +3488,74 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
     }
 
+    func testVisibleWorkspaceCloseCardAcceptsReturnFromTheShortcutMonitor() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+        guard let window = window(withId: windowId),
+              let manager = appDelegate.workspaceManagerFor(windowId: windowId),
+              let workspace = manager.selectedWorkspace else {
+            XCTFail("Expected the new window's workspace")
+            return
+        }
+        guard let absent = makeKeyEvent(
+            type: .keyDown,
+            key: "\r",
+            modifiers: [],
+            keyCode: 36,
+            windowNumber: window.windowNumber
+        ) else {
+            XCTFail("Failed to build Return")
+            return
+        }
+
+#if DEBUG
+        XCTAssertFalse(appDelegate.debugHandleShortcutMonitorEvent(event: absent))
+#else
+        XCTFail("debugHandleShortcutMonitorEvent is only available in DEBUG")
+        return
+#endif
+
+        let runtime = workspace.workspaceCloseInteractionRuntime
+        var result: ConfirmResult?
+        runtime.present(content: ConfirmContent(
+            title: "Close workspace?",
+            message: nil,
+            confirmLabel: "Close",
+            cancelLabel: "Cancel",
+            role: .destructive,
+            defaultSelection: .confirm,
+            source: .local,
+            completion: { result = $0 }
+        ))
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+        if !runtime.isConfirmCardVisible {
+            runtime.noteConfirmVisible(true)
+        }
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+
+        runtime.noteConfirmVisible(false)
+#if DEBUG
+        XCTAssertFalse(appDelegate.debugHandleShortcutMonitorEvent(event: absent))
+#else
+        XCTFail("debugHandleShortcutMonitorEvent is only available in DEBUG")
+#endif
+        XCTAssertNil(result)
+        XCTAssertNotNil(runtime.active)
+
+        runtime.noteConfirmVisible(true)
+#if DEBUG
+        XCTAssertTrue(appDelegate.debugHandleShortcutMonitorEvent(event: absent))
+#else
+        XCTFail("debugHandleShortcutMonitorEvent is only available in DEBUG")
+#endif
+        XCTAssertEqual(result, .confirmed)
+        XCTAssertNil(runtime.active)
+    }
+
     private func window(withId windowId: UUID) -> NSWindow? {
         let identifier = "cmux.main.\(windowId.uuidString)"
         return NSApp.windows.first(where: { $0.identifier?.rawValue == identifier })

@@ -11636,6 +11636,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                shortcutWorkspaceManager?.cancelActiveWorkspaceCloseInteractionInKeyWorkspace() == true {
                 return true
             }
+            // The overlay host asks for first responder and Ghostty refuses.
+            // Deliver Return only after the card has reported itself on screen.
+            if !hasAppShortcutModifier,
+               shortcutWorkspaceManager?.handleVisibleWorkspaceCloseKeyInKeyWorkspace(event) == true {
+                return true
+            }
             return hasAppShortcutModifier
         }
 

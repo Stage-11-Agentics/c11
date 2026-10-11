@@ -1161,8 +1161,277 @@ final class CloseConfirmMountTests: XCTestCase {
         XCTAssertFalse(second[0] === first[0])
     }
 
-    private func spinMain() {
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    /// A workspace host built outside the controller used to schedule a fade
+    /// from its initial empty apply. That completion hid the first real card
+    /// about 120 ms later, so the spin is longer than the fade.
+    func testWorkspaceHostMountedOutsideItsControllerStaysVisible() {
+        _ = NSApplication.shared
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+        window.contentView?.addSubview(container)
+        let host = WorkspaceCloseOverlayHost(runtime: runtime)
+        host.frame = container.bounds
+        container.addSubview(host)
+        var result: ConfirmResult?
+
+        runtime.present(
+            content: makeConfirm(title: "Close workspace?", defaultSelection: .confirm) { result = $0 }
+        )
+        spinMain(0.2)
+
+        XCTAssertFalse(host.isHidden)
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        container.isHidden = true
+        XCTAssertFalse(runtime.isConfirmCardVisible)
+        XCTAssertFalse(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertNil(result)
+        XCTAssertNotNil(runtime.active)
+
+        container.isHidden = false
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        XCTAssertTrue(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+    }
+
+    func testAnchoredWorkspaceCardMatchesTheAnchorAndAcceptsReturn() {
+        _ = NSApplication.shared
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let anchor = WorkspaceCloseOverlayHostView.AnchorView()
+        let frame = NSRect(x: 48, y: 36, width: 220, height: 140)
+        controller.updateAnchor(frameInWindow: frame, window: window, owner: anchor)
+        var result: ConfirmResult?
+
+        runtime.present(
+            content: makeConfirm(title: "Close workspace?", defaultSelection: .confirm) { result = $0 }
+        )
+        spinMain()
+
+        let hosts = window.contentView?.superview?.subviews.compactMap { $0 as? WorkspaceCloseOverlayHost } ?? []
+        XCTAssertEqual(hosts.count, 1)
+        XCTAssertEqual(hosts.first?.frame, frame)
+        let full = window.contentView!.convert(window.contentView!.bounds, to: nil)
+        XCTAssertNotEqual(hosts.first?.frame, full)
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        XCTAssertTrue(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+        _ = controller
+    }
+
+    func testAnchoredAreaCardMatchesTheAnchorAndAcceptsReturn() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let controller = AreaCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        let frame = NSRect(x: 36, y: 28, width: 200, height: 120)
+        controller.updateAnchor(paneIdentity: panelId, frameInWindow: frame, window: window)
+        var result: ConfirmResult?
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close area?", defaultSelection: .confirm) { result = $0 })
+        )
+        spinMain()
+
+        let hosts = window.contentView?.superview?.subviews.compactMap { $0 as? AreaInteractionOverlayHost } ?? []
+        XCTAssertEqual(hosts.count, 1)
+        XCTAssertEqual(hosts.first?.frame, frame)
+        let full = window.contentView!.convert(window.contentView!.bounds, to: nil)
+        XCTAssertNotEqual(hosts.first?.frame, full)
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertEqual(result, .confirmed)
+        _ = controller
+    }
+
+    func testOwnerWindowFallbackUsesTheWorkspaceContentAnchor() {
+        _ = NSApplication.shared
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let anchor = WorkspaceCloseOverlayHostView.AnchorView(
+            frame: NSRect(x: 80, y: 40, width: 260, height: 180)
+        )
+        window.contentView?.addSubview(anchor)
+        controller.ownerWindow = { .onScreen(window) }
+
+        runtime.present(content: makeConfirm(title: "Close workspace?") { _ in })
+        spinMain()
+
+        let hosts = window.contentView?.superview?.subviews.compactMap { $0 as? WorkspaceCloseOverlayHost } ?? []
+        XCTAssertEqual(hosts.count, 1)
+        let expected = anchor.convert(anchor.bounds, to: nil)
+        let full = window.contentView!.convert(window.contentView!.bounds, to: nil)
+        XCTAssertEqual(hosts.first?.frame, expected)
+        XCTAssertNotEqual(expected, full)
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        _ = controller
+    }
+
+    func testUnmountedOwnerReasonNamesAMissingContentRect() {
+        _ = NSApplication.shared
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        XCTAssertEqual(
+            CloseOverlayFallback.unmountedOwnerReason(owner: .onScreen(window), hasUsableContent: false),
+            "no_content_rect"
+        )
+        XCTAssertEqual(
+            CloseOverlayFallback.unmountedOwnerReason(owner: .onScreen(window), hasUsableContent: true),
+            "owner_window_not_visible"
+        )
+        XCTAssertEqual(
+            CloseOverlayFallback.unmountedOwnerReason(owner: .notOnScreen, hasUsableContent: false),
+            "owner_window_not_visible"
+        )
+        XCTAssertEqual(
+            CloseOverlayFallback.unmountedOwnerReason(owner: .missing, hasUsableContent: false),
+            "owner_window_not_visible"
+        )
+
+        window.makeKeyAndOrderFront(nil)
+        let empty = ZeroBoundsView(frame: .zero)
+        window.contentView = empty
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtime, workspaceId: UUID())
+        controller.ownerWindow = { .onScreen(window) }
+        var result: ConfirmResult?
+        runtime.present(content: makeConfirm(title: "Close workspace?") { result = $0 })
+        spinMain()
+
+        XCTAssertEqual(result, .cancelled)
+        XCTAssertFalse(runtime.hasActive)
+        _ = controller
+    }
+
+    func testClearDropsVisibleAndUnmountedConfirmIds() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close?") { _ in })
+        )
+        runtime.noteConfirmVisible(panelId: panelId, visible: true)
+        runtime.noteConfirmVisible(panelId: panelId, visible: false)
+        runtime.clear(panelId: panelId)
+
+#if DEBUG
+        XCTAssertEqual(runtime.debugTrackedConfirmCount, 0)
+#else
+        XCTFail("Tracked-confirm count is a DEBUG seam")
+#endif
+    }
+
+    func testStaleFadeCompletionDoesNotHideTheReplacementCard() {
+        _ = NSApplication.shared
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+
+        let runtime = WorkspaceCloseInteractionRuntime()
+        let host = WorkspaceCloseOverlayHost(runtime: runtime)
+        host.frame = NSRect(x: 0, y: 0, width: 420, height: 260)
+        window.contentView?.addSubview(host)
+        var first: ConfirmResult?
+        runtime.present(content: makeConfirm(title: "First", defaultSelection: .confirm) { first = $0 })
+        spinMain()
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+
+        runtime.cancel()
+        var second: ConfirmResult?
+        runtime.present(content: makeConfirm(title: "Second", defaultSelection: .confirm) { second = $0 })
+        spinMain(0.2)
+
+        XCTAssertEqual(first, .cancelled)
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+        XCTAssertTrue(runtime.handleKeyDown(keyCode: 36))
+        XCTAssertEqual(second, .confirmed)
+        XCTAssertEqual(runtime.active?.title, nil)
+
+        let runtimeB = WorkspaceCloseInteractionRuntime()
+        let controller = WorkspaceCloseOverlayController(runtime: runtimeB, workspaceId: UUID())
+        controller.ownerWindow = { .onScreen(window) }
+        var removed: ConfirmResult?
+        runtimeB.present(content: makeConfirm(title: "Removed", defaultSelection: .confirm) { removed = $0 })
+        spinMain()
+        XCTAssertTrue(runtimeB.isConfirmCardVisible)
+
+        runtimeB.cancel()
+        spinMain()
+        var replacement: ConfirmResult?
+        runtimeB.present(
+            content: makeConfirm(title: "Replacement", defaultSelection: .confirm) { replacement = $0 }
+        )
+        spinMain(0.2)
+
+        XCTAssertEqual(removed, .cancelled)
+        XCTAssertFalse(
+            WorkspaceCloseOverlayHost.fadeCompletionShouldRun(generation: 1, current: 1, hasSuperview: false)
+        )
+        XCTAssertFalse(
+            WorkspaceCloseOverlayHost.fadeCompletionShouldRun(generation: 1, current: 2, hasSuperview: true)
+        )
+        XCTAssertTrue(
+            WorkspaceCloseOverlayHost.fadeCompletionShouldRun(generation: 3, current: 3, hasSuperview: true)
+        )
+        XCTAssertTrue(runtimeB.isConfirmCardVisible)
+        XCTAssertTrue(runtimeB.handleKeyDown(keyCode: 36))
+        XCTAssertEqual(replacement, .confirmed)
+        _ = controller
+        _ = host
+    }
+
+    func testHiddenRegularHostDoesNotUnmountAVisibleFallback() {
+        _ = NSApplication.shared
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let fallbackContainer = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+        window.contentView?.addSubview(fallbackContainer)
+        let fallback = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        fallback.frame = fallbackContainer.bounds
+        fallbackContainer.addSubview(fallback)
+        let hiddenContainer = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+        hiddenContainer.isHidden = true
+        window.contentView?.addSubview(hiddenContainer)
+        var result: ConfirmResult?
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(makeConfirm(title: "Close panel?", defaultSelection: .confirm) { result = $0 })
+        )
+        spinMain()
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+
+        let regular = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        regular.frame = hiddenContainer.bounds
+        hiddenContainer.addSubview(regular)
+        regular.frame = NSRect(x: 0, y: 0, width: 180, height: 100)
+
+        XCTAssertTrue(runtime.isConfirmCardVisible(panelId: panelId))
+        fallbackContainer.isHidden = true
+        XCTAssertFalse(runtime.isConfirmCardVisible(panelId: panelId))
+        XCTAssertFalse(runtime.handleKeyDown(panelId: panelId, keyCode: 36))
+        XCTAssertNil(result)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+        _ = regular
+    }
+
+    private func spinMain(_ interval: TimeInterval = 0.05) {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: interval))
     }
 
     private func makeWindow() -> NSWindow {
@@ -1208,5 +1477,13 @@ final class CloseConfirmMountTests: XCTestCase {
             source: .local,
             completion: completion
         )
+    }
+}
+
+/// Content bounds stay empty so an on-screen window still has no drawable rect.
+private final class ZeroBoundsView: NSView {
+    override var bounds: NSRect {
+        get { .zero }
+        set { _ = newValue }
     }
 }

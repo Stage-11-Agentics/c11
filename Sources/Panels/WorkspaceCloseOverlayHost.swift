@@ -23,6 +23,9 @@ final class WorkspaceCloseOverlayHost: NSView {
     private var hostingView: NSHostingView<WorkspaceCloseCardView>?
     private var cancellable: AnyCancellable?
     private weak var priorFirstResponder: NSResponder?
+    /// Bumped on every show. A fade-out completion from the previous card
+    /// must not hide the one that replaced it.
+    private var fadeGeneration: UInt = 0
 
     init(runtime: WorkspaceCloseInteractionRuntime) {
         self.runtime = runtime
@@ -101,6 +104,7 @@ final class WorkspaceCloseOverlayHost: NSView {
 
     private func apply(content: ConfirmContent?) {
         if let content {
+            fadeGeneration &+= 1
             let rootView = WorkspaceCloseCardView(content: content, runtime: runtime)
             if let hostingView {
                 hostingView.rootView = rootView
@@ -124,6 +128,13 @@ final class WorkspaceCloseOverlayHost: NSView {
             }
             publishConfirmVisibility()
         } else {
+            // Init applies nil before the host is in a window. Starting a
+            // fade there schedules a completion that hides the first real card.
+            let wasShown = !isHidden || hostingView != nil
+            guard wasShown else {
+                publishConfirmVisibility()
+                return
+            }
             fadeOut { [weak self] in
                 guard let self else { return }
                 self.isHidden = true
@@ -173,11 +184,26 @@ final class WorkspaceCloseOverlayHost: NSView {
         }
     }
 
+    /// A fade started by a host that has since left the window, or by an
+    /// older card on the same host, must not publish over the card now showing.
+    static func fadeCompletionShouldRun(generation: UInt, current: UInt, hasSuperview: Bool) -> Bool {
+        current == generation && hasSuperview
+    }
+
     private func fadeOut(completion: @escaping () -> Void) {
+        let generation = fadeGeneration
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.12
             ctx.allowsImplicitAnimation = true
-            ctx.completionHandler = completion
+            ctx.completionHandler = { [weak self] in
+                guard let self,
+                      Self.fadeCompletionShouldRun(
+                        generation: generation,
+                        current: self.fadeGeneration,
+                        hasSuperview: self.superview != nil
+                      ) else { return }
+                completion()
+            }
             self.animator().alphaValue = 0.0
         }
     }

@@ -112,7 +112,8 @@ final class AreaCloseOverlayController {
 #if DEBUG
             dlog("paneClose.sync skip pane=\(id.uuidString.prefix(5)) reason=\(reason)")
 #endif
-            if case .onScreen(let window) = ownerWindow(),
+            let owner = ownerWindow()
+            if case .onScreen(let window) = owner,
                let placement = CloseOverlayFallback.themePlacement(in: window) {
                 CloseLog.fallback(scope: "area", workspace: workspaceId)
                 mount(id: id, frame: placement.frame, theme: placement.theme)
@@ -127,7 +128,7 @@ final class AreaCloseOverlayController {
             CloseLog.overlayUnmounted(
                 scope: "area",
                 workspace: workspaceId,
-                reason: "owner_window_not_visible"
+                reason: CloseOverlayFallback.unmountedOwnerReason(owner: owner, hasUsableContent: false)
             )
             runtime.releaseUnmounted(panelId: id)
         }

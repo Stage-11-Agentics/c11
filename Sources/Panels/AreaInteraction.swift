@@ -241,6 +241,9 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// AppKit hosts whose latest report for this confirm id is hidden.
     /// A later SwiftUI `onAppear` cannot mark that card visible.
     private var hostHiddenConfirmIds: Set<UUID> = []
+    /// Host that last reported this confirm on screen. A hidden host must not
+    /// clear a different host that is still showing the same panel's card.
+    private var visibleConfirmReporters: [UUID: ObjectIdentifier] = [:]
     /// Live text-input values keyed by the interaction's id. Bridged from
     /// `TextInputCard` so `acceptActive` (Cmd+D) can submit the edited value
     /// instead of the default (synthesis-critical §1.1).
@@ -567,6 +570,11 @@ public final class AreaInteractionRuntime: ObservableObject {
     func debugClearConfirmSelection(panelId: UUID) {
         confirmSelection[panelId] = nil
     }
+
+    /// Ids still tracked after `clear`. A panel teardown must drop both sets.
+    var debugTrackedConfirmCount: Int {
+        confirmVisibleIds.count + confirmUnmountedIds.count
+    }
 #endif
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
@@ -575,13 +583,28 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// A host report is authoritative for that interaction: a later card
     /// `onAppear` cannot override a host that reported the card hidden.
     /// A card with no host report still accepts its own `onAppear`.
-    public func noteConfirmVisible(panelId: UUID, visible: Bool, fromHost: Bool = false) {
+    public func noteConfirmVisible(
+        panelId: UUID,
+        visible: Bool,
+        fromHost: Bool = false,
+        reporter: ObjectIdentifier? = nil
+    ) {
         guard case .confirm(let content)? = active[panelId] else { return }
         if fromHost {
             if visible {
                 hostHiddenConfirmIds.remove(content.id)
+                if let reporter {
+                    visibleConfirmReporters[content.id] = reporter
+                }
+            } else if let reporter,
+                      let current = visibleConfirmReporters[content.id],
+                      current != reporter {
+                // The fallback host is on screen. A hidden regular host's
+                // frame change must not mark that card unmounted.
+                return
             } else {
                 hostHiddenConfirmIds.insert(content.id)
+                visibleConfirmReporters.removeValue(forKey: content.id)
             }
         } else if visible, hostHiddenConfirmIds.contains(content.id) {
             return
@@ -611,6 +634,7 @@ public final class AreaInteractionRuntime: ObservableObject {
         confirmVisibleIds.remove(interaction.id)
         confirmUnmountedIds.remove(interaction.id)
         hostHiddenConfirmIds.remove(interaction.id)
+        visibleConfirmReporters.removeValue(forKey: interaction.id)
         retireToken(forInteractionId: interaction.id, panelId: panelId)
         switch interaction {
         case .confirm(let content): content.completion(.cancelled)
@@ -643,14 +667,14 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// Panel/workspace teardown: resolve every pending (active + queued) with `.dismissed`.
     public func clear(panelId: UUID) {
         if let interaction = active[panelId] {
-            hostHiddenConfirmIds.remove(interaction.id)
+            dropConfirmTracking(interaction.id)
             pendingTextInputValues.removeValue(forKey: interaction.id)
             dismissEvicted(interaction)
         }
         active[panelId] = nil
         if let queue = queues[panelId] {
             for interaction in queue {
-                hostHiddenConfirmIds.remove(interaction.id)
+                dropConfirmTracking(interaction.id)
                 pendingTextInputValues.removeValue(forKey: interaction.id)
                 dismissEvicted(interaction)
             }
@@ -682,6 +706,7 @@ public final class AreaInteractionRuntime: ObservableObject {
             confirmVisibleIds.remove(current.id)
             confirmUnmountedIds.remove(current.id)
             hostHiddenConfirmIds.remove(current.id)
+            visibleConfirmReporters.removeValue(forKey: current.id)
             retireToken(forInteractionId: current.id, panelId: panelId)
             dismissEvicted(current)
             active[panelId] = nil
@@ -692,6 +717,7 @@ public final class AreaInteractionRuntime: ObservableObject {
                 confirmVisibleIds.remove(item.id)
                 confirmUnmountedIds.remove(item.id)
                 hostHiddenConfirmIds.remove(item.id)
+                visibleConfirmReporters.removeValue(forKey: item.id)
                 retireToken(forInteractionId: item.id, panelId: panelId)
                 dismissEvicted(item)
                 return true
@@ -710,10 +736,15 @@ public final class AreaInteractionRuntime: ObservableObject {
         }
     }
 
-    private func retireToken(forInteractionId interactionId: UUID, panelId: UUID) {
+    private func dropConfirmTracking(_ interactionId: UUID) {
         confirmVisibleIds.remove(interactionId)
         confirmUnmountedIds.remove(interactionId)
         hostHiddenConfirmIds.remove(interactionId)
+        visibleConfirmReporters.removeValue(forKey: interactionId)
+    }
+
+    private func retireToken(forInteractionId interactionId: UUID, panelId: UUID) {
+        dropConfirmTracking(interactionId)
         guard let token = interactionIdToToken.removeValue(forKey: interactionId) else { return }
         var byToken = tokenToInteractionIds[panelId] ?? [:]
         if var ids = byToken[token] {

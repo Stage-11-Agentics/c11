@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mailbox Drawer Proposal</title>
+<style>
+:root {
+  --bg: #16171a; --chrome: #1d1f23; --bar: #202226; --line: #2c2f35; --term: #0f1012;
+  --fg: #e6e6e6; --dim: #8d929b; --faint: #5b6068;
+  --gold: #e3b341; --amber: #f0883e; --violet: #b48ead; --blue: #6ca0dc; --green: #7ec699;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 32px 0 8px; color: var(--gold); letter-spacing: .02em; }
+h3 { font-size: 14px; margin: 18px 0 6px; }
+p, li { color: #cfd2d8; }
+.sub { color: var(--dim); margin: 0 0 16px; }
+code { font: 12px var(--mono); color: #d7c08a; }
+.rec { border-left: 3px solid var(--gold); padding: 6px 12px; background: #1b1c20; margin: 8px 0; }
+.rec b { color: var(--gold); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--dim); font-weight: 600; }
+.cap { color: var(--dim); font-size: 12px; margin: 6px 0 18px; }
+
+/* ---------- mock chrome ---------- */
+.area { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--term); margin: 10px 0; position: relative; }
+.panelbar { display: flex; align-items: center; height: 30px; background: var(--chrome); border-bottom: 1px solid var(--line); font-size: 12px; }
+.count { display: flex; gap: 5px; align-items: center; padding: 0 10px; height: 100%; border-right: 1px solid var(--line); color: var(--dim); font: 12px var(--mono); }
+.count .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
+.ptab { padding: 0 12px; height: 100%; display: flex; align-items: center; color: var(--dim); border-right: 1px solid var(--line); white-space: nowrap; }
+.ptab.on { color: var(--fg); background: var(--bar); }
+.ptab .n { font-family: var(--mono); margin-right: 6px; color: var(--faint); }
+.ptab.on .n { color: var(--gold); }
+.sbar { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px 0 12px; background: var(--bar); border-bottom: 1px solid var(--line); font-size: 12px; }
+.sbar .desc { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #d5d8de; }
+.sbar .desc.empty { color: transparent; }
+.chev { width: 14px; color: var(--dim); font-size: 10px; text-align: center; flex: none; }
+/* the mailbox cell: fixed width, never moves */
+.mail { flex: none; width: 92px; height: 20px; display: grid; grid-template-columns: 16px 34px 34px; align-items: center; gap: 4px; padding: 0 4px; border-radius: 4px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--dim); cursor: pointer; }
+.mail:hover, .mail.open { background: #2a2d33; }
+.mail svg { width: 14px; height: 14px; }
+.mail .u, .mail .h { text-align: right; white-space: nowrap; }
+.mail .u.zero, .mail .h.zero { color: var(--faint); }
+.mail .u.live { color: var(--gold); }
+.mail .u.stale { color: #16171a; background: var(--amber); border-radius: 3px; padding: 0 3px; }
+.term { padding: 10px 12px; font: 12px/1.6 var(--mono); color: #9aa0a8; min-height: 54px; }
+.term .p { color: var(--green); }
+
+/* drawer */
+.drawer { border-top: 1px solid var(--line); background: #1a1c20; box-shadow: 0 10px 24px rgba(0,0,0,.45); }
+.dhead { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+.dhead b { color: var(--fg); font-weight: 600; }
+.dhead .sp { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg span { padding: 1px 8px; font-size: 11px; }
+.seg span.on { background: #2c3036; color: var(--fg); }
+.msg { border-bottom: 1px solid var(--line); padding: 10px 12px 12px; }
+.msg.unread { box-shadow: inset 3px 0 0 var(--gold); }
+.mh { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.topic { font: 12px var(--mono); color: #d7c08a; }
+.state { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 0 5px; border-radius: 3px; }
+.state.unread { color: #16171a; background: var(--gold); }
+.state.read { color: var(--dim); border: 1px solid var(--line); }
+.age { margin-left: auto; color: var(--dim); font: 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.from { color: #cfd2d8; font-size: 12px; margin-top: 2px; }
+.from .addr { font: 11px var(--mono); color: var(--dim); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.chip { font: 10.5px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; }
+.chip.warn { color: var(--amber); border-color: #5a3b22; }
+.chip.link { color: var(--blue); border-color: #2c4058; cursor: pointer; }
+.body { margin-top: 8px; padding: 8px 10px; background: var(--term); border: 1px solid var(--line); border-radius: 4px; font: 12px/1.55 var(--mono); color: #dcdfe4; white-space: pre-wrap; word-break: break-word; }
+.body .src { display: block; color: var(--faint); font-size: 10.5px; margin-bottom: 6px; }
+.body.missing { color: var(--amber); }
+.more { margin-top: 4px; font-size: 11px; color: var(--blue); }
+.collapsed .body { max-height: 3.2em; overflow: hidden; }
+
+/* state strip */
+.states { display: grid; gap: 6px; }
+.states .row { display: grid; grid-template-columns: 170px 1fr; gap: 10px; align-items: center; }
+.states .lbl { font-size: 12px; color: var(--dim); }
+.states .area { margin: 0; }
+
+ol li { margin-bottom: 4px; }
+.qs li { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Mailbox badge and drawer</h1>
+<p class="sub">C11-397 · design proposal for Atin · Mailbox Drawer (panel:88) · 2026-10-11</p>
+
+<p>The 2026-10-10 incident: Board Move mailed Import Flow Design twice; both sat in its inbox about 37 hours because a restored session never reported idle, so push never fired. The fix this proposes is to make every panel's mail visible where its description already lives, and to make stuck mail look different from fresh mail.</p>
+
+<h2>THE MOCKUP</h2>
+
+<h3>The mailbox cell, in every state</h3>
+<p>A fixed 92pt cell at the right end of the subtitle bar: icon, unread count, last-hour count. Both counts are right-aligned tabular numerals with room for <code>99+</code>, so nothing in the bar moves when counts change. Long descriptions truncate before the cell.</p>
+<div class="states">
+  <div class="row"><div class="lbl">No mail this hour, none unread</div>
+    <div class="area"><div class="sbar"><div class="desc">Auditing retry admission against the shipped tests; next, verify cancellation.</div>
+      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u zero">0</span><span class="h zero">0/h</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">2 unread, 5 this hour</div>
+    <div class="area"><div class="sbar"><div class="desc">Implementing the crate view filter row against DESIGN.md; next, the empty state and keyboard focus order for the filter chips.</div>
+      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u live">2</span><span class="h">5/h</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">Stuck: oldest unread &gt; 10 min</div>
+    <div class="area"><div class="sbar"><div class="desc">Import flow design, waiting on Atin's call on the merge preview.</div>
+      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u stale">2</span><span class="h zero">0/h</span></div><div class="chev">›</div></div></div></div>
+  <div class="row"><div class="lbl">No description, has mail</div>
+    <div class="area"><div class="sbar"><div class="desc empty">.</div>
+      <div class="mail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u live">1</span><span class="h">1/h</span></div><div class="chev" style="visibility:hidden">›</div></div></div></div>
+</div>
+<p class="cap">Tooltip on the cell: "2 unread (the agent has not taken them yet), oldest 37h ago · 5 received in the last hour · click to read".</p>
+
+<h3>The drawer, open</h3>
+<p>Same presenter as the panel sheet (child panel, 120 ms unroll, Esc or click-outside to close, area-wide with a 320pt minimum), hung under the subtitle bar instead of the panel bar. Newest first. Every message shows in full; a body over about 12 lines starts folded with "Show all".</p>
+<div class="area">
+  <div class="panelbar">
+    <div class="count"><span class="dot"></span>⌄ 4</div>
+    <div class="ptab"><span class="n">54</span>Crate view fixes</div>
+    <div class="ptab on"><span class="n">57</span>Import Flow Design</div>
+    <div class="ptab"><span class="n">55</span>Board Move</div>
+  </div>
+  <div class="sbar"><div class="desc">Import flow design, waiting on Atin's call on the merge preview.</div>
+    <div class="mail open"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg><span class="u stale">2</span><span class="h zero">0/h</span></div><div class="chev">›</div></div>
+  <div class="drawer">
+    <div class="dhead"><b>Mail for Import Flow Design</b><span class="addr" style="font:11px var(--mono)">import-flow-design · panel 57</span><span class="sp"></span><span>2 unread · 0 this hour · 14 total</span></div>
+
+    <div class="msg unread">
+      <div class="mh"><span class="state unread">unread</span><span class="topic">lattice.unfreeze</span><span class="age">Oct 10 09:07 · 37h ago</span></div>
+      <div class="from">from <b>Board Move</b> · panel 55 · <span class="addr">board-move</span></div>
+      <div class="chips"><span class="chip">text/plain</span><span class="chip">body_ref</span></div>
+      <div class="body"><span class="src">from file /private/tmp/claude-501/…/scratchpad/board-move/unfreeze.txt · 412 bytes</span>The board move is done. Acetate's Lattice board now lives on the hosted server on Atlas.
+Board writes are open again. Run `lattice remote status` once to confirm your checkout is bound.
+— Board Move (panel:55, mailbox board-move)</div>
+    </div>
+
+    <div class="msg unread">
+      <div class="mh"><span class="state unread">unread</span><span class="topic">lattice.freeze</span><span class="age">Oct 10 08:33 · 38h ago</span></div>
+      <div class="from">from <b>Board Move</b> · panel 55 · <span class="addr">board-move</span></div>
+      <div class="chips"><span class="chip warn">ttl 30m · expired 37h ago</span></div>
+      <div class="body">Acetate's Lattice board is moving to the hosted server on Atlas. Make NO board writes (no lattice create/status/comment/plan write/complete/attach/link) until I message again, about 30 minutes. Reads are fine until then. — Board Move (panel:55, mailbox board-move)</div>
+    </div>
+
+    <div class="msg">
+      <div class="mh"><span class="state read">read</span><span class="topic">design.review</span><span class="age">Oct 9 17:12 · 2d ago</span></div>
+      <div class="from">from <b>Crate view fixes</b> · panel 54 · <span class="addr">crate-albums</span></div>
+      <div class="chips"><span class="chip link">↳ reply to design.question · Oct 9 16:40</span></div>
+      <div class="body missing"><span class="src">from file /private/tmp/…/scratchpad/review.md</span>The referenced file is gone (no such file). The message carried no inline body.</div>
+    </div>
+
+    <div class="msg collapsed">
+      <div class="mh"><span class="state read">read</span><span class="topic">handoff</span><span class="age">Oct 9 14:02 · 2d ago</span></div>
+      <div class="from">from <b>Overwatch</b> · <span class="addr">overwatch</span> · not open</div>
+      <div class="body">Handoff for the import flow. Three things are settled: the preview is a modal sheet, not a panel; duplicates are matched on file hash before path; and the merge step never rewrites tags without a confirm.
+Open questions for you: …</div>
+      <div class="more">Show all · 38 lines</div>
+    </div>
+  </div>
+</div>
+<p class="cap">Mock data is the real incident traffic, with the unfreeze file's contents invented (that file is gone now).</p>
+
+<h2>DECISIONS (YOUR CALL, MY RECOMMENDATION FIRST)</h2>
+<ol class="qs">
+<li><b>What "unread" means.</b>
+  <div class="rec"><b>Recommended: the agent has not taken it.</b> Unread = the envelope is still in the inbox root, not yet claimed into <code>_read/</code>. That is exactly the signal that would have caught the incident. The count turns amber when the oldest unread is over 10 minutes old, so stuck mail looks different from mail that just landed.</div>
+  Alternative: also track "the operator has opened it" as a second, per-message state (a dot in the drawer, persisted by c11). It adds a store and a third number people have to learn, and it does not catch stuck mail. I'd leave it out of v1.</li>
+<li><b>Does the mailbox force the bar to appear, and is it shown at zero?</b>
+  <div class="rec"><b>Recommended:</b> the bar renders when the panel has a description, <i>or</i> a <code>mailbox.address</code>, <i>or</i> any mail on disk. The cell shows dim zeros rather than disappearing. A panel that declared an address therefore gets its bar at orientation, before mail arrives, so the content never jumps down when the first message lands. Panels with no address and no mail ever (plain shells, browsers) stay barless.</div></li>
+<li><b>Placement.</b>
+  <div class="rec"><b>Recommended:</b> description (flexes, truncates) · mailbox cell (fixed 92pt) · expand chevron (rightmost, unchanged). When the description is expanded to several lines, the cell stays pinned to the first line.</div>
+  Alternative: mailbox rightmost, chevron inside. It reads as more "right end", but moves a control people already know.</li>
+<li><b>Live updates and cost.</b>
+  <div class="rec"><b>Recommended: no file watchers.</b> The app already sees every delivery (its dispatcher writes the inbox), every push claim (in-process), and every drain (CLI and hook drains drop a receipt into <code>_receipts/</code>, which the app already records). Each of those bumps a per-panel count in memory. Message times come from the ULID file names, so counts need directory listings, never file reads. A 60 s reconcile lists the two directories for panels whose bar is on screen, which catches hand-dropped files and late receipts and lets "last hour" decay. Bodies are read only when the drawer opens.</div>
+  Alternative: a vnode watcher on every inbox. Exact and instant, but two file descriptors per panel across hundreds of panels, plus re-arming when directories are created. Following the events stream is also possible, but under the privacy defaults it may not carry body text, so the drawer would still read files.</li>
+<li><b>Sent mail.</b>
+  <div class="rec"><b>Recommended: received only in v1</b>, with a follow-up ticket for a Sent view.</div>
+  Why: the sender's <code>from</code> is a title or an address, not a panel id, so mapping sent mail back to a panel is guesswork, and the event log may hold no text. A Sent view done properly wants the dispatcher to stamp the sending panel's UUID, which is a protocol change worth its own ticket.</li>
+<li><b>How a message reads in the drawer.</b>
+  <div class="rec"><b>Recommended: a feed of full messages</b> (the mock above). Each card shows everything; long bodies fold at about 12 lines with "Show all". Text is selectable for copying. It works at the 320pt minimum and at full width with one layout.</div>
+  Alternative: list on the left, reader on the right. Better for long bodies when the area is wide, but needs a separate narrow mode and adds a click per message.</li>
+</ol>
+
+<h2>OUR ASSUMPTIONS (SAY IF ANY IS WRONG)</h2>
+<ul>
+<li>Bodies and <code>body_ref</code> files render as plain text in a non-editable text view. No Markdown, no links, nothing loaded. <code>body_ref</code> reads only regular files, at most 256 KB (then "truncated"), never FIFOs or devices, off the main thread. Missing, unreadable, too large and not-text each get their own plain sentence.</li>
+<li>Read-only: no compose, reply, delete or mark-read. Opening the drawer never claims mail, so it cannot steal a message from the agent.</li>
+<li>The drawer reuses the panel sheet's presenter. That means making it public in our Bonsplit fork and bumping the submodule (pushed to Bonsplit <code>main</code> first, per the repo rule).</li>
+<li>Sender line resolves the <code>from</code> string to a live panel (number and address) when it can, and says "not open" when it cannot. <code>in_reply_to</code> becomes a chip that scrolls to the parent when that message is in the list.</li>
+<li><code>_read/</code> is never pruned today, so the drawer shows the newest 200 and says how many older ones exist.</li>
+<li>Localized strings, skill and mailbox guide updated, tagged-build computer-use validation including opening and dismissing the drawer.</li>
+</ul>
+</main>
+</body>
+</html>

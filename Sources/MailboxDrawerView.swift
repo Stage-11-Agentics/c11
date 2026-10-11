@@ -182,10 +182,7 @@ struct MailboxDrawerView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(String(
-                localized: "mailbox.drawer.title",
-                defaultValue: "Mail for \(panelTitle ?? String(localized: "mailbox.drawer.thisPanel", defaultValue: "this panel"))"
-            ))
+            Text(String(localized: "mailbox.drawer.title", defaultValue: "Mail for \(headerName)"))
             .font(textFont.weight(.semibold))
             .foregroundColor(style.foreground)
             .lineLimit(1)
@@ -207,6 +204,10 @@ struct MailboxDrawerView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private var headerName: String {
+        panelTitle ?? String(localized: "mailbox.drawer.thisPanel", defaultValue: "this panel")
     }
 
     private var identityLine: String {

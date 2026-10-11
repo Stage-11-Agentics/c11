@@ -242,15 +242,16 @@ struct MailboxDrawerView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
                 TimelineView(.periodic(from: .now, by: 30)) { timeline in
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(listing.messages) { message in
+                            let parent = message.inReplyTo.flatMap { id in listing.messages.first { $0.fileId == id } }
                             MailboxMessageCard(
                                 message: message,
                                 sender: senders[message.from],
                                 now: timeline.date,
                                 isExpanded: expanded.contains(message.id),
-                                hasParentInList: message.inReplyTo.map { id in listing.messages.contains { $0.id == id } } ?? false,
-                                parentTopic: message.inReplyTo.flatMap { id in listing.messages.first { $0.id == id }?.topic },
+                                parentId: parent?.id,
+                                parentTopic: parent?.topic,
                                 style: style,
                                 bodyFont: bodyFont,
                                 metaFont: metaFont,
@@ -317,7 +318,8 @@ private struct MailboxMessageCard: View {
     let sender: MailboxDrawerSender?
     let now: Date
     let isExpanded: Bool
-    let hasParentInList: Bool
+    /// The parent message's list id, when the parent is in the list.
+    let parentId: String?
     let parentTopic: String?
     let style: MailboxDrawerStyle
     let bodyFont: Font
@@ -325,8 +327,6 @@ private struct MailboxMessageCard: View {
     let textFont: Font
     let onToggleExpanded: () -> Void
     let onShowParent: (String) -> Void
-
-    static let foldedLineLimit = 12
 
     private var orange: Color { Color(nsColor: .systemOrange) }
 
@@ -441,7 +441,7 @@ private struct MailboxMessageCard: View {
             let label = parentTopic.map {
                 String(localized: "mailbox.drawer.chip.replyToTopic", defaultValue: "↳ reply to \($0)")
             } ?? String(localized: "mailbox.drawer.chip.replyToId", defaultValue: "↳ reply to \(String(parent.prefix(10)))…")
-            items.append(Chip(text: label, kind: hasParentInList ? .link(parent) : .plain))
+            items.append(Chip(text: label, kind: parentId.map { .link($0) } ?? .plain))
         }
         if let ttl = message.ttlSeconds, ttl > 0, let expiry = message.expiresAt() {
             let ttlText = MailboxDrawerText.span(TimeInterval(ttl))
@@ -491,19 +491,6 @@ private struct MailboxMessageCard: View {
 
     // MARK: Body
 
-    private var fullText: String {
-        var pieces: [String] = []
-        if !message.body.isEmpty { pieces.append(message.body) }
-        if case .text(let text, _, _)? = message.reference?.content { pieces.append(text) }
-        return pieces.joined(separator: "\n\n")
-    }
-
-    private var isLong: Bool {
-        let text = fullText
-        let lines = text.reduce(into: 1) { count, character in if character.isNewline { count += 1 } }
-        return lines > Self.foldedLineLimit || text.count > 1400
-    }
-
     @ViewBuilder
     private var bodyBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -531,7 +518,7 @@ private struct MailboxMessageCard: View {
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(style.border, lineWidth: 1))
 
         HStack(spacing: 12) {
-            if isLong {
+            if message.isLong {
                 Button(isExpanded
                     ? String(localized: "mailbox.drawer.showLess", defaultValue: "Show less")
                     : String(localized: "mailbox.drawer.showAll", defaultValue: "Show all")
@@ -539,10 +526,12 @@ private struct MailboxMessageCard: View {
                 .buttonStyle(.link)
                 .font(metaFont)
             }
-            if !fullText.isEmpty {
+            if message.problem == nil && (!message.body.isEmpty || message.reference.map(Self.hasText) == true) {
+                // The drawer's panel never becomes key, so text selection could
+                // not be copied with Command-C; this button is the copy path.
                 Button(String(localized: "mailbox.drawer.copy", defaultValue: "Copy text")) {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(fullText, forType: .string)
+                    NSPasteboard.general.setString(message.fullText, forType: .string)
                 }
                 .buttonStyle(.link)
                 .font(metaFont)
@@ -550,13 +539,17 @@ private struct MailboxMessageCard: View {
         }
     }
 
+    private static func hasText(_ reference: MailboxPanelMail.Reference) -> Bool {
+        if case .text(let text, _, _) = reference.content { return !text.isEmpty }
+        return false
+    }
+
     private func bodyText(_ text: String) -> some View {
         Text(verbatim: text)
             .font(bodyFont)
             .foregroundColor(style.foreground)
-            .lineLimit(isExpanded ? nil : Self.foldedLineLimit)
+            .lineLimit(isExpanded ? nil : MailboxPanelMail.foldedLineLimit)
             .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -568,7 +561,6 @@ private struct MailboxMessageCard: View {
                 .foregroundColor(style.secondary)
                 .lineLimit(2)
                 .truncationMode(.middle)
-                .textSelection(.enabled)
             switch reference.content {
             case .text(let text, let truncated, let bytes):
                 if text.isEmpty {

@@ -7,15 +7,17 @@ import Combine
 /// panel's inbox: the dispatcher writes deliveries, the stdin push claims in
 /// process, and turn-boundary drains leave receipts the app records. Each of
 /// those reports `inboxChanged`, which recounts that panel with two directory
-/// listings on a utility queue. A slow reconcile recounts the panels whose bar
-/// is on screen, which catches hand-dropped files and lets the fresh
-/// highlight go out on time.
+/// listings on a utility queue. A reconcile recounts the panels whose cell is
+/// on screen every minute, and every panel the store knows every five
+/// minutes, which catches hand-dropped files.
 ///
 /// Main-thread only, except `inboxChanged`, which any thread may call.
 final class MailboxBadgeStore {
     static let shared = MailboxBadgeStore()
 
     static let reconcileInterval: TimeInterval = 60
+    /// Every this many reconcile ticks, panels without a visible cell recount too.
+    static let fullSweepEvery = 5
 
     private struct Key: Hashable {
         let workspaceId: UUID
@@ -34,6 +36,7 @@ final class MailboxBadgeStore {
     private var pending: Set<Key> = []
     private var inFlight: Set<Key> = []
     private var reconcileTimer: Timer?
+    private var reconcileTick = 0
 
     private struct WeakWorkspace {
         weak var value: Workspace?
@@ -41,7 +44,7 @@ final class MailboxBadgeStore {
 
     init(
         mailboxesRoot: @escaping (UUID) -> URL? = { workspaceId in
-            (try? MailboxLayout.defaultStateURL()).map {
+            MailboxBadgeStore.stateURL.map {
                 MailboxLayout.mailboxesRoot(state: $0, workspaceId: workspaceId)
             }
         },
@@ -50,6 +53,9 @@ final class MailboxBadgeStore {
         self.mailboxesRoot = mailboxesRoot
         self.now = now
     }
+
+    /// Resolved once: the state root never moves while the app runs.
+    private static let stateURL: URL? = try? MailboxLayout.defaultStateURL()
 
     // MARK: - Reads (main thread)
 
@@ -60,6 +66,7 @@ final class MailboxBadgeStore {
         if workspaceOfPanel[panelId] != workspace.id {
             workspaceOfPanel[panelId] = workspace.id
             schedule(Key(workspaceId: workspace.id, panelId: panelId))
+            startReconcileIfNeeded()
         }
         return summaries[panelId] ?? .empty
     }
@@ -92,10 +99,6 @@ final class MailboxBadgeStore {
     func cellDisappeared(panelId: UUID) {
         guard let count = onScreen[panelId] else { return }
         if count <= 1 { onScreen.removeValue(forKey: panelId) } else { onScreen[panelId] = count - 1 }
-        if onScreen.isEmpty {
-            reconcileTimer?.invalidate()
-            reconcileTimer = nil
-        }
     }
 
     /// A closed panel's counts and model go away with it.
@@ -105,6 +108,10 @@ final class MailboxBadgeStore {
         models.removeValue(forKey: panelId)
         owners.removeValue(forKey: panelId)
         onScreen.removeValue(forKey: panelId)
+        if workspaceOfPanel.isEmpty {
+            reconcileTimer?.invalidate()
+            reconcileTimer = nil
+        }
     }
 
     // MARK: - Change reports (any thread)
@@ -163,11 +170,12 @@ final class MailboxBadgeStore {
     }
 
     private func startReconcileIfNeeded() {
-        guard reconcileTimer == nil, !onScreen.isEmpty else { return }
+        guard reconcileTimer == nil, !workspaceOfPanel.isEmpty else { return }
         let timer = Timer(timeInterval: Self.reconcileInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
-            for panelId in self.onScreen.keys {
-                guard let workspaceId = self.workspaceOfPanel[panelId] else { continue }
+            self.reconcileTick += 1
+            let everyPanel = self.reconcileTick % Self.fullSweepEvery == 0
+            for (panelId, workspaceId) in self.workspaceOfPanel where everyPanel || self.onScreen[panelId] != nil {
                 self.schedule(Key(workspaceId: workspaceId, panelId: panelId))
             }
         }

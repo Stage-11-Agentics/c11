@@ -180,6 +180,12 @@ final class MailboxReceiptRecorder {
             .filter { fileManager.fileExists(atPath: $0.path) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         guard !receipts.isEmpty else { return }
+        // C11-397: a drain changed some inbox in this workspace. Recording
+        // reaches the mailbox cells through emitMailboxDelivered; with it off,
+        // tell them here.
+        if !isRecording() {
+            MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: nil)
+        }
         guard isRecording() else {
             scheduleRetry(spool: spool, workspaceId: workspaceId)
             return

@@ -58,6 +58,8 @@ struct PanelTitleBarView: View {
     @StateObject private var drawerPresenter = CollapsedSheetPresenter()
     @State private var isDrawerOpen = false
     @State private var barWidth: CGFloat = 0
+    /// This bar's mailbox cell is counted as on screen by the badge store.
+    @State private var cellRegistered = false
 
     private var descriptionText: String {
         state.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -145,8 +147,14 @@ struct PanelTitleBarView: View {
                 )
                 .accessibilityElement(children: .contain)
                 .onChange(of: barWidth) { _ in if isDrawerOpen { presentDrawer() } }
-                .onChange(of: isVisibleInUI) { visible in if !visible { closeDrawer(animated: false) } }
-                .onDisappear { closeDrawer(animated: false) }
+                .onChange(of: isVisibleInUI) { visible in
+                    if !visible { closeDrawer(animated: false) }
+                    updateCellRegistration(visible && mailboxModel != nil)
+                }
+                .onDisappear {
+                    closeDrawer(animated: false)
+                    updateCellRegistration(false)
+                }
         }
     }
 
@@ -178,7 +186,20 @@ struct PanelTitleBarView: View {
     private func closeDrawer(animated: Bool) {
         guard isDrawerOpen || drawerPresenter.isPresented else { return }
         isDrawerOpen = false
+        drawerPresenter.onDismiss = nil
         if animated { drawerPresenter.dismissAnimated() } else { drawerPresenter.dismiss() }
+    }
+
+    /// Kept-alive hidden workspaces stay mounted, so "on screen" also needs
+    /// the panel to be visible; the store reconciles on-screen cells faster.
+    private func updateCellRegistration(_ registered: Bool) {
+        guard let panelId, registered != cellRegistered else { return }
+        cellRegistered = registered
+        if registered {
+            MailboxBadgeStore.shared.cellAppeared(panelId: panelId)
+        } else {
+            MailboxBadgeStore.shared.cellDisappeared(panelId: panelId)
+        }
     }
 
     private func presentDrawer() {
@@ -199,7 +220,10 @@ struct PanelTitleBarView: View {
             style: drawerStyle,
             resolveSenders: { names in Self.resolveSenders(names, preferring: workspaceId) }
         )
-        drawerPresenter.onDismiss = { isDrawerOpen = false }
+        // Capture the binding, not the view: the view holds the presenter and
+        // the workspace, and the presenter holds this closure.
+        let open = $isDrawerOpen
+        drawerPresenter.onDismiss = { open.wrappedValue = false }
         isDrawerOpen = true
         drawerPresenter.present(rootView: AnyView(drawer))
         if !drawerPresenter.isPresented { isDrawerOpen = false }
@@ -260,8 +284,8 @@ struct PanelTitleBarView: View {
                     action: toggleDrawer
                 )
                 .background(CollapsedSheetTrailingAnchorReader { drawerPresenter.trailingAnchorView = $0 })
-                .onAppear { if let panelId { MailboxBadgeStore.shared.cellAppeared(panelId: panelId) } }
-                .onDisappear { if let panelId { MailboxBadgeStore.shared.cellDisappeared(panelId: panelId) } }
+                .onAppear { updateCellRegistration(isVisibleInUI) }
+                .onDisappear { updateCellRegistration(false) }
             }
             Button(action: onToggleCollapsed) {
                 Image(systemName: effectiveCollapsed ? "chevron.right" : "chevron.down")

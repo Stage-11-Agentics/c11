@@ -57,15 +57,17 @@ enum MailboxPanelMail {
         mailboxesRoot.appendingPathComponent(panelId.uuidString.lowercased(), isDirectory: true)
     }
 
-    /// Two directory listings; file contents are never read. Arrival times come
-    /// from the ULID file names, falling back to the file's modification time
-    /// for a hand-dropped file whose name is not a ULID.
+    /// Two directory listings and a stat per unread file; file contents are
+    /// never read. An unread message landed when it was written into the inbox
+    /// (its modification time) or, if the clock says otherwise, when it was
+    /// sent (its ULID), whichever is later: mail that waited in the outbox
+    /// still lights the cell when it finally lands.
     static func summary(inbox: URL, fileManager: FileManager = .default) -> Summary {
         let unread = envelopeFiles(in: inbox, fileManager: fileManager)
         let read = envelopeFiles(in: MailboxDrain.readURL(inbox: inbox), fileManager: fileManager)
         var result = Summary(unread: unread.count, received: unread.count + read.count)
         for file in unread {
-            guard let date = arrivalDate(of: file, fileManager: fileManager) else { continue }
+            guard let date = landingDate(of: file, fileManager: fileManager) else { continue }
             if result.newestUnreadAt.map({ date > $0 }) ?? true { result.newestUnreadAt = date }
             if result.oldestUnreadAt.map({ date < $0 }) ?? true { result.oldestUnreadAt = date }
         }
@@ -81,10 +83,24 @@ enum MailboxPanelMail {
         return entries.filter { $0.pathExtension == MailboxLayout.envelopeExtension }
     }
 
+    /// When a message was sent: its ULID, or the file's modification time for
+    /// a hand-dropped file whose name is not a ULID.
     static func arrivalDate(of file: URL, fileManager: FileManager = .default) -> Date? {
         if let date = ulidDate(file.deletingPathExtension().lastPathComponent) { return date }
-        let attributes = try? fileManager.attributesOfItem(atPath: file.path)
-        return attributes?[.modificationDate] as? Date
+        return modificationDate(of: file, fileManager: fileManager)
+    }
+
+    static func landingDate(of file: URL, fileManager: FileManager = .default) -> Date? {
+        let sent = ulidDate(file.deletingPathExtension().lastPathComponent)
+        let written = modificationDate(of: file, fileManager: fileManager)
+        switch (sent, written) {
+        case let (sent?, written?): return max(sent, written)
+        default: return sent ?? written
+        }
+    }
+
+    private static func modificationDate(of file: URL, fileManager: FileManager) -> Date? {
+        (try? fileManager.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
     }
 
     /// The millisecond timestamp in a ULID's first ten characters, or nil when
@@ -119,9 +135,12 @@ enum MailboxPanelMail {
     /// One envelope as the drawer shows it. Every string is untrusted text from
     /// another agent; the view renders all of it verbatim.
     struct Message: Identifiable, Equatable {
+        /// Unique within a listing: the same file name can sit in both the
+        /// inbox root and `_read/` after a re-delivery.
+        var id: String { (isUnread ? "unread/" : "read/") + fileId }
         /// The file name without extension: the envelope id for anything the
         /// dispatcher wrote, the claim ULID for a hand-dropped file.
-        let id: String
+        let fileId: String
         let isUnread: Bool
         let arrivedAt: Date?
         let from: String
@@ -138,6 +157,18 @@ enum MailboxPanelMail {
         let reference: Reference?
         /// Set when the file could not be read or parsed as an envelope.
         let problem: String?
+
+        /// The inline body and any referenced text, as "Copy text" copies it.
+        var fullText: String {
+            var pieces: [String] = []
+            if !body.isEmpty { pieces.append(body) }
+            if case .text(let text, _, _)? = reference?.content { pieces.append(text) }
+            return pieces.joined(separator: "\n\n")
+        }
+
+        /// Long enough that the drawer folds it behind "Show all". Computed once
+        /// when the listing loads, off the main thread.
+        let isLong: Bool
 
         /// The TTL ran out before `now`, measured from when it was sent.
         func isExpired(now: Date) -> Bool {
@@ -200,17 +231,33 @@ enum MailboxPanelMail {
         return Listing(messages: Array(messages), total: all.count, unread: unread.count)
     }
 
+    static let foldedLineLimit = 12
+    static let foldedCharacterLimit = 1400
+
+    static func isLong(_ text: String) -> Bool {
+        var lines = 1
+        var characters = 0
+        for character in text {
+            characters += 1
+            if character.isNewline { lines += 1 }
+            if lines > foldedLineLimit || characters > foldedCharacterLimit { return true }
+        }
+        return false
+    }
+
     static func message(at url: URL, isUnread: Bool, arrivedAt: Date?, fileManager: FileManager = .default) -> Message {
         let id = url.deletingPathExtension().lastPathComponent
         func failed(_ problem: String) -> Message {
             Message(
-                id: id, isUnread: isUnread, arrivedAt: arrivedAt, from: "", to: nil, topic: nil,
+                fileId: id, isUnread: isUnread, arrivedAt: arrivedAt, from: "", to: nil, topic: nil,
                 sentAt: nil, sentAtText: nil, inReplyTo: nil, replyTo: nil, ttlSeconds: nil,
-                urgent: false, contentType: nil, body: "", reference: nil, problem: problem
+                urgent: false, contentType: nil, body: "", reference: nil, problem: problem, isLong: false
             )
         }
         let data: Data
-        switch readPrefix(path: url.path, limit: maxEnvelopeBytes, fileManager: fileManager) {
+        // An envelope is opened only as a regular file and never through a
+        // symlink, so a FIFO dropped into an inbox cannot block the read.
+        switch readRegularFilePrefix(path: url.path, limit: maxEnvelopeBytes, followSymlinks: false) {
         case .success(let read):
             guard !read.truncated else {
                 return failed(String(
@@ -233,9 +280,12 @@ enum MailboxPanelMail {
             return value
         }
         let sentAtText = string("ts")
-        let reference = string("body_ref").map { referencedContent(path: $0, fileManager: fileManager) }
+        let reference = string("body_ref").map { referencedContent(path: $0) }
+        let body = raw["body"] as? String ?? ""
+        var referencedText = ""
+        if case .text(let text, _, _)? = reference?.content { referencedText = text }
         return Message(
-            id: id,
+            fileId: id,
             isUnread: isUnread,
             arrivedAt: arrivedAt,
             from: string("from") ?? "",
@@ -248,9 +298,10 @@ enum MailboxPanelMail {
             ttlSeconds: (raw["ttl_seconds"] as? NSNumber)?.intValue,
             urgent: (raw["urgent"] as? Bool) ?? false,
             contentType: string("content_type"),
-            body: raw["body"] as? String ?? "",
+            body: body,
             reference: reference,
-            problem: nil
+            problem: nil,
+            isLong: isLong(body) || isLong(referencedText)
         )
     }
 
@@ -263,33 +314,20 @@ enum MailboxPanelMail {
         return plain.date(from: text)
     }
 
-    /// Reads a `body_ref` target for display. Only a regular file is opened
-    /// (after resolving symlinks), so a FIFO or device named by another agent
-    /// can never block or stream; at most `maxReferencedBytes` are read.
-    static func referencedContent(path: String, fileManager: FileManager = .default) -> Reference {
+    /// Reads a `body_ref` target for display. The file is opened non-blocking
+    /// and checked through the open descriptor, so a FIFO or device named by
+    /// another agent (or swapped in after a check) can never block or stream;
+    /// at most `maxReferencedBytes` are read.
+    static func referencedContent(path: String) -> Reference {
         guard path.hasPrefix("/") else { return Reference(path: path, content: .notAbsolute) }
-        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-        let attributes: [FileAttributeKey: Any]
-        do {
-            attributes = try fileManager.attributesOfItem(atPath: resolved)
-        } catch {
-            if !fileManager.fileExists(atPath: resolved) {
-                return Reference(path: path, content: .missing)
-            }
-            return Reference(path: path, content: .unreadable(error.localizedDescription))
-        }
-        guard (attributes[.type] as? FileAttributeType) == .typeRegular else {
-            return Reference(path: path, content: .notRegularFile)
-        }
-        switch readPrefix(path: resolved, limit: maxReferencedBytes, fileManager: fileManager) {
+        switch readRegularFilePrefix(path: path, limit: maxReferencedBytes, followSymlinks: true) {
         case .failure(let failure):
             return Reference(path: path, content: failure.referenceContent)
         case .success(let read):
-            let size = (attributes[.size] as? NSNumber)?.intValue ?? read.data.count
             guard let text = decodeText(read.data, truncated: read.truncated) else {
-                return Reference(path: path, content: .notText(byteCount: size))
+                return Reference(path: path, content: .notText(byteCount: read.size))
             }
-            return Reference(path: path, content: .text(text, truncated: read.truncated, byteCount: size))
+            return Reference(path: path, content: .text(text, truncated: read.truncated, byteCount: read.size))
         }
     }
 
@@ -313,11 +351,21 @@ enum MailboxPanelMail {
     struct PrefixRead {
         let data: Data
         let truncated: Bool
+        /// The file's size from the open descriptor.
+        let size: Int
     }
 
-    static func readPrefix(path: String, limit: Int, fileManager: FileManager = .default) -> Result<PrefixRead, ReadFailure> {
-        guard let handle = FileHandle(forReadingAtPath: path) else {
-            if !fileManager.fileExists(atPath: path) {
+    /// Opens `path` read-only and non-blocking, confirms through `fstat` on the
+    /// open descriptor that it is a regular file, then reads at most
+    /// `limit + 1` bytes. With `followSymlinks` false a symlink is refused.
+    static func readRegularFilePrefix(path: String, limit: Int, followSymlinks: Bool) -> Result<PrefixRead, ReadFailure> {
+        var flags = O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC
+        if !followSymlinks { flags |= O_NOFOLLOW }
+        let fd = open(path, flags)
+        guard fd >= 0 else {
+            let code = errno
+            switch code {
+            case ENOENT, ENOTDIR:
                 return .failure(ReadFailure(
                     description: String(
                         localized: "mailbox.drawer.problem.gone",
@@ -325,22 +373,52 @@ enum MailboxPanelMail {
                     ),
                     referenceContent: .missing
                 ))
+            case ELOOP:
+                return .failure(notRegular)
+            case EACCES, EPERM:
+                let reason = String(
+                    localized: "mailbox.drawer.problem.permission",
+                    defaultValue: "c11 does not have permission to read it."
+                )
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            default:
+                let reason = String(cString: strerror(code))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
             }
-            let reason = String(
-                localized: "mailbox.drawer.problem.permission",
-                defaultValue: "c11 does not have permission to read it."
-            )
+        }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else {
+            let reason = String(cString: strerror(errno))
             return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
         }
-        defer { try? handle.close() }
-        do {
-            let data = try handle.read(upToCount: limit + 1) ?? Data()
-            return .success(PrefixRead(data: data.prefix(limit), truncated: data.count > limit))
-        } catch {
-            return .failure(ReadFailure(
-                description: error.localizedDescription,
-                referenceContent: .unreadable(error.localizedDescription)
-            ))
+        guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
+        let wanted = max(0, limit) + 1
+        var buffer = [UInt8](repeating: 0, count: wanted)
+        var filled = 0
+        while filled < wanted {
+            let count = buffer.withUnsafeMutableBytes { raw in
+                read(fd, raw.baseAddress!.advanced(by: filled), wanted - filled)
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                let reason = String(cString: strerror(errno))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            }
+            if count == 0 { break }
+            filled += count
         }
+        let data = Data(buffer[0..<min(filled, max(0, limit))])
+        return .success(PrefixRead(data: data, truncated: filled > limit, size: Int(info.st_size)))
+    }
+
+    private static var notRegular: ReadFailure {
+        ReadFailure(
+            description: String(
+                localized: "mailbox.drawer.problem.notRegular",
+                defaultValue: "This entry is not a regular file, so c11 did not open it."
+            ),
+            referenceContent: .notRegularFile
+        )
     }
 }

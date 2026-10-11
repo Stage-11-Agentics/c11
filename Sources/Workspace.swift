@@ -12595,6 +12595,8 @@ extension Workspace: BonsplitDelegate {
             panel?.close()
             // C11-243: the panel is gone for good (detach keeps its id and the stamp).
             PanelSeenTracker.shared.forget(panelId: panelId)
+            // C11-397: a detached panel keeps its mailbox counts and model.
+            MailboxBadgeStore.shared.forget(panelId: panelId)
         }
 
         // Resolve any pending pane interactions on this panel with .dismissed so
@@ -12633,7 +12635,6 @@ extension Workspace: BonsplitDelegate {
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
-        MailboxBadgeStore.shared.forget(panelId: panelId)
         panelSheetStatusEntered.removeValue(forKey: panelId)
         PanelAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)

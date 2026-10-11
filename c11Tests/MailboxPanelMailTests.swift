@@ -42,6 +42,10 @@ final class MailboxPanelMailTests: XCTestCase {
         let dir = read ? MailboxDrain.readURL(inbox: inbox) : inbox!
         let url = dir.appendingPathComponent("\(id).msg")
         try JSONSerialization.data(withJSONObject: object).write(to: url)
+        // Delivered the moment it was sent, unless a test says otherwise.
+        if let sent = MailboxPanelMail.ulidDate(id) {
+            try FileManager.default.setAttributes([.modificationDate: sent], ofItemAtPath: url.path)
+        }
         return url
     }
 
@@ -57,6 +61,15 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(summary.received, 3)
         XCTAssertEqual(summary.oldestUnreadAt!.timeIntervalSince1970, now.addingTimeInterval(-3600).timeIntervalSince1970, accuracy: 0.01)
         XCTAssertEqual(summary.newestUnreadAt!.timeIntervalSince1970, now.addingTimeInterval(-60).timeIntervalSince1970, accuracy: 0.01)
+    }
+
+    func testUnreadThatLandsLateCountsFromWhenItLanded() throws {
+        let now = Date()
+        let url = try write([:], id: ulid(now.addingTimeInterval(-600)))
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: url.path)
+        let summary = MailboxPanelMail.summary(inbox: inbox)
+        XCTAssertEqual(summary.newestUnreadAt!.timeIntervalSince1970, now.timeIntervalSince1970, accuracy: 1)
+        XCTAssertTrue(summary.isFresh(now: now))
     }
 
     func testMissingInboxIsEmpty() {
@@ -97,7 +110,8 @@ final class MailboxPanelMailTests: XCTestCase {
         try write(["topic": "lattice.freeze", "body": "freeze", "ttl_seconds": 1800], id: older, read: true)
         try write(["topic": "lattice.unfreeze", "body": "thaw", "in_reply_to": older, "urgent": true], id: newer)
         let listing = MailboxPanelMail.listing(inbox: inbox)
-        XCTAssertEqual(listing.messages.map(\.id), [newer, older])
+        XCTAssertEqual(listing.messages.map(\.fileId), [newer, older])
+        XCTAssertEqual(Set(listing.messages.map(\.id)).count, 2)
         XCTAssertEqual(listing.messages.map(\.isUnread), [true, false])
         XCTAssertEqual(listing.unread, 1)
         XCTAssertEqual(listing.total, 2)
@@ -128,6 +142,41 @@ final class MailboxPanelMailTests: XCTestCase {
         let markup = "<script>alert(1)</script> **bold** [link](https://example.com)"
         try write(["body": markup], id: ulid(Date()))
         XCTAssertEqual(MailboxPanelMail.listing(inbox: inbox).messages.first?.body, markup)
+    }
+
+    func testSameFileInRootAndReadHasDistinctIds() throws {
+        let id = ulid(Date())
+        try write([:], id: id)
+        try write([:], id: id, read: true)
+        let listing = MailboxPanelMail.listing(inbox: inbox)
+        XCTAssertEqual(listing.messages.count, 2)
+        XCTAssertEqual(Set(listing.messages.map(\.id)).count, 2)
+    }
+
+    func testLongBodyIsMarkedForFolding() throws {
+        try write(["body": (1...20).map { "line \($0)" }.joined(separator: "\n")], id: ulid(Date()))
+        XCTAssertEqual(MailboxPanelMail.listing(inbox: inbox).messages.first?.isLong, true)
+        XCTAssertFalse(MailboxPanelMail.isLong("short"))
+    }
+
+    func testFifoEnvelopeIsNotOpened() throws {
+        let fifo = inbox.appendingPathComponent("\(ulid(Date())).msg")
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+        // Opening a FIFO with no writer would block the drawer's loader forever.
+        let message = try XCTUnwrap(MailboxPanelMail.listing(inbox: inbox).messages.first)
+        XCTAssertNotNil(message.problem)
+    }
+
+    func testSymlinkedEnvelopeIsNotFollowed() throws {
+        let target = root.appendingPathComponent("elsewhere.msg")
+        try JSONSerialization.data(withJSONObject: ["version": 1, "id": "x", "from": "a", "ts": "t", "body": "secret"]).write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: inbox.appendingPathComponent("\(ulid(Date())).msg"),
+            withDestinationURL: target
+        )
+        let message = try XCTUnwrap(MailboxPanelMail.listing(inbox: inbox).messages.first)
+        XCTAssertNotNil(message.problem)
+        XCTAssertEqual(message.body, "")
     }
 
     func testUnparseableEnvelopeCarriesAProblem() throws {
@@ -162,6 +211,9 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
         // Opening a FIFO with no writer would block; it must be refused first.
         XCTAssertEqual(MailboxPanelMail.referencedContent(path: fifo.path).content, .notRegularFile)
+        let link = root.appendingPathComponent("pipe-link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fifo)
+        XCTAssertEqual(MailboxPanelMail.referencedContent(path: link.path).content, .notRegularFile)
     }
 
     func testBodyRefBinaryIsNotText() throws {

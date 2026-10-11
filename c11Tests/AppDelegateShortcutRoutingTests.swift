@@ -3556,6 +3556,76 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertNil(runtime.active)
     }
 
+    /// Return, Space and Tab typed into another window must not accept or
+    /// move the visible workspace card. The New Workspace picker is such a window.
+    func testReturnInAnotherWindowDoesNotAcceptTheWorkspaceCard() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+        guard let window = window(withId: windowId),
+              let manager = appDelegate.workspaceManagerFor(windowId: windowId),
+              let workspace = manager.selectedWorkspace else {
+            XCTFail("Expected the new window's workspace")
+            return
+        }
+        appDelegate.synchronizeActiveMainWindowContext(preferredWindow: window)
+        let runtime = workspace.workspaceCloseInteractionRuntime
+        var result: ConfirmResult?
+        runtime.present(content: ConfirmContent(
+            title: "Close workspace?",
+            message: nil,
+            confirmLabel: "Close",
+            cancelLabel: "Cancel",
+            role: .destructive,
+            defaultSelection: .confirm,
+            source: .local,
+            completion: { result = $0 }
+        ))
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+        runtime.noteConfirmVisible(true)
+        XCTAssertTrue(runtime.isConfirmCardVisible)
+
+        let other = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 240),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        other.isReleasedWhenClosed = false
+        other.level = .modalPanel
+        defer { other.orderOut(nil) }
+        other.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+
+        for (code, key) in [(UInt16(36), "\r"), (UInt16(49), " "), (UInt16(48), "\t")] {
+            guard let event = makeKeyEvent(
+                type: .keyDown,
+                key: key,
+                modifiers: [],
+                keyCode: code,
+                windowNumber: other.windowNumber
+            ) else {
+                XCTFail("key \(code)")
+                return
+            }
+#if DEBUG
+            XCTAssertFalse(
+                appDelegate.debugHandleShortcutMonitorEvent(event: event),
+                "key \(code) in another window must not be consumed by the card"
+            )
+#else
+            XCTFail("debugHandleShortcutMonitorEvent is only available in DEBUG")
+            return
+#endif
+        }
+        XCTAssertNil(result, "Return in another window must not resolve the card")
+        XCTAssertNotNil(runtime.active)
+        runtime.cancel()
+    }
+
     private func window(withId windowId: UUID) -> NSWindow? {
         let identifier = "cmux.main.\(windowId.uuidString)"
         return NSApp.windows.first(where: { $0.identifier?.rawValue == identifier })

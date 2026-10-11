@@ -11637,8 +11637,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return true
             }
             // The overlay host asks for first responder and Ghostty refuses.
-            // Deliver Return only after the card has reported itself on screen.
+            // Deliver Return only after the card has reported itself on screen,
+            // and only when the key was typed into a main terminal window.
+            // The monitor sees every window; a Return in the New Workspace
+            // picker must not confirm the card.
             if !hasAppShortcutModifier,
+               let eventWindow = event.window ?? NSApp.window(withWindowNumber: event.windowNumber),
+               isMainTerminalWindow(eventWindow),
                shortcutWorkspaceManager?.handleVisibleWorkspaceCloseKeyInKeyWorkspace(event) == true {
                 return true
             }

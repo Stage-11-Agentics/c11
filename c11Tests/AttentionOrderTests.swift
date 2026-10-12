@@ -150,12 +150,12 @@ final class PanelLineageStoreTests: XCTestCase {
         let secondRoot = UUID(uuidString: "00000000-0000-0000-0000-000000000012")!
         let child = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
         var store = PanelLineageStore()
-        _ = store.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "A", type: "terminal", agentType: nil, delegated: false)
-        _ = store.insert(panelId: secondRoot, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "B", type: "terminal", agentType: nil, delegated: false)
-        _ = store.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "A", type: "terminal", agentType: nil)
+        _ = store.insert(panelId: secondRoot, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "B", type: "terminal", agentType: nil)
+        _ = store.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: nil)
 
-        _ = store.insert(panelId: child, creatorPanelId: secondRoot, workspaceId: workspaceId, workspaceTitle: "Moved", title: "Child", type: "terminal", agentType: nil, delegated: false)
-        _ = store.insert(panelId: root, creatorPanelId: child, workspaceId: workspaceId, workspaceTitle: "Moved", title: "A", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: child, creatorPanelId: secondRoot, workspaceId: workspaceId, workspaceTitle: "Moved", title: "Child", type: "terminal", agentType: nil)
+        _ = store.insert(panelId: root, creatorPanelId: child, workspaceId: workspaceId, workspaceTitle: "Moved", title: "A", type: "terminal", agentType: nil)
 
         XCTAssertEqual(try XCTUnwrap(store.node(panelId: child)).parentPanelId, root)
         XCTAssertEqual(store.node(panelId: child)?.workspaceTitle, "Moved")
@@ -174,8 +174,7 @@ final class PanelLineageStoreTests: XCTestCase {
             workspaceTitle: "Work",
             title: "Panel",
             type: "terminal",
-            agentType: nil,
-            delegated: false
+            agentType: nil
         )
 
         XCTAssertNil(parentId)

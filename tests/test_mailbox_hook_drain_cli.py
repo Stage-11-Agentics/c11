@@ -25,6 +25,11 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      that reads one line and stops, or reads nothing, with 70 inboxes, in the
      Codex format and through `claude-hook stop`, it exits at once with its
      output intact and its receipts written.
+ 10. C11-401: a Stop whose inbox scan outlasts the hook's socket window (a
+     panel's first Stop, or a stale scan cache, over many workspace
+     directories) still reports the turn end to c11 live, never only to the
+     journal spool, and still exits promptly against a c11 that never
+     answers. A Stop that delivers mail sends no lifecycle report.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -183,6 +188,54 @@ class Fixture:
 
     def cleanup(self) -> None:
         shutil.rmtree(self.home, ignore_errors=True)
+
+
+# claude-hook's socket window (`CMUXCLI.claudeHookSocketWindowSeconds`).
+SOCKET_WINDOW_MS = 250
+
+
+def remove_scan_cache(fx: Fixture) -> None:
+    """A panel's first Stop, or one after the 5-minute scan cache went stale."""
+    path = os.path.join(fx.home, "Library", "Application Support", "c11", "mailbox-tab-scan", TAB.lower())
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def spooled_journal_drafts(fx: Fixture) -> list[str]:
+    """Drafts the CLI could not hand to c11. The app reads these only at its
+    next launch, and only as history, so a spooled Stop is a lost idle edge."""
+    return glob.glob(os.path.join(fx.home, "Library", "Application Support", "c11", "journal", "*", "spool", "*.ready"))
+
+
+def grow_workspaces(cli: str, fx: Fixture, sock_path: str, stop_input: str,
+                    target_ms: float, limit: int = 320_000) -> tuple[int, float, float]:
+    """Adds empty workspace directories until the inbox scan alone costs
+    `target_ms`. `mailbox recv --hook-format` runs the same scan and makes no
+    socket call for an empty inbox; its time over an empty root is the process
+    overhead. Returns (directories, overhead ms, scan ms)."""
+    root = os.path.dirname(os.path.dirname(fx.mailboxes))
+    os.makedirs(root, exist_ok=True)
+
+    def timed() -> float:
+        best = float("inf")
+        for _ in range(3):
+            remove_scan_cache(fx)
+            _, ms = run(cli, ["--socket", sock_path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "claude"],
+                        fx.env(sock_path), stop_input)
+            best = min(best, ms)
+        return best
+
+    base = timed()
+    count, step, cost = 0, 20_000, 0.0
+    while count < limit:
+        for i in range(count, count + step):
+            os.mkdir(os.path.join(root, f"{i:08X}-0000-4000-8000-000000000000"))
+        count += step
+        cost = timed() - base
+        if cost >= target_ms:
+            break
+        step = min(count, limit - count)
+    return count, base, cost
 
 
 FAILURES: list[str] = []
@@ -393,6 +446,48 @@ def main() -> int:
     proc, _ = run(cli, ["--socket", fast.path, "mailbox", "recv", "--drain", "--hook-format", "codex", "--event", "prompt-submit"],
                   fx.env(fast.path), "")
     check(proc.stdout == b"", "recv --hook-format codex --event prompt-submit: nothing (Codex has no prompt-submit hook either)")
+    fast.close()
+    fx.cleanup()
+
+    # 10. C11-401: a Stop whose inbox scan outlasts the hook's socket window.
+    #     The fixture grows the workspaces root until the scan alone costs
+    #     twice the window on this machine, then forces the scan by removing
+    #     the scan cache before every Stop.
+    fx = Fixture()
+    stalled = FakeC11(os.path.join(tmp, "scan-stall.sock"), stall=True)
+    fast = FakeC11(os.path.join(tmp, "scan-fast.sock"), stall=False)
+    count, base, cost = grow_workspaces(cli, fx, stalled.path, stop_input, target_ms=2 * SOCKET_WINDOW_MS)
+    check(cost >= 2 * SOCKET_WINDOW_MS,
+          f"slow-scan fixture: {count} workspace directories, scan {cost:.0f} ms")
+    claude_stop = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"})
+
+    def stop_reports(sock: FakeC11) -> list[dict]:
+        return [r for r in sock.requests if r.get("method") == "agent.event.append"
+                and ((r.get("params") or {}).get("event") or {}).get("native_event") == "Stop"]
+
+    remove_scan_cache(fx)
+    proc, ms = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path), claude_stop)
+    check(len(stop_reports(fast)) == 1, f"slow-scan Stop: the turn end reaches c11 live ({ms:.0f} ms)",
+          f"{len(stop_reports(fast))} Stop reports, requests {[r.get('method') or r.get('v1') for r in fast.requests]}")
+    check(spooled_journal_drafts(fx) == [], "slow-scan Stop: nothing left in the journal spool",
+          str(spooled_journal_drafts(fx)))
+    check(proc.returncode == 0 and "OK" in proc.stdout.decode().split(), "slow-scan Stop: exit 0 and OK",
+          f"exit {proc.returncode} {proc.stdout[:120]!r} {proc.stderr[:200]!r}")
+
+    remove_scan_cache(fx)
+    proc, ms = run(cli, ["--socket", stalled.path, "claude-hook", "stop"], fx.env(stalled.path), claude_stop)
+    check(ms < base + cost + 1000,
+          f"slow-scan Stop, c11 never answers: exits in {ms:.0f} ms (scan {cost:.0f} ms, process {base:.0f} ms)")
+
+    fast.requests.clear()
+    ulid = fx.deliver(TAB.lower())
+    remove_scan_cache(fx)
+    proc, _ = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path), claude_stop)
+    out = proc.stdout.decode()
+    check('"decision":"block"' in out and ulid in out and stop_reports(fast) == [],
+          "slow-scan Stop with mail: delivers it and sends no lifecycle report (the agent takes another turn)",
+          f"{out[:120]} {len(stop_reports(fast))} Stop reports")
+    stalled.close()
     fast.close()
     fx.cleanup()
     shutil.rmtree(tmp, ignore_errors=True)

@@ -11,8 +11,6 @@ struct PanelLineageNode: Codable, Equatable, Identifiable, Sendable {
     var panelType: String
     var agentType: String?
     var closedAt: Date?
-    var delegated: Bool
-    var delegatedBy: UUID?
 
     var isClosed: Bool { closedAt != nil }
 
@@ -25,8 +23,6 @@ struct PanelLineageNode: Codable, Equatable, Identifiable, Sendable {
         case panelType = "panel_type"
         case agentType = "agent_type"
         case closedAt = "closed_at"
-        case delegated
-        case delegatedBy = "delegated_by"
     }
 }
 
@@ -46,9 +42,7 @@ struct PanelLineageStore: Equatable, Sendable {
         workspaceTitle: String,
         title: String,
         type: String,
-        agentType: String?,
-        delegated: Bool,
-        delegatedBy: UUID? = nil
+        agentType: String?
     ) -> UUID? {
         let existing = nodes[panelId]
         let candidateParentId = existing?.parentPanelId ?? creatorPanelId
@@ -61,9 +55,7 @@ struct PanelLineageStore: Equatable, Sendable {
             lastTitle: title,
             panelType: type,
             agentType: agentType,
-            closedAt: nil,
-            delegated: delegated,
-            delegatedBy: existing?.delegatedBy ?? delegatedBy
+            closedAt: nil
         )
         return nodes[panelId]?.parentPanelId
     }
@@ -74,9 +66,7 @@ struct PanelLineageStore: Equatable, Sendable {
         workspaceTitle: String,
         title: String,
         type: String,
-        agentType: String?,
-        delegated: Bool,
-        delegatedBy: UUID? = nil
+        agentType: String?
     ) {
         guard var node = nodes[panelId], !node.isClosed else { return }
         node.workspaceId = workspaceId
@@ -84,21 +74,12 @@ struct PanelLineageStore: Equatable, Sendable {
         node.lastTitle = title
         node.panelType = type
         node.agentType = agentType
-        node.delegated = delegated
-        node.delegatedBy = delegatedBy ?? node.delegatedBy
         nodes[panelId] = node
     }
 
     mutating func updateTitle(panelId: UUID, title: String) {
         guard var node = nodes[panelId], !node.isClosed else { return }
         node.lastTitle = title
-        nodes[panelId] = node
-    }
-
-    mutating func updateDelegation(panelId: UUID, delegated: Bool, delegatedBy: UUID?) {
-        guard var node = nodes[panelId], !node.isClosed else { return }
-        node.delegated = delegated
-        node.delegatedBy = delegatedBy
         nodes[panelId] = node
     }
 

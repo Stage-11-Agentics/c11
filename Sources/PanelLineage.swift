@@ -28,10 +28,6 @@ final class PanelLineage {
             workspaceId: workspace.id,
             surfaceId: panel.id
         ).metadata
-        let attention = PanelMetadataStore.shared.attentionSnapshot(
-            workspaceId: workspace.id,
-            surfaceId: panel.id
-        )
         closedPanelIds.remove(panel.id)
         return store.insert(
             panelId: panel.id,
@@ -40,8 +36,7 @@ final class PanelLineage {
             workspaceTitle: workspace.title,
             title: workspace.panelTitle(panelId: panel.id) ?? panel.displayTitle,
             type: panel.panelType.rawValue,
-            agentType: metadata[MetadataKey.terminalType] as? String,
-            delegated: attention.suppressed
+            agentType: metadata[MetadataKey.terminalType] as? String
         )
     }
 
@@ -105,18 +100,13 @@ final class PanelLineage {
             workspaceId: located.workspace.id,
             surfaceId: panelId
         ).metadata
-        let attention = PanelMetadataStore.shared.attentionSnapshot(
-            workspaceId: located.workspace.id,
-            surfaceId: panelId
-        )
         store.updateLiveState(
             panelId: panelId,
             workspaceId: located.workspace.id,
             workspaceTitle: located.workspace.title,
             title: located.workspace.panelTitle(panelId: panelId) ?? panel.displayTitle,
             type: panel.panelType.rawValue,
-            agentType: metadata[MetadataKey.terminalType] as? String,
-            delegated: attention.suppressed
+            agentType: metadata[MetadataKey.terminalType] as? String
         )
     }
 }

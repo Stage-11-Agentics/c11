@@ -192,8 +192,12 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
     func testDelegateRelationshipIsVisibleAlongsidePanelLocator() {
         var input = inputs(directory: "/repo")
         input.relationshipLabel = "Delegate of Planner"
+        input.lineageNote = "Child of Intake"
 
-        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "Delegate of Planner · /repo")
+        XCTAssertEqual(
+            PanelSheetDetailBuilder.build(input).subtitle,
+            "Delegate of Planner · Child of Intake · /repo"
+        )
     }
 
     // MARK: Title

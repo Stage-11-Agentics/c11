@@ -270,7 +270,11 @@ extension TerminalController {
             }
             let iso = ISO8601DateFormatter()
             let nodes: [[String: Any]] = family.nodes.map { node in
-                [
+                let attention = PanelMetadataStore.shared.attentionSnapshot(
+                    workspaceId: node.workspaceId,
+                    surfaceId: node.id
+                )
+                return [
                     "id": node.id.uuidString,
                     "ref": v2Ref(kind: .surface, uuid: node.id),
                     "parent_panel_id": v2OrNull(node.parentPanelId?.uuidString),
@@ -279,8 +283,8 @@ extension TerminalController {
                     "type": node.panelType,
                     "state": node.isClosed ? "closed" : "live",
                     "agent_type": v2OrNull(node.agentType),
-                    "delegated": node.delegated,
-                    "delegated_by": v2OrNull(node.delegatedBy?.uuidString),
+                    "delegated": attention.delegated,
+                    "delegated_by": v2OrNull(attention.delegatedBy?.uuidString),
                     "closed_at": v2OrNull(node.closedAt.map { iso.string(from: $0) }),
                     "workspace_id": node.workspaceId.uuidString,
                     "workspace_ref": v2Ref(kind: .workspace, uuid: node.workspaceId),

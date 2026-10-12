@@ -152,11 +152,11 @@ final class PanelLineageStoreTests: XCTestCase {
         let sibling = UUID(uuidString: "00000000-0000-0000-0000-000000000040")!
         let grandchild = UUID(uuidString: "00000000-0000-0000-0000-000000000050")!
         var store = PanelLineageStore()
-        _ = store.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "A", type: "terminal", agentType: nil, delegated: false)
-        _ = store.insert(panelId: parent, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "B", type: "terminal", agentType: nil, delegated: false)
-        _ = store.insert(panelId: child, creatorPanelId: parent, workspaceId: workspaceId, workspaceTitle: "Work", title: "C", type: "terminal", agentType: "codex", delegated: false)
-        _ = store.insert(panelId: sibling, creatorPanelId: parent, workspaceId: workspaceId, workspaceTitle: "Work", title: "C2", type: "terminal", agentType: nil, delegated: false)
-        _ = store.insert(panelId: grandchild, creatorPanelId: child, workspaceId: workspaceId, workspaceTitle: "Work", title: "D", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "A", type: "terminal", agentType: nil)
+        _ = store.insert(panelId: parent, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "B", type: "terminal", agentType: nil)
+        _ = store.insert(panelId: child, creatorPanelId: parent, workspaceId: workspaceId, workspaceTitle: "Work", title: "C", type: "terminal", agentType: "codex")
+        _ = store.insert(panelId: sibling, creatorPanelId: parent, workspaceId: workspaceId, workspaceTitle: "Work", title: "C2", type: "terminal", agentType: nil)
+        _ = store.insert(panelId: grandchild, creatorPanelId: child, workspaceId: workspaceId, workspaceTitle: "Work", title: "D", type: "terminal", agentType: nil)
 
         store.close(panelId: root, at: Date(timeIntervalSince1970: 10))
         store.close(panelId: parent, at: Date(timeIntervalSince1970: 20))
@@ -183,34 +183,13 @@ final class PanelLineageStoreTests: XCTestCase {
         let orphan = UUID(uuidString: "00000000-0000-0000-0000-000000000060")!
         let orphanChild = UUID(uuidString: "00000000-0000-0000-0000-000000000070")!
         var original = PanelLineageStore()
-        _ = original.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "Root", type: "terminal", agentType: nil, delegated: false)
-        _ = original.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: "claude", delegated: true)
-        _ = original.insert(panelId: orphan, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan", type: "terminal", agentType: nil, delegated: false)
-        _ = original.insert(panelId: orphanChild, creatorPanelId: orphan, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan child", type: "terminal", agentType: nil, delegated: false)
-        let appNodes = original.snapshot().map { node in
-            c11.PanelLineageNode(
-                id: node.id,
-                parentPanelId: node.parentPanelId,
-                workspaceId: node.workspaceId,
-                workspaceTitle: node.workspaceTitle,
-                lastTitle: node.lastTitle,
-                panelType: node.panelType,
-                agentType: node.agentType,
-                closedAt: node.closedAt,
-                delegated: node.delegated,
-                delegatedBy: node.delegatedBy
-            )
-        }
-        let snapshot = c11.AppSessionSnapshot(
-            version: SessionSnapshotSchema.currentVersion,
-            createdAt: 1,
-            windows: [],
-            panelLineageNodes: appNodes
-        )
-        let data = try JSONEncoder().encode(snapshot)
-        let restoredSnapshot = try JSONDecoder().decode(c11.AppSessionSnapshot.self, from: data)
-        let restoredNodes = try XCTUnwrap(restoredSnapshot.panelLineageNodes)
-        var restored = c11.PanelLineageStore(nodes: restoredNodes)
+        _ = original.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "Root", type: "terminal", agentType: nil)
+        _ = original.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: "claude")
+        _ = original.insert(panelId: orphan, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan", type: "terminal", agentType: nil)
+        _ = original.insert(panelId: orphanChild, creatorPanelId: orphan, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan child", type: "terminal", agentType: nil)
+        let data = try JSONEncoder().encode(original.snapshot())
+        let restoredNodes = try JSONDecoder().decode([PanelLineageNode].self, from: data)
+        var restored = PanelLineageStore(nodes: restoredNodes)
 
         restored.finishRestore(livePanelIds: [child], at: Date(timeIntervalSince1970: 40))
 
@@ -218,8 +197,14 @@ final class PanelLineageStoreTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(restored.node(panelId: root)).isClosed)
         XCTAssertEqual(restored.node(panelId: child)?.parentPanelId, root)
         XCTAssertEqual(restored.node(panelId: child)?.agentType, "claude")
-        XCTAssertEqual(restored.node(panelId: child)?.delegated, true)
         XCTAssertNil(restored.node(panelId: orphan))
         XCTAssertNil(restored.node(panelId: orphanChild))
+
+        let childLineage = try XCTUnwrap(restored.node(panelId: child))
+        let encodedLineage = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(childLineage)) as? [String: Any]
+        )
+        XCTAssertNil(encodedLineage[MetadataKey.delegated])
+        XCTAssertNil(encodedLineage[MetadataKey.delegatedBy])
     }
 }

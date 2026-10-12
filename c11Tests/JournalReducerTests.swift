@@ -417,6 +417,30 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertEqual(drained.snapshot?.phase, .working)
     }
 
+    /// The order a real restart produces: the quit kills Claude, its
+    /// SessionEnd hook finds no socket and spools, and the relaunched c11
+    /// drains that spool before the resumed session's SessionStart. The drain
+    /// restamps the row with this process's instance, but as history. The
+    /// start must still re-attach (seen live on Atlas, C11-398).
+    func testResumeAfterADrainedSessionEndReattaches() throws {
+        let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
+        var earlier = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnCompleted), seq: 2).snapshot)
+        earlier.appInstanceID = UUID() // written live by the c11 that quit
+        XCTAssertGreaterThan(earlier.lastLiveSequence, 0)
+
+        var end = JournalTestData.draft(.sessionEnded)
+        end.nativeEvent = "SessionEnd"
+        let drained = JournalTestData.fold(earlier, end, seq: 3, context: JournalContext(eligible: true, historical: true))
+        let restamped = try XCTUnwrap(drained.snapshot)
+        XCTAssertEqual(restamped.appInstanceID, JournalTestData.instance)
+        XCTAssertEqual(restamped.connection, .disconnected)
+
+        let resumed = JournalTestData.fold(restamped, sessionStart(), seq: 4)
+        XCTAssertEqual(resumed.reason, "session_reattached")
+        XCTAssertEqual(resumed.snapshot?.phase, .unknown)
+        XCTAssertEqual(resumed.snapshot?.connection, .live)
+    }
+
     /// A session this process saw end keeps its ended label when it starts
     /// again here (`JournalStoreTests` holds the restore side). Only a row
     /// from an earlier c11 process re-attaches.

@@ -60,13 +60,40 @@ final class PanelLineage {
             refreshLiveNode(panelId)
             guard store.node(panelId: panelId)?.isClosed != true,
                   closedPanelIds.insert(panelId).inserted else { continue }
-            store.close(panelId: panelId)
             newlyClosed.insert(panelId)
         }
         guard !newlyClosed.isEmpty else { return }
+        store.close(panelIds: newlyClosed)
 
         for observer in panelClosedForGoodObservers {
             observer(newlyClosed)
+        }
+    }
+
+    /// Refreshes final panel identity from a workspace that is already known
+    /// to the close path. Call before removing panels/caches or unregistering
+    /// the owning window, when global workspace lookup may no longer find it.
+    func captureFinalIdentity(_ panelIds: Set<UUID>, in workspace: Workspace) {
+        for panelId in panelIds {
+            guard let existing = store.node(panelId: panelId), !existing.isClosed,
+                  let panel = workspace.panels[panelId] else { continue }
+            let metadata = PanelMetadataStore.shared.getMetadata(
+                workspaceId: workspace.id,
+                surfaceId: panelId
+            ).metadata
+            let attention = PanelMetadataStore.shared.attentionSnapshot(
+                workspaceId: workspace.id,
+                surfaceId: panelId
+            )
+            store.updateLiveState(
+                panelId: panelId,
+                workspaceId: workspace.id,
+                workspaceTitle: workspace.title,
+                title: workspace.panelTitle(panelId: panelId) ?? panel.displayTitle,
+                type: panel.panelType.rawValue,
+                agentType: metadata[MetadataKey.terminalType] as? String,
+                delegated: attention.suppressed
+            )
         }
     }
 
@@ -99,24 +126,7 @@ final class PanelLineage {
               let located = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: panelId,
                 preferredWorkspaceId: existing.workspaceId
-              ),
-              let panel = located.workspace.panels[panelId] else { return }
-        let metadata = PanelMetadataStore.shared.getMetadata(
-            workspaceId: located.workspace.id,
-            surfaceId: panelId
-        ).metadata
-        let attention = PanelMetadataStore.shared.attentionSnapshot(
-            workspaceId: located.workspace.id,
-            surfaceId: panelId
-        )
-        store.updateLiveState(
-            panelId: panelId,
-            workspaceId: located.workspace.id,
-            workspaceTitle: located.workspace.title,
-            title: located.workspace.panelTitle(panelId: panelId) ?? panel.displayTitle,
-            type: panel.panelType.rawValue,
-            agentType: metadata[MetadataKey.terminalType] as? String,
-            delegated: attention.suppressed
-        )
+              ) else { return }
+        captureFinalIdentity([panelId], in: located.workspace)
     }
 }

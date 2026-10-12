@@ -145,6 +145,43 @@ final class PanelCloseForGoodPolicyTests: XCTestCase {
 final class PanelLineageStoreTests: XCTestCase {
     private let workspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
+    func testReinsertingMovedPanelKeepsItsOriginalParent() throws {
+        let root = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        let secondRoot = UUID(uuidString: "00000000-0000-0000-0000-000000000012")!
+        let child = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
+        var store = PanelLineageStore()
+        _ = store.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "A", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: secondRoot, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "B", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: nil, delegated: false)
+
+        _ = store.insert(panelId: child, creatorPanelId: secondRoot, workspaceId: workspaceId, workspaceTitle: "Moved", title: "Child", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: root, creatorPanelId: child, workspaceId: workspaceId, workspaceTitle: "Moved", title: "A", type: "terminal", agentType: nil, delegated: false)
+
+        XCTAssertEqual(try XCTUnwrap(store.node(panelId: child)).parentPanelId, root)
+        XCTAssertEqual(store.node(panelId: child)?.workspaceTitle, "Moved")
+        XCTAssertNil(store.node(panelId: root)?.parentPanelId)
+    }
+
+    func testUnknownCreatorLeavesPanelAsRoot() {
+        let missingCreator = UUID(uuidString: "00000000-0000-0000-0000-000000000014")!
+        let panel = UUID(uuidString: "00000000-0000-0000-0000-000000000015")!
+        var store = PanelLineageStore()
+
+        let parentId = store.insert(
+            panelId: panel,
+            creatorPanelId: missingCreator,
+            workspaceId: workspaceId,
+            workspaceTitle: "Work",
+            title: "Panel",
+            type: "terminal",
+            agentType: nil,
+            delegated: false
+        )
+
+        XCTAssertNil(parentId)
+        XCTAssertNil(store.node(panelId: panel)?.parentPanelId)
+    }
+
     func testFamilyRetainsClosedAncestorsUntilLastLiveDescendantCloses() throws {
         let root = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
         let parent = UUID(uuidString: "00000000-0000-0000-0000-000000000020")!

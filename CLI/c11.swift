@@ -15051,8 +15051,16 @@ struct CMUXCLI {
     }
 
     private func addCallingPanel(to params: inout [String: Any]) throws {
-        if let panelId = try resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
-            params["caller_panel_id"] = panelId
+        do {
+            if let panelId = try resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+                params["caller_panel_id"] = panelId
+            }
+        } catch let error as CLIError
+            where error.message.hasPrefix("surface_env_mismatch:") || error.message.hasPrefix("invalid_surface:") {
+            // A stale or conflicting caller environment must not prevent a
+            // panel-creation command that worked outside c11 from succeeding.
+            // Without one unambiguous UUID, create the panel as a root.
+            return
         }
     }
 
@@ -16220,7 +16228,10 @@ struct CMUXCLI {
                 parentId = byId[parent]?["parent_panel_id"] as? String
             }
             let marker = depth == 0 ? "" : String(repeating: "  ", count: depth - 1) + "└── "
-            let ref = formatHandle(node, kind: "panel", idFormat: idFormat) ?? id
+            let ref = formatPanelHandle(
+                ["panel_id": id, "panel_ref": node["ref"] as? String ?? ""],
+                idFormat: idFormat
+            ) ?? id
             let type = node["type"] as? String ?? "panel"
             let title = (node["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let state = node["state"] as? String ?? "unknown"

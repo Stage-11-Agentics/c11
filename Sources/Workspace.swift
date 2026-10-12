@@ -13330,6 +13330,7 @@ extension Workspace: BonsplitDelegate {
             let lineageClosedPanelIds = isDetachingCloseTransaction
                 ? Set<UUID>()
                 : Set(closedPanelIds.filter { panels[$0] != nil })
+            PanelLineage.shared.captureFinalIdentity(lineageClosedPanelIds, in: self)
             for panelId in closedPanelIds {
                 // Dismiss any pending pane interactions on this panel before
                 // tearing it down so withCheckedContinuation callers resume

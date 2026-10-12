@@ -4144,7 +4144,8 @@ class TerminalController {
             cells.append(PromptRegionCell(
                 textOffset: Int(cell.text_offset),
                 textLength: Int(cell.text_len),
-                faint: cell.faint
+                faint: cell.faint,
+                italic: cell.italic
             ))
         }
         let copiedText = nativeText.withUnsafeBufferPointer { textBuffer in

@@ -54,6 +54,9 @@ struct PromptRegionCell: Equatable, Sendable {
     let textOffset: Int
     let textLength: Int
     let faint: Bool
+    /// SGR 3. Grok draws its next-prompt suggestion italic, not faint. A
+    /// capture without it reads as plain, so the suggestion stays a draft.
+    var italic: Bool = false
 }
 
 struct PromptRegionRow: Equatable, Sendable {
@@ -81,6 +84,7 @@ enum PromptInputClassifier {
     private struct StyledScalar {
         let value: Unicode.Scalar
         let faint: Bool
+        var italic: Bool = false
     }
 
     private struct Line {
@@ -176,7 +180,8 @@ enum PromptInputClassifier {
                 cursorIndex: cursorIndex,
                 cursorX: region.cursorX,
                 cursorY: region.cursorY,
-                boxed: true
+                boxed: true,
+                italicSuggestion: true
             )
         case .prefix:
             return prefixComposer(
@@ -209,12 +214,24 @@ enum PromptInputClassifier {
     /// Claude Code and Codex share the unboxed `❯` / `›` reader, including
     /// Claude's chooser. Grok's reader is only the boxed `│ ❯` composer.
     /// Neither falls through to another harness's shape.
+    ///
+    /// `italicSuggestion` is Grok's next-prompt ghost text: SGR 3 italic in a
+    /// grey, never SGR 2, with the cursor parked on its first cell. Grok
+    /// draws typed text, pastes, slash completions and mentions upright
+    /// (Grok 1.0.50, Grok 4.7). Italic reads as a suggestion only when every
+    /// visible character in the composer is italic, the first content cell is
+    /// an italic glyph, and the cursor sits on it; anything else is typed
+    /// text, so a draft is never typed into. The one shape these cells cannot
+    /// separate is an all-italic typed draft with the cursor moved home; the
+    /// rule rests on Grok never drawing typed text italic, and the captured
+    /// fixtures in `GrokPromptSuggestionTests` pin that.
     private static func prefixComposer(
         _ lines: [Line],
         cursorIndex: Int,
         cursorX: Int,
         cursorY: Int,
-        boxed: Bool
+        boxed: Bool,
+        italicSuggestion: Bool = false
     ) -> Analysis {
         if !boxed {
             if isSupportedDialog(lines, cursorY: cursorY) {
@@ -241,6 +258,8 @@ enum PromptInputClassifier {
         var typedScalars: [Unicode.Scalar] = []
         var hasTypedText = false
         var hasFaintSuggestion = false
+        var hasUprightText = false
+        var firstContentIsItalic = false
         var previousIndex = promptIndex
         var stoppedAtRule = false
 
@@ -287,13 +306,19 @@ enum PromptInputClassifier {
             // so a hard row's trailing whitespace is dropped (a soft-wrapped row's
             // trailing space is real content).
             var rowScalars: [Unicode.Scalar] = []
-            for item in content {
+            for (offset, item) in content.enumerated() {
+                if index == promptIndex, offset == 0 {
+                    firstContentIsItalic = item.italic && !item.faint && !isWhitespace(item.value)
+                }
                 guard !item.faint else {
                     if !isWhitespace(item.value) { hasFaintSuggestion = true }
                     continue
                 }
                 rowScalars.append(item.value)
-                if !isWhitespace(item.value) { hasTypedText = true }
+                if !isWhitespace(item.value) {
+                    hasTypedText = true
+                    if !item.italic { hasUprightText = true }
+                }
             }
             if !line.softWrap {
                 while let last = rowScalars.last, isWhitespace(last) { rowScalars.removeLast() }
@@ -314,6 +339,19 @@ enum PromptInputClassifier {
                     state: hasFaintSuggestion ? .suggestion : .empty,
                     draftLength: nil
                 ),
+                composerText: ""
+            )
+        }
+
+        // `prefix.endIndex` is a scalar index, and here also the cell column:
+        // every cell of Grok's `│ ❯ ` prefix is one narrow, single-scalar cell.
+        if italicSuggestion,
+           !hasUprightText,
+           firstContentIsItalic,
+           cursorY == lines[promptIndex].y,
+           cursorX == prefix.endIndex {
+            return Analysis(
+                classification: PromptInputClassification(state: .suggestion, draftLength: nil),
                 composerText: ""
             )
         }
@@ -342,7 +380,7 @@ enum PromptInputClassifier {
                 let end = start + cell.textLength
                 let text = String(decoding: bytes[start..<end], as: UTF8.self)
                 for scalar in text.unicodeScalars {
-                    scalars.append(StyledScalar(value: scalar, faint: cell.faint))
+                    scalars.append(StyledScalar(value: scalar, faint: cell.faint, italic: cell.italic))
                 }
             }
             result.append(Line(

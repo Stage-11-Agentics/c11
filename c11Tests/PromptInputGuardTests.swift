@@ -1232,3 +1232,388 @@ extension PromptInputClassifierTests {
         ], cursorY: 1)
     }
 }
+
+// MARK: - C11-406 Grok's italic next-prompt suggestion
+
+/// Real Grok 1.0.50 (Grok 4.7, 100x30) screens, replayed from the raw pty
+/// bytes. Grok draws its suggestion `ESC[3m ESC[38;2;88;88;88m`: italic grey,
+/// never SGR 2. Each fixture is the native capture window (9 rows above the
+/// cursor, 6 below) with each cell's faint and italic bits.
+final class GrokPromptSuggestionTests: XCTestCase {
+    func testCapturedGrokSuggestionIsASuggestion() {
+        for capture in [GrokCaptures.suggestion, GrokCaptures.suggestionAfterClear,
+                        GrokCaptures.narrowTruncatedSuggestion] {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok"),
+                           .init(state: .suggestion, draftLength: nil))
+            XCTAssertNil(PromptInputClassifier.composerText(region, harness: "grok"))
+        }
+    }
+
+    func testCapturedGrokSuggestionRingsAndAdmitsSend() {
+        let state = PromptInputClassifier.classify(GrokCaptures.suggestion.region(), harness: "grok").state
+        XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .ring)
+        XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .deliver(.checked))
+    }
+
+    /// Fail closed: a capture with no italic bit is the pre-fix read.
+    func testSuggestionWithoutTheItalicSignalIsADraft() {
+        let region = GrokCaptures.suggestion.region(dropItalic: true)
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+        XCTAssertEqual(SendInputGuard.decide(state: .draft, allowUnguarded: false), .refuse(reason: "draft"))
+    }
+
+    func testCapturedGrokTypedTextStaysADraft() {
+        let cases: [(GrokCapture, String)] = [
+            (GrokCaptures.typedOverSuggestion, "x"),
+            (GrokCaptures.typedDraft, "Reply with the one word ALPHA and stop."),
+            (GrokCaptures.pastePlaceholder, "[Pasted: 6 lines]"),
+            (GrokCaptures.slashCompletion, "/model"),
+            (GrokCaptures.doorbellPasted, MailboxDoorbell.text),
+        ]
+        for (capture, text) in cases {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft, text)
+            XCTAssertEqual(PromptInputClassifier.composerText(region, harness: "grok"), text)
+        }
+    }
+
+    func testDoorbellPastedOverTheSuggestionMatchesBeforeReturn() {
+        let region = GrokCaptures.doorbellPasted.region()
+        let compared = FeedAnswerComposerCheck.compare(
+            state: PromptInputClassifier.classify(region, harness: "grok").state,
+            composer: PromptInputClassifier.composerText(region, harness: "grok"),
+            expected: MailboxDoorbell.text
+        )
+        XCTAssertEqual(compared, .matches)
+    }
+
+    func testCapturedGrokEmptyComposerIsEmpty() {
+        XCTAssertEqual(PromptInputClassifier.classify(GrokCaptures.emptyAfterEscape.region(), harness: "grok").state, .empty)
+    }
+
+    /// An italic draft with the cursor at its end (where typing leaves it).
+    func testItalicTextWithTheCursorPastItsStartIsADraft() {
+        let region = GrokCaptures.suggestion.region(cursorX: 47)
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+    }
+
+    /// The cursor on the first cell, but one upright character (the `o` of
+    /// `one`) in the text.
+    func testItalicTextWithAnyUprightCharacterIsADraft() {
+        let region = GrokCaptures.suggestion.region(uprightAt: (y: 25, x: 21))
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+    }
+
+    /// Upright typed text with the cursor moved home, then italic text.
+    func testUprightFirstCharacterIsADraft() {
+        let region = GrokCaptures.suggestion.region(uprightAt: (y: 25, x: 6))
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+    }
+
+    /// Two italic rows with the cursor at the second row's first cell: the
+    /// cursor is not on the prompt row, so this is not the suggestion shape.
+    func testItalicTextWithTheCursorOffThePromptRowIsADraft() {
+        var rows = GrokCaptures.suggestion.rows.filter { $0.0 <= 25 }
+        rows.append((26, [S("  │ "), S("  and keep going", italic: true), S("   │  ")]))
+        rows.append((27, [S("  ╰──── Grok 4.7 (high) · always-approve ─╯  ")]))
+        let region = GrokCapture(cursorX: 6, cursorY: 26, rows: rows).region()
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+    }
+
+    /// Grok predicts the line a seat sees most: the doorbell line itself.
+    /// Whole or cut short with Grok's italic ellipsis, it is a suggestion, so
+    /// it is neither a draft nor a stranded invitation.
+    func testDoorbellLineAsGroksSuggestionIsASuggestion() {
+        let whole = GrokCapture.suggestionRow(MailboxDoorbell.text)
+        let cut = GrokCapture.suggestionRow(String(MailboxDoorbell.text.prefix(33)) + "…")
+        for capture in [whole, cut] {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .suggestion)
+            XCTAssertNil(PromptInputClassifier.composerText(region, harness: "grok"))
+            XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: .suggestion)), .ring)
+            XCTAssertEqual(PromptInputClassifier.classify(capture.region(dropItalic: true), harness: "grok").state, .draft)
+        }
+    }
+
+    /// An upright space on the cursor cell, then italic text: the cursor is
+    /// not on the suggestion's first glyph.
+    func testUprightSpaceAtTheCursorBeforeItalicTextIsADraft() {
+        let capture = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+            (24, [S("  ╭" + String(repeating: "─", count: 50) + "╮  ")]),
+            (25, [S("  │ ❯  "), S("Reply with the one word CHARLIE and stop.", italic: true), S("    │  ")]),
+            (26, [S("  ╰──── Grok 4.7 (high) · always-approve ─╯  ")]),
+        ])
+        XCTAssertEqual(PromptInputClassifier.classify(capture.region(), harness: "grok").state, .draft)
+    }
+
+    /// Italic is Grok's signal only. Other readers see the Grok capture as
+    /// they did before: never a suggestion.
+    func testGrokSuggestionCaptureOnOtherPanelsIsNotASuggestion() {
+        for harness in ["claude-code", "codex", "opencode", "pi", "omp", nil] as [String?] {
+            XCTAssertNotEqual(PromptInputClassifier.classify(GrokCaptures.suggestion.region(), harness: harness).state,
+                              .suggestion, harness ?? "untyped")
+        }
+    }
+
+    /// Italic is Grok's signal only. Claude's reader still needs faint.
+    func testItalicOnAClaudeComposerIsADraft() {
+        var cells: [PromptRegionCell] = []
+        var bytes = Data()
+        var rows: [PromptRegionRow] = []
+        let lines = [String(repeating: "─", count: 40), "❯\u{00A0}", String(repeating: "─", count: 40)]
+        for (y, text) in lines.enumerated() {
+            let start = cells.count
+            var scalars = Array(text.unicodeScalars).map { ($0, false) }
+            if y == 1 { scalars += "fix the lint errors".unicodeScalars.map { ($0, true) } }
+            for (scalar, italic) in scalars {
+                let encoded = Array(String(scalar).utf8)
+                cells.append(PromptRegionCell(textOffset: bytes.count, textLength: encoded.count, faint: false, italic: italic))
+                bytes.append(contentsOf: encoded)
+            }
+            rows.append(PromptRegionRow(screenY: y, cellRange: start..<cells.count, softWrap: false, wrapContinuation: false))
+        }
+        let region = PromptRegionSnapshot(cursorX: 2, cursorY: 1, cursorPendingWrap: false, complete: true,
+                                          rows: rows, cells: cells, text: bytes)
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "claude-code").state, .draft)
+    }
+}
+
+private struct GrokCapture {
+    let cursorX: Int
+    let cursorY: Int
+    let rows: [(Int, [S])]
+
+    struct S {
+        let text: String
+        var faint = false
+        var italic = false
+        init(_ text: String, faint: Bool = false, italic: Bool = false) {
+            self.text = text
+            self.faint = faint
+            self.italic = italic
+        }
+    }
+
+    /// Grok's composer holding only `text` as its italic suggestion.
+    static func suggestionRow(_ text: String) -> GrokCapture {
+        GrokCapture(cursorX: 6, cursorY: 25, rows: [
+            (24, [S("  ╭" + String(repeating: "─", count: 94) + "╮  ")]),
+            (25, [S("  │ ❯ "), S(text, italic: true),
+                  S(String(repeating: " ", count: max(1, 92 - text.count)) + "│  ")]),
+            (26, [S("  ╰" + String(repeating: "─", count: 59) + " Grok 4.7 (high) · always-approve ─╯  ")]),
+            (27, [S("")]),
+            (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:mode")]),
+        ])
+    }
+
+    /// One cell per scalar. Grok's composer, box and footer are narrow, so
+    /// a scalar index is the cell column.
+    func region(
+        cursorX: Int? = nil,
+        cursorY: Int? = nil,
+        dropItalic: Bool = false,
+        uprightAt: (y: Int, x: Int)? = nil
+    ) -> PromptRegionSnapshot {
+        var bytes = Data()
+        var cells: [PromptRegionCell] = []
+        var outputRows: [PromptRegionRow] = []
+        for (y, spans) in rows {
+            let start = cells.count
+            var x = 0
+            for span in spans {
+                for scalar in span.text.unicodeScalars {
+                    let encoded = Array(String(scalar).utf8)
+                    var italic = span.italic && !dropItalic
+                    if let upright = uprightAt, upright.y == y, upright.x == x { italic = false }
+                    cells.append(PromptRegionCell(
+                        textOffset: bytes.count, textLength: encoded.count,
+                        faint: span.faint, italic: italic
+                    ))
+                    bytes.append(contentsOf: encoded)
+                    x += 1
+                }
+            }
+            outputRows.append(PromptRegionRow(
+                screenY: y, cellRange: start..<cells.count, softWrap: false, wrapContinuation: false
+            ))
+        }
+        return PromptRegionSnapshot(
+            cursorX: cursorX ?? self.cursorX,
+            cursorY: cursorY ?? self.cursorY,
+            cursorPendingWrap: false,
+            complete: true,
+            rows: outputRows,
+            cells: cells,
+            text: bytes
+        )
+    }
+}
+
+private typealias S = GrokCapture.S
+
+// Generated from real Grok 1.0.50 (Grok 4.7) pty captures by gen_fixture.py.
+private enum GrokCaptures {
+    /// Grok 4.7 after two same-shaped turns: italic grey suggestion, cursor on its first cell.
+    static let suggestion = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+        (16, [S("                                                                                                   █")]),
+        (17, [S("                                                                                                   █")]),
+        (18, [S("                                                                                                   █")]),
+        (19, [S("                                                                                                   █")]),
+        (20, [S("                                                                                                   █")]),
+        (21, [S("                                                                                                   █")]),
+        (22, [S("                                                                                                   █")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ "), S("Reply with the one word CHARLIE and stop.", italic: true), S("                                                  │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts                                   ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// Ctrl+U over a pasted line: the suggestion is redrawn.
+    static let suggestionAfterClear = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+        (16, [S("                                                                                                   █")]),
+        (17, [S("                                                                                                   █")]),
+        (18, [S("                                                                                                   █")]),
+        (19, [S("                                                                                                   █")]),
+        (20, [S("                                                                                                   █")]),
+        (21, [S("                                                                                                    ")]),
+        (22, [S("   Input cleared · ctrl+z to undo                                                                   ")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ "), S("Reply with the one word CHARLIE and stop.", italic: true), S("                                                  │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts                                   ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// One key typed over the suggestion: the suggestion is gone, `x` is upright.
+    static let typedOverSuggestion = GrokCapture(cursorX: 7, cursorY: 25, rows: [
+        (16, [S("                                                                                                   █")]),
+        (17, [S("                                                                                                   █")]),
+        (18, [S("                                                                                                   █")]),
+        (19, [S("                                                                                                   █")]),
+        (20, [S("                                                                                                   █")]),
+        (21, [S("                                                                                                   █")]),
+        (22, [S("                                                                                                   █")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ x                                                                                          │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Enter:send"), S("  │  ", faint: true), S("Shift+Enter/Opt+Enter:newline"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts              ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// A typed prompt before Enter.
+    static let typedDraft = GrokCapture(cursorX: 45, cursorY: 25, rows: [
+        (16, [S("                                                                                                    ")]),
+        (17, [S("                                                                                                    ")]),
+        (18, [S("                                                                                                    ")]),
+        (19, [S("                                                                                                    ")]),
+        (20, [S("                                                                                                    ")]),
+        (21, [S("                                                                                                    ")]),
+        (22, [S("                                                                                                    ")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ Reply with the one word ALPHA and stop.                                                    │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Enter:send"), S("  │  ", faint: true), S("Shift+Enter/Opt+Enter:newline"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts              ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// The doorbell line pasted over the suggestion replaces it.
+    static let doorbellPasted = GrokCapture(cursorX: 76, cursorY: 25, rows: [
+        (16, [S("                                                                                                   █")]),
+        (17, [S("                                                                                                   █")]),
+        (18, [S("                                                                                                   █")]),
+        (19, [S("                                                                                                   █")]),
+        (20, [S("                                                                                                   █")]),
+        (21, [S("                                                                                                   █")]),
+        (22, [S("                                                                                                   █")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ You have mail: run c11 mailbox recv --ack when you want to receive it.                     │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Enter:send"), S("  │  ", faint: true), S("Shift+Enter/Opt+Enter:newline"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts              ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// A six-line paste collapsed to `[Pasted: 6 lines]`.
+    static let pastePlaceholder = GrokCapture(cursorX: 23, cursorY: 25, rows: [
+        (16, [S("              │line one of a paste                                                   │             █")]),
+        (17, [S("              │line two                                                              │             █")]),
+        (18, [S("              │line three                                                            │             █")]),
+        (19, [S("              │line four                                                             │             █")]),
+        (20, [S("              │line five                                                             │             █")]),
+        (21, [S("              │line six                                                              │             █")]),
+        (22, [S("              ╰─ paste again or double-click to expand ──────────────────────────────╯             █")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ [Pasted: 6 lines]                                                                          │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Enter:send"), S("  │  ", faint: true), S("Shift+Enter/Opt+Enter:newline"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts              ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// `/mod` typed; Grok completes `el` in grey, upright.
+    static let slashCompletion = GrokCapture(cursorX: 10, cursorY: 25, rows: [
+        (16, [S("                                                                                                   █")]),
+        (17, [S("  ──────────────────────────────────────────────────────────────────────────────────────────────5─ █")]),
+        (18, [S("    ❯ /model         Switch the active model                                                       █")]),
+        (19, [S("      /compact-mode  Toggle compact UI (less padding, more content)                                █")]),
+        (20, [S("      /vim-mode      Toggle vim-style scrollback keybindings (j/k, h/l, g/G, y/Y, …)               █")]),
+        (21, [S("      /resume-codex  Continue from a recent Codex session                                          █")]),
+        (22, [S("      /import-claude Open the Claude settings import modal                                         █")]),
+        (23, [S("  ────────────────────────────────────────────────────────────────────────────────────────────────  ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ /model                                                                                     │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Enter:send"), S("  │  ", faint: true), S("Shift+Enter/Opt+Enter:newline"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts              ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// Escape dismissed the suggestion: an empty composer.
+    static let emptyAfterEscape = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+        (16, [S("                                                                                                   █")]),
+        (17, [S("                                                                                                   █")]),
+        (18, [S("                                                                                                   █")]),
+        (19, [S("                                                                                                   █")]),
+        (20, [S("                                                                                                   █")]),
+        (21, [S("                                                                                                   █")]),
+        (22, [S("                                                                                                   █")]),
+        (23, [S("                                                                                                    ")]),
+        (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯                                                                                            │  ")]),
+        (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                                                                                    ")]),
+        (28, [S("  Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts                                                               ")]),
+        (29, [S("                                                                                                    ")]),
+    ])
+
+    /// A 44-column pane: Grok truncates the suggestion on one row with an italic ellipsis.
+    static let narrowTruncatedSuggestion = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+        (16, [S("                                           █")]),
+        (17, [S("                                           █")]),
+        (18, [S("                                           █")]),
+        (19, [S("                                           █")]),
+        (20, [S("                                           █")]),
+        (21, [S("                                           █")]),
+        (22, [S("                                           █")]),
+        (23, [S("                                            ")]),
+        (24, [S("  ╭──────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ "), S("Reply with the one word CHARLIE a…", italic: true), S(" │  ")]),
+        (26, [S("  ╰─── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                            ")]),
+        (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:    ")]),
+        (29, [S("                                            ")]),
+    ])
+
+}

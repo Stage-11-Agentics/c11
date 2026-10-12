@@ -4474,8 +4474,10 @@ class TerminalController {
             .contains { applied[$0] == true || removedKeys.contains($0) }
         let iconApplied = applied[MetadataKey.icon] == true || removedKeys.contains(MetadataKey.icon)
         let colorApplied = applied[MetadataKey.color] == true || removedKeys.contains(MetadataKey.color)
+        let mailboxAddressApplied = applied[MetadataKey.mailboxAddress] == true
+            || removedKeys.contains(MetadataKey.mailboxAddress)
         guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied || modelApplied
-            || iconApplied || colorApplied else { return }
+            || iconApplied || colorApplied || mailboxAddressApplied else { return }
         let resolvedActivity: SidebarActivityState? = if activityApplied {
             (PanelMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
                 .metadata[MetadataKey.activity] as? String)
@@ -4488,9 +4490,10 @@ class TerminalController {
             if titleApplied {
                 ws.syncPanelTitleFromMetadata(panelId: surfaceId)
             }
-            if descriptionApplied {
-                // The bar (and its height) follows the description; publish so it
-                // shows, updates and hides without waiting on unrelated state.
+            if descriptionApplied || mailboxAddressApplied {
+                // The bar (and its height) follows the description and the
+                // mailbox address; publish so it shows, updates and hides
+                // without waiting on unrelated state.
                 ws.objectWillChange.send()
             }
             if descriptionApplied && autoExpand {

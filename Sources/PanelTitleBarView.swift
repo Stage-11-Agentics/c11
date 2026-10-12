@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Bonsplit
 
 // M7 — Surface title bar.
 //
@@ -18,12 +19,20 @@ struct PanelTitleBarState: Equatable {
     var descriptionSource: MetadataSource?
     var visible: Bool = true
     var collapsed: Bool = true
+    /// The panel's `mailbox.address`, shown in the mailbox drawer's header.
+    var mailboxAddress: String?
+    /// The panel has received mail, so it shows the mailbox cell (C11-397).
+    var showsMailbox: Bool = false
+
+    var hasDescription: Bool {
+        !(description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
 
     /// The bar renders only when the workspace shows title bars and the surface
-    /// has a description. Everything that reserves space for the bar (the
-    /// portal's top frame edge included) keys off this.
+    /// has a description or a mailbox. Everything that reserves space for the
+    /// bar (the portal's top frame edge included) keys off this.
     var rendersBar: Bool {
-        visible && !(description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        visible && (hasDescription || showsMailbox)
     }
 }
 
@@ -34,6 +43,11 @@ let titleBarDescriptionMaxHeight: CGFloat = 90
 struct PanelTitleBarView: View {
     let state: PanelTitleBarState
     var onToggleCollapsed: () -> Void = {}
+    /// The panel's workspace and id, for the mailbox cell (C11-397). Without
+    /// them the bar shows only the description.
+    var workspace: Workspace? = nil
+    var panelId: UUID? = nil
+    var isVisibleInUI: Bool = true
 
     @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -41,6 +55,11 @@ struct PanelTitleBarView: View {
     @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
     private var m1bSurfaceTitleBarMigrated = false
     @State private var measuredDescriptionHeight: CGFloat = 0
+    @StateObject private var drawerPresenter = CollapsedSheetPresenter()
+    @State private var isDrawerOpen = false
+    @State private var barWidth: CGFloat = 0
+    /// This bar's mailbox cell is counted as on screen by the badge store.
+    @State private var cellRegistered = false
 
     private var descriptionText: String {
         state.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -103,7 +122,8 @@ struct PanelTitleBarView: View {
             EmptyView()
         } else {
             descriptionBar
-                .padding(.horizontal, 12)
+                .padding(.leading, 12)
+                .padding(.trailing, mailboxModel == nil ? 12 : 6)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
@@ -116,9 +136,120 @@ struct PanelTitleBarView: View {
                         .frame(height: 1),
                     alignment: .bottom
                 )
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(accessibilityText)
+                // The mailbox drawer hangs flush under the whole bar.
+                .background(CollapsedSheetAnchorReader { drawerPresenter.anchorView = $0 })
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear
+                            .onAppear { barWidth = geometry.size.width }
+                            .onChange(of: geometry.size.width) { barWidth = $0 }
+                    }
+                )
+                .accessibilityElement(children: .contain)
+                .onChange(of: barWidth) { _ in if isDrawerOpen { presentDrawer() } }
+                .onChange(of: isVisibleInUI) { visible in
+                    if !visible { closeDrawer(animated: false) }
+                    updateCellRegistration(visible && mailboxModel != nil)
+                }
+                .onDisappear {
+                    closeDrawer(animated: false)
+                    updateCellRegistration(false)
+                }
         }
+    }
+
+    // MARK: - Mailbox (C11-397)
+
+    private var mailboxModel: MailboxBadgeModel? {
+        guard state.showsMailbox, let workspace, let panelId else { return nil }
+        return MailboxBadgeStore.shared.model(workspace: workspace, panelId: panelId)
+    }
+
+    private var drawerStyle: MailboxDrawerStyle {
+        MailboxDrawerStyle(
+            background: resolvedBackgroundColor.withAlphaComponent(1),
+            foreground: resolvedForegroundColor,
+            secondary: resolvedSecondaryForegroundColor,
+            border: resolvedBottomBorderColor,
+            scale: chromeTokens.surfaceTitleBarTitle / 12
+        )
+    }
+
+    private func toggleDrawer() {
+        if isDrawerOpen {
+            closeDrawer(animated: true)
+        } else {
+            presentDrawer()
+        }
+    }
+
+    private func closeDrawer(animated: Bool) {
+        guard isDrawerOpen || drawerPresenter.isPresented else { return }
+        isDrawerOpen = false
+        drawerPresenter.onDismiss = nil
+        if animated { drawerPresenter.dismissAnimated() } else { drawerPresenter.dismiss() }
+    }
+
+    /// Kept-alive hidden workspaces stay mounted, so "on screen" also needs
+    /// the panel to be visible; the store reconciles on-screen cells faster.
+    private func updateCellRegistration(_ registered: Bool) {
+        guard let panelId, registered != cellRegistered else { return }
+        cellRegistered = registered
+        if registered {
+            MailboxBadgeStore.shared.cellAppeared(panelId: panelId)
+        } else {
+            MailboxBadgeStore.shared.cellDisappeared(panelId: panelId)
+        }
+    }
+
+    private func presentDrawer() {
+        guard let model = mailboxModel, let workspace, let panelId else { return }
+        let window = drawerPresenter.anchorView?.window
+        let windowHeight = window?.contentLayoutRect.height ?? 800
+        let screenWidth = window?.screen?.visibleFrame.width ?? 4000
+        let width = min(max(barWidth, 320), screenWidth)
+        let workspaceId = workspace.id
+        let drawer = MailboxDrawerView(
+            model: model,
+            panelTitle: state.title,
+            panelNumber: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: panelId),
+            mailboxAddress: state.mailboxAddress,
+            inboxURL: MailboxBadgeStore.shared.inboxURL(workspaceId: workspaceId, panelId: panelId),
+            width: width,
+            maxHeight: max(220, windowHeight * 0.7),
+            style: drawerStyle,
+            resolveSenders: { names in Self.resolveSenders(names, preferring: workspaceId) }
+        )
+        // Capture the binding, not the view: the view holds the presenter and
+        // the workspace, and the presenter holds this closure.
+        let open = $isDrawerOpen
+        drawerPresenter.onDismiss = { open.wrappedValue = false }
+        // Opening is a reason to recount: a hand-dropped file would otherwise
+        // wait for the reconcile while the drawer already lists it.
+        MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: panelId)
+        isDrawerOpen = true
+        drawerPresenter.present(rootView: AnyView(drawer))
+        if !drawerPresenter.isPresented { isDrawerOpen = false }
+    }
+
+    /// Matches each `from` the way the dispatcher matches a `to` (address,
+    /// then role, then title), preferring a panel in the reader's workspace.
+    static func resolveSenders(_ names: [String], preferring workspaceId: UUID) -> [String: MailboxDrawerSender] {
+        let panels = AppDelegate.shared?.mailboxAddressableSurfaces() ?? []
+        var result: [String: MailboxDrawerSender] = [:]
+        for name in names where !name.isEmpty {
+            let matches = MailboxMatcher.select(MailboxAddress.parse(name), from: panels, identity: { $0.identity })
+            guard let match = matches.first(where: { $0.workspaceId == workspaceId }) ?? matches.first else {
+                result[name] = MailboxDrawerSender(panelNumber: nil, address: nil, isOpen: false)
+                continue
+            }
+            result[name] = MailboxDrawerSender(
+                panelNumber: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: match.surfaceId),
+                address: match.address,
+                isOpen: true
+            )
+        }
+        return result
     }
 
     private var chevronAccessibilityLabel: String {
@@ -139,10 +270,29 @@ struct PanelTitleBarView: View {
                 if effectiveCollapsed {
                     collapsedDescription
                 } else {
-                    expandedDescription(descriptionText)
+                    // An expanded mail-only bar renders the placeholder the way
+                    // it renders a description, so one arriving does not move it.
+                    expandedDescription(Self.collapsedLine(descriptionText).isPlaceholder
+                        ? Self.collapsedLine(descriptionText).text : descriptionText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
+            if let model = mailboxModel {
+                // Fixed width, pinned to the first line: a long description
+                // truncates before it and an expanded one grows under it.
+                MailboxCellView(
+                    model: model,
+                    isOpen: isDrawerOpen,
+                    fontSize: chromeTokens.surfaceTitleBarTitle - 1,
+                    secondary: resolvedSecondaryForegroundColor,
+                    action: toggleDrawer
+                )
+                .background(CollapsedSheetTrailingAnchorReader { drawerPresenter.trailingAnchorView = $0 })
+                .onAppear { updateCellRegistration(isVisibleInUI) }
+                .onDisappear { updateCellRegistration(false) }
+            }
             Button(action: onToggleCollapsed) {
                 Image(systemName: effectiveCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: chromeTokens.surfaceTitleBarAccessory, weight: .semibold))
@@ -154,16 +304,34 @@ struct PanelTitleBarView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(chevronAccessibilityLabel))
+            // A mail-only bar keeps the chevron's slot, so the mailbox cell
+            // does not move when a description arrives.
+            .opacity(descriptionText.isEmpty ? 0 : 1)
+            .disabled(descriptionText.isEmpty)
+            .accessibilityHidden(descriptionText.isEmpty)
         }
     }
 
     private var collapsedDescription: some View {
-        Text(Self.singleLine(descriptionText))
+        // A mail-only bar reads a dim placeholder in the same font, so a real
+        // description takes its place on the same line without a jump.
+        let line = Self.collapsedLine(descriptionText)
+        return Text(line.text)
             .font(.system(size: chromeTokens.surfaceTitleBarTitle))
-            .foregroundColor(resolvedForegroundColor)
+            .foregroundColor(line.isPlaceholder ? resolvedSecondaryForegroundColor : resolvedForegroundColor)
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 2)
+    }
+
+    /// The collapsed line: the description on one line, or the placeholder
+    /// when the bar shows only because the panel has mail.
+    static func collapsedLine(_ description: String) -> (text: String, isPlaceholder: Bool) {
+        let line = singleLine(description)
+        if line.isEmpty {
+            return (String(localized: "titlebar.description.placeholder", defaultValue: "No subtitle set"), true)
+        }
+        return (line, false)
     }
 
     /// Newlines and runs of whitespace collapse to single spaces.
@@ -208,7 +376,7 @@ struct PanelTitleBarView: View {
     }
 
     private var accessibilityText: String {
-        Self.singleLine(descriptionText)
+        Self.collapsedLine(descriptionText).text
     }
 }
 

@@ -24,7 +24,10 @@ struct PanelContentView: View {
             if titleBarState.rendersBar {
                 PanelTitleBarView(
                     state: titleBarState,
-                    onToggleCollapsed: { workspace.toggleSurfaceTitleBarCollapsed(panelId: panel.id) }
+                    onToggleCollapsed: { workspace.toggleSurfaceTitleBarCollapsed(panelId: panel.id) },
+                    workspace: workspace,
+                    panelId: panel.id,
+                    isVisibleInUI: isVisibleInUI
                 )
             }
             contentView

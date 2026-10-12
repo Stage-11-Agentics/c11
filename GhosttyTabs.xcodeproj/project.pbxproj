@@ -368,6 +368,10 @@
 		C1124300000000000000A004 /* PanelSeenClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124300000000000000A003 /* PanelSeenClockTests.swift */; };
 		C1124400000000000000B002 /* AgentModelDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B001 /* AgentModelDetection.swift */; };
 		C1382000000000000000A002 /* PromptCacheReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A001 /* PromptCacheReports.swift */; };
+		C397000000000000000000B4 /* MailboxPanelMailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C397000000000000000000A4 /* MailboxPanelMailTests.swift */; };
+		C397000000000000000000B3 /* MailboxDrawerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C397000000000000000000A3 /* MailboxDrawerView.swift */; };
+		C397000000000000000000B2 /* MailboxBadgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C397000000000000000000A2 /* MailboxBadgeStore.swift */; };
+		C397000000000000000000B1 /* MailboxPanelMail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C397000000000000000000A1 /* MailboxPanelMail.swift */; };
 		C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B003 /* AgentModelDetectionTests.swift */; };
 		C1382000000000000000A004 /* PromptCacheReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A003 /* PromptCacheReportTests.swift */; };
 		C1124400000000000000B012 /* TabActivitySignals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B011 /* TabActivitySignals.swift */; };
@@ -979,6 +983,10 @@
 		C1124300000000000000A003 /* PanelSeenClockTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelSeenClockTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B001 /* AgentModelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelDetection.swift; sourceTree = "<group>"; };
 		C1382000000000000000A001 /* PromptCacheReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCacheReports.swift; sourceTree = "<group>"; };
+		C397000000000000000000A4 /* MailboxPanelMailTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MailboxPanelMailTests.swift; sourceTree = "<group>"; };
+		C397000000000000000000A3 /* MailboxDrawerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDrawerView.swift; sourceTree = "<group>"; };
+		C397000000000000000000A2 /* MailboxBadgeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxBadgeStore.swift; sourceTree = "<group>"; };
+		C397000000000000000000A1 /* MailboxPanelMail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxPanelMail.swift; sourceTree = "<group>"; };
 		C1124400000000000000B003 /* AgentModelDetectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelDetectionTests.swift; sourceTree = "<group>"; };
 		C1382000000000000000A003 /* PromptCacheReportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PromptCacheReportTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B011 /* TabActivitySignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabActivitySignals.swift; sourceTree = "<group>"; };
@@ -1501,6 +1509,9 @@
 				D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */,
 				D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */,
 				C2570001A1B2C3D4E5F60718 /* MailboxDrain.swift */,
+				C397000000000000000000A3 /* MailboxDrawerView.swift */,
+				C397000000000000000000A2 /* MailboxBadgeStore.swift */,
+				C397000000000000000000A1 /* MailboxPanelMail.swift */,
 				C2570002A1B2C3D4E5F60718 /* MailboxFraming.swift */,
 				C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */,
 				C11144A0B0C0D0E0F0010001 /* MailboxStdinBuffer.swift */,
@@ -1924,6 +1935,7 @@
 				C11262000000000000000007 /* FocusHistoryModelTests.swift */,
 				C1124400000000000000B003 /* AgentModelDetectionTests.swift */,
 				C1382000000000000000A003 /* PromptCacheReportTests.swift */,
+				C397000000000000000000A4 /* MailboxPanelMailTests.swift */,
 				C1124400000000000000B013 /* PanelActivitySignalsTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketPanelRefValidatorTests.swift */,
 				C11279000000000000000001 /* LegacyWireRoutingKeyTests.swift */,
@@ -2324,6 +2336,7 @@
 				C11262000000000000000008 /* FocusHistoryModelTests.swift in Sources */,
 				C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */,
 				C1382000000000000000A004 /* PromptCacheReportTests.swift in Sources */,
+				C397000000000000000000B4 /* MailboxPanelMailTests.swift in Sources */,
 				C1124400000000000000B014 /* PanelActivitySignalsTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketPanelRefValidatorTests.swift in Sources */,
 				C11279000000000000000002 /* LegacyWireRoutingKeyTests.swift in Sources */,
@@ -2468,6 +2481,9 @@
 				D7103BF0A1B2C3D4E5F60718 /* MailboxULID.swift in Sources */,
 				D7106BF0A1B2C3D4E5F60718 /* MailboxEnvelope.swift in Sources */,
 				C2570011A1B2C3D4E5F60718 /* MailboxDrain.swift in Sources */,
+				C397000000000000000000B3 /* MailboxDrawerView.swift in Sources */,
+				C397000000000000000000B2 /* MailboxBadgeStore.swift in Sources */,
+				C397000000000000000000B1 /* MailboxPanelMail.swift in Sources */,
 				C2570012A1B2C3D4E5F60718 /* MailboxFraming.swift in Sources */,
 				C2570013A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift in Sources */,
 				D7108BF0A1B2C3D4E5F60718 /* MailboxDispatchLog.swift in Sources */,

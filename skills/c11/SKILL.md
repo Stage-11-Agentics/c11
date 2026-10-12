@@ -271,7 +271,7 @@ When the panel bar overflows on 4 days inside 14 and Panel Layout is still Strip
 
 A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `panel-bar-round-five` is `com.stage11.c11.debug.panel.bar.round.five`).
 
-The bar under the panels shows only the panel's description (`c11 set-description`); with no description it takes no height.
+The bar under the panels shows the panel's description (`c11 set-description`) and, at its right end, a mailbox cell `[unread] ✉ [received]` once the panel has received any mail. Orange unread is mail no drain or push has taken; it stays on screen until the agent takes it. Clicking the cell opens a read-only drawer of that panel's mail. A panel with mail but no description reads "No subtitle set" there; with neither, the bar takes no height.
 
 ## Editing this skill
 

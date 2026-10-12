@@ -56,6 +56,10 @@ public enum MetadataKey {
     /// Values: `"working"` | `"idle"`.
     public static let activity = "activity"
 
+    /// The panel's stable mailbox handle (C11-143). Non-canonical: opaque to
+    /// the store, read by the subtitle bar's mailbox cell (C11-397).
+    static let mailboxAddress = "mailbox.address"
+
     /// Non-canonical display hint used by M3's sidebar chip.
     public static let modelLabel = "model_label"
 

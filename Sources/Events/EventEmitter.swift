@@ -558,6 +558,9 @@ final class EventEmitter {
         surface: UUID?,
         via: String = "inbox"
     ) {
+        // C11-397: every delivery, push and drain passes here; the subtitle
+        // bar's mailbox cell recounts the recipient's inbox.
+        MailboxBadgeStore.inboxChanged(workspaceId: workspace, panelId: surface)
         emit(
             .mailboxDelivered,
             workspace: workspace,

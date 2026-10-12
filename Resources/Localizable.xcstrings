@@ -2,6 +2,78 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "titlebar.description.placeholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No subtitle set"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "サブタイトル未設定"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Підзаголовок не задано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "부제목 없음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "未设置副标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "未設定副標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Подзаголовок не задан"}}
+      }
+    },
+    "mailbox.cell.accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Mailbox, %lld unread, %lld received"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "メールボックス、未読 %lld 件、受信 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Поштова скринька: непрочитаних %lld, отримано %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "메일박스, 읽지 않음 %lld개, 받음 %lld개"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "邮箱，%lld 条未读，共收到 %lld 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "信箱，%lld 則未讀，共收到 %lld 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Почтовый ящик: непрочитанных — %lld, получено — %lld"}}
+      }
+    },
+    "mailbox.cell.help.oldest": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "(oldest %@)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "（最古 %@）"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "(найстаріше: %@)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "(가장 오래된 것 %@)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "（最早 %@）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "（最早 %@）"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "(самое старое: %@)"}}
+      }
+    },
+    "mailbox.cell.help.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Click to read"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "クリックして読む"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Натисніть, щоб прочитати"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "클릭하여 읽기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "点击阅读"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "點擊閱讀"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Нажмите, чтобы прочитать"}}
+      }
+    },
+    "mailbox.cell.help.received": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld received"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "受信 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Отримано: %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "받음 %lld개"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已收到 %lld 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已收到 %lld 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Получено: %lld"}}
+      }
+    },
+    "mailbox.cell.help.unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld unread: the agent has not taken them yet"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "未読 %lld 件：エージェントはまだ受け取っていません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Непрочитаних: %lld — агент ще не забрав їх"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "읽지 않음 %lld개: 에이전트가 아직 가져가지 않았습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 条未读：智能体尚未取走"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 則未讀：代理尚未取走"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Непрочитанных: %lld — агент ещё не забрал их"}}
+      }
+    },
     "mailbox.cli.error.unknown-flag": {
       "extractionState": "manual",
       "localizations": {
@@ -120,6 +192,486 @@
         "zh-Hans": {"stringUnit": {"state": "translated", "value": "标准输出不是终端，因此拒绝将邮箱消息标为已读。请运行 %@"}},
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "標準輸出不是終端機，因此拒絕將信箱訊息標為已讀。請執行 %@"}},
         "ru": {"stringUnit": {"state": "translated", "value": "Сообщения почтового ящика не помечаются прочитанными, потому что stdout не является терминалом. Выполните %@"}}
+      }
+    },
+    "mailbox.drawer.age.ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%@ ago"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%@前"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%@ тому"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@ 전"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%@前"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@前"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%@ назад"}}
+      }
+    },
+    "mailbox.drawer.age.now": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "just now"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "たった今"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "щойно"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "방금"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "刚刚"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "剛剛"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "только что"}}
+      }
+    },
+    "mailbox.drawer.chip.replyAddress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "replies to %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "返信先: %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "відповіді надсилати: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "답장 대상: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "回复至 %@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "回覆至 %@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ответы: %@"}}
+      }
+    },
+    "mailbox.drawer.chip.replyToId": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "↳ reply to %@…"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "↳ %@… への返信"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "↳ відповідь на %@…"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "↳ %@…에 대한 답장"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "↳ 回复 %@…"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "↳ 回覆 %@…"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "↳ ответ на %@…"}}
+      }
+    },
+    "mailbox.drawer.chip.replyToTopic": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "↳ reply to %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "↳ %@ への返信"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "↳ відповідь на %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "↳ %@에 대한 답장"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "↳ 回复 %@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "↳ 回覆 %@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "↳ ответ на %@"}}
+      }
+    },
+    "mailbox.drawer.chip.ttlExpired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "ttl %@ · expired %@ ago"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · %2$@前に期限切れ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · термін минув %2$@ тому"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · %2$@ 전에 만료됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · 已过期 %2$@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · 已過期 %2$@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · истёк %2$@ назад"}}
+      }
+    },
+    "mailbox.drawer.chip.ttlLive": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "ttl %@ · expires in %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · 残り %2$@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · спливе за %2$@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · %2$@ 후 만료"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · %2$@后过期"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · %2$@後過期"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ttl %1$@ · истекает через %2$@"}}
+      }
+    },
+    "mailbox.drawer.chip.urgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "urgent"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "緊急"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "терміново"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "긴급"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "紧急"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "緊急"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "срочно"}}
+      }
+    },
+    "mailbox.drawer.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Copy text"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "テキストをコピー"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Копіювати текст"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "텍스트 복사"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "复制文本"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製文字"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Копировать текст"}}
+      }
+    },
+    "mailbox.drawer.counts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld unread · %lld received"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "未読 %lld · 受信 %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "непрочитаних %lld · отримано %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "읽지 않음 %lld · 받음 %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 未读 · %lld 已收"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 未讀 · %lld 已收"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "непрочитанных %lld · получено %lld"}}
+      }
+    },
+    "mailbox.drawer.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No mail yet."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "メールはまだありません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Пошти ще немає."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "아직 메일이 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "暂无邮件。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "尚無郵件。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Писем пока нет."}}
+      }
+    },
+    "mailbox.drawer.emptyBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This message has no body."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このメッセージには本文がありません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "У цьому повідомленні немає тексту."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 메시지에는 본문이 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此消息没有正文。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此訊息沒有內文。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "В этом сообщении нет текста."}}
+      }
+    },
+    "mailbox.drawer.from": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "from"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "送信元"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "від"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보낸 이"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "来自"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "來自"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "от"}}
+      }
+    },
+    "mailbox.drawer.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Reading mail…"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "メールを読み込み中…"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Читання пошти…"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "메일을 읽는 중…"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "正在读取邮件…"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取郵件…"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Чтение почты…"}}
+      }
+    },
+    "mailbox.drawer.noTopic": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "(no topic)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "（トピックなし）"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "(без теми)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "(주제 없음)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "（无主题）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "（無主題）"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "(без темы)"}}
+      }
+    },
+    "mailbox.drawer.olderHidden": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld older messages are not shown."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "これより古いメッセージ %lld 件は表示されていません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Старіші повідомлення не показано: %lld."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이전 메시지 %lld개는 표시되지 않습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "更早的 %lld 条消息未显示。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "更早的 %lld 則訊息未顯示。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Более ранние сообщения не показаны: %lld."}}
+      }
+    },
+    "mailbox.drawer.panelNumber": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "panel %lld"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "パネル %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "панель %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "패널 %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "面板 %lld"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "面板 %lld"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "панель %lld"}}
+      }
+    },
+    "mailbox.drawer.problem.gone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This message was moved before it could be read."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このメッセージは、読み込まれる前に移動されました。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Це повідомлення було переміщено, перш ніж його вдалося прочитати."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 메시지는 읽기 전에 이동되었습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此消息在读取之前已被移走。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此訊息在讀取之前已被移走。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Это сообщение было перемещено, прежде чем его удалось прочитать."}}
+      }
+    },
+    "mailbox.drawer.problem.notEnvelope": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This file is not a readable mailbox envelope."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このファイルは読み取り可能なメールボックスのエンベロープではありません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Цей файл не є придатним для читання конвертом поштової скриньки."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 파일은 읽을 수 있는 메일박스 봉투가 아닙니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此文件不是可读取的邮箱信封。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此檔案不是可讀取的信箱信封。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Этот файл не является читаемым конвертом почтового ящика."}}
+      }
+    },
+    "mailbox.drawer.problem.notRegular": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This entry is not a regular file, so c11 did not open it."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このエントリは通常のファイルではないため、c11 は開きませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Цей елемент не є звичайним файлом, тому c11 його не відкрив."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 항목은 일반 파일이 아니어서 c11이 열지 않았습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "该条目不是常规文件，因此 c11 未打开。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "該項目不是一般檔案，因此 c11 未開啟。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Этот элемент не является обычным файлом, поэтому c11 его не открыл."}}
+      }
+    },
+    "mailbox.drawer.problem.permission": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "c11 does not have permission to read it."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "c11 には読み取る権限がありません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "c11 не має дозволу на його читання."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "c11에 읽을 권한이 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 没有读取权限。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 沒有讀取權限。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "У c11 нет разрешения на его чтение."}}
+      }
+    },
+    "mailbox.drawer.problem.tooLarge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This envelope is too large to show."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このエンベロープは大きすぎて表示できません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Цей конверт завеликий для показу."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 봉투는 너무 커서 표시할 수 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此信封过大，无法显示。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此信封過大，無法顯示。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Этот конверт слишком велик для показа."}}
+      }
+    },
+    "mailbox.drawer.ref.caption": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "from file %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ファイル %@ より"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "з файлу %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일 %@에서"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "来自文件 %@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "來自檔案 %@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "из файла %@"}}
+      }
+    },
+    "mailbox.drawer.ref.captionSized": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "from file %@ · %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ファイル %1$@ より · %2$@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "з файлу %1$@ · %2$@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일 %1$@에서 · %2$@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "来自文件 %1$@ · %2$@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "來自檔案 %1$@ · %2$@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "из файла %1$@ · %2$@"}}
+      }
+    },
+    "mailbox.drawer.ref.emptyFile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The referenced file is empty."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照先のファイルは空です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Вказаний файл порожній."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조된 파일이 비어 있습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "引用的文件为空。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "引用的檔案為空。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Указанный файл пуст."}}
+      }
+    },
+    "mailbox.drawer.ref.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The referenced file is gone (no such file)."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照先のファイルが見つかりません（そのようなファイルはありません）。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Вказаний файл зник (такого файлу немає)."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조된 파일이 없습니다(해당 파일 없음)."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "引用的文件已不存在（没有此文件）。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "引用的檔案已不存在（沒有此檔案）。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Указанный файл отсутствует (нет такого файла)."}}
+      }
+    },
+    "mailbox.drawer.ref.notAbsolute": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The reference is not an absolute path, so c11 did not open it."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照が絶対パスではないため、c11 は開きませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Посилання не є абсолютним шляхом, тому c11 його не відкрив."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조가 절대 경로가 아니어서 c11이 열지 않았습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "该引用不是绝对路径，因此 c11 未打开。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "該參照不是絕對路徑，因此 c11 未開啟。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ссылка не является абсолютным путём, поэтому c11 её не открыл."}}
+      }
+    },
+    "mailbox.drawer.ref.notRegular": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The reference is not a regular file, so c11 did not open it."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照が通常のファイルではないため、c11 は開きませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Посилання вказує не на звичайний файл, тому c11 його не відкрив."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조가 일반 파일이 아니어서 c11이 열지 않았습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "该引用不是常规文件，因此 c11 未打开。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "該參照不是一般檔案，因此 c11 未開啟。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ссылка указывает не на обычный файл, поэтому c11 его не открыл."}}
+      }
+    },
+    "mailbox.drawer.ref.notText": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The referenced file is not text (%@)."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "参照先のファイルはテキストではありません（%@）。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Вказаний файл не є текстовим (%@)."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "참조된 파일이 텍스트가 아닙니다(%@)."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "引用的文件不是文本（%@）。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "引用的檔案不是文字（%@）。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Указанный файл не является текстовым (%@)."}}
+      }
+    },
+    "mailbox.drawer.ref.truncated": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Showing the first %@ of %@."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%2$@ のうち最初の %1$@ を表示しています。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Показано перші %1$@ з %2$@."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%2$@ 중 처음 %1$@을(를) 표시 중입니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "显示前 %1$@，共 %2$@。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示前 %1$@，共 %2$@。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Показано первые %1$@ из %2$@."}}
+      }
+    },
+    "mailbox.drawer.ref.unreadable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "c11 could not read the referenced file: %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "c11 は参照先のファイルを読み取れませんでした: %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "c11 не вдалося прочитати вказаний файл: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "c11이 참조된 파일을 읽을 수 없습니다: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 无法读取引用的文件：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 無法讀取參照的檔案：%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "c11 не удалось прочитать указанный файл: %@"}}
+      }
+    },
+    "mailbox.drawer.sender.notOpen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "not open"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "未オープン"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "не відкрито"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "열려 있지 않음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "未打开"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "未開啟"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "не открыт"}}
+      }
+    },
+    "mailbox.drawer.showAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Show all"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "すべて表示"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Показати все"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "모두 보기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "显示全部"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示全部"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Показать все"}}
+      }
+    },
+    "mailbox.drawer.showLess": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Show less"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "表示を減らす"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Показати менше"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "간략히 보기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "收起"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "收合"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Показать меньше"}}
+      }
+    },
+    "mailbox.drawer.state.read": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "READ"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "既読"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ПРОЧИТАНО"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "읽음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已读"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已讀"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ПРОЧИТАНО"}}
+      }
+    },
+    "mailbox.drawer.state.read.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The agent has taken this message."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "エージェントがこのメッセージを受け取りました。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Агент забрав це повідомлення."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트가 이 메시지를 가져갔습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "智能体已取走此消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "代理已取走此訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Агент забрал это сообщение."}}
+      }
+    },
+    "mailbox.drawer.state.unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "UNREAD"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "未読"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "НЕПРОЧИТАНО"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "안 읽음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "未读"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "未讀"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "НЕПРОЧИТАНО"}}
+      }
+    },
+    "mailbox.drawer.state.unread.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The agent has not taken this message yet."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "エージェントはまだこのメッセージを受け取っていません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Агент ще не забрав це повідомлення."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트가 아직 이 메시지를 가져가지 않았습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "智能体尚未取走此消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "代理尚未取走此訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Агент ещё не забрал это сообщение."}}
+      }
+    },
+    "mailbox.drawer.thisPanel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "this panel"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このパネル"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ця панель"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 패널"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此面板"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此面板"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "эта панель"}}
+      }
+    },
+    "mailbox.drawer.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Mail for %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%@ 宛のメール"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Пошта для %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@의 메일"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%@ 的邮件"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ 的郵件"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Почта для %@"}}
       }
     },
     "markdown.reader.history.back": {

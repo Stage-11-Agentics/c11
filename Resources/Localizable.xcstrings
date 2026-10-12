@@ -2,6 +2,18 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "titlebar.description.placeholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No subtitle set"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "サブタイトル未設定"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Підзаголовок не задано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "부제목 없음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "未设置副标题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "未設定副標題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Подзаголовок не задан"}}
+      }
+    },
     "mailbox.cell.accessibility": {
       "extractionState": "manual",
       "localizations": {

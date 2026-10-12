@@ -21,7 +21,7 @@ struct PanelTitleBarState: Equatable {
     var collapsed: Bool = true
     /// The panel's `mailbox.address`, shown in the mailbox drawer's header.
     var mailboxAddress: String?
-    /// The panel declared a mailbox address or has received mail (C11-397).
+    /// The panel has received mail, so it shows the mailbox cell (C11-397).
     var showsMailbox: Bool = false
 
     var hasDescription: Bool {
@@ -267,10 +267,13 @@ struct PanelTitleBarView: View {
     private var descriptionBar: some View {
         HStack(alignment: .top, spacing: 6) {
             Group {
-                if effectiveCollapsed || descriptionText.isEmpty {
+                if effectiveCollapsed {
                     collapsedDescription
                 } else {
-                    expandedDescription(descriptionText)
+                    // An expanded mail-only bar renders the placeholder the way
+                    // it renders a description, so one arriving does not move it.
+                    expandedDescription(Self.collapsedLine(descriptionText).isPlaceholder
+                        ? Self.collapsedLine(descriptionText).text : descriptionText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -310,13 +313,25 @@ struct PanelTitleBarView: View {
     }
 
     private var collapsedDescription: some View {
-        // A mail-only bar holds one line's height with a blank.
-        Text(descriptionText.isEmpty ? " " : Self.singleLine(descriptionText))
+        // A mail-only bar reads a dim placeholder in the same font, so a real
+        // description takes its place on the same line without a jump.
+        let line = Self.collapsedLine(descriptionText)
+        return Text(line.text)
             .font(.system(size: chromeTokens.surfaceTitleBarTitle))
-            .foregroundColor(resolvedForegroundColor)
+            .foregroundColor(line.isPlaceholder ? resolvedSecondaryForegroundColor : resolvedForegroundColor)
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 2)
+    }
+
+    /// The collapsed line: the description on one line, or the placeholder
+    /// when the bar shows only because the panel has mail.
+    static func collapsedLine(_ description: String) -> (text: String, isPlaceholder: Bool) {
+        let line = singleLine(description)
+        if line.isEmpty {
+            return (String(localized: "titlebar.description.placeholder", defaultValue: "No subtitle set"), true)
+        }
+        return (line, false)
     }
 
     /// Newlines and runs of whitespace collapse to single spaces.
@@ -361,7 +376,7 @@ struct PanelTitleBarView: View {
     }
 
     private var accessibilityText: String {
-        Self.singleLine(descriptionText)
+        Self.collapsedLine(descriptionText).text
     }
 }
 

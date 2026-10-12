@@ -105,6 +105,23 @@ final class PanelTitleBarRenderTests: XCTestCase {
         )
     }
 
+    func testMailOnlyBarReadsPlaceholderAtOneLinesHeight() {
+        XCTAssertEqual(PanelTitleBarView.collapsedLine("  \n ").text, "No subtitle set")
+        XCTAssertTrue(PanelTitleBarView.collapsedLine("").isPlaceholder)
+        XCTAssertEqual(PanelTitleBarView.collapsedLine("Working.\nNext: verify.").text, "Working. Next: verify.")
+        XCTAssertFalse(PanelTitleBarView.collapsedLine("Working.").isPlaceholder)
+
+        // The bar keeps its height when a real description replaces the placeholder.
+        for collapsed in [true, false] {
+            let mailOnly = PanelTitleBarState(title: "t", description: nil, collapsed: collapsed, showsMailbox: true)
+            let described = PanelTitleBarState(title: "t", description: "Working on it.", collapsed: collapsed, showsMailbox: true)
+            XCTAssertTrue(mailOnly.rendersBar)
+            let placeholderHeight = measure(state: mailOnly)
+            XCTAssertGreaterThan(placeholderHeight, 0)
+            XCTAssertEqual(placeholderHeight, measure(state: described), accuracy: 0.5)
+        }
+    }
+
     func testRenderingNeverFiresTheToggle() {
         var fireCount = 0
         let state = PanelTitleBarState(title: "t", description: "Some description", collapsed: false)

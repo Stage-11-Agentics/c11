@@ -2836,6 +2836,9 @@ class WorkspaceManager: ObservableObject {
         guard !isRetiredForWindowClose else { return }
         isRetiredForWindowClose = true
         for workspace in workspaces {
+            for panelId in workspace.panels.keys {
+                PanelLineage.shared.panelClosedForGood(panelId)
+            }
             workspace.retireForWindowClose()
         }
     }

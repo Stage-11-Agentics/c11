@@ -132,3 +132,12 @@ final class AttentionOrderTests: XCTestCase {
         XCTAssertEqual(MenuBarBadgeLabelFormatter.badgeText(for: 12), "9+")
     }
 }
+
+final class PanelCloseForGoodPolicyTests: XCTestCase {
+    func testOnlyFinalNonDetachingCloseOutsideAppTerminationFires() {
+        XCTAssertTrue(PanelCloseForGoodPolicy.shouldFire(isDetaching: false, isTerminatingApp: false))
+        XCTAssertFalse(PanelCloseForGoodPolicy.shouldFire(isDetaching: true, isTerminatingApp: false))
+        XCTAssertFalse(PanelCloseForGoodPolicy.shouldFire(isDetaching: false, isTerminatingApp: true))
+        XCTAssertFalse(PanelCloseForGoodPolicy.shouldFire(isDetaching: true, isTerminatingApp: true))
+    }
+}

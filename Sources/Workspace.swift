@@ -9982,13 +9982,13 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxDispatcher = nil
         teardownRemoteConnection()
         owningWorkspaceManager = nil
-        teardownAllPanels()
+        teardownAllPanels(markPanelsClosedForGood: false)
     }
 
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
-    func teardownAllPanels() {
+    func teardownAllPanels(markPanelsClosedForGood: Bool = true) {
         emitWorkspaceTeardownEvents()
 
         // Drain every pending pane interaction with .dismissed FIRST so any
@@ -10010,6 +10010,9 @@ final class Workspace: Identifiable, ObservableObject {
 
         let panelEntries = Array(panels)
         for (panelId, panel) in panelEntries {
+            if markPanelsClosedForGood {
+                PanelLineage.shared.panelClosedForGood(panelId)
+            }
             panelSubscriptions.removeValue(forKey: panelId)
             PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
@@ -13115,6 +13118,9 @@ extension Workspace: BonsplitDelegate {
                 shellEdgeAt: panelShellEdgeAt[panelId]
             )
         } else {
+            if panel != nil {
+                PanelLineage.shared.panelClosedForGood(panelId)
+            }
             if let closedBrowserRestoreSnapshot {
                 onClosedBrowserPanel?(closedBrowserRestoreSnapshot)
             }
@@ -13328,6 +13334,9 @@ extension Workspace: BonsplitDelegate {
                 // before the panel disappears. Same invariant as the
                 // single-panel close path above.
                 cancelPersistentFlash(panelId: panelId)
+                if !isDetachingCloseTransaction, panels[panelId] != nil {
+                    PanelLineage.shared.panelClosedForGood(panelId)
+                }
                 panels[panelId]?.close()
                 panels.removeValue(forKey: panelId)
                 // C11-243: pane closed for good; a detaching transaction keeps ids.

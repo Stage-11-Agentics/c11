@@ -751,7 +751,8 @@ def main() -> int:
             assert [name for name, _ in server.calls if name in ("flag.delegate", "flag.suppress")] == [
                 "flag.delegate", "flag.suppress"
             ], server.calls
-            assert routed("flag.suppress")["panel_id"] == b_ws["panels"][1]["id"]
+            fallback_request = routed("flag.suppress")
+            assert matches(b_ws["panels"][1], fallback_request["panel_id"]), fallback_request
             assert server.mutations == [("flag.suppress", b["ref"], b_ws["ref"], b_ws["panels"][1]["ref"])], server.mutations
 
             for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):

@@ -6077,10 +6077,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         let ledger = mailboxStdinState.doorbell.ledger(for: surfaceId)
         let now = Date()
-        let turn = mailboxStdinState.buffer.agentTurn(surfaceId: surfaceId)
-        let epoch = turn.map {
-            MailboxDoorbell.promptEpoch(since: $0.since, atPrompt: $0.atPrompt)
-        } ?? "none"
+        let epoch = mailboxStdinState.buffer.ringEpoch(surfaceId: surfaceId)
         let prompt: PromptInputState?
         if capturePrompt {
             if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {

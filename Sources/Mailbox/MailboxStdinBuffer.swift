@@ -79,6 +79,8 @@ struct MailboxStdinBuffer {
     private var queues: [UUID: [Entry]] = [:]
     private var turns: [UUID: AgentTurn] = [:]
     private var lastSubmitAt: [UUID: Date] = [:]
+    /// When the agent's session last started or re-attached.
+    private var attachedAt: [UUID: Date] = [:]
     /// The interactive agent process each panel's turn edges came from
     /// (`C11_AGENT_INTERACTIVE_PID`). A ring types only while this process's
     /// group owns the panel's terminal.
@@ -160,6 +162,7 @@ struct MailboxStdinBuffer {
     /// process, or the Return that launched this one, so the turn is unknown
     /// again. A newer edge stays.
     mutating func noteAgentAttached(surfaceId: UUID, at: Date) {
+        attachedAt[surfaceId] = max(attachedAt[surfaceId] ?? at, at)
         if let turn = turns[surfaceId], turn.since <= at {
             turns.removeValue(forKey: surfaceId)
         }
@@ -172,6 +175,7 @@ struct MailboxStdinBuffer {
     /// exited, so its turn edges no longer describe the panel.
     mutating func forgetAgent(surfaceId: UUID) {
         turns.removeValue(forKey: surfaceId)
+        attachedAt.removeValue(forKey: surfaceId)
         agentPids.removeValue(forKey: surfaceId)
     }
 
@@ -197,6 +201,17 @@ struct MailboxStdinBuffer {
 
     func agentTurn(surfaceId: UUID) -> AgentTurn? {
         turns[surfaceId]
+    }
+
+    /// The ring's idle period. A turn edge names it. With none, each attach
+    /// is its own period, so a ring before a `/clear` or a second resume does
+    /// not hold the mail that follows it.
+    func ringEpoch(surfaceId: UUID) -> String {
+        if let turn = turns[surfaceId] {
+            return MailboxDoorbell.promptEpoch(since: turn.since, atPrompt: turn.atPrompt)
+        }
+        guard let attached = attachedAt[surfaceId] else { return "none" }
+        return "\(Int64((attached.timeIntervalSince1970 * 1000).rounded()))|attach"
     }
 
     // MARK: - Queue
@@ -245,6 +260,7 @@ struct MailboxStdinBuffer {
     mutating func removeSurface(_ surfaceId: UUID) -> [Entry] {
         turns.removeValue(forKey: surfaceId)
         lastSubmitAt.removeValue(forKey: surfaceId)
+        attachedAt.removeValue(forKey: surfaceId)
         agentPids.removeValue(forKey: surfaceId)
         return queues.removeValue(forKey: surfaceId) ?? []
     }
@@ -254,6 +270,7 @@ struct MailboxStdinBuffer {
         queues = queues.filter { surfaceIds.contains($0.key) }
         turns = turns.filter { surfaceIds.contains($0.key) }
         lastSubmitAt = lastSubmitAt.filter { surfaceIds.contains($0.key) }
+        attachedAt = attachedAt.filter { surfaceIds.contains($0.key) }
         agentPids = agentPids.filter { surfaceIds.contains($0.key) }
     }
 

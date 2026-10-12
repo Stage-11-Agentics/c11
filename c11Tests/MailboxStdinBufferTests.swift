@@ -155,6 +155,26 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertEqual(gate(buffer, panel, at: t(6)), .closed)
     }
 
+    /// Each attach is its own idle period. A ring in one unknown period
+    /// (after a resume) does not hold the mail after a later `/clear`.
+    func testEachAttachIsItsOwnRingEpoch() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        XCTAssertEqual(buffer.ringEpoch(surfaceId: panel), "none")
+        buffer.noteAgentAttached(surfaceId: panel, at: Date(timeIntervalSince1970: 1.5))
+        XCTAssertEqual(buffer.ringEpoch(surfaceId: panel), "1500|attach")
+        buffer.noteAgentAttached(surfaceId: panel, at: Date(timeIntervalSince1970: 9))
+        XCTAssertEqual(buffer.ringEpoch(surfaceId: panel), "9000|attach")
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.beginAttempt(at: Date(timeIntervalSince1970: 2), epoch: "1500|attach")
+        XCTAssertFalse(ledger.rung(in: buffer.ringEpoch(surfaceId: panel)))
+        // A turn edge names the period again.
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: Date(timeIntervalSince1970: 10))
+        XCTAssertEqual(buffer.ringEpoch(surfaceId: panel), "10000|prompt")
+        buffer.forgetAgent(surfaceId: panel)
+        XCTAssertEqual(buffer.ringEpoch(surfaceId: panel), "none")
+    }
+
     func testQueueKeepsFifoAndIsolatesPanels() {
         var buffer = MailboxStdinBuffer()
         let a = UUID()

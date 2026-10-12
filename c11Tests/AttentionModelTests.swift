@@ -60,6 +60,7 @@ final class AttentionModelTests: XCTestCase {
         let surface = UUID()
         let originalCaller = UUID()
         let revisingCaller = UUID()
+        let ownerPanelId = UUID()
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
         let raisedAt = Date(timeIntervalSince1970: 1_000)
 
@@ -67,7 +68,7 @@ final class AttentionModelTests: XCTestCase {
             workspaceId: workspace,
             surfaceId: surface,
             flag: .raise("Needs review"),
-            suppression: .suppress,
+            delegation: .delegate(ownerPanelId: ownerPanelId),
             callerPanelId: originalCaller,
             now: raisedAt
         )
@@ -75,8 +76,20 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(raised.after.flagRaisedAt, raisedAt)
         XCTAssertEqual(raised.after.flagCallerPanelId, originalCaller)
         XCTAssertTrue(raised.after.suppressed)
+        XCTAssertEqual(raised.after.delegatedBy, ownerPanelId)
         XCTAssertEqual(raised.result.applied[MetadataKey.flag], true)
-        XCTAssertEqual(raised.result.applied[MetadataKey.suppressed], true)
+        XCTAssertEqual(raised.result.applied[MetadataKey.delegated], true)
+        let rawMetadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
+        XCTAssertNil(rawMetadata[MetadataKey.delegated], "delegated is a read alias, not a second stored state")
+        XCTAssertEqual(rawMetadata[MetadataKey.suppressed] as? Bool, true)
+        XCTAssertEqual(rawMetadata[MetadataKey.delegatedBy] as? String, ownerPanelId.uuidString)
+        let aliases = store.getMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            keys: [MetadataKey.delegated, MetadataKey.suppressed, MetadataKey.delegatedBy]
+        ).metadata
+        XCTAssertEqual(aliases[MetadataKey.delegated] as? Bool, true)
+        XCTAssertEqual(aliases[MetadataKey.suppressed] as? Bool, true)
 
         let revised = try store.mutateAttention(
             workspaceId: workspace,
@@ -98,10 +111,10 @@ final class AttentionModelTests: XCTestCase {
             workspaceId: workspace,
             surfaceId: surface,
             flag: .raise("Needs operator decision"),
-            suppression: .suppress
+            delegation: .delegate(ownerPanelId: ownerPanelId)
         )
         XCTAssertEqual(noOp.result.applied[MetadataKey.flag], false)
-        XCTAssertEqual(noOp.result.applied[MetadataKey.suppressed], false)
+        XCTAssertEqual(noOp.result.applied[MetadataKey.delegated], false)
 
         let lowered = try store.mutateAttention(
             workspaceId: workspace,
@@ -131,6 +144,146 @@ final class AttentionModelTests: XCTestCase {
                 surfaceId: surface,
                 flagRaisedAt: reraised.after.flagRaisedAt!
             )
+        )
+    }
+
+    func testDelegationAdoptsLegacySuppressionAndTransfersToTheLatestCaller() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        let firstOwner = UUID()
+        let nextOwner = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        _ = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            delegation: .delegate(ownerPanelId: nil)
+        )
+        let adopted = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            delegation: .delegate(ownerPanelId: firstOwner)
+        )
+        XCTAssertTrue(adopted.result.applied[MetadataKey.delegated] == true)
+        XCTAssertNil(adopted.before.delegatedBy)
+        XCTAssertEqual(adopted.after.delegatedBy, firstOwner)
+
+        let transferred = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            delegation: .delegate(ownerPanelId: nextOwner)
+        )
+        XCTAssertTrue(transferred.result.applied[MetadataKey.delegated] == true)
+        XCTAssertEqual(transferred.before.delegatedBy, firstOwner)
+        XCTAssertEqual(transferred.after.delegatedBy, nextOwner)
+        XCTAssertEqual(transferred.result.priorValues[MetadataKey.delegatedBy] as? String, firstOwner.uuidString)
+    }
+
+    func testDelegationPolicyRejectsSelfAndPreservesLegacyOwnerlessSuppression() {
+        let panel = UUID()
+        XCTAssertTrue(PanelAttentionDelegationPolicy.isSelfDelegation(
+            callerPanelId: panel,
+            targetPanelId: panel
+        ))
+        XCTAssertFalse(PanelAttentionDelegationPolicy.isSelfDelegation(
+            callerPanelId: nil,
+            targetPanelId: panel
+        ))
+        XCTAssertTrue(PanelAttentionDelegationPolicy.requiresCaller(
+            actor: .agent,
+            callerPanelId: nil,
+            isLegacyOwnerlessSuppression: false
+        ))
+        XCTAssertFalse(PanelAttentionDelegationPolicy.requiresCaller(
+            actor: .agent,
+            callerPanelId: nil,
+            isLegacyOwnerlessSuppression: true
+        ))
+        XCTAssertFalse(PanelAttentionDelegationPolicy.requiresCaller(
+            actor: .operator,
+            callerPanelId: nil,
+            isLegacyOwnerlessSuppression: false
+        ))
+    }
+
+    func testDelegateIndexTracksOwnerAdoptionTransferAndRemoval() {
+        let index = PanelAttentionIndex()
+        let workspace = UUID()
+        let surface = UUID()
+        let firstOwner = UUID()
+        let nextOwner = UUID()
+        let first = PanelAttentionSnapshot(
+            workspaceId: workspace,
+            surfaceId: surface,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            delegated: true,
+            delegatedBy: firstOwner
+        )
+        index.publish(first)
+        XCTAssertEqual(index.delegatesOwned(by: firstOwner), [first])
+
+        let transferred = PanelAttentionSnapshot(
+            workspaceId: workspace,
+            surfaceId: surface,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            delegated: true,
+            delegatedBy: nextOwner
+        )
+        index.publish(transferred)
+        XCTAssertTrue(index.delegatesOwned(by: firstOwner).isEmpty)
+        XCTAssertEqual(index.delegatesOwned(by: nextOwner), [transferred])
+
+        index.remove(workspaceId: workspace, surfaceId: surface)
+        XCTAssertTrue(index.delegatesOwned(by: nextOwner).isEmpty)
+    }
+
+    func testDelegateReleasePlannerHandlesOwnerCloseAndMissingOwnerRestore() {
+        let workspace = UUID()
+        let owner = UUID()
+        let liveDelegate = UUID()
+        let simultaneouslyClosing = UUID()
+        let legacySuppressed = UUID()
+        let attention = [
+            PanelAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: liveDelegate,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                delegated: true,
+                delegatedBy: owner
+            ),
+            PanelAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: simultaneouslyClosing,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                delegated: true,
+                delegatedBy: owner
+            ),
+            PanelAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: legacySuppressed,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                delegated: true
+            ),
+        ]
+
+        let closed = PanelAttentionReleasePlanner.forClosingPanels(
+            [owner, simultaneouslyClosing],
+            attention: attention
+        )
+        XCTAssertEqual(Set(closed.map(\.surfaceId)), Set([liveDelegate]))
+
+        let restored = PanelAttentionReleasePlanner.forMissingOwners(
+            livePanelIds: [liveDelegate, simultaneouslyClosing, legacySuppressed],
+            attention: attention
+        )
+        XCTAssertEqual(
+            Set(restored.map(\.surfaceId)),
+            Set([liveDelegate, simultaneouslyClosing])
         )
     }
 
@@ -205,6 +358,7 @@ final class AttentionModelTests: XCTestCase {
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
         let raisedAt: Double = 1_725_000_123
         let caller = UUID()
+        let ownerPanelId = UUID()
 
         store.restoreFromSnapshot(
             workspaceId: workspace,
@@ -213,6 +367,7 @@ final class AttentionModelTests: XCTestCase {
                 MetadataKey.flag: "Need a deployment decision",
                 MetadataKey.legacyFlagCallerSurfaceId: caller.uuidString,
                 MetadataKey.suppressed: true,
+                MetadataKey.delegatedBy: ownerPanelId.uuidString,
             ],
             sources: [
                 MetadataKey.flag: .init(source: .explicit, ts: raisedAt),
@@ -221,12 +376,14 @@ final class AttentionModelTests: XCTestCase {
                     ts: raisedAt + 99
                 ),
                 MetadataKey.suppressed: .init(source: .explicit, ts: raisedAt + 1),
+                MetadataKey.delegatedBy: .init(source: .explicit, ts: raisedAt + 1),
             ]
         )
         let snapshot = store.attentionSnapshot(workspaceId: workspace, surfaceId: surface)
         XCTAssertEqual(snapshot.flagReason, "Need a deployment decision")
         XCTAssertEqual(snapshot.flagCallerPanelId, caller)
         XCTAssertTrue(snapshot.suppressed)
+        XCTAssertEqual(snapshot.delegatedBy, ownerPanelId)
         XCTAssertEqual(snapshot.flagRaisedAt?.timeIntervalSince1970, raisedAt)
         XCTAssertEqual(
             store.getSource(workspaceId: workspace, surfaceId: surface, key: MetadataKey.flag),
@@ -274,6 +431,8 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(valid.flagReason, "Need operator approval")
         XCTAssertEqual(valid.flagRaisedAt?.timeIntervalSince1970, epoch)
         XCTAssertTrue(valid.suppressed)
+        XCTAssertTrue(valid.delegated)
+        XCTAssertNil(valid.delegatedBy, "legacy suppressed state has no owner to auto-release")
         XCTAssertEqual(
             store.getSource(workspaceId: workspace, surfaceId: validSurface, key: MetadataKey.flag),
             .explicit
@@ -549,15 +708,76 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(error["code"] as? String, "missing_caller_surface")
     }
 
+    func testAgentDelegationRequiresCallerSurfaceBeforeMainThreadCommit() {
+        let controller = TerminalController.shared
+        let response = AttentionTestBox<String?>(nil)
+        let completed = expectation(description: "flag.delegate validation response")
+        DispatchQueue.global(qos: .userInitiated).async {
+            response.set(
+                controller.socketWorkerV2Response(
+                    TerminalController.V2SocketRequest(
+                        id: 19,
+                        method: "flag.delegate",
+                        params: [
+                            "surface_id": UUID().uuidString,
+                            "by": "agent",
+                        ]
+                    )
+                )
+            )
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+
+        let data = try! XCTUnwrap(response.get()?.data(using: .utf8))
+        let object = try! XCTUnwrap(
+            try! JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        let error = try! XCTUnwrap(object["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "missing_caller_surface")
+    }
+
+    func testSocketRejectsInternalC11ActorForDelegation() {
+        let controller = TerminalController.shared
+        let response = AttentionTestBox<String?>(nil)
+        let completed = expectation(description: "internal actor validation response")
+        DispatchQueue.global(qos: .userInitiated).async {
+            response.set(
+                controller.socketWorkerV2Response(
+                    TerminalController.V2SocketRequest(
+                        id: 20,
+                        method: "flag.delegate",
+                        params: [
+                            "surface_id": UUID().uuidString,
+                            "caller_panel_id": UUID().uuidString,
+                            "by": "c11",
+                        ]
+                    )
+                )
+            )
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+
+        let data = try! XCTUnwrap(response.get()?.data(using: .utf8))
+        let object = try! XCTUnwrap(
+            try! JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        let error = try! XCTUnwrap(object["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "invalid_params")
+    }
+
     func testLaunchSequencerStampsIdentityAndAttentionBeforeSendingCommand() {
         var order: [String] = []
         AgentLaunchAttentionSequencer.stampThenSend(
             stampIdentity: { order.append("identity") },
-            stampSuppression: { order.append("suppression") },
+            stampDelegation: { order.append("delegation") },
             stampFlag: { order.append("flag") },
             sendCommand: { order.append("command") }
         )
-        XCTAssertEqual(order, ["identity", "suppression", "flag", "command"])
+        XCTAssertEqual(order, ["identity", "delegation", "flag", "command"])
     }
 
     func testNotificationIndexesRetainSuppressedHistoryButExcludeItsSignal() {

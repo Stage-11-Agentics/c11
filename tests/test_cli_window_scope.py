@@ -111,6 +111,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
         self.windows = fixture()
         self.calls = []
         self.mutations = []
+        self.reject_methods: set[str] = set()
 
     def window(self, params: dict) -> dict:
         token = params.get("window_id")
@@ -246,6 +247,8 @@ class Server(socketserver.ThreadingUnixStreamServer):
         return result
 
     def dispatch(self, method: str, params: dict) -> dict:
+        if method in self.reject_methods:
+            raise RPCError("method_not_found", f"Unexpected method: {method}")
         if method == "system.capabilities":
             return {"methods": ["window.list", "workspace.list", "workspace.current",
                                 "workspace.select", "area.list", "area.panels", "area.create",
@@ -253,7 +256,8 @@ class Server(socketserver.ThreadingUnixStreamServer):
                                 "panel.create", "panel.split", "panel.get_metadata", "panel.set_metadata",
                                 "system.identify", "system.tree", "workspace.group.list",
                                 "notification.create", "notification.create_for_panel", "sidebar.state",
-                                "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress",
+                                "flag.raise", "flag.lower", "flag.delegate", "flag.undelegate",
+                                "flag.suppress", "flag.unsuppress",
                                 "snapshot.create", "snapshot.restore", "snapshot.restore_set",
                                 "panel.get_titlebar_state", "area.swap", "area.join",
                                 "panel.move", "panel.reorder", "config.launch"],
@@ -725,7 +729,8 @@ def main() -> int:
             unchanged()
 
             for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
-                                    ("suppress", "flag.suppress"), ("unsuppress", "flag.unsuppress")):
+                                    ("delegate", "flag.delegate"), ("undelegate", "flag.undelegate"),
+                                    ("suppress", "flag.delegate"), ("unsuppress", "flag.undelegate")):
                 args = [command, "--panel", "1", "--by", "operator"]
                 if command == "raise-flag":
                     args.append("Synthetic reason")
@@ -736,6 +741,19 @@ def main() -> int:
                 args[2] = a_tab["ref"]
                 run(*args, env=caller, success=False)
                 unchanged()
+
+            # A newer CLI first tries the canonical method, then retries only
+            # the legacy attention name when an older app reports method_not_found.
+            server.reset()
+            server.reject_methods = {"flag.delegate"}
+            payload = json.loads(run("delegate", "--panel", "1", "--by", "operator", reset=False).stdout)
+            assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
+            assert [name for name, _ in server.calls if name in ("flag.delegate", "flag.suppress")] == [
+                "flag.delegate", "flag.suppress"
+            ], server.calls
+            fallback_request = routed("flag.suppress")
+            assert matches(b_ws["panels"][1], fallback_request["panel_id"]), fallback_request
+            assert server.mutations == [("flag.suppress", b["ref"], b_ws["ref"], b_ws["panels"][1]["ref"])], server.mutations
 
             for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
                 payload = json.loads(run("snapshot", *extra, env=caller).stdout)

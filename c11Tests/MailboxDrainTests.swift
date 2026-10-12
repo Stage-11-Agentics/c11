@@ -589,6 +589,23 @@ final class MailboxCLISeamTests: XCTestCase {
         XCTAssertEqual(parsed.bodyRef, "/tmp/diff.patch")
     }
 
+    func testToParentParsesByItselfAndConflictsWithRecipientFlags() throws {
+        let parsed = try MailboxSendArguments.parse(["--to-parent", "--body", "completion report"])
+        XCTAssertTrue(parsed.toParent)
+        XCTAssertNil(parsed.to)
+        XCTAssertNil(parsed.toWorkspace)
+        XCTAssertEqual(parsed.body, "completion report")
+
+        assertSend(
+            ["--to-parent", "--to", "owner", "--body", "report"],
+            fails: .toParentConflict
+        )
+        assertSend(
+            ["--to-parent", "--to-workspace", "workspace:2", "--body", "report"],
+            fails: .toParentConflict
+        )
+    }
+
     func testEmptyBodyIsRefused() {
         assertSend(["--to", "watcher"], fails: .emptyBody)
         assertSend(["--to", "watcher", "--body", ""], fails: .emptyBody)

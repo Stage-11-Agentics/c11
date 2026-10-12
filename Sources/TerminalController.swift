@@ -2440,6 +2440,9 @@ class TerminalController {
         let id: Any?
         let method: String
         let params: [String: Any]
+        /// Retained for the compatibility cases whose old spelling carried
+        /// semantics that the canonical method did not (legacy ownerless suppress).
+        var rawMethod: String? = nil
         /// C11-337: set when the request used an old method spelling; the
         /// response's generic `ref` values are echoed in that spelling.
         var legacyRefPrefix: String? = nil
@@ -2510,8 +2513,8 @@ class TerminalController {
         "flag.raise",
         "flag.lower",
         "flag.list",
-        "flag.suppress",
-        "flag.unsuppress",
+        "flag.delegate",
+        "flag.undelegate",
         // C11-217: WebKit waits are worker-owned. Their WebKit invocations hop
         // back to main for the short call, but the socket worker owns the
         // potentially long completion wait.
@@ -2744,10 +2747,15 @@ class TerminalController {
         for (surfaceIndex, panel) in orderedPanels(in: workspace).enumerated() {
             let paneUUID = paneByPanelId[panel.id]
             let selectedInPane = selectedInPaneByPanelId[panel.id] ?? false
+            let lineage = PanelLineage.shared.node(panelId: panel.id)
+            let parentLineage = lineage?.parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0) }
 
             var item: [String: Any] = [
                 "id": panel.id.uuidString,
                 "ref": v2Ref(kind: .surface, uuid: panel.id),
+                "parent_panel_id": v2OrNull(lineage?.parentPanelId?.uuidString),
+                "parent_panel_ref": v2Ref(kind: .surface, uuid: lineage?.parentPanelId),
+                "parent_panel_title": v2OrNull(parentLineage?.lastTitle),
                 "index": surfaceIndex,
                 "type": panel.panelType.rawValue,
                 "title": workspace.panelTitle(panelId: panel.id) ?? panel.displayTitle,
@@ -6343,8 +6351,11 @@ class TerminalController {
 
         var newWorkspaceId: UUID?
         let focus = socketCommandAllowsInAppFocusMutations()
+        let creatorPanelId = SocketCommandContext.current?.callerPanelId
         guard v2MainSyncWithDeadline({
-            let workspace = workspaceManager.addTab(select: focus, eagerLoadTerminal: !focus)
+            let workspace = PanelLineage.shared.withCreator(creatorPanelId) {
+                workspaceManager.addTab(select: focus, eagerLoadTerminal: !focus)
+            }
             newWorkspaceId = workspace.id
             return
         }) != nil else {
@@ -6370,6 +6381,7 @@ class TerminalController {
         }
 
         var result = "ERROR: Failed to create split"
+        let creatorPanelId = SocketCommandContext.current?.callerPanelId
         guard v2MainSyncWithDeadline({
             guard let workspaceId = workspaceManager.selectedWorkspaceId,
                   let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
@@ -6393,7 +6405,9 @@ class TerminalController {
                 return
             }
 
-            if let newPanelId = workspaceManager.newSplit(workspaceId: workspaceId, surfaceId: targetSurface, direction: direction) {
+            if let newPanelId = PanelLineage.shared.withCreator(creatorPanelId, operation: {
+                workspaceManager.newSplit(workspaceId: workspaceId, surfaceId: targetSurface, direction: direction)
+            }) {
                 result = "OK \(newPanelId.uuidString)"
             }
         }) != nil else {
@@ -8064,6 +8078,7 @@ class TerminalController {
 
         var result = "ERROR: Failed to create browser panel"
         let focus = socketCommandAllowsInAppFocusMutations()
+        let creatorPanelId = SocketCommandContext.current?.callerPanelId
         v2MainSync {
             guard let workspaceId = workspaceManager.selectedWorkspaceId,
                   let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
@@ -8071,12 +8086,14 @@ class TerminalController {
                 return
             }
 
-            if let browserPanelId = workspace.newBrowserSplit(
-                from: focusedPanelId,
-                orientation: .horizontal,
-                url: url,
-                focus: focus
-            )?.id {
+            if let browserPanelId = PanelLineage.shared.withCreator(creatorPanelId, operation: {
+                workspace.newBrowserSplit(
+                    from: focusedPanelId,
+                    orientation: .horizontal,
+                    url: url,
+                    focus: focus
+                )?.id
+            }) {
                 result = "OK \(browserPanelId.uuidString)"
             }
         }
@@ -8529,6 +8546,7 @@ class TerminalController {
 
         var result = "ERROR: Failed to create pane"
         let focus = socketCommandAllowsInAppFocusMutations()
+        let creatorPanelId = SocketCommandContext.current?.callerPanelId
         v2MainSync {
             guard let workspaceId = workspaceManager.selectedWorkspaceId,
                   let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
@@ -8537,16 +8555,17 @@ class TerminalController {
             }
 
             let newPanelId: UUID?
-            if panelType == .browser {
-                newPanelId = workspace.newBrowserSplit(
-                    from: focusedPanelId,
-                    orientation: orientation,
-                    insertFirst: insertFirst,
-                    url: url,
-                    focus: focus
-                )?.id
-            } else {
-                newPanelId = workspace.newTerminalSplit(
+            newPanelId = PanelLineage.shared.withCreator(creatorPanelId) {
+                if panelType == .browser {
+                    return workspace.newBrowserSplit(
+                        from: focusedPanelId,
+                        orientation: orientation,
+                        insertFirst: insertFirst,
+                        url: url,
+                        focus: focus
+                    )?.id
+                }
+                return workspace.newTerminalSplit(
                     from: focusedPanelId,
                     orientation: orientation,
                     insertFirst: insertFirst,
@@ -10259,6 +10278,7 @@ class TerminalController {
 
         var result = "ERROR: Failed to create tab"
         let focus = socketCommandAllowsInAppFocusMutations()
+        let creatorPanelId = SocketCommandContext.current?.callerPanelId
         v2MainSync {
             guard let workspaceId = workspaceManager.selectedWorkspaceId,
                   let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
@@ -10286,10 +10306,11 @@ class TerminalController {
             }
 
             let newPanelId: UUID?
-            if panelType == .browser {
-                newPanelId = workspace.newBrowserSurface(inPane: targetPaneId, url: url, focus: focus)?.id
-            } else {
-                newPanelId = workspace.newTerminalSurface(inPane: targetPaneId, focus: focus)?.id
+            newPanelId = PanelLineage.shared.withCreator(creatorPanelId) {
+                if panelType == .browser {
+                    return workspace.newBrowserSurface(inPane: targetPaneId, url: url, focus: focus)?.id
+                }
+                return workspace.newTerminalSurface(inPane: targetPaneId, focus: focus)?.id
             }
 
             if let id = newPanelId {

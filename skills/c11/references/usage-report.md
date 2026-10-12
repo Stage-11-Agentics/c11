@@ -188,8 +188,9 @@ workspace remain `waiting_entered_unattributed` and
 `workspace_agent_hours_unattributed`. These are derived from edges only.
 
 Coordination summaries count observed `mailbox.accepted` / `mailbox.delivered`
-events, accepted messages by sender (`mail_from`), and raised/lowered/suppressed/
-unsuppressed flag edges (`flag_events`). They count events, not unique people or
+events, accepted messages by sender (`mail_from`), and raised/lowered/delegated/
+undelegated attention edges (`flag_events`; the event stream retains the historical
+`flag.suppressed` / `flag.unsuppressed` names). They count events, not unique people or
 still-pending messages. `hang_causes` counts precursor causes, preserving an
 `unknown` cause. `hang_durations_ms` includes sample count, observed sum and max,
 and unknown precursor count. Missing/invalid samples, reported counts exceeding

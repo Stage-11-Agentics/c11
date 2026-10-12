@@ -188,7 +188,7 @@ Lineage: Login Button → Lint Fixes sub-agent"
 # 3b. If you will handle this worker's results, make it your delegate before the agent
 #     boots (see "Launch the workers you'll manage as delegates" below). Skip this only
 #     when the operator will drive the child directly or you are handing the work off.
-c11 suppress --panel $PANEL
+c11 delegate --panel $PANEL
 
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
 c11 set-agent --workspace $WS --panel $PANEL --type claude-code --model claude-opus-4-7
@@ -374,8 +374,8 @@ When you launch a worker whose results you will handle (an implementation worker
 you review and act on is the canonical case), launch it as your **delegate**. Its routine stops
 then come to you, and the operator hears that *you* are waiting, never that your worker
 finished. Launch normal when the operator will deal with the child directly (they asked for an
-instance they can watch or drive), or when you are handing the work off for good. The CLI still
-calls a delegate *suppressed*. Taking a delegate makes it yours on three counts:
+instance they can watch or drive), or when you are handing the work off for good. A delegate is
+yours in three ways:
 
 - **Completion.** Delegation removes the operator-facing stop signal, and polling for flags
   does not detect ordinary completion. Opt into the mailbox doorbell
@@ -387,18 +387,22 @@ calls a delegate *suppressed*. Taking a delegate makes it yours on three counts:
   parent can't or shouldn't judge it, raise a c11 flag."* Without that instruction a delegate
   reads its quiet as a gag, and a worker that believes it has been gagged will sit blocked in
   silence.
-- **Release.** Before you close, hand off or abandon a delegate, `c11 unsuppress` it, or its
-  stops reach no one.
+- **Visibility.** Its teal mark distinguishes a quiet delegate from a plain idle panel; a flag
+  overrides that mark in violet.
+
+c11 releases delegates when their owner panel closes. A re-tasked delegate releases itself with
+`c11 undelegate --panel "$C11_PANEL_ID"`.
 
 ```bash
-c11 launch-agent --type claude-code --suppressed ...   # your delegate; you handle its results
-c11 suppress --panel $PANEL                            # manual-launch path: right after creating the panel
-c11 unsuppress --panel $PANEL                          # release: you're leaving, or the operator took it over
+c11 launch-agent --type claude-code --delegated ...    # your delegate; you handle its results
+c11 delegate --panel $PANEL                            # manual-launch path: right after creating the panel
+c11 undelegate --panel $PANEL                          # the operator took it over
 c11 get-metadata --workspace $WS --panel $PANEL | grep '^flag = '   # escalation check; completion arrives by mailbox
 ```
 
-`get-metadata` is the read for attention state — `flag = <reason>` and `suppressed = true`
-appear only when set, and neither `tree` nor `get-titlebar-state` carries them.
+`get-metadata` is the read for attention state — `flag = <reason>`, `delegated = true`, and
+`delegated_by = <panel UUID>` appear when set. Neither `tree` nor `get-titlebar-state` carries
+attention state.
 
 ## Writing c11-aware agent prompts
 

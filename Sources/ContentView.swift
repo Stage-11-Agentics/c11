@@ -11679,6 +11679,12 @@ private struct WorkspacePulseMark: View {
             alpha: 1
         )
     )
+    private static let delegatedLightColor = Color(
+        nsColor: NSColor(hex: Workspace.delegatedActivityHex(lightBackground: true)) ?? .secondaryLabelColor
+    )
+    private static let delegatedDarkColor = Color(
+        nsColor: NSColor(hex: Workspace.delegatedActivityHex(lightBackground: false)) ?? .secondaryLabelColor
+    )
 
     let state: WorkspacePulseState
     let lifecycleColor: Color
@@ -11689,6 +11695,7 @@ private struct WorkspacePulseMark: View {
 
     @AppStorage(ActivityMarkSettings.staticMarksKey)
     private var staticMarks = ActivityMarkSettings.defaultStaticMarks
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var clockToken: UUID?
@@ -11702,7 +11709,11 @@ private struct WorkspacePulseMark: View {
     }
 
     private var color: Color {
-        flagged ? Self.flaggedColor : lifecycleColor
+        if flagged { return Self.flaggedColor }
+        if suppressed {
+            return colorScheme == .light ? Self.delegatedLightColor : Self.delegatedDarkColor
+        }
+        return lifecycleColor
     }
 
     private var motion: BonsplitActivityMarkMotion? {

@@ -19,6 +19,12 @@ enum LegacyWireAliases {
     /// so every registry (handlers, off-main set, focus-intent set,
     /// capabilities) holds only canonical names.
     nonisolated static func canonicalMethod(_ method: String) -> String {
+        if method == "flag.suppress" {
+            return "flag.delegate"
+        }
+        if method == "flag.unsuppress" {
+            return "flag.undelegate"
+        }
         if method.hasPrefix("tab.") {
             return "panel." + method.dropFirst("tab.".count)
         }

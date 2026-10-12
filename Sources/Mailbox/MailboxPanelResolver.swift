@@ -59,22 +59,20 @@ struct MailboxPanelResolver {
 
     // MARK: - Mailbox metadata enumeration
 
-    /// One tuple per live surface that has a `title`:
+    /// One tuple per live panel, including untitled panels so `id:<uuid>` can
+    /// address them without introducing fake title matches:
     ///   * surface UUID
     ///   * the title (mailbox address)
     ///   * every `mailbox.*` key it carries, as strings (alignment doc §3:
     ///     v1 metadata values are strings; non-string entries are dropped).
     ///
-    /// Surfaces without a title can't be addressed and are filtered out.
     func panelsWithMailboxMetadata() -> [PanelMetadata] {
         livePanels().compactMap { panelId in
             let (metadata, _) = metadataStore.getMetadata(
                 workspaceId: workspaceId,
                 surfaceId: panelId
             )
-            guard let title = metadata[MetadataKey.title] as? String else {
-                return nil
-            }
+            let title = metadata[MetadataKey.title] as? String ?? ""
             var mailboxKeys: [String: String] = [:]
             for (key, value) in metadata where key.hasPrefix(Self.metadataPrefix) {
                 if let stringValue = value as? String {
@@ -125,7 +123,7 @@ struct MailboxPanelResolver {
         /// The address-precedence view (`title`/`address`/`role`) used by
         /// `MailboxMatcher`.
         var identity: MailboxIdentity {
-            MailboxIdentity(title: name, address: address, role: role)
+            MailboxIdentity(title: name, address: address, role: role, panelId: surfaceId)
         }
 
         private func splitCommaSeparated(_ value: String?) -> [String] {
@@ -196,7 +194,7 @@ struct MailboxGlobalResolver {
         }
 
         var identity: MailboxIdentity {
-            MailboxIdentity(title: name, address: address, role: role)
+            MailboxIdentity(title: name, address: address, role: role, panelId: surfaceId)
         }
     }
 

@@ -17,6 +17,7 @@ enum PanelAttentionReason {
 enum PanelAttentionActor: String, CaseIterable {
     case `operator`
     case agent
+    case c11
 }
 
 enum PanelAttentionFlagMutation {
@@ -25,10 +26,24 @@ enum PanelAttentionFlagMutation {
     case lower
 }
 
-enum PanelAttentionSuppressionMutation {
+enum PanelAttentionDelegationMutation {
     case unchanged
-    case suppress
-    case unsuppress
+    case delegate(ownerPanelId: UUID?)
+    case undelegate
+}
+
+enum PanelAttentionDelegationPolicy {
+    static func requiresCaller(
+        actor: PanelAttentionActor,
+        callerPanelId: UUID?,
+        isLegacyOwnerlessSuppression: Bool
+    ) -> Bool {
+        actor == .agent && callerPanelId == nil && !isLegacyOwnerlessSuppression
+    }
+
+    static func isSelfDelegation(callerPanelId: UUID?, targetPanelId: UUID) -> Bool {
+        callerPanelId == targetPanelId
+    }
 }
 
 struct PanelAttentionSnapshot: Equatable, Identifiable {
@@ -37,7 +52,27 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
     let flagReason: String?
     let flagRaisedAt: Date?
     let flagCallerPanelId: UUID?
-    let suppressed: Bool
+    let delegated: Bool
+    let delegatedBy: UUID?
+    var suppressed: Bool { delegated }
+
+    init(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flagReason: String?,
+        flagRaisedAt: Date?,
+        flagCallerPanelId: UUID? = nil,
+        delegated: Bool,
+        delegatedBy: UUID? = nil
+    ) {
+        self.workspaceId = workspaceId
+        self.surfaceId = surfaceId
+        self.flagReason = flagReason
+        self.flagRaisedAt = flagRaisedAt
+        self.flagCallerPanelId = flagCallerPanelId
+        self.delegated = delegated
+        self.delegatedBy = delegatedBy
+    }
 
     init(
         workspaceId: UUID,
@@ -47,12 +82,14 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
         flagCallerPanelId: UUID? = nil,
         suppressed: Bool
     ) {
-        self.workspaceId = workspaceId
-        self.surfaceId = surfaceId
-        self.flagReason = flagReason
-        self.flagRaisedAt = flagRaisedAt
-        self.flagCallerPanelId = flagCallerPanelId
-        self.suppressed = suppressed
+        self.init(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            flagReason: flagReason,
+            flagRaisedAt: flagRaisedAt,
+            flagCallerPanelId: flagCallerPanelId,
+            delegated: suppressed
+        )
     }
 
     var id: String { "\(workspaceId.uuidString):\(surfaceId.uuidString)" }
@@ -157,14 +194,54 @@ final class FailClosedCommitGate<Result>: @unchecked Sendable {
 enum AgentLaunchAttentionSequencer {
     static func stampThenSend(
         stampIdentity: () -> Void,
-        stampSuppression: () throws -> Void,
+        stampDelegation: () throws -> Void,
         stampFlag: () throws -> Void,
         sendCommand: () -> Void
     ) rethrows {
         stampIdentity()
-        try stampSuppression()
+        try stampDelegation()
         try stampFlag()
         sendCommand()
+    }
+}
+
+/// Pure lifecycle decision for delegates whose owner panel is closing or did
+/// not return during restore. Kept separate from Workspace so `c11-logic` can
+/// prove close/move/simultaneous-teardown rules without constructing AppKit.
+enum PanelAttentionReleasePlanner {
+    static func forClosingPanels(
+        _ closingPanelIds: Set<UUID>,
+        attention: [PanelAttentionSnapshot]
+    ) -> [PanelAttentionSnapshot] {
+        attention
+            .filter { snapshot in
+                snapshot.delegated
+                    && !closingPanelIds.contains(snapshot.surfaceId)
+                    && snapshot.delegatedBy.map(closingPanelIds.contains) == true
+            }
+            .sorted(by: stableOrder)
+    }
+
+    static func forMissingOwners(
+        livePanelIds: Set<UUID>,
+        attention: [PanelAttentionSnapshot]
+    ) -> [PanelAttentionSnapshot] {
+        attention
+            .filter { snapshot in
+                snapshot.delegated
+                    && snapshot.delegatedBy.map { !livePanelIds.contains($0) } == true
+            }
+            .sorted(by: stableOrder)
+    }
+
+    private static func stableOrder(
+        _ lhs: PanelAttentionSnapshot,
+        _ rhs: PanelAttentionSnapshot
+    ) -> Bool {
+        if lhs.workspaceId != rhs.workspaceId {
+            return lhs.workspaceId.uuidString < rhs.workspaceId.uuidString
+        }
+        return lhs.surfaceId.uuidString < rhs.surfaceId.uuidString
     }
 }
 
@@ -173,6 +250,7 @@ final class PanelAttentionIndex: ObservableObject {
     static let shared = PanelAttentionIndex()
 
     @Published private(set) var snapshots: [String: PanelAttentionSnapshot] = [:]
+    private var delegateKeysByOwner: [UUID: Set<String>] = [:]
 
     var flaggedCount: Int { snapshots.values.lazy.filter(\.isFlagged).count }
     var oldestFlags: [PanelAttentionSnapshot] {
@@ -192,20 +270,60 @@ final class PanelAttentionIndex: ObservableObject {
 
     func publish(_ snapshot: PanelAttentionSnapshot) {
         let key = Self.key(workspaceId: snapshot.workspaceId, surfaceId: snapshot.surfaceId)
+        if let prior = snapshots[key], prior.delegated {
+            if !snapshot.delegated || prior.delegatedBy != snapshot.delegatedBy {
+                removeDelegateKey(key, ownerPanelId: prior.delegatedBy)
+            }
+        }
         if !snapshot.isFlagged && !snapshot.suppressed {
             snapshots.removeValue(forKey: key)
         } else if snapshots[key] != snapshot {
             snapshots[key] = snapshot
         }
+        if snapshot.delegated, let ownerPanelId = snapshot.delegatedBy {
+            delegateKeysByOwner[ownerPanelId, default: []].insert(key)
+        }
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
-        snapshots.removeValue(forKey: Self.key(workspaceId: workspaceId, surfaceId: surfaceId))
+        let key = Self.key(workspaceId: workspaceId, surfaceId: surfaceId)
+        let prior = snapshots.removeValue(forKey: key)
+        removeDelegateKey(key, ownerPanelId: prior?.delegatedBy)
+    }
+
+    func delegatesOwned(by ownerPanelId: UUID) -> [PanelAttentionSnapshot] {
+        (delegateKeysByOwner[ownerPanelId] ?? [])
+            .compactMap { snapshots[$0] }
+            .filter { $0.delegated && $0.delegatedBy == ownerPanelId }
+            .sorted {
+                if $0.workspaceId != $1.workspaceId {
+                    return $0.workspaceId.uuidString < $1.workspaceId.uuidString
+                }
+                return $0.surfaceId.uuidString < $1.surfaceId.uuidString
+            }
     }
 
     func prune(workspaceId: UUID, validSurfaceIds: Set<UUID>) {
         snapshots = snapshots.filter {
             $0.value.workspaceId != workspaceId || validSurfaceIds.contains($0.value.surfaceId)
+        }
+        rebuildDelegateIndex()
+    }
+
+    private func removeDelegateKey(_ key: String, ownerPanelId: UUID?) {
+        guard let ownerPanelId else { return }
+        delegateKeysByOwner[ownerPanelId]?.remove(key)
+        if delegateKeysByOwner[ownerPanelId]?.isEmpty == true {
+            delegateKeysByOwner.removeValue(forKey: ownerPanelId)
+        }
+    }
+
+    private func rebuildDelegateIndex() {
+        delegateKeysByOwner.removeAll(keepingCapacity: true)
+        for (key, snapshot) in snapshots where snapshot.delegated {
+            if let ownerPanelId = snapshot.delegatedBy {
+                delegateKeysByOwner[ownerPanelId, default: []].insert(key)
+            }
         }
     }
 
@@ -222,9 +340,18 @@ final class PanelAttentionService {
     static let shared = PanelAttentionService()
 
     private let feedProjection: FeedProjectionBridge
+    private var didInstallCloseObserver = false
 
     init(feedProjection: FeedProjectionBridge = .shared) {
         self.feedProjection = feedProjection
+    }
+
+    func installCloseObserver() {
+        guard !didInstallCloseObserver else { return }
+        didInstallCloseObserver = true
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] closingPanelIds in
+            self?.releaseDelegatesForClosingPanels(closingPanelIds)
+        }
     }
 
     @discardableResult
@@ -279,34 +406,6 @@ final class PanelAttentionService {
         return try lower(workspaceId: workspaceId, surfaceId: surfaceId, by: actor)
     }
 
-    @discardableResult
-    func suppress(
-        workspaceId: UUID,
-        surfaceId: UUID,
-        by actor: PanelAttentionActor
-    ) throws -> PanelMetadataStore.WriteResult {
-        try mutate(
-            workspaceId: workspaceId,
-            surfaceId: surfaceId,
-            suppression: .suppress,
-            actor: actor
-        )
-    }
-
-    @discardableResult
-    func unsuppress(
-        workspaceId: UUID,
-        surfaceId: UUID,
-        by actor: PanelAttentionActor
-    ) throws -> PanelMetadataStore.WriteResult {
-        try mutate(
-            workspaceId: workspaceId,
-            surfaceId: surfaceId,
-            suppression: .unsuppress,
-            actor: actor
-        )
-    }
-
     func syncFromMetadata(workspaceId: UUID, surfaceId: UUID) {
         let snapshot = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: workspaceId,
@@ -323,6 +422,149 @@ final class PanelAttentionService {
         )
         publishProjection(canonical)
         TerminalNotificationStore.shared.refreshSignalEligibility()
+    }
+
+    @discardableResult
+    func delegate(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        ownerPanelId: UUID?,
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult {
+        try mutate(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            delegation: .delegate(ownerPanelId: ownerPanelId),
+            actor: actor
+        )
+    }
+
+    @discardableResult
+    func undelegate(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult {
+        try mutate(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            delegation: .undelegate,
+            actor: actor
+        )
+    }
+
+    /// Compatibility entry point for the established suppression handler. New
+    /// callers may supply an owner; old ownerless suppression remains readable.
+    @discardableResult
+    func suppress(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        ownerPanelId: UUID? = nil,
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult {
+        try delegate(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            ownerPanelId: ownerPanelId,
+            by: actor
+        )
+    }
+
+    @discardableResult
+    func unsuppress(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        by actor: PanelAttentionActor
+    ) throws -> PanelMetadataStore.WriteResult {
+        try undelegate(workspaceId: workspaceId, surfaceId: surfaceId, by: actor)
+    }
+
+    /// Releases every live delegate owned by a panel. The caller passes panels
+    /// that are part of a simultaneous teardown so they do not briefly emit a
+    /// newly eligible stop signal immediately before they are removed too.
+    func releaseDelegatesOwned(
+        by ownerPanelId: UUID,
+        excludingPanelIds: Set<UUID> = []
+    ) {
+        releaseDelegatesForClosingPanels(excludingPanelIds.union([ownerPanelId]))
+    }
+
+    func releaseDelegatesForClosingPanels(_ closingPanelIds: Set<UUID>) {
+        let candidates = PanelAttentionIndex.shared.snapshots.values
+        let releases = PanelAttentionReleasePlanner.forClosingPanels(
+            closingPanelIds,
+            attention: Array(candidates)
+        )
+        for snapshot in releases {
+            guard let workspace = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: snapshot.surfaceId,
+                preferredWorkspaceId: snapshot.workspaceId
+            )?.workspace else { continue }
+            _ = try? undelegate(
+                workspaceId: workspace.id,
+                surfaceId: snapshot.surfaceId,
+                by: .c11
+            )
+        }
+    }
+
+    /// Rebuild the tooltip and panel-sheet relationship text when an owner's
+    /// displayed title changes. Delegates can live in another workspace, so
+    /// the owner workspace cannot refresh those projections itself.
+    func refreshDelegatePresentations(ownedBy ownerPanelId: UUID) {
+        let ownerTitle: String?
+        if let owner = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerPanelId),
+           let panel = owner.workspace.panels[ownerPanelId] {
+            ownerTitle = owner.workspace.panelTitle(panelId: ownerPanelId) ?? panel.displayTitle
+        } else {
+            ownerTitle = nil
+        }
+        for entry in PanelAttentionIndex.shared.delegatesOwned(by: ownerPanelId) {
+            guard let workspace = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: entry.surfaceId,
+                preferredWorkspaceId: entry.workspaceId
+            )?.workspace else { continue }
+            workspace.setDelegationOwnerTitle(ownerTitle, forSurface: entry.surfaceId)
+        }
+    }
+
+    /// A session restore can bring back a delegate without its owner (for
+    /// example, after a crash during close). Legacy suppressed records have no
+    /// owner and are deliberately absent from this query.
+    func releaseDelegatesWithMissingOwners(livePanelIds: Set<UUID>) {
+        let candidates = PanelAttentionIndex.shared.snapshots.values
+        let candidateSnapshots = Array(candidates)
+        let releases = PanelAttentionReleasePlanner.forMissingOwners(
+            livePanelIds: livePanelIds,
+            attention: candidateSnapshots
+        )
+        let releasedIds = Set(releases.map(\.surfaceId))
+        for snapshot in candidateSnapshots
+        where snapshot.delegated && !releasedIds.contains(snapshot.surfaceId) {
+            guard let ownerPanelId = snapshot.delegatedBy,
+                  livePanelIds.contains(ownerPanelId),
+                  let owner = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerPanelId),
+                  let ownerPanel = owner.workspace.panels[ownerPanelId],
+                  let delegateWorkspace = AppDelegate.shared?.workspaceContainingPanel(
+                    panelId: snapshot.surfaceId,
+                    preferredWorkspaceId: snapshot.workspaceId
+                  )?.workspace else { continue }
+            delegateWorkspace.setDelegationOwnerTitle(
+                owner.workspace.panelTitle(panelId: ownerPanelId) ?? ownerPanel.displayTitle,
+                forSurface: snapshot.surfaceId
+            )
+        }
+        for snapshot in releases {
+            guard let workspace = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: snapshot.surfaceId,
+                preferredWorkspaceId: snapshot.workspaceId
+            )?.workspace else { continue }
+            _ = try? undelegate(
+                workspaceId: workspace.id,
+                surfaceId: snapshot.surfaceId,
+                by: .c11
+            )
+        }
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
@@ -385,7 +627,7 @@ final class PanelAttentionService {
         workspaceId: UUID,
         surfaceId: UUID,
         flag: PanelAttentionFlagMutation = .unchanged,
-        suppression: PanelAttentionSuppressionMutation = .unchanged,
+        delegation: PanelAttentionDelegationMutation = .unchanged,
         callerPanelId: UUID? = nil,
         actor: PanelAttentionActor = .agent,
         answer: String? = nil,
@@ -396,13 +638,13 @@ final class PanelAttentionService {
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: flag,
-            suppression: suppression,
+            delegation: delegation,
             callerPanelId: callerPanelId,
             expectedFlagEpoch: expectedFlagEpoch
         )
         let flagChanged = transaction.result.applied[MetadataKey.flag] == true
-        let suppressionChanged = transaction.result.applied[MetadataKey.suppressed] == true
-        guard flagChanged || suppressionChanged else { return transaction.result }
+        let delegationChanged = transaction.result.applied[MetadataKey.delegated] == true
+        guard flagChanged || delegationChanged else { return transaction.result }
 
         publishProjection(transaction.after)
         TerminalNotificationStore.shared.refreshSignalEligibility()
@@ -443,11 +685,13 @@ final class PanelAttentionService {
                 }
             }
         }
-        if suppressionChanged {
-            if transaction.after.suppressed {
+        if delegationChanged {
+            if transaction.after.delegated {
                 EventEmitter.shared.emitFlagSuppressed(
                     workspace: workspaceId,
                     surface: surfaceId,
+                    delegatedBy: transaction.after.delegatedBy,
+                    priorDelegatedBy: transaction.before.delegatedBy,
                     by: actor
                 )
                 TerminalNotificationStore.shared.cancelRoutineExternalNotifications(
@@ -458,6 +702,7 @@ final class PanelAttentionService {
                 EventEmitter.shared.emitFlagUnsuppressed(
                     workspace: workspaceId,
                     surface: surfaceId,
+                    delegatedBy: transaction.before.delegatedBy,
                     by: actor
                 )
             }
@@ -472,9 +717,21 @@ final class PanelAttentionService {
 
     private func publishProjection(_ snapshot: PanelAttentionSnapshot) {
         PanelAttentionIndex.shared.publish(snapshot)
-        AppDelegate.shared?.workspaceManagerFor(workspaceId: snapshot.workspaceId)?
-            .workspaces.first(where: { $0.id == snapshot.workspaceId })?
-            .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
+        let workspace = AppDelegate.shared?.workspaceContainingPanel(
+            panelId: snapshot.surfaceId,
+            preferredWorkspaceId: snapshot.workspaceId
+        )?.workspace
+        if snapshot.delegated, let ownerPanelId = snapshot.delegatedBy,
+           let owner = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerPanelId),
+           let ownerPanel = owner.workspace.panels[ownerPanelId] {
+            workspace?.setDelegationOwnerTitle(
+                owner.workspace.panelTitle(panelId: ownerPanelId) ?? ownerPanel.displayTitle,
+                forSurface: snapshot.surfaceId
+            )
+        } else {
+            workspace?.setDelegationOwnerTitle(nil, forSurface: snapshot.surfaceId)
+        }
+        workspace?.setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
         // Copy the snapshot off main. Do not project the feed row here.
         feedProjection.noteAttention(snapshot)
     }

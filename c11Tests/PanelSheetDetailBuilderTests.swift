@@ -189,6 +189,34 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         XCTAssertNil(PanelSheetDetailBuilder.build(inputs()).subtitle)
     }
 
+    func testDelegateRelationshipIsVisibleAlongsidePanelLocator() {
+        var input = inputs(directory: "/repo")
+        input.relationshipLabel = "Delegate of Planner"
+        input.lineageNote = "Child of Intake"
+
+        XCTAssertEqual(
+            PanelSheetDetailBuilder.build(input).subtitle,
+            "Delegate of Planner · Child of Intake · /repo"
+        )
+    }
+
+    func testDelegateOfItsParentOmitsRedundantChildRelationship() {
+        let owner = UUID()
+        XCTAssertNil(PanelSheetDetailBuilder.parentLineageNote(
+            parentTitle: "Planner",
+            parentPanelId: owner,
+            delegateOwnerPanelId: owner
+        ))
+        XCTAssertEqual(
+            PanelSheetDetailBuilder.parentLineageNote(
+                parentTitle: "Planner",
+                parentPanelId: UUID(),
+                delegateOwnerPanelId: owner
+            ),
+            "Child of Planner"
+        )
+    }
+
     // MARK: Title
 
     func testFullTitleIsKeptWhole() {

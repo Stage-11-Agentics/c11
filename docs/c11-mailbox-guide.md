@@ -30,7 +30,7 @@ flowchart LR
 Two facts to internalize:
 
 1. **The filesystem is the contract.** The CLI is convenience over file I/O. Any process that can write a JSON file to a directory can send a message; any process that can list a directory can receive one.
-2. **A panel is addressed by a stable handle, falling back to its name.** The resolver matches `to` with precedence **address → role → title** (see [Addressing](#addressing-stable-handles-and-the-title-fallback) below). A panel is addressable as long as it has a `title` (set with `c11 set-title` / `c11 rename-panel`); the optional `mailbox.address` / `mailbox.role` keys give it a rename-proof handle on top.
+2. **A panel is addressed by a stable handle, falling back to its name.** The resolver matches `to` with precedence **address → role → title** (see [Addressing](#addressing-stable-handles-and-the-title-fallback) below). A panel needs a title for bare-name addressing; the optional `mailbox.address` / `mailbox.role` keys give it a rename-proof handle, and `id:<uuid>` reaches an untitled panel by its exact UUID.
 
 ---
 
@@ -142,11 +142,13 @@ c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.role    --value "delegato
 c11 mailbox send --to panel:delegator-c11-143 --body "…"   # matches mailbox.address ONLY
 c11 mailbox send --to role:delegator            --body "…"   # matches mailbox.role ONLY
 c11 mailbox send --to watcher                   --body "…"   # bare: address → role → title
+c11 mailbox send --to id:00000000-0000-0000-0000-000000000011 --body "…" # exact panel UUID
+c11 mailbox send --to-parent --body "done"      # this child panel's direct parent
 ```
 
-These `panel:` / `role:` forms select *which panels* match; the workspace `--to-workspace` qualifier (below) is an orthogonal axis selecting *which workspace*. The envelope's `to` field stays an opaque string — no schema change — so the framed block a recipient sees carries whatever handle the sender used.
+These `panel:` / `role:` forms select *which panels* match; `id:<uuid>` matches one exact panel UUID and never falls back to a title. The workspace `--to-workspace` qualifier (below) is an orthogonal axis selecting *which workspace*. The envelope's `to` field stays an opaque string — no schema change — so the framed block a recipient sees carries whatever handle the sender used. `--to-parent` asks c11 for the caller's direct lineage parent and sends to its exact UUID; it requires `C11_PANEL_ID`, fails for a root or a closed parent, and never falls back to an ambiguous title.
 
-`panel:` and `role:` (and the older qualifier prefixes) are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a panel whose title literally starts with `panel:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
+`panel:`, `role:`, and `id:` (and the older panel qualifier prefixes) are **reserved leading tokens** in `--to`: a value beginning with one is always parsed as that qualifier, never as a title. So a panel whose title literally starts with one of these prefixes is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
 
 **Back-compat.** A panel with only a `title` is addressable by that title exactly as before. `mailbox.address` / `mailbox.role` are additive. Whatever handle resolves the recipient, its inbox directory is keyed on the recipient panel's UUID (lowercased), never on the title, so a title with `/`, a 100-byte title, or a rename never breaks delivery.
 

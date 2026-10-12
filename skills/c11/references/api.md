@@ -183,7 +183,7 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
     [--prompt <text> | --prompt-file <path>] [--title <text>] \
-    [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
+    [--flag <reason>] [--delegated] [--env K=V ...] [--json]
     # Launch a typed agent (claude-code|codex|grok|kimi|opencode|github-copilot|pi|omp,
     # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new panel or a
     # fresh workspace. One command owns the per-agent invocation quirks, model/effort
@@ -199,7 +199,7 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
     # --flag <reason> raises a sticky flag before command delivery (operator-designated
-    # priority missions only); --suppressed launches the worker as your delegate (its
+    # priority missions only); --delegated launches the worker as your delegate (its
     # routine stops go to you, not the operator). Semantics: "Delegates" in SKILL.md.
     # cwd precedence: explicit --cwd > workspace root > launching panel cwd (the same
     # rule as every new terminal; see "Where a new terminal starts" below).
@@ -446,9 +446,9 @@ at `99+`; accessibility labels and tooltips retain the exact count.
   payload, cancellation or outside drop cannot partially transfer/reorder a member.
   Shift-click selects visible workspace rows only, excluding collapsed members.
 - Attention includes every member panel, including collapsed/offscreen members.
-  Flags count plain terminals and suppressed panels as well as agents. Any flag
+  Flags count plain terminals and delegated panels as well as agents. Any flag
   makes the visible group signal violet; clearing the last flag restores ordinary
-  tint. Waiting counts only resolved waiting panels that are not suppressed. Unread
+  tint. Waiting counts only resolved waiting panels that are not delegated. Unread
   counts workspace notification records exactly once, including workspace-scoped
   records; it does not manufacture a waiting panel. Transferring a member transfers
   its contribution to the destination header. Badge changes do not select a
@@ -558,6 +558,12 @@ c11 get-metadata --key role --sources
 c11 clear-metadata --key task
 ```
 
+`get-metadata` includes read-only lineage projections: `parent_panel_id` (the
+direct creator UUID), `parent_panel_ref` (its current ref), and
+`parent_panel_title` (its last known title). Each is `null` for a root or
+unknown parent. They are not stored in panel metadata; `set-metadata` and
+`clear-metadata` reject them. Use `c11 family` for the full creation tree.
+
 ## Agent declaration
 
 ```bash
@@ -648,6 +654,33 @@ c11 tree --canvas-cols 100           # Override floor plan canvas width
 c11 tree --json                      # Structured JSON (pixel + percent coords, split paths, content area)
 ```
 
+Live panel nodes include `parent_panel_id`, `parent_panel_ref`, and
+`parent_panel_title`. Roots and panels whose creator is unknown have a null
+parent. Text output marks a known child with `↳ child of <panel ref> <title>`.
+
+```bash
+c11 family                         # Caller panel's root and descendants
+c11 family --panel panel:12        # Another panel's family
+c11 family --panel panel:12 --json # Formatted lineage output for scripts
+c11 --id-format both family --json # Include stable UUIDs and short refs
+```
+
+Text output lists type, title, live/closed state, delegate status, and workspace
+for each node. Socket method: `panel.family`. Its version 1 response carries
+`selected_panel_id/ref`, `root_panel_id/ref`, and preorder `nodes`. Each node
+has `id`, `ref`, `parent_panel_id/ref`, `title`, `type`, `state` (`live` or
+`closed`), `agent_type`, `delegated`, `delegated_by`, `closed_at`, and workspace
+identity/title. Closed ancestors remain in the family while a live descendant
+depends on them. The socket response carries stable UUIDs and refs in its
+schema fields. CLI JSON applies the global `--id-format` policy and defaults to
+refs; use `c11 --id-format both family --json` when scripts need stable UUIDs.
+Lineage is app-level session state, not workspace snapshot or metadata state.
+
+`c11 mailbox send --to-parent --body "…"` resolves the caller's direct parent
+by exact panel UUID, even when another workspace has the same title. It needs
+`C11_PANEL_ID`, and refuses a root, a closed parent, or an unverified socket
+resolution rather than writing an envelope to the sender's outbox.
+
 Every area's JSON output includes: `pixel_rect`, `percent_rect`, `h_range` / `v_range` (both pixel and percent), `split_path` (a non-persistent ordered list of `H:left | H:right | V:top | V:bottom`), and the workspace `content_area` dimensions. Use `split_path` for current-layout reasoning only; use `area:<n>` / area UUID for stable references across layout mutations.
 
 Every panel node (in `tree --json` and `panel.list`) also carries `last_seen_at` and `being_seen`: when the operator last looked at that panel. A panel is *being seen* while it is the selected panel of the focused area, in the selected workspace of the key c11 window, with c11 frontmost, that window on the active Space and not occluded, and the screen unlocked, awake and out of screensaver. `last_seen_at` is an ISO-8601 UTC timestamp (second precision) of the moment it last stopped being seen (equal to now while `being_seen` is true), or `null` if the operator has never looked at it. A socket focus change while c11 is frontmost DOES stamp the old panel and mark the new one `being_seen`; while c11 is in the background it changes nothing. The value survives relaunch, but it rides the session autosave, so the persisted copy can lag by up to about a minute. Use it to tell panels the operator has read from ones they have not: `c11 tree --json | jq '.. | objects | select(has("being_seen") and .last_seen_at == null)'`.
@@ -694,7 +727,7 @@ attribution preserves existing notices. Bypass AskUserQuestion and ExitPlanMode
 enter waiting from PreToolUse. ExitPlanMode also enters waiting in plan mode,
 which Claude reports after a bypass-started session enters plan mode. A follow-up
 Notification replaces that panel's item.
-Flags appear separately in the enabled menu-bar extra, including suppressed
+Flags appear separately in the enabled menu-bar extra, including delegated
 flags; routine clear/read controls do not lower them.
 
 The configured Notification Command receives `C11_NOTIFICATION_WORKSPACE_ID`,
@@ -1036,8 +1069,7 @@ The JSON document is schema 1. `live_identity` is `available` or `unavailable`.
 lists live panels. `restore_candidates` lists unconfirmed current rows.
 Timestamps are ISO-8601 UTC at whole seconds. Nulls are explicit.
 
-A live panel reports `flag`, `suppressed`, and `last_seen_at` even when it has
-no journal row. Journal fields are then null. `kind` comes from the journal
+A live panel reports `flag`, `delegated`, `delegated_by`, and `last_seen_at` even when it has no journal row. `suppressed` remains as a compatibility alias. Journal fields are then null. `kind` comes from the journal
 owner. `model` is the model on the journal snapshot. Waiting `reason` is
 `approval`, `question`, `plan_review`, or null.
 
@@ -1068,7 +1100,7 @@ c11 feed watch [--json] [--scope attention|all]
 ```
 
 `feed list` defaults to scope `attention`: open blocking asks and flag rows.
-`--scope all` adds non-suppressed `turn_end` rows. Both scopes use one projector.
+`--scope all` adds non-delegated `turn_end` rows. Both scopes use one projector.
 Rows sort flags first by raised time, then eligible open asks by opened time,
 oldest first with missing times last. Ties use panel UUID, then workspace UUID.
 The configured attention jump uses the same prefix, then oldest eligible unread

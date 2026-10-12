@@ -207,7 +207,8 @@ enum LaunchResumePicker {
             version: snapshot.version,
             createdAt: snapshot.createdAt,
             windows: newWindows,
-            focusHistory: snapshot.focusHistory
+            focusHistory: snapshot.focusHistory,
+            panelLineageNodes: snapshot.panelLineageNodes
         )
     }
 

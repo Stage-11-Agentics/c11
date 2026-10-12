@@ -5087,6 +5087,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// Main-actor render cache for canonical attention metadata. The metadata
     /// store remains authoritative; views consume this immutable projection.
     @Published private(set) var attentionByPanel: [UUID: PanelAttentionSnapshot] = [:]
+    /// Owner display names precomputed by `PanelAttentionService`; view bodies
+    /// never resolve a delegate across workspace boundaries.
+    @Published private(set) var delegationOwnerTitlesByPanel: [UUID: String] = [:]
     /// Live-agent dormancy is a reversible presentation projection, kept
     /// separate from the durable working/idle metadata truth.
     @Published private(set) var coldAgentSurfaceIds: Set<UUID> = []
@@ -5296,13 +5299,19 @@ final class Workspace: Identifiable, ObservableObject {
         lightBackground ? "#2C5597" : "#5287D6"
     }
 
-    /// The mark's recolor: the flag's violet wins, then an expired prompt cache.
+    nonisolated static func delegatedActivityHex(lightBackground: Bool) -> String {
+        lightBackground ? "#006D67" : "#54C8BE"
+    }
+
+    /// The mark's recolor: flag violet wins, then delegate teal, then cache blue.
     nonisolated static func activityColorOverrideHex(
         isFlagged: Bool,
+        isDelegated: Bool = false,
         promptCacheExpired: Bool,
         lightBackground: Bool
     ) -> String? {
         if isFlagged { return "#9D8AD9" }
+        if isDelegated { return delegatedActivityHex(lightBackground: lightBackground) }
         return promptCacheExpired ? promptCacheColdHex(lightBackground: lightBackground) : nil
     }
 
@@ -5312,8 +5321,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// running/idle/cold are a neutral white-to-gray ramp (running most present,
     /// cold most receded) so `waiting` gold stays the only chromatic lifecycle
     /// color in the chrome: the brand's deliberate "needs you" signal. Two
-    /// modifiers recolor a mark: the flag's violet and, on a cold mark whose
-    /// agent's prompt cache expired, `promptCacheColdHex`.
+    /// Modifiers recolor a mark: flag violet wins, then delegate teal, then
+    /// blue on a cold mark whose prompt cache expired.
     nonisolated static func resolvedSurfaceTabActivityColors(
         from backgroundColor: NSColor
     ) -> BonsplitConfiguration.Appearance.TabActivityColors {
@@ -5893,11 +5902,13 @@ final class Workspace: Identifiable, ObservableObject {
             // This callback runs in @Published.willSet. Register the supplied
             // new tab directly; self.panels still contains the old collection.
             _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
-            EventEmitter.shared.emitSurfaceCreated(
+            let parentPanelId = PanelLineage.shared.panelInserted(panel, in: self)
+            EventEmitter.shared.emitPanelCreated(
                 workspace: id,
-                surface: createdId,
+                panel: createdId,
                 kind: panel.panelType.rawValue,
-                title: panel.displayTitle
+                title: panel.displayTitle,
+                parentPanelId: parentPanelId
             )
         }
         for closedId in lastKnownPanelIds.subtracting(newIds) {
@@ -7366,6 +7377,9 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func setAttentionSnapshot(_ snapshot: PanelAttentionSnapshot?, forSurface surfaceId: UUID) {
+        if snapshot?.delegated != true {
+            delegationOwnerTitlesByPanel.removeValue(forKey: surfaceId)
+        }
         if let snapshot, snapshot.isFlagged || snapshot.suppressed {
             if attentionByPanel[surfaceId] != snapshot {
                 attentionByPanel[surfaceId] = snapshot
@@ -7375,6 +7389,18 @@ final class Workspace: Identifiable, ObservableObject {
         }
         syncSurfacePanelActivityStateForPanel(surfaceId)
         (panels[surfaceId] as? TerminalPanel)?.surface.hostedView.updateFlagBanner()
+    }
+
+    func setDelegationOwnerTitle(_ title: String?, forSurface surfaceId: UUID) {
+        let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = normalized?.isEmpty == false ? normalized : nil
+        guard delegationOwnerTitlesByPanel[surfaceId] != resolved else { return }
+        if let resolved {
+            delegationOwnerTitlesByPanel[surfaceId] = resolved
+        } else {
+            delegationOwnerTitlesByPanel.removeValue(forKey: surfaceId)
+        }
+        syncSurfacePanelActivityStateForPanel(surfaceId)
     }
 
     /// `terminalKind` lets a caller that has already read the surface's kind
@@ -7412,6 +7438,7 @@ final class Workspace: Identifiable, ObservableObject {
         return BonsplitTabActivityPresentation(
             colorOverrideHex: Self.activityColorOverrideHex(
                 isFlagged: attention.isFlagged,
+                isDelegated: attention.delegated,
                 promptCacheExpired: help?.promptCacheExpired == true,
                 lightBackground: bonsplitController.configuration.appearance.chromeColors.backgroundHex
                     .flatMap { NSColor(hex: $0) }?.isLightColor ?? false
@@ -7432,15 +7459,17 @@ final class Workspace: Identifiable, ObservableObject {
         panelId: UUID,
         activityState: BonsplitTabActivityState?
     ) -> AgentActivityHelpProjection? {
+        let attention = attentionSnapshot(panelId: panelId)
         let state: WorkspacePulseState
         switch activityState {
         case .waiting: state = .waiting
         case .running: state = .working
         case .idle: state = .idle
         case .cold: state = .cold
-        case nil: return nil
+        case nil:
+            guard attention.delegated else { return nil }
+            state = .idle
         }
-        let attention = attentionSnapshot(panelId: panelId)
         let lastActivityAt = PanelActivityTracker.shared.lastActivity(
             for: panelId.uuidString
         )
@@ -7458,10 +7487,26 @@ final class Workspace: Identifiable, ObservableObject {
             flagReason: attention.flagReason,
             flagRaisedAt: attention.flagRaisedAt,
             suppressed: attention.suppressed,
+            delegationLabel: delegationLabel(panelId: panelId),
             journal: journalByPanel[panelId],
             promptCache: state == .cold || state == .waiting
                 ? PromptCacheSources.observation(forPanel: panelId)
                 : nil
+        )
+    }
+
+    /// Relationship text shared by the activity tooltip and panel sheet. Kept
+    /// separate so the family-tree child row can take this slot when no owner
+    /// delegation is active.
+    func delegationLabel(panelId: UUID) -> String? {
+        let attention = attentionSnapshot(panelId: panelId)
+        guard attention.delegated else { return nil }
+        guard let title = delegationOwnerTitlesByPanel[panelId] else {
+            return String(localized: "surface.activity.delegate", defaultValue: "Delegate")
+        }
+        return String(
+            localized: "surface.activity.delegateOf",
+            defaultValue: "Delegate of \(title)"
         )
     }
 
@@ -7561,6 +7606,10 @@ final class Workspace: Identifiable, ObservableObject {
 
     func setPanelCustomTitle(panelId: UUID, title: String?) {
         guard panels[panelId] != nil else { return }
+        let previousResolvedTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
+        )
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let previous = panelCustomTitles[panelId]
         if trimmed.isEmpty {
@@ -7587,6 +7636,13 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         syncPanelTitleFromMetadata(panelId: panelId)
+        let currentResolvedTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
+        )
+        if previousResolvedTitle != currentResolvedTitle {
+            PanelAttentionService.shared.refreshDelegatePresentations(ownedBy: panelId)
+        }
     }
 
     /// Set or clear the surface tab color for a panel. Pass nil or an empty/whitespace
@@ -8235,6 +8291,10 @@ final class Workspace: Identifiable, ObservableObject {
     func updatePanelTitle(panelId: UUID, title: String) -> Bool {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        let previousResolvedTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
+        )
         var didMutate = false
 
         if panelTitles[panelId] != trimmed {
@@ -8273,6 +8333,14 @@ final class Workspace: Identifiable, ObservableObject {
             if processTitle != trimmed {
                 processTitle = trimmed
             }
+        }
+
+        let resolvedTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
+        )
+        if previousResolvedTitle != resolvedTitle {
+            PanelAttentionService.shared.refreshDelegatePresentations(ownedBy: panelId)
         }
 
         return didMutate
@@ -8416,6 +8484,10 @@ final class Workspace: Identifiable, ObservableObject {
     /// Safe to call on main thread; expected call path: after a `set_metadata`
     /// that touched `title`.
     func syncPanelTitleFromMetadata(panelId: UUID) {
+        let previousResolvedTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
+        )
         let resolvedTitle: String
         let metadataTitle = PanelMetadataStore.shared
             .getMetadata(workspaceId: id, surfaceId: panelId)
@@ -8456,6 +8528,14 @@ final class Workspace: Identifiable, ObservableObject {
             if stableDefaultTitle == nil, self.title != trimmed {
                 self.title = trimmed
             }
+        }
+
+        let currentResolvedTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
+        )
+        if previousResolvedTitle != currentResolvedTitle {
+            PanelAttentionService.shared.refreshDelegatePresentations(ownedBy: panelId)
         }
     }
 
@@ -8601,6 +8681,14 @@ final class Workspace: Identifiable, ObservableObject {
                 workspaceId: id,
                 surfaceId: panelId
             )
+            // During session restore this workspace is not installed in the
+            // AppDelegate registry yet, so service-wide lookup cannot project
+            // attention back onto `self`. Keep the local render cache aligned
+            // with the restored metadata before the workspace is published.
+            setAttentionSnapshot(
+                PanelMetadataStore.shared.attentionSnapshot(workspaceId: id, surfaceId: panelId),
+                forSurface: panelId
+            )
             // The snapshot's `customColor` (applied when the panel was created)
             // owns the tab color; re-mirror it over the restored blob, which may
             // predate the `color` key. Then paint the restored `icon`.
@@ -8682,6 +8770,7 @@ final class Workspace: Identifiable, ObservableObject {
         // @Published map doesn't leak stale liveness for pruned surfaces.
         derivedActivityByPanel = derivedActivityByPanel.filter { validSurfaceIds.contains($0.key) }
         attentionByPanel = attentionByPanel.filter { validSurfaceIds.contains($0.key) }
+        delegationOwnerTitlesByPanel = delegationOwnerTitlesByPanel.filter { validSurfaceIds.contains($0.key) }
         coldAgentSurfaceIds = coldAgentSurfaceIds.filter { validSurfaceIds.contains($0) }
         promptCacheExpiredAgentIds = promptCacheExpiredAgentIds.filter { validSurfaceIds.contains($0) }
         detectedTerminalTypesByPanel = detectedTerminalTypesByPanel.filter {
@@ -9982,13 +10071,13 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxDispatcher = nil
         teardownRemoteConnection()
         owningWorkspaceManager = nil
-        teardownAllPanels()
+        teardownAllPanels(markPanelsClosedForGood: false)
     }
 
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
-    func teardownAllPanels() {
+    func teardownAllPanels(markPanelsClosedForGood: Bool = true) {
         emitWorkspaceTeardownEvents()
 
         // Drain every pending pane interaction with .dismissed FIRST so any
@@ -10009,6 +10098,7 @@ final class Workspace: Identifiable, ObservableObject {
         cancelAllPersistentFlashes()
 
         let panelEntries = Array(panels)
+        let closedPanelIds = Set(panelEntries.map { $0.key })
         for (panelId, panel) in panelEntries {
             panelSubscriptions.removeValue(forKey: panelId)
             PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
@@ -10016,6 +10106,9 @@ final class Workspace: Identifiable, ObservableObject {
             panel.close()
             // C11-243: workspace teardown; these panels are gone.
             PanelSeenTracker.shared.forget(panelId: panelId)
+        }
+        if markPanelsClosedForGood {
+            PanelLineage.shared.panelsClosedForGood(closedPanelIds)
         }
 
         panels.removeAll(keepingCapacity: false)
@@ -10575,7 +10668,8 @@ final class Workspace: Identifiable, ObservableObject {
             surfaceId: detached.panelId,
             flagReason: detached.attention.flagReason,
             flagRaisedAt: detached.attention.flagRaisedAt,
-            suppressed: detached.attention.suppressed
+            delegated: detached.attention.delegated,
+            delegatedBy: detached.attention.delegatedBy
         )
         PanelAttentionService.shared.restore(restoredAttention)
         if detached.isAgentCold {
@@ -11995,13 +12089,15 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func closePanels(_ bonsplitTabIds: [TabID], skipPinned: Bool = true) {
-        for bonsplitTabId in bonsplitTabIds {
-            if skipPinned,
-               let panelId = tabIdFromBonsplitTabId(bonsplitTabId),
-               pinnedPanelIds.contains(panelId) {
-                continue
+        PanelLineage.shared.withCloseBatch {
+            for bonsplitTabId in bonsplitTabIds {
+                if skipPinned,
+                   let panelId = tabIdFromBonsplitTabId(bonsplitTabId),
+                   pinnedPanelIds.contains(panelId) {
+                    continue
+                }
+                _ = bonsplitController.closeTab(bonsplitTabId)
             }
-            _ = bonsplitController.closeTab(bonsplitTabId)
         }
     }
 
@@ -13115,6 +13211,9 @@ extension Workspace: BonsplitDelegate {
                 shellEdgeAt: panelShellEdgeAt[panelId]
             )
         } else {
+            if panel != nil {
+                PanelLineage.shared.panelClosedForGood(panelId)
+            }
             if let closedBrowserRestoreSnapshot {
                 onClosedBrowserPanel?(closedBrowserRestoreSnapshot)
             }
@@ -13153,6 +13252,7 @@ extension Workspace: BonsplitDelegate {
         panelShellEdgeAt.removeValue(forKey: panelId)
         derivedActivityByPanel.removeValue(forKey: panelId)
         attentionByPanel.removeValue(forKey: panelId)
+        delegationOwnerTitlesByPanel.removeValue(forKey: panelId)
         coldAgentSurfaceIds.remove(panelId)
         promptCacheExpiredAgentIds.remove(panelId)
         detectedTerminalTypesByPanel.removeValue(forKey: panelId)
@@ -13318,6 +13418,10 @@ extension Workspace: BonsplitDelegate {
         let shouldScheduleFocusReconcile = !isDetachingCloseTransaction
 
         if !closedPanelIds.isEmpty {
+            let lineageClosedPanelIds = isDetachingCloseTransaction
+                ? Set<UUID>()
+                : Set(closedPanelIds.filter { panels[$0] != nil })
+            PanelLineage.shared.captureFinalIdentity(lineageClosedPanelIds, in: self)
             for panelId in closedPanelIds {
                 // Dismiss any pending pane interactions on this panel before
                 // tearing it down so withCheckedContinuation callers resume
@@ -13358,6 +13462,10 @@ extension Workspace: BonsplitDelegate {
                 PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
             }
+            PanelLineage.shared.panelsClosedForGood(
+                lineageClosedPanelIds,
+                isDetaching: isDetachingCloseTransaction
+            )
 
             let closedSet = Set(closedPanelIds)
             bonsplitTabIdToTabId = bonsplitTabIdToTabId.filter { !closedSet.contains($0.value) }
@@ -14175,9 +14283,11 @@ extension Workspace: BonsplitDelegate {
                 // staring at the empty-pane chooser. Matches the user's ask:
                 // X always does something, even on the root pane.
                 let bonsplitTabsNow = self.bonsplitController.tabs(inPane: pane)
-                for bonsplitTab in bonsplitTabsNow {
-                    self.forceCloseBonsplitTabIds.insert(bonsplitTab.id)
-                    _ = self.bonsplitController.closeTab(bonsplitTab.id)
+                PanelLineage.shared.withCloseBatch {
+                    for bonsplitTab in bonsplitTabsNow {
+                        self.forceCloseBonsplitTabIds.insert(bonsplitTab.id)
+                        _ = self.bonsplitController.closeTab(bonsplitTab.id)
+                    }
                 }
                 _ = self.newTerminalSurface(inPane: pane)
             } else {

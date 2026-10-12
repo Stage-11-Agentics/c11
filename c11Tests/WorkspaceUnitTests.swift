@@ -13,6 +13,25 @@ import UserNotifications
 @testable import c11
 #endif
 
+private final class WorkspaceTestBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) { self.value = value }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ value: Value) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+}
+
 @MainActor
 func makeTemporaryBrowserProfile(named prefix: String) throws -> BrowserProfileDefinition {
     try XCTUnwrap(
@@ -2866,6 +2885,8 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
 
 @MainActor
 final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
+    private var observedCloseBatches: [Set<UUID>] = []
+
     func testSnapshotAndRestorePreserveCreationAcrossPanelKinds() throws {
         let workspace = Workspace()
         defer { workspace.teardownAllPanels() }
@@ -2894,6 +2915,238 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
         for (panelId, createdAt) in expected {
             XCTAssertEqual(restored.panels[panelId]?.createdAt, createdAt)
         }
+    }
+
+    func testWorkspaceTeardownNotifiesOwnerAndDelegateInOneBatch() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let delegate = try XCTUnwrap(
+            PanelLineage.shared.withCreator(owner.id) {
+                workspace.newTerminalSplit(from: owner.id, orientation: .horizontal)
+            }
+        )
+        XCTAssertEqual(PanelLineage.shared.node(panelId: delegate.id)?.parentPanelId, owner.id)
+        observedCloseBatches = []
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] closedPanelIds in
+            self?.observedCloseBatches.append(closedPanelIds)
+        }
+
+        workspace.teardownAllPanels()
+
+        XCTAssertEqual(observedCloseBatches, [Set([owner.id, delegate.id])])
+    }
+
+    func testReviewOnlyAreaResetReportsOneCloseBatch() async throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let survivingWorkspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let windowId = UUID()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(
+            window,
+            windowId: windowId,
+            workspaceManager: manager,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            app.debugUnregisterMainWindow(window)
+            window.orderOut(nil)
+            for workspace in manager.workspaces {
+                workspace.teardownAllPanels()
+                PanelMetadataStore.shared.removeWorkspace(workspaceId: workspace.id)
+                PanelAttentionIndex.shared.prune(workspaceId: workspace.id, validSurfaceIds: [])
+            }
+        }
+        PanelAttentionService.shared.installCloseObserver()
+
+        let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        XCTAssertEqual(workspace.bonsplitController.allPaneIds.count, 1)
+        let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let worker = try XCTUnwrap(PanelLineage.shared.withCreator(owner.id) {
+            workspace.newTerminalSurface(inPane: paneId, focus: false)
+        })
+        let survivingDelegate = try XCTUnwrap(survivingWorkspace.focusedTerminalPanel)
+        _ = try PanelAttentionService.shared.delegate(
+            workspaceId: workspace.id,
+            surfaceId: worker.id,
+            ownerPanelId: owner.id,
+            by: .operator
+        )
+        _ = try PanelAttentionService.shared.delegate(
+            workspaceId: survivingWorkspace.id,
+            surfaceId: survivingDelegate.id,
+            ownerPanelId: owner.id,
+            by: .operator
+        )
+
+        observedCloseBatches = []
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] ids in
+            self?.observedCloseBatches.append(ids)
+        }
+        workspace.splitTabBar(workspace.bonsplitController, didRequestClosePane: paneId)
+        for _ in 0..<20 {
+            if workspace.areaCloseInteractionRuntime.active[paneId.id] != nil { break }
+            await Task.yield()
+        }
+        XCTAssertNotNil(workspace.areaCloseInteractionRuntime.active[paneId.id])
+        workspace.areaCloseInteractionRuntime.resolveConfirm(panelId: paneId.id, result: .confirmed)
+        for _ in 0..<20 {
+            if workspace.panels[owner.id] == nil && workspace.panels[worker.id] == nil { break }
+            await Task.yield()
+        }
+
+        XCTAssertNil(workspace.panels[owner.id])
+        XCTAssertNil(workspace.panels[worker.id])
+        XCTAssertEqual(
+            observedCloseBatches,
+            [Set([owner.id, worker.id])],
+            "One confirmed area reset must notify observers once with every panel it closed"
+        )
+        XCTAssertFalse(
+            PanelAttentionIndex.shared.snapshot(
+                workspaceId: survivingWorkspace.id,
+                surfaceId: survivingDelegate.id
+            ).delegated,
+            "A delegate surviving in another workspace must still be released"
+        )
+    }
+
+    func testCloseOthersReportsAllClosedPanelsTogether() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let delegate = try XCTUnwrap(PanelLineage.shared.withCreator(owner.id) {
+            workspace.newTerminalSurface(inPane: paneId, focus: false)
+        })
+        let survivor = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+        let survivorTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(survivor.id))
+        let survivorTab = try XCTUnwrap(
+            workspace.bonsplitController.tabs(inPane: paneId).first { $0.id == survivorTabId }
+        )
+        observedCloseBatches = []
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] ids in
+            self?.observedCloseBatches.append(ids)
+        }
+
+        workspace.splitTabBar(
+            workspace.bonsplitController,
+            didRequestTabContextAction: .closeOthers,
+            for: survivorTab,
+            inPane: paneId
+        )
+
+        XCTAssertNil(workspace.panels[owner.id])
+        XCTAssertNil(workspace.panels[delegate.id])
+        XCTAssertNotNil(workspace.panels[survivor.id])
+        XCTAssertEqual(observedCloseBatches, [Set([owner.id, delegate.id])])
+    }
+
+    func testLegacySuppressSocketAliasAllowsOwnerlessAgentSuppression() throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let target = try XCTUnwrap(workspace.focusedPanelId)
+        let windowId = UUID()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(
+            window,
+            windowId: windowId,
+            workspaceManager: manager,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            app.debugUnregisterMainWindow(window)
+            window.orderOut(nil)
+            workspace.teardownAllPanels()
+            PanelMetadataStore.shared.removeWorkspace(workspaceId: workspace.id)
+            PanelAttentionIndex.shared.prune(workspaceId: workspace.id, validSurfaceIds: [])
+        }
+
+        let requestData = try JSONSerialization.data(withJSONObject: [
+            "id": 21,
+            "method": "flag.suppress",
+            "params": ["surface_id": target.uuidString, "by": "agent"],
+        ])
+        let requestLine = try XCTUnwrap(String(data: requestData, encoding: .utf8))
+        let request = try XCTUnwrap(TerminalController.shared.parseV2SocketRequest(requestLine))
+        XCTAssertEqual(request.method, "flag.delegate")
+        XCTAssertEqual(request.rawMethod, "flag.suppress")
+
+        let response = WorkspaceTestBox<String?>(nil)
+        let completed = expectation(description: "legacy ownerless suppression response")
+        DispatchQueue.global(qos: .userInitiated).async {
+            response.set(TerminalController.shared.socketWorkerV2Response(request))
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+
+        let data = try XCTUnwrap(response.get()?.data(using: .utf8))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        let result = try XCTUnwrap(object["result"] as? [String: Any])
+        XCTAssertEqual(result["delegated"] as? Bool, true)
+        XCTAssertTrue(result["delegated_by"] is NSNull)
+        XCTAssertTrue(workspace.attentionSnapshot(panelId: target).delegated)
+        XCTAssertNil(workspace.attentionSnapshot(panelId: target).delegatedBy)
+    }
+
+    func testAreaClosePreservesFinalLineageIdentity() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let parent = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let parentArea = try XCTUnwrap(workspace.paneId(forPanelId: parent.id))
+        let child = try XCTUnwrap(
+            PanelLineage.shared.withCreator(parent.id) {
+                workspace.newTerminalSplit(
+                    from: parent.id,
+                    orientation: .horizontal,
+                    focus: false
+                )
+            }
+        )
+        let childArea = try XCTUnwrap(workspace.paneId(forPanelId: child.id))
+        XCTAssertNotEqual(parentArea, childArea)
+
+        XCTAssertEqual(PanelLineage.shared.node(panelId: parent.id)?.lastTitle, parent.displayTitle)
+        workspace.setPanelCustomTitle(panelId: parent.id, title: "Final parent title")
+        _ = try PanelMetadataStore.shared.setMetadata(
+            workspaceId: workspace.id,
+            surfaceId: parent.id,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+
+        XCTAssertTrue(workspace.bonsplitController.closePane(parentArea))
+
+        let closedParent = try XCTUnwrap(PanelLineage.shared.node(panelId: parent.id))
+        XCTAssertTrue(closedParent.isClosed)
+        XCTAssertEqual(closedParent.lastTitle, "Final parent title")
+        XCTAssertEqual(closedParent.agentType, "codex")
+        XCTAssertNil(workspace.panels[parent.id])
+        XCTAssertNotNil(workspace.panels[child.id])
+        XCTAssertEqual(PanelLineage.shared.node(panelId: child.id)?.parentPanelId, parent.id)
     }
 }
 

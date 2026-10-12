@@ -84,6 +84,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2PanelList(params: params))
         case "panel.current":
             return v2Result(id: id, self.v2PanelCurrent(params: params))
+        case "panel.family":
+            return v2Result(id: id, self.v2PanelFamily(params: params))
         case "panel.set_custom_color":
             return v2Result(id: id, self.v2PanelSetCustomColor(params: params))
         case "panel.focus":
@@ -253,6 +255,51 @@ extension TerminalController {
             return .err(code: "not_found", message: "Workspace not found", data: nil)
         }
         return .ok(payload)
+    }
+
+    private func v2PanelFamily(params: [String: Any]) -> V2CallResult {
+        guard let selectedPanelId = v2UUID(params, "panel_id") ?? v2UUID(params, "surface_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
+        }
+        return v2MainSync {
+            guard let family = PanelLineage.shared.family(startingAt: selectedPanelId) else {
+                return .err(code: "panel_lineage_not_found", message: "Panel lineage not found", data: [
+                    "panel_id": selectedPanelId.uuidString,
+                    "panel_ref": v2Ref(kind: .surface, uuid: selectedPanelId)
+                ])
+            }
+            let iso = ISO8601DateFormatter()
+            let nodes: [[String: Any]] = family.nodes.map { node in
+                let attention = PanelMetadataStore.shared.attentionSnapshot(
+                    workspaceId: node.workspaceId,
+                    surfaceId: node.id
+                )
+                return [
+                    "id": node.id.uuidString,
+                    "ref": v2Ref(kind: .surface, uuid: node.id),
+                    "parent_panel_id": v2OrNull(node.parentPanelId?.uuidString),
+                    "parent_panel_ref": v2Ref(kind: .surface, uuid: node.parentPanelId),
+                    "title": node.lastTitle,
+                    "type": node.panelType,
+                    "state": node.isClosed ? "closed" : "live",
+                    "agent_type": v2OrNull(node.agentType),
+                    "delegated": attention.delegated,
+                    "delegated_by": v2OrNull(attention.delegatedBy?.uuidString),
+                    "closed_at": v2OrNull(node.closedAt.map { iso.string(from: $0) }),
+                    "workspace_id": node.workspaceId.uuidString,
+                    "workspace_ref": v2Ref(kind: .workspace, uuid: node.workspaceId),
+                    "workspace_title": node.workspaceTitle
+                ]
+            }
+            return .ok([
+                "version": 1,
+                "selected_panel_id": selectedPanelId.uuidString,
+                "selected_panel_ref": v2Ref(kind: .surface, uuid: selectedPanelId),
+                "root_panel_id": family.rootId.uuidString,
+                "root_panel_ref": v2Ref(kind: .surface, uuid: family.rootId),
+                "nodes": nodes
+            ])
+        }
     }
 
     private func v2PanelSetCustomColor(params: [String: Any]) -> V2CallResult {
@@ -427,7 +474,9 @@ extension TerminalController {
                 result = .err(code: "pane_too_small", message: message, data: data)
 
             case .panel(let paneId, let warning):
-                guard let panel = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput) else {
+                guard let panel = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id"), operation: {
+                    ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)
+                }) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
@@ -449,7 +498,9 @@ extension TerminalController {
                 result = .ok(ok)
 
             case .split(let actualDirection, let requested, let warning):
-                if let newId = workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride, initialInput: initialInput) {
+                if let newId = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id"), operation: {
+                    workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride, initialInput: initialInput)
+                }) {
                     let paneUUID = ws.paneId(forPanelId: newId)?.id
                     // Seed pane title atomic with pane id becoming valid.
                     self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
@@ -566,19 +617,21 @@ extension TerminalController {
             }
 
             let newPanelId: UUID?
-            switch panelType {
-            case .browser:
-                newPanelId = ws.newBrowserSurface(
-                    inPane: paneId,
-                    url: url,
-                    focus: focus,
-                    preferredProfileID: preferredProfileID,
-                    sticksAsPreferred: sticksAsPreferred
-                )?.id
-            case .markdown:
-                newPanelId = ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
-            case .terminal:
-                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride, initialInput: initialInput)?.id
+            newPanelId = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id")) {
+                switch panelType {
+                case .browser:
+                    return ws.newBrowserSurface(
+                        inPane: paneId,
+                        url: url,
+                        focus: focus,
+                        preferredProfileID: preferredProfileID,
+                        sticksAsPreferred: sticksAsPreferred
+                    )?.id
+                case .markdown:
+                    return ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
+                case .terminal:
+                    return ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                }
             }
 
             guard let newPanelId else {
@@ -1815,6 +1868,14 @@ extension TerminalController {
         guard let metadataObj = params["metadata"] as? [String: Any] else {
             return .err(code: "invalid_json", message: "metadata must be a JSON object", data: nil)
         }
+        let lineageProjectionKeys: Set<String> = [
+            MetadataKey.parentPanelId,
+            MetadataKey.parentPanelRef,
+            MetadataKey.parentPanelTitle,
+        ]
+        guard lineageProjectionKeys.isDisjoint(with: metadataObj.keys) else {
+            return .err(code: "lineage_read_only", message: "parent_panel_id is a read-only lineage projection", data: nil)
+        }
 
         let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
         guard let mode = PanelMetadataStore.WriteMode(rawValue: modeStr) else {
@@ -1860,6 +1921,8 @@ extension TerminalController {
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,
+            MetadataKey.delegated,
+            MetadataKey.delegatedBy,
             MetadataKey.suppressed,
         ])
         let existingAttention = PanelMetadataStore.shared.attentionSnapshot(
@@ -1870,7 +1933,7 @@ extension TerminalController {
             || (mode == .replace && (existingAttention.isFlagged || existingAttention.suppressed)) {
             return .err(
                 code: "attention_requires_flag_method",
-                message: "flag attention metadata must be changed through the flag.* methods",
+                message: "flag and delegation metadata must be changed through their methods",
                 data: nil
             )
         }
@@ -1920,12 +1983,28 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Panel not found", data: nil)
         }
 
-        let (storedMetadata, fullSources) = PanelMetadataStore.shared.getMetadata(
+        let (storedMetadata, storedSources) = PanelMetadataStore.shared.getMetadata(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
 
         var fullMetadata = storedMetadata
+        var fullSources = storedSources
+        if storedMetadata[MetadataKey.suppressed] as? Bool == true {
+            fullMetadata[MetadataKey.delegated] = true
+            if let source = storedSources[MetadataKey.suppressed] {
+                fullSources[MetadataKey.delegated] = source
+            }
+        }
+        let lineage = PanelLineage.shared.node(panelId: resolved.surfaceId)
+        let parentPanelId = lineage?.parentPanelId
+        let parentNode = parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0) }
+        fullMetadata[MetadataKey.parentPanelId] = v2OrNull(parentPanelId?.uuidString)
+        fullMetadata[MetadataKey.parentPanelRef] = v2Ref(kind: .surface, uuid: parentPanelId)
+        fullMetadata[MetadataKey.parentPanelTitle] = v2OrNull(parentNode?.lastTitle)
+        fullSources.removeValue(forKey: MetadataKey.parentPanelId)
+        fullSources.removeValue(forKey: MetadataKey.parentPanelRef)
+        fullSources.removeValue(forKey: MetadataKey.parentPanelTitle)
         fullMetadata["journal"] = JournalCoordinator.shared.readback(panelID: resolved.surfaceId)
         var metadataOut: [String: Any] = fullMetadata
         var sourcesOut: [String: [String: Any]] = fullSources
@@ -1933,8 +2012,9 @@ extension TerminalController {
             metadataOut = [:]
             sourcesOut = [:]
             for k in filterKeys {
-                if let v = fullMetadata[k] { metadataOut[k] = v }
-                if let s = fullSources[k] { sourcesOut[k] = s }
+                let storedKey = k == MetadataKey.delegated ? MetadataKey.suppressed : k
+                if let v = fullMetadata[storedKey] { metadataOut[k] = v }
+                if let s = fullSources[storedKey] { sourcesOut[k] = s }
             }
         }
 
@@ -1959,6 +2039,14 @@ extension TerminalController {
             keys = arr
         } else {
             return .err(code: "invalid_keys_param", message: "keys must be an array of strings", data: nil)
+        }
+        let lineageProjectionKeys: Set<String> = [
+            MetadataKey.parentPanelId,
+            MetadataKey.parentPanelRef,
+            MetadataKey.parentPanelTitle,
+        ]
+        guard keys.map({ lineageProjectionKeys.isDisjoint(with: $0) }) ?? true else {
+            return .err(code: "lineage_read_only", message: "parent_panel_id is a read-only lineage projection", data: nil)
         }
 
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
@@ -1998,6 +2086,8 @@ extension TerminalController {
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,
+            MetadataKey.delegated,
+            MetadataKey.delegatedBy,
             MetadataKey.suppressed,
         ])
         let existingAttention = PanelMetadataStore.shared.attentionSnapshot(
@@ -2008,7 +2098,7 @@ extension TerminalController {
             ?? (existingAttention.isFlagged || existingAttention.suppressed) {
             return .err(
                 code: "attention_requires_flag_method",
-                message: "flag attention metadata must be changed through the flag.* methods",
+                message: "flag and delegation metadata must be changed through their methods",
                 data: nil
             )
         }

@@ -44,6 +44,7 @@ enum AgentRoster {
         var turnStartedMs: Int64?
         var flagged: Bool
         var suppressed: Bool
+        var delegatedBy: UUID? = nil
         var lastSeenAt: Date?
     }
 
@@ -309,6 +310,8 @@ enum AgentRoster {
             "turn_outcome": snap?.turnOutcome ?? NSNull(),
             "turn_started_at": row.turnStartedMs.map { isoSeconds(ms: $0) } ?? NSNull(),
             "flag": row.flagged,
+            "delegated": row.suppressed,
+            "delegated_by": row.delegatedBy?.uuidString ?? NSNull(),
             "suppressed": row.suppressed,
             "last_seen_at": row.lastSeenAt.map { isoSeconds(date: $0) } ?? NSNull(),
         ]

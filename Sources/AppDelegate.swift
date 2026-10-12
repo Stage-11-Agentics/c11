@@ -2492,6 +2492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private(set) var didCompleteInitialSessionRestore = false
     private var deferredStartupSessionRestore: ((NSWindow) -> Void)?
     private var isApplyingStartupSessionRestore = false
+    private var didApplyStartupPanelLineageSnapshot = false
     private var isAwaitingStartupResumeDecision = false
     private weak var startupResumePickerParentWindow: NSWindow?
     private var sessionAutosaveTimer: DispatchSourceTimer?
@@ -2589,6 +2590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     override init() {
         super.init()
         Self.shared = self
+        PanelAttentionService.shared.installCloseObserver()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -3852,6 +3854,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let startupSnapshot = startupSessionSnapshot
         let primaryWindowSnapshot = startupSnapshot?.windows.first
         if let primaryWindowSnapshot {
+            PanelLineage.shared.restore(startupSnapshot?.panelLineageNodes ?? [])
+            didApplyStartupPanelLineageSnapshot = true
             isApplyingStartupSessionRestore = true
             NSLog("session.restore.begin socket_listening=%d", TerminalController.shared.isListeningForStartupRestore ? 1 : 0)
 #if DEBUG
@@ -3964,6 +3968,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func completeStartupSessionRestore() {
         JournalCoordinator.shared.startupPanelsReady()
         FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
+        if didApplyStartupPanelLineageSnapshot {
+            let livePanelIds = Set(mainWindowContexts.values.flatMap { context in
+                context.workspaceManager.workspaces.flatMap { $0.panels.keys }
+            })
+            PanelLineage.shared.finishRestore(livePanelIds: livePanelIds)
+            PanelAttentionService.shared.releaseDelegatesWithMissingOwners(livePanelIds: livePanelIds)
+            didApplyStartupPanelLineageSnapshot = false
+        }
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
         finishInitialSessionReadiness()
@@ -5103,7 +5115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             version: SessionSnapshotSchema.currentVersion,
             createdAt: Date().timeIntervalSince1970,
             windows: windows,
-            focusHistory: FocusHistoryStore.shared.snapshot()
+            focusHistory: FocusHistoryStore.shared.snapshot(),
+            panelLineageNodes: PanelLineage.shared.snapshot()
         )
     }
 
@@ -5563,9 +5576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         workspaceId: workspace.id,
                         surfaceId: surfaceId
                     )
-                    guard let name = metadata[MetadataKey.title] as? String, !name.isEmpty else {
-                        continue
-                    }
+                    let name = metadata[MetadataKey.title] as? String ?? ""
                     // Stable identities (optional): the same `mailbox.*` keys
                     // the per-workspace resolver reads, so global routing and
                     // local delivery resolve a `to` identically.
@@ -13689,10 +13700,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
+        let closingWindowId = ObjectIdentifier(window)
+        if !isTerminatingApp,
+           let closingContext = mainWindowContexts[closingWindowId],
+           !mainWindowContexts.contains(where: {
+               $0.key != closingWindowId && $0.value.workspaceManager === closingContext.workspaceManager
+           }) {
+            for workspace in closingContext.workspaceManager.workspaces {
+                PanelLineage.shared.captureFinalIdentity(Set(workspace.panels.keys), in: workspace)
+            }
+        }
         if !isTerminatingApp,
            !closesUnansweredResumePicker,
            mainWindowContexts.count == 1,
-           mainWindowContexts[ObjectIdentifier(window)] != nil {
+           mainWindowContexts[closingWindowId] != nil {
             persistLastWindowSnapshot()
         }
         guard let removed = unregisterMainWindowContext(for: window) else { return }

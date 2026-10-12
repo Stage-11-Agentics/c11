@@ -146,7 +146,8 @@ extension TerminalController {
             )
         }
         let actorRaw = params["by"] as? String ?? PanelAttentionActor.agent.rawValue
-        guard let actor = PanelAttentionActor(rawValue: actorRaw) else {
+        guard actorRaw == "agent" || actorRaw == "operator",
+              let actor = PanelAttentionActor(rawValue: actorRaw) else {
             return .err(code: "invalid_params", message: "by must be agent or operator", data: nil)
         }
 

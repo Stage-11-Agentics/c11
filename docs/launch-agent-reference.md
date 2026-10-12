@@ -264,6 +264,7 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 | `invalid_effort` | value outside the template's declared allowed list |
 | `invalid_params` | bad `cwd`, or `new_workspace` combined with `area_id`/`workspace_id` |
 | `not_found` | target workspace or area doesn't resolve |
+| `caller_surface_not_found` | `--delegated` received a stale `C11_PANEL_ID`; refresh it to a live caller panel UUID and retry |
 | `prompt_staging_failed` | the private prompt copy could not be created |
 | `main_thread_timeout` | main admission or commit exceeded the launch deadline |
 

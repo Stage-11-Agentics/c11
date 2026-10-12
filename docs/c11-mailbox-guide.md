@@ -339,7 +339,7 @@ Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows 
 
 ### Doorbell
 
-Every `mailbox.delivery=stdin` panel whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, reads unknown and is not rung. That includes omp and GitHub Copilot. Those seats get no doorbell. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
+Every `mailbox.delivery=stdin` panel whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. That includes omp and GitHub Copilot. Those seats get no doorbell. `c11 send` still refuses a Claude-style draft or dialog on that panel. An empty prompt there stays unknown. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
 
 `You have mail: run c11 mailbox recv --ack when you want to receive it.`
 

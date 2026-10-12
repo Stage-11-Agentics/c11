@@ -108,7 +108,8 @@ enum PromptInputClassifier {
     /// A composer shape is read only for the harness that owns it. `harness`
     /// is the panel's `terminal_type` (`claude-code`, `codex`, `grok`,
     /// `opencode`, `pi`). Anything else, including omp and GitHub Copilot,
-    /// has no reader and stays unknown.
+    /// runs the unboxed prefix reader only to refuse a draft or a dialog.
+    /// Empty and suggestion on those panels stay unknown, so they are not rung.
     static func classify(_ region: PromptRegionSnapshot, harness: String?) -> PromptInputClassification {
         analyze(region, harness: harness).classification
     }
@@ -164,28 +165,65 @@ enum PromptInputClassifier {
         }
 
         let unknown = Analysis(classification: .unknown, composerText: nil)
-        guard let reader = composerReader(for: harness) else { return unknown }
-        switch reader {
+        switch composerReader(for: harness) {
         case .openCode:
             return openCodeComposer(lines, cursorIndex: cursorIndex) ?? unknown
         case .pi:
             return piComposer(lines, cursorIndex: cursorIndex) ?? unknown
-        case .prefix, .grok:
-            break
+        case .grok:
+            return prefixComposer(
+                lines,
+                cursorIndex: cursorIndex,
+                cursorX: region.cursorX,
+                cursorY: region.cursorY,
+                boxed: true
+            )
+        case .prefix:
+            return prefixComposer(
+                lines,
+                cursorIndex: cursorIndex,
+                cursorX: region.cursorX,
+                cursorY: region.cursorY,
+                boxed: false
+            )
+        case nil:
+            // Refusal only. `c11 send` still refuses a Claude-style draft or
+            // dialog on an untyped panel. Empty and suggestion stay unknown,
+            // so the doorbell does not admit the panel.
+            let scanned = prefixComposer(
+                lines,
+                cursorIndex: cursorIndex,
+                cursorX: region.cursorX,
+                cursorY: region.cursorY,
+                boxed: false
+            )
+            switch scanned.classification.state {
+            case .draft, .dialog:
+                return scanned
+            case .empty, .suggestion, .unknown, .unavailable:
+                return unknown
+            }
         }
+    }
 
-        // Claude Code and Codex share the unboxed `❯` / `›` reader, including
-        // Claude's chooser. Grok's reader is only the boxed `│ ❯` composer.
-        // Neither falls through to another harness's shape.
-        let boxed = reader == .grok
+    /// Claude Code and Codex share the unboxed `❯` / `›` reader, including
+    /// Claude's chooser. Grok's reader is only the boxed `│ ❯` composer.
+    /// Neither falls through to another harness's shape.
+    private static func prefixComposer(
+        _ lines: [Line],
+        cursorIndex: Int,
+        cursorX: Int,
+        cursorY: Int,
+        boxed: Bool
+    ) -> Analysis {
         if !boxed {
-            if isSupportedDialog(lines, cursorY: region.cursorY) {
+            if isSupportedDialog(lines, cursorY: cursorY) {
                 return Analysis(
                     classification: PromptInputClassification(state: .dialog, draftLength: nil),
                     composerText: nil
                 )
             }
-            if isEmptyCodexPrompt(lines[cursorIndex], cursorX: region.cursorX) {
+            if isEmptyCodexPrompt(lines[cursorIndex], cursorX: cursorX) {
                 return Analysis(
                     classification: PromptInputClassification(state: .suggestion, draftLength: nil),
                     composerText: nil
@@ -194,10 +232,10 @@ enum PromptInputClassifier {
         }
 
         guard let promptIndex = lines.indices.reversed().first(where: { index in
-            lines[index].y <= region.cursorY && acceptedPrefix(in: lines[index], boxed: boxed) != nil
+            lines[index].y <= cursorY && acceptedPrefix(in: lines[index], boxed: boxed) != nil
         }), promptIndex <= cursorIndex,
               let prefix = acceptedPrefix(in: lines[promptIndex], boxed: boxed) else {
-            return unknown
+            return Analysis(classification: .unknown, composerText: nil)
         }
 
         var typedScalars: [Unicode.Scalar] = []
@@ -213,10 +251,10 @@ enum PromptInputClassifier {
                 if line.y != previous.y + 1 || previous.softWrap != line.wrapContinuation {
                     return Analysis(classification: .unknown, composerText: nil)
                 }
-                if isRule(line) || (line.y > region.cursorY && isClosingBoxEdge(line)) {
+                if isRule(line) || (line.y > cursorY && isClosingBoxEdge(line)) {
                     // The composer's closing rule sits below the cursor row. A rule
                     // above it means the typed row was never reached: not empty.
-                    if line.y <= region.cursorY {
+                    if line.y <= cursorY {
                         return Analysis(classification: .unknown, composerText: nil)
                     }
                     stoppedAtRule = true
@@ -224,7 +262,7 @@ enum PromptInputClassifier {
                 }
                 // Blank rows inside a multiline composer (leading or embedded) are
                 // content; only a blank row past the cursor row ends the scan.
-                if isBlank(line), line.y > region.cursorY, !previous.softWrap {
+                if isBlank(line), line.y > cursorY, !previous.softWrap {
                     stoppedAtRule = true
                     break
                 }
@@ -661,10 +699,13 @@ enum PromptInputClassifier {
         return values.contains(where: { (0x2500...0x257F).contains($0) })
     }
 
-    /// Pi draws its borders at column 0. An indented rule is another
-    /// harness's draft row, so it is not this composer's border.
+    /// Pi's border is an unindented rule whose box-drawing run reaches the
+    /// row's last cell. Captured rows are padded to the panel width, so a
+    /// short rule typed into the composer has trailing blank cells and is
+    /// draft content. An indented rule belongs to another harness.
     private static func isPiBorder(_ line: Line) -> Bool {
-        guard let first = line.scalars.first, !isWhitespace(first.value) else { return false }
+        guard let first = line.scalars.first, !isWhitespace(first.value),
+              let last = line.scalars.last, !isWhitespace(last.value) else { return false }
         return isRule(line)
     }
 

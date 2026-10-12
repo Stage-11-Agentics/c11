@@ -958,14 +958,12 @@ extension PromptInputClassifierTests {
         let rule = String(repeating: "─", count: 69)
         let rows = [
             Row(y: 0, spans: [Span(text: rule)]),
-            Row(y: 1, spans: [Span(text: " fix the todo")]),
+            Row(y: 1, spans: [Span(text: "fix the todo")]),
             Row(y: 2, spans: [Span(text: rule)]),
         ]
         let input = region(rows, cursorY: 1)
         XCTAssertEqual(PromptInputClassifier.classify(input, harness: "pi").state, .draft)
-        // The row's leading space is the cursor gutter. It is part of the
-        // captured line. The state is what holds the ring.
-        XCTAssertEqual(PromptInputClassifier.composerText(input, harness: "pi"), " fix the todo")
+        XCTAssertEqual(PromptInputClassifier.composerText(input, harness: "pi"), "fix the todo")
     }
 
     /// OpenCode 1.18.30. The cursor sits on a blank ┃ row under a typed line.
@@ -1032,7 +1030,7 @@ extension PromptInputClassifierTests {
         let rule = String(repeating: "─", count: 60)
         let rows = [
             Row(y: 0, spans: [Span(text: rule)]),
-            Row(y: 1, spans: [Span(text: " first line of my draft")]),
+            Row(y: 1, spans: [Span(text: "first line of my draft")]),
             Row(y: 2, spans: [Span(text: " ")]),
             Row(y: 3, spans: [Span(text: rule)]),
         ]
@@ -1044,7 +1042,7 @@ extension PromptInputClassifierTests {
         )
         XCTAssertEqual(
             PromptInputClassifier.composerText(input, harness: "pi"),
-            " first line of my draft"
+            "first line of my draft"
         )
     }
 
@@ -1129,6 +1127,70 @@ extension PromptInputClassifierTests {
                 )
             }
         }
+    }
+
+    /// An untyped panel still refuses a Claude draft. Empty stays unknown.
+    func testUnknownHarnessRefusesAClaudeDraft() {
+        let draft = region([
+            Row(y: 0, spans: [Span(text: liveRule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}notes:")]),
+            Row(y: 2, spans: [Span(text: liveRule)]),
+        ], cursorY: 1)
+        for harness in [nil, "omp", "github-copilot", "shell", "kimi"] {
+            let state = PromptInputClassifier.classify(draft, harness: harness).state
+            XCTAssertEqual(state, .draft, "harness \(harness ?? "nil") reads \(state)")
+            XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+            XCTAssertEqual(
+                SendInputGuard.decide(state: state, allowUnguarded: false),
+                .refuse(reason: "draft")
+            )
+        }
+    }
+
+    func testUnknownHarnessEmptyClaudePromptStaysUnknown() {
+        for harness in [nil, "omp", "github-copilot", "shell", "kimi"] {
+            let state = PromptInputClassifier.classify(claudeIdle(), harness: harness).state
+            XCTAssertEqual(state, .unknown, "harness \(harness ?? "nil") reads \(state)")
+            XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+            XCTAssertEqual(
+                SendInputGuard.decide(state: state, allowUnguarded: false),
+                .deliver(.unknown)
+            )
+        }
+    }
+
+    private var piLiveRule: String { String(repeating: "─", count: 69) }
+
+    func testR1V3PiLiveDraftEndingInARuleRowIsNotEmpty() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: piLiveRule)]),
+            Row(y: 1, spans: [Span(text: "notes:" + String(repeating: " ", count: 63))]),
+            Row(y: 2, spans: [Span(text: "────────────" + String(repeating: " ", count: 57))]),
+            Row(y: 3, spans: [Span(text: String(repeating: " ", count: 69))]),
+            Row(y: 4, spans: [Span(text: piLiveRule)]),
+        ]
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 3), harness: "pi").state
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state), "Pi draft ending in a rule row reads \(state)")
+    }
+
+    func testR1V3DoorbellAfterPiRuleDraftIsNotSubmitted() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: piLiveRule)]),
+            Row(y: 1, spans: [Span(text: "notes:" + String(repeating: " ", count: 63))]),
+            Row(y: 2, spans: [Span(text: "────────────" + String(repeating: " ", count: 57))]),
+            Row(y: 3, spans: [Span(text: MailboxDoorbell.text)]),
+            Row(y: 4, spans: [Span(text: piLiveRule)]),
+        ]
+        let after = region(rows, cursorY: 3)
+        let verdict = MailboxDoorbellSequence.preReturn(
+            rowIsCurrent: true,
+            operatorInputUnchanged: true,
+            agentOwnsTerminal: true,
+            captured: true,
+            prompt: PromptInputClassifier.classify(after, harness: "pi").state,
+            composer: PromptInputClassifier.composerText(after, harness: "pi")
+        )
+        XCTAssertNotNil(verdict, "the Return would submit the operator's Pi draft with the doorbell line")
     }
 
     private var liveRule: String { String(repeating: "─", count: 69) }

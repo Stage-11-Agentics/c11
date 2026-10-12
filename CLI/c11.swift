@@ -2955,6 +2955,7 @@ struct CMUXCLI {
                 // Resolve blueprint path or name -> {plan: ...} dict for workspace.create layout param.
                 params["layout"] = try resolveBlueprintPlan(layoutRef, client: client)
             }
+            try addCallingPanel(to: &params)
             let response = try client.sendV2(method: "workspace.create", params: params)
             printV2Payload(response, jsonOutput: jsonOutput, idFormat: idFormat,
                            fallbackText: createOKSummary(response, idFormat: idFormat, kinds: ["workspace"]))
@@ -2997,6 +2998,7 @@ struct CMUXCLI {
             if createArgs.contains("--allow-undersized") || createArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
+            try addCallingPanel(to: &params)
             let payload = try client.sendV2(method: "panel.split", params: params)
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat))
@@ -3055,6 +3057,9 @@ struct CMUXCLI {
         case "tree":
             try runTreeCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        case "family":
+            try runPanelFamilyCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         case "focus-area":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             guard let paneRaw = optionValue(commandArgs, name: "--area") ?? commandArgs.first else {
@@ -3102,6 +3107,7 @@ struct CMUXCLI {
             if createArgs.contains("--allow-undersized") || createArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
+            try addCallingPanel(to: &params)
             let payload = try client.sendV2(method: "area.create", params: params)
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["panel", "area", "workspace"]))
@@ -3375,6 +3381,7 @@ struct CMUXCLI {
                 params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
             }
             if noFocus { params["focus"] = false }
+            try addCallingPanel(to: &params)
             let payload = try client.sendV2(method: "panel.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["panel", "area", "workspace"]))
 
@@ -4593,6 +4600,7 @@ struct CMUXCLI {
             params["layout"] = FileManager.default.fileExists(atPath: asPath) ? asPath : layoutOpt
         }
         if let nameOpt { params["name"] = nameOpt }
+        try addCallingPanel(to: &params)
         let payload = try client.sendV2(method: "workspace.create_in_directory", params: params)
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -5638,6 +5646,7 @@ struct CMUXCLI {
             }
         }
 
+        try addCallingPanel(to: &params)
         let payload = try client.sendV2(method: "markdown.open", params: params)
 
         if jsonOutput {
@@ -5922,7 +5931,8 @@ struct CMUXCLI {
             try launchApp()
             let launchedClient = try SocketClient.waitForConnectableSocket(path: socketPath, timeout: 10)
             defer { launchedClient.close() }
-            let params: [String: Any] = ["cwd": directory]
+            var params: [String: Any] = ["cwd": directory]
+            try addCallingPanel(to: &params)
             let response = try launchedClient.sendV2(method: "workspace.create", params: params)
             let wsRef = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
             if !wsRef.isEmpty {
@@ -5933,7 +5943,8 @@ struct CMUXCLI {
         }
         defer { client.close() }
 
-        let params: [String: Any] = ["cwd": directory]
+        var params: [String: Any] = ["cwd": directory]
+        try addCallingPanel(to: &params)
         let response = try client.sendV2(method: "workspace.create", params: params)
         let wsRef = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
         if !wsRef.isEmpty {
@@ -7207,6 +7218,7 @@ struct CMUXCLI {
             params["url"] = urlOpt.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
+        try addCallingPanel(to: &params)
         let payload = try client.sendV2(method: "panel.action", params: params)
         var summaryParts = ["OK", "action=\(action)"]
         if let panelHandle = formatPanelHandle(payload, idFormat: idFormat) {
@@ -7622,9 +7634,10 @@ struct CMUXCLI {
             "extraArgs=\(sshOptions.extraArguments.count)"
         )
 
-        let workspaceCreateParams: [String: Any] = [
+        var workspaceCreateParams: [String: Any] = [
             "initial_command": initialSSHStartupCommand,
         ]
+        try addCallingPanel(to: &workspaceCreateParams)
 
         let workspaceCreateStartedAt = Date()
         let workspaceCreate = try client.sendV2(method: "workspace.create", params: workspaceCreateParams)
@@ -8830,6 +8843,7 @@ struct CMUXCLI {
                     params["window_id"] = window
                 }
             }
+            try addCallingPanel(to: &params)
             let payload = try client.sendV2(method: "browser.open_split", params: params)
             let surfaceText = formatHandle(payload, kind: "panel", idFormat: effectiveIDFormat) ?? "unknown"
             let paneText = formatHandle(payload, kind: "area", idFormat: effectiveIDFormat) ?? "unknown"
@@ -9698,6 +9712,7 @@ struct CMUXCLI {
                 if !url.isEmpty {
                     params["url"] = url
                 }
+                try addCallingPanel(to: &params)
                 let payload = try client.sendV2(method: "browser.panel.new", params: params)
                 output(payload, fallback: "OK")
             case "switch", "close":
@@ -11076,6 +11091,16 @@ struct CMUXCLI {
             Example:
               c11 list-area-panels
               c11 list-area-panels --workspace workspace:2 --area area:1
+            """
+        case "family":
+            return """
+            Usage: c11 family [--panel <ref>] [--json]
+
+            Show the target panel's creation root and its descendants. The
+            default panel is the caller's C11_PANEL_ID.
+
+            JSON returns versioned nodes with parent_panel_id, live/closed
+            state, title, type, agent_type, delegation, and workspace details.
             """
         case "tree":
             return """
@@ -15038,6 +15063,12 @@ struct CMUXCLI {
         return surface
     }
 
+    private func addCallingPanel(to params: inout [String: Any]) throws {
+        if let panelId = try resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+            params["caller_panel_id"] = panelId
+        }
+    }
+
     private func resolveRuntimeConversationSurface(environment: [String: String]) throws -> String {
         guard let surface = try resolveCallingSurface(environment: environment) else {
             throw CLIError(message: "missing_surface: C11_PANEL_ID required")
@@ -16147,6 +16178,74 @@ struct CMUXCLI {
         let workspaceHandle: String?
         let paneHandle: String?
         let surfaceHandle: String?
+    }
+
+    private func runPanelFamilyCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (panelRaw, remaining) = parseOption(commandArgs, name: "--panel")
+        let wantsJSON = jsonOutput || commandArgs.contains("--json")
+        let rest = remaining.filter { $0 != "--json" }
+        guard rest.isEmpty else {
+            throw CLIError(message: "family: unknown argument '\(rest[0])'. Usage: c11 family [--panel <ref>] [--json]")
+        }
+
+        let panelId: String
+        if let panelRaw {
+            guard let normalized = try normalizeSurfaceHandle(panelRaw, client: client, workspaceHandle: nil) else {
+                throw CLIError(message: "family: invalid panel ref '\(panelRaw)'")
+            }
+            panelId = normalized
+        } else if let caller = try resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
+            panelId = caller
+        } else {
+            throw CLIError(message: "family: pass --panel <ref> or run from a panel with C11_PANEL_ID")
+        }
+
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(method: "panel.family", params: ["panel_id": panelId])
+        } catch let error as CLIError where error.message.contains("method_not_found") {
+            throw CLIError(message: "family requires a c11 server with panel.family support; update the app and CLI together")
+        }
+
+        if wantsJSON {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+
+        let nodes = payload["nodes"] as? [[String: Any]] ?? []
+        guard !nodes.isEmpty else { throw CLIError(message: "family: server returned no lineage nodes") }
+        let byId = Dictionary(uniqueKeysWithValues: nodes.compactMap { node -> (String, [String: Any])? in
+            guard let id = node["id"] as? String else { return nil }
+            return (id, node)
+        })
+        for node in nodes {
+            let id = node["id"] as? String ?? ""
+            var depth = 0
+            var parentId = node["parent_panel_id"] as? String
+            var seen: Set<String> = [id]
+            while let parent = parentId, byId[parent] != nil, seen.insert(parent).inserted {
+                depth += 1
+                parentId = byId[parent]?["parent_panel_id"] as? String
+            }
+            let marker = depth == 0 ? "" : String(repeating: "  ", count: depth - 1) + "└── "
+            let ref = formatHandle(node, kind: "panel", idFormat: idFormat) ?? id
+            let type = node["type"] as? String ?? "panel"
+            let title = (node["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let state = node["state"] as? String ?? "unknown"
+            let delegation = (node["delegated"] as? Bool) == true ? " [delegate]" : ""
+            let workspaceRef = node["workspace_ref"] as? String ?? "workspace"
+            let workspaceTitle = (node["workspace_title"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let workspace = workspaceTitle.isEmpty
+                ? workspaceRef
+                : "\(workspaceRef) \"\(workspaceTitle)\""
+            print("\(marker)\(ref) [\(type)]\(title.isEmpty ? "" : " \(title)") [\(state)]\(delegation) — \(workspace)")
+        }
     }
 
     private func runTreeCommand(
@@ -17411,6 +17510,12 @@ struct CMUXCLI {
         if (surface["here"] as? Bool) == true {
             parts.append("◀ here")
         }
+        if let parentRef = surface["parent_panel_ref"] as? String,
+           !parentRef.isEmpty {
+            let parentTitle = (surface["parent_panel_title"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            parts.append("↳ child of \(parentRef)\(parentTitle.isEmpty ? "" : " \(parentTitle)")")
+        }
         if surfaceType.lowercased() == "browser",
            let url = surface["url"] as? String,
            !url.isEmpty {
@@ -18287,6 +18392,7 @@ struct CMUXCLI {
             if let cwd = parsed.value("-c") {
                 params["cwd"] = resolvePath(cwd)
             }
+            try addCallingPanel(to: &params)
             let created = try client.sendV2(method: "workspace.create", params: params)
             guard let workspaceId = created["workspace_id"] as? String else {
                 throw CLIError(message: "workspace.create did not return workspace_id")
@@ -18324,6 +18430,7 @@ struct CMUXCLI {
             if let cwd = parsed.value("-c") {
                 params["cwd"] = resolvePath(cwd)
             }
+            try addCallingPanel(to: &params)
             let created = try client.sendV2(method: "workspace.create", params: params)
             guard let workspaceId = created["workspace_id"] as? String else {
                 throw CLIError(message: "workspace.create did not return workspace_id")
@@ -18361,11 +18468,13 @@ struct CMUXCLI {
             } else {
                 direction = parsed.hasFlag("-b") ? "up" : "down"
             }
-            let created = try client.sendV2(method: "panel.split", params: [
+            var params: [String: Any] = [
                 "workspace_id": target.workspaceId,
                 "panel_id": target.surfaceId,
                 "direction": direction
-            ])
+            ]
+            try addCallingPanel(to: &params)
+            let created = try client.sendV2(method: "panel.split", params: params)
             guard let surfaceId = created["panel_id"] as? String else {
                 throw CLIError(message: "panel.split did not return panel_id")
             }
@@ -20552,6 +20661,7 @@ struct CMUXCLI {
           new-split <left|right|up|down> [--command <text>] [--workspace <id|ref>] [--panel <id|ref>] [--title <text>]
           list-areas [--workspace <id|ref>]
           list-area-panels [--workspace <id|ref>] [--area <id|ref>]
+          family [--panel <id|ref>] [--json]
           tree [--all] [--workspace <id|ref|index>]
           focus-area --area <id|ref> [--workspace <id|ref>]
           new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
@@ -21293,6 +21403,7 @@ extension CMUXCLI {
                     params["workspace_id"] = workspaceID.uuidString
                 }
             }
+            try addCallingPanel(to: &params)
             let payload = try client.sendV2(method: "messages.view", params: params)
             printV2Payload(
                 payload,
@@ -21385,6 +21496,7 @@ extension CMUXCLI {
 
         Send flags:
           --to <panel>            recipient panel name (any workspace)
+          --to-parent             send to this panel's direct parent by exact UUID
           --to-workspace <ref>    disambiguate a name shared across workspaces
           --topic <topic>         dotted topic token
           --body <text>           inline body (≤ 4096 bytes UTF-8)
@@ -21520,7 +21632,7 @@ extension CMUXCLI {
             throw CLIError(message: failure.description)
         }
         let reportJSON = jsonOutput || parsed.json
-        let to = parsed.to
+        var to = parsed.to
         let topic = parsed.topic
         let body = parsed.body
         let bodyRef = parsed.bodyRef
@@ -21532,7 +21644,13 @@ extension CMUXCLI {
         let tsOverride = parsed.ts
         let contentType = parsed.contentType
         let fromOverride = parsed.from
-        let toWorkspace = parsed.toWorkspace
+        var toWorkspace = parsed.toWorkspace
+
+        if parsed.toParent {
+            let parent = try resolveMailboxParent(client: client)
+            to = "id:\(parent.panelId.uuidString)"
+            toWorkspace = parent.workspaceId.uuidString
+        }
 
         if to == nil && topic == nil {
             throw CLIError(
@@ -21598,7 +21716,8 @@ extension CMUXCLI {
             client: client,
             to: to ?? "",
             senderWorkspaceId: workspaceId,
-            qualifier: toWorkspace
+            qualifier: toWorkspace,
+            requireVerified: parsed.toParent
         )
         let targetWorkspaceId = resolution.workspaceId
 
@@ -21648,6 +21767,35 @@ extension CMUXCLI {
         }
     }
 
+    private func resolveMailboxParent(client: SocketClient) throws -> (panelId: UUID, workspaceId: UUID) {
+        guard let callerRaw = try resolveCallingSurface(environment: ProcessInfo.processInfo.environment),
+              let callerId = UUID(uuidString: callerRaw) else {
+            throw CLIError(message: String(localized: "mailbox.cli.error.to-parent-no-caller", defaultValue: "mailbox send --to-parent needs C11_PANEL_ID from a child panel."))
+        }
+
+        let family: [String: Any]
+        do {
+            family = try client.sendV2(method: "panel.family", params: ["panel_id": callerId.uuidString])
+        } catch let error as CLIError where error.message.contains("method_not_found") {
+            throw CLIError(message: String(localized: "mailbox.cli.error.to-parent-unsupported", defaultValue: "mailbox send --to-parent requires an updated c11 app and CLI with panel.family support."))
+        }
+
+        let nodes = family["nodes"] as? [[String: Any]] ?? []
+        guard let caller = nodes.first(where: { UUID(uuidString: $0["id"] as? String ?? "") == callerId }),
+              let parentRaw = caller["parent_panel_id"] as? String,
+              let parentId = UUID(uuidString: parentRaw),
+              let parent = nodes.first(where: { UUID(uuidString: $0["id"] as? String ?? "") == parentId }),
+              let workspaceRaw = parent["workspace_id"] as? String,
+              let workspaceId = UUID(uuidString: workspaceRaw) else {
+            throw CLIError(message: String(localized: "mailbox.cli.error.to-parent-none", defaultValue: "This panel has no known parent; --to-parent requires a child panel."))
+        }
+        guard (parent["state"] as? String) == "live" else {
+            let title = parent["title"] as? String ?? parentId.uuidString
+            throw CLIError(message: String(localized: "mailbox.cli.error.to-parent-closed", defaultValue: "Parent panel \(title) is closed, so --to-parent cannot deliver."))
+        }
+        return (parentId, workspaceId)
+    }
+
     /// Resolves which workspace's outbox a `--to` envelope should be written
     /// into by asking the app for a cross-workspace view of live surfaces
     /// (`mailbox.resolve`). Throws a non-zero `CLIError` when the recipient is
@@ -21660,7 +21808,8 @@ extension CMUXCLI {
         client: SocketClient,
         to: String,
         senderWorkspaceId: UUID,
-        qualifier: String?
+        qualifier: String?,
+        requireVerified: Bool = false
     ) throws -> (workspaceId: UUID, verified: Bool) {
         var params: [String: Any] = [
             "to": to,
@@ -21674,6 +21823,12 @@ extension CMUXCLI {
         do {
             payload = try client.sendV2(method: "mailbox.resolve", params: params)
         } catch {
+            if requireVerified {
+                throw CLIError(message: String(
+                    localized: "mailbox.cli.error.to-parent-unverified",
+                    defaultValue: "mailbox send --to-parent could not verify the exact parent panel; no envelope was written."
+                ))
+            }
             // Socket unreachable (or an older app without mailbox.resolve): we
             // cannot resolve across workspaces. Fall back to the sender's own
             // workspace so a same-workspace recipient still gets the message,

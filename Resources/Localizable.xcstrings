@@ -78698,6 +78698,90 @@
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "還有 %d 則引用"}},
         "ru": {"stringUnit": {"state": "translated", "value": "Ещё ссылок: %d"}}
       }
+    },
+    "mailbox.cli.error.to-parent-closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Parent panel %@ is closed, so --to-parent cannot deliver."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "親パネル %@ は閉じているため、`--to-parent` では送信できません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Батьківську панель %@ закрито, тому доставити повідомлення через `--to-parent` неможливо."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "부모 패널 %@이(가) 닫혀 있어 `--to-parent`로 전달할 수 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "父面板 %@ 已关闭，因此无法通过 `--to-parent` 投递。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "父面板 %@ 已關閉，因此無法透過 `--to-parent` 傳送。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Родительская панель %@ закрыта, поэтому доставить сообщение через `--to-parent` нельзя."}}
+      }
+    },
+    "mailbox.cli.error.to-parent-conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Pass --to-parent by itself; it cannot be combined with --to or --to-workspace."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "`--to-parent` は単独で指定してください。`--to` または `--to-workspace` と併用できません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Передавайте `--to-parent` окремо; його не можна поєднувати з `--to` або `--to-workspace`."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "`--to-parent`는 단독으로 전달해야 합니다. `--to` 또는 `--to-workspace`와 함께 사용할 수 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请单独传入 `--to-parent`；不能与 `--to` 或 `--to-workspace` 同时使用。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請單獨傳入 `--to-parent`；不能與 `--to` 或 `--to-workspace` 同時使用。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Передавайте `--to-parent` отдельно; его нельзя сочетать с `--to` или `--to-workspace`."}}
+      }
+    },
+    "mailbox.cli.error.to-parent-no-caller": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "mailbox send --to-parent needs C11_PANEL_ID from a child panel."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` には、子パネルの `C11_PANEL_ID` が必要です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Для `mailbox send --to-parent` потрібен `C11_PANEL_ID` дочірньої панелі."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent`에는 자식 패널의 `C11_PANEL_ID`가 필요합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` 需要子面板提供 `C11_PANEL_ID`。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` 需要子面板提供 `C11_PANEL_ID`。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Для `mailbox send --to-parent` нужен `C11_PANEL_ID` дочерней панели."}}
+      }
+    },
+    "mailbox.cli.error.to-parent-none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This panel has no known parent; --to-parent requires a child panel."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このパネルの親パネルは不明です。`--to-parent` を使うには子パネルが必要です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Для цієї панелі немає відомої батьківської панелі; `--to-parent` можна використовувати лише з дочірньої панелі."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 패널의 부모 패널을 알 수 없습니다. `--to-parent`를 사용하려면 자식 패널이어야 합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此面板没有已知的父面板；使用 `--to-parent` 需要从子面板发送。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此面板沒有已知的父面板；使用 `--to-parent` 需要從子面板傳送。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Для этой панели нет известной родительской панели; `--to-parent` можно использовать только из дочерней панели."}}
+      }
+    },
+    "mailbox.cli.error.to-parent-unverified": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "mailbox send --to-parent could not verify the exact parent panel; no envelope was written."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` は親パネルを正確に検証できなかったため、エンベロープは書き込まれませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` не вдалося перевірити точну батьківську панель; конверт не записано."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent`에서 정확한 부모 패널을 확인할 수 없어 봉투를 기록하지 않았습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` 无法验证确切的父面板；未写入信封。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` 無法驗證確切的父面板；未寫入信封。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` не удалось проверить точную родительскую панель; конверт не записан."}}
+      }
+    },
+    "mailbox.cli.error.to-parent-unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "mailbox send --to-parent requires an updated c11 app and CLI with panel.family support."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` には、`panel.family` に対応した更新版の c11 アプリと CLI が必要です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Для `mailbox send --to-parent` потрібні оновлені застосунок c11 і CLI з підтримкою `panel.family`."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent`를 사용하려면 `panel.family`를 지원하는 최신 c11 앱과 CLI가 필요합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` 需要支持 `panel.family` 的新版 c11 应用和 CLI。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "`mailbox send --to-parent` 需要支援 `panel.family` 的新版 c11 App 和 CLI。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Для `mailbox send --to-parent` нужны обновлённые приложение c11 и CLI с поддержкой `panel.family`."}}
+      }
+    },
+    "panelSheet.lineage.childOf": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Child of %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%@ の子パネル"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Дочірня панель: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@의 하위 패널"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%@ 的子面板"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ 的子面板"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Дочерняя панель %@"}}
+      }
     }
   }
 }

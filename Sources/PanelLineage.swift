@@ -1,0 +1,122 @@
+import Foundation
+
+/// One lifecycle seam for panels that are permanently closed. Part B wires
+/// mailbox delivery to these observers; moves and app termination do not fire it.
+@MainActor
+final class PanelLineage {
+    static let shared = PanelLineage()
+
+    private var panelClosedForGoodObservers: [(Set<UUID>) -> Void] = []
+    private(set) var store = PanelLineageStore()
+    private var creatorPanelId: UUID?
+    private var closedPanelIds: Set<UUID> = []
+
+    func addPanelClosedForGoodObserver(_ body: @escaping (Set<UUID>) -> Void) {
+        panelClosedForGoodObservers.append(body)
+    }
+
+    func withCreator<T>(_ panelId: UUID?, operation: () throws -> T) rethrows -> T {
+        let previous = creatorPanelId
+        creatorPanelId = panelId
+        defer { creatorPanelId = previous }
+        return try operation()
+    }
+
+    @discardableResult
+    func panelInserted(_ panel: any Panel, in workspace: Workspace) -> UUID? {
+        let metadata = PanelMetadataStore.shared.getMetadata(
+            workspaceId: workspace.id,
+            surfaceId: panel.id
+        ).metadata
+        let attention = PanelMetadataStore.shared.attentionSnapshot(
+            workspaceId: workspace.id,
+            surfaceId: panel.id
+        )
+        closedPanelIds.remove(panel.id)
+        return store.insert(
+            panelId: panel.id,
+            creatorPanelId: creatorPanelId,
+            workspaceId: workspace.id,
+            workspaceTitle: workspace.title,
+            title: workspace.panelTitle(panelId: panel.id) ?? panel.displayTitle,
+            type: panel.panelType.rawValue,
+            agentType: metadata[MetadataKey.terminalType] as? String,
+            delegated: attention.suppressed
+        )
+    }
+
+    func panelClosedForGood(_ panelId: UUID, isDetaching: Bool = false) {
+        panelsClosedForGood([panelId], isDetaching: isDetaching)
+    }
+
+    func panelsClosedForGood(_ panelIds: Set<UUID>, isDetaching: Bool = false) {
+        guard PanelCloseForGoodPolicy.shouldFire(
+            isDetaching: isDetaching,
+            isTerminatingApp: AppDelegate.shared?.isTerminatingApp ?? false
+        ), !panelIds.isEmpty else { return }
+
+        var newlyClosed: Set<UUID> = []
+        for panelId in panelIds {
+            refreshLiveNode(panelId)
+            guard store.node(panelId: panelId)?.isClosed != true,
+                  closedPanelIds.insert(panelId).inserted else { continue }
+            store.close(panelId: panelId)
+            newlyClosed.insert(panelId)
+        }
+        guard !newlyClosed.isEmpty else { return }
+
+        for observer in panelClosedForGoodObservers {
+            observer(newlyClosed)
+        }
+    }
+
+    func updateTitle(panelId: UUID, title: String) { store.updateTitle(panelId: panelId, title: title) }
+
+    func node(panelId: UUID) -> PanelLineageNode? {
+        refreshLiveNode(panelId)
+        return store.node(panelId: panelId)
+    }
+
+    func family(startingAt panelId: UUID) -> (rootId: UUID, nodes: [PanelLineageNode])? {
+        for node in store.snapshot() where !node.isClosed { refreshLiveNode(node.id) }
+        return store.family(startingAt: panelId)
+    }
+
+    func restore(_ nodes: [PanelLineageNode]) {
+        closedPanelIds.removeAll()
+        store.replace(with: nodes)
+    }
+
+    func finishRestore(livePanelIds: Set<UUID>) { store.finishRestore(livePanelIds: livePanelIds) }
+
+    func snapshot() -> [PanelLineageNode] {
+        for node in store.snapshot() where !node.isClosed { refreshLiveNode(node.id) }
+        return store.snapshot()
+    }
+
+    private func refreshLiveNode(_ panelId: UUID) {
+        guard let existing = store.node(panelId: panelId), !existing.isClosed,
+              let located = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: panelId,
+                preferredWorkspaceId: existing.workspaceId
+              ),
+              let panel = located.workspace.panels[panelId] else { return }
+        let metadata = PanelMetadataStore.shared.getMetadata(
+            workspaceId: located.workspace.id,
+            surfaceId: panelId
+        ).metadata
+        let attention = PanelMetadataStore.shared.attentionSnapshot(
+            workspaceId: located.workspace.id,
+            surfaceId: panelId
+        )
+        store.updateLiveState(
+            panelId: panelId,
+            workspaceId: located.workspace.id,
+            workspaceTitle: located.workspace.title,
+            title: located.workspace.panelTitle(panelId: panelId) ?? panel.displayTitle,
+            type: panel.panelType.rawValue,
+            agentType: metadata[MetadataKey.terminalType] as? String,
+            delegated: attention.suppressed
+        )
+    }
+}

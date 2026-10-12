@@ -258,7 +258,7 @@ final class EventLogTests: XCTestCase {
         let log = EventLog(url: logURL(), instance: "test-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "test-inst")
         let ws = UUID(), sf = UUID()
-        EventEmitter.shared.emitSurfaceCreated(workspace: ws, surface: sf, kind: "terminal")
+        EventEmitter.shared.emitPanelCreated(workspace: ws, panel: sf, kind: "terminal")
         EventEmitter.shared.emitMetadataChanged(
             scope: "surface", workspace: ws, surface: sf,
             key: "status", value: "working", prior: "idle", source: "explicit")
@@ -755,8 +755,8 @@ extension EventLogTests {
         emitter.startForTesting(log: log, instance: "workspaces")
         let workspace = UUID(), first = UUID(), second = UUID()
         emitter.emitWorkspaceCreated(workspace: workspace, title: "Research", rootDirectory: "/tmp/project")
-        emitter.emitSurfaceCreated(workspace: workspace, surface: first, kind: "terminal")
-        emitter.emitSurfaceCreated(workspace: workspace, surface: second, kind: "browser")
+        emitter.emitPanelCreated(workspace: workspace, panel: first, kind: "terminal")
+        emitter.emitPanelCreated(workspace: workspace, panel: second, kind: "browser")
         emitter.emitWorkspaceRenamed(workspace: workspace, title: "Review", prior: "Research")
         emitter.emitWorkspaceClosed(workspace: workspace, title: "Review", remainingPanels: [first, second])
         emitter.flush()
@@ -1953,11 +1953,11 @@ extension EventLogTests {
         emitter.withTransientWorkspaceConstruction {
             emitter.enrollTransientWorkspaceConstruction(bootstrap)
             // Panel creation can precede workspace.created in real construction.
-            emitter.emitSurfaceCreated(workspace: bootstrap, surface: bootstrapPanel, kind: "terminal", title: "Synthetic bootstrap")
+            emitter.emitPanelCreated(workspace: bootstrap, panel: bootstrapPanel, kind: "terminal", title: "Synthetic bootstrap")
             emitter.emitWorkspaceCreated(workspace: bootstrap, title: "Synthetic bootstrap", rootDirectory: nil)
         }
         emitter.enrollTransientWorkspaceConstruction(normal)
-        emitter.emitSurfaceCreated(workspace: normal, surface: normalPanel, kind: "terminal", title: "Synthetic installed")
+        emitter.emitPanelCreated(workspace: normal, panel: normalPanel, kind: "terminal", title: "Synthetic installed")
         emitter.emitWorkspaceCreated(workspace: normal, title: "Synthetic installed", rootDirectory: nil)
         // No onAppear, activation or delayed callback has run. Classification
         // already belongs to the construction UUID, not later UI attachment.
@@ -1998,7 +1998,7 @@ extension EventLogTests {
         let workspace = UUID(), panel = UUID()
         emitter.withTransientWorkspaceConstruction {
             emitter.enrollTransientWorkspaceConstruction(workspace)
-            emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic bootstrap")
+            emitter.emitPanelCreated(workspace: workspace, panel: panel, kind: "terminal", title: "Synthetic bootstrap")
             emitter.emitWorkspaceCreated(workspace: workspace, title: "Synthetic bootstrap", rootDirectory: nil)
         }
         emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic bootstrap", remainingPanels: [panel])
@@ -2017,12 +2017,12 @@ extension EventLogTests {
         let workspace = UUID(), panel = UUID()
         emitter.withTransientWorkspaceConstruction {
             emitter.enrollTransientWorkspaceConstruction(workspace)
-            emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic bootstrap")
+            emitter.emitPanelCreated(workspace: workspace, panel: panel, kind: "terminal", title: "Synthetic bootstrap")
         }
         log.flush()
         XCTAssertTrue(readLines(logURL()).isEmpty)
         emitter.updatePolicy(ActivityHistoryPolicy())
-        emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic delayed bootstrap")
+        emitter.emitPanelCreated(workspace: workspace, panel: panel, kind: "terminal", title: "Synthetic delayed bootstrap")
         emitter.updatePolicy(ActivityHistoryPolicy(enabled: false))
         emitter.updatePolicy(ActivityHistoryPolicy())
         emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic bootstrap", remainingPanels: [panel])
@@ -2065,7 +2065,7 @@ extension EventLogTests {
         let workspace = UUID(), panel = UUID()
         emitter.withTransientWorkspaceConstruction {
             emitter.enrollTransientWorkspaceConstruction(workspace)
-            emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic bootstrap")
+            emitter.emitPanelCreated(workspace: workspace, panel: panel, kind: "terminal", title: "Synthetic bootstrap")
         }
         log.flush()
         XCTAssertEqual((readLines(logURL()).map(parse).first?["payload"] as? [String: Any])?["transient"] as? Bool, true)
@@ -2098,7 +2098,7 @@ extension EventLogTests {
         }
         emitter.noteWorkspaceRuntimeSurfaceCreated(workspace)
         emitter.updatePolicy(ActivityHistoryPolicy(analyticsEnabled: false))
-        emitter.emitSurfaceCreated(workspace: workspace, surface: panel, kind: "terminal", title: "Synthetic real runtime")
+        emitter.emitPanelCreated(workspace: workspace, panel: panel, kind: "terminal", title: "Synthetic real runtime")
         emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic real runtime", remainingPanels: [panel])
         log.flush()
         let edges = readLines(logURL()).map(parse).filter { $0["workspace"] as? String == workspace.uuidString }

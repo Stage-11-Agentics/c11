@@ -5902,11 +5902,13 @@ final class Workspace: Identifiable, ObservableObject {
             // This callback runs in @Published.willSet. Register the supplied
             // new tab directly; self.panels still contains the old collection.
             _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
-            EventEmitter.shared.emitSurfaceCreated(
+            let parentPanelId = PanelLineage.shared.panelInserted(panel, in: self)
+            EventEmitter.shared.emitPanelCreated(
                 workspace: id,
-                surface: createdId,
+                panel: createdId,
                 kind: panel.panelType.rawValue,
-                title: panel.displayTitle
+                title: panel.displayTitle,
+                parentPanelId: parentPanelId
             )
         }
         for closedId in lastKnownPanelIds.subtracting(newIds) {
@@ -10061,13 +10063,13 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxDispatcher = nil
         teardownRemoteConnection()
         owningWorkspaceManager = nil
-        teardownAllPanels()
+        teardownAllPanels(markPanelsClosedForGood: false)
     }
 
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
-    func teardownAllPanels() {
+    func teardownAllPanels(markPanelsClosedForGood: Bool = true) {
         emitWorkspaceTeardownEvents()
 
         // Drain every pending pane interaction with .dismissed FIRST so any
@@ -10088,6 +10090,7 @@ final class Workspace: Identifiable, ObservableObject {
         cancelAllPersistentFlashes()
 
         let panelEntries = Array(panels)
+        let closedPanelIds = Set(panelEntries.map { $0.key })
         for (panelId, panel) in panelEntries {
             panelSubscriptions.removeValue(forKey: panelId)
             PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
@@ -10095,6 +10098,9 @@ final class Workspace: Identifiable, ObservableObject {
             panel.close()
             // C11-243: workspace teardown; these panels are gone.
             PanelSeenTracker.shared.forget(panelId: panelId)
+        }
+        if markPanelsClosedForGood {
+            PanelLineage.shared.panelsClosedForGood(closedPanelIds)
         }
 
         panels.removeAll(keepingCapacity: false)
@@ -13195,6 +13201,9 @@ extension Workspace: BonsplitDelegate {
                 shellEdgeAt: panelShellEdgeAt[panelId]
             )
         } else {
+            if panel != nil {
+                PanelLineage.shared.panelClosedForGood(panelId)
+            }
             if let closedBrowserRestoreSnapshot {
                 onClosedBrowserPanel?(closedBrowserRestoreSnapshot)
             }
@@ -13399,6 +13408,9 @@ extension Workspace: BonsplitDelegate {
         let shouldScheduleFocusReconcile = !isDetachingCloseTransaction
 
         if !closedPanelIds.isEmpty {
+            let lineageClosedPanelIds = isDetachingCloseTransaction
+                ? Set<UUID>()
+                : Set(closedPanelIds.filter { panels[$0] != nil })
             for panelId in closedPanelIds {
                 // Dismiss any pending pane interactions on this panel before
                 // tearing it down so withCheckedContinuation callers resume
@@ -13439,6 +13451,10 @@ extension Workspace: BonsplitDelegate {
                 PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
             }
+            PanelLineage.shared.panelsClosedForGood(
+                lineageClosedPanelIds,
+                isDetaching: isDetachingCloseTransaction
+            )
 
             let closedSet = Set(closedPanelIds)
             bonsplitTabIdToTabId = bonsplitTabIdToTabId.filter { !closedSet.contains($0.value) }

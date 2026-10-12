@@ -236,16 +236,18 @@ extension TerminalController {
         var newId: UUID?
         let shouldFocus = v2FocusAllowed()
         guard v2MainSyncWithDeadline({
-            let ws = workspaceManager.addWorkspace(
-                workingDirectory: initialWorkingDirectory,
-                rootDirectory: rootDirectory,
-                establishRootFromWorkingDirectory: false,
-                initialTerminalCommand: initialCommand,
-                initialTerminalInput: initialInput,
-                initialTerminalEnvironment: initialEnv,
-                select: shouldFocus,
-                eagerLoadTerminal: !shouldFocus
-            )
+            let ws = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id")) {
+                workspaceManager.addWorkspace(
+                    workingDirectory: initialWorkingDirectory,
+                    rootDirectory: rootDirectory,
+                    establishRootFromWorkingDirectory: false,
+                    initialTerminalCommand: initialCommand,
+                    initialTerminalInput: initialInput,
+                    initialTerminalEnvironment: initialEnv,
+                    select: shouldFocus,
+                    eagerLoadTerminal: !shouldFocus
+                )
+            }
             newId = ws.id
             if let customTitle {
                 workspaceManager.setCustomTitle(workspaceId: ws.id, title: customTitle)

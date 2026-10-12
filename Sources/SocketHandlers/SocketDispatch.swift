@@ -1508,14 +1508,16 @@ extension TerminalController {
                 // skips shell rc, which changes PATH-wrapper resolution.
                 // autoWelcome is suppressed: this workspace hosts an agent,
                 // not the onboarding grid.
-                let created = workspaceManager.addWorkspace(
-                    workingDirectory: cwdResolution.path,
-                    establishRootFromWorkingDirectory: cwdResolution.source != .launchingSurface,
-                    initialTerminalEnvironment: plan.env,
-                    select: focus,
-                    eagerLoadTerminal: !focus,
-                    autoWelcomeIfNeeded: false
-                )
+                let created = PanelLineage.shared.withCreator(launchCallerSurfaceId) {
+                    workspaceManager.addWorkspace(
+                        workingDirectory: cwdResolution.path,
+                        establishRootFromWorkingDirectory: cwdResolution.source != .launchingSurface,
+                        initialTerminalEnvironment: plan.env,
+                        select: focus,
+                        eagerLoadTerminal: !focus,
+                        autoWelcomeIfNeeded: false
+                    )
+                }
                 guard let initialPanel = created.focusedTerminalPanel else {
                     result = .err(code: "internal_error", message: "New workspace has no terminal panel", data: nil)
                     return result
@@ -1542,12 +1544,14 @@ extension TerminalController {
                     result = .err(code: "not_found", message: "Area not found", data: nil)
                     return result
                 }
-                guard let created = target.newTerminalSurface(
-                    inPane: paneId,
-                    focus: focus,
-                    workingDirectory: cwdResolution.path,
-                    startupEnvironment: plan.env
-                ) else {
+                guard let created = PanelLineage.shared.withCreator(launchCallerSurfaceId, operation: {
+                    target.newTerminalSurface(
+                        inPane: paneId,
+                        focus: focus,
+                        workingDirectory: cwdResolution.path,
+                        startupEnvironment: plan.env
+                    )
+                }) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return result
                 }

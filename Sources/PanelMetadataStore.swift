@@ -10,6 +10,9 @@ import Foundation
 /// String constants for the canonical metadata keys rendered in the sidebar
 /// and title bar. Non-canonical keys accept any JSON value and are opaque to c11.
 public enum MetadataKey {
+    public static let parentPanelId = "parent_panel_id"
+    public static let parentPanelRef = "parent_panel_ref"
+    public static let parentPanelTitle = "parent_panel_title"
     public static let role = "role"
     public static let status = "status"
     public static let task = "task"
@@ -218,6 +221,9 @@ final class PanelMetadataStore: @unchecked Sendable {
     /// would make the metadata layer a command-injection vector. See
     /// `validateReservedKey` for the UUIDv4 grammar enforced at write time.
     static let reservedKeys: Set<String> = [
+        "parent_panel_id",
+        "parent_panel_ref",
+        "parent_panel_title",
         "journal",
         "role",
         "status",
@@ -249,6 +255,8 @@ final class PanelMetadataStore: @unchecked Sendable {
     static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
         switch key {
         case "journal": return .reservedKeyInvalidType(key, "read-only journal projection")
+        case "parent_panel_id", "parent_panel_ref", "parent_panel_title":
+            return .reservedKeyInvalidType(key, "read-only lineage projection")
         case "role":
             return validateKebab(key: key, value: value, maxLen: 64)
         case "status":

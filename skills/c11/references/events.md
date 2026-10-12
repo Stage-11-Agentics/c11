@@ -47,7 +47,7 @@ The taxonomy types below are the closed v2 enum. The envelope fields `workspace`
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
-| `panel.created` | workspace + panel | `{kind, title?}` | A new panel opened. `kind` is terminal / browser / markdown. |
+| `panel.created` | workspace + panel | `{kind, title?, parent_panel_id}` | A new panel opened. `kind` is terminal / browser / markdown. `parent_panel_id` is its known creator UUID or `null`; roots and unknown creators are explicit. |
 | `panel.closed` | workspace + panel | — | Panel torn down. |
 | `workspace.reordered` | none (window-scoped) | `{window_id, final_workspace_ids}` | Applied batch order changed. Dry-run, no-op and rejected batches emit nothing. |
 | `workspace.selected` | selected workspace | `{previous?, cause, method?, caller_panel_id?}` | Operator selection. `cause` is `sidebar`, `shortcut`, `palette`, `notification`, `jump`, `menu`, `socket`, `close_fallback`, `restore`, or `create`. Socket fields identify the method and calling panel when known. |

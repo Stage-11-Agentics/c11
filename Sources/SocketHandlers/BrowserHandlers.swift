@@ -1454,9 +1454,9 @@ extension TerminalController {
 
             var createdSplit = true
             var placementStrategy = "split_right"
-            let createdPanel: BrowserPanel?
-            if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                    createdPanel = ws.newBrowserSurface(
+            let createdPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
+                if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
+                    let panel = ws.newBrowserSurface(
                         inPane: targetPane,
                         url: url,
                         focus: true,
@@ -1464,17 +1464,19 @@ extension TerminalController {
                         sticksAsPreferred: sticksAsPreferred,
                         bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
                     )
-                createdSplit = false
-                placementStrategy = "reuse_right_sibling"
-            } else {
-                createdPanel = ws.newBrowserSplit(
-                    from: sourceSurfaceId,
-                    orientation: .horizontal,
-                    url: url,
-                    preferredProfileID: preferredProfileID,
-                    sticksAsPreferred: sticksAsPreferred,
-                    bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
-                )
+                    createdSplit = false
+                    placementStrategy = "reuse_right_sibling"
+                    return panel
+                } else {
+                    return ws.newBrowserSplit(
+                        from: sourceSurfaceId,
+                        orientation: .horizontal,
+                        url: url,
+                        preferredProfileID: preferredProfileID,
+                        sticksAsPreferred: sticksAsPreferred,
+                        bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
+                    )
+                }
             }
 
             guard let browserPanelId = createdPanel?.id else {

@@ -1396,7 +1396,9 @@ extension TerminalController {
                 return
             }
 
-            guard let panel = ws.newBrowserSurface(inPane: pane, url: url, focus: true) else {
+            guard let panel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id"), operation: {
+                ws.newBrowserSurface(inPane: pane, url: url, focus: true)
+            }) else {
                 result = .err(code: "internal_error", message: "Failed to create browser panel", data: nil)
                 return
             }

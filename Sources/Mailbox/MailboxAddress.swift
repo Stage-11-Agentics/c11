@@ -12,6 +12,8 @@ import Foundation
 ///     hold them).
 ///   * `role:<name>` — match **only** surfaces whose `mailbox.role` equals
 ///     `<name>`. Opt-in role addressing.
+///   * `id:<uuid>` — match **only** the panel UUID, independent of title or
+///     workspace. Used when sending to a known lineage parent.
 ///   * bare `<x>` — precedence resolution: `mailbox.address`, then `mailbox.role`,
 ///     then `title`. Title is the fallback, so a send by display name keeps
 ///     working unchanged for surfaces that declare no stable identity.
@@ -24,6 +26,8 @@ enum MailboxAddress: Equatable {
     /// `panel:<address>` (or the legacy `tab:` / `surface:`) — match
     /// `mailbox.address` exactly.
     case surface(String)
+    /// `id:<uuid>` — exact panel UUID match.
+    case id(UUID?)
     /// `role:<name>` — match `mailbox.role` exactly.
     case role(String)
     /// Bare name — precedence: address, then role, then title.
@@ -34,6 +38,7 @@ enum MailboxAddress: Equatable {
     static let surfacePrefix = "surface:"
     static let tabPrefix = "tab:"
     static let rolePrefix = "role:"
+    static let idPrefix = "id:"
 
     /// Parse a raw `to` string. An empty value after a recognized prefix (e.g.
     /// `panel:`) yields that scheme with an empty payload — which matches
@@ -51,6 +56,9 @@ enum MailboxAddress: Equatable {
         if raw.hasPrefix(rolePrefix) {
             return .role(String(raw.dropFirst(rolePrefix.count)))
         }
+        if raw.hasPrefix(idPrefix) {
+            return .id(UUID(uuidString: String(raw.dropFirst(idPrefix.count))))
+        }
         return .name(raw)
     }
 
@@ -59,6 +67,7 @@ enum MailboxAddress: Equatable {
     var canonical: String {
         switch self {
         case .surface(let address): return Self.panelPrefix + address
+        case .id(let uuid): return Self.idPrefix + (uuid?.uuidString.lowercased() ?? "")
         case .role(let name): return Self.rolePrefix + name
         case .name(let name): return name
         }
@@ -74,11 +83,14 @@ struct MailboxIdentity: Equatable {
     let address: String?
     /// `mailbox.role` — the opt-in role handle.
     let role: String?
+    /// Exact panel identity; independent of user metadata.
+    let panelId: UUID?
 
-    init(title: String?, address: String?, role: String?) {
+    init(title: String?, address: String?, role: String?, panelId: UUID? = nil) {
         self.title = MailboxIdentity.nonEmpty(title)
         self.address = MailboxIdentity.nonEmpty(address)
         self.role = MailboxIdentity.nonEmpty(role)
+        self.panelId = panelId
     }
 
     /// Treats empty strings as absent so a blank metadata value never matches a
@@ -100,6 +112,9 @@ enum MailboxMatcher {
         identity: (Item) -> MailboxIdentity
     ) -> [Item] {
         switch address {
+        case .id(let target):
+            guard let target else { return [] }
+            return items.filter { identity($0).panelId == target }
         case .surface(let target):
             guard let target = MailboxIdentity.nonEmpty(target) else { return [] }
             return items.filter { identity($0).address == target }

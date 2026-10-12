@@ -2866,6 +2866,8 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
 
 @MainActor
 final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
+    private var observedCloseBatches: [Set<UUID>] = []
+
     func testSnapshotAndRestorePreserveCreationAcrossPanelKinds() throws {
         let workspace = Workspace()
         defer { workspace.teardownAllPanels() }
@@ -2894,6 +2896,26 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
         for (panelId, createdAt) in expected {
             XCTAssertEqual(restored.panels[panelId]?.createdAt, createdAt)
         }
+    }
+
+    func testWorkspaceTeardownNotifiesOwnerAndDelegateInOneBatch() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let delegate = try XCTUnwrap(
+            PanelLineage.shared.withCreator(owner.id) {
+                workspace.newTerminalSplit(from: owner.id, orientation: .horizontal)
+            }
+        )
+        XCTAssertEqual(PanelLineage.shared.node(panelId: delegate.id)?.parentPanelId, owner.id)
+        observedCloseBatches = []
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] closedPanelIds in
+            self?.observedCloseBatches.append(closedPanelIds)
+        }
+
+        workspace.teardownAllPanels()
+
+        XCTAssertEqual(observedCloseBatches, [Set([owner.id, delegate.id])])
     }
 }
 

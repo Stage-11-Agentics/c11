@@ -65,6 +65,8 @@ enum PanelSheetDetailBuilder {
         var evidenceNote: String? = nil
         /// The active panel relationship, if one should be shown in this row.
         var relationshipLabel: String? = nil
+        /// A parent/delegate relationship note, precomputed by `Workspace`.
+        var lineageNote: String? = nil
         /// Agent tabs: the prompt cache from the transcript tail (`cache`).
         var promptCache: PromptCacheObservation? = nil
         var now: Date = Date()
@@ -111,7 +113,7 @@ enum PanelSheetDetailBuilder {
                 modelLabel: input.modelLabel
             ),
             typeLabel: typeLabel(input.panelType),
-            subtitle: subtitle(input),
+            subtitle: subtitleWithLineage(input),
             status: status(
                 activity: input.activity,
                 isFlagged: input.isFlagged,
@@ -195,6 +197,27 @@ enum PanelSheetDetailBuilder {
         // its normal slot when no relationship is active.
         guard let detail else { return relationship }
         return "\(relationship) · \(detail)"
+    }
+
+    /// Kept separate so the delegate presentation can take precedence without
+    /// duplicating the parent wording or the subtitle composition.
+    static func parentLineageNote(parentTitle: String?) -> String? {
+        guard let parentTitle = oneLine(parentTitle), !parentTitle.isEmpty else { return nil }
+        return String(localized: "panelSheet.lineage.childOf", defaultValue: "Child of \(parentTitle)")
+    }
+
+    private static func subtitleWithLineage(_ input: Inputs) -> String? {
+        var detailInput = input
+        detailInput.relationshipLabel = nil
+        detailInput.lineageNote = nil
+        let detail = subtitle(detailInput)
+        let relationshipNotes = [
+            oneLine(input.relationshipLabel),
+            oneLine(input.lineageNote),
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+        guard !relationshipNotes.isEmpty else { return detail }
+        return (relationshipNotes + [detail].compactMap { $0 })
+            .joined(separator: " · ")
     }
 
     /// A waiting agent keeps its gold mark; its expired cache shows here.
@@ -390,6 +413,8 @@ extension Workspace {
             panelId: panelId,
             fallback: panelTitles[panelId] ?? panel.displayTitle
         )
+        let parentTitle = PanelLineage.shared.node(panelId: panelId)?.parentPanelId
+            .flatMap { PanelLineage.shared.node(panelId: $0)?.lastTitle }
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
         }
@@ -457,6 +482,7 @@ extension Workspace {
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
                 : nil,
             relationshipLabel: delegationLabel(panelId: panelId),
+            lineageNote: PanelSheetDetailBuilder.parentLineageNote(parentTitle: parentTitle),
             promptCache: AgentIdentityPolicy.isAgentKind(terminalKind)
                 ? PromptCacheSources.observation(forPanel: panelId)
                 : nil

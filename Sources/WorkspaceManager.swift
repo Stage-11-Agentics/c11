@@ -2835,9 +2835,12 @@ class WorkspaceManager: ObservableObject {
     func retireForWindowClose() {
         guard !isRetiredForWindowClose else { return }
         isRetiredForWindowClose = true
+        var closedPanelIds: Set<UUID> = []
         for workspace in workspaces {
+            closedPanelIds.formUnion(workspace.panels.keys)
             workspace.retireForWindowClose()
         }
+        PanelLineage.shared.panelsClosedForGood(closedPanelIds)
     }
 
     /// Detach a workspace from this window without closing its panels.

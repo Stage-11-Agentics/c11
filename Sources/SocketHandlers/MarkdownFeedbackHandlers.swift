@@ -1148,12 +1148,14 @@ extension TerminalController {
                     return
                 }
 
-                let createdPanel = ws.newMarkdownPanel(
-                    inPane: targetPaneId,
-                    filePath: filePath,
-                    fragment: fragment,
-                    focus: v2FocusAllowed()
-                )
+                let createdPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
+                    ws.newMarkdownPanel(
+                        inPane: targetPaneId,
+                        filePath: filePath,
+                        fragment: fragment,
+                        focus: v2FocusAllowed()
+                    )
+                }
 
                 guard let markdownPanelId = createdPanel?.id else {
                     result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
@@ -1189,13 +1191,15 @@ extension TerminalController {
 
             let sourcePaneUUID = ws.paneId(forPanelId: sourceSurfaceId)?.id
 
-            let createdPanel = ws.newMarkdownSplit(
-                from: sourceSurfaceId,
-                orientation: .horizontal,
-                filePath: filePath,
-                fragment: fragment,
-                focus: v2FocusAllowed()
-            )
+            let createdPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
+                ws.newMarkdownSplit(
+                    from: sourceSurfaceId,
+                    orientation: .horizontal,
+                    filePath: filePath,
+                    fragment: fragment,
+                    focus: v2FocusAllowed()
+                )
+            }
 
             guard let markdownPanelId = createdPanel?.id else {
                 result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)

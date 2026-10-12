@@ -457,10 +457,7 @@ final class PanelAttentionService {
         let ownerTitle: String?
         if let owner = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerPanelId),
            let panel = owner.workspace.panels[ownerPanelId] {
-            ownerTitle = owner.workspace.resolvedPanelTitle(
-                panelId: ownerPanelId,
-                fallback: panel.displayTitle
-            )
+            ownerTitle = owner.workspace.panelTitle(panelId: ownerPanelId) ?? panel.displayTitle
         } else {
             ownerTitle = nil
         }
@@ -495,10 +492,7 @@ final class PanelAttentionService {
                     preferredWorkspaceId: snapshot.workspaceId
                   )?.workspace else { continue }
             delegateWorkspace.setDelegationOwnerTitle(
-                owner.workspace.resolvedPanelTitle(
-                    panelId: ownerPanelId,
-                    fallback: ownerPanel.displayTitle
-                ),
+                owner.workspace.panelTitle(panelId: ownerPanelId) ?? ownerPanel.displayTitle,
                 forSurface: snapshot.surfaceId
             )
         }
@@ -673,10 +667,7 @@ final class PanelAttentionService {
            let owner = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerPanelId),
            let ownerPanel = owner.workspace.panels[ownerPanelId] {
             workspace?.setDelegationOwnerTitle(
-                owner.workspace.resolvedPanelTitle(
-                    panelId: ownerPanelId,
-                    fallback: ownerPanel.displayTitle
-                ),
+                owner.workspace.panelTitle(panelId: ownerPanelId) ?? ownerPanel.displayTitle,
                 forSurface: snapshot.surfaceId
             )
         } else {

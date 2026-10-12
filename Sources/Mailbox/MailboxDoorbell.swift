@@ -52,6 +52,11 @@ enum MailboxDoorbell {
         var prompt: PromptInputState? = .empty
         var epoch: String = ""
         var now: Date = Date(timeIntervalSince1970: 0)
+        /// Unread envelope ids. Empty means the caller did not name them, and
+        /// a ring is not treated as already covered.
+        var unreadIds: Set<String> = []
+        /// Ids a submitted ring already covered.
+        var coveredIds: Set<String> = []
 
         static let absent = Input(hasUnread: false, prompt: nil)
     }
@@ -63,6 +68,10 @@ enum MailboxDoorbell {
         var rungEpoch: String?
         var inFlight = false
         var attempts: [Date] = []
+        /// Envelopes a submitted ring covered. Later idle edges do not ring
+        /// while every unread id is in this set.
+        var coveredIds: Set<String> = []
+        var draftWatch: MailboxDoorbellSequence.DraftWatch?
 
         func rung(in epoch: String) -> Bool { rungEpoch == epoch }
 
@@ -141,6 +150,14 @@ enum MailboxDoorbell {
         if input.flagged { return .skip(reason: "flagged") }
         if input.rungThisEpoch { return .skip(reason: "once_per_idle") }
         if input.recentAttempts >= rateCap { return .skip(reason: "rate_capped") }
+        // Before the screen read. A covered set must not look like an
+        // unreadable prompt, and it must not start a draft backoff.
+        if MailboxDoorbellSequence.unreadIsCovered(
+            unreadIds: input.unreadIds,
+            coveredIds: input.coveredIds
+        ) {
+            return .skip(reason: "already_covered")
+        }
         if input.textBoxUnsent { return .skip(reason: "draft") }
         if input.focused, let age = input.operatorKeyAge, age < quietWindow {
             let remaining = age >= 0 ? (quietWindow - age) : quietWindow
@@ -192,7 +209,28 @@ enum MailboxDoorbellSequence {
     struct Plan: Equatable {
         var arrival: MailboxDoorbell.Arrival
         var rearm: Rearm
+        /// The draft backoff after this decision. Nil when this skip is not
+        /// a plain draft, or when that backoff has not started.
+        var draftWatch: DraftWatch?
     }
+
+    /// One draft-skip series, started for a set of unread ids.
+    /// `exhausted` means the 10 minute schedule is over. The same ids keep a
+    /// 60 second look. A new id, or a new epoch, starts again at 5 seconds.
+    struct DraftWatch: Equatable {
+        var startedAt: Date
+        var steps: Int
+        var epoch: String
+        /// Unread ids this series started for. A later id is a new series.
+        var ids: Set<String>
+        var exhausted: Bool
+    }
+
+    /// First looks after a draft skip, then `draftRecheckInterval`. Past
+    /// `draftRecheckBound` the same mail stays on that interval.
+    static let draftRecheckDelays: [TimeInterval] = [5, 15, 30]
+    static let draftRecheckInterval: TimeInterval = 60
+    static let draftRecheckBound: TimeInterval = 600
 
     /// Captures of a busy renderer before the read is given up.
     static let busyAttempts = 3
@@ -206,22 +244,112 @@ enum MailboxDoorbellSequence {
         tryIndex >= 0 && tryIndex + 1 < busyAttempts
     }
 
+    /// True when a submitted ring already covered every unread id. An empty
+    /// unread set is not covered: the caller did not name the envelopes.
+    static func unreadIsCovered(unreadIds: Set<String>, coveredIds: Set<String>) -> Bool {
+        !unreadIds.isEmpty && unreadIds.isSubset(of: coveredIds)
+    }
+
+    /// The ids a submitted ring covers: everything unread at submit time.
+    static func coveredIds(for unreadIds: Set<String>) -> Set<String> {
+        unreadIds
+    }
+
+    /// Ids named from the queued envelopes. An empty queue names nothing.
+    static func unreadIds(in entries: [MailboxStdinBuffer.Entry]) -> Set<String> {
+        Set(entries.map(\.id))
+    }
+
+    /// The coverage fields the idle path decides on.
+    static func namingUnread(
+        _ input: MailboxDoorbell.Input,
+        entries: [MailboxStdinBuffer.Entry],
+        coveredIds: Set<String>
+    ) -> MailboxDoorbell.Input {
+        var named = input
+        named.unreadIds = unreadIds(in: entries)
+        named.coveredIds = coveredIds
+        return named
+    }
+
+    /// Record a submitted ring. The queue it saw is covered, and the draft
+    /// series ends. A failed paste does not call this.
+    static func coverAfterSubmit(ledger: inout MailboxDoorbell.Ledger, unread: Set<String>) {
+        ledger.coveredIds = coveredIds(for: unread)
+        ledger.draftWatch = nil
+    }
+
+    /// Nothing still unread ends the series. The next envelope must not
+    /// inherit a watch whose mail is already gone.
+    static func draftWatchAfterPrune(watch: DraftWatch?, liveIds: Set<String>) -> DraftWatch? {
+        liveIds.isEmpty ? nil : watch
+    }
+
+    /// True when this series is still about the same turn and the same mail.
+    /// An id the watch did not start with is a new series, even past the bound.
+    static func draftSeriesContinues(_ watch: DraftWatch, epoch: String, unreadIds: Set<String>) -> Bool {
+        watch.epoch == epoch && unreadIds.isSubset(of: watch.ids)
+    }
+
+    /// The next look after a plain draft skip. A turn change, or an unread id
+    /// this series did not start with, starts again at 5 seconds. The same
+    /// mail keeps a 60 second look after the 10 minute schedule.
+    static func nextDraftRecheck(
+        watch: DraftWatch?,
+        epoch: String,
+        unreadIds: Set<String> = [],
+        now: Date
+    ) -> (rearm: Rearm, watch: DraftWatch?) {
+        let continues = watch.map { draftSeriesContinues($0, epoch: epoch, unreadIds: unreadIds) } ?? false
+        if continues, let watch, watch.exhausted {
+            return (.after(draftRecheckInterval), watch)
+        }
+        var current: DraftWatch
+        if continues, let watch {
+            current = watch
+        } else {
+            current = DraftWatch(
+                startedAt: now,
+                steps: 0,
+                epoch: epoch,
+                ids: unreadIds,
+                exhausted: false
+            )
+        }
+        let gap = current.steps < draftRecheckDelays.count
+            ? draftRecheckDelays[current.steps]
+            : draftRecheckInterval
+        if now.addingTimeInterval(gap).timeIntervalSince(current.startedAt) > draftRecheckBound {
+            current.exhausted = true
+            return (.after(draftRecheckInterval), current)
+        }
+        current.steps += 1
+        return (.after(gap), current)
+    }
+
     /// `rate_capped` looks again when the oldest attempt leaves the window.
     /// A busy read that has used its captures looks again after `shortRecheck`.
     /// A composer that still holds the doorbell line looks again too, and is
-    /// not retyped by this plan. Any other keep waits for a later edge.
+    /// not retyped by this plan. A plain draft looks again on the draft
+    /// backoff. A covered ring waits for a new envelope. Any other keep waits
+    /// for a later edge.
     static func plan(
         decision: MailboxDoorbell.Decision,
         attempts: [Date],
         now: Date,
         busyExhausted: Bool,
-        strandedDoorbell: Bool
+        strandedDoorbell: Bool,
+        draftWatch: DraftWatch? = nil,
+        epoch: String = "",
+        unreadIds: Set<String> = []
     ) -> Plan {
         let arrival = MailboxDoorbell.arrival(for: decision)
         let rearm: Rearm
+        var watch = draftWatch
         switch decision {
         case .deferRing(let after):
             rearm = .after(after)
+            watch = nil
         case .skip(let reason) where reason == "rate_capped":
             let live = attempts.filter { now.timeIntervalSince($0) < MailboxDoorbell.rateWindow }
             if let oldest = live.min() {
@@ -229,14 +357,27 @@ enum MailboxDoorbellSequence {
             } else {
                 rearm = .after(0)
             }
+            watch = nil
         case .skip(let reason) where reason == "unavailable" && busyExhausted:
             rearm = .after(shortRecheck)
+            watch = nil
         case .skip(let reason) where reason == "draft" && strandedDoorbell:
             rearm = .after(shortRecheck)
+            watch = nil
+        case .skip(let reason) where reason == "draft":
+            let step = nextDraftRecheck(
+                watch: draftWatch,
+                epoch: epoch,
+                unreadIds: unreadIds,
+                now: now
+            )
+            rearm = step.rearm
+            watch = step.watch
         default:
             rearm = .none
+            watch = nil
         }
-        return Plan(arrival: arrival, rearm: rearm)
+        return Plan(arrival: arrival, rearm: rearm, draftWatch: watch)
     }
 
     /// Ids from the pre-hop snapshot that are no longer in the inbox root.

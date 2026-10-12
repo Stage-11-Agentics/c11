@@ -49,6 +49,7 @@ struct AgentActivityHelpProjection: Equatable {
         flagReason: String?,
         flagRaisedAt: Date?,
         suppressed: Bool,
+        delegationLabel: String? = nil,
         now: Date = Date(),
         journal: JournalSnapshot? = nil,
         promptCache: PromptCacheObservation? = nil
@@ -78,9 +79,9 @@ struct AgentActivityHelpProjection: Equatable {
             ))
         }
         if suppressed {
-            detailLines.append(String(
-                localized: "surface.activity.suppressed",
-                defaultValue: "Suppressed"
+            detailLines.append(delegationLabel ?? String(
+                localized: "surface.activity.delegate",
+                defaultValue: "Delegate"
             ))
         }
 

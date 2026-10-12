@@ -63,6 +63,8 @@ enum PanelSheetDetailBuilder {
         var journalPhaseSince: Date? = nil
         /// Existing unconfirmed-evidence qualification, appended to the subtitle.
         var evidenceNote: String? = nil
+        /// The active panel relationship, if one should be shown in this row.
+        var relationshipLabel: String? = nil
         /// Agent tabs: the prompt cache from the transcript tail (`cache`).
         var promptCache: PromptCacheObservation? = nil
         var now: Date = Date()
@@ -177,11 +179,22 @@ enum PanelSheetDetailBuilder {
                 base = abbreviatedPath(input.markdownPath)
             }
         }
+        let relationship = oneLine(input.relationshipLabel)
         let notes = [oneLine(input.evidenceNote), promptCacheNote(input)].compactMap { $0 }
-        guard !notes.isEmpty else { return base }
-        let note = notes.joined(separator: " · ")
-        guard let base else { return note }
-        return "\(base) · \(note)"
+        let detail: String?
+        if notes.isEmpty {
+            detail = base
+        } else {
+            detail = [base, notes.joined(separator: " · ")]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+        }
+        guard let relationship else { return detail }
+        // The relationship leads the fixed-height subtitle row so it remains
+        // visible at the sheet's narrower width tiers; the row still reserves
+        // its normal slot when no relationship is active.
+        guard let detail else { return relationship }
+        return "\(relationship) · \(detail)"
     }
 
     /// A waiting agent keeps its gold mark; its expired cache shows here.
@@ -443,6 +456,7 @@ extension Workspace {
             evidenceNote: journal?.isHistorical == true
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
                 : nil,
+            relationshipLabel: delegationLabel(panelId: panelId),
             promptCache: AgentIdentityPolicy.isAgentKind(terminalKind)
                 ? PromptCacheSources.observation(forPanel: panelId)
                 : nil

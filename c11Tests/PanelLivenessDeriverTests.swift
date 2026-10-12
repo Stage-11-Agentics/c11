@@ -293,9 +293,28 @@ final class PanelLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(help.flagRaisedAt, now.addingTimeInterval(-60))
         XCTAssertTrue(help.suppressed)
         XCTAssertTrue(help.help.detailLines[0].contains("Need a decision"))
-        XCTAssertEqual(help.help.detailLines[1], "Suppressed")
+        XCTAssertEqual(help.help.detailLines[1], "Delegate")
         XCTAssertTrue(help.text(at: now).hasPrefix("Idle"))
-        XCTAssertTrue(help.text(at: now).contains("\nFlagged: Need a decision\nSuppressed"))
+        XCTAssertTrue(help.text(at: now).contains("\nFlagged: Need a decision\nDelegate"))
+    }
+
+    func testDelegateTooltipNamesItsOwnerAndOmitsLegacySuppressionText() {
+        let now = Date(timeIntervalSince1970: 94_000)
+        let help = AgentActivityHelpProjection.project(
+            state: .idle,
+            lastActivityAt: now,
+            waitingStartedAt: nil,
+            coldAfterSeconds: 600,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            suppressed: true,
+            delegationLabel: "Delegate of Planner",
+            now: now
+        )
+
+        XCTAssertEqual(help.help.detailLines, ["Delegate of Planner"])
+        XCTAssertTrue(help.text(at: now).contains("Delegate of Planner"))
+        XCTAssertFalse(help.text(at: now).contains("Suppressed"))
     }
 
     func testDetectedShellTurnsDeclaredAgentIntoTerminalPresentation() {
@@ -758,6 +777,25 @@ final class PanelLivenessDeriverTests: XCTestCase {
     func testTheFlagVioletBeatsTheCacheBlueInBothThemes() {
         for light in [false, true] {
             XCTAssertEqual(Workspace.activityColorOverrideHex(isFlagged: true, promptCacheExpired: true, lightBackground: light), "#9D8AD9")
+            XCTAssertEqual(
+                Workspace.activityColorOverrideHex(
+                    isFlagged: false,
+                    isDelegated: true,
+                    promptCacheExpired: true,
+                    lightBackground: light
+                ),
+                Workspace.delegatedActivityHex(lightBackground: light)
+            )
+            XCTAssertEqual(
+                Workspace.activityColorOverrideHex(
+                    isFlagged: true,
+                    isDelegated: true,
+                    promptCacheExpired: true,
+                    lightBackground: light
+                ),
+                "#9D8AD9",
+                "flags override the delegate color"
+            )
             XCTAssertEqual(Workspace.activityColorOverrideHex(isFlagged: false, promptCacheExpired: true, lightBackground: light),
                            Workspace.promptCacheColdHex(lightBackground: light))
             XCTAssertNil(Workspace.activityColorOverrideHex(isFlagged: false, promptCacheExpired: false, lightBackground: light))

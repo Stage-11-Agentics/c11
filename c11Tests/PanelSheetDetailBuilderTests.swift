@@ -189,6 +189,13 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         XCTAssertNil(PanelSheetDetailBuilder.build(inputs()).subtitle)
     }
 
+    func testDelegateRelationshipIsVisibleAlongsidePanelLocator() {
+        var input = inputs(directory: "/repo")
+        input.relationshipLabel = "Delegate of Planner"
+
+        XCTAssertEqual(PanelSheetDetailBuilder.build(input).subtitle, "Delegate of Planner · /repo")
+    }
+
     // MARK: Title
 
     func testFullTitleIsKeptWhole() {

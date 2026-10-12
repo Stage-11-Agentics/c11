@@ -186,6 +186,43 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertNotNil(message.problem)
     }
 
+    // MARK: - Read-only
+
+    /// Every file in the inbox root and `_read/`, by name, with its bytes.
+    private func inboxFiles() throws -> [String: Data] {
+        var files: [String: Data] = [:]
+        for (prefix, dir) in [("", inbox!), ("_read/", MailboxDrain.readURL(inbox: inbox))] {
+            for url in try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isRegularFileKey]) {
+                guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
+                files[prefix + url.lastPathComponent] = try Data(contentsOf: url)
+            }
+        }
+        return files
+    }
+
+    /// The drawer only looks: the doorbell (C11-394) and every drain rely on
+    /// unread mail staying in the inbox root until an agent claims it.
+    func testListingAndBodyRefReadNeverChangeReadState() throws {
+        let now = Date()
+        let file = root.appendingPathComponent("unfreeze.txt")
+        try Data("Board writes are open again.".utf8).write(to: file)
+        try write(["body": "Freeze the board."], id: ulid(now.addingTimeInterval(-7200)), read: true)
+        try write(["body": "Still frozen."], id: ulid(now.addingTimeInterval(-600)))
+        try write(["body_ref": file.path], id: ulid(now.addingTimeInterval(-60)))
+        let before = try inboxFiles()
+        XCTAssertEqual(before.count, 3)
+
+        let listing = MailboxPanelMail.listing(inbox: inbox)
+        let reference = MailboxPanelMail.referencedContent(path: file.path)
+        _ = MailboxPanelMail.summary(inbox: inbox)
+
+        XCTAssertEqual(listing.unread, 2)
+        XCTAssertEqual(listing.messages.first?.reference?.content, .text("Board writes are open again.", truncated: false, byteCount: 28))
+        XCTAssertEqual(reference.content, .text("Board writes are open again.", truncated: false, byteCount: 28))
+        XCTAssertEqual(try inboxFiles(), before)
+        XCTAssertEqual(try Data(contentsOf: file), Data("Board writes are open again.".utf8))
+    }
+
     // MARK: - body_ref
 
     func testBodyRefTextIsRead() throws {

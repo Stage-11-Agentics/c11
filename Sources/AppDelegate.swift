@@ -3972,6 +3972,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 context.workspaceManager.workspaces.flatMap { $0.panels.keys }
             })
             PanelLineage.shared.finishRestore(livePanelIds: livePanelIds)
+            PanelAttentionService.shared.releaseDelegatesWithMissingOwners(livePanelIds: livePanelIds)
             didApplyStartupPanelLineageSnapshot = false
         }
         startupSessionSnapshot = nil

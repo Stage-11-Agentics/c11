@@ -1298,9 +1298,10 @@ final class GrokPromptSuggestionTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
     }
 
-    /// The cursor on the first cell, but one upright character in the text.
+    /// The cursor on the first cell, but one upright character (the `o` of
+    /// `one`) in the text.
     func testItalicTextWithAnyUprightCharacterIsADraft() {
-        let region = GrokCaptures.suggestion.region(uprightAt: (y: 25, x: 20))
+        let region = GrokCaptures.suggestion.region(uprightAt: (y: 25, x: 21))
         XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
     }
 

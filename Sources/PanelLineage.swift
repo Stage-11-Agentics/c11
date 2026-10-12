@@ -77,10 +77,11 @@ final class PanelLineage {
         closeBatchDepth += 1
         defer {
             closeBatchDepth -= 1
-            guard closeBatchDepth == 0, !batchedClosedPanelIds.isEmpty else { return }
-            let closedPanelIds = batchedClosedPanelIds
-            batchedClosedPanelIds.removeAll(keepingCapacity: true)
-            notifyPanelClosedForGoodObservers(closedPanelIds)
+            if closeBatchDepth == 0, !batchedClosedPanelIds.isEmpty {
+                let closedPanelIds = batchedClosedPanelIds
+                batchedClosedPanelIds.removeAll(keepingCapacity: true)
+                notifyPanelClosedForGoodObservers(closedPanelIds)
+            }
         }
         return try operation()
     }

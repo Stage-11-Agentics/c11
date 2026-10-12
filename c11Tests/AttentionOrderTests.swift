@@ -141,3 +141,71 @@ final class PanelCloseForGoodPolicyTests: XCTestCase {
         XCTAssertFalse(PanelCloseForGoodPolicy.shouldFire(isDetaching: true, isTerminatingApp: true))
     }
 }
+
+final class PanelLineageStoreTests: XCTestCase {
+    private let workspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
+    func testFamilyRetainsClosedAncestorsUntilLastLiveDescendantCloses() throws {
+        let root = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+        let parent = UUID(uuidString: "00000000-0000-0000-0000-000000000020")!
+        let child = UUID(uuidString: "00000000-0000-0000-0000-000000000030")!
+        let sibling = UUID(uuidString: "00000000-0000-0000-0000-000000000040")!
+        let grandchild = UUID(uuidString: "00000000-0000-0000-0000-000000000050")!
+        var store = PanelLineageStore()
+        _ = store.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "A", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: parent, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "B", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: child, creatorPanelId: parent, workspaceId: workspaceId, workspaceTitle: "Work", title: "C", type: "terminal", agentType: "codex", delegated: false)
+        _ = store.insert(panelId: sibling, creatorPanelId: parent, workspaceId: workspaceId, workspaceTitle: "Work", title: "C2", type: "terminal", agentType: nil, delegated: false)
+        _ = store.insert(panelId: grandchild, creatorPanelId: child, workspaceId: workspaceId, workspaceTitle: "Work", title: "D", type: "terminal", agentType: nil, delegated: false)
+
+        store.close(panelId: root, at: Date(timeIntervalSince1970: 10))
+        store.close(panelId: parent, at: Date(timeIntervalSince1970: 20))
+        store.close(panelId: child, at: Date(timeIntervalSince1970: 25))
+
+        let family = try XCTUnwrap(store.family(startingAt: grandchild))
+        XCTAssertEqual(family.rootId, root)
+        XCTAssertEqual(family.nodes.map(\.id), [root, parent, child, grandchild, sibling])
+        XCTAssertTrue(try XCTUnwrap(store.node(panelId: parent)).isClosed)
+        XCTAssertTrue(try XCTUnwrap(store.node(panelId: child)).isClosed)
+
+        store.close(panelId: sibling, at: Date(timeIntervalSince1970: 30))
+        store.close(panelId: grandchild, at: Date(timeIntervalSince1970: 40))
+        XCTAssertNil(store.node(panelId: root))
+        XCTAssertNil(store.node(panelId: parent))
+        XCTAssertNil(store.node(panelId: child))
+        XCTAssertNil(store.node(panelId: sibling))
+        XCTAssertNil(store.node(panelId: grandchild))
+    }
+
+    func testLineageSnapshotRoundTripsAndRestorePrunesUnrestoredBranch() throws {
+        let root = UUID(uuidString: "00000000-0000-0000-0000-000000000040")!
+        let child = UUID(uuidString: "00000000-0000-0000-0000-000000000050")!
+        let orphan = UUID(uuidString: "00000000-0000-0000-0000-000000000060")!
+        let orphanChild = UUID(uuidString: "00000000-0000-0000-0000-000000000070")!
+        var original = PanelLineageStore()
+        _ = original.insert(panelId: root, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Work", title: "Root", type: "terminal", agentType: nil, delegated: false)
+        _ = original.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: "claude", delegated: true)
+        _ = original.insert(panelId: orphan, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan", type: "terminal", agentType: nil, delegated: false)
+        _ = original.insert(panelId: orphanChild, creatorPanelId: orphan, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan child", type: "terminal", agentType: nil, delegated: false)
+        let snapshot = AppSessionSnapshot(
+            version: SessionSnapshotSchema.currentVersion,
+            createdAt: 1,
+            windows: [],
+            panelLineageNodes: original.snapshot()
+        )
+        let data = try JSONEncoder().encode(snapshot)
+        let restoredSnapshot = try JSONDecoder().decode(AppSessionSnapshot.self, from: data)
+        let restoredNodes = try XCTUnwrap(restoredSnapshot.panelLineageNodes)
+        var restored = PanelLineageStore(nodes: restoredNodes)
+
+        restored.finishRestore(livePanelIds: [child], at: Date(timeIntervalSince1970: 40))
+
+        XCTAssertEqual(restored.node(panelId: root)?.parentPanelId, nil)
+        XCTAssertTrue(try XCTUnwrap(restored.node(panelId: root)).isClosed)
+        XCTAssertEqual(restored.node(panelId: child)?.parentPanelId, root)
+        XCTAssertEqual(restored.node(panelId: child)?.agentType, "claude")
+        XCTAssertEqual(restored.node(panelId: child)?.delegated, true)
+        XCTAssertNil(restored.node(panelId: orphan))
+        XCTAssertNil(restored.node(panelId: orphanChild))
+    }
+}

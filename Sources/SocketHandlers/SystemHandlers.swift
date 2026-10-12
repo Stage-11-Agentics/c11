@@ -122,6 +122,7 @@ extension TerminalController {
             "feedback.submit",
             "panel.list",
             "panel.current",
+            "panel.family",
             "panel.focus",
             "panel.split",
             "panel.create",

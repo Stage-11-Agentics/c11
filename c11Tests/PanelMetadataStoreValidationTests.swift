@@ -34,6 +34,31 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
         XCTAssertEqual(result.applied["claude.session_id"], true)
     }
 
+    func testParentPanelIdIsReadOnlyLineageProjection() {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        for key in [MetadataKey.parentPanelId, MetadataKey.parentPanelRef, MetadataKey.parentPanelTitle] {
+            XCTAssertThrowsError(
+                try store.setMetadata(
+                    workspaceId: workspace,
+                    surfaceId: surface,
+                    partial: [key: UUID().uuidString],
+                    mode: .merge,
+                    source: .explicit
+                )
+            ) { error in
+                XCTAssertEqual((error as? PanelMetadataStore.WriteError)?.code, "reserved_key_invalid_type")
+            }
+        }
+
+        let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
+        XCTAssertNil(metadata[MetadataKey.parentPanelId])
+        XCTAssertNil(metadata[MetadataKey.parentPanelRef])
+        XCTAssertNil(metadata[MetadataKey.parentPanelTitle])
+    }
+
     func testStoreRejectsShellInjectionInClaudeSessionId() {
         let workspace = UUID()
         let surface = UUID()

@@ -5893,11 +5893,13 @@ final class Workspace: Identifiable, ObservableObject {
             // This callback runs in @Published.willSet. Register the supplied
             // new tab directly; self.panels still contains the old collection.
             _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
-            EventEmitter.shared.emitSurfaceCreated(
+            let parentPanelId = PanelLineage.shared.panelInserted(panel, in: self)
+            EventEmitter.shared.emitPanelCreated(
                 workspace: id,
-                surface: createdId,
+                panel: createdId,
                 kind: panel.panelType.rawValue,
-                title: panel.displayTitle
+                title: panel.displayTitle,
+                parentPanelId: parentPanelId
             )
         }
         for closedId in lastKnownPanelIds.subtracting(newIds) {

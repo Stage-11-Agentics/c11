@@ -44,6 +44,7 @@ extension TerminalController {
         }
 
         let hasExplicitWorkspace = params.keys.contains("workspace_id")
+        let creatorPanelId = v2UUID(params, "caller_panel_id")
         let targetWorkspaceID: UUID? = v2MainSync {
             if hasExplicitWorkspace {
                 guard let requestedWorkspaceID = v2UUID(params, "workspace_id"),
@@ -74,7 +75,8 @@ extension TerminalController {
                     _ = self.v2OpenMessagesPage(
                         pageURL: readyURL,
                         workspaceManager: workspaceManager,
-                        targetWorkspaceID: targetWorkspaceID
+                        targetWorkspaceID: targetWorkspaceID,
+                        creatorPanelId: creatorPanelId
                     )
                 }
             }
@@ -89,7 +91,8 @@ extension TerminalController {
             v2OpenMessagesPage(
                 pageURL: pageURL,
                 workspaceManager: workspaceManager,
-                targetWorkspaceID: targetWorkspaceID
+                targetWorkspaceID: targetWorkspaceID,
+                creatorPanelId: creatorPanelId
             )
         }
     }
@@ -98,7 +101,8 @@ extension TerminalController {
     private func v2OpenMessagesPage(
         pageURL: URL,
         workspaceManager: WorkspaceManager,
-        targetWorkspaceID: UUID
+        targetWorkspaceID: UUID,
+        creatorPanelId: UUID?
     ) -> V2CallResult {
         guard let targetWorkspace = workspaceManager.workspaces.first(where: { $0.id == targetWorkspaceID }) else {
             return .err(code: "not_found", message: "Workspace not found", data: [
@@ -124,7 +128,9 @@ extension TerminalController {
 
         guard let pane = targetWorkspace.bonsplitController.focusedPaneId
                     ?? targetWorkspace.bonsplitController.allPaneIds.first,
-              let panel = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: false) else {
+              let panel = PanelLineage.shared.withCreator(creatorPanelId, operation: {
+                  targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: false)
+              }) else {
             return .err(code: "unavailable", message: "No area available for messages page", data: nil)
         }
         return .ok([
@@ -297,11 +303,13 @@ extension TerminalController {
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
-                guard let newPanel = workspace.newBrowserSurface(
-                    inPane: paneId,
-                    url: browserPanel.currentURL,
-                    focus: true
-                ) else {
+                guard let newPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id"), operation: {
+                    workspace.newBrowserSurface(
+                        inPane: paneId,
+                        url: browserPanel.currentURL,
+                        focus: true
+                    )
+                }) else {
                     result = .err(code: "internal_error", message: "Failed to duplicate panel", data: nil)
                     return
                 }
@@ -319,7 +327,9 @@ extension TerminalController {
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
-                guard let newPanel = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
+                guard let newPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id"), operation: {
+                    workspace.newTerminalSurface(inPane: paneId, focus: true)
+                }) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }
@@ -344,7 +354,9 @@ extension TerminalController {
                 }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
-                guard let newPanel = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
+                guard let newPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id"), operation: {
+                    workspace.newBrowserSurface(inPane: paneId, url: url, focus: true)
+                }) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
                 }

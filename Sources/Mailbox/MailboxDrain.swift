@@ -263,6 +263,7 @@ enum MailboxSendArguments {
         case flagTakesNoValue(String)
         case duplicateFlag(String)
         case bodyConflict
+        case toParentConflict
         case extraArgument
         case emptyBody
 
@@ -293,6 +294,11 @@ enum MailboxSendArguments {
                     localized: "mailbox.cli.error.body-conflict",
                     defaultValue: "Pass the message as --body or as one trailing argument, not both."
                 )
+            case .toParentConflict:
+                return String(
+                    localized: "mailbox.cli.error.to-parent-conflict",
+                    defaultValue: "Pass --to-parent by itself; it cannot be combined with --to or --to-workspace."
+                )
             case .extraArgument:
                 return String(
                     localized: "mailbox.cli.error.extra-argument",
@@ -310,6 +316,7 @@ enum MailboxSendArguments {
     struct Parsed: Equatable {
         var to: String?
         var toWorkspace: String?
+        var toParent: Bool
         var topic: String?
         var body: String
         var bodyRef: String?
@@ -329,7 +336,7 @@ enum MailboxSendArguments {
         "--reply-to", "--in-reply-to", "--ttl-seconds", "--from",
         "--id", "--ts", "--content-type",
     ]
-    private static let boolFlags: Set<String> = ["--urgent", "--json"]
+    private static let boolFlags: Set<String> = ["--urgent", "--json", "--to-parent"]
 
     static func parse(_ args: [String]) throws -> Parsed {
         var values: [String: String] = [:]
@@ -401,9 +408,14 @@ enum MailboxSendArguments {
         if body.isEmpty, bodyRef == nil {
             throw Failure.emptyBody
         }
+        let toParent = flags.contains("--to-parent")
+        if toParent && (values["--to"] != nil || values["--to-workspace"] != nil) {
+            throw Failure.toParentConflict
+        }
         return Parsed(
             to: values["--to"],
             toWorkspace: values["--to-workspace"],
+            toParent: toParent,
             topic: values["--topic"],
             body: body,
             bodyRef: bodyRef,

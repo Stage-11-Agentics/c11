@@ -19,6 +19,14 @@ Every panel in c11 carries an open-ended JSON metadata blob. Agents read and wri
 - **Per-panel.** Keyed by the panel UUID. No workspace- or window-scoped metadata in v1.
 - **64 KiB cap** on the serialized `metadata` object per panel. Writes that would exceed the cap return `payload_too_large`. Store large payloads externally (S3, Lattice attachments) and put a reference in the blob.
 
+`get-metadata` also projects the direct creator as `parent_panel_id` (UUID or
+`null`), `parent_panel_ref` (current panel ref or `null`), and
+`parent_panel_title` (last known title or `null`). These values belong to
+app-level panel lineage, not the metadata blob or workspace snapshot. They are
+read-only: writes through `set-metadata` or `clear-metadata` return
+`lineage_read_only`. Use [`c11 family`](api.md#spatial-layout-c11-tree) to
+read the full family.
+
 ## Canonical keys
 
 These keys have a defined shape and render in the sidebar or title bar. Any write to a canonical key that violates its type returns `reserved_key_invalid_type`. Writes to non-reserved keys accept any JSON value.

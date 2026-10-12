@@ -329,15 +329,21 @@ final class EventEmitter {
 
     // MARK: - Emit helpers
 
-    func emitSurfaceCreated(
+    func emitPanelCreated(
         workspace: UUID,
-        surface: UUID,
+        panel: UUID,
         kind: String,
-        title: String? = nil
+        title: String? = nil,
+        parentPanelId: UUID? = nil
     ) {
         var payload: [String: Any] = ["kind": kind]
         if let title { payload["title"] = title }
-        emit(.surfaceCreated, workspace: workspace, surface: surface, payload: payload)
+        if let parentPanelId {
+            payload["parent_panel_id"] = parentPanelId.uuidString
+        } else {
+            payload["parent_panel_id"] = NSNull()
+        }
+        emit(.surfaceCreated, workspace: workspace, surface: panel, payload: payload)
     }
 
     func emitSurfaceClosed(workspace: UUID, surface: UUID) {

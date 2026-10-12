@@ -558,6 +558,12 @@ c11 get-metadata --key role --sources
 c11 clear-metadata --key task
 ```
 
+`get-metadata` includes read-only lineage projections: `parent_panel_id` (the
+direct creator UUID), `parent_panel_ref` (its current ref), and
+`parent_panel_title` (its last known title). Each is `null` for a root or
+unknown parent. They are not stored in panel metadata; `set-metadata` and
+`clear-metadata` reject them. Use `c11 family` for the full creation tree.
+
 ## Agent declaration
 
 ```bash
@@ -647,6 +653,30 @@ c11 tree --no-layout                 # Suppress floor plan
 c11 tree --canvas-cols 100           # Override floor plan canvas width
 c11 tree --json                      # Structured JSON (pixel + percent coords, split paths, content area)
 ```
+
+Live panel nodes include `parent_panel_id`, `parent_panel_ref`, and
+`parent_panel_title`. Roots and panels whose creator is unknown have a null
+parent. Text output marks a known child with `↳ child of <panel ref> <title>`.
+
+```bash
+c11 family                         # Caller panel's root and descendants
+c11 family --panel panel:12        # Another panel's family
+c11 family --panel panel:12 --json # Versioned lineage nodes for scripts
+```
+
+Text output lists type, title, live/closed state, delegate status, and workspace
+for each node. Socket method: `panel.family`. Its version 1 response carries
+`selected_panel_id/ref`, `root_panel_id/ref`, and preorder `nodes`. Each node
+has `id`, `ref`, `parent_panel_id/ref`, `title`, `type`, `state` (`live` or
+`closed`), `agent_type`, `delegated`, `delegated_by`, `closed_at`, and workspace
+identity/title. Closed ancestors remain in the family while a live descendant
+depends on them. Lineage is app-level session state, not workspace snapshot or
+metadata state.
+
+`c11 mailbox send --to-parent --body "…"` resolves the caller's direct parent
+by exact panel UUID, even when another workspace has the same title. It needs
+`C11_PANEL_ID`, and refuses a root, a closed parent, or an unverified socket
+resolution rather than writing an envelope to the sender's outbox.
 
 Every area's JSON output includes: `pixel_rect`, `percent_rect`, `h_range` / `v_range` (both pixel and percent), `split_path` (a non-persistent ordered list of `H:left | H:right | V:top | V:bottom`), and the workspace `content_area` dimensions. Use `split_path` for current-layout reasoning only; use `area:<n>` / area UUID for stable references across layout mutations.
 

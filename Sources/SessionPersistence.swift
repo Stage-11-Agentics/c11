@@ -733,6 +733,7 @@ struct AppSessionSnapshot: Codable, Sendable {
     var createdAt: TimeInterval
     var windows: [SessionWindowSnapshot]
     var focusHistory: FocusHistorySnapshot? = nil
+    var panelLineageNodes: [PanelLineageNode]? = nil
 }
 
 enum SessionPersistenceStore {

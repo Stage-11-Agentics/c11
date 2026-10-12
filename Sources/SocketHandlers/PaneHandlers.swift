@@ -266,19 +266,21 @@ extension TerminalController {
                 becamePanel = true
                 warningText = warning
                 targetPaneForPanel = paneId
-                switch panelType {
-                case .browser:
-                    newPanelId = ws.newBrowserSurface(
-                        inPane: paneId,
-                        url: url,
-                        focus: self.v2FocusAllowed(),
-                        preferredProfileID: preferredProfileID,
-                        sticksAsPreferred: sticksAsPreferred
-                    )?.id
-                case .markdown:
-                    newPanelId = ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
-                case .terminal:
-                    newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                newPanelId = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id")) {
+                    switch panelType {
+                    case .browser:
+                        return ws.newBrowserSurface(
+                            inPane: paneId,
+                            url: url,
+                            focus: self.v2FocusAllowed(),
+                            preferredProfileID: preferredProfileID,
+                            sticksAsPreferred: sticksAsPreferred
+                        )?.id
+                    case .markdown:
+                        return ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                    case .terminal:
+                        return ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                    }
                 }
 
             case .split(let actualDirection, _, let warning):
@@ -286,21 +288,23 @@ extension TerminalController {
                 warningText = warning
                 let orientation = actualDirection.orientation
                 let insertFirst = actualDirection.insertFirst
-                switch panelType {
-                case .browser:
-                    newPanelId = ws.newBrowserSplit(
-                        from: focusedPanelId,
-                        orientation: orientation,
-                        insertFirst: insertFirst,
-                        url: url,
-                        preferredProfileID: preferredProfileID,
-                        sticksAsPreferred: sticksAsPreferred,
-                        focus: self.v2FocusAllowed()
-                    )?.id
-                case .markdown:
-                    newPanelId = ws.newMarkdownSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
-                case .terminal:
-                    newPanelId = ws.newTerminalSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                newPanelId = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id")) {
+                    switch panelType {
+                    case .browser:
+                        return ws.newBrowserSplit(
+                            from: focusedPanelId,
+                            orientation: orientation,
+                            insertFirst: insertFirst,
+                            url: url,
+                            preferredProfileID: preferredProfileID,
+                            sticksAsPreferred: sticksAsPreferred,
+                            focus: self.v2FocusAllowed()
+                        )?.id
+                    case .markdown:
+                        return ws.newMarkdownSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                    case .terminal:
+                        return ws.newTerminalSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                    }
                 }
             }
 

@@ -95,7 +95,7 @@ final class MailboxPanelResolverTests: XCTestCase {
 
     // MARK: - Mailbox metadata enumeration
 
-    func testEnumeratesMailboxMetadataForTitledPanels() {
+    func testEnumeratesUntitledPanelsForExactIdMailRouting() {
         let watcher = seedSurface(
             name: "watcher",
             extraMailbox: [
@@ -114,7 +114,7 @@ final class MailboxPanelResolverTests: XCTestCase {
         let rows = resolver.panelsWithMailboxMetadata()
         let byName = Dictionary(uniqueKeysWithValues: rows.map { ($0.name, $0) })
 
-        XCTAssertEqual(rows.count, 2, "untitled surfaces are filtered out")
+        XCTAssertEqual(rows.count, 3, "untitled panels remain addressable by UUID")
 
         let watcherRow = try? XCTUnwrap(byName["watcher"])
         XCTAssertEqual(watcherRow?.delivery, ["stdin", "watch"])
@@ -125,6 +125,15 @@ final class MailboxPanelResolverTests: XCTestCase {
         XCTAssertEqual(silentRow?.delivery, ["silent"])
         XCTAssertEqual(silentRow?.subscribe, [])
         XCTAssertNil(silentRow?.retentionDays)
+
+        let untitledRow = try? XCTUnwrap(byName[""])
+        XCTAssertEqual(untitledRow?.identity.panelId, untitled)
+        let exactMatch = MailboxMatcher.select(
+            .id(untitled),
+            from: rows,
+            identity: { $0.identity }
+        )
+        XCTAssertEqual(exactMatch.map(\.surfaceId), [untitled])
     }
 
     func testEnumerateIgnoresNonMailboxKeys() {
@@ -156,7 +165,12 @@ final class MailboxPanelResolverTests: XCTestCase {
         XCTAssertEqual(row?.role, "builder")
         XCTAssertEqual(
             row?.identity,
-            MailboxIdentity(title: "builder-display", address: "01HSTABLEADDR", role: "builder")
+            MailboxIdentity(
+                title: "builder-display",
+                address: "01HSTABLEADDR",
+                role: "builder",
+                panelId: s
+            )
         )
     }
 
@@ -165,7 +179,10 @@ final class MailboxPanelResolverTests: XCTestCase {
         let row = makeResolver(candidates: [s]).panelsWithMailboxMetadata().first
         XCTAssertNil(row?.address)
         XCTAssertNil(row?.role)
-        XCTAssertEqual(row?.identity, MailboxIdentity(title: "title-only", address: nil, role: nil))
+        XCTAssertEqual(
+            row?.identity,
+            MailboxIdentity(title: "title-only", address: nil, role: nil, panelId: s)
+        )
     }
 
     func testPanelMetadataRoleDoesNotFallBackToCanonicalRole() {
@@ -206,6 +223,10 @@ final class MailboxGlobalResolverTests: XCTestCase {
 
     private func resolver(_ surfaces: [MailboxGlobalResolver.PanelRecord]) -> MailboxGlobalResolver {
         MailboxGlobalResolver(surfaces: { surfaces })
+    }
+
+    private func surface(_ ws: UUID, id: UUID, title: String) -> MailboxGlobalResolver.PanelRecord {
+        MailboxGlobalResolver.PanelRecord(workspaceId: ws, surfaceId: id, name: title)
     }
 
     // MARK: - Local-first
@@ -252,6 +273,18 @@ final class MailboxGlobalResolverTests: XCTestCase {
             senderWorkspaceId: wsA
         )
         XCTAssertEqual(resolution, .unresolved)
+    }
+
+    func testExactIdSelectsOneOfDuplicateParentTitlesAcrossWorkspaces() {
+        let owner = surface(wsB, id: UUID(), title: "Parent")
+        let sameTitle = surface(wsA, id: UUID(), title: "Parent")
+
+        let resolution = resolver([sameTitle, owner]).resolve(
+            name: "id:\(owner.surfaceId.uuidString)",
+            senderWorkspaceId: wsA
+        )
+
+        XCTAssertEqual(resolution, .unique(workspaceId: wsB, surfaceIds: [owner.surfaceId]))
     }
 
     // MARK: - Collision across workspaces
@@ -418,6 +451,22 @@ final class MailboxAddressTests: XCTestCase {
         XCTAssertEqual(MailboxAddress.parse("role:delegator").canonical, "role:delegator")
         XCTAssertEqual(MailboxAddress.parse("watcher").canonical, "watcher")
         XCTAssertEqual(MailboxAddress.parse(MailboxAddress.parse("tab:x").canonical), .surface("x"))
+    }
+
+    func testExactPanelIdAddressParsesCanonicallyAndNeverFallsBackToTitle() {
+        let panelId = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        XCTAssertEqual(MailboxAddress.parse("id:\(panelId.uuidString)"), .id(panelId))
+        XCTAssertEqual(
+            MailboxAddress.parse("id:\(panelId.uuidString)").canonical,
+            "id:\(panelId.uuidString.lowercased())"
+        )
+        XCTAssertEqual(MailboxAddress.parse("id:not-a-uuid"), .id(nil))
+
+        let sameTitle = MailboxIdentity(title: "Parent", address: nil, role: nil, panelId: panelId)
+        XCTAssertEqual(
+            MailboxMatcher.select(MailboxAddress.parse("id:not-a-uuid"), from: [sameTitle], identity: { $0 }),
+            []
+        )
     }
 
     func testMatcherPanelQualifierSelectsLikeLegacyQualifiers() {

@@ -2903,8 +2903,11 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
         defer { workspace.teardownAllPanels() }
         let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
         let delegate = try XCTUnwrap(
-            workspace.newTerminalSplit(from: owner.id, orientation: .horizontal)
+            PanelLineage.shared.withCreator(owner.id) {
+                workspace.newTerminalSplit(from: owner.id, orientation: .horizontal)
+            }
         )
+        XCTAssertEqual(PanelLineage.shared.node(panelId: delegate.id)?.parentPanelId, owner.id)
         observedCloseBatches = []
         PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] closedPanelIds in
             self?.observedCloseBatches.append(closedPanelIds)

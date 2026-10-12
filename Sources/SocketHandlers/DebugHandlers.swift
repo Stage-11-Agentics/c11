@@ -42,7 +42,9 @@ extension TerminalController {
                     // Create and hold on this same main turn, before the normal
                     // eager-load callbacks can start the new fixture runtime.
                     guard let pane = located.workspace.paneId(forPanelId: panelId),
-                          let created = located.workspace.newTerminalSurface(inPane: pane, focus: false) else {
+                          let created = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id"), operation: {
+                              located.workspace.newTerminalSurface(inPane: pane, focus: false)
+                          }) else {
                         return .err(code: "internal_error", message: String(
                             localized: "socket.debug.runtime_hold_create",
                             defaultValue: "Failed to create the fixture terminal panel."

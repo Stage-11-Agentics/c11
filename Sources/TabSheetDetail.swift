@@ -63,6 +63,8 @@ enum PanelSheetDetailBuilder {
         var journalPhaseSince: Date? = nil
         /// Existing unconfirmed-evidence qualification, appended to the subtitle.
         var evidenceNote: String? = nil
+        /// A parent/delegate relationship note, precomputed by `Workspace`.
+        var lineageNote: String? = nil
         /// Agent tabs: the prompt cache from the transcript tail (`cache`).
         var promptCache: PromptCacheObservation? = nil
         var now: Date = Date()
@@ -109,7 +111,7 @@ enum PanelSheetDetailBuilder {
                 modelLabel: input.modelLabel
             ),
             typeLabel: typeLabel(input.panelType),
-            subtitle: subtitle(input),
+            subtitle: subtitleWithLineage(input),
             status: status(
                 activity: input.activity,
                 isFlagged: input.isFlagged,
@@ -182,6 +184,20 @@ enum PanelSheetDetailBuilder {
         let note = notes.joined(separator: " · ")
         guard let base else { return note }
         return "\(base) · \(note)"
+    }
+
+    /// Kept separate so the delegate presentation can take precedence without
+    /// duplicating the parent wording or the subtitle composition.
+    static func parentLineageNote(parentTitle: String?) -> String? {
+        guard let parentTitle = oneLine(parentTitle), !parentTitle.isEmpty else { return nil }
+        return String(localized: "panelSheet.lineage.childOf", defaultValue: "Child of \(parentTitle)")
+    }
+
+    private static func subtitleWithLineage(_ input: Inputs) -> String? {
+        let base = subtitle(input)
+        guard let lineageNote = oneLine(input.lineageNote), !lineageNote.isEmpty else { return base }
+        guard let base, !base.isEmpty else { return lineageNote }
+        return "\(lineageNote) · \(base)"
     }
 
     /// A waiting agent keeps its gold mark; its expired cache shows here.
@@ -377,6 +393,8 @@ extension Workspace {
             panelId: panelId,
             fallback: panelTitles[panelId] ?? panel.displayTitle
         )
+        let parentTitle = PanelLineage.shared.node(panelId: panelId)?.parentPanelId
+            .flatMap { PanelLineage.shared.node(panelId: $0)?.lastTitle }
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
         }
@@ -443,6 +461,7 @@ extension Workspace {
             evidenceNote: journal?.isHistorical == true
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
                 : nil,
+            lineageNote: PanelSheetDetailBuilder.parentLineageNote(parentTitle: parentTitle),
             promptCache: AgentIdentityPolicy.isAgentKind(terminalKind)
                 ? PromptCacheSources.observation(forPanel: panelId)
                 : nil

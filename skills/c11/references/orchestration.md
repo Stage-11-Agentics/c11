@@ -185,9 +185,10 @@ c11 rename-panel     --workspace $WS --panel $PANEL "Lint Fixes"
 c11 set-description  --workspace $WS --panel $PANEL "Clearing lint errors in src/ before the feature branch merges.
 Lineage: Login Button → Lint Fixes sub-agent"
 
-# 3b. Only if you own this worker's completion and blockers (see the attention model
-#     in the skill card): suppress it before the agent boots. When in doubt, skip this.
-# c11 suppress --panel $PANEL
+# 3b. If you will handle this worker's results, make it your delegate before the agent
+#     boots (see "Launch the workers you'll manage as delegates" below). Skip this only
+#     when the operator will drive the child directly or you are handing the work off.
+c11 suppress --panel $PANEL
 
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
 c11 set-agent --workspace $WS --panel $PANEL --type claude-code --model claude-opus-4-7
@@ -367,29 +368,33 @@ c11 set-progress 0.6 --label "3/5 subtasks"
 c11 log --source "orchestrator" "Agent A finished; Agent B starting"
 ```
 
-### Suppress only workers you own
+### Launch the workers you'll manage as delegates
 
-Suppress at dispatch iff **you** will act on this worker's completion and recoverable
-blockers — you launched it, you consume its result, you clear its ordinary blocks. Then the
-operator's sidebar stays quiet while coordination happens one level down. When in doubt,
-launch normal: never infer suppression from what the operator's orchestration setup probably
-is. Every suppression transfers responsibility upward — to you, on both channels:
+When you launch a worker whose results you will handle (an implementation worker whose output
+you review and act on is the canonical case), launch it as your **delegate**. Its routine stops
+then come to you, and the operator hears that *you* are waiting, never that your worker
+finished. Launch normal when the operator will deal with the child directly (they asked for an
+instance they can watch or drive), or when you are handing the work off for good. The CLI still
+calls a delegate *suppressed*. Taking a delegate makes it yours on three counts:
 
-- **Completion.** Suppression removes the operator-facing stop signal, and polling for flags
-  does not detect ordinary completion. Give the worker an explicit completion path back to
-  you — a mailbox message, a metadata handoff key, or a final `c11 send` into your area — and
-  consume it.
-- **Escalation.** A flag overrides suppression completely, at full visual strength, so a
-  genuinely blocked worker still reaches both you and the operator. Put the contract in the
-  launch prompt: *"Report completion and recoverable blockers to your parent. Raise a c11
-  flag only when operator action is required."* Suppression without that instruction reads to
-  a worker as a gag, and a worker that believes it has been gagged will sit blocked in
+- **Completion.** Delegation removes the operator-facing stop signal, and polling for flags
+  does not detect ordinary completion. Opt into the mailbox doorbell
+  (`mailbox.delivery=stdin`) and have the delegate finish with
+  `c11 mailbox send --to <your mailbox.address>`, so its report becomes your next turn.
+- **Escalation.** A flag overrides delegation completely, at full visual strength, and goes
+  straight to the operator, past you. Put the contract in the launch prompt: *"Report results
+  and recoverable blockers to your parent by mailbox. If something needs the operator, or your
+  parent can't or shouldn't judge it, raise a c11 flag."* Without that instruction a delegate
+  reads its quiet as a gag, and a worker that believes it has been gagged will sit blocked in
   silence.
+- **Release.** Before you close, hand off or abandon a delegate, `c11 unsuppress` it, or its
+  stops reach no one.
 
 ```bash
-c11 launch-agent --type claude-code --suppressed ...   # you own it, you sweep it
-c11 suppress --panel $PANEL                           # manual-launch path: right after creating the panel
-c11 get-metadata --workspace $WS --panel $PANEL | grep '^flag = '   # escalation check; completion arrives on the channel you assigned
+c11 launch-agent --type claude-code --suppressed ...   # your delegate; you handle its results
+c11 suppress --panel $PANEL                            # manual-launch path: right after creating the panel
+c11 unsuppress --panel $PANEL                          # release: you're leaving, or the operator took it over
+c11 get-metadata --workspace $WS --panel $PANEL | grep '^flag = '   # escalation check; completion arrives by mailbox
 ```
 
 `get-metadata` is the read for attention state — `flag = <reason>` and `suppressed = true`
@@ -408,3 +413,7 @@ When spawning sub-agents in c11, include these as first-class instructions in th
 7. **Require a positive receipt for consequential work.** State the exact work item,
    cwd, head/base (when git-backed), mode, and return channel. Do not treat panel
    creation as proof that the child oriented successfully.
+8. **Give a delegate its contract.** For a worker launched as your delegate: your mailbox
+   address for its results, and *"Report results and recoverable blockers to your parent by
+   mailbox. If something needs the operator, or your parent can't or shouldn't judge it, raise
+   a c11 flag."*

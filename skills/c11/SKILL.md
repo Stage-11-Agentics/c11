@@ -59,7 +59,7 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 - **Icon + color = optional at-a-glance marker.** `c11 set-panel-icon --panel "$C11_PANEL_ID" "🧪"` pins a glyph left of the panel's close X; `c11 set-panel-color --panel "$C11_PANEL_ID" teal` tints it (`--clear` removes either). Use them to mark a set or a role family across panels, not as status.
 - **Lineage is the LAST line**: `Lineage: <parent> → <role>`. Arrow, never `::`. Ancestry is static; the line that survives truncation must be the live one. Preserve it on every update.
 
-## Flags and suppression (the attention model)
+## Flags and delegates (the attention model)
 
 Your panel's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
 Cold means you are still at your prompt but your next message starts cold. Where c11 knows
@@ -74,14 +74,14 @@ the dormancy threshold (10 minutes idle by default). A harness that warms its ow
 one. GitHub Copilot exposes no cache data. A waiting agent whose cache expired keeps its
 gold mark and says so in its tooltip and panel sheet row.
 Two independent modifiers sit over it. A flag is **attention** priority, not scheduling
-priority; suppression reroutes routine attention, it never blocks escalation.
+priority; delegation reroutes routine attention, it never blocks escalation.
 
 | State | Meaning |
 |---|---|
-| Normal | Independent agent; routine completion reaches the operator. Most agents, most of the time. |
-| Suppressed | A parent agent owns this worker's completion and recoverable blockers; routine signals stay off the operator's sidebar. |
+| Normal | Independent agent; routine completion reaches the operator. |
+| Delegate | The agent that launched this worker handles its results; routine signals go to that parent, not the operator's sidebar. The usual state for workers an agent launches. |
 | Flagged | Operator-designated priority mission, or a running agent now needs human action. Marks render violet; the flag escalates to the menu bar extra, reaching the operator even when c11 isn't frontmost. |
-| Flagged + suppressed | Supervised priority mission: routine completion stays quiet, escalation still lands at full strength. |
+| Flagged delegate | Supervised priority mission: routine completion stays quiet, escalation still lands at full strength. |
 
 Feed and the configured attention jump use oldest flags first, then oldest eligible open asks (panel UUID, then workspace UUID for ties). The jump continues through oldest eligible unread completions/legacy notices with exact panel targets.
 
@@ -105,6 +105,8 @@ as the sentence you would say if the operator walked over. Policy differs by ori
 - **Self-raised** (mid-run): you have stopped on a decision only a human can make, or hit an
   urgent issue whose blast radius crosses other agents. "I finished, please review" is
   waiting, not a flag. If the operator is already in conversation with you, just ask them.
+  A delegate also flags when its parent can't or shouldn't judge what it found (see
+  Delegates below).
 
 A flag is **sticky** — it holds until dismissed or lowered, and if you are also stopped the
 mark strobes, the strongest signal c11 has. **Expect at least nine in ten agents to never
@@ -124,33 +126,43 @@ display identity: resolve the UUID against current panel metadata or conversatio
 fall back to the raw UUID after the caller closes. `flag.raised` events carry the same
 `caller_panel_id` plus `by`.
 
-### Suppression
+### Delegates: workers that report to their parent
+
+A **delegate** is an agent you launched whose results you will handle. Its routine stops go to
+you, not the operator: on stop its mark reads idle, and it stays out of waiting counts, ⌥V and
+routine notifications (the record still lands in the store). The operator hears that *you* are
+waiting, never that your worker finished. The CLI still calls this state *suppressed*:
 
 ```bash
-c11 suppress --panel "$C11_PANEL_ID"
-c11 unsuppress --panel "$C11_PANEL_ID"
-c11 launch-agent ... --suppressed     # set at dispatch by the parent
+c11 launch-agent ... --suppressed            # launch as your delegate
+c11 suppress --panel <child>                 # manual launch: right after creating the panel
+c11 unsuppress --panel <child>               # release it back to the operator
 ```
 
-A suppressed panel never enters needs-attention: on stop its mark reads idle, and it is
-excluded from waiting counts, ⌥V, and routine waiting-derived notifications. The notification
-record still lands in the store; the `flag.raise` notification is the deliberate exception,
-because a flag overrides suppression completely.
+**Launch the workers you'll manage as delegates.** The canonical case is an implementation
+worker whose output you will review and act on. Launch normal when the operator will deal with
+the child directly (they asked for an instance they can watch or drive), or when you are
+handing the work off for good. A delegate is yours on three counts:
 
-**Suppression is rare, and never a guess.** Suppress only when you *know* another agent owns
-your outcomes — it launched you, consumes your completion, handles your recoverable blockers.
-That knowledge comes from your launch prompt or from being the launcher yourself, never from
-inference about how the operator's setup probably works. In doubt, stay normal. A parent that
-suppresses a worker takes on both channels: give it a completion path back to you (mailbox,
-metadata key, a `send`) and put this contract in its prompt:
+- **Completion.** Opt into the mailbox doorbell (`mailbox.delivery=stdin`) and tell the
+  delegate to finish with `c11 mailbox send --to <your mailbox.address>`. Its report becomes
+  your next turn.
+- **Escalation.** Put this in its prompt: *"Report results and recoverable blockers to your
+  parent by mailbox. If something needs the operator, or your parent can't or shouldn't judge
+  it, raise a c11 flag."*
+- **Release.** Before you close, hand off or abandon a delegate, `c11 unsuppress` it;
+  otherwise its stops reach no one.
 
-> Report completion and recoverable blockers to your parent. Raise a c11 flag only when
-> operator action is required.
+**If you are a delegate,** report to your parent. A flag goes straight to the operator, past
+your parent, at full strength. Raise one when you hit something that needs a human, looks
+dangerous, affects other agents, contradicts what the operator asked for, or when your parent
+itself seems wrong. If the operator gives you a new mission directly, you are no longer a
+delegate: `c11 unsuppress --panel "$C11_PANEL_ID"`. Never make yourself a delegate.
 
 ### Reading attention state
 
 ```bash
-c11 get-metadata --panel panel:12    # flag + flag_caller_panel_id / suppressed, when set
+c11 get-metadata --panel panel:12    # flag + flag_caller_panel_id / suppressed (delegate), when set
 ```
 
 `tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read.

@@ -199,8 +199,8 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
     # --flag <reason> raises a sticky flag before command delivery (operator-designated
-    # priority missions only); --suppressed marks the worker parent-owned. Semantics:
-    # the attention model in SKILL.md.
+    # priority missions only); --suppressed launches the worker as your delegate (its
+    # routine stops go to you, not the operator). Semantics: "Delegates" in SKILL.md.
     # cwd precedence: explicit --cwd > workspace root > launching panel cwd (the same
     # rule as every new terminal; see "Where a new terminal starts" below).
     # Linked-worktree cwd values proceed with a coded warning naming the worktree path.

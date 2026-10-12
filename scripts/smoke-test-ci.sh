@@ -111,7 +111,9 @@ fi
 # send waits at most 2s for the ghostty surface. On the virtual-display runner
 # that attach can take ~3s, which blows the 5s recv timeout. v1 send targets
 # the selected workspace's focused terminal, so poll debug.terminals until one
-# entry is runtime_surface_ready, surface_focused, and workspace_selected.
+# entry is runtime_panel_ready, panel_focused, and workspace_selected. Socket
+# output carries only the canonical panel_*/area_* keys (C11-345); a missing
+# key fails at once instead of reading as "not ready" until the deadline.
 echo "Waiting for a focused, attached terminal (up to 20s)..."
 if ! python3 - "$SOCKET_PATH" "$APP_PID" <<'PY'
 import json, os, socket, sys, time
@@ -123,6 +125,21 @@ poll_gap_s = 0.5
 recv_timeout_s = 5.0
 start = time.monotonic()
 poll = 0
+last_terminals = []
+READY_KEYS = ("runtime_panel_ready", "panel_focused", "workspace_selected")
+DIAG_KEYS = (
+    "index", "mapped", "window_key", "window_visible", "window_occluded",
+    "workspace_title", "workspace_selected", "area_index", "panel_title",
+    "panel_focused", "panel_selected_in_area", "runtime_panel_ready",
+    "hosted_view_in_window", "hosted_view_visible_in_ui",
+    "panel_view_first_responder", "hosted_view_frame_in_window",
+    "portal_binding_state", "teardown_requested",
+)
+
+def dump_terminals(label, terminals):
+    print("--- debug.terminals (%s) ---" % label, flush=True)
+    for terminal in terminals:
+        print(json.dumps({k: terminal.get(k) for k in DIAG_KEYS}), flush=True)
 
 def app_alive():
     try:
@@ -149,6 +166,7 @@ while True:
             "ERROR: Timed out after 20s waiting for a focused, attached terminal surface",
             flush=True,
         )
+        dump_terminals("last poll", last_terminals)
         sys.exit(1)
     if not app_alive():
         print("ERROR: App crashed while waiting for a terminal surface", flush=True)
@@ -175,12 +193,24 @@ while True:
             summary = "error %s: %s" % (err.get("code"), err.get("message"))
         else:
             terminals = (msg.get("result") or {}).get("terminals") or []
+            last_terminals = terminals
+            missing = sorted({k for t in terminals for k in READY_KEYS if k not in t})
+            if missing:
+                print(
+                    "ERROR: debug.terminals entries lack %s; the socket's key names changed"
+                    % ", ".join(missing),
+                    flush=True,
+                )
+                dump_terminals("missing keys", terminals)
+                sys.exit(1)
             selected_focused_attached = 0
             for terminal in terminals:
                 # v1 send uses the selected workspace's focused terminal.
+                # A mapped terminal whose workspace is not selected reports
+                # workspace_selected=false; an unmapped one reports null.
                 if (
-                    terminal.get("runtime_surface_ready") is True
-                    and terminal.get("surface_focused") is True
+                    terminal.get("runtime_panel_ready") is True
+                    and terminal.get("panel_focused") is True
                     and terminal.get("workspace_selected") is True
                 ):
                     selected_focused_attached += 1

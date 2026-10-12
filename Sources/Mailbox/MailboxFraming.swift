@@ -85,15 +85,17 @@ enum MailboxFraming {
         }
         var buffer = [UInt8](repeating: 0, count: cap + 1)
         var got = 0
-        while true {
-            let count = Darwin.read(fd, &buffer[got], cap + 1 - got)
+        while got < cap + 1 {
+            let count = buffer.withUnsafeMutableBytes { raw -> Int in
+                guard let base = raw.baseAddress else { return -1 }
+                return Darwin.read(fd, base.advanced(by: got), cap + 1 - got)
+            }
             if count == 0 { break }
             if count < 0 {
                 if errno == EINTR { continue }
                 return unavailable
             }
             got += count
-            if got >= cap + 1 { break }
         }
         let data = Data(buffer.prefix(got))
         let truncated = data.count > cap

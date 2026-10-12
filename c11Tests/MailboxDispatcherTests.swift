@@ -628,8 +628,8 @@ final class MailboxDispatcherTests: XCTestCase {
 
     // MARK: - C11-381 stdin flush seam
 
-    /// Drives `MailboxStdinDelivery`, the sequence `Workspace` calls.
-    /// `ownsTerminal` stands in for the kernel check; there is no PTY here.
+    /// Restages the doorbell sequence Workspace runs. There is no PTY here.
+    /// `ownsTerminal` stands in for the kernel check.
     private final class StdinSeat: @unchecked Sendable {
         let state = MailboxStdinBufferStore()
         var ownsTerminal = true
@@ -638,7 +638,6 @@ final class MailboxDispatcherTests: XCTestCase {
         var focused = false
         var textBox = ""
         var screen: PromptInputState = .empty
-        private(set) var pasted: [String] = []
         private(set) var rings: [String] = []
         private(set) var idleFlushes = 0
         private var ledger = MailboxDoorbell.Ledger()
@@ -694,9 +693,6 @@ final class MailboxDispatcherTests: XCTestCase {
                         recipient: evicted.recipientName,
                         outcome: .evicted
                     )
-                },
-                push: { [self] _ in
-                    self.pasted.append("push")
                 }
             )
             switch admitted {
@@ -735,7 +731,6 @@ final class MailboxDispatcherTests: XCTestCase {
                 processStartTime: processStartTime,
                 flush: { [self] in
                     self.idleFlushes += 1
-                    guard MailboxDoorbellSequence.shouldRingOnPromptEdge(.agentPrompt) else { return }
                     self.ringQueued(surfaceId: surfaceId)
                 }
             )
@@ -768,7 +763,7 @@ final class MailboxDispatcherTests: XCTestCase {
                 MailboxDoorbell.promptEpoch(since: $0.since, atPrompt: $0.atPrompt)
             } ?? "none"
             var input = MailboxDoorbell.Input()
-            input.prompt = MailboxDoorbellSequence.promptForDecision(captured: screen)
+            input.prompt = screen
             input.rungThisEpoch = ledger.rung(in: epoch)
             input.recentAttempts = ledger.rings(at: now)
             input.inFlight = ledger.inFlight
@@ -790,7 +785,7 @@ final class MailboxDispatcherTests: XCTestCase {
                 strandedDoorbell: false
             )
             guard case .ring = plan.arrival else { return }
-            rings.append(MailboxDoorbellSequence.typedText(queuedBlocks: live.map(\.block)))
+            rings.append(MailboxDoorbell.text)
             ledger.beginAttempt(at: now, epoch: epoch)
         }
     }
@@ -856,14 +851,12 @@ final class MailboxDispatcherTests: XCTestCase {
         try dispatchToSeat(id: id, body: "flush-once")
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
-        XCTAssertTrue(seat.pasted.isEmpty)
 
         seat.noteIdle(surfaceId: surface, at: t381(20))
         dispatcher?.log.flush()
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertEqual(seat.idleFlushes, 1)
         XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
-        XCTAssertTrue(seat.pasted.isEmpty)
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
 
@@ -884,7 +877,6 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
-        XCTAssertTrue(seat.pasted.isEmpty)
         XCTAssertTrue(seat.rings.isEmpty)
     }
 
@@ -900,7 +892,6 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
-        XCTAssertTrue(seat.pasted.isEmpty)
         XCTAssertTrue(seat.rings.isEmpty)
     }
 
@@ -915,7 +906,6 @@ final class MailboxDispatcherTests: XCTestCase {
         seat.noteIdle(surfaceId: surface, at: t381(20))
         dispatcher?.log.flush()
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
-        XCTAssertTrue(seat.pasted.isEmpty)
         XCTAssertTrue(seat.rings.isEmpty)
         XCTAssertEqual(seat.idleFlushes, 1)
         XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
@@ -940,7 +930,6 @@ final class MailboxDispatcherTests: XCTestCase {
         dispatcher?.log.flush()
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
-        XCTAssertTrue(seat.pasted.isEmpty)
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
         XCTAssertEqual(seat.buffer.agentProcess(surfaceId: surface)?.pid, 1)
@@ -948,7 +937,6 @@ final class MailboxDispatcherTests: XCTestCase {
         seat.noteWrapperIdle(surfaceId: surface, at: t381(40))
         dispatcher?.log.flush()
         XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
-        XCTAssertTrue(seat.pasted.isEmpty)
         XCTAssertEqual(try handlerOutcomes().filter { $0 == "flushed" }.count, 0)
     }
 }

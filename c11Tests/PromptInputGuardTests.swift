@@ -967,4 +967,84 @@ extension PromptInputClassifierTests {
         // captured line. The state is what holds the ring.
         XCTAssertEqual(PromptInputClassifier.composerText(input), " fix the todo")
     }
+
+    /// OpenCode 1.18.30. The cursor sits on a blank ┃ row under a typed line.
+    /// That draft is not an open prompt.
+    func testRV394BOpenCodeMultiLineDraftIsNotAnOpenPrompt() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: "  ┃")]),
+            Row(y: 1, spans: [Span(text: "  ┃  first line of my draft")]),
+            Row(y: 2, spans: [Span(text: "  ┃  ")]),
+            Row(y: 3, spans: [Span(text: "  ┃")]),
+            Row(y: 4, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
+            Row(y: 5, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
+        ]
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 2)).state
+        XCTAssertFalse(
+            FeedAnswerPromptCommit.admits(state),
+            "an OpenCode multi-line draft reads \(state); the doorbell would be typed into it"
+        )
+    }
+
+    /// OpenCode at 60 columns wraps the invitation. The joined composer submits.
+    func testRV394BOpenCodeWrappedInvitationSubmits() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: "  ┃")]),
+            Row(y: 1, spans: [Span(text: "  ┃  You have mail: run c11 mailbox recv --ack when you")]),
+            Row(y: 2, spans: [Span(text: "  ┃  want to receive it.")]),
+            Row(y: 3, spans: [Span(text: "  ┃")]),
+            Row(y: 4, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
+            Row(y: 5, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 55))]),
+        ]
+        let input = region(rows, cursorY: 2)
+        let state = PromptInputClassifier.classify(input).state
+        let composer = state == .draft ? PromptInputClassifier.composerText(input) : nil
+        let outcome = MailboxDoorbellSequence.preReturn(
+            rowIsCurrent: true, operatorInputUnchanged: true,
+            agentOwnsTerminal: true, captured: true,
+            prompt: state, composer: composer
+        )
+        XCTAssertNil(outcome, "wrapped OpenCode invitation reads \(state) composer=\(composer ?? "nil")")
+    }
+
+    /// Pi at 60 columns wraps the invitation onto two rows between the rules.
+    func testRV394BPiWrappedInvitationSubmits() {
+        let rule = String(repeating: "─", count: 60)
+        let rows = [
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "You have mail: run c11 mailbox recv --ack when you want to ")]),
+            Row(y: 2, spans: [Span(text: "receive it.")]),
+            Row(y: 3, spans: [Span(text: rule)]),
+        ]
+        let input = region(rows, cursorY: 2)
+        let state = PromptInputClassifier.classify(input).state
+        let composer = state == .draft ? PromptInputClassifier.composerText(input) : nil
+        let outcome = MailboxDoorbellSequence.preReturn(
+            rowIsCurrent: true, operatorInputUnchanged: true,
+            agentOwnsTerminal: true, captured: true,
+            prompt: state, composer: composer
+        )
+        XCTAssertNil(outcome, "wrapped Pi invitation reads \(state) composer=\(composer ?? "nil")")
+    }
+
+    /// A Pi draft that spans two rows, with the cursor on the blank one, stays a draft.
+    func testRV394BPiMultiLineDraftIsNotAnOpenPrompt() {
+        let rule = String(repeating: "─", count: 60)
+        let rows = [
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: " first line of my draft")]),
+            Row(y: 2, spans: [Span(text: " ")]),
+            Row(y: 3, spans: [Span(text: rule)]),
+        ]
+        let input = region(rows, cursorY: 2)
+        let state = PromptInputClassifier.classify(input).state
+        XCTAssertFalse(
+            FeedAnswerPromptCommit.admits(state),
+            "a Pi multi-line draft reads \(state); the doorbell would be typed into it"
+        )
+        XCTAssertEqual(
+            PromptInputClassifier.composerText(input),
+            " first line of my draft"
+        )
+    }
 }

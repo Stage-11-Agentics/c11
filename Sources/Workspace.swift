@@ -6005,7 +6005,6 @@ final class Workspace: Identifiable, ObservableObject {
                     outcome: .evicted
                 )
             },
-            push: { _ in },
             ringInput: { [weak self] capturePrompt in
                 guard let self else { return .absent }
                 let input = self.mailboxDoorbellInput(
@@ -6081,9 +6080,9 @@ final class Workspace: Identifiable, ObservableObject {
         let prompt: PromptInputState?
         if capturePrompt {
             if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
-                prompt = MailboxDoorbellSequence.promptForDecision(captured: captured.state)
+                prompt = captured.state
             } else {
-                prompt = MailboxDoorbellSequence.promptForDecision(captured: nil)
+                prompt = nil
             }
         } else {
             prompt = nil
@@ -6283,7 +6282,7 @@ final class Workspace: Identifiable, ObservableObject {
         var stranded = false
         if MailboxDoorbell.needsPrompt(input) {
             if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
-                input.prompt = MailboxDoorbellSequence.promptForDecision(captured: captured.state)
+                input.prompt = captured.state
                 if captured.state == .draft, let composer = captured.composer {
                     let compared = FeedAnswerComposerCheck.compare(
                         state: .draft,
@@ -6300,7 +6299,7 @@ final class Workspace: Identifiable, ObservableObject {
                 )
                 return
             } else {
-                input.prompt = MailboxDoorbellSequence.promptForDecision(captured: nil)
+                input.prompt = nil
                 busyExhausted = true
             }
         }
@@ -6316,8 +6315,9 @@ final class Workspace: Identifiable, ObservableObject {
         applyBufferedDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, plan: plan)
     }
 
-    /// Idle-edge and recheck. A keep leaves every id the seam still names.
-    /// The re-arm, when there is one, goes back through the buffered ring.
+    /// Idle-edge and recheck. A keep leaves the queue. The inbox stat already
+    /// dropped ids a drain claimed. The re-arm, when there is one, goes back
+    /// through the buffered ring.
     private func applyBufferedDoorbell(
         surfaceId: UUID,
         terminalPanel: TerminalPanel,
@@ -6336,14 +6336,8 @@ final class Workspace: Identifiable, ObservableObject {
             }
         case .keep:
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { [weak self] live in
-                guard let self else { return }
-                let remaining = Set(MailboxDoorbellSequence.idsRemainingAfterKeep(queued: live.map(\.id)))
-                for entry in live where !remaining.contains(entry.id) {
-                    _ = self.mailboxStdinState.buffer.removeQueued(surfaceId: surfaceId, id: entry.id)
-                }
-                let kept = self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
-                guard !kept.isEmpty else { return }
-                self.logMailboxDoorbellEffect(kept, effect: plan.arrival)
+                guard let self, !live.isEmpty else { return }
+                self.logMailboxDoorbellEffect(live, effect: plan.arrival)
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
         }
@@ -6568,7 +6562,7 @@ final class Workspace: Identifiable, ObservableObject {
             }
         }
         _ = TerminalController.shared.deliverSocketSendText(
-            MailboxDoorbellSequence.typedText(queuedBlocks: queued.map(\.block)),
+            MailboxDoorbell.text,
             submit: true,
             terminalSurface: terminalPanel.surface,
             surface: native,
@@ -6691,7 +6685,6 @@ final class Workspace: Identifiable, ObservableObject {
     ) {
         switch trigger {
         case .agentPrompt:
-            guard MailboxDoorbellSequence.shouldRingOnPromptEdge(trigger) else { return }
             ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
         case .shellPrompt:
             let dropped = mailboxStdinState.buffer.takeQueue(surfaceId: surfaceId)

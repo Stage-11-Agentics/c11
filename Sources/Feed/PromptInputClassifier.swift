@@ -151,11 +151,10 @@ enum PromptInputClassifier {
             )
         }
 
-        // OpenCode's composer is a `┃` row. Pi's (and omp's, the same shape)
-        // is the row between two rules. Both are read from the cursor row
-        // only, so a status line under the cursor is not typed text. A `❯`
-        // or `›` row keeps the prefix scan below.
-        if let openCode = openCodeComposer(lines[cursorIndex]) {
+        // OpenCode's composer is every `┃` row above the model line. Pi's is
+        // every row between the two rules around the cursor. A `❯` or `›`
+        // row keeps the prefix scan below.
+        if let openCode = openCodeComposer(lines, cursorIndex: cursorIndex) {
             return openCode
         }
         if currentPromptPrefix(in: lines[cursorIndex]) == nil,
@@ -413,26 +412,68 @@ enum PromptInputClassifier {
         return Array(scalars[..<(end - 1)])
     }
 
-    /// OpenCode draws the composer as a heavy vertical bar (`┃`, U+2503).
-    /// The cursor row is the composer. Faint placeholder text is a suggestion.
-    /// Typed text on that row is a draft. Rows below it (the model line, the
-    /// `╹▀` footer) are not part of the composer.
-    private static func openCodeComposer(_ line: Line) -> Analysis? {
-        guard let content = contentAfterMarker(line, marker: 0x2503) else { return nil }
-        let row = composerRow(content)
+    /// OpenCode draws the composer as heavy vertical bars (`┃`, U+2503), one
+    /// row per visual line, from the top padding row down to the row above
+    /// the model line (`┃  <model> · …`) and the `╹▀` footer. The cursor can
+    /// sit on a blank row of a multi-line draft, so every composer row counts.
+    /// One non-blank row that is not the idle hint is a draft. The rows are
+    /// joined so a wrapped invitation matches the doorbell line.
+    private static func openCodeComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
+        guard contentAfterMarker(lines[cursorIndex], marker: 0x2503) != nil else { return nil }
+        var start = cursorIndex
+        while start > 0,
+              lines[start - 1].y + 1 == lines[start].y,
+              contentAfterMarker(lines[start - 1], marker: 0x2503) != nil {
+            start -= 1
+        }
+        var end = cursorIndex
+        while end + 1 < lines.count,
+              lines[end].y + 1 == lines[end + 1].y,
+              contentAfterMarker(lines[end + 1], marker: 0x2503) != nil {
+            end += 1
+        }
+        if isOpenCodeModelLine(lines[end]),
+           end + 1 < lines.count,
+           lines[end].y + 1 == lines[end + 1].y,
+           isOpenCodeFooter(lines[end + 1]) {
+            end -= 1
+        }
+        guard end >= start else { return nil }
+        var rows: [Analysis] = []
+        for index in start...end {
+            guard let content = contentAfterMarker(lines[index], marker: 0x2503) else { continue }
+            rows.append(composerRow(content))
+        }
+        let joined = joinedComposer(rows)
         // Live OpenCode 1.18.30 draws its placeholder in a normal-weight gray,
-        // so the prompt capture does not mark those cells faint. The idle row
-        // is exactly `Ask anything…` plus an optional quoted hint. Anything else
-        // on that row is text the operator typed.
-        guard row.classification.state == .draft,
-              let composer = row.composerText,
-              openCodePlaceholder(composer) else {
-            return row
+        // so the prompt capture does not mark those cells faint. The idle
+        // hint is exactly `Ask anything…` plus an optional quoted hint, even
+        // when that hint wraps. Anything else is text the operator typed.
+        guard joined.classification.state == .draft,
+              let composer = joined.composerText,
+              openCodePlaceholder(collapsedComposer(composer)) else {
+            return joined
         }
         return Analysis(
             classification: PromptInputClassification(state: .suggestion, draftLength: nil),
             composerText: ""
         )
+    }
+
+    /// A `┃` row that contains a middle dot (`·`, U+00B7). The caller treats
+    /// it as the model line only when the `╹▀` footer is the next row, so a
+    /// draft that happens to contain a middle dot stays in the composer.
+    private static func isOpenCodeModelLine(_ line: Line) -> Bool {
+        guard let content = contentAfterMarker(line, marker: 0x2503) else { return false }
+        return content.contains { $0.value.value == 0x00B7 }
+    }
+
+    /// OpenCode's composer footer. The first glyph is `╹` (U+2579).
+    private static func isOpenCodeFooter(_ line: Line) -> Bool {
+        guard let first = line.scalars.map(\.value.value).first(where: { !isWhitespaceValue($0) }) else {
+            return false
+        }
+        return first == 0x2579
     }
 
     /// OpenCode's idle hint. The ellipsis is the one it draws (U+2026) or three dots.
@@ -454,17 +495,82 @@ enum PromptInputClassifier {
         return body.first == "\"" && body.last == "\""
     }
 
-    /// Pi's idle composer is an empty row between two horizontal rules, with
-    /// the cursor on that row. Typed text there is a draft. A row that already
-    /// has a `❯` or `›` prefix is not this shape.
+    /// Pi's composer is every row between the two rules around the cursor, not
+    /// exactly one row. An empty row is idle. Typed text is a draft, including
+    /// a multi-line draft whose cursor sits on a blank row. The rows are
+    /// joined so a wrapped invitation matches the doorbell line. A `❯` or `›`
+    /// row is not this shape.
     private static func piComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
-        guard cursorIndex > 0, cursorIndex + 1 < lines.count else { return nil }
-        let above = lines[cursorIndex - 1]
-        let line = lines[cursorIndex]
-        let below = lines[cursorIndex + 1]
-        guard above.y + 1 == line.y, line.y + 1 == below.y else { return nil }
-        guard isRule(above), isRule(below), !isRule(line) else { return nil }
-        return composerRow(line.scalars)
+        if isRule(lines[cursorIndex]) { return nil }
+        var above = cursorIndex - 1
+        while above >= 0,
+              lines[above].y + 1 == lines[above + 1].y,
+              !isRule(lines[above]) {
+            above -= 1
+        }
+        guard above >= 0,
+              isRule(lines[above]),
+              lines[above].y + 1 == lines[above + 1].y else {
+            return nil
+        }
+        var below = cursorIndex + 1
+        while below < lines.count,
+              lines[below - 1].y + 1 == lines[below].y,
+              !isRule(lines[below]) {
+            below += 1
+        }
+        guard below < lines.count,
+              isRule(lines[below]),
+              lines[below - 1].y + 1 == lines[below].y else {
+            return nil
+        }
+        let body = lines[(above + 1)..<below]
+        if body.contains(where: { currentPromptPrefix(in: $0) != nil }) { return nil }
+        return joinedComposer(body.map { composerRow($0.scalars) })
+    }
+
+    /// One composer across several visual rows. Blank rows drop out. A single
+    /// Pi row keeps its leading cursor space. A wrapped invitation joins with
+    /// newlines so the doorbell compare can unwrap it.
+    private static func joinedComposer(_ rows: [Analysis]) -> Analysis {
+        var parts: [String] = []
+        var faint = false
+        for row in rows {
+            switch row.classification.state {
+            case .draft:
+                if let text = row.composerText, !text.isEmpty {
+                    parts.append(text)
+                }
+            case .suggestion:
+                faint = true
+            case .empty, .dialog, .unknown, .unavailable:
+                break
+            }
+        }
+        if parts.isEmpty {
+            return Analysis(
+                classification: PromptInputClassification(
+                    state: faint ? .suggestion : .empty,
+                    draftLength: nil
+                ),
+                composerText: ""
+            )
+        }
+        let joined = parts.joined(separator: "\n")
+        let trimmed = joined.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Analysis(
+            classification: PromptInputClassification(state: .draft, draftLength: trimmed.count),
+            composerText: joined
+        )
+    }
+
+    /// Newlines and the indent on a continuation are presentation. The
+    /// doorbell compare uses the same collapse.
+    private static func collapsedComposer(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     /// Text after a leading marker and its gutter, or nil when the marker is

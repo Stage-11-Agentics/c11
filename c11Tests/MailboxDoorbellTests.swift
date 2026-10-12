@@ -40,8 +40,7 @@ final class MailboxDoorbellTests: XCTestCase {
         id: String = "env-1",
         gate: MailboxStdinDelivery.Gate? = nil,
         ring: ((Bool) -> MailboxDoorbell.Input)? = nil,
-        note: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil,
-        push: @escaping (String?) -> Void = { _ in }
+        note: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil
     ) -> MailboxStdinDelivery.AdmitResult {
         MailboxStdinDelivery.deliver(
             state: state,
@@ -49,7 +48,6 @@ final class MailboxDoorbellTests: XCTestCase {
             entry: entry(id: id),
             gate: gate ?? openGate(),
             logEvicted: { _ in },
-            push: push,
             ringInput: ring,
             noteRing: note
         )
@@ -333,12 +331,10 @@ final class MailboxDoorbellTests: XCTestCase {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
         var captures: [Bool] = []
-        var pushed = false
         let admitted = admit(state: state, surfaceId: surface, ring: { capture in
             captures.append(capture)
             return MailboxDoorbell.Input()
-        }, push: { _ in pushed = true })
-        XCTAssertFalse(pushed)
+        })
         XCTAssertEqual(captures, [])
         guard case .buffered = admitted else {
             return XCTFail("expected a buffer, got \(admitted)")
@@ -352,14 +348,12 @@ final class MailboxDoorbellTests: XCTestCase {
         let surface = UUID()
         openPrompt(state, surface)
         var read = false
-        var pushed = false
         let admitted = admit(state: state, surfaceId: surface, ring: { capture in
             read = true
             var input = MailboxDoorbell.Input()
             input.prompt = capture ? .empty : nil
             return input
-        }, push: { _ in pushed = true })
-        XCTAssertFalse(pushed)
+        })
         XCTAssertTrue(read)
         guard case .doorbell(_, let effect) = admitted else {
             return XCTFail("expected a ring, got \(admitted)")
@@ -372,11 +366,9 @@ final class MailboxDoorbellTests: XCTestCase {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
         openPrompt(state, surface)
-        var pushed = false
         let admitted = admit(state: state, surfaceId: surface, ring: { _ in
             MailboxDoorbell.Input()
-        }, push: { _ in pushed = true })
-        XCTAssertFalse(pushed)
+        })
         guard case .doorbell(_, let effect) = admitted else {
             return XCTFail("expected a ring, got \(admitted)")
         }
@@ -388,15 +380,13 @@ final class MailboxDoorbellTests: XCTestCase {
         let surface = UUID()
         openPrompt(state, surface)
         state.buffer.enqueue(surfaceId: surface, entry: entry(id: "older"))
-        var pushed = false
         var noted: MailboxDoorbell.Decision?
         let admitted = admit(state: state, surfaceId: surface, id: "newer", ring: { _ in
             var input = MailboxDoorbell.Input()
             input.recentAttempts = MailboxDoorbell.rateCap
             input.prompt = .empty
             return input
-        }, note: { decision, _ in noted = decision }, push: { _ in pushed = true })
-        XCTAssertFalse(pushed)
+        }, note: { decision, _ in noted = decision })
         XCTAssertEqual(noted, .skip(reason: "rate_capped"))
         guard case .buffered = admitted else {
             return XCTFail("expected the mail to stay queued, got \(admitted)")
@@ -408,15 +398,13 @@ final class MailboxDoorbellTests: XCTestCase {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
         openPrompt(state, surface)
-        var pushed = false
         let admitted = admit(state: state, surfaceId: surface, ring: { _ in
             var input = MailboxDoorbell.Input()
             input.focused = true
             input.operatorKeyAge = 1
             input.prompt = .empty
             return input
-        }, push: { _ in pushed = true })
-        XCTAssertFalse(pushed)
+        })
         guard case .doorbell(_, let effect) = admitted else {
             return XCTFail("expected a deferred doorbell, got \(admitted)")
         }
@@ -428,13 +416,11 @@ final class MailboxDoorbellTests: XCTestCase {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
         var captures: [Bool] = []
-        var pushed = false
         let admitted = admit(state: state, surfaceId: surface, ring: { capture in
             captures.append(capture)
             return MailboxDoorbell.Input()
-        }, push: { _ in pushed = true })
+        })
         XCTAssertEqual(captures, [])
-        XCTAssertFalse(pushed)
         guard case .buffered = admitted else {
             return XCTFail("expected a buffer, got \(admitted)")
         }
@@ -596,14 +582,6 @@ final class MailboxDoorbellTests: XCTestCase {
         )
     }
 
-    /// W2. An idle-edge keep leaves the queue in place.
-    func testKeepLeavesTheQueue() {
-        XCTAssertEqual(
-            MailboxDoorbellSequence.idsRemainingAfterKeep(queued: ["a", "b"]),
-            ["a", "b"]
-        )
-    }
-
     /// W3. The inbox check drops only snapshot ids that are gone.
     func testInboxCheckDropsOnlyGoneIds() {
         let dropped = MailboxDoorbellSequence.droppedIds(
@@ -612,29 +590,6 @@ final class MailboxDoorbellTests: XCTestCase {
         )
         XCTAssertEqual(dropped, ["a", "c"])
         XCTAssertFalse(dropped.contains("b"))
-    }
-
-    /// W4. The decision uses the captured prompt, not an assumed empty one.
-    func testDecisionUsesTheCapturedPrompt() {
-        let captured = MailboxDoorbellSequence.promptForDecision(captured: .draft)
-        var input = MailboxDoorbell.Input()
-        input.prompt = captured
-        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "draft"))
-    }
-
-    /// Review 2 W3. An agent prompt edge rings. A shell prompt does not.
-    func testIdleEdgeIsThePromptRing() {
-        XCTAssertTrue(MailboxDoorbellSequence.shouldRingOnPromptEdge(.agentPrompt))
-        XCTAssertFalse(MailboxDoorbellSequence.shouldRingOnPromptEdge(.shellPrompt))
-    }
-
-    /// Review 2 W7. The ring types the invitation. The queued block stays unread.
-    func testRingTypesTheInvitationNotTheBlock() {
-        let typed = MailboxDoorbellSequence.typedText(
-            queuedBlocks: ["<c11-msg from=\"a\">body</c11-msg>"]
-        )
-        XCTAssertEqual(typed, MailboxDoorbell.text)
-        XCTAssertFalse(typed.contains("<c11-msg"))
     }
 
     /// W5. Starting a ring records the attempt. Skipping the record leaves

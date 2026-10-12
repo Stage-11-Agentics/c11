@@ -273,7 +273,7 @@ enum MailboxStdinDelivery {
     }
 
     /// Admit one envelope: enqueue it, and ring when the agent is at its
-    /// prompt. `push` is never called. The inbox copy is not claimed here.
+    /// prompt. Nothing is pasted. The inbox copy is not claimed here.
     ///
     /// A live agent TUI keeps the shell `.commandRunning` for life. Without
     /// a prompt edge this gate only enqueues. The Bool asks for a
@@ -284,7 +284,6 @@ enum MailboxStdinDelivery {
         entry: MailboxStdinBuffer.Entry,
         gate: Gate,
         logEvicted: (MailboxStdinBuffer.Entry) -> Void,
-        push: (_ immediateId: String?) -> Void,
         ringInput: ((Bool) -> MailboxDoorbell.Input)? = nil,
         noteRing: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil
     ) -> AdmitResult {
@@ -297,9 +296,6 @@ enum MailboxStdinDelivery {
             isAgentKind: gate.isAgentKind,
             agentOwnsTerminal: gate.ownsTerminal
         )
-        // `push` stays in the signature so a regression that pastes a block
-        // is visible to tests. Delivery does not call it.
-        _ = push
         guard promptOpen, let ringInput else {
             return .buffered(bytes: bytes)
         }

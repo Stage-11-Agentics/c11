@@ -239,21 +239,10 @@ enum MailboxDoorbellSequence {
         return Plan(arrival: arrival, rearm: rearm)
     }
 
-    /// A keep does not take the queue. Unread mail stays until a later ring
-    /// or a shell prompt drops it.
-    static func idsRemainingAfterKeep(queued: [String]) -> [String] {
-        queued
-    }
-
     /// Ids from the pre-hop snapshot that are no longer in the inbox root.
     /// An id absent from the snapshot arrived during the hop and stays.
     static func droppedIds(snapshot: [String], stillPending: Set<String>) -> [String] {
         snapshot.filter { !stillPending.contains($0) }
-    }
-
-    /// The prompt the decision saw. A draft stays a draft.
-    static func promptForDecision(captured: PromptInputState?) -> PromptInputState? {
-        captured
     }
 
     enum Start: Equatable {
@@ -377,20 +366,5 @@ enum MailboxDoorbellSequence {
     /// not splice a message onto the doorbell line.
     static func textBoxHoldsUnsent(_ text: String) -> Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// What the ring types. The queued blocks stay in the inbox. They are
-    /// never the typed text.
-    static func typedText(queuedBlocks: [String]) -> String {
-        if queuedBlocks.contains(where: { $0.contains("<c11-msg") }) {
-            return MailboxDoorbell.text
-        }
-        return MailboxDoorbell.text
-    }
-
-    /// An agent prompt edge rings. A shell prompt does not.
-    static func shouldRingOnPromptEdge(_ trigger: MailboxStdinBuffer.FlushTrigger) -> Bool {
-        if case .agentPrompt = trigger { return true }
-        return false
     }
 }

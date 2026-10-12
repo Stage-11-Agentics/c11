@@ -187,16 +187,30 @@ final class PanelLineageStoreTests: XCTestCase {
         _ = original.insert(panelId: child, creatorPanelId: root, workspaceId: workspaceId, workspaceTitle: "Work", title: "Child", type: "terminal", agentType: "claude", delegated: true)
         _ = original.insert(panelId: orphan, creatorPanelId: nil, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan", type: "terminal", agentType: nil, delegated: false)
         _ = original.insert(panelId: orphanChild, creatorPanelId: orphan, workspaceId: workspaceId, workspaceTitle: "Other", title: "Orphan child", type: "terminal", agentType: nil, delegated: false)
-        let snapshot = AppSessionSnapshot(
+        let appNodes = original.snapshot().map { node in
+            c11.PanelLineageNode(
+                id: node.id,
+                parentPanelId: node.parentPanelId,
+                workspaceId: node.workspaceId,
+                workspaceTitle: node.workspaceTitle,
+                lastTitle: node.lastTitle,
+                panelType: node.panelType,
+                agentType: node.agentType,
+                closedAt: node.closedAt,
+                delegated: node.delegated,
+                delegatedBy: node.delegatedBy
+            )
+        }
+        let snapshot = c11.AppSessionSnapshot(
             version: SessionSnapshotSchema.currentVersion,
             createdAt: 1,
             windows: [],
-            panelLineageNodes: original.snapshot()
+            panelLineageNodes: appNodes
         )
         let data = try JSONEncoder().encode(snapshot)
-        let restoredSnapshot = try JSONDecoder().decode(AppSessionSnapshot.self, from: data)
+        let restoredSnapshot = try JSONDecoder().decode(c11.AppSessionSnapshot.self, from: data)
         let restoredNodes = try XCTUnwrap(restoredSnapshot.panelLineageNodes)
-        var restored = PanelLineageStore(nodes: restoredNodes)
+        var restored = c11.PanelLineageStore(nodes: restoredNodes)
 
         restored.finishRestore(livePanelIds: [child], at: Date(timeIntervalSince1970: 40))
 

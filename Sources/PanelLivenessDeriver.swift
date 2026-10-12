@@ -101,9 +101,19 @@ enum PanelLivenessDeriver {
     /// the 10 s sweep interval so a single missed sweep never trips a decay.
     static let idleDecayThreshold: TimeInterval = 45
 
+    /// An agent panel's `working` that only its shell wrote (the agent TUI is
+    /// the shell's running command) and nothing has touched for this long
+    /// decays to unknown (C11-398). A resumed session that never reports an
+    /// edge would otherwise read as working for hours.
+    static let agentShellWorkingDecay: TimeInterval = 120
+
     /// Journal-backed agents this deriver last published with an expired
     /// prompt cache. Touched only on `queue`.
     private nonisolated(unsafe) static var journalCacheExpiredSurfaceIds = Set<UUID>()
+
+    /// Surfaces whose current derived `working` came from the shell path and
+    /// no agent edge since. Touched only on `queue`.
+    private nonisolated(unsafe) static var shellWorkingSurfaceIds = Set<UUID>()
 
     // MARK: - Mapping (TEL-3/4)
 
@@ -137,6 +147,20 @@ enum PanelLivenessDeriver {
         state: Workspace.PanelShellActivityState,
         workspace: Workspace
     ) {
+        onShellActivityChanged(surfaceId: surfaceId, workspaceId: workspaceId, state: state) { mirrored in
+            workspace.setAgentCold(false, forSurface: surfaceId)
+            workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+        }
+    }
+
+    /// The same transition with the main-actor mirror passed in. Tests drive
+    /// the store side through it without constructing a `Workspace`.
+    static func onShellActivityChanged(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        state: Workspace.PanelShellActivityState,
+        mirror: @escaping @MainActor (SidebarActivityState?) -> Void
+    ) {
         let derived = activityState(for: state)
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
@@ -149,6 +173,11 @@ enum PanelLivenessDeriver {
             // reject the derived write, in which case no real transition
             // happened.
             let after = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            if derived == .working, after == SidebarActivityState.working.rawValue {
+                shellWorkingSurfaceIds.insert(surfaceId)
+            } else {
+                shellWorkingSurfaceIds.remove(surfaceId)
+            }
             if prior != after {
                 emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId, workspaceId: workspaceId)
             }
@@ -159,8 +188,7 @@ enum PanelLivenessDeriver {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
-                    workspace.setAgentCold(false, forSurface: surfaceId)
-                    workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+                    mirror(mirrored)
                 }
             }
         }
@@ -204,6 +232,7 @@ enum PanelLivenessDeriver {
                 }
                 return
             }
+            shellWorkingSurfaceIds.remove(surfaceId)
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(
                 derived: activity,
@@ -273,6 +302,7 @@ enum PanelLivenessDeriver {
                 PanelActivityTracker.shared.recordActivity(surfaceId: panelID.uuidString,
                     at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
             }
+            shellWorkingSurfaceIds.remove(panelID)
             let prior = currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID)
             applyToStore(derived: derived, workspaceId: workspaceID, surfaceId: panelID, journal: true)
             let after = currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID)
@@ -408,7 +438,28 @@ enum PanelLivenessDeriver {
         // TUIs) render idle. Exact lifecycle completion signals own the
         // working→idle transition for detected agents; retain the timeout
         // only as the fallback for ordinary shell commands.
-        guard !AreaSizePolicy.isAgentKind(detectedTerminalType) else { return }
+        //
+        // That holds only for a `working` some agent edge wrote. One only the
+        // shell wrote is the TUI's lifetime, not a turn: with nothing newer
+        // for `agentShellWorkingDecay` it decays to unknown (C11-398).
+        guard !AreaSizePolicy.isAgentKind(detectedTerminalType) else {
+            guard shellWorkingSurfaceIds.contains(surfaceId),
+                  lastTouched.map({ now.timeIntervalSince($0) >= agentShellWorkingDecay }) ?? true else { return }
+            shellWorkingSurfaceIds.remove(surfaceId)
+            applyToStore(derived: nil, workspaceId: workspaceId, surfaceId: surfaceId)
+            #if DEBUG
+            dlog("surface.liveness.agentShellWorkingDecayed surface=\(surfaceId.uuidString.prefix(5))")
+            #endif
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
+                            .workspaces.first(where: { $0.id == workspaceId }) else { return }
+                    guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
+                    workspace.setDerivedActivity(nil, forSurface: surfaceId)
+                }
+            }
+            return
+        }
 
         let isStale = last.map { now.timeIntervalSince($0) >= idleDecayThreshold } ?? true
         guard isStale else { return }
@@ -499,8 +550,11 @@ enum PanelLivenessDeriver {
     }
 
     /// Forget published state for surfaces the sweep no longer sees.
-    static func retainPromptCacheState(forLiveSurfaces live: Set<UUID>) {
-        queue.sync { journalCacheExpiredSurfaceIds.formIntersection(live) }
+    static func retainSurfaceState(forLiveSurfaces live: Set<UUID>) {
+        queue.sync {
+            journalCacheExpiredSurfaceIds.formIntersection(live)
+            shellWorkingSurfaceIds.formIntersection(live)
+        }
     }
 
     /// A journal-backed agent's cache state, published only while the journal

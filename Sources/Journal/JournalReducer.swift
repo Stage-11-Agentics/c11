@@ -85,9 +85,29 @@ enum JournalReducer {
 
         switch d.kind {
         case .sessionStarted:
-            guard previous == nil else { return unchanged(.observation, "session_already_known") }
             guard caps.contains("session") else { return unchanged(.advisory, "unsupported_session") }
-            reason = "session_observed"
+            if let previous {
+                // A row this process admitted live evidence for is the same
+                // session (a `compact` SessionStart fires mid-turn), or one it saw
+                // end, which keeps its ended label. Any other row is a session
+                // resumed after a restart, including one the startup spool drain
+                // restamped with its SessionEnd: it re-attaches as unknown, and
+                // stays unknown until the harness reports a turn edge.
+                let liveInThisProcess = previous.appInstanceID == instanceID && previous.lastLiveSequence > 0
+                guard !context.historical, !liveInThisProcess else {
+                    return unchanged(.observation, "session_already_known")
+                }
+                s.phase = .unknown
+                s.turnID = nil
+                s.turnOutcome = nil
+                s.requestID = nil
+                s.reason = nil
+                s.terminalBarrier = false
+                s.terminalRank = 0
+                reason = "session_reattached"
+            } else {
+                reason = "session_observed"
+            }
         case .sessionEnded:
             guard caps.contains("session") else { return unchanged(.advisory, "unsupported_session") }
             s.connection = .disconnected

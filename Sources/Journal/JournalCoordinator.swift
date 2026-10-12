@@ -469,6 +469,10 @@ struct JournalOpenAsk: Sendable {
 /// turn end older than the newest Return typed into the panel, so a late poll
 /// cannot reopen it over a newer turn. A transcript turn start is not a
 /// boundary: the Return that started the turn already closed the gate.
+///
+/// A live session start that leaves the session `unknown` (a fresh launch, or
+/// a resumed session re-attaching) is an `attached` edge: it names the
+/// interactive process and says nothing about the turn (C11-398).
 struct JournalMailboxBoundary: Sendable {
     let working: Bool
     let pid: Int32?
@@ -477,6 +481,7 @@ struct JournalMailboxBoundary: Sendable {
     /// run nested in the panel. A transcript edge follows the panel's exact
     /// owner and never carries a PID.
     let headless: Bool
+    var attached = false
     /// `verifiedNativeClock` is the append route's own evidence (only the
     /// in-process transcript reader sets it); a draft's fields alone never
     /// qualify a transcript turn end.
@@ -487,6 +492,11 @@ struct JournalMailboxBoundary: Sendable {
         let committedAtMs = result.receipt.committedAtMs
         switch draft.source {
         case .hook, .plugin:
+            if draft.kind == .sessionStarted, state.phase == .unknown {
+                return Self(working: false, pid: pid,
+                            at: Date(timeIntervalSince1970: Double(committedAtMs) / 1000),
+                            headless: pid == nil, attached: true)
+            }
             guard (draft.kind == .turnStarted && state.phase == .working)
                     || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
             return Self(working: state.phase == .working, pid: pid,
@@ -511,6 +521,7 @@ struct JournalMailboxBoundary: Sendable {
     /// can arrive after a newer state; one that disagrees is dropped.
     func stillHolds(projected: JournalSnapshot?, current: JournalSnapshot?) -> Bool {
         guard let projected, let current, current.owner == projected.owner else { return false }
+        if attached { return current.phase == .unknown }
         return working ? [.working, .blocked, .error].contains(current.phase) : current.phase == .idle
     }
 }

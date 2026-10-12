@@ -294,19 +294,21 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 
 | Harness | At its prompt when | Working when |
 |---------|--------------------|--------------|
-| Claude Code | session start (not after a compaction), each `Stop` hook | prompt submit, any submitted Return |
+| Claude Code | each `Stop` hook | prompt submit, any submitted Return |
 | Codex | launch, each completed turn (its `notify` callback, or the turn end in its rollout file, whichever c11 records first) | any submitted Return |
 | Grok | launch, each `turn_ended` in its session's `events.jsonl` (from its wrapper or c11's transcript reader) | `turn_started`, any submitted Return |
 
 A turn end read from a transcript counts at the time the agent wrote it, not when c11 read it, and is ignored if a Return was submitted after it: the agent has had input since.
 
+A session start (a fresh launch, a session c11 resumed after a restart, a Claude `/clear`) says nothing about the turn. It names the agent's process and makes the turn **unknown** until the harness reports an edge. A working state with nothing behind it also becomes unknown: a working edge or Return holds the gate for 2 minutes, and if the agent's journal does not show a turn in progress by then, the turn reads as unknown. A turn the journal shows in progress holds for as long as it runs, including a long tool call that prints nothing.
+
 | Recipient agent state | What gets typed |
 |-----------------------|----------------|
 | at its prompt, composer empty or a suggestion | one doorbell line, submitted as a new turn. The envelope stays in the inbox until `c11 mailbox recv` or the hook drain |
 | mid-turn | nothing now. At the next real idle, one doorbell line. Same edge for every harness. Grok's idle is its wrapper `turn_ended` report or a verified transcript turn end |
+| unknown (no turn edge since the session started or resumed, or a working state nothing has supported for 2 minutes) | the same screen check as at its prompt: one doorbell line when the composer is empty or a suggestion. A draft, a dialog or an unreadable screen holds the mail |
 | the operator just typed into the focused panel | nothing for a few seconds. Once quiet, if the composer is still empty and the mail is unread, one doorbell line |
 | a draft, a dialog, or an unreadable prompt | nothing. The mail stays queued |
-| no turn edge known yet | nothing. The inbox holds the mail |
 
 A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.)
 
@@ -333,7 +335,7 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 
 Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows the path: rung, held, capped, skipped, or failed with the FeedAnswer code.
 
-**Bounds.** Each panel buffers up to 64 envelopes (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, however long that takes, and drops from the queue when the panel returns to a shell prompt. Evicted and expired envelopes remain in the filesystem inbox; `recv --drain` is their floor.
+**Bounds.** Each panel buffers up to 64 envelopes (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, or until its working state goes unknown (2 minutes with no journal turn behind it; c11 looks again at that moment), and drops from the queue when the panel returns to a shell prompt. Evicted and expired envelopes remain in the filesystem inbox; `recv --drain` is their floor.
 
 **Why you still pull.** The inbox copy is written before the ring. The ring is only the invitation. `c11 mailbox recv` (or the hook drain) is how the body arrives.
 

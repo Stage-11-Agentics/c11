@@ -26,6 +26,26 @@ final class MailboxDoorbellTests: XCTestCase {
         MailboxStdinDelivery.Gate(isAgentKind: true, ownsTerminal: true)
     }
 
+    private func gateAt(_ seconds: TimeInterval, journalTurnOpen: Bool = false) -> MailboxStdinDelivery.Gate {
+        MailboxStdinDelivery.Gate(isAgentKind: true, ownsTerminal: true, journalTurnOpen: journalTurnOpen,
+                                  now: Date(timeIntervalSince1970: seconds))
+    }
+
+    /// The screen shows an empty composer whenever the ring asks for it.
+    private func emptyScreen(_ captures: Box<[Bool]>) -> (Bool) -> MailboxDoorbell.Input {
+        { capture in
+            captures.value.append(capture)
+            var input = MailboxDoorbell.Input()
+            input.prompt = capture ? .empty : nil
+            return input
+        }
+    }
+
+    private final class Box<T> {
+        var value: T
+        init(_ value: T) { self.value = value }
+    }
+
     private func openPrompt(_ state: MailboxStdinBufferStore, _ surface: UUID) {
         state.buffer.noteAgentTurn(
             surfaceId: surface,
@@ -326,12 +346,13 @@ final class MailboxDoorbellTests: XCTestCase {
 
     // MARK: - deliver()
 
-    /// No prompt edge yet: enqueue only. Do not ring and do not paste.
+    /// Mid-turn: enqueue only. Do not ring and do not paste.
     func testClosedGateDoesNotRingOrPaste() {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: false, at: Date(timeIntervalSince1970: 10))
         var captures: [Bool] = []
-        let admitted = admit(state: state, surfaceId: surface, ring: { capture in
+        let admitted = admit(state: state, surfaceId: surface, gate: gateAt(11), ring: { capture in
             captures.append(capture)
             return MailboxDoorbell.Input()
         })
@@ -415,8 +436,10 @@ final class MailboxDoorbellTests: XCTestCase {
     func testClosedGateDoesNotCaptureThePrompt() {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
+        state.buffer.noteSubmit(surfaceId: surface, at: Date(timeIntervalSince1970: 10))
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: false, at: Date(timeIntervalSince1970: 10))
         var captures: [Bool] = []
-        let admitted = admit(state: state, surfaceId: surface, ring: { capture in
+        let admitted = admit(state: state, surfaceId: surface, gate: gateAt(11, journalTurnOpen: true), ring: { capture in
             captures.append(capture)
             return MailboxDoorbell.Input()
         })
@@ -425,6 +448,100 @@ final class MailboxDoorbellTests: XCTestCase {
             return XCTFail("expected a buffer, got \(admitted)")
         }
         XCTAssertEqual(state.buffer.pendingCount(surfaceId: surface), 1)
+    }
+
+    // MARK: - C11-398: restored sessions
+
+    /// The observed trace: c11 restarted, the session resumed idle at its
+    /// prompt, and no turn edge followed. Mail that arrives is rung through
+    /// the screen read, not buffered until someone types.
+    func testRestoredPanelWithNoEdgeIsRungWhenMailArrives() {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        // The attach forgets the earlier process's working edge and the Return
+        // that launched `claude --resume`.
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: false, at: Date(timeIntervalSince1970: 5))
+        state.buffer.noteSubmit(surfaceId: surface, at: Date(timeIntervalSince1970: 9))
+        state.buffer.noteAgentProcess(surfaceId: surface, process: .init(pid: 4242, startTime: 7))
+        state.buffer.noteAgentAttached(surfaceId: surface, at: Date(timeIntervalSince1970: 10))
+        let captures = Box<[Bool]>([])
+        var held: [Date] = []
+        let admitted = MailboxStdinDelivery.deliver(
+            state: state, surfaceId: surface, entry: entry(id: "after-restart"), gate: gateAt(11),
+            logEvicted: { _ in }, ringInput: emptyScreen(captures),
+            noteHeldUntil: { held.append($0) }
+        )
+        XCTAssertEqual(captures.value, [false, true], "the ring reads the screen")
+        guard case .doorbell(_, let effect) = admitted else {
+            return XCTFail("expected a ring, got \(admitted)")
+        }
+        XCTAssertEqual(effect, .ring)
+        XCTAssertEqual(held, [])
+        XCTAssertEqual(state.buffer.pendingCount(surfaceId: surface), 1)
+
+        // Unknown is not a pass: the same screen read refuses a draft.
+        let drafted = MailboxStdinDelivery.deliver(
+            state: state, surfaceId: surface, entry: entry(id: "behind-draft"), gate: gateAt(12),
+            logEvicted: { _ in }, ringInput: { capture in
+                var input = MailboxDoorbell.Input()
+                input.prompt = capture ? .draft : nil
+                return input
+            }
+        )
+        guard case .buffered = drafted else { return XCTFail("expected a draft to hold, got \(drafted)") }
+    }
+
+    /// A real long turn: the journal is live and working, and the tool call
+    /// has printed nothing for an hour. The gate stays closed, the screen is
+    /// not read, and nothing waits on a decay deadline: the turn end rings.
+    func testLongJournalTurnIsNeverRung() {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: false, at: Date(timeIntervalSince1970: 10))
+        let captures = Box<[Bool]>([])
+        var held: [Date] = []
+        let admitted = MailboxStdinDelivery.deliver(
+            state: state, surfaceId: surface, entry: entry(id: "mid-turn"),
+            gate: gateAt(10 + 3_600, journalTurnOpen: true),
+            logEvicted: { _ in }, ringInput: emptyScreen(captures),
+            noteHeldUntil: { held.append($0) }
+        )
+        XCTAssertEqual(captures.value, [])
+        XCTAssertEqual(held, [])
+        guard case .buffered = admitted else { return XCTFail("expected a buffer, got \(admitted)") }
+        XCTAssertEqual(state.buffer.pendingCount(surfaceId: surface), 1)
+    }
+
+    /// A working edge with no journal turn behind it holds the mail until the
+    /// decay deadline, reports that deadline for the recheck, and rings once
+    /// it has passed.
+    func testUnsupportedWorkingHoldsUntilTheDecayThenRings() {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: false, at: Date(timeIntervalSince1970: 10))
+        let captures = Box<[Bool]>([])
+        var held: [Date] = []
+        let early = MailboxStdinDelivery.deliver(
+            state: state, surfaceId: surface, entry: entry(id: "early"), gate: gateAt(70),
+            logEvicted: { _ in }, ringInput: emptyScreen(captures),
+            noteHeldUntil: { held.append($0) }
+        )
+        guard case .buffered = early else { return XCTFail("expected a buffer, got \(early)") }
+        XCTAssertEqual(captures.value, [])
+        XCTAssertEqual(held, [Date(timeIntervalSince1970: 10 + MailboxStdinBuffer.unsupportedWorkingDecay)])
+        XCTAssertEqual(MailboxStdinDelivery.heldUntil(state: state, surfaceId: surface, gate: gateAt(70)), held.first)
+        XCTAssertNil(MailboxStdinDelivery.heldUntil(state: state, surfaceId: surface,
+                                                    gate: gateAt(70, journalTurnOpen: true)))
+
+        let late = MailboxStdinDelivery.deliver(
+            state: state, surfaceId: surface, entry: entry(id: "late"), gate: gateAt(130),
+            logEvicted: { _ in }, ringInput: emptyScreen(captures),
+            noteHeldUntil: { held.append($0) }
+        )
+        guard case .doorbell(_, let effect) = late else { return XCTFail("expected a ring, got \(late)") }
+        XCTAssertEqual(effect, .ring)
+        XCTAssertEqual(held.count, 1)
+        XCTAssertNil(MailboxStdinDelivery.heldUntil(state: state, surfaceId: surface, gate: gateAt(130)))
     }
 
     func testPromptEpochFollowsTheTurnClock() {

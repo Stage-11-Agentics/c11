@@ -359,4 +359,137 @@ final class JournalReducerTests: XCTestCase {
             XCTAssertEqual(state?.phase, expected, name)
         }
     }
+
+    // MARK: - C11-398: a resumed session re-attaches as unknown
+
+    private func sessionStart() -> JournalDraft {
+        var draft = JournalTestData.draft(.sessionStarted)
+        draft.nativeEvent = "SessionStart"
+        return draft
+    }
+
+    private func mailboxResult(_ draft: JournalDraft, _ fold: JournalFoldResult) -> JournalAppendResult {
+        JournalAppendResult(receipt: JournalReceipt(eventID: draft.eventID, sequence: 9, committedAtMs: 20_000,
+                                                    replayed: false, projectionEffect: fold.effect),
+                            changedSnapshot: fold.snapshot)
+    }
+
+    /// The observed C11-398 trace: the session was mid-turn (or idle) before
+    /// the restart, its row came back from another process, and the resumed
+    /// session's SessionStart folded as `session_already_known`. Nothing went
+    /// live, so the shell's "working" stood for 37 hours.
+    func testResumedSessionReattachesAsUnknownAndLive() throws {
+        let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
+        var working = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnStarted), seq: 2).snapshot)
+        XCTAssertEqual(working.phase, .working)
+        working.appInstanceID = UUID() // the row an earlier c11 process wrote
+
+        let resumed = JournalTestData.fold(working, sessionStart(), seq: 3)
+        XCTAssertEqual(resumed.effect, .applied)
+        XCTAssertEqual(resumed.reason, "session_reattached")
+        let state = try XCTUnwrap(resumed.snapshot)
+        XCTAssertEqual(state.phase, .unknown)
+        XCTAssertEqual(state.connection, .live)
+        XCTAssertEqual(state.confirmation, .confirmed)
+        XCTAssertNil(state.turnID)
+        XCTAssertFalse(state.terminalBarrier)
+
+        // The harness's next edge decides the turn.
+        XCTAssertEqual(JournalTestData.fold(state, JournalTestData.draft(.turnCompleted), seq: 4).snapshot?.phase, .idle)
+    }
+
+    /// A live row from this process is the same session still running. A
+    /// `compact` SessionStart fires mid-turn and must not end the turn.
+    func testLiveSessionStartIsAlreadyKnown() throws {
+        let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
+        let working = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnStarted), seq: 2).snapshot)
+        let again = JournalTestData.fold(working, sessionStart(), seq: 3)
+        XCTAssertEqual(again.effect, .observation)
+        XCTAssertEqual(again.reason, "session_already_known")
+        XCTAssertEqual(again.snapshot?.phase, .working)
+
+        // A drained (historical) start re-attaches nothing.
+        var restored = working
+        restored.appInstanceID = UUID()
+        let drained = JournalTestData.fold(restored, sessionStart(), seq: 3,
+                                           context: JournalContext(eligible: true, historical: true))
+        XCTAssertEqual(drained.reason, "session_already_known")
+        XCTAssertEqual(drained.snapshot?.phase, .working)
+    }
+
+    /// The order a real restart produces: the quit kills Claude, its
+    /// SessionEnd hook finds no socket and spools, and the relaunched c11
+    /// drains that spool before the resumed session's SessionStart. The drain
+    /// restamps the row with this process's instance, but as history. The
+    /// start must still re-attach (seen live on Atlas, C11-398).
+    func testResumeAfterADrainedSessionEndReattaches() throws {
+        let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
+        var earlier = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnCompleted), seq: 2).snapshot)
+        earlier.appInstanceID = UUID() // written live by the c11 that quit
+        XCTAssertGreaterThan(earlier.lastLiveSequence, 0)
+
+        var end = JournalTestData.draft(.sessionEnded)
+        end.nativeEvent = "SessionEnd"
+        let drained = JournalTestData.fold(earlier, end, seq: 3, context: JournalContext(eligible: true, historical: true))
+        let restamped = try XCTUnwrap(drained.snapshot)
+        XCTAssertEqual(restamped.appInstanceID, JournalTestData.instance)
+        XCTAssertEqual(restamped.connection, .disconnected)
+
+        let resumed = JournalTestData.fold(restamped, sessionStart(), seq: 4)
+        XCTAssertEqual(resumed.reason, "session_reattached")
+        XCTAssertEqual(resumed.snapshot?.phase, .unknown)
+        XCTAssertEqual(resumed.snapshot?.connection, .live)
+    }
+
+    /// A session this process saw end keeps its ended label when it starts
+    /// again here (`JournalStoreTests` holds the restore side). Only a row
+    /// from an earlier c11 process re-attaches.
+    func testEndedSessionInThisProcessStaysKnown() throws {
+        let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
+        var end = JournalTestData.draft(.sessionEnded)
+        end.nativeEvent = "SessionEnd"
+        let ended = try XCTUnwrap(JournalTestData.fold(started, end, seq: 2).snapshot)
+        XCTAssertEqual(ended.connection, .disconnected)
+        let again = JournalTestData.fold(ended, sessionStart(), seq: 3)
+        XCTAssertEqual(again.reason, "session_already_known")
+        XCTAssertEqual(again.snapshot?.connection, .disconnected)
+
+        var restored = ended
+        restored.appInstanceID = UUID()
+        XCTAssertEqual(JournalTestData.fold(restored, sessionStart(), seq: 3).reason, "session_reattached")
+    }
+
+    /// A live start that leaves the session unknown names the interactive
+    /// process for the mailbox gate and says nothing about the turn.
+    func testSessionStartIsAnAttachEdgeCarryingTheInteractivePID() throws {
+        let start = sessionStart()
+        var restored = try XCTUnwrap(JournalTestData.fold(nil, JournalTestData.draft(.turnCompleted), seq: 1).snapshot)
+        restored.appInstanceID = UUID()
+        for prior in [nil, restored] as [JournalSnapshot?] {
+            let fold = JournalTestData.fold(prior, start, seq: 2)
+            let edge = try XCTUnwrap(JournalMailboxBoundary.make(draft: start, result: mailboxResult(start, fold),
+                                                                 historical: false, pid: 4242))
+            XCTAssertTrue(edge.attached)
+            XCTAssertFalse(edge.working)
+            XCTAssertFalse(edge.headless)
+            XCTAssertEqual(edge.pid, 4242)
+            XCTAssertEqual(edge.at, Date(timeIntervalSince1970: 20))
+            XCTAssertEqual(JournalMailboxBoundary.make(draft: start, result: mailboxResult(start, fold),
+                                                       historical: false, pid: nil)?.headless, true)
+            XCTAssertNil(JournalMailboxBoundary.make(draft: start, result: mailboxResult(start, fold),
+                                                     historical: true, pid: 4242))
+        }
+        // An already-known start changes nothing and is no edge.
+        let live = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1).snapshot)
+        let known = JournalTestData.fold(live, start, seq: 2)
+        let unchanged = JournalAppendResult(receipt: JournalReceipt(eventID: start.eventID, sequence: 2,
+            committedAtMs: 20_000, replayed: false, projectionEffect: known.effect), changedSnapshot: nil)
+        XCTAssertNil(JournalMailboxBoundary.make(draft: start, result: unchanged, historical: false, pid: 4242))
+
+        // A superseded attach reaches the gate only while the session is still unknown.
+        let attached = JournalMailboxBoundary(working: false, pid: 4242, at: Date(), headless: false, attached: true)
+        let working = JournalTestData.fold(live, JournalTestData.draft(.turnStarted), seq: 3).snapshot
+        XCTAssertTrue(attached.stillHolds(projected: live, current: live))
+        XCTAssertFalse(attached.stillHolds(projected: live, current: working))
+    }
 }

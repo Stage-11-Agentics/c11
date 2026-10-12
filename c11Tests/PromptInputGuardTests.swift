@@ -33,7 +33,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 1, spans: [Span(text: prompt)]),
             Row(y: 2, spans: [Span(text: bottom)]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(input), .init(state: .empty, draftLength: nil))
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "grok"), .init(state: .empty, draftLength: nil))
     }
 
     func testGrokDraftStopsAtTheBoxFooter() {
@@ -45,8 +45,8 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 1, spans: [Span(text: prompt)]),
             Row(y: 2, spans: [Span(text: bottom)]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(input).state, .draft)
-        XCTAssertEqual(PromptInputClassifier.composerText(input), "hello")
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "grok").state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(input, harness: "grok"), "hello")
     }
 
     func testEmptyAndFaintSuggestionAreDistinct() {
@@ -55,14 +55,14 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 1, spans: [Span(text: "❯\u{00A0} ")]),
             Row(y: 2, spans: [Span(text: rule)]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(empty), .init(state: .empty, draftLength: nil))
+        XCTAssertEqual(PromptInputClassifier.classify(empty, harness: "claude-code"), .init(state: .empty, draftLength: nil))
 
         let suggestion = region([
             Row(y: 0, spans: [Span(text: rule)]),
             Row(y: 1, spans: [Span(text: "❯\u{00A0} "), Span(text: "Try \"fix lint errors\"", faint: true)]),
             Row(y: 2, spans: [Span(text: rule)]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(suggestion), .init(state: .suggestion, draftLength: nil))
+        XCTAssertEqual(PromptInputClassifier.classify(suggestion, harness: "claude-code"), .init(state: .suggestion, draftLength: nil))
     }
 
     func testDraftReportsOnlyLengthAndNeverPromptText() throws {
@@ -73,7 +73,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: rule)]),
         ], cursorY: 1)
 
-        let classification = PromptInputClassifier.classify(input)
+        let classification = PromptInputClassifier.classify(input, harness: "claude-code")
         XCTAssertEqual(classification.state, .draft)
         XCTAssertEqual(classification.draftLength, sentinel.unicodeScalars.count)
 
@@ -90,7 +90,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 1, spans: [Span(text: "❯\u{00A0}" + body)]),
             Row(y: 2, spans: [Span(text: rule)]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.composerText(singleLine), body)
+        XCTAssertEqual(PromptInputClassifier.composerText(singleLine, harness: "claude-code"), body)
 
         let multiline = region([
             Row(y: 0, spans: [Span(text: rule)]),
@@ -99,14 +99,14 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 3, spans: [Span(text: "  third line")]),
             Row(y: 4, spans: [Span(text: rule)]),
         ], cursorY: 3)
-        XCTAssertEqual(PromptInputClassifier.composerText(multiline), "first line\n\n  third line")
+        XCTAssertEqual(PromptInputClassifier.composerText(multiline, harness: "claude-code"), "first line\n\n  third line")
 
         let suggestion = region([
             Row(y: 0, spans: [Span(text: rule)]),
             Row(y: 1, spans: [Span(text: "❯\u{00A0} "), Span(text: "suggested text", faint: true)]),
             Row(y: 2, spans: [Span(text: rule)]),
         ], cursorY: 1)
-        XCTAssertNil(PromptInputClassifier.composerText(suggestion))
+        XCTAssertNil(PromptInputClassifier.composerText(suggestion, harness: "claude-code"))
 
         let dialog = region([
             Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
@@ -114,10 +114,10 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: "  No, keep planning")]),
             Row(y: 3, spans: [Span(text: "Enter to select · Esc to go back")]),
         ], cursorY: 3)
-        XCTAssertNil(PromptInputClassifier.composerText(dialog))
+        XCTAssertNil(PromptInputClassifier.composerText(dialog, harness: "claude-code"))
 
         let unknown = region([Row(y: 0, spans: [Span(text: "ordinary terminal output")])], cursorY: 0)
-        XCTAssertNil(PromptInputClassifier.composerText(unknown))
+        XCTAssertNil(PromptInputClassifier.composerText(unknown, harness: "claude-code"))
     }
 
     func testMultilineDraftSurvivesBlankCursorRow() {
@@ -130,7 +130,7 @@ final class PromptInputClassifierTests: XCTestCase {
         ], cursorY: 3)
 
         let expectedLength = "first line\n  second line".unicodeScalars.count
-        XCTAssertEqual(PromptInputClassifier.classify(input), .init(state: .draft, draftLength: expectedLength))
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "claude-code"), .init(state: .draft, draftLength: expectedLength))
     }
 
     func testBlankRowsInsideAMultilineDraftAreContentNotTheEndOfTheComposer() {
@@ -143,7 +143,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 4, spans: [Span(text: rule)]),
         ], cursorY: 3)
         XCTAssertEqual(
-            PromptInputClassifier.classify(leading),
+            PromptInputClassifier.classify(leading, harness: "claude-code"),
             .init(state: .draft, draftLength: "typed after a blank line".unicodeScalars.count)
         )
 
@@ -156,7 +156,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 4, spans: [Span(text: rule)]),
         ], cursorY: 3)
         XCTAssertEqual(
-            PromptInputClassifier.classify(embedded),
+            PromptInputClassifier.classify(embedded, harness: "claude-code"),
             .init(state: .draft, draftLength: "first\n\n  third".unicodeScalars.count)
         )
 
@@ -166,7 +166,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 1, spans: [Span(text: rule)]),
             Row(y: 2, spans: [Span(text: "  typed below a rule")]),
         ], cursorY: 2)
-        XCTAssertEqual(PromptInputClassifier.classify(ruleBeforeCursor).state, .unknown)
+        XCTAssertEqual(PromptInputClassifier.classify(ruleBeforeCursor, harness: "claude-code").state, .unknown)
     }
 
     func testDraftLengthIgnoresRowPaddingOnMultilineDrafts() {
@@ -179,7 +179,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 4, spans: [Span(text: rule)]),
         ], cursorY: 3)
         XCTAssertEqual(
-            PromptInputClassifier.classify(input),
+            PromptInputClassifier.classify(input, harness: "claude-code"),
             .init(state: .draft, draftLength: "first line\n\n  third line".unicodeScalars.count)
         )
     }
@@ -196,7 +196,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 13, spans: [Span(text: "")]),
             Row(y: 14, spans: [Span(text: " Enter to confirm \u{00B7} Esc to cancel")]),
         ], cursorY: 12)
-        XCTAssertEqual(PromptInputClassifier.classify(trust).state, .dialog)
+        XCTAssertEqual(PromptInputClassifier.classify(trust, harness: "claude-code").state, .dialog)
 
         let plan = region([
             Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
@@ -204,14 +204,14 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: "\u{276F} No, keep planning")]),
             Row(y: 3, spans: [Span(text: "Enter to select \u{00B7} Esc to go back")]),
         ], cursorY: 2)
-        XCTAssertEqual(PromptInputClassifier.classify(plan).state, .dialog)
+        XCTAssertEqual(PromptInputClassifier.classify(plan, harness: "claude-code").state, .dialog)
 
         // A lone option with no partner, or a stale chooser above a live composer, stays unguarded.
         let lone = region([
             Row(y: 0, spans: [Span(text: "\u{276F} No, exit")]),
             Row(y: 1, spans: [Span(text: "Enter to confirm \u{00B7} Esc to cancel")]),
         ], cursorY: 0)
-        XCTAssertEqual(PromptInputClassifier.classify(lone).state, .unknown)
+        XCTAssertEqual(PromptInputClassifier.classify(lone, harness: "claude-code").state, .unknown)
     }
 
     func testHumanTypingAfterObservationIsNotCaughtByThePriorCheck() {
@@ -223,7 +223,7 @@ final class PromptInputClassifierTests: XCTestCase {
                 Row(y: 0, spans: [Span(text: rule)]),
                 Row(y: 1, spans: [Span(text: "❯\u{00A0}" + composer)]),
                 Row(y: 2, spans: [Span(text: rule)]),
-            ], cursorY: 1)).state
+            ], cursorY: 1), harness: "claude-code").state
         }
 
         let observed = observe()
@@ -253,7 +253,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: "gh")], wrapContinuation: true),
             Row(y: 3, spans: [Span(text: rule)]),
         ], cursorY: 2)
-        XCTAssertEqual(PromptInputClassifier.classify(input), .init(state: .draft, draftLength: 8))
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "claude-code"), .init(state: .draft, draftLength: 8))
     }
 
     func testRecordedClaudeQuestionAndPlanDialogsAreDialogs() {
@@ -263,7 +263,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: "  Yes, I trust this folder")]),
             Row(y: 3, spans: [Span(text: "Enter to confirm · Esc to cancel")]),
         ], cursorY: 3)
-        XCTAssertEqual(PromptInputClassifier.classify(question).state, .dialog)
+        XCTAssertEqual(PromptInputClassifier.classify(question, harness: "claude-code").state, .dialog)
 
         let plan = region([
             Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
@@ -271,7 +271,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: "  No, keep planning")]),
             Row(y: 3, spans: [Span(text: "Enter to select · Esc to go back")]),
         ], cursorY: 3)
-        XCTAssertEqual(PromptInputClassifier.classify(plan).state, .dialog)
+        XCTAssertEqual(PromptInputClassifier.classify(plan, harness: "claude-code").state, .dialog)
     }
 
     func testNarrowPaneTrustChooserWithClippedHeadingIsStillADialog() {
@@ -294,7 +294,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 19, spans: [Span(text: " Enter to confirm \u{00B7} Esc to cancel")]),
             Row(y: 20, spans: [Span(text: "")]),
         ], cursorY: 16)
-        XCTAssertEqual(PromptInputClassifier.classify(clipped).state, .dialog)
+        XCTAssertEqual(PromptInputClassifier.classify(clipped, harness: "claude-code").state, .dialog)
     }
 
     func testVisibleOldChooserAboveLiveComposerDoesNotLookLikeDialog() {
@@ -307,7 +307,7 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 5, spans: [Span(text: "❯\u{00A0} ")]),
         ], cursorY: 5)
 
-        XCTAssertEqual(PromptInputClassifier.classify(input).state, .empty)
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "claude-code").state, .empty)
     }
 
     func testCodexEmptyPromptPlaceholderIsSuggestionAndHistoricalPromptRemainsUnknown() {
@@ -323,8 +323,8 @@ final class PromptInputClassifierTests: XCTestCase {
             cells: codex.cells,
             text: codex.text
         )
-        XCTAssertEqual(PromptInputClassifier.classify(emptyCodexPrompt).state, .suggestion)
-        XCTAssertNil(PromptInputClassifier.composerText(emptyCodexPrompt))
+        XCTAssertEqual(PromptInputClassifier.classify(emptyCodexPrompt, harness: "codex").state, .suggestion)
+        XCTAssertNil(PromptInputClassifier.composerText(emptyCodexPrompt, harness: "codex"))
 
         let nonFaintText = region([
             Row(y: 0, spans: [Span(text: "› "), Span(text: "Ask Codex to do anything")]),
@@ -338,15 +338,15 @@ final class PromptInputClassifierTests: XCTestCase {
             cells: nonFaintText.cells,
             text: nonFaintText.text
         )
-        XCTAssertEqual(PromptInputClassifier.classify(editedCodexPrompt).state, .draft)
-        XCTAssertEqual(PromptInputClassifier.composerText(editedCodexPrompt), "Ask Codex to do anything")
+        XCTAssertEqual(PromptInputClassifier.classify(editedCodexPrompt, harness: "codex").state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(editedCodexPrompt, harness: "codex"), "Ask Codex to do anything")
 
         let codexDraft = region([
             Row(y: 0, spans: [Span(text: "› " + "first line")]),
             Row(y: 1, spans: [Span(text: "second line")]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(codexDraft).state, .draft)
-        XCTAssertEqual(PromptInputClassifier.composerText(codexDraft), "first line\nsecond line")
+        XCTAssertEqual(PromptInputClassifier.classify(codexDraft, harness: "codex").state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexDraft, harness: "codex"), "first line\nsecond line")
 
         let codexRenderedMultiline = region([
             Row(y: 0, spans: [Span(text: "› first line")]),
@@ -354,16 +354,16 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 2, spans: [Span(text: "    third line")]),
         ], cursorY: 2)
         let codexBody = "first line\nsecond line\n  third line"
-        XCTAssertEqual(PromptInputClassifier.classify(codexRenderedMultiline).state, .draft)
-        XCTAssertEqual(PromptInputClassifier.composerText(codexRenderedMultiline), codexBody)
+        XCTAssertEqual(PromptInputClassifier.classify(codexRenderedMultiline, harness: "codex").state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexRenderedMultiline, harness: "codex"), codexBody)
         XCTAssertEqual(
-            PromptInputClassifier.classify(codexRenderedMultiline).draftLength,
+            PromptInputClassifier.classify(codexRenderedMultiline, harness: "codex").draftLength,
             codexBody.unicodeScalars.count
         )
         XCTAssertEqual(
             FeedAnswerComposerCheck.compare(
-                state: PromptInputClassifier.classify(codexRenderedMultiline).state,
-                composer: PromptInputClassifier.composerText(codexRenderedMultiline),
+                state: PromptInputClassifier.classify(codexRenderedMultiline, harness: "codex").state,
+                composer: PromptInputClassifier.composerText(codexRenderedMultiline, harness: "codex"),
                 expected: codexBody
             ),
             .matches
@@ -372,7 +372,7 @@ final class PromptInputClassifierTests: XCTestCase {
         var refusedWrites = 0
         XCTAssertEqual(
             SendInputGuard.perform(
-                state: PromptInputClassifier.classify(codexRenderedMultiline).state,
+                state: PromptInputClassifier.classify(codexRenderedMultiline, harness: "codex").state,
                 allowUnguarded: false
             ) { refusedWrites += 1 },
             .refuse(reason: "draft"),
@@ -385,11 +385,11 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 1, spans: [Span(text: "  nothing else.")], wrapContinuation: true),
         ], cursorY: 1)
         let singleLineBody = "Reply with exactly C11-FEED-SINGLE-OK and nothing else."
-        XCTAssertEqual(PromptInputClassifier.composerText(codexSoftWrappedSingleLine), singleLineBody)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexSoftWrappedSingleLine, harness: "codex"), singleLineBody)
         XCTAssertEqual(
             FeedAnswerComposerCheck.compare(
-                state: PromptInputClassifier.classify(codexSoftWrappedSingleLine).state,
-                composer: PromptInputClassifier.composerText(codexSoftWrappedSingleLine),
+                state: PromptInputClassifier.classify(codexSoftWrappedSingleLine, harness: "codex").state,
+                composer: PromptInputClassifier.composerText(codexSoftWrappedSingleLine, harness: "codex"),
                 expected: singleLineBody
             ),
             .matches
@@ -402,11 +402,11 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 3, spans: [Span(text: "  C11-268-MULTILINE-TWO")]),
         ], cursorY: 3)
         let multilineBody = "Return these two lines exactly and nothing else:\nC11-268-MULTILINE-ONE\nC11-268-MULTILINE-TWO"
-        XCTAssertEqual(PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow), multilineBody)
+        XCTAssertEqual(PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow, harness: "codex"), multilineBody)
         XCTAssertEqual(
             FeedAnswerComposerCheck.compare(
-                state: PromptInputClassifier.classify(codexMultilineWithWrappedFirstRow).state,
-                composer: PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow),
+                state: PromptInputClassifier.classify(codexMultilineWithWrappedFirstRow, harness: "codex").state,
+                composer: PromptInputClassifier.composerText(codexMultilineWithWrappedFirstRow, harness: "codex"),
                 expected: multilineBody
             ),
             .matches
@@ -415,19 +415,19 @@ final class PromptInputClassifierTests: XCTestCase {
         let transcript = region([
             Row(y: 0, spans: [Span(text: "❯ say hi in two words")]),
         ], cursorY: 0)
-        XCTAssertEqual(PromptInputClassifier.classify(transcript).state, .unknown)
+        XCTAssertEqual(PromptInputClassifier.classify(transcript, harness: "codex").state, .unknown)
     }
 
     func testIncompleteAndClippedWrapsRemainUnknown() {
         let incomplete = region([
             Row(y: 0, spans: [Span(text: "❯\u{00A0}draft")]),
         ], cursorY: 0, complete: false)
-        XCTAssertEqual(PromptInputClassifier.classify(incomplete).state, .unknown)
+        XCTAssertEqual(PromptInputClassifier.classify(incomplete, harness: "claude-code").state, .unknown)
 
         let clippedWrap = region([
             Row(y: 0, spans: [Span(text: "❯\u{00A0}draft")], softWrap: true),
         ], cursorY: 0)
-        XCTAssertEqual(PromptInputClassifier.classify(clippedWrap).state, .unknown)
+        XCTAssertEqual(PromptInputClassifier.classify(clippedWrap, harness: "claude-code").state, .unknown)
     }
 
     func testOversizedRegionRemainsUnknown() {
@@ -443,7 +443,7 @@ final class PromptInputClassifierTests: XCTestCase {
             text: Data(repeating: 0x20, count: PromptInputClassifier.maxTextBytes + 1)
         )
 
-        XCTAssertEqual(PromptInputClassifier.classify(oversized).state, .unknown)
+        XCTAssertEqual(PromptInputClassifier.classify(oversized, harness: "claude-code").state, .unknown)
     }
 
     private func region(_ rows: [Row], cursorY: Int, complete: Bool = true) -> PromptRegionSnapshot {
@@ -896,7 +896,7 @@ extension PromptInputClassifierTests {
             Row(y: 3, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
             Row(y: 4, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
         ]
-        let state = PromptInputClassifier.classify(region(rows, cursorY: 1)).state
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 1), harness: "opencode").state
         var input = MailboxDoorbell.Input()
         input.prompt = state
         XCTAssertEqual(MailboxDoorbell.decide(input), .ring, "OpenCode idle composer reads \(state)")
@@ -911,8 +911,8 @@ extension PromptInputClassifierTests {
             Row(y: 4, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
         ]
         let input = region(rows, cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(input).state, .draft)
-        XCTAssertEqual(PromptInputClassifier.composerText(input), "fix the todo")
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "opencode").state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(input, harness: "opencode"), "fix the todo")
         var decision = MailboxDoorbell.Input()
         decision.prompt = .draft
         XCTAssertEqual(MailboxDoorbell.decide(decision), .skip(reason: "draft"))
@@ -928,9 +928,9 @@ extension PromptInputClassifierTests {
             Row(y: 4, spans: [Span(text: "            ╹" + String(repeating: "▀", count: 40))]),
         ]
         let input = region(rows, cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(input).state, .suggestion)
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "opencode").state, .suggestion)
         var decision = MailboxDoorbell.Input()
-        decision.prompt = PromptInputClassifier.classify(input).state
+        decision.prompt = PromptInputClassifier.classify(input, harness: "opencode").state
         XCTAssertEqual(MailboxDoorbell.decide(decision), .ring)
 
         let typed = region([
@@ -938,7 +938,7 @@ extension PromptInputClassifierTests {
             Row(y: 1, spans: [Span(text: "  ┃  Ask anything else")]),
             Row(y: 2, spans: [Span(text: "  ┃")]),
         ], cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(typed).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.classify(typed, harness: "opencode").state, .draft)
     }
 
     func testReviewProbePiIdleComposerAdmitsDoorbell() {
@@ -948,7 +948,7 @@ extension PromptInputClassifierTests {
             Row(y: 1, spans: [Span(text: " ")]),
             Row(y: 2, spans: [Span(text: rule)]),
         ]
-        let state = PromptInputClassifier.classify(region(rows, cursorY: 1)).state
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 1), harness: "pi").state
         var input = MailboxDoorbell.Input()
         input.prompt = state
         XCTAssertEqual(MailboxDoorbell.decide(input), .ring, "Pi idle composer reads \(state)")
@@ -962,10 +962,10 @@ extension PromptInputClassifierTests {
             Row(y: 2, spans: [Span(text: rule)]),
         ]
         let input = region(rows, cursorY: 1)
-        XCTAssertEqual(PromptInputClassifier.classify(input).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "pi").state, .draft)
         // The row's leading space is the cursor gutter. It is part of the
         // captured line. The state is what holds the ring.
-        XCTAssertEqual(PromptInputClassifier.composerText(input), " fix the todo")
+        XCTAssertEqual(PromptInputClassifier.composerText(input, harness: "pi"), " fix the todo")
     }
 
     /// OpenCode 1.18.30. The cursor sits on a blank ┃ row under a typed line.
@@ -979,7 +979,7 @@ extension PromptInputClassifierTests {
             Row(y: 4, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
             Row(y: 5, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
         ]
-        let state = PromptInputClassifier.classify(region(rows, cursorY: 2)).state
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 2), harness: "opencode").state
         XCTAssertFalse(
             FeedAnswerPromptCommit.admits(state),
             "an OpenCode multi-line draft reads \(state); the doorbell would be typed into it"
@@ -997,8 +997,8 @@ extension PromptInputClassifierTests {
             Row(y: 5, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 55))]),
         ]
         let input = region(rows, cursorY: 2)
-        let state = PromptInputClassifier.classify(input).state
-        let composer = state == .draft ? PromptInputClassifier.composerText(input) : nil
+        let state = PromptInputClassifier.classify(input, harness: "opencode").state
+        let composer = state == .draft ? PromptInputClassifier.composerText(input, harness: "opencode") : nil
         let outcome = MailboxDoorbellSequence.preReturn(
             rowIsCurrent: true, operatorInputUnchanged: true,
             agentOwnsTerminal: true, captured: true,
@@ -1017,8 +1017,8 @@ extension PromptInputClassifierTests {
             Row(y: 3, spans: [Span(text: rule)]),
         ]
         let input = region(rows, cursorY: 2)
-        let state = PromptInputClassifier.classify(input).state
-        let composer = state == .draft ? PromptInputClassifier.composerText(input) : nil
+        let state = PromptInputClassifier.classify(input, harness: "pi").state
+        let composer = state == .draft ? PromptInputClassifier.composerText(input, harness: "pi") : nil
         let outcome = MailboxDoorbellSequence.preReturn(
             rowIsCurrent: true, operatorInputUnchanged: true,
             agentOwnsTerminal: true, captured: true,
@@ -1037,14 +1037,136 @@ extension PromptInputClassifierTests {
             Row(y: 3, spans: [Span(text: rule)]),
         ]
         let input = region(rows, cursorY: 2)
-        let state = PromptInputClassifier.classify(input).state
+        let state = PromptInputClassifier.classify(input, harness: "pi").state
         XCTAssertFalse(
             FeedAnswerPromptCommit.admits(state),
             "a Pi multi-line draft reads \(state); the doorbell would be typed into it"
         )
         XCTAssertEqual(
-            PromptInputClassifier.composerText(input),
+            PromptInputClassifier.composerText(input, harness: "pi"),
             " first line of my draft"
         )
+    }
+
+    /// A Claude draft that ends on an indented rule is not Pi's empty composer.
+    func testR1VerifyClaudeDraftEndingInARuleRowIsNotEmpty() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: liveRule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}notes:")]),
+            Row(y: 2, spans: [Span(text: "  ────────────")]),
+            Row(y: 3, spans: [Span(text: "  ")]),
+            Row(y: 4, spans: [Span(text: liveRule)]),
+        ]
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 3), harness: "claude-code").state
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state), "Claude draft ending in a rule row reads \(state)")
+        var input = MailboxDoorbell.Input()
+        input.prompt = state
+        XCTAssertNotEqual(MailboxDoorbell.decide(input), .ring)
+    }
+
+    func testR1VerifyDoorbellAfterClaudeRuleDraftIsNotSubmitted() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: liveRule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}notes:")]),
+            Row(y: 2, spans: [Span(text: "  ────────────")]),
+            Row(y: 3, spans: [Span(text: "  " + MailboxDoorbell.text)]),
+            Row(y: 4, spans: [Span(text: liveRule)]),
+        ]
+        let after = region(rows, cursorY: 3)
+        let verdict = MailboxDoorbellSequence.preReturn(
+            rowIsCurrent: true,
+            operatorInputUnchanged: true,
+            agentOwnsTerminal: true,
+            captured: true,
+            prompt: PromptInputClassifier.classify(after, harness: "claude-code").state,
+            composer: PromptInputClassifier.composerText(after, harness: "claude-code")
+        )
+        XCTAssertNotNil(verdict, "the Return would submit the operator's draft with the doorbell line")
+    }
+
+    func testDispatchPiIdleOnAClaudePanelReadsUnknown() {
+        let state = PromptInputClassifier.classify(piIdle(), harness: "claude-code").state
+        XCTAssertEqual(state, .unknown)
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+    }
+
+    func testDispatchOpenCodeIdleOnAPiPanelReadsUnknown() {
+        let state = PromptInputClassifier.classify(openCodeIdle(), harness: "pi").state
+        XCTAssertEqual(state, .unknown)
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+    }
+
+    func testDispatchGrokIdleOnAnOpenCodePanelReadsUnknown() {
+        let state = PromptInputClassifier.classify(grokIdle(), harness: "opencode").state
+        XCTAssertEqual(state, .unknown)
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+    }
+
+    func testDispatchClaudeIdleOnAPiPanelReadsUnknown() {
+        let state = PromptInputClassifier.classify(claudeIdle(), harness: "pi").state
+        XCTAssertEqual(state, .unknown)
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+    }
+
+    func testDispatchGrokIdleOnAClaudePanelReadsUnknown() {
+        let state = PromptInputClassifier.classify(grokIdle(), harness: "claude-code").state
+        XCTAssertEqual(state, .unknown)
+    }
+
+    func testDispatchClaudeIdleOnAGrokPanelReadsUnknown() {
+        let state = PromptInputClassifier.classify(claudeIdle(), harness: "grok").state
+        XCTAssertEqual(state, .unknown)
+    }
+
+    func testUnknownHarnessReadsUnknown() {
+        let screens = [claudeIdle(), piIdle(), openCodeIdle(), grokIdle()]
+        for harness in [nil, "omp", "github-copilot", "shell", "kimi"] {
+            for screen in screens {
+                XCTAssertEqual(
+                    PromptInputClassifier.classify(screen, harness: harness).state,
+                    .unknown,
+                    "harness \(harness ?? "nil") admitted a composer"
+                )
+            }
+        }
+    }
+
+    private var liveRule: String { String(repeating: "─", count: 69) }
+
+    private func claudeIdle() -> PromptRegionSnapshot {
+        region([
+            Row(y: 0, spans: [Span(text: liveRule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0} ")]),
+            Row(y: 2, spans: [Span(text: liveRule)]),
+        ], cursorY: 1)
+    }
+
+    private func piIdle() -> PromptRegionSnapshot {
+        region([
+            Row(y: 0, spans: [Span(text: liveRule)]),
+            Row(y: 1, spans: [Span(text: " ")]),
+            Row(y: 2, spans: [Span(text: liveRule)]),
+        ], cursorY: 1)
+    }
+
+    private func openCodeIdle() -> PromptRegionSnapshot {
+        region([
+            Row(y: 0, spans: [Span(text: "  ┃")]),
+            Row(y: 1, spans: [Span(text: "  ┃  Ask anything… \"Fix a TODO in the codebase\"", faint: true)]),
+            Row(y: 2, spans: [Span(text: "  ┃")]),
+            Row(y: 3, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
+            Row(y: 4, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
+        ], cursorY: 1)
+    }
+
+    private func grokIdle() -> PromptRegionSnapshot {
+        let top = "╭" + String(repeating: "─", count: 20) + "╮"
+        let prompt = "│ ❯" + String(repeating: " ", count: 16) + "│"
+        let bottom = "╰──────── Grok 4.7 · always-approve ─╯"
+        return region([
+            Row(y: 0, spans: [Span(text: top)]),
+            Row(y: 1, spans: [Span(text: prompt)]),
+            Row(y: 2, spans: [Span(text: bottom)]),
+        ], cursorY: 1)
     }
 }

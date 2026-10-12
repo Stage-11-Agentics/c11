@@ -333,7 +333,10 @@ extension TerminalController {
                     delivered: false, submitted: false, retry: "safe"
                 )))
             }
-            let observation = PromptInputObservation.activeScreen(region)
+            let observation = PromptInputObservation.activeScreen(
+                region,
+                harness: resolved.workspace.surfaceActivityTerminalKind(panelId: panelID)
+            )
             guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
                 return .error(feedAnswerInputRefusal(
                     observation.classification.state,
@@ -395,7 +398,10 @@ extension TerminalController {
                 delivered: false, submitted: false, retry: "safe"
             )))
         }
-        let observation = PromptInputObservation.activeScreen(region)
+        let observation = PromptInputObservation.activeScreen(
+            region,
+            harness: prepared.resolved.workspace.surfaceActivityTerminalKind(panelId: prepared.identity.panelID)
+        )
         guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
             return .error(feedAnswerInputRefusal(
                 observation.classification.state,
@@ -447,8 +453,11 @@ extension TerminalController {
         guard let region = capturePromptInputRegion(surface: prepared.nativeSurface) else {
             return .pastedNotSubmitted
         }
-        let inputState = PromptInputClassifier.classify(region).state
-        let composer = inputState == .draft ? PromptInputClassifier.composerText(region) : nil
+        let harness = prepared.resolved.workspace.surfaceActivityTerminalKind(
+            panelId: prepared.identity.panelID
+        )
+        let inputState = PromptInputClassifier.classify(region, harness: harness).state
+        let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         if let outcome = FeedAnswerPreReturnCheck.outcome(
             targetIsCurrent: targetIsCurrent,
             rowIsCurrent: rowIsCurrent,

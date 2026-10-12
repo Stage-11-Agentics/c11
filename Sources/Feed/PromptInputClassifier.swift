@@ -37,9 +37,9 @@ struct PromptInputObservation: Sendable {
         observedAtMs: nil
     )
 
-    static func activeScreen(_ region: PromptRegionSnapshot) -> Self {
+    static func activeScreen(_ region: PromptRegionSnapshot, harness: String?) -> Self {
         Self(
-            classification: PromptInputClassifier.classify(region),
+            classification: PromptInputClassifier.classify(region, harness: harness),
             source: "active_screen",
             observedAtMs: Int64((Date().timeIntervalSince1970 * 1000).rounded())
         )
@@ -105,20 +105,46 @@ enum PromptInputClassifier {
         let composerText: String?
     }
 
-    static func classify(_ region: PromptRegionSnapshot) -> PromptInputClassification {
-        analyze(region).classification
+    /// A composer shape is read only for the harness that owns it. `harness`
+    /// is the panel's `terminal_type` (`claude-code`, `codex`, `grok`,
+    /// `opencode`, `pi`). Anything else, including omp and GitHub Copilot,
+    /// has no reader and stays unknown.
+    static func classify(_ region: PromptRegionSnapshot, harness: String?) -> PromptInputClassification {
+        analyze(region, harness: harness).classification
     }
 
     /// Transiently returns the typed text for an exact composer comparison.
     /// Suggestions, dialogs, incomplete captures, and unsupported layouts do
     /// not expose text to callers.
-    static func composerText(_ region: PromptRegionSnapshot) -> String? {
-        let analysis = analyze(region)
+    static func composerText(_ region: PromptRegionSnapshot, harness: String?) -> String? {
+        let analysis = analyze(region, harness: harness)
         guard analysis.classification.state == .draft else { return nil }
         return analysis.composerText
     }
 
-    private static func analyze(_ region: PromptRegionSnapshot) -> Analysis {
+    private enum ComposerReader {
+        case prefix
+        case grok
+        case openCode
+        case pi
+    }
+
+    private static func composerReader(for harness: String?) -> ComposerReader? {
+        switch harness?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "claude-code", "codex":
+            return .prefix
+        case "grok":
+            return .grok
+        case "opencode":
+            return .openCode
+        case "pi":
+            return .pi
+        default:
+            return nil
+        }
+    }
+
+    private static func analyze(_ region: PromptRegionSnapshot, harness: String?) -> Analysis {
         guard region.complete,
               !region.rows.isEmpty,
               region.rows.count <= maxRows,
@@ -137,36 +163,41 @@ enum PromptInputClassifier {
             return Analysis(classification: .unknown, composerText: nil)
         }
 
-        if isSupportedDialog(lines, cursorY: region.cursorY) {
-            return Analysis(
-                classification: PromptInputClassification(state: .dialog, draftLength: nil),
-                composerText: nil
-            )
+        let unknown = Analysis(classification: .unknown, composerText: nil)
+        guard let reader = composerReader(for: harness) else { return unknown }
+        switch reader {
+        case .openCode:
+            return openCodeComposer(lines, cursorIndex: cursorIndex) ?? unknown
+        case .pi:
+            return piComposer(lines, cursorIndex: cursorIndex) ?? unknown
+        case .prefix, .grok:
+            break
         }
 
-        if isEmptyCodexPrompt(lines[cursorIndex], cursorX: region.cursorX) {
-            return Analysis(
-                classification: PromptInputClassification(state: .suggestion, draftLength: nil),
-                composerText: nil
-            )
-        }
-
-        // OpenCode's composer is every `┃` row above the model line. Pi's is
-        // every row between the two rules around the cursor. A `❯` or `›`
-        // row keeps the prefix scan below.
-        if let openCode = openCodeComposer(lines, cursorIndex: cursorIndex) {
-            return openCode
-        }
-        if currentPromptPrefix(in: lines[cursorIndex]) == nil,
-           let pi = piComposer(lines, cursorIndex: cursorIndex) {
-            return pi
+        // Claude Code and Codex share the unboxed `❯` / `›` reader, including
+        // Claude's chooser. Grok's reader is only the boxed `│ ❯` composer.
+        // Neither falls through to another harness's shape.
+        let boxed = reader == .grok
+        if !boxed {
+            if isSupportedDialog(lines, cursorY: region.cursorY) {
+                return Analysis(
+                    classification: PromptInputClassification(state: .dialog, draftLength: nil),
+                    composerText: nil
+                )
+            }
+            if isEmptyCodexPrompt(lines[cursorIndex], cursorX: region.cursorX) {
+                return Analysis(
+                    classification: PromptInputClassification(state: .suggestion, draftLength: nil),
+                    composerText: nil
+                )
+            }
         }
 
         guard let promptIndex = lines.indices.reversed().first(where: { index in
-            lines[index].y <= region.cursorY && currentPromptPrefix(in: lines[index]) != nil
+            lines[index].y <= region.cursorY && acceptedPrefix(in: lines[index], boxed: boxed) != nil
         }), promptIndex <= cursorIndex,
-              let prefix = currentPromptPrefix(in: lines[promptIndex]) else {
-            return Analysis(classification: .unknown, composerText: nil)
+              let prefix = acceptedPrefix(in: lines[promptIndex], boxed: boxed) else {
+            return unknown
         }
 
         var typedScalars: [Unicode.Scalar] = []
@@ -311,6 +342,13 @@ enum PromptInputClassifier {
         // unless they sit inside a box, which is Grok's composer.
         guard gap.value == 0x00A0 || (boxed && gap == " ") else { return nil }
         return PromptPrefix(endIndex: index + 2, isBoxed: boxed, isCodex: false)
+    }
+
+    /// The prefix reader and Grok's box reader share the scan. `boxed` selects
+    /// which of them this panel is allowed to see.
+    private static func acceptedPrefix(in line: Line, boxed: Bool) -> PromptPrefix? {
+        guard let prefix = currentPromptPrefix(in: line), prefix.isBoxed == boxed else { return nil }
+        return prefix
     }
 
     /// Codex indents each continuation row, including visual soft-wrap rows,
@@ -501,26 +539,26 @@ enum PromptInputClassifier {
     /// joined so a wrapped invitation matches the doorbell line. A `❯` or `›`
     /// row is not this shape.
     private static func piComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
-        if isRule(lines[cursorIndex]) { return nil }
+        if isPiBorder(lines[cursorIndex]) { return nil }
         var above = cursorIndex - 1
         while above >= 0,
               lines[above].y + 1 == lines[above + 1].y,
-              !isRule(lines[above]) {
+              !isPiBorder(lines[above]) {
             above -= 1
         }
         guard above >= 0,
-              isRule(lines[above]),
+              isPiBorder(lines[above]),
               lines[above].y + 1 == lines[above + 1].y else {
             return nil
         }
         var below = cursorIndex + 1
         while below < lines.count,
               lines[below - 1].y + 1 == lines[below].y,
-              !isRule(lines[below]) {
+              !isPiBorder(lines[below]) {
             below += 1
         }
         guard below < lines.count,
-              isRule(lines[below]),
+              isPiBorder(lines[below]),
               lines[below - 1].y + 1 == lines[below].y else {
             return nil
         }
@@ -621,6 +659,13 @@ enum PromptInputClassifier {
         guard let first = values.first(where: { !isWhitespaceValue($0) }) else { return false }
         guard first == 0x2570 || first == 0x2514 else { return false }
         return values.contains(where: { (0x2500...0x257F).contains($0) })
+    }
+
+    /// Pi draws its borders at column 0. An indented rule is another
+    /// harness's draft row, so it is not this composer's border.
+    private static func isPiBorder(_ line: Line) -> Bool {
+        guard let first = line.scalars.first, !isWhitespace(first.value) else { return false }
+        return isRule(line)
     }
 
     private static func isRule(_ line: Line) -> Bool {

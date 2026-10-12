@@ -6124,8 +6124,9 @@ final class Workspace: Identifiable, ObservableObject {
               let region = TerminalController.shared.capturePromptInputRegion(surface: native) else {
             return nil
         }
-        let state = PromptInputObservation.activeScreen(region).classification.state
-        let composer = state == .draft ? PromptInputClassifier.composerText(region) : nil
+        let harness = surfaceActivityTerminalKind(panelId: terminalPanel.id)
+        let state = PromptInputObservation.activeScreen(region, harness: harness).classification.state
+        let composer = state == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         return MailboxDoorbellScreen(state: state, composer: composer)
     }
 
@@ -6630,8 +6631,9 @@ final class Workspace: Identifiable, ObservableObject {
                 nil
             )
         }
-        let inputState = PromptInputClassifier.classify(region).state
-        let composer = inputState == .draft ? PromptInputClassifier.composerText(region) : nil
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        let inputState = PromptInputClassifier.classify(region, harness: harness).state
+        let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         let owns = mailboxAgentOwnsTerminal(surfaceId: surfaceId)
         if let outcome = MailboxDoorbellSequence.preReturn(
             rowIsCurrent: true,

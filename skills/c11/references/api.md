@@ -183,7 +183,7 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
     [--prompt <text> | --prompt-file <path>] [--title <text>] \
-    [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
+    [--flag <reason>] [--delegated] [--env K=V ...] [--json]
     # Launch a typed agent (claude-code|codex|grok|kimi|opencode|github-copilot|pi|omp,
     # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new panel or a
     # fresh workspace. One command owns the per-agent invocation quirks, model/effort
@@ -199,7 +199,7 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
     # --flag <reason> raises a sticky flag before command delivery (operator-designated
-    # priority missions only); --suppressed launches the worker as your delegate (its
+    # priority missions only); --delegated launches the worker as your delegate (its
     # routine stops go to you, not the operator). Semantics: "Delegates" in SKILL.md.
     # cwd precedence: explicit --cwd > workspace root > launching panel cwd (the same
     # rule as every new terminal; see "Where a new terminal starts" below).
@@ -446,9 +446,9 @@ at `99+`; accessibility labels and tooltips retain the exact count.
   payload, cancellation or outside drop cannot partially transfer/reorder a member.
   Shift-click selects visible workspace rows only, excluding collapsed members.
 - Attention includes every member panel, including collapsed/offscreen members.
-  Flags count plain terminals and suppressed panels as well as agents. Any flag
+  Flags count plain terminals and delegated panels as well as agents. Any flag
   makes the visible group signal violet; clearing the last flag restores ordinary
-  tint. Waiting counts only resolved waiting panels that are not suppressed. Unread
+  tint. Waiting counts only resolved waiting panels that are not delegated. Unread
   counts workspace notification records exactly once, including workspace-scoped
   records; it does not manufacture a waiting panel. Transferring a member transfers
   its contribution to the destination header. Badge changes do not select a
@@ -694,7 +694,7 @@ attribution preserves existing notices. Bypass AskUserQuestion and ExitPlanMode
 enter waiting from PreToolUse. ExitPlanMode also enters waiting in plan mode,
 which Claude reports after a bypass-started session enters plan mode. A follow-up
 Notification replaces that panel's item.
-Flags appear separately in the enabled menu-bar extra, including suppressed
+Flags appear separately in the enabled menu-bar extra, including delegated
 flags; routine clear/read controls do not lower them.
 
 The configured Notification Command receives `C11_NOTIFICATION_WORKSPACE_ID`,
@@ -1036,8 +1036,8 @@ The JSON document is schema 1. `live_identity` is `available` or `unavailable`.
 lists live panels. `restore_candidates` lists unconfirmed current rows.
 Timestamps are ISO-8601 UTC at whole seconds. Nulls are explicit.
 
-A live panel reports `flag`, `suppressed`, and `last_seen_at` even when it has
-no journal row. Journal fields are then null. `kind` comes from the journal
+A live panel reports `flag`, `delegated`, `delegated_by`, and `suppressed`, plus
+`last_seen_at` even when it has no journal row. Journal fields are then null. `kind` comes from the journal
 owner. `model` is the model on the journal snapshot. Waiting `reason` is
 `approval`, `question`, `plan_review`, or null.
 
@@ -1068,7 +1068,7 @@ c11 feed watch [--json] [--scope attention|all]
 ```
 
 `feed list` defaults to scope `attention`: open blocking asks and flag rows.
-`--scope all` adds non-suppressed `turn_end` rows. Both scopes use one projector.
+`--scope all` adds non-delegated `turn_end` rows. Both scopes use one projector.
 Rows sort flags first by raised time, then eligible open asks by opened time,
 oldest first with missing times last. Ties use panel UUID, then workspace UUID.
 The configured attention jump uses the same prefix, then oldest eligible unread

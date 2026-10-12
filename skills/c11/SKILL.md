@@ -131,12 +131,13 @@ fall back to the raw UUID after the caller closes. `flag.raised` events carry th
 A **delegate** is an agent you launched whose results you will handle. Its routine stops go to
 you, not the operator: on stop its mark reads idle, and it stays out of waiting counts, ⌥V and
 routine notifications (the record still lands in the store). The operator hears that *you* are
-waiting, never that your worker finished. The CLI still calls this state *suppressed*:
+waiting, never that your worker finished. Use the delegate vocabulary for new work; `--suppressed`,
+`suppress`/`unsuppress`, and reads of `suppressed` remain aliases for compatibility:
 
 ```bash
-c11 launch-agent ... --suppressed            # launch as your delegate
-c11 suppress --panel <child>                 # manual launch: right after creating the panel
-c11 unsuppress --panel <child>               # release it back to the operator
+c11 launch-agent ... --delegated             # launch as your delegate
+c11 delegate --panel <child>                 # manual launch: right after creating the panel
+c11 undelegate --panel <child>               # release it back to the operator
 ```
 
 **Launch the workers you'll manage as delegates.** The canonical case is an implementation
@@ -150,19 +151,19 @@ handing the work off for good. A delegate is yours on three counts:
 - **Escalation.** Put this in its prompt: *"Report results and recoverable blockers to your
   parent by mailbox. If something needs the operator, or your parent can't or shouldn't judge
   it, raise a c11 flag."*
-- **Release.** Before you close, hand off or abandon a delegate, `c11 unsuppress` it;
-  otherwise its stops reach no one.
+- c11 releases a delegate when its owner panel closes. A re-tasked delegate releases itself with
+  `c11 undelegate --panel "$C11_PANEL_ID"`.
 
 **If you are a delegate,** report to your parent. A flag goes straight to the operator, past
 your parent, at full strength. Raise one when you hit something that needs a human, looks
 dangerous, affects other agents, contradicts what the operator asked for, or when your parent
 itself seems wrong. If the operator gives you a new mission directly, you are no longer a
-delegate: `c11 unsuppress --panel "$C11_PANEL_ID"`. Never make yourself a delegate.
+delegate: `c11 undelegate --panel "$C11_PANEL_ID"`. Never make yourself a delegate.
 
 ### Reading attention state
 
 ```bash
-c11 get-metadata --panel panel:12    # flag + flag_caller_panel_id / suppressed (delegate), when set
+c11 get-metadata --panel panel:12    # flag, delegated + delegated_by, and suppressed state, when set
 ```
 
 `tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read.
@@ -194,8 +195,8 @@ Full verbs, errors and ordering: [API reference](references/api.md#workspace-gro
 In the sidebar, the chevron hides/shows member rows without changing the active
 terminal. Click the group name to focus a member. The header stays highlighted
 when its active member is hidden. Its fixed slots show members, flagged panels,
-unsuppressed waiting panels, and unread notifications separately, including hidden
-members. Any flag makes the group signal violet, even on a suppressed or plain
+non-delegated waiting panels, and unread notifications separately, including hidden
+members. Any flag makes the group signal violet, even on a delegated or plain
 terminal; unread alone does not add a waiting panel. Counts above 99 show `99+`,
 with exact counts in accessibility labels and tooltips.
 
@@ -258,7 +259,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 - **`c11 mailbox send` is durable coordination.** Its envelope and body are recorded through `mailbox.accepted` / `mailbox.delivered` events. A drain or `recv` that claims the envelope records `via: drain`. The doorbell ring does not. Use it for requests, handoffs, completion reports, and recoverable blockers. A waiting agent that opted into push (`mailbox.delivery=stdin`) gets the doorbell line as a new turn; a busy agent gets that line when it next goes idle. The body is `--body <text>` or one trailing argument, the same shape as `c11 send`: `c11 mailbox send --to <address> "<text>"`. The next token after `--body`, and any token after `--`, is text even when it starts with dashes. `mailbox send --help` still prints help. An empty body with no `--body-ref` is an error. So is `--body` together with a trailing argument, a second trailing argument, or an unknown flag. Nothing is sent.
 - **To message another panel, use `c11 mailbox`, not Claude's SendMessage or ListAgents.** SendMessage stays fine for continuing your own subagents.
 - **Opt into the doorbell only for an agent-owned interactive panel.** Set `mailbox.delivery` to `stdin` during orientation. c11 checks foreground ownership and raw-mode input before typing; plain shells, one-shot commands, and other programs are left with their inbox mail. When mail is waiting and the agent is at its prompt, c11 types one line and submits it: `You have mail: run c11 mailbox recv --ack when you want to receive it.` It does not type a `<c11-msg>` block. The envelope stays in the inbox until you run that command. Claude's Stop hook can also claim it into hook context; that hook is not typed input, and its prompt-submit hook does not drain. Codex's wrapper does not install a drain hook (`Resources/bin/codex` passes notify only), and Grok has none, so those seats run `c11 mailbox recv --ack` after the line. A tool call's stdout is not a terminal: without `--ack`, recv refuses and leaves the mail unread. A busy panel is not rung; the line waits for the next real idle (a wrapper `turn_ended` or a verified transcript turn end) and is never typed into a turn in progress or an operator draft. A session that just started or was resumed after a restart has no turn edge yet: its turn is unknown, and unknown is rung like idle when the composer reads empty. So is a working state nothing has supported for 2 minutes; a turn the agent's journal shows in progress holds however long it runs. A drain that already claimed the envelope wins, and nothing is typed for it. `c11 mailbox recv --drain` is the explicit floor. It marks mail read only when stdout is a terminal or `--ack` is passed. Otherwise it exits nonzero and leaves the mail unread, and the error repeats that command with `--ack` added, so `--socket`, `--window`, and any `--panel`, `--tab`, or `--surface` stay. When you drain from a tool call, pass `--ack`: that subprocess's stdout is a pipe even though you read it. Turn-boundary hooks pass `--ack` because they have no terminal. A `--body-ref` message's recv and hook output include the file, up to 4096 bytes, and name the path for the rest.
-- **The doorbell line is typed only into a composer c11 recognizes.** Claude Code, OpenCode, Grok, Codex, and Pi get it, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. A Claude-style draft or dialog on that panel is still a draft or dialog; an empty prompt stays unknown. That includes omp and GitHub Copilot. The mail waits in the inbox. The focused panel waits 3 seconds after an operator key or text-box input, then rings if it is still idle and the mail is unread. A text box that still holds unsent text is not rung. One ring per idle period, at most 20 submitted attempts per 10 minutes. Starting the paste counts, including a submit that fails. A ring that never started typing does not. Waiting out the operator does not. A capped panel is checked again when the oldest attempt leaves the window. A submitted ring covers the unread envelopes present then, and those are not rung again until new mail arrives. A draft skip is looked at again after 5 seconds, then 15, then 30, then every 60 seconds. After 10 minutes the same unread mail keeps a look every 60 seconds while the draft is still there. A new envelope starts those short delays again, and so does a turn change. Clearing the draft rings on the next look. The cap stays as a backstop. `mailbox.doorbell=off` types nothing and leaves the inbox. A panel that raised its own flag is not rung. A dispatch flag or an operator-designated flag still rings. Lowering any flag runs the ring decision again while mail is unread. A suppressed panel is rung. Trace outcomes are `doorbell` (`started` or `submitted`), `doorbell_skipped`, `doorbell_capped`, and `doorbell_failed`.
+- **The doorbell line is typed only into a composer c11 recognizes.** Claude Code, OpenCode, Grok, Codex, and Pi get it, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. A Claude-style draft or dialog on that panel is still a draft or dialog; an empty prompt stays unknown. That includes omp and GitHub Copilot. The mail waits in the inbox. The focused panel waits 3 seconds after an operator key or text-box input, then rings if it is still idle and the mail is unread. A text box that still holds unsent text is not rung. One ring per idle period, at most 20 submitted attempts per 10 minutes. Starting the paste counts, including a submit that fails. A ring that never started typing does not. Waiting out the operator does not. A capped panel is checked again when the oldest attempt leaves the window. A submitted ring covers the unread envelopes present then, and those are not rung again until new mail arrives. A draft skip is looked at again after 5 seconds, then 15, then 30, then every 60 seconds. After 10 minutes the same unread mail keeps a look every 60 seconds while the draft is still there. A new envelope starts those short delays again, and so does a turn change. Clearing the draft rings on the next look. The cap stays as a backstop. `mailbox.doorbell=off` types nothing and leaves the inbox. A panel that raised its own flag is not rung. A dispatch flag or an operator-designated flag still rings. Lowering any flag runs the ring decision again while mail is unread. A delegated panel is rung. Trace outcomes are `doorbell` (`started` or `submitted`), `doorbell_skipped`, `doorbell_capped`, and `doorbell_failed`.
 - **`c11 messages view` is the traffic view.** It opens the live recorded timeline in a c11 browser panel without taking focus; `c11 mailbox view` is the mailbox spelling of the same view.
 
 ## Panel bar and panel sheet

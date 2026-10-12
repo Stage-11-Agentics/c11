@@ -27,7 +27,7 @@ private final class WorkspaceTestBox<Value>: @unchecked Sendable {
 
     func set(_ value: Value) {
         lock.lock()
-        value = value
+        self.value = value
         lock.unlock()
     }
 }

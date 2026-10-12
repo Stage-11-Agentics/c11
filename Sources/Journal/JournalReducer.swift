@@ -87,12 +87,12 @@ enum JournalReducer {
         case .sessionStarted:
             guard caps.contains("session") else { return unchanged(.advisory, "unsupported_session") }
             if let previous {
-                // A live row from this process is the same session still running
-                // (a `compact` SessionStart fires mid-turn). Any other row is an
-                // earlier process: a resumed session re-attaches as unknown, and
-                // stays unknown until the harness reports a turn edge.
-                guard !context.historical,
-                      previous.appInstanceID != instanceID || previous.connection != .live else {
+                // A row this c11 process wrote is the same session (a `compact`
+                // SessionStart fires mid-turn), or one it saw end, which keeps
+                // its ended label. A row from an earlier c11 process is a session
+                // resumed after a restart: it re-attaches as unknown, and stays
+                // unknown until the harness reports a turn edge.
+                guard !context.historical, previous.appInstanceID != instanceID else {
                     return unchanged(.observation, "session_already_known")
                 }
                 s.phase = .unknown

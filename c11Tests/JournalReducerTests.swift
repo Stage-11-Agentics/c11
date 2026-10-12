@@ -417,18 +417,22 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertEqual(drained.snapshot?.phase, .working)
     }
 
-    /// `claude --resume` of a session that ended earlier in this same run.
-    func testEndedSessionInThisProcessReattaches() throws {
+    /// A session this process saw end keeps its ended label when it starts
+    /// again here (`JournalStoreTests` holds the restore side). Only a row
+    /// from an earlier c11 process re-attaches.
+    func testEndedSessionInThisProcessStaysKnown() throws {
         let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
-        let idle = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnCompleted), seq: 2).snapshot)
         var end = JournalTestData.draft(.sessionEnded)
         end.nativeEvent = "SessionEnd"
-        let ended = try XCTUnwrap(JournalTestData.fold(idle, end, seq: 3).snapshot)
+        let ended = try XCTUnwrap(JournalTestData.fold(started, end, seq: 2).snapshot)
         XCTAssertEqual(ended.connection, .disconnected)
-        let resumed = JournalTestData.fold(ended, sessionStart(), seq: 4)
-        XCTAssertEqual(resumed.reason, "session_reattached")
-        XCTAssertEqual(resumed.snapshot?.phase, .unknown)
-        XCTAssertEqual(resumed.snapshot?.connection, .live)
+        let again = JournalTestData.fold(ended, sessionStart(), seq: 3)
+        XCTAssertEqual(again.reason, "session_already_known")
+        XCTAssertEqual(again.snapshot?.connection, .disconnected)
+
+        var restored = ended
+        restored.appInstanceID = UUID()
+        XCTAssertEqual(JournalTestData.fold(restored, sessionStart(), seq: 3).reason, "session_reattached")
     }
 
     /// A live start that leaves the session unknown names the interactive

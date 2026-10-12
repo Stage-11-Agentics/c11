@@ -109,6 +109,26 @@ enum FeedAnswerSubmitOutcome: Equatable {
     case submitted(flagLowered: Bool, flagEpoch: String?)
 }
 
+/// Empty-prompt admit shared by `c11 feed answer` and the mailbox doorbell.
+/// A draft, a dialog, an unknown read, or an unreadable prompt does not admit.
+enum FeedAnswerPromptCommit {
+    static func admits(_ state: PromptInputState) -> Bool {
+        if case .deliver(.checked) = SendInputGuard.decide(state: state, allowUnguarded: false) {
+            return true
+        }
+        return false
+    }
+
+    static func refusalReason(_ state: PromptInputState) -> String {
+        switch state {
+        case .draft: return "draft"
+        case .dialog: return "dialog"
+        case .unknown: return "unknown_prompt"
+        case .unavailable, .empty, .suggestion: return "unavailable"
+        }
+    }
+}
+
 enum FeedAnswerTextPolicy {
     static func refusalCode(for text: String) -> String? {
         text.unicodeScalars.contains { CharacterSet.newlines.contains($0) }
@@ -138,11 +158,21 @@ enum FeedAnswerComposerCheck: Equatable {
             return .notVisible
         case .draft:
             guard let composer else { return .changed }
-            if composer == expected { return .matches }
+            if composer == expected || unwrapped(composer) == expected { return .matches }
             return expected.hasPrefix(composer) ? .notVisible : .changed
         case .dialog, .unknown, .unavailable:
             return .changed
         }
+    }
+
+    /// A TUI wraps a long composer onto the next row. That row is the same
+    /// text, not an edit. Newlines and the indent on the continuation are
+    /// presentation. Any other change stays a mismatch.
+    private static func unwrapped(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 

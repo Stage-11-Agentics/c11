@@ -21771,9 +21771,7 @@ extension CMUXCLI {
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
             for url in entries {
                 let data = try Data(contentsOf: url)
-                if let text = String(data: data, encoding: .utf8) {
-                    print(text)
-                }
+                print(MailboxFraming.displayText(data: data))
             }
             return
         }
@@ -21794,7 +21792,8 @@ extension CMUXCLI {
                     arguments: CommandLine.arguments
                 )
             ) { message in
-                Self.writeStdout(message.text + "\n")
+                let shown = MailboxFraming.displayText(data: Data(message.text.utf8))
+                return Self.writeStdout(shown + "\n")
             }.claimed
         } catch let refusal as MailboxRecvAdmission.Refusal {
             throw CLIError(message: refusal.description)

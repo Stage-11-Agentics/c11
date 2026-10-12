@@ -6174,11 +6174,16 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             let suppressFlagLower = isSynthesizingKey && suppressNextSyntheticFlagLower
             if suppressFlagLower { suppressNextSyntheticFlagLower = false }
             if !suppressFlagLower {
-                _ = try? PanelAttentionService.shared.lowerIfFlagged(
+                if (try? PanelAttentionService.shared.lowerIfFlagged(
                     workspaceId: terminalSurface.workspaceId,
                     surfaceId: terminalSurface.id,
                     by: .operator
-                )
+                )) != nil {
+                    AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: terminalSurface.id,
+                        preferredWorkspaceId: terminalSurface.workspaceId
+                    )?.workspace.recheckMailboxDoorbellAfterFlagLower(surfaceId: terminalSurface.id)
+                }
             }
             let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if !event.isARepeat,
@@ -8152,6 +8157,10 @@ final class GhosttySurfaceScrollView: NSView {
                 surfaceId: terminalSurface.id,
                 by: .operator
             )
+            AppDelegate.shared?.workspaceContainingPanel(
+                panelId: terminalSurface.id,
+                preferredWorkspaceId: terminalSurface.workspaceId
+            )?.workspace.recheckMailboxDoorbellAfterFlagLower(surfaceId: terminalSurface.id)
             self.moveFocus()
         }
         if let banner = flagBannerHostingView {

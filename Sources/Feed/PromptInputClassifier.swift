@@ -37,9 +37,9 @@ struct PromptInputObservation: Sendable {
         observedAtMs: nil
     )
 
-    static func activeScreen(_ region: PromptRegionSnapshot) -> Self {
+    static func activeScreen(_ region: PromptRegionSnapshot, harness: String?) -> Self {
         Self(
-            classification: PromptInputClassifier.classify(region),
+            classification: PromptInputClassifier.classify(region, harness: harness),
             source: "active_screen",
             observedAtMs: Int64((Date().timeIntervalSince1970 * 1000).rounded())
         )
@@ -105,20 +105,47 @@ enum PromptInputClassifier {
         let composerText: String?
     }
 
-    static func classify(_ region: PromptRegionSnapshot) -> PromptInputClassification {
-        analyze(region).classification
+    /// A composer shape is read only for the harness that owns it. `harness`
+    /// is the panel's `terminal_type` (`claude-code`, `codex`, `grok`,
+    /// `opencode`, `pi`). Anything else, including omp and GitHub Copilot,
+    /// runs the unboxed prefix reader only to refuse a draft or a dialog.
+    /// Empty and suggestion on those panels stay unknown, so they are not rung.
+    static func classify(_ region: PromptRegionSnapshot, harness: String?) -> PromptInputClassification {
+        analyze(region, harness: harness).classification
     }
 
     /// Transiently returns the typed text for an exact composer comparison.
     /// Suggestions, dialogs, incomplete captures, and unsupported layouts do
     /// not expose text to callers.
-    static func composerText(_ region: PromptRegionSnapshot) -> String? {
-        let analysis = analyze(region)
+    static func composerText(_ region: PromptRegionSnapshot, harness: String?) -> String? {
+        let analysis = analyze(region, harness: harness)
         guard analysis.classification.state == .draft else { return nil }
         return analysis.composerText
     }
 
-    private static func analyze(_ region: PromptRegionSnapshot) -> Analysis {
+    private enum ComposerReader {
+        case prefix
+        case grok
+        case openCode
+        case pi
+    }
+
+    private static func composerReader(for harness: String?) -> ComposerReader? {
+        switch harness?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "claude-code", "codex":
+            return .prefix
+        case "grok":
+            return .grok
+        case "opencode":
+            return .openCode
+        case "pi":
+            return .pi
+        default:
+            return nil
+        }
+    }
+
+    private static func analyze(_ region: PromptRegionSnapshot, harness: String?) -> Analysis {
         guard region.complete,
               !region.rows.isEmpty,
               region.rows.count <= maxRows,
@@ -137,24 +164,77 @@ enum PromptInputClassifier {
             return Analysis(classification: .unknown, composerText: nil)
         }
 
-        if isSupportedDialog(lines, cursorY: region.cursorY) {
-            return Analysis(
-                classification: PromptInputClassification(state: .dialog, draftLength: nil),
-                composerText: nil
+        let unknown = Analysis(classification: .unknown, composerText: nil)
+        switch composerReader(for: harness) {
+        case .openCode:
+            return openCodeComposer(lines, cursorIndex: cursorIndex) ?? unknown
+        case .pi:
+            return piComposer(lines, cursorIndex: cursorIndex) ?? unknown
+        case .grok:
+            return prefixComposer(
+                lines,
+                cursorIndex: cursorIndex,
+                cursorX: region.cursorX,
+                cursorY: region.cursorY,
+                boxed: true
             )
+        case .prefix:
+            return prefixComposer(
+                lines,
+                cursorIndex: cursorIndex,
+                cursorX: region.cursorX,
+                cursorY: region.cursorY,
+                boxed: false
+            )
+        case nil:
+            // Refusal only. `c11 send` still refuses a Claude-style draft or
+            // dialog on an untyped panel. Empty and suggestion stay unknown,
+            // so the doorbell does not admit the panel.
+            let scanned = prefixComposer(
+                lines,
+                cursorIndex: cursorIndex,
+                cursorX: region.cursorX,
+                cursorY: region.cursorY,
+                boxed: false
+            )
+            switch scanned.classification.state {
+            case .draft, .dialog:
+                return scanned
+            case .empty, .suggestion, .unknown, .unavailable:
+                return unknown
+            }
         }
+    }
 
-        if isEmptyCodexPrompt(lines[cursorIndex], cursorX: region.cursorX) {
-            return Analysis(
-                classification: PromptInputClassification(state: .suggestion, draftLength: nil),
-                composerText: nil
-            )
+    /// Claude Code and Codex share the unboxed `❯` / `›` reader, including
+    /// Claude's chooser. Grok's reader is only the boxed `│ ❯` composer.
+    /// Neither falls through to another harness's shape.
+    private static func prefixComposer(
+        _ lines: [Line],
+        cursorIndex: Int,
+        cursorX: Int,
+        cursorY: Int,
+        boxed: Bool
+    ) -> Analysis {
+        if !boxed {
+            if isSupportedDialog(lines, cursorY: cursorY) {
+                return Analysis(
+                    classification: PromptInputClassification(state: .dialog, draftLength: nil),
+                    composerText: nil
+                )
+            }
+            if isEmptyCodexPrompt(lines[cursorIndex], cursorX: cursorX) {
+                return Analysis(
+                    classification: PromptInputClassification(state: .suggestion, draftLength: nil),
+                    composerText: nil
+                )
+            }
         }
 
         guard let promptIndex = lines.indices.reversed().first(where: { index in
-            lines[index].y <= region.cursorY && currentPromptPrefix(in: lines[index]) != nil
+            lines[index].y <= cursorY && acceptedPrefix(in: lines[index], boxed: boxed) != nil
         }), promptIndex <= cursorIndex,
-              let prefix = currentPromptPrefix(in: lines[promptIndex]) else {
+              let prefix = acceptedPrefix(in: lines[promptIndex], boxed: boxed) else {
             return Analysis(classification: .unknown, composerText: nil)
         }
 
@@ -171,10 +251,10 @@ enum PromptInputClassifier {
                 if line.y != previous.y + 1 || previous.softWrap != line.wrapContinuation {
                     return Analysis(classification: .unknown, composerText: nil)
                 }
-                if isRule(line) {
+                if isRule(line) || (line.y > cursorY && isClosingBoxEdge(line)) {
                     // The composer's closing rule sits below the cursor row. A rule
                     // above it means the typed row was never reached: not empty.
-                    if line.y <= region.cursorY {
+                    if line.y <= cursorY {
                         return Analysis(classification: .unknown, composerText: nil)
                     }
                     stoppedAtRule = true
@@ -182,7 +262,7 @@ enum PromptInputClassifier {
                 }
                 // Blank rows inside a multiline composer (leading or embedded) are
                 // content; only a blank row past the cursor row ends the scan.
-                if isBlank(line), line.y > region.cursorY, !previous.softWrap {
+                if isBlank(line), line.y > cursorY, !previous.softWrap {
                     stoppedAtRule = true
                     break
                 }
@@ -292,10 +372,21 @@ enum PromptInputClassifier {
         }
         guard index + 1 < line.scalars.count,
               line.scalars[index].value.value == 0x276F,
-              line.scalars[index + 1].value.value == 0x00A0,
               !line.scalars[index].faint,
               !line.scalars[index + 1].faint else { return nil }
+        let gap = line.scalars[index + 1].value
+        // Claude's live composer uses a non-breaking space. A historical
+        // `❯ ` row and a dialog option use a normal space and stay unknown
+        // unless they sit inside a box, which is Grok's composer.
+        guard gap.value == 0x00A0 || (boxed && gap == " ") else { return nil }
         return PromptPrefix(endIndex: index + 2, isBoxed: boxed, isCodex: false)
+    }
+
+    /// The prefix reader and Grok's box reader share the scan. `boxed` selects
+    /// which of them this panel is allowed to see.
+    private static func acceptedPrefix(in line: Line, boxed: Bool) -> PromptPrefix? {
+        guard let prefix = currentPromptPrefix(in: line), prefix.isBoxed == boxed else { return nil }
+        return prefix
     }
 
     /// Codex indents each continuation row, including visual soft-wrap rows,
@@ -395,6 +486,227 @@ enum PromptInputClassifier {
         while end > 0, isWhitespace(scalars[end - 1].value) { end -= 1 }
         guard end > 0, scalars[end - 1].value.value == 0x2502 else { return scalars }
         return Array(scalars[..<(end - 1)])
+    }
+
+    /// OpenCode draws the composer as heavy vertical bars (`┃`, U+2503), one
+    /// row per visual line, from the top padding row down to the row above
+    /// the model line (`┃  <model> · …`) and the `╹▀` footer. The cursor can
+    /// sit on a blank row of a multi-line draft, so every composer row counts.
+    /// One non-blank row that is not the idle hint is a draft. The rows are
+    /// joined so a wrapped invitation matches the doorbell line.
+    private static func openCodeComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
+        guard contentAfterMarker(lines[cursorIndex], marker: 0x2503) != nil else { return nil }
+        var start = cursorIndex
+        while start > 0,
+              lines[start - 1].y + 1 == lines[start].y,
+              contentAfterMarker(lines[start - 1], marker: 0x2503) != nil {
+            start -= 1
+        }
+        var end = cursorIndex
+        while end + 1 < lines.count,
+              lines[end].y + 1 == lines[end + 1].y,
+              contentAfterMarker(lines[end + 1], marker: 0x2503) != nil {
+            end += 1
+        }
+        if isOpenCodeModelLine(lines[end]),
+           end + 1 < lines.count,
+           lines[end].y + 1 == lines[end + 1].y,
+           isOpenCodeFooter(lines[end + 1]) {
+            end -= 1
+        }
+        guard end >= start else { return nil }
+        var rows: [Analysis] = []
+        for index in start...end {
+            guard let content = contentAfterMarker(lines[index], marker: 0x2503) else { continue }
+            rows.append(composerRow(content))
+        }
+        let joined = joinedComposer(rows)
+        // Live OpenCode 1.18.30 draws its placeholder in a normal-weight gray,
+        // so the prompt capture does not mark those cells faint. The idle
+        // hint is exactly `Ask anything…` plus an optional quoted hint, even
+        // when that hint wraps. Anything else is text the operator typed.
+        guard joined.classification.state == .draft,
+              let composer = joined.composerText,
+              openCodePlaceholder(collapsedComposer(composer)) else {
+            return joined
+        }
+        return Analysis(
+            classification: PromptInputClassification(state: .suggestion, draftLength: nil),
+            composerText: ""
+        )
+    }
+
+    /// A `┃` row that contains a middle dot (`·`, U+00B7). The caller treats
+    /// it as the model line only when the `╹▀` footer is the next row, so a
+    /// draft that happens to contain a middle dot stays in the composer.
+    private static func isOpenCodeModelLine(_ line: Line) -> Bool {
+        guard let content = contentAfterMarker(line, marker: 0x2503) else { return false }
+        return content.contains { $0.value.value == 0x00B7 }
+    }
+
+    /// OpenCode's composer footer. The first glyph is `╹` (U+2579).
+    private static func isOpenCodeFooter(_ line: Line) -> Bool {
+        guard let first = line.scalars.map(\.value.value).first(where: { !isWhitespaceValue($0) }) else {
+            return false
+        }
+        return first == 0x2579
+    }
+
+    /// OpenCode's idle hint. The ellipsis is the one it draws (U+2026) or three dots.
+    private static func openCodePlaceholder(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "Ask anything"
+        guard trimmed.hasPrefix(prefix) else { return false }
+        let rest = trimmed.dropFirst(prefix.count)
+        let hint: Substring
+        if rest.first == "…" {
+            hint = rest.dropFirst()
+        } else if rest.hasPrefix("...") {
+            hint = rest.dropFirst(3)
+        } else {
+            return false
+        }
+        let body = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty { return true }
+        return body.first == "\"" && body.last == "\""
+    }
+
+    /// Pi's composer is every row between the two rules around the cursor, not
+    /// exactly one row. An empty row is idle. Typed text is a draft, including
+    /// a multi-line draft whose cursor sits on a blank row. The rows are
+    /// joined so a wrapped invitation matches the doorbell line. A `❯` or `›`
+    /// row is not this shape.
+    private static func piComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
+        if isPiBorder(lines[cursorIndex]) { return nil }
+        var above = cursorIndex - 1
+        while above >= 0,
+              lines[above].y + 1 == lines[above + 1].y,
+              !isPiBorder(lines[above]) {
+            above -= 1
+        }
+        guard above >= 0,
+              isPiBorder(lines[above]),
+              lines[above].y + 1 == lines[above + 1].y else {
+            return nil
+        }
+        var below = cursorIndex + 1
+        while below < lines.count,
+              lines[below - 1].y + 1 == lines[below].y,
+              !isPiBorder(lines[below]) {
+            below += 1
+        }
+        guard below < lines.count,
+              isPiBorder(lines[below]),
+              lines[below - 1].y + 1 == lines[below].y else {
+            return nil
+        }
+        let body = lines[(above + 1)..<below]
+        if body.contains(where: { currentPromptPrefix(in: $0) != nil }) { return nil }
+        return joinedComposer(body.map { composerRow($0.scalars) })
+    }
+
+    /// One composer across several visual rows. Blank rows drop out. A single
+    /// Pi row keeps its leading cursor space. A wrapped invitation joins with
+    /// newlines so the doorbell compare can unwrap it.
+    private static func joinedComposer(_ rows: [Analysis]) -> Analysis {
+        var parts: [String] = []
+        var faint = false
+        for row in rows {
+            switch row.classification.state {
+            case .draft:
+                if let text = row.composerText, !text.isEmpty {
+                    parts.append(text)
+                }
+            case .suggestion:
+                faint = true
+            case .empty, .dialog, .unknown, .unavailable:
+                break
+            }
+        }
+        if parts.isEmpty {
+            return Analysis(
+                classification: PromptInputClassification(
+                    state: faint ? .suggestion : .empty,
+                    draftLength: nil
+                ),
+                composerText: ""
+            )
+        }
+        let joined = parts.joined(separator: "\n")
+        let trimmed = joined.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Analysis(
+            classification: PromptInputClassification(state: .draft, draftLength: trimmed.count),
+            composerText: joined
+        )
+    }
+
+    /// Newlines and the indent on a continuation are presentation. The
+    /// doorbell compare uses the same collapse.
+    private static func collapsedComposer(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    /// Text after a leading marker and its gutter, or nil when the marker is
+    /// not the row's first glyph.
+    private static func contentAfterMarker(_ line: Line, marker: UInt32) -> [StyledScalar]? {
+        var index = 0
+        while index < line.scalars.count, line.scalars[index].value == " " { index += 1 }
+        guard index < line.scalars.count, line.scalars[index].value.value == marker else { return nil }
+        index += 1
+        while index < line.scalars.count, line.scalars[index].value == " " { index += 1 }
+        return Array(line.scalars.dropFirst(index))
+    }
+
+    private static func composerRow(_ scalars: [StyledScalar]) -> Analysis {
+        var typed: [Unicode.Scalar] = []
+        var hasTypedText = false
+        var hasFaintSuggestion = false
+        for item in scalars {
+            guard !item.faint else {
+                if !isWhitespace(item.value) { hasFaintSuggestion = true }
+                continue
+            }
+            typed.append(item.value)
+            if !isWhitespace(item.value) { hasTypedText = true }
+        }
+        while let last = typed.last, isWhitespace(last) { typed.removeLast() }
+        guard hasTypedText else {
+            return Analysis(
+                classification: PromptInputClassification(
+                    state: hasFaintSuggestion ? .suggestion : .empty,
+                    draftLength: nil
+                ),
+                composerText: ""
+            )
+        }
+        let trimmed = trimWhitespace(typed)
+        return Analysis(
+            classification: PromptInputClassification(state: .draft, draftLength: trimmed.count),
+            composerText: String(String.UnicodeScalarView(typed))
+        )
+    }
+
+    /// Grok closes its composer with `╰── Grok 4.7 … ─╯`. That footer is the
+    /// bottom of the box, not text the operator typed. A pure horizontal rule
+    /// is handled by `isRule`.
+    private static func isClosingBoxEdge(_ line: Line) -> Bool {
+        let values = line.scalars.map(\.value.value)
+        guard let first = values.first(where: { !isWhitespaceValue($0) }) else { return false }
+        guard first == 0x2570 || first == 0x2514 else { return false }
+        return values.contains(where: { (0x2500...0x257F).contains($0) })
+    }
+
+    /// Pi's border is an unindented rule whose box-drawing run reaches the
+    /// row's last cell. Captured rows are padded to the panel width, so a
+    /// short rule typed into the composer has trailing blank cells and is
+    /// draft content. An indented rule belongs to another harness.
+    private static func isPiBorder(_ line: Line) -> Bool {
+        guard let first = line.scalars.first, !isWhitespace(first.value),
+              let last = line.scalars.last, !isWhitespace(last.value) else { return false }
+        return isRule(line)
     }
 
     private static func isRule(_ line: Line) -> Bool {

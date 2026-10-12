@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 
 #if canImport(c11_DEV)
@@ -266,16 +267,128 @@ final class MailboxDrainTests: XCTestCase {
         )
     }
 
-    func testFramingCarriesBodyRef() throws {
+    func testFramingInlinesBodyRef() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-bodyref-\(UUID().uuidString).txt")
+        try Data("full brief".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
         let envelope = try MailboxEnvelope.build(
             from: "builder",
             to: "watcher",
             body: "",
             id: idA,
             ts: "2026-10-01T12:00:00Z",
-            bodyRef: "/tmp/brief.md"
+            bodyRef: file.path
         )
-        XCTAssertTrue(MailboxFraming.framedBlock(envelope: envelope).contains("body_ref=\"/tmp/brief.md\""))
+        XCTAssertEqual(envelope.body, "")
+        let framed = MailboxFraming.framedBlock(envelope: envelope)
+        XCTAssertTrue(framed.contains("body_ref=\"\(file.path)\""))
+        XCTAssertTrue(framed.contains("full brief"))
+        let stored = try envelope.encode()
+        let raw = String(data: stored, encoding: .utf8) ?? ""
+        XCTAssertTrue(raw.contains("\"body\":\"\""))
+        XCTAssertEqual(MailboxFraming.displayText(data: stored), framed)
+        XCTAssertEqual(
+            MailboxDrain.framedBlock(data: stored, fallbackId: idA),
+            framed
+        )
+    }
+
+    func testBodyRefCapNamesThePath() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-bodyref-\(UUID().uuidString).txt")
+        var bytes = Data(repeating: 0x61, count: MailboxEnvelope.maxBodyBytes)
+        bytes.append(contentsOf: "TAIL".utf8)
+        try bytes.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let envelope = try MailboxEnvelope.build(
+            from: "builder",
+            to: "watcher",
+            body: "",
+            id: idA,
+            ts: "2026-10-01T12:00:00Z",
+            bodyRef: file.path
+        )
+        let body = MailboxFraming.presentedBody(envelope: envelope)
+        XCTAssertFalse(body.contains("TAIL"))
+        XCTAssertTrue(body.hasPrefix(String(repeating: "a", count: MailboxEnvelope.maxBodyBytes)))
+        XCTAssertTrue(body.contains("[truncated; rest is at \(file.path)]"))
+        XCTAssertEqual(envelope.body, "")
+    }
+
+    func testMissingBodyRefNamesThePath() throws {
+        let missing = "/tmp/c11-394-missing-\(UUID().uuidString).txt"
+        let envelope = try MailboxEnvelope.build(
+            from: "builder",
+            to: "watcher",
+            body: "",
+            id: idA,
+            ts: "2026-10-01T12:00:00Z",
+            bodyRef: missing
+        )
+        let body = MailboxFraming.presentedBody(envelope: envelope)
+        XCTAssertEqual(body, "[body unavailable; see \(missing)]")
+        XCTAssertTrue(MailboxFraming.framedBlock(envelope: envelope).contains("body_ref=\"\(missing)\""))
+    }
+
+    func testBodyRefCutsOnAUTF8Boundary() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-bodyref-\(UUID().uuidString).txt")
+        var bytes = Data("a".utf8)
+        bytes.append(contentsOf: "€".utf8)
+        bytes.append(contentsOf: "Z".utf8)
+        try bytes.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let read = MailboxFraming.readBodyRef(path: file.path, cap: 2)
+        XCTAssertEqual(read.text, "a")
+        XCTAssertTrue(read.truncated)
+        XCTAssertFalse(read.text.contains("€"))
+    }
+
+    func testFifoBodyRefIsUnavailable() throws {
+        let path = "/tmp/c11-394-fifo-\(UUID().uuidString)"
+        XCTAssertEqual(mkfifo(path, 0o600), 0)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let read = MailboxFraming.readBodyRef(path: path, cap: 32)
+        XCTAssertTrue(read.missing)
+        XCTAssertEqual(read.text, "")
+    }
+
+    func testDirectoryBodyRefIsUnavailable() {
+        let read = MailboxFraming.readBodyRef(path: "/tmp", cap: 32)
+        XCTAssertTrue(read.missing)
+        XCTAssertEqual(read.text, "")
+    }
+
+    /// `/dev/zero` would fill the inline cap if the regular-file check were
+    /// gone. A device is unavailable, and the read does not consume it.
+    func testDeviceBodyRefIsUnavailable() {
+        let read = MailboxFraming.readBodyRef(path: "/dev/zero", cap: 8)
+        XCTAssertTrue(read.missing)
+        XCTAssertEqual(read.text, "")
+    }
+
+    func testPendingStaysUntilAClaim() throws {
+        let url = try deliver(id: idA)
+        let dir = url.deletingLastPathComponent()
+        XCTAssertTrue(MailboxIO.isPending(id: idA, inbox: dir))
+        _ = try MailboxIO.claim(id: idA, inbox: dir)
+        XCTAssertFalse(MailboxIO.isPending(id: idA, inbox: dir))
+    }
+
+    func testInlineBodyRecvStaysRawJSON() throws {
+        let envelope = try MailboxEnvelope.build(
+            from: "builder",
+            to: "watcher",
+            body: "inline",
+            id: idA,
+            ts: "2026-10-01T12:00:00Z"
+        )
+        let stored = try envelope.encode()
+        XCTAssertEqual(
+            MailboxFraming.displayText(data: stored),
+            String(data: stored, encoding: .utf8)
+        )
     }
 
     // MARK: - Hook input

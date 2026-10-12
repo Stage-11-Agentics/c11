@@ -4,10 +4,12 @@ import Foundation
 /// panel's mail, read from that panel's inbox alone.
 ///
 /// A panel's inbox is `<mailboxes>/<panel-uuid-lowercased>/`. An envelope in
-/// the inbox root is **unread**: no consumer (hook drain, `recv --drain`, stdin
-/// push) has claimed it yet. A claim renames it into `_read/`, so everything in
-/// both places is everything the panel has **received**. Opening the drawer
-/// never claims anything; the counts describe the agent, not the operator.
+/// the inbox root is **unread**: no consumer (`recv --drain` or a hook drain)
+/// has claimed it yet. The doorbell ring does not claim, so a rung envelope
+/// stays unread until one of those does. A claim renames it into `_read/`,
+/// so everything in both places is everything the panel has **received**.
+/// Opening the drawer never claims anything; the counts describe the agent,
+/// not the operator.
 ///
 /// Pure file I/O, no app state, so `c11LogicTests` covers it directly.
 enum MailboxPanelMail {

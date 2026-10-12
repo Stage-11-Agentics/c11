@@ -116,6 +116,7 @@ extension TerminalController {
                             surfaceId: surfaceId,
                             by: actor
                         )
+                        workspace.recheckMailboxDoorbellAfterFlagLower(surfaceId: surfaceId)
                     case "flag.suppress":
                         write = try PanelAttentionService.shared.suppress(
                             workspaceId: workspace.id,

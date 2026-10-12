@@ -333,11 +333,11 @@ extension TerminalController {
                     delivered: false, submitted: false, retry: "safe"
                 )))
             }
-            let observation = PromptInputObservation.activeScreen(region)
-            guard case .deliver(.checked) = SendInputGuard.decide(
-                state: observation.classification.state,
-                allowUnguarded: false
-            ) else {
+            let observation = PromptInputObservation.activeScreen(
+                region,
+                harness: resolved.workspace.surfaceActivityTerminalKind(panelId: panelID)
+            )
+            guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
                 return .error(feedAnswerInputRefusal(
                     observation.classification.state,
                     data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe"),
@@ -398,11 +398,11 @@ extension TerminalController {
                 delivered: false, submitted: false, retry: "safe"
             )))
         }
-        let observation = PromptInputObservation.activeScreen(region)
-        guard case .deliver(.checked) = SendInputGuard.decide(
-            state: observation.classification.state,
-            allowUnguarded: false
-        ) else {
+        let observation = PromptInputObservation.activeScreen(
+            region,
+            harness: prepared.resolved.workspace.surfaceActivityTerminalKind(panelId: prepared.identity.panelID)
+        )
+        guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
             return .error(feedAnswerInputRefusal(
                 observation.classification.state,
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe"),
@@ -453,8 +453,11 @@ extension TerminalController {
         guard let region = capturePromptInputRegion(surface: prepared.nativeSurface) else {
             return .pastedNotSubmitted
         }
-        let inputState = PromptInputClassifier.classify(region).state
-        let composer = inputState == .draft ? PromptInputClassifier.composerText(region) : nil
+        let harness = prepared.resolved.workspace.surfaceActivityTerminalKind(
+            panelId: prepared.identity.panelID
+        )
+        let inputState = PromptInputClassifier.classify(region, harness: harness).state
+        let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         if let outcome = FeedAnswerPreReturnCheck.outcome(
             targetIsCurrent: targetIsCurrent,
             rowIsCurrent: rowIsCurrent,
@@ -480,7 +483,16 @@ extension TerminalController {
                     answer: answer,
                     expectedFlagEpoch: expectedEpoch
                 )
-                return result.applied[MetadataKey.flag] == true ? .lowered : .replaced
+                if result.applied[MetadataKey.flag] == true {
+                    AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: prepared.identity.panelID,
+                        preferredWorkspaceId: prepared.identity.workspaceID
+                    )?.workspace.recheckMailboxDoorbellAfterFlagLower(
+                        surfaceId: prepared.identity.panelID
+                    )
+                    return .lowered
+                }
+                return .replaced
             } catch {
                 return .unavailable
             }

@@ -628,13 +628,19 @@ final class MailboxDispatcherTests: XCTestCase {
 
     // MARK: - C11-381 stdin flush seam
 
-    /// Drives `MailboxStdinDelivery`, the sequence `Workspace` calls.
-    /// `ownsTerminal` stands in for the kernel check; there is no PTY here.
+    /// Restages the doorbell sequence Workspace runs. There is no PTY here.
+    /// `ownsTerminal` stands in for the kernel check.
     private final class StdinSeat: @unchecked Sendable {
         let state = MailboxStdinBufferStore()
         var ownsTerminal = true
         var lastOperatorKeyAt: Date?
-        private(set) var pasted: [String] = []
+        var lastOperatorInputAt: Date?
+        var focused = false
+        var textBox = ""
+        var screen: PromptInputState = .empty
+        private(set) var rings: [String] = []
+        private(set) var idleFlushes = 0
+        private var ledger = MailboxDoorbell.Ledger()
         let dispatcher: MailboxDispatcher
         let stateURL: URL
         let workspaceId: UUID
@@ -687,19 +693,12 @@ final class MailboxDispatcherTests: XCTestCase {
                         recipient: evicted.recipientName,
                         outcome: .evicted
                     )
-                },
-                push: { [self] immediateId in
-                    self.perform(
-                        surfaceId: surfaceId,
-                        immediateId: immediateId,
-                        now: Date(timeIntervalSince1970: 1_700_000_100)
-                    )
                 }
             )
             switch admitted {
             case .ok(let bytes):
                 return .init(outcome: .ok, bytes: bytes, elapsedMs: 0)
-            case .buffered(let bytes):
+            case .buffered(let bytes), .doorbell(let bytes, _):
                 return .init(outcome: .buffered, bytes: bytes, elapsedMs: 0)
             }
         }
@@ -731,44 +730,63 @@ final class MailboxDispatcherTests: XCTestCase {
                 agentPid: agentPid,
                 processStartTime: processStartTime,
                 flush: { [self] in
-                    self.perform(
-                        surfaceId: surfaceId,
-                        immediateId: nil,
-                        now: at.addingTimeInterval(0.2)
-                    )
+                    self.idleFlushes += 1
+                    self.ringQueued(surfaceId: surfaceId)
                 }
             )
         }
 
-        private func perform(surfaceId: UUID, immediateId: String?, now: Date) {
-            MailboxStdinDelivery.perform(
-                state: state,
-                surfaceId: surfaceId,
-                trigger: .agentPrompt,
-                immediateId: immediateId,
-                now: now,
-                gate: gate(),
-                inbox: inbox(surfaceId),
-                log: { [dispatcher] line in
-                    dispatcher.logStdinLifecycle(
-                        id: line.entry.id,
-                        recipient: line.entry.recipientName,
-                        outcome: line.outcome,
-                        bytes: line.bytes
-                    )
-                },
-                logFailed: { [dispatcher] entry, code in
-                    dispatcher.logStdinClaimFailed(
-                        id: entry.id,
-                        recipient: entry.recipientName,
-                        errno: code
-                    )
-                },
-                paste: { [self] block in
-                    pasted.append(block)
-                    return true
-                }
+        /// Idle-edge ring. Stats the inbox, then runs the doorbell decision.
+        /// A ring records the invitation. It does not claim and does not paste.
+        private func ringQueued(surfaceId: UUID) {
+            let queued = state.buffer.queuedEntries(surfaceId: surfaceId)
+            let pending = Set(queued.map(\.id).filter {
+                MailboxIO.isPending(id: $0, inbox: inbox(surfaceId))
+            })
+            let gone = MailboxDoorbellSequence.droppedIds(
+                snapshot: queued.map(\.id),
+                stillPending: pending
             )
+            for id in gone {
+                _ = state.buffer.removeQueued(surfaceId: surfaceId, id: id)
+            }
+            let live = state.buffer.queuedEntries(surfaceId: surfaceId)
+            guard !live.isEmpty else { return }
+            guard state.buffer.promptIsOpen(
+                surfaceId: surfaceId,
+                isAgentKind: true,
+                agentOwnsTerminal: ownsTerminal
+            ) else { return }
+            let now = Date()
+            let turn = state.buffer.agentTurn(surfaceId: surfaceId)
+            let epoch = turn.map {
+                MailboxDoorbell.promptEpoch(since: $0.since, atPrompt: $0.atPrompt)
+            } ?? "none"
+            var input = MailboxDoorbell.Input()
+            input.prompt = screen
+            input.rungThisEpoch = ledger.rung(in: epoch)
+            input.recentAttempts = ledger.rings(at: now)
+            input.inFlight = ledger.inFlight
+            input.focused = focused
+            input.operatorKeyAge = MailboxDoorbellSequence.operatorKeyAge(
+                keyAt: lastOperatorKeyAt,
+                inputAt: lastOperatorInputAt,
+                now: now
+            )
+            input.textBoxUnsent = MailboxDoorbellSequence.textBoxHoldsUnsent(textBox)
+            input.epoch = epoch
+            input.now = now
+            let decision = MailboxDoorbell.decide(input)
+            let plan = MailboxDoorbellSequence.plan(
+                decision: decision,
+                attempts: ledger.attempts,
+                now: now,
+                busyExhausted: false,
+                strandedDoorbell: false
+            )
+            guard case .ring = plan.arrival else { return }
+            rings.append(MailboxDoorbell.text)
+            ledger.beginAttempt(at: now, epoch: epoch)
         }
     }
 
@@ -823,28 +841,31 @@ final class MailboxDispatcherTests: XCTestCase {
         return FileManager.default.fileExists(atPath: claimed.path)
     }
 
-    /// Mail admitted while the agent is mid-turn stays in the inbox, then one
-    /// idle claims it once and logs `flushed` once. A second idle does not.
-    func testBufferedStdinFlushesOnceOnIdle() throws {
+    /// Mail admitted while the agent is mid-turn stays in the inbox. An idle
+    /// edge does not claim it and does not paste a block. The doorbell ring
+    /// is Workspace's, and it leaves the file unread.
+    func testBufferedStdinStaysUnclaimedOnIdle() throws {
         let (surface, seat) = makeStdinSeat()
         let id = "01K3A2B7X8PQRTVWYZ0123456A"
         seat.beginTurn(surfaceId: surface, at: t381(0))
         try dispatchToSeat(id: id, body: "flush-once")
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
-        XCTAssertTrue(seat.pasted.isEmpty)
 
         seat.noteIdle(surfaceId: surface, at: t381(20))
         dispatcher?.log.flush()
-        XCTAssertEqual(try handlerOutcomes(), ["buffered", "flushed"])
-        XCTAssertEqual(seat.pasted.count, 1)
-        XCTAssertFalse(envelopeIsInInboxRoot(surface: surface, id: id))
-        XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertEqual(seat.idleFlushes, 1)
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
 
         seat.noteIdle(surfaceId: surface, at: t381(30))
         dispatcher?.log.flush()
-        XCTAssertEqual(try handlerOutcomes(), ["buffered", "flushed"])
-        XCTAssertEqual(seat.pasted.count, 1)
+        XCTAssertEqual(seat.idleFlushes, 2)
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
     }
 
     /// A busy turn does not claim. The inbox file stays where a drain can find it.
@@ -856,7 +877,7 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
-        XCTAssertTrue(seat.pasted.isEmpty)
+        XCTAssertTrue(seat.rings.isEmpty)
     }
 
     /// An idle edge does not type over an operator draft, and does not claim.
@@ -865,16 +886,16 @@ final class MailboxDispatcherTests: XCTestCase {
         let id = "01K3A2B7X8PQRTVWYZ0123456C"
         seat.beginTurn(surfaceId: surface, at: t381(0))
         try dispatchToSeat(id: id, body: "behind-draft")
-        seat.lastOperatorKeyAt = t381(5)
+        seat.screen = .draft
         seat.noteIdle(surfaceId: surface, at: t381(20))
         dispatcher?.log.flush()
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
-        XCTAssertTrue(seat.pasted.isEmpty)
+        XCTAssertTrue(seat.rings.isEmpty)
     }
 
-    /// A drain that claimed the file first wins. The push logs `skipped` and does not paste.
+    /// A drain that claimed the file first keeps it. The idle edge does not paste.
     func testDrainClaimSkipsPush() throws {
         let (surface, seat) = makeStdinSeat()
         let id = "01K3A2B7X8PQRTVWYZ0123456D"
@@ -884,13 +905,15 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(claimed.deletingLastPathComponent().lastPathComponent, "_read")
         seat.noteIdle(surfaceId: surface, at: t381(20))
         dispatcher?.log.flush()
-        XCTAssertEqual(try handlerOutcomes(), ["buffered", "skipped"])
-        XCTAssertTrue(seat.pasted.isEmpty)
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(seat.rings.isEmpty)
+        XCTAssertEqual(seat.idleFlushes, 1)
         XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
     }
 
-    /// A transcript idle does not pin a process. The later wrapper idle does, and claims once.
-    func testTranscriptIdleThenWrapperIdleClaimsOnce() throws {
+    /// A transcript idle does not pin a process. The later wrapper idle does.
+    /// Neither claims the envelope.
+    func testTranscriptIdleThenWrapperIdlePinsWithoutClaiming() throws {
         let (surface, seat) = makeStdinSeat()
         let id = "01K3A2B7X8PQRTVWYZ0123456E"
         seat.ownsTerminal = false
@@ -899,19 +922,21 @@ final class MailboxDispatcherTests: XCTestCase {
         seat.noteIdle(surfaceId: surface, at: t381(20))
         dispatcher?.log.flush()
         XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(seat.rings.isEmpty)
         XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
         XCTAssertNil(seat.buffer.agentProcess(surfaceId: surface))
 
         seat.noteWrapperIdle(surfaceId: surface, at: t381(21))
         dispatcher?.log.flush()
-        XCTAssertEqual(try handlerOutcomes(), ["buffered", "flushed"])
-        XCTAssertEqual(seat.pasted.count, 1)
-        XCTAssertTrue(envelopeIsClaimed(surface: surface, id: id))
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
         XCTAssertEqual(seat.buffer.agentProcess(surfaceId: surface)?.pid, 1)
 
         seat.noteWrapperIdle(surfaceId: surface, at: t381(40))
         dispatcher?.log.flush()
-        XCTAssertEqual(seat.pasted.count, 1)
-        XCTAssertEqual(try handlerOutcomes().filter { $0 == "flushed" }.count, 1)
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertEqual(try handlerOutcomes().filter { $0 == "flushed" }.count, 0)
     }
 }

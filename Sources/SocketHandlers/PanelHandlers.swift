@@ -1061,7 +1061,10 @@ extension TerminalController {
             if !targetIsCurrent {
                 observation = .unavailable
             } else if let liveSurface, let region = capturePromptInputRegion(surface: liveSurface) {
-                observation = .activeScreen(region)
+                observation = .activeScreen(
+                    region,
+                    harness: resolved.workspace.surfaceActivityTerminalKind(panelId: resolved.panelId)
+                )
             } else {
                 // A cold live exact tab and a busy/unavailable capture preserve
                 // today's queue/delivery behavior, with the uncertainty exposed.
@@ -1305,7 +1308,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: String(localized: "socket.input_state.tab_required", defaultValue: "A panel identifier is required."), data: nil)
         }
 
-        typealias Capture = (PromptRegionSnapshot?, [String: Any])
+        typealias Capture = (PromptRegionSnapshot?, String?, [String: Any])
         let operation = SelectionReadOperation<Result<Capture, V2CallResult>>()
         Task { @MainActor in
             guard operation.beginCapture() else { return }
@@ -1344,7 +1347,8 @@ extension TerminalController {
                 let snapshot = resolved.terminalPanel.surface.surface.flatMap {
                     capturePromptInputRegion(surface: $0)
                 }
-                operation.complete(.success((snapshot, resolved.responseEnvelope)))
+                let harness = resolved.workspace.surfaceActivityTerminalKind(panelId: resolved.panelId)
+                operation.complete(.success((snapshot, harness, resolved.responseEnvelope)))
             }
         }
 
@@ -1356,8 +1360,10 @@ extension TerminalController {
             return operation.canPublish ? error : .err(
                 code: "timeout", message: String(localized: "socket.input_state.timeout", defaultValue: "Terminal input-state inspection timed out."), data: nil
             )
-        case .success(let (snapshot, routing)):
-            let observation = snapshot.map(PromptInputObservation.activeScreen) ?? .unavailable
+        case .success(let (snapshot, harness, routing)):
+            let observation = snapshot.map {
+                PromptInputObservation.activeScreen($0, harness: harness)
+            } ?? .unavailable
             var payload = routing
             for (key, value) in observation.responseFields { payload[key] = value }
             guard operation.canPublish else {

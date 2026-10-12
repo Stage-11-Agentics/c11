@@ -1860,6 +1860,8 @@ extension TerminalController {
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,
+            MetadataKey.delegated,
+            MetadataKey.delegatedBy,
             MetadataKey.suppressed,
         ])
         let existingAttention = PanelMetadataStore.shared.attentionSnapshot(
@@ -1870,7 +1872,7 @@ extension TerminalController {
             || (mode == .replace && (existingAttention.isFlagged || existingAttention.suppressed)) {
             return .err(
                 code: "attention_requires_flag_method",
-                message: "flag attention metadata must be changed through the flag.* methods",
+                message: "flag and delegation metadata must be changed through their methods",
                 data: nil
             )
         }
@@ -1926,6 +1928,9 @@ extension TerminalController {
         )
 
         var fullMetadata = storedMetadata
+        if storedMetadata[MetadataKey.suppressed] as? Bool == true {
+            fullMetadata[MetadataKey.delegated] = true
+        }
         fullMetadata["journal"] = JournalCoordinator.shared.readback(panelID: resolved.surfaceId)
         var metadataOut: [String: Any] = fullMetadata
         var sourcesOut: [String: [String: Any]] = fullSources
@@ -1933,8 +1938,9 @@ extension TerminalController {
             metadataOut = [:]
             sourcesOut = [:]
             for k in filterKeys {
-                if let v = fullMetadata[k] { metadataOut[k] = v }
-                if let s = fullSources[k] { sourcesOut[k] = s }
+                let storedKey = k == MetadataKey.delegated ? MetadataKey.suppressed : k
+                if let v = fullMetadata[storedKey] { metadataOut[k] = v }
+                if let s = fullSources[storedKey] { sourcesOut[k] = s }
             }
         }
 
@@ -1998,6 +2004,8 @@ extension TerminalController {
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,
+            MetadataKey.delegated,
+            MetadataKey.delegatedBy,
             MetadataKey.suppressed,
         ])
         let existingAttention = PanelMetadataStore.shared.attentionSnapshot(
@@ -2008,7 +2016,7 @@ extension TerminalController {
             ?? (existingAttention.isFlagged || existingAttention.suppressed) {
             return .err(
                 code: "attention_requires_flag_method",
-                message: "flag attention metadata must be changed through the flag.* methods",
+                message: "flag and delegation metadata must be changed through their methods",
                 data: nil
             )
         }

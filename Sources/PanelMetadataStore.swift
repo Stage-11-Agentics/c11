@@ -31,6 +31,11 @@ public enum MetadataKey {
     static let flagCallerWriteKeys = [flagCallerPanelId, legacyFlagCallerSurfaceId]
     /// Every caller spelling: read and cleared, including the read-only tab key.
     static let flagCallerKeys = [flagCallerPanelId, flagCallerTabId, legacyFlagCallerSurfaceId]
+    /// Modern read name. `PanelMetadataStore` exposes this as an alias of the
+    /// single persisted `suppressed` boolean; it is never stored separately.
+    public static let delegated = "delegated"
+    public static let delegatedBy = "delegated_by"
+    /// C11-411: the persisted boolean retained for compatibility with older snapshots.
     public static let suppressed = "suppressed"
 
     /// Operator/agent-set tab identity marker. `icon` is a short glyph (usually
@@ -66,7 +71,7 @@ public enum MetadataKey {
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
         worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, flagCallerPanelId,
-        suppressed, icon, color
+        delegated, delegatedBy, suppressed, icon, color
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -133,6 +138,12 @@ final class PanelMetadataStore: @unchecked Sendable {
         }
     }
 
+    struct DelegationEntry {
+        let workspaceId: UUID
+        let surfaceId: UUID
+        let ownerPanelId: UUID?
+    }
+
     enum WriteError: Error {
         case invalidJSON(String)
         case payloadTooLarge
@@ -167,7 +178,7 @@ final class PanelMetadataStore: @unchecked Sendable {
             case .invalidSource(let d): return "invalid source: \(d)"
             case .invalidKeysParam: return "keys must be an array of strings"
             case .replaceRequiresExplicit: return "mode 'replace' requires source 'explicit'"
-            case .attentionRequiresService: return "flag and suppressed must be mutated through the attention service"
+            case .attentionRequiresService: return "flag and delegation must be mutated through the attention service"
             case .encodeFailed: return "failed to encode metadata"
             }
         }
@@ -224,6 +235,8 @@ final class PanelMetadataStore: @unchecked Sendable {
         "flag_caller_surface_id",
         "flag_caller_tab_id",
         "flag_caller_panel_id",
+        "delegated",
+        "delegated_by",
         "suppressed",
         "icon",
         "color",
@@ -340,9 +353,14 @@ final class PanelMetadataStore: @unchecked Sendable {
                 return .reservedKeyInvalidType(key, "expected UUID string")
             }
             return nil
-        case "suppressed":
+        case "delegated", "suppressed":
             guard value is Bool else {
                 return .reservedKeyInvalidType(key, "expected boolean")
+            }
+            return nil
+        case "delegated_by":
+            guard let value = value as? String, UUID(uuidString: value) != nil else {
+                return .reservedKeyInvalidType(key, "expected UUID string")
             }
             return nil
         case "icon":
@@ -568,7 +586,7 @@ final class PanelMetadataStore: @unchecked Sendable {
     /// single string. Callers that want one key should ask for one key.
     func metadataValue(workspaceId: UUID, surfaceId: UUID, key: String) -> Any? {
         return queue.sync {
-            metadata[workspaceId]?[surfaceId]?[key]
+            metadata[workspaceId]?[surfaceId]?[key == MetadataKey.delegated ? MetadataKey.suppressed : key]
         }
     }
 
@@ -586,10 +604,11 @@ final class PanelMetadataStore: @unchecked Sendable {
             var md: [String: Any] = [:]
             var src: [String: [String: Any]] = [:]
             for key in keys {
-                if let value = allMetadata?[key] {
+                let storedKey = key == MetadataKey.delegated ? MetadataKey.suppressed : key
+                if let value = allMetadata?[storedKey] {
                     md[key] = value
                 }
-                if let source = allSources?[key] {
+                if let source = allSources?[storedKey] {
                     src[key] = source.toJSON()
                 }
             }
@@ -606,7 +625,8 @@ final class PanelMetadataStore: @unchecked Sendable {
     /// Returns whether a specific key is currently set on a surface, and its source.
     func getSource(workspaceId: UUID, surfaceId: UUID, key: String) -> MetadataSource? {
         return queue.sync {
-            return sources[workspaceId]?[surfaceId]?[key]?.source
+            let storedKey = key == MetadataKey.delegated ? MetadataKey.suppressed : key
+            return sources[workspaceId]?[surfaceId]?[storedKey]?.source
         }
     }
 
@@ -632,8 +652,35 @@ final class PanelMetadataStore: @unchecked Sendable {
                 flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
                 flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
-                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+                delegated: blob[MetadataKey.suppressed] as? Bool ?? false,
+                delegatedBy: (blob[MetadataKey.delegatedBy] as? String).flatMap(UUID.init(uuidString:))
             )
+        }
+    }
+
+    func delegateEntries(ownerPanelId: UUID) -> [DelegationEntry] {
+        allDelegateEntries().filter { $0.ownerPanelId == ownerPanelId }
+    }
+
+    func allDelegateEntries() -> [DelegationEntry] {
+        queue.sync {
+            var entries: [DelegationEntry] = []
+            for (workspaceId, panels) in metadata {
+                for (surfaceId, values) in panels where values[MetadataKey.suppressed] as? Bool == true {
+                    entries.append(DelegationEntry(
+                        workspaceId: workspaceId,
+                        surfaceId: surfaceId,
+                        ownerPanelId: (values[MetadataKey.delegatedBy] as? String)
+                            .flatMap(UUID.init(uuidString:))
+                    ))
+                }
+            }
+            return entries.sorted {
+                if $0.workspaceId != $1.workspaceId {
+                    return $0.workspaceId.uuidString < $1.workspaceId.uuidString
+                }
+                return $0.surfaceId.uuidString < $1.surfaceId.uuidString
+            }
         }
     }
 
@@ -644,7 +691,7 @@ final class PanelMetadataStore: @unchecked Sendable {
         workspaceId: UUID,
         surfaceId: UUID,
         flag: PanelAttentionFlagMutation = .unchanged,
-        suppression: PanelAttentionSuppressionMutation = .unchanged,
+        delegation: PanelAttentionDelegationMutation = .unchanged,
         callerPanelId: UUID? = nil,
         expectedFlagEpoch: Date? = nil,
         now: Date = Date()
@@ -659,7 +706,8 @@ final class PanelMetadataStore: @unchecked Sendable {
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
                 flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
-                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+                delegated: blob[MetadataKey.suppressed] as? Bool ?? false,
+                delegatedBy: (blob[MetadataKey.delegatedBy] as? String).flatMap(UUID.init(uuidString:))
             )
             var result = WriteResult()
 
@@ -717,34 +765,56 @@ final class PanelMetadataStore: @unchecked Sendable {
                 }
             }
 
-            switch suppression {
+            switch delegation {
             case .unchanged:
                 break
-            case .suppress:
+            case .delegate(let ownerPanelId):
+                let ownerValue = ownerPanelId?.uuidString
+                let priorOwner = blob[MetadataKey.delegatedBy] as? String
                 if blob[MetadataKey.suppressed] as? Bool != true
+                    || blob[MetadataKey.delegatedBy] as? String != ownerValue
                     || sourceBlob[MetadataKey.suppressed]?.source != .explicit {
                     if let prior = blob[MetadataKey.suppressed] {
-                        result.priorValues[MetadataKey.suppressed] = prior
+                        result.priorValues[MetadataKey.delegated] = prior
+                    }
+                    if let priorOwner {
+                        result.priorValues[MetadataKey.delegatedBy] = priorOwner
                     }
                     blob[MetadataKey.suppressed] = true
                     sourceBlob[MetadataKey.suppressed] = SourceRecord(
                         source: .explicit,
                         ts: now.timeIntervalSince1970
                     )
-                    result.applied[MetadataKey.suppressed] = true
+                    if let ownerValue {
+                        blob[MetadataKey.delegatedBy] = ownerValue
+                        sourceBlob[MetadataKey.delegatedBy] = SourceRecord(
+                            source: .explicit,
+                            ts: now.timeIntervalSince1970
+                        )
+                    } else {
+                        blob.removeValue(forKey: MetadataKey.delegatedBy)
+                        sourceBlob.removeValue(forKey: MetadataKey.delegatedBy)
+                        if priorOwner != nil {
+                            result.removedKeys.insert(MetadataKey.delegatedBy)
+                        }
+                    }
+                    result.applied[MetadataKey.delegated] = true
                 } else {
-                    result.applied[MetadataKey.suppressed] = false
-                    result.reasons[MetadataKey.suppressed] = "unchanged"
+                    result.applied[MetadataKey.delegated] = false
+                    result.reasons[MetadataKey.delegated] = "unchanged"
                 }
-            case .unsuppress:
+            case .undelegate:
                 if let prior = blob.removeValue(forKey: MetadataKey.suppressed) {
-                    result.priorValues[MetadataKey.suppressed] = prior
+                    result.priorValues[MetadataKey.delegated] = prior
                     sourceBlob.removeValue(forKey: MetadataKey.suppressed)
-                    result.removedKeys.insert(MetadataKey.suppressed)
-                    result.applied[MetadataKey.suppressed] = true
+                    blob.removeValue(forKey: MetadataKey.delegatedBy)
+                    sourceBlob.removeValue(forKey: MetadataKey.delegatedBy)
+                    result.removedKeys.insert(MetadataKey.delegated)
+                    result.removedKeys.insert(MetadataKey.delegatedBy)
+                    result.applied[MetadataKey.delegated] = true
                 } else {
-                    result.applied[MetadataKey.suppressed] = false
-                    result.reasons[MetadataKey.suppressed] = "unchanged"
+                    result.applied[MetadataKey.delegated] = false
+                    result.reasons[MetadataKey.delegated] = "unchanged"
                 }
             }
 
@@ -772,7 +842,8 @@ final class PanelMetadataStore: @unchecked Sendable {
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
                 flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
-                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+                delegated: blob[MetadataKey.suppressed] as? Bool ?? false,
+                delegatedBy: (blob[MetadataKey.delegatedBy] as? String).flatMap(UUID.init(uuidString:))
             )
             return (result, before, after)
         }
@@ -790,8 +861,12 @@ final class PanelMetadataStore: @unchecked Sendable {
                 blob.removeValue(forKey: key)
                 sourceBlob.removeValue(forKey: key)
             }
+            blob.removeValue(forKey: MetadataKey.delegated)
+            blob.removeValue(forKey: MetadataKey.delegatedBy)
             blob.removeValue(forKey: MetadataKey.suppressed)
             sourceBlob.removeValue(forKey: MetadataKey.flag)
+            sourceBlob.removeValue(forKey: MetadataKey.delegated)
+            sourceBlob.removeValue(forKey: MetadataKey.delegatedBy)
             sourceBlob.removeValue(forKey: MetadataKey.suppressed)
 
             if let reason = snapshot.flagReason,
@@ -810,16 +885,23 @@ final class PanelMetadataStore: @unchecked Sendable {
                     }
                 }
             }
-            if snapshot.suppressed {
+            if snapshot.delegated {
                 blob[MetadataKey.suppressed] = true
                 sourceBlob[MetadataKey.suppressed] = SourceRecord(
                     source: .explicit,
                     ts: Date().timeIntervalSince1970
                 )
+                if let owner = snapshot.delegatedBy {
+                    blob[MetadataKey.delegatedBy] = owner.uuidString
+                    sourceBlob[MetadataKey.delegatedBy] = SourceRecord(
+                        source: .explicit,
+                        ts: Date().timeIntervalSince1970
+                    )
+                }
             }
             metadata[snapshot.workspaceId, default: [:]][snapshot.surfaceId] = blob
             sources[snapshot.workspaceId, default: [:]][snapshot.surfaceId] = sourceBlob
-            if snapshot.isFlagged || snapshot.suppressed {
+            if snapshot.isFlagged || snapshot.delegated {
                 metadataStoreRevision &+= 1
             }
         }
@@ -840,6 +922,8 @@ final class PanelMetadataStore: @unchecked Sendable {
                 MetadataKey.legacyFlagCallerSurfaceId,
                 MetadataKey.flagCallerTabId,
                 MetadataKey.flagCallerPanelId,
+                MetadataKey.delegated,
+                MetadataKey.delegatedBy,
                 MetadataKey.suppressed,
             ]
             let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
@@ -1017,17 +1101,33 @@ final class PanelMetadataStore: @unchecked Sendable {
             }
         }
 
-        if values[MetadataKey.suppressed] as? Bool == true {
+        let interimDelegated = values.removeValue(forKey: MetadataKey.delegated) as? Bool == true
+        let delegatedTimestamp = sources.removeValue(forKey: MetadataKey.delegated)?.ts
+        if values[MetadataKey.suppressed] as? Bool == true || interimDelegated {
             values[MetadataKey.suppressed] = true
             sources[MetadataKey.suppressed] = SourceRecord(
                 source: .explicit,
-                ts: validAttentionTimestamp(sources[MetadataKey.suppressed]?.ts) ?? fallbackTimestamp
+                ts: validAttentionTimestamp(
+                    sources[MetadataKey.suppressed]?.ts ?? delegatedTimestamp
+                ) ?? fallbackTimestamp
             )
+            if let owner = values[MetadataKey.delegatedBy] as? String,
+               validateReservedKey(MetadataKey.delegatedBy, owner) == nil {
+                sources[MetadataKey.delegatedBy] = SourceRecord(
+                    source: .explicit,
+                    ts: validAttentionTimestamp(sources[MetadataKey.delegatedBy]?.ts) ?? fallbackTimestamp
+                )
+            } else {
+                values.removeValue(forKey: MetadataKey.delegatedBy)
+                sources.removeValue(forKey: MetadataKey.delegatedBy)
+            }
         } else {
-            // `false` is the canonical absence of suppression. Invalid values
+            // False is the canonical absence of delegation. Invalid values
             // and orphan source records are dropped rather than installed.
             values.removeValue(forKey: MetadataKey.suppressed)
             sources.removeValue(forKey: MetadataKey.suppressed)
+            values.removeValue(forKey: MetadataKey.delegatedBy)
+            sources.removeValue(forKey: MetadataKey.delegatedBy)
         }
 
         return (values, sources)
@@ -1054,6 +1154,8 @@ final class PanelMetadataStore: @unchecked Sendable {
               key != MetadataKey.legacyFlagCallerSurfaceId,
               key != MetadataKey.flagCallerTabId,
               key != MetadataKey.flagCallerPanelId,
+              key != MetadataKey.delegated,
+              key != MetadataKey.delegatedBy,
               key != MetadataKey.suppressed else {
             return false
         }
@@ -1124,6 +1226,8 @@ final class PanelMetadataStore: @unchecked Sendable {
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,
+            MetadataKey.delegated,
+            MetadataKey.delegatedBy,
             MetadataKey.suppressed,
         ]
         let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)

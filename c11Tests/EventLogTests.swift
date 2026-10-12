@@ -521,6 +521,8 @@ final class EventLogTests: XCTestCase {
         let workspace = UUID()
         let surface = UUID()
         let callerSurface = UUID()
+        let previousOwner = UUID()
+        let currentOwner = UUID()
 
         EventEmitter.shared.emitFlagRaised(
             workspace: workspace,
@@ -530,8 +532,19 @@ final class EventLogTests: XCTestCase {
             by: .agent
         )
         EventEmitter.shared.emitFlagLowered(workspace: workspace, surface: surface, by: .operator)
-        EventEmitter.shared.emitFlagSuppressed(workspace: workspace, surface: surface, by: .agent)
-        EventEmitter.shared.emitFlagUnsuppressed(workspace: workspace, surface: surface, by: .operator)
+        EventEmitter.shared.emitFlagSuppressed(
+            workspace: workspace,
+            surface: surface,
+            delegatedBy: currentOwner,
+            priorDelegatedBy: previousOwner,
+            by: .agent
+        )
+        EventEmitter.shared.emitFlagUnsuppressed(
+            workspace: workspace,
+            surface: surface,
+            delegatedBy: currentOwner,
+            by: .c11
+        )
         EventEmitter.shared.flush()
 
         let events = readLines(logURL()).map(parse)
@@ -546,11 +559,17 @@ final class EventLogTests: XCTestCase {
         let raisedPayload = events[0]["payload"] as? [String: Any]
         XCTAssertEqual(raisedPayload?["caller_panel_id"] as? String, callerSurface.uuidString)
         XCTAssertNil(raisedPayload?["caller_tab_id"], "v2 flag.raised writes only caller_panel_id")
+        let delegatedPayload = events[2]["payload"] as? [String: Any]
+        XCTAssertEqual(delegatedPayload?["delegated_by"] as? String, currentOwner.uuidString)
+        XCTAssertEqual(delegatedPayload?["prior_delegated_by"] as? String, previousOwner.uuidString)
+        let releasedPayload = events[3]["payload"] as? [String: Any]
+        XCTAssertEqual(releasedPayload?["by"] as? String, "c11")
+        XCTAssertEqual(releasedPayload?["delegated_by"] as? String, currentOwner.uuidString)
         XCTAssertNil(raisedPayload?["caller_surface_id"])
         XCTAssertEqual((events[0]["payload"] as? [String: Any])?["by"] as? String, "agent")
         XCTAssertEqual((events[1]["payload"] as? [String: Any])?["by"] as? String, "operator")
         XCTAssertEqual((events[2]["payload"] as? [String: Any])?["by"] as? String, "agent")
-        XCTAssertEqual((events[3]["payload"] as? [String: Any])?["by"] as? String, "operator")
+        XCTAssertEqual((events[3]["payload"] as? [String: Any])?["by"] as? String, "c11")
     }
 }
 

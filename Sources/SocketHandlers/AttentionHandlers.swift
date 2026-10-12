@@ -8,6 +8,7 @@ extension TerminalController {
         if method == "flag.list" {
             return v2FlagListWorker()
         }
+        let tracksDelegateOwner = method == "flag.delegate"
 
         guard let rawSurface = params["surface_id"] as? String else {
             return .err(
@@ -22,7 +23,8 @@ extension TerminalController {
         }
         let actor: PanelAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = PanelAttentionActor(rawValue: rawActor) else {
+            guard rawActor == "operator" || rawActor == "agent",
+                  let parsed = PanelAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -36,12 +38,14 @@ extension TerminalController {
 
         var validatedReason: String?
         var callerPanelId: UUID?
-        if method == "flag.raise" {
-            switch PanelAttentionReason.validate(params["reason"]) {
-            case .success(let reason):
-                validatedReason = reason
-            case .failure(let error):
-                return .err(code: "invalid_params", message: error.message, data: error.detailData)
+        if method == "flag.raise" || tracksDelegateOwner {
+            if method == "flag.raise" {
+                switch PanelAttentionReason.validate(params["reason"]) {
+                case .success(let reason):
+                    validatedReason = reason
+                case .failure(let error):
+                    return .err(code: "invalid_params", message: error.message, data: error.detailData)
+                }
             }
             if let rawCaller = params["caller_surface_id"] as? String {
                 let trimmedCaller = rawCaller.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -63,7 +67,9 @@ extension TerminalController {
             if actor == .agent, callerPanelId == nil {
                 return .err(
                     code: "missing_caller_surface",
-                    message: "agent-raised flags require caller_panel_id",
+                    message: tracksDelegateOwner
+                        ? "agent delegation requires caller_panel_id"
+                        : "agent-raised flags require caller_panel_id",
                     data: nil
                 )
             }
@@ -87,6 +93,13 @@ extension TerminalController {
                     return .err(
                         code: "caller_surface_not_found",
                         message: "Calling panel not found",
+                        data: nil
+                    )
+                }
+                if tracksDelegateOwner, callerPanelId == surfaceId {
+                    return .err(
+                        code: "self_delegation",
+                        message: "A panel cannot delegate itself",
                         data: nil
                     )
                 }
@@ -117,16 +130,17 @@ extension TerminalController {
                             by: actor
                         )
                         workspace.recheckMailboxDoorbellAfterFlagLower(surfaceId: surfaceId)
-                    case "flag.suppress":
-                        write = try PanelAttentionService.shared.suppress(
+                    case "flag.undelegate":
+                        write = try PanelAttentionService.shared.undelegate(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             by: actor
                         )
-                    case "flag.unsuppress":
-                        write = try PanelAttentionService.shared.unsuppress(
+                    case "flag.delegate":
+                        write = try PanelAttentionService.shared.delegate(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
+                            ownerPanelId: tracksDelegateOwner ? callerPanelId : nil,
                             by: actor
                         )
                     default:
@@ -146,7 +160,9 @@ extension TerminalController {
                         "caller_surface_id": self.v2OrNull(
                             snapshot.flagCallerPanelId?.uuidString
                         ),
-                        "suppressed": snapshot.suppressed,
+                        "delegated": snapshot.delegated,
+                        "delegated_by": self.v2OrNull(snapshot.delegatedBy?.uuidString),
+                        "suppressed": snapshot.delegated,
                         "applied": write.applied
                     ])
                 } catch let error as PanelMetadataStore.WriteError {
@@ -178,7 +194,9 @@ extension TerminalController {
                         "caller_surface_id": self.v2OrNull(
                             snapshot.flagCallerPanelId?.uuidString
                         ),
-                        "suppressed": snapshot.suppressed
+                        "delegated": snapshot.delegated,
+                        "delegated_by": self.v2OrNull(snapshot.delegatedBy?.uuidString),
+                        "suppressed": snapshot.delegated
                     ]
                 }
                 return .ok(["flags": flags, "count": flags.count])

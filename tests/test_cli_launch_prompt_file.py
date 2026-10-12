@@ -83,20 +83,21 @@ def main():
         worker = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.05), daemon=True)
         worker.start()
         environment = fake_server_env(socket_path)
+        environment["C11_PANEL_ID"] = TAB
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
         environment["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] = "1"
 
-        def run(*arguments, json_output=True):
+        def run(*arguments, json_output=True, environment_override=None):
             command = [cli, "--socket", socket_path]
             if json_output:
                 command.append("--json")
             command += ["launch-agent", "--type", "codex", "--new-workspace", *arguments]
-            return subprocess.run(command, env=environment, capture_output=True,
+            return subprocess.run(command, env=environment if environment_override is None else environment_override, capture_output=True,
                                   text=True, encoding="utf-8", timeout=5)
 
-        def accepted(*arguments, expected_prompt):
+        def accepted(*arguments, expected_prompt, environment_override=None):
             before = len(launches)
-            result = run(*arguments)
+            result = run(*arguments, environment_override=environment_override)
             assert result.returncode == 0, result.stderr
             assert len(launches) == before + 1, (result.stdout, launches[before:])
             params = launches[-1]["params"]
@@ -121,6 +122,28 @@ def main():
                 accepted("--prompt-file", str(prompt_file), expected_prompt=prompt)
                 print("PASS: inline/file raw prompt bytes preserved (%d B)" % size)
 
+            for option in ("--delegated", "--suppressed"):
+                payload = accepted(option, "delegate fixture", expected_prompt="delegate fixture")
+                params = launches[-1]["params"]
+                assert params["delegated"] is True, params
+                assert params["suppressed"] is True, params
+                assert params.get("caller_panel_id", params.get("caller_surface_id")) == TAB, params
+                assert payload["panel_id"] == TAB, payload
+            print("PASS: --delegated and --suppressed stamp the caller-owned delegate state")
+
+            no_caller_environment = dict(environment)
+            no_caller_environment.pop("C11_PANEL_ID", None)
+            accepted(
+                "--delegated",
+                "delegate without caller",
+                expected_prompt="delegate without caller",
+                environment_override=no_caller_environment,
+            )
+            no_caller_params = launches[-1]["params"]
+            assert no_caller_params["delegated"] is True and no_caller_params["suppressed"] is True, no_caller_params
+            assert "caller_panel_id" not in no_caller_params and "caller_surface_id" not in no_caller_params, no_caller_params
+            print("PASS: callerless launch-agent delegation remains operator-owned and ownerless")
+
             rejected("--prompt", "inline", "--prompt-file", str(prompt_file),
                      expected_error="mutually exclusive")
             rejected("--prompt-file", str(root / "missing.txt"), expected_error="failed to read --prompt-file")
@@ -143,7 +166,7 @@ def main():
                 print("PASS: startup=%s human and JSON forwarding" % state)
 
             assert not failures, failures
-            print("PASS: built CLI fake-socket launch-agent checks (10 accepted launches, 4 rejected inputs)")
+            print("PASS: built CLI fake-socket launch-agent checks (13 accepted launches, 4 rejected inputs)")
         finally:
             server.shutdown()
             server.server_close()

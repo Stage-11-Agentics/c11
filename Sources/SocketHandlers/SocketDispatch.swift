@@ -147,7 +147,7 @@ extension TerminalController {
         case "config.list", "config.recent", "config.stats",
              "config.save", "config.edit", "config.rm", "config.reorder", "config.default":
             return v2Result(id: request.id, TerminalController.v2ConfigNonLaunch(method: request.method, params: request.params))
-        case "flag.raise", "flag.lower", "flag.list", "flag.suppress", "flag.unsuppress":
+        case "flag.raise", "flag.lower", "flag.list", "flag.delegate", "flag.undelegate":
             return v2Result(
                 id: request.id,
                 self.v2FlagWorker(method: request.method, params: request.params)
@@ -1240,7 +1240,8 @@ extension TerminalController {
         }
         let launchFlagActor: PanelAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = PanelAttentionActor(rawValue: rawActor) else {
+            guard rawActor == "operator" || rawActor == "agent",
+                  let parsed = PanelAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -1280,11 +1281,18 @@ extension TerminalController {
                 data: nil
             )
         }
+        if params["delegated"] != nil, !(params["delegated"] is Bool) {
+            return .err(code: "invalid_params", message: "delegated must be a boolean", data: nil)
+        }
         if params["suppressed"] != nil, !(params["suppressed"] is Bool) {
             return .err(code: "invalid_params", message: "suppressed must be a boolean", data: nil)
         }
-        let launchSuppressed = params["suppressed"] as? Bool ?? false
-
+        if let delegated = params["delegated"] as? Bool,
+           let suppressed = params["suppressed"] as? Bool,
+           delegated != suppressed {
+            return .err(code: "invalid_params", message: "delegated and suppressed aliases disagree", data: nil)
+        }
+        let launchDelegated = (params["delegated"] as? Bool) ?? (params["suppressed"] as? Bool) ?? false
         let newWorkspace = v2Bool(params, "new_workspace") ?? false
 
         let cwdOverride: String?
@@ -1472,6 +1480,19 @@ extension TerminalController {
                 )
                 return result
             }
+            if launchDelegated,
+               let launchCallerSurfaceId,
+               AppDelegate.shared?.workspaceContainingPanel(
+                   panelId: launchCallerSurfaceId,
+                   preferredWorkspaceId: nil
+               ) == nil {
+                result = .err(
+                    code: "caller_surface_not_found",
+                    message: "Calling panel not found",
+                    data: nil
+                )
+                return result
+            }
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
@@ -1554,11 +1575,12 @@ extension TerminalController {
                             title: title
                         )
                     },
-                    stampSuppression: {
-                        if launchSuppressed {
-                            _ = try PanelAttentionService.shared.suppress(
+                    stampDelegation: {
+                        if launchDelegated {
+                            _ = try PanelAttentionService.shared.delegate(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
+                                ownerPanelId: launchCallerSurfaceId,
                                 by: .operator
                             )
                         }
@@ -1608,7 +1630,8 @@ extension TerminalController {
             agent["effort"] = plan.effort.isEmpty ? NSNull() : plan.effort
             agent["task"] = self.v2OrNull(request.task)
             agent["flag"] = self.v2OrNull(launchFlagReason)
-            agent["suppressed"] = launchSuppressed
+            agent["delegated"] = launchDelegated
+            agent["suppressed"] = launchDelegated
             result = .ok([
                 "agent": agent,
                 "command": plan.launchLine,

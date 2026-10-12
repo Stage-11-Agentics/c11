@@ -1668,10 +1668,10 @@ final class SocketClient {
         if let scopedWindow, params["window_id"] == nil,
            method.hasPrefix("workspace.") || (method.hasPrefix("panel.") && method != "panel.move") || method.hasPrefix("area.")
             || method.hasPrefix("notification.") || method.hasPrefix("flag.") || method.hasPrefix("snapshot.")
-            || ["system.identify", "system.tree", "agent.launch", "config.launch", "sidebar.state", "snapshot.create"].contains(method) {
+            || ["system.identify", "system.tree", "agent.launch", "flag.delegate", "flag.undelegate", "config.launch", "sidebar.state", "snapshot.create"].contains(method) {
             params["window_id"] = scopedWindow
         }
-        if let scopedWindow, ["panel.move", "panel.reorder", "area.swap", "area.join", "config.launch", "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress"].contains(method) {
+        if let scopedWindow, ["panel.move", "panel.reorder", "area.swap", "area.join", "config.launch", "flag.raise", "flag.lower", "flag.delegate", "flag.undelegate"].contains(method) {
             // panel.move treats window_id as a destination, so its global scope
             // is source admission rather than a synthesized destination.
             if method == "panel.move", let destination = params["window_id"] as? String {
@@ -3190,7 +3190,10 @@ struct CMUXCLI {
             } else if optionValue(commandArgs, name: "--by") != nil {
                 throw CLIError(message: "launch-agent: --by requires --flag")
             }
-            if commandArgs.contains("--suppressed") {
+            if commandArgs.contains("--delegated") || commandArgs.contains("--suppressed") {
+                params["delegated"] = true
+                // Keep the old spelling alongside the new one for an app
+                // version that predates delegated metadata.
                 params["suppressed"] = true
             }
             if let v = optionValue(commandArgs, name: "--model") { params["model"] = v }
@@ -3243,7 +3246,7 @@ struct CMUXCLI {
             }
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["panel", "area", "workspace"]))
 
-        case "raise-flag", "lower-flag", "suppress", "unsuppress":
+        case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
             guard let rawSurface = optionValue(commandArgs, name: "--panel") else {
                 throw CLIError(message: "\(command) requires --panel <id|ref>")
             }
@@ -3301,8 +3304,17 @@ struct CMUXCLI {
                     params["caller_panel_id"] = callerPanelId
                 }
             case "lower-flag": method = "flag.lower"
-            case "suppress": method = "flag.suppress"
-            default: method = "flag.unsuppress"
+            case "delegate", "suppress":
+                method = "flag.delegate"
+                let callerPanelId = try resolveCallingSurface(
+                    environment: ProcessInfo.processInfo.environment
+                )
+                if actor == "agent", callerPanelId == nil {
+                    throw CLIError(message: "\(command): agent delegation requires C11_PANEL_ID")
+                }
+                if let callerPanelId { params["caller_panel_id"] = callerPanelId }
+            case "undelegate", "unsuppress": method = "flag.undelegate"
+            default: method = "flag.undelegate"
             }
             let payload = try client.sendV2(method: method, params: params)
             let attentionJSON = jsonOutput || commandArgs.contains("--json")
@@ -11203,7 +11215,8 @@ struct CMUXCLI {
               --flag <reason>          Raise a sticky flag before command delivery
               --by <actor>             Flag authority: operator (default) or agent;
                                        requires --flag
-              --suppressed             Suppress routine attention before command delivery
+              --delegated              Route routine stops to the caller; flags still escalate
+              --suppressed             Alias for --delegated
               --env KEY=VALUE          Extra spawn env (repeatable)
               --json                   Print the machine-readable result object
 
@@ -11214,23 +11227,23 @@ struct CMUXCLI {
               c11 launch-agent --type claude-code --model opus --effort high
               c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
               c11 launch-agent --type opencode --prompt-file /tmp/brief.md --area area:2
-              c11 launch-agent --type codex --suppressed
+              c11 launch-agent --type codex --delegated
               c11 launch-agent --type claude-code --flag 'Watch migration'
               c11 launch-agent --type claude-code --system-prompt-mode append \\
                 --system-prompt 'Prefer terse answers.'
               c11 launch-agent --type claude-code --system-prompt-mode replace \\
                 --system-prompt ''      # Gregorovich blank slate
             """
-        case "raise-flag", "lower-flag", "suppress", "unsuppress":
+        case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
             return """
             Usage:
               c11 raise-flag --panel <id|ref> "<reason>" [--by agent|operator]
               c11 lower-flag --panel <id|ref> [--by agent|operator]
-              c11 suppress --panel <id|ref> [--by agent|operator]
-              c11 unsuppress --panel <id|ref> [--by agent|operator]
+              c11 delegate --panel <id|ref> [--by agent|operator]
+              c11 undelegate --panel <id|ref> [--by agent|operator]
 
-            Attention mutations require an explicit panel and never focus,
-            select, or raise their target.
+            Delegate aliases: suppress and unsuppress. Attention mutations
+            require an explicit panel and never focus, select, or raise their target.
             """
         case "new-panel", "new-tab":
             return """
@@ -20590,12 +20603,12 @@ struct CMUXCLI {
           claude-hook <session-start|stop|notification|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [--workspace <id|ref>] [--panel <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--panel <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-panel <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
-          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--delegated] [--env K=V ...] [--json]
           model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--cache-read <usd>] [--cache-write <usd>] [--cache-write-1h <usd>] [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
           raise-flag --panel <id|ref> "<reason>"
           lower-flag --panel <id|ref>
-          suppress --panel <id|ref>
-          unsuppress --panel <id|ref>
+          delegate --panel <id|ref>
+          undelegate --panel <id|ref>
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref>]

@@ -2510,8 +2510,8 @@ class TerminalController {
         "flag.raise",
         "flag.lower",
         "flag.list",
-        "flag.suppress",
-        "flag.unsuppress",
+        "flag.delegate",
+        "flag.undelegate",
         // C11-217: WebKit waits are worker-owned. Their WebKit invocations hop
         // back to main for the short call, but the socket worker owns the
         // potentially long completion wait.

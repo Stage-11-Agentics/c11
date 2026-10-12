@@ -78,6 +78,8 @@ final class LegacyWireCompletionTests: XCTestCase {
             ("pane.list", "area.list"), ("area.confirm", "area.confirm"),
             ("notification.create_for_tab", "notification.create_for_panel"),
             ("notification.create_for_surface", "notification.create_for_panel"),
+            ("flag.suppress", "flag.delegate"), ("flag.unsuppress", "flag.undelegate"),
+            ("flag.delegate", "flag.delegate"), ("flag.undelegate", "flag.undelegate"),
             ("browser.tab.list", "browser.panel.list"), ("browser.panel.new", "browser.panel.new"),
             ("debug.tab_snapshot", "debug.panel_snapshot"),
             ("debug.tab_snapshot.reset", "debug.panel_snapshot.reset"),

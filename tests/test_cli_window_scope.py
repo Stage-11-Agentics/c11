@@ -253,7 +253,8 @@ class Server(socketserver.ThreadingUnixStreamServer):
                                 "panel.create", "panel.split", "panel.get_metadata", "panel.set_metadata",
                                 "system.identify", "system.tree", "workspace.group.list",
                                 "notification.create", "notification.create_for_panel", "sidebar.state",
-                                "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress",
+                                "flag.raise", "flag.lower", "flag.delegate", "flag.undelegate",
+                                "flag.suppress", "flag.unsuppress",
                                 "snapshot.create", "snapshot.restore", "snapshot.restore_set",
                                 "panel.get_titlebar_state", "area.swap", "area.join",
                                 "panel.move", "panel.reorder", "config.launch"],
@@ -725,7 +726,8 @@ def main() -> int:
             unchanged()
 
             for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
-                                    ("suppress", "flag.suppress"), ("unsuppress", "flag.unsuppress")):
+                                    ("delegate", "flag.delegate"), ("undelegate", "flag.undelegate"),
+                                    ("suppress", "flag.delegate"), ("unsuppress", "flag.undelegate")):
                 args = [command, "--panel", "1", "--by", "operator"]
                 if command == "raise-flag":
                     args.append("Synthetic reason")

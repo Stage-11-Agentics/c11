@@ -21,9 +21,12 @@ jobs:
             skip_zig: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout }}
-    env:
-      C11_COMPAT_DERIVED_DATA: ${{ runner.temp }}/c11-compat-derived
     steps:
+      # The runner context is not available in job-level env, so set the
+      # derived-data path from the step environment instead.
+      - name: Set derived data path
+        run: echo "C11_COMPAT_DERIVED_DATA=$RUNNER_TEMP/c11-compat-derived" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

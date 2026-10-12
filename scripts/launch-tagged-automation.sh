@@ -181,6 +181,31 @@ OPEN_ENV=(
   -u GH_PAGER
   -u TERMINFO
   -u XDG_DATA_DIRS
+  # A launch from inside an agent seat carries that seat's wrapper, identity
+  # and Claude Code session markers. Inherited by the app's terminals, the
+  # reentry marker makes Resources/bin/claude skip its hooks (a Claude seat in
+  # the tagged build reports no lifecycle at all), and the session markers make
+  # every Claude seat there a child of the launcher (no transcript).
+  -u C11_CLAUDE_WRAPPER_REENTRY
+  -u C11_AGENT_INTERACTIVE_PID
+  -u CMUX_CLAUDE_PID
+  -u CLAUDECODE
+  -u CLAUDE_PID
+  -u CLAUDE_CODE_SESSION_ID
+  -u CLAUDE_CODE_CHILD_SESSION
+  -u CLAUDE_CODE_SESSION_ATTENDED
+  -u CLAUDE_CODE_MESSAGING_SOCKET
+  -u CLAUDE_CODE_MESSAGING_TOKEN
+  -u CLAUDE_CODE_ENTRYPOINT
+  -u CLAUDE_CODE_EXECPATH
+  -u C11_AGENT_TYPE
+  -u C11_AGENT_MODEL
+  -u C11_AGENT_TASK
+  -u C11_AGENT_ROLE
+  -u CMUX_AGENT_TYPE
+  -u CMUX_AGENT_MODEL
+  -u CMUX_AGENT_TASK
+  -u CMUX_AGENT_ROLE
   "C11_SOCKET_MODE=${MODE}"
   "C11_SOCKET_PATH=${SOCK}"
   "CMUXD_UNIX_PATH=${DSOCK}"

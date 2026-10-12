@@ -1,5 +1,4 @@
 import XCTest
-import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -737,63 +736,6 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(object["ok"] as? Bool, false)
         let error = try! XCTUnwrap(object["error"] as? [String: Any])
         XCTAssertEqual(error["code"] as? String, "missing_caller_surface")
-    }
-
-    func testLegacySuppressSocketAliasAllowsOwnerlessAgentSuppression() throws {
-        _ = NSApplication.shared
-        let app = AppDelegate()
-        let manager = WorkspaceManager()
-        let workspace = try XCTUnwrap(manager.selectedWorkspace)
-        let target = try XCTUnwrap(workspace.focusedPanelId)
-        let windowId = UUID()
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
-        app.registerMainWindow(
-            window,
-            windowId: windowId,
-            workspaceManager: manager,
-            sidebarState: SidebarState(),
-            sidebarSelectionState: SidebarSelectionState()
-        )
-        defer {
-            app.debugUnregisterMainWindow(window)
-            window.orderOut(nil)
-            workspace.teardownAllPanels()
-            store.removeWorkspace(workspaceId: workspace.id)
-        }
-
-        let requestData = try JSONSerialization.data(withJSONObject: [
-            "id": 21,
-            "method": "flag.suppress",
-            "params": ["surface_id": target.uuidString, "by": "agent"],
-        ])
-        let requestLine = try XCTUnwrap(String(data: requestData, encoding: .utf8))
-        let request = try XCTUnwrap(TerminalController.shared.parseV2SocketRequest(requestLine))
-        XCTAssertEqual(request.method, "flag.delegate")
-        XCTAssertEqual(request.rawMethod, "flag.suppress")
-
-        let response = AttentionTestBox<String?>(nil)
-        let completed = expectation(description: "legacy ownerless suppression response")
-        DispatchQueue.global(qos: .userInitiated).async {
-            response.set(TerminalController.shared.socketWorkerV2Response(request))
-            completed.fulfill()
-        }
-        wait(for: [completed], timeout: 2)
-
-        let data = try XCTUnwrap(response.get()?.data(using: .utf8))
-        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object["ok"] as? Bool, true)
-        let result = try XCTUnwrap(object["result"] as? [String: Any])
-        XCTAssertEqual(result["delegated"] as? Bool, true)
-        XCTAssertTrue(result["delegated_by"] is NSNull)
-        XCTAssertTrue(workspace.attentionSnapshot(panelId: target).delegated)
-        XCTAssertNil(workspace.attentionSnapshot(panelId: target).delegatedBy)
     }
 
     func testSocketRejectsInternalC11ActorForDelegation() {

@@ -4,11 +4,16 @@ extension TerminalController {
     /// Worker-owned attention methods. Parsing and validation happen here;
     /// the only main hop resolves the live surface and commits the already
     /// validated mutation. The semaphore guarantees commit-before-response.
-    nonisolated func v2FlagWorker(method: String, params: [String: Any]) -> V2CallResult {
+    nonisolated func v2FlagWorker(
+        method: String,
+        params: [String: Any],
+        legacyMethod: String? = nil
+    ) -> V2CallResult {
         if method == "flag.list" {
             return v2FlagListWorker()
         }
         let tracksDelegateOwner = method == "flag.delegate"
+        let isLegacyOwnerlessSuppression = legacyMethod == "flag.suppress"
 
         guard let rawSurface = params["surface_id"] as? String else {
             return .err(
@@ -64,7 +69,11 @@ extension TerminalController {
                     data: nil
                 )
             }
-            if actor == .agent, callerPanelId == nil {
+            if PanelAttentionDelegationPolicy.requiresCaller(
+                actor: actor,
+                callerPanelId: callerPanelId,
+                isLegacyOwnerlessSuppression: isLegacyOwnerlessSuppression
+            ) {
                 return .err(
                     code: "missing_caller_surface",
                     message: tracksDelegateOwner
@@ -96,7 +105,11 @@ extension TerminalController {
                         data: nil
                     )
                 }
-                if tracksDelegateOwner, callerPanelId == surfaceId {
+                if tracksDelegateOwner,
+                   PanelAttentionDelegationPolicy.isSelfDelegation(
+                       callerPanelId: callerPanelId,
+                       targetPanelId: surfaceId
+                   ) {
                     return .err(
                         code: "self_delegation",
                         message: "A panel cannot delegate itself",

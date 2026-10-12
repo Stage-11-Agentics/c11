@@ -2590,6 +2590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     override init() {
         super.init()
         Self.shared = self
+        PanelAttentionService.shared.installCloseObserver()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

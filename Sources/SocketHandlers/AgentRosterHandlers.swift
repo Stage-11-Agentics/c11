@@ -48,6 +48,7 @@ extension TerminalController {
             turnStartedMs: owner == nil ? nil : JournalCoordinator.shared.cachedTurnStartedMs(panelID: panelID),
             flagged: attention?.isFlagged ?? false,
             suppressed: attention?.suppressed ?? false,
+            delegatedBy: attention?.delegatedBy,
             lastSeenAt: PanelSeenTracker.shared.storedLastSeenAt(panelId: panelID)
         )
     }

@@ -201,7 +201,12 @@ enum PanelSheetDetailBuilder {
 
     /// Kept separate so the delegate presentation can take precedence without
     /// duplicating the parent wording or the subtitle composition.
-    static func parentLineageNote(parentTitle: String?) -> String? {
+    static func parentLineageNote(
+        parentTitle: String?,
+        parentPanelId: UUID? = nil,
+        delegateOwnerPanelId: UUID? = nil
+    ) -> String? {
+        if let parentPanelId, parentPanelId == delegateOwnerPanelId { return nil }
         guard let parentTitle = oneLine(parentTitle), !parentTitle.isEmpty else { return nil }
         return String(localized: "panelSheet.lineage.childOf", defaultValue: "Child of \(parentTitle)")
     }
@@ -413,8 +418,8 @@ extension Workspace {
             panelId: panelId,
             fallback: panelTitles[panelId] ?? panel.displayTitle
         )
-        let parentTitle = PanelLineage.shared.node(panelId: panelId)?.parentPanelId
-            .flatMap { PanelLineage.shared.node(panelId: $0)?.lastTitle }
+        let parentPanelId = PanelLineage.shared.node(panelId: panelId)?.parentPanelId
+        let parentTitle = parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0)?.lastTitle }
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
         }
@@ -482,7 +487,11 @@ extension Workspace {
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
                 : nil,
             relationshipLabel: delegationLabel(panelId: panelId),
-            lineageNote: PanelSheetDetailBuilder.parentLineageNote(parentTitle: parentTitle),
+            lineageNote: PanelSheetDetailBuilder.parentLineageNote(
+                parentTitle: parentTitle,
+                parentPanelId: parentPanelId,
+                delegateOwnerPanelId: attention.delegatedBy
+            ),
             promptCache: AgentIdentityPolicy.isAgentKind(terminalKind)
                 ? PromptCacheSources.observation(forPanel: panelId)
                 : nil

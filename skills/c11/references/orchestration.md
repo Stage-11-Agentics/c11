@@ -374,8 +374,8 @@ When you launch a worker whose results you will handle (an implementation worker
 you review and act on is the canonical case), launch it as your **delegate**. Its routine stops
 then come to you, and the operator hears that *you* are waiting, never that your worker
 finished. Launch normal when the operator will deal with the child directly (they asked for an
-instance they can watch or drive), or when you are handing the work off for good. Taking a
-delegate makes it yours on three counts:
+instance they can watch or drive), or when you are handing the work off for good. A delegate is
+yours in three ways:
 
 - **Completion.** Delegation removes the operator-facing stop signal, and polling for flags
   does not detect ordinary completion. Opt into the mailbox doorbell
@@ -387,8 +387,11 @@ delegate makes it yours on three counts:
   parent can't or shouldn't judge it, raise a c11 flag."* Without that instruction a delegate
   reads its quiet as a gag, and a worker that believes it has been gagged will sit blocked in
   silence.
-- c11 releases delegates when their owner panel closes. A re-tasked delegate releases itself with
-  `c11 undelegate --panel "$C11_PANEL_ID"`.
+- **Visibility.** Its teal mark distinguishes a quiet delegate from a plain idle panel; a flag
+  overrides that mark in violet.
+
+c11 releases delegates when their owner panel closes. A re-tasked delegate releases itself with
+`c11 undelegate --panel "$C11_PANEL_ID"`.
 
 ```bash
 c11 launch-agent --type claude-code --delegated ...    # your delegate; you handle its results

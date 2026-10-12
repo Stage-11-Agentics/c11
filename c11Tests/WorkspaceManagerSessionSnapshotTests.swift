@@ -1,5 +1,6 @@
 import XCTest
 import Combine
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -475,6 +476,91 @@ extension WorkspaceManagerSessionSnapshotTests {
 }
 
 extension WorkspaceManagerSessionSnapshotTests {
+    func testRestoredDelegateKeepsWorkspaceProjection() throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+        let source = WorkspaceManager()
+        let sourceWorkspace = try XCTUnwrap(source.selectedWorkspace)
+        let owner = try XCTUnwrap(sourceWorkspace.focusedTerminalPanel)
+        sourceWorkspace.setPanelCustomTitle(panelId: owner.id, title: "Planner")
+        let delegate = try XCTUnwrap(
+            sourceWorkspace.newTerminalSplit(from: owner.id, orientation: .horizontal)
+        )
+        _ = try PanelMetadataStore.shared.mutateAttention(
+            workspaceId: sourceWorkspace.id,
+            surfaceId: delegate.id,
+            delegation: .delegate(ownerPanelId: owner.id)
+        )
+        let snapshot = source.sessionSnapshot(includeScrollback: false)
+        sourceWorkspace.teardownAllPanels(markPanelsClosedForGood: false)
+
+        let manager = WorkspaceManager()
+        let windowId = UUID()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(
+            window,
+            windowId: windowId,
+            workspaceManager: manager,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            app.debugUnregisterMainWindow(window)
+            window.orderOut(nil)
+            for workspace in manager.workspaces { workspace.teardownAllPanels() }
+            sourceWorkspace.teardownAllPanels(markPanelsClosedForGood: false)
+            PanelMetadataStore.shared.removeWorkspace(workspaceId: sourceWorkspace.id)
+            PanelAttentionIndex.shared.prune(workspaceId: sourceWorkspace.id, validSurfaceIds: [])
+        }
+
+        manager.restoreSessionSnapshot(snapshot)
+
+        let restored = try XCTUnwrap(manager.workspaces.first { $0.id == sourceWorkspace.id })
+        XCTAssertEqual(
+            PanelMetadataStore.shared.attentionSnapshot(
+                workspaceId: restored.id,
+                surfaceId: delegate.id
+            ).delegatedBy,
+            owner.id
+        )
+        XCTAssertTrue(PanelAttentionIndex.shared.snapshot(
+            workspaceId: restored.id,
+            surfaceId: delegate.id
+        ).delegated)
+        XCTAssertTrue(restored.attentionSnapshot(panelId: delegate.id).delegated)
+        XCTAssertEqual(
+            restored.resolvedSurfacePanelActivityState(
+                panelId: delegate.id,
+                hasExactSurfaceNotification: true
+            ),
+            .idle,
+            "a restored delegate's routine stop remains quiet"
+        )
+
+        let livePanelIds = Set(manager.workspaces.flatMap { $0.panels.keys })
+        PanelAttentionService.shared.releaseDelegatesWithMissingOwners(livePanelIds: livePanelIds)
+        XCTAssertEqual(restored.delegationOwnerTitlesByPanel[delegate.id], "Planner")
+
+        // The explicit startup observer must route a permanent owner close
+        // through the service, clear delegation, and make the retained wait gold.
+        PanelLineage.shared.panelClosedForGood(owner.id)
+        XCTAssertFalse(restored.attentionSnapshot(panelId: delegate.id).delegated)
+        XCTAssertEqual(
+            restored.resolvedSurfacePanelActivityState(
+                panelId: delegate.id,
+                hasExactSurfaceNotification: true
+            ),
+            .waiting
+        )
+    }
+
     func testCollapsedGroupProductionAdapterExcludesSuppressedRoutineUnreadButRetainsFlags() throws {
         let manager = WorkspaceManager()
         let plainFlagged = try XCTUnwrap(manager.selectedWorkspace)

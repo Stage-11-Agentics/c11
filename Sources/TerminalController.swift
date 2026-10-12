@@ -2440,6 +2440,9 @@ class TerminalController {
         let id: Any?
         let method: String
         let params: [String: Any]
+        /// Retained for the compatibility cases whose old spelling carried
+        /// semantics that the canonical method did not (legacy ownerless suppress).
+        var rawMethod: String? = nil
         /// C11-337: set when the request used an old method spelling; the
         /// response's generic `ref` values are echoed in that spelling.
         var legacyRefPrefix: String? = nil

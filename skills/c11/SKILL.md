@@ -130,8 +130,9 @@ fall back to the raw UUID after the caller closes. `flag.raised` events carry th
 
 A **delegate** is an agent you launched whose results you will handle. Its routine stops go to
 you, not the operator: on stop its mark reads idle, and it stays out of waiting counts, ⌥V and
-routine notifications (the record still lands in the store). The operator hears that *you* are
-waiting, never that your worker finished. Parent/child is a creation fact: every delegate is a
+routine notifications (the record still lands in the store). Its distinct teal mark identifies a
+quiet delegate; a flag overrides it in violet. The operator hears that *you* are waiting, never
+that your worker finished. Parent/child is a creation fact: every delegate is a
 child, but not every child is a delegate. Use the delegate vocabulary for new work; `--suppressed`,
 `suppress`/`unsuppress`, and reads of `suppressed` remain aliases for compatibility:
 
@@ -144,15 +145,18 @@ c11 undelegate --panel <child>               # release it back to the operator
 **Launch the workers you'll manage as delegates.** The canonical case is an implementation
 worker whose output you will review and act on. Launch normal when the operator will deal with
 the child directly (they asked for an instance they can watch or drive), or when you are
-handing the work off for good. A delegate is yours on three counts:
+handing the work off for good. A delegate is yours in three ways:
 
 - **Completion.** Opt into the mailbox doorbell (`mailbox.delivery=stdin`) and tell the
   delegate to finish with `c11 mailbox send --to-parent`. Its report becomes your next turn.
 - **Escalation.** Put this in its prompt: *"Report results and recoverable blockers to your
   parent by mailbox. If something needs the operator, or your parent can't or shouldn't judge
   it, raise a c11 flag."*
-- c11 releases a delegate when its owner panel closes. A re-tasked delegate releases itself with
-  `c11 undelegate --panel "$C11_PANEL_ID"`.
+- **Visibility.** The teal delegate mark distinguishes a quiet worker from an ordinary idle
+  panel; a flag overrides it in violet.
+
+c11 releases a delegate when its owner panel closes. A re-tasked delegate releases itself with
+`c11 undelegate --panel "$C11_PANEL_ID"`.
 
 **If you are a delegate,** report to your parent. A flag goes straight to the operator, past
 your parent, at full strength. Raise one when you hit something that needs a human, looks

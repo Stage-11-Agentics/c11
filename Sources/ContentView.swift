@@ -11679,6 +11679,12 @@ private struct WorkspacePulseMark: View {
             alpha: 1
         )
     )
+    private static let delegatedLightColor = Color(
+        nsColor: NSColor(hex: Workspace.delegatedActivityHex(lightBackground: true)) ?? .secondaryLabelColor
+    )
+    private static let delegatedDarkColor = Color(
+        nsColor: NSColor(hex: Workspace.delegatedActivityHex(lightBackground: false)) ?? .secondaryLabelColor
+    )
 
     let state: WorkspacePulseState
     let lifecycleColor: Color
@@ -11705,11 +11711,7 @@ private struct WorkspacePulseMark: View {
     private var color: Color {
         if flagged { return Self.flaggedColor }
         if suppressed {
-            return Color(
-                nsColor: NSColor(
-                    hex: Workspace.delegatedActivityHex(lightBackground: colorScheme == .light)
-                ) ?? .secondaryLabelColor
-            )
+            return colorScheme == .light ? Self.delegatedLightColor : Self.delegatedDarkColor
         }
         return lifecycleColor
     }

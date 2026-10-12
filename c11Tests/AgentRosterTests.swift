@@ -13,6 +13,7 @@ final class AgentRosterTests: XCTestCase {
     private let panelB = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
     private let panelC = UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!
     private let workspace = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+    private let delegateOwner = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
 
     func testTwoOwnerDocumentKeepsNullsAndHistoricalCandidates() {
         let blocked = snapshot(panel: panelA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
@@ -24,7 +25,7 @@ final class AgentRosterTests: XCTestCase {
         let live = [
             AgentRoster.LivePanel(panelID: panelB, workspaceID: workspace, sessionID: "owner-b", kind: "claude-code", snapshot: working, turnStartedMs: 1_699_000_000_000, flagged: false, suppressed: false, lastSeenAt: nil),
             AgentRoster.LivePanel(panelID: panelC, workspaceID: workspace, sessionID: nil, kind: nil, snapshot: nil, turnStartedMs: nil, flagged: true, suppressed: false, lastSeenAt: seen),
-            AgentRoster.LivePanel(panelID: panelA, workspaceID: workspace, sessionID: "owner-a", kind: "claude-code", snapshot: blocked, turnStartedMs: nil, flagged: false, suppressed: true, lastSeenAt: nil),
+            AgentRoster.LivePanel(panelID: panelA, workspaceID: workspace, sessionID: "owner-a", kind: "claude-code", snapshot: blocked, turnStartedMs: nil, flagged: false, suppressed: true, delegatedBy: delegateOwner, lastSeenAt: nil),
         ]
         let started = retained(.sessionStarted, sequence: 1, native: "SessionStart")
         let document = AgentRoster.document(
@@ -58,6 +59,8 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertTrue(ask["model"] is NSNull)
         XCTAssertEqual(ask["freshness"] as? String, "fresh")
         XCTAssertEqual(ask["since"] as? String, AgentRoster.isoSeconds(ms: blocked.sinceMs))
+        XCTAssertEqual(ask["delegated"] as? Bool, true)
+        XCTAssertEqual(ask["delegated_by"] as? String, delegateOwner.uuidString)
         XCTAssertEqual(ask["suppressed"] as? Bool, true)
         let worker = panels[1]
         XCTAssertEqual(worker["state"] as? String, "working")

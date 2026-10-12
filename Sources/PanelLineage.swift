@@ -10,6 +10,8 @@ final class PanelLineage {
     private(set) var store = PanelLineageStore()
     private var creatorPanelId: UUID?
     private var closedPanelIds: Set<UUID> = []
+    private var closeBatchDepth = 0
+    private var batchedClosedPanelIds: Set<UUID> = []
 
     func addPanelClosedForGoodObserver(_ body: @escaping (Set<UUID>) -> Void) {
         panelClosedForGoodObservers.append(body)
@@ -60,8 +62,32 @@ final class PanelLineage {
         }
         guard !newlyClosed.isEmpty else { return }
 
+        if closeBatchDepth > 0 {
+            batchedClosedPanelIds.formUnion(newlyClosed)
+            return
+        }
+
+        notifyPanelClosedForGoodObservers(newlyClosed)
+    }
+
+    /// Collects panels that actually close during a synchronous operation and
+    /// publishes them as one batch after per-panel cleanup completes. Nested
+    /// batches share the outer batch so observers see the full teardown set.
+    func withCloseBatch<T>(_ operation: () throws -> T) rethrows -> T {
+        closeBatchDepth += 1
+        defer {
+            closeBatchDepth -= 1
+            guard closeBatchDepth == 0, !batchedClosedPanelIds.isEmpty else { return }
+            let closedPanelIds = batchedClosedPanelIds
+            batchedClosedPanelIds.removeAll(keepingCapacity: true)
+            notifyPanelClosedForGoodObservers(closedPanelIds)
+        }
+        return try operation()
+    }
+
+    private func notifyPanelClosedForGoodObservers(_ panelIds: Set<UUID>) {
         for observer in panelClosedForGoodObservers {
-            observer(newlyClosed)
+            observer(panelIds)
         }
     }
 

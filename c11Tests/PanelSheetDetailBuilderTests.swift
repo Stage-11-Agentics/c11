@@ -200,6 +200,23 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         )
     }
 
+    func testDelegateOfItsParentOmitsRedundantChildRelationship() {
+        let owner = UUID()
+        XCTAssertNil(PanelSheetDetailBuilder.parentLineageNote(
+            parentTitle: "Planner",
+            parentPanelId: owner,
+            delegateOwnerPanelId: owner
+        ))
+        XCTAssertEqual(
+            PanelSheetDetailBuilder.parentLineageNote(
+                parentTitle: "Planner",
+                parentPanelId: UUID(),
+                delegateOwnerPanelId: owner
+            ),
+            "Child of Planner"
+        )
+    }
+
     // MARK: Title
 
     func testFullTitleIsKeptWhole() {

@@ -66,6 +66,7 @@ extension TerminalController {
             id: dict["id"],
             method: LegacyWireAliases.canonicalMethod(method),
             params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:]),
+            rawMethod: method,
             legacyRefPrefix: LegacyWireAliases.legacyRefPrefix(
                 forRawMethod: method, params: dict["params"] as? [String: Any] ?? [:]
             )
@@ -150,7 +151,11 @@ extension TerminalController {
         case "flag.raise", "flag.lower", "flag.list", "flag.delegate", "flag.undelegate":
             return v2Result(
                 id: request.id,
-                self.v2FlagWorker(method: request.method, params: request.params)
+                self.v2FlagWorker(
+                    method: request.method,
+                    params: request.params,
+                    legacyMethod: request.rawMethod
+                )
             )
         // C11-217: browser eval/wait and download wait resolve their routing
         // snapshot on main, then wait on this socket worker while each WebKit

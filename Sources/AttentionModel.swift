@@ -32,6 +32,20 @@ enum PanelAttentionDelegationMutation {
     case undelegate
 }
 
+enum PanelAttentionDelegationPolicy {
+    static func requiresCaller(
+        actor: PanelAttentionActor,
+        callerPanelId: UUID?,
+        isLegacyOwnerlessSuppression: Bool
+    ) -> Bool {
+        actor == .agent && callerPanelId == nil && !isLegacyOwnerlessSuppression
+    }
+
+    static func isSelfDelegation(callerPanelId: UUID?, targetPanelId: UUID) -> Bool {
+        callerPanelId == targetPanelId
+    }
+}
+
 struct PanelAttentionSnapshot: Equatable, Identifiable {
     let workspaceId: UUID
     let surfaceId: UUID
@@ -236,6 +250,7 @@ final class PanelAttentionIndex: ObservableObject {
     static let shared = PanelAttentionIndex()
 
     @Published private(set) var snapshots: [String: PanelAttentionSnapshot] = [:]
+    private var delegateKeysByOwner: [UUID: Set<String>] = [:]
 
     var flaggedCount: Int { snapshots.values.lazy.filter(\.isFlagged).count }
     var oldestFlags: [PanelAttentionSnapshot] {
@@ -255,20 +270,60 @@ final class PanelAttentionIndex: ObservableObject {
 
     func publish(_ snapshot: PanelAttentionSnapshot) {
         let key = Self.key(workspaceId: snapshot.workspaceId, surfaceId: snapshot.surfaceId)
+        if let prior = snapshots[key], prior.delegated {
+            if !snapshot.delegated || prior.delegatedBy != snapshot.delegatedBy {
+                removeDelegateKey(key, ownerPanelId: prior.delegatedBy)
+            }
+        }
         if !snapshot.isFlagged && !snapshot.suppressed {
             snapshots.removeValue(forKey: key)
         } else if snapshots[key] != snapshot {
             snapshots[key] = snapshot
         }
+        if snapshot.delegated, let ownerPanelId = snapshot.delegatedBy {
+            delegateKeysByOwner[ownerPanelId, default: []].insert(key)
+        }
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
-        snapshots.removeValue(forKey: Self.key(workspaceId: workspaceId, surfaceId: surfaceId))
+        let key = Self.key(workspaceId: workspaceId, surfaceId: surfaceId)
+        let prior = snapshots.removeValue(forKey: key)
+        removeDelegateKey(key, ownerPanelId: prior?.delegatedBy)
+    }
+
+    func delegatesOwned(by ownerPanelId: UUID) -> [PanelAttentionSnapshot] {
+        (delegateKeysByOwner[ownerPanelId] ?? [])
+            .compactMap { snapshots[$0] }
+            .filter { $0.delegated && $0.delegatedBy == ownerPanelId }
+            .sorted {
+                if $0.workspaceId != $1.workspaceId {
+                    return $0.workspaceId.uuidString < $1.workspaceId.uuidString
+                }
+                return $0.surfaceId.uuidString < $1.surfaceId.uuidString
+            }
     }
 
     func prune(workspaceId: UUID, validSurfaceIds: Set<UUID>) {
         snapshots = snapshots.filter {
             $0.value.workspaceId != workspaceId || validSurfaceIds.contains($0.value.surfaceId)
+        }
+        rebuildDelegateIndex()
+    }
+
+    private func removeDelegateKey(_ key: String, ownerPanelId: UUID?) {
+        guard let ownerPanelId else { return }
+        delegateKeysByOwner[ownerPanelId]?.remove(key)
+        if delegateKeysByOwner[ownerPanelId]?.isEmpty == true {
+            delegateKeysByOwner.removeValue(forKey: ownerPanelId)
+        }
+    }
+
+    private func rebuildDelegateIndex() {
+        delegateKeysByOwner.removeAll(keepingCapacity: true)
+        for (key, snapshot) in snapshots where snapshot.delegated {
+            if let ownerPanelId = snapshot.delegatedBy {
+                delegateKeysByOwner[ownerPanelId, default: []].insert(key)
+            }
         }
     }
 
@@ -282,18 +337,21 @@ final class PanelAttentionIndex: ObservableObject {
 /// events, and optional direct delivery are all committed.
 @MainActor
 final class PanelAttentionService {
-    static let shared: PanelAttentionService = {
-        let service = PanelAttentionService()
-        PanelLineage.shared.addPanelClosedForGoodObserver { [weak service] closingPanelIds in
-            service?.releaseDelegatesForClosingPanels(closingPanelIds)
-        }
-        return service
-    }()
+    static let shared = PanelAttentionService()
 
     private let feedProjection: FeedProjectionBridge
+    private var didInstallCloseObserver = false
 
     init(feedProjection: FeedProjectionBridge = .shared) {
         self.feedProjection = feedProjection
+    }
+
+    func installCloseObserver() {
+        guard !didInstallCloseObserver else { return }
+        didInstallCloseObserver = true
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] closingPanelIds in
+            self?.releaseDelegatesForClosingPanels(closingPanelIds)
+        }
     }
 
     @discardableResult
@@ -461,7 +519,7 @@ final class PanelAttentionService {
         } else {
             ownerTitle = nil
         }
-        for entry in PanelMetadataStore.shared.delegateEntries(ownerPanelId: ownerPanelId) {
+        for entry in PanelAttentionIndex.shared.delegatesOwned(by: ownerPanelId) {
             guard let workspace = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: entry.surfaceId,
                 preferredWorkspaceId: entry.workspaceId

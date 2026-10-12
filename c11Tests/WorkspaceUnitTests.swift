@@ -2917,6 +2917,91 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
 
         XCTAssertEqual(observedCloseBatches, [Set([owner.id, delegate.id])])
     }
+
+    func testReviewOnlyAreaResetReportsOneCloseBatch() async throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let survivingWorkspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let windowId = UUID()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(
+            window,
+            windowId: windowId,
+            workspaceManager: manager,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            app.debugUnregisterMainWindow(window)
+            window.orderOut(nil)
+            for workspace in manager.workspaces {
+                workspace.teardownAllPanels()
+                PanelMetadataStore.shared.removeWorkspace(workspaceId: workspace.id)
+                PanelAttentionIndex.shared.prune(workspaceId: workspace.id, validSurfaceIds: [])
+            }
+        }
+        PanelAttentionService.shared.installCloseObserver()
+
+        let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        XCTAssertEqual(workspace.bonsplitController.allPaneIds.count, 1)
+        let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let worker = try XCTUnwrap(PanelLineage.shared.withCreator(owner.id) {
+            workspace.newTerminalSurface(inPane: paneId, focus: false)
+        })
+        let survivingDelegate = try XCTUnwrap(survivingWorkspace.focusedTerminalPanel)
+        _ = try PanelAttentionService.shared.delegate(
+            workspaceId: workspace.id,
+            surfaceId: worker.id,
+            ownerPanelId: owner.id,
+            by: .operator
+        )
+        _ = try PanelAttentionService.shared.delegate(
+            workspaceId: survivingWorkspace.id,
+            surfaceId: survivingDelegate.id,
+            ownerPanelId: owner.id,
+            by: .operator
+        )
+
+        observedCloseBatches = []
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] ids in
+            self?.observedCloseBatches.append(ids)
+        }
+        workspace.splitTabBar(workspace.bonsplitController, didRequestClosePane: paneId)
+        for _ in 0..<20 {
+            if workspace.areaCloseInteractionRuntime.active[paneId.id] != nil { break }
+            await Task.yield()
+        }
+        XCTAssertNotNil(workspace.areaCloseInteractionRuntime.active[paneId.id])
+        workspace.areaCloseInteractionRuntime.resolveConfirm(panelId: paneId.id, result: .confirmed)
+        for _ in 0..<20 {
+            if workspace.panels[owner.id] == nil && workspace.panels[worker.id] == nil { break }
+            await Task.yield()
+        }
+
+        XCTAssertNil(workspace.panels[owner.id])
+        XCTAssertNil(workspace.panels[worker.id])
+        XCTAssertEqual(
+            observedCloseBatches,
+            [Set([owner.id, worker.id])],
+            "One confirmed area reset must notify observers once with every panel it closed"
+        )
+        XCTAssertFalse(
+            PanelAttentionIndex.shared.snapshot(
+                workspaceId: survivingWorkspace.id,
+                surfaceId: survivingDelegate.id
+            ).delegated,
+            "A delegate surviving in another workspace must still be released"
+        )
+    }
 }
 
 @MainActor

@@ -3322,7 +3322,19 @@ struct CMUXCLI {
             case "undelegate", "unsuppress": method = "flag.undelegate"
             default: method = "flag.undelegate"
             }
-            let payload = try client.sendV2(method: method, params: params)
+            let payload: [String: Any]
+            do {
+                payload = try client.sendV2(method: method, params: params)
+            } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
+                let legacyMethod: String?
+                switch method {
+                case "flag.delegate": legacyMethod = "flag.suppress"
+                case "flag.undelegate": legacyMethod = "flag.unsuppress"
+                default: legacyMethod = nil
+                }
+                guard let legacyMethod else { throw error }
+                payload = try client.sendV2(method: legacyMethod, params: params)
+            }
             let attentionJSON = jsonOutput || commandArgs.contains("--json")
             printV2Payload(
                 payload,

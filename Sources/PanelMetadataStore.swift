@@ -141,12 +141,6 @@ final class PanelMetadataStore: @unchecked Sendable {
         }
     }
 
-    struct DelegationEntry {
-        let workspaceId: UUID
-        let surfaceId: UUID
-        let ownerPanelId: UUID?
-    }
-
     enum WriteError: Error {
         case invalidJSON(String)
         case payloadTooLarge
@@ -663,32 +657,6 @@ final class PanelMetadataStore: @unchecked Sendable {
                 delegated: blob[MetadataKey.suppressed] as? Bool ?? false,
                 delegatedBy: (blob[MetadataKey.delegatedBy] as? String).flatMap(UUID.init(uuidString:))
             )
-        }
-    }
-
-    func delegateEntries(ownerPanelId: UUID) -> [DelegationEntry] {
-        allDelegateEntries().filter { $0.ownerPanelId == ownerPanelId }
-    }
-
-    func allDelegateEntries() -> [DelegationEntry] {
-        queue.sync {
-            var entries: [DelegationEntry] = []
-            for (workspaceId, panels) in metadata {
-                for (surfaceId, values) in panels where values[MetadataKey.suppressed] as? Bool == true {
-                    entries.append(DelegationEntry(
-                        workspaceId: workspaceId,
-                        surfaceId: surfaceId,
-                        ownerPanelId: (values[MetadataKey.delegatedBy] as? String)
-                            .flatMap(UUID.init(uuidString:))
-                    ))
-                }
-            }
-            return entries.sorted {
-                if $0.workspaceId != $1.workspaceId {
-                    return $0.workspaceId.uuidString < $1.workspaceId.uuidString
-                }
-                return $0.surfaceId.uuidString < $1.surfaceId.uuidString
-            }
         }
     }
 

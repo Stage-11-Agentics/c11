@@ -8681,6 +8681,14 @@ final class Workspace: Identifiable, ObservableObject {
                 workspaceId: id,
                 surfaceId: panelId
             )
+            // During session restore this workspace is not installed in the
+            // AppDelegate registry yet, so service-wide lookup cannot project
+            // attention back onto `self`. Keep the local render cache aligned
+            // with the restored metadata before the workspace is published.
+            setAttentionSnapshot(
+                PanelMetadataStore.shared.attentionSnapshot(workspaceId: id, surfaceId: panelId),
+                forSurface: panelId
+            )
             // The snapshot's `customColor` (applied when the panel was created)
             // owns the tab color; re-mirror it over the restored blob, which may
             // predate the `color` key. Then paint the restored `icon`.
@@ -14272,9 +14280,11 @@ extension Workspace: BonsplitDelegate {
                 // staring at the empty-pane chooser. Matches the user's ask:
                 // X always does something, even on the root pane.
                 let bonsplitTabsNow = self.bonsplitController.tabs(inPane: pane)
-                for bonsplitTab in bonsplitTabsNow {
-                    self.forceCloseBonsplitTabIds.insert(bonsplitTab.id)
-                    _ = self.bonsplitController.closeTab(bonsplitTab.id)
+                PanelLineage.shared.withCloseBatch {
+                    for bonsplitTab in bonsplitTabsNow {
+                        self.forceCloseBonsplitTabIds.insert(bonsplitTab.id)
+                        _ = self.bonsplitController.closeTab(bonsplitTab.id)
+                    }
                 }
                 _ = self.newTerminalSurface(inPane: pane)
             } else {

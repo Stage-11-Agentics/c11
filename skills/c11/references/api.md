@@ -1066,8 +1066,7 @@ The JSON document is schema 1. `live_identity` is `available` or `unavailable`.
 lists live panels. `restore_candidates` lists unconfirmed current rows.
 Timestamps are ISO-8601 UTC at whole seconds. Nulls are explicit.
 
-A live panel reports `flag`, `delegated`, `delegated_by`, and `suppressed`, plus
-`last_seen_at` even when it has no journal row. Journal fields are then null. `kind` comes from the journal
+A live panel reports `flag`, `delegated`, `delegated_by`, and `last_seen_at` even when it has no journal row. `suppressed` remains as a compatibility alias. Journal fields are then null. `kind` comes from the journal
 owner. `model` is the model on the journal snapshot. Waiting `reason` is
 `approval`, `question`, `plan_review`, or null.
 

@@ -3002,6 +3002,75 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
             "A delegate surviving in another workspace must still be released"
         )
     }
+
+    func testCloseOthersReportsAllClosedPanelsTogether() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let owner = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let delegate = try XCTUnwrap(PanelLineage.shared.withCreator(owner.id) {
+            workspace.newTerminalSurface(inPane: paneId, focus: false)
+        })
+        let survivor = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+        let survivorTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(survivor.id))
+        let survivorTab = try XCTUnwrap(
+            workspace.bonsplitController.tabs(inPane: paneId).first { $0.id == survivorTabId }
+        )
+        observedCloseBatches = []
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak self] ids in
+            self?.observedCloseBatches.append(ids)
+        }
+
+        workspace.splitTabBar(
+            workspace.bonsplitController,
+            didRequestTabContextAction: .closeOthers,
+            for: survivorTab,
+            inPane: paneId
+        )
+
+        XCTAssertNil(workspace.panels[owner.id])
+        XCTAssertNil(workspace.panels[delegate.id])
+        XCTAssertNotNil(workspace.panels[survivor.id])
+        XCTAssertEqual(observedCloseBatches, [Set([owner.id, delegate.id])])
+    }
+
+    func testAreaClosePreservesFinalLineageIdentity() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let parent = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let parentArea = try XCTUnwrap(workspace.paneId(forPanelId: parent.id))
+        let child = try XCTUnwrap(
+            PanelLineage.shared.withCreator(parent.id) {
+                workspace.newTerminalSplit(
+                    from: parent.id,
+                    orientation: .horizontal,
+                    focus: false
+                )
+            }
+        )
+        let childArea = try XCTUnwrap(workspace.paneId(forPanelId: child.id))
+        XCTAssertNotEqual(parentArea, childArea)
+
+        XCTAssertEqual(PanelLineage.shared.node(panelId: parent.id)?.lastTitle, parent.displayTitle)
+        workspace.setPanelCustomTitle(panelId: parent.id, title: "Final parent title")
+        _ = try PanelMetadataStore.shared.setMetadata(
+            workspaceId: workspace.id,
+            surfaceId: parent.id,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+
+        XCTAssertTrue(workspace.bonsplitController.closePane(parentArea))
+
+        let closedParent = try XCTUnwrap(PanelLineage.shared.node(panelId: parent.id))
+        XCTAssertTrue(closedParent.isClosed)
+        XCTAssertEqual(closedParent.lastTitle, "Final parent title")
+        XCTAssertEqual(closedParent.agentType, "codex")
+        XCTAssertNil(workspace.panels[parent.id])
+        XCTAssertNotNil(workspace.panels[child.id])
+        XCTAssertEqual(PanelLineage.shared.node(panelId: child.id)?.parentPanelId, parent.id)
+    }
 }
 
 @MainActor

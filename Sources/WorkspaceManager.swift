@@ -2837,7 +2837,9 @@ class WorkspaceManager: ObservableObject {
         isRetiredForWindowClose = true
         var closedPanelIds: Set<UUID> = []
         for workspace in workspaces {
-            closedPanelIds.formUnion(workspace.panels.keys)
+            let workspacePanelIds = Set(workspace.panels.keys)
+            PanelLineage.shared.captureFinalIdentity(workspacePanelIds, in: workspace)
+            closedPanelIds.formUnion(workspacePanelIds)
             workspace.retireForWindowClose()
         }
         PanelLineage.shared.panelsClosedForGood(closedPanelIds)

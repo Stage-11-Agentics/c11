@@ -661,7 +661,8 @@ parent. Text output marks a known child with `↳ child of <panel ref> <title>`.
 ```bash
 c11 family                         # Caller panel's root and descendants
 c11 family --panel panel:12        # Another panel's family
-c11 family --panel panel:12 --json # Versioned lineage nodes for scripts
+c11 family --panel panel:12 --json # Formatted lineage output for scripts
+c11 --id-format both family --json # Include stable UUIDs and short refs
 ```
 
 Text output lists type, title, live/closed state, delegate status, and workspace
@@ -670,8 +671,10 @@ for each node. Socket method: `panel.family`. Its version 1 response carries
 has `id`, `ref`, `parent_panel_id/ref`, `title`, `type`, `state` (`live` or
 `closed`), `agent_type`, `delegated`, `delegated_by`, `closed_at`, and workspace
 identity/title. Closed ancestors remain in the family while a live descendant
-depends on them. Lineage is app-level session state, not workspace snapshot or
-metadata state.
+depends on them. The socket response carries stable UUIDs and refs in its
+schema fields. CLI JSON applies the global `--id-format` policy and defaults to
+refs; use `c11 --id-format both family --json` when scripts need stable UUIDs.
+Lineage is app-level session state, not workspace snapshot or metadata state.
 
 `c11 mailbox send --to-parent --body "…"` resolves the caller's direct parent
 by exact panel UUID, even when another workspace has the same title. It needs

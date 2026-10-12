@@ -12089,13 +12089,15 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func closePanels(_ bonsplitTabIds: [TabID], skipPinned: Bool = true) {
-        for bonsplitTabId in bonsplitTabIds {
-            if skipPinned,
-               let panelId = tabIdFromBonsplitTabId(bonsplitTabId),
-               pinnedPanelIds.contains(panelId) {
-                continue
+        PanelLineage.shared.withCloseBatch {
+            for bonsplitTabId in bonsplitTabIds {
+                if skipPinned,
+                   let panelId = tabIdFromBonsplitTabId(bonsplitTabId),
+                   pinnedPanelIds.contains(panelId) {
+                    continue
+                }
+                _ = bonsplitController.closeTab(bonsplitTabId)
             }
-            _ = bonsplitController.closeTab(bonsplitTabId)
         }
     }
 
@@ -13419,6 +13421,7 @@ extension Workspace: BonsplitDelegate {
             let lineageClosedPanelIds = isDetachingCloseTransaction
                 ? Set<UUID>()
                 : Set(closedPanelIds.filter { panels[$0] != nil })
+            PanelLineage.shared.captureFinalIdentity(lineageClosedPanelIds, in: self)
             for panelId in closedPanelIds {
                 // Dismiss any pending pane interactions on this panel before
                 // tearing it down so withCheckedContinuation callers resume

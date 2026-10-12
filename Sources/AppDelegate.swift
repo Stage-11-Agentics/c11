@@ -13700,10 +13700,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
+        let closingWindowId = ObjectIdentifier(window)
+        if !isTerminatingApp,
+           let closingContext = mainWindowContexts[closingWindowId],
+           !mainWindowContexts.contains(where: {
+               $0.key != closingWindowId && $0.value.workspaceManager === closingContext.workspaceManager
+           }) {
+            for workspace in closingContext.workspaceManager.workspaces {
+                PanelLineage.shared.captureFinalIdentity(Set(workspace.panels.keys), in: workspace)
+            }
+        }
         if !isTerminatingApp,
            !closesUnansweredResumePicker,
            mainWindowContexts.count == 1,
-           mainWindowContexts[ObjectIdentifier(window)] != nil {
+           mainWindowContexts[closingWindowId] != nil {
             persistLastWindowSnapshot()
         }
         guard let removed = unregisterMainWindowContext(for: window) else { return }

@@ -45,7 +45,12 @@ struct PanelLineageStore: Equatable, Sendable {
         agentType: String?
     ) -> UUID? {
         let existing = nodes[panelId]
-        let candidateParentId = existing?.parentPanelId ?? creatorPanelId
+        let candidateParentId: UUID?
+        if let existing {
+            candidateParentId = existing.parentPanelId
+        } else {
+            candidateParentId = creatorPanelId
+        }
         let parentId = candidateParentId.flatMap { nodes[$0] == nil ? nil : $0 }
         nodes[panelId] = PanelLineageNode(
             id: panelId,
@@ -84,9 +89,18 @@ struct PanelLineageStore: Equatable, Sendable {
     }
 
     mutating func close(panelId: UUID, at date: Date = Date()) {
-        guard var node = nodes[panelId], !node.isClosed else { return }
-        node.closedAt = date
-        nodes[panelId] = node
+        close(panelIds: [panelId], at: date)
+    }
+
+    mutating func close(panelIds: Set<UUID>, at date: Date = Date()) {
+        var didCloseAny = false
+        for panelId in panelIds {
+            guard var node = nodes[panelId], !node.isClosed else { continue }
+            node.closedAt = date
+            nodes[panelId] = node
+            didCloseAny = true
+        }
+        guard didCloseAny else { return }
         pruneClosedNodesWithoutLiveDescendants()
     }
 

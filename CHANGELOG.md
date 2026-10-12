@@ -4,6 +4,35 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [1.1.1] - 2026-10-12
+
+Headline: **c11 1.1.1. Mail rings an agent's doorbell instead of being typed into its prompt, every panel shows its mail, and c11 records who launched whom.**
+
+### Changed
+
+- **Mail rings a doorbell instead of being pasted into the prompt.** When mail reaches an agent panel with stdin delivery, c11 types one line, `You have mail: run c11 mailbox recv --ack when you want to receive it.`, at the moments it used to paste the whole message. The message stays unread until the agent runs `c11 mailbox recv --ack` or Claude Code's Stop hook takes it. Every harness gets the same line. `recv` and the hook show the text of a `--body-ref` file up to 4096 bytes and name the path for the rest. ([#658](https://github.com/Stage-11-Agentics/c11/pull/658))
+- **An agent that does not read its mail is rung once, not over and over.** A ring covers every message unread at that moment. New mail rings once more and covers everything still unread. ([#660](https://github.com/Stage-11-Agentics/c11/pull/660))
+- **Mail held behind a draft follows when the draft is cleared.** c11 never types into a draft. It looks again after 5, 15 and 30 seconds, then every 60 seconds, and rings once the prompt is empty. ([#660](https://github.com/Stage-11-Agentics/c11/pull/660))
+- **Workers an agent launches are its delegates.** `c11 launch-agent --delegated`, `c11 delegate` and `c11 undelegate` record which panel owns a worker. A delegate's routine stops stay off your sidebar and reach its owner. When the owner closes, its delegates are released and a stopped one turns gold. A delegate shows a teal mark and "Delegate of X". `--suppressed`, `suppress` and `unsuppress` still work as before. ([#664](https://github.com/Stage-11-Agentics/c11/pull/664))
+- **Jumping to a waiting or flagged agent centers its workspace in the sidebar.** This covers ⌃⌘↩, the Waiting Agent and Flagged Agents buttons, Feed and notification clicks. A collapsed folder centers its header. ([#652](https://github.com/Stage-11-Agentics/c11/pull/652))
+
+### Added
+
+- **A mailbox cell on every panel's subtitle bar.** It shows unread mail in orange and the total received in grey. Clicking it opens a read-only drawer with the newest 200 messages in full, including sender, reply links and `--body-ref` text. Opening the drawer never marks mail read. ([#657](https://github.com/Stage-11-Agentics/c11/pull/657))
+- **c11 records who created each panel.** `c11 family` shows a panel's ancestors and every descendant, including closed ones, so a chain holds together when a middle panel closes. `get-metadata`, `tree` and the panel sheet show the parent. `c11 mailbox send --to-parent` mails the panel that launched you. ([#664](https://github.com/Stage-11-Agentics/c11/pull/664))
+
+### Fixed
+
+- **Agents restored after a restart get their mail.** A resumed session used to stay "working" until someone typed into it, so its mail waited for hours. It now starts as unknown, and a "working" state with nothing behind it fades after 2 minutes. A real long turn is never rung. ([#663](https://github.com/Stage-11-Agentics/c11/pull/663))
+- **Mail reaches a Grok agent showing its prompt suggestion.** c11 read Grok's grey italic suggestion as a typed draft and held the mail. It now recognises the suggestion, and the doorbell line replaces it. ([#661](https://github.com/Stage-11-Agentics/c11/pull/661))
+- **Claude Code agents keep their idle signal.** On a long-lived install, the mail check at the end of a turn could use up the time the turn-end report needed, so c11 kept the agent "working" and held its mail. ([#659](https://github.com/Stage-11-Agentics/c11/pull/659))
+- **A close confirmation is either on screen or cancelled.** A click on a panel's close button could leave an invisible confirmation that swallowed later clicks and let Return close something you never saw. A visible close card now accepts Return, and an unseen one cancels. ([#655](https://github.com/Stage-11-Agentics/c11/pull/655), [#656](https://github.com/Stage-11-Agentics/c11/pull/656))
+- **New strings are translated** into Japanese, Ukrainian, Korean, Simplified and Traditional Chinese, and Russian. ([#657](https://github.com/Stage-11-Agentics/c11/pull/657), [#664](https://github.com/Stage-11-Agentics/c11/pull/664))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.1.0] - 2026-10-10
 
 Headline: **c11 1.1. The first launch deletes event history older than 14 days and keeps the rest within 64 MiB. Markdown panels become a full offline reader that agents can drive, and c11 reports usage and sessions from its local history.**

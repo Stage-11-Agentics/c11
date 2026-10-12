@@ -147,6 +147,20 @@ enum PanelLivenessDeriver {
         state: Workspace.PanelShellActivityState,
         workspace: Workspace
     ) {
+        onShellActivityChanged(surfaceId: surfaceId, workspaceId: workspaceId, state: state) { mirrored in
+            workspace.setAgentCold(false, forSurface: surfaceId)
+            workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+        }
+    }
+
+    /// The same transition with the main-actor mirror passed in. Tests drive
+    /// the store side through it without constructing a `Workspace`.
+    static func onShellActivityChanged(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        state: Workspace.PanelShellActivityState,
+        mirror: @escaping @MainActor (SidebarActivityState?) -> Void
+    ) {
         let derived = activityState(for: state)
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
@@ -174,8 +188,7 @@ enum PanelLivenessDeriver {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
-                    workspace.setAgentCold(false, forSurface: surfaceId)
-                    workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+                    mirror(mirrored)
                 }
             }
         }

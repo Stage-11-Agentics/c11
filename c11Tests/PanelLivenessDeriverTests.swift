@@ -478,10 +478,8 @@ final class PanelLivenessDeriverTests: XCTestCase {
     /// resumed session that never reports an edge read as working for 37
     /// hours. With nothing newer for the window, that working decays to
     /// unknown. Working an agent edge wrote is never decayed.
-    @MainActor
     func testShellWorkingOnAnAgentDecaysToUnknownAndAgentWorkingDoesNot() {
         let ws = UUID(); let shellOnly = UUID(); let reported = UUID()
-        let workspace = Workspace()
         defer {
             store.removeSurface(workspaceId: ws, surfaceId: shellOnly)
             store.removeSurface(workspaceId: ws, surfaceId: reported)
@@ -489,12 +487,12 @@ final class PanelLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(PanelLivenessDeriver.agentShellWorkingDecay, 120)
 
         PanelLivenessDeriver.onShellActivityChanged(
-            surfaceId: shellOnly, workspaceId: ws, state: .commandRunning, workspace: workspace
+            surfaceId: shellOnly, workspaceId: ws, state: .commandRunning, mirror: { _ in }
         )
         XCTAssertTrue(poll { self.activityValue(ws, shellOnly) == SidebarActivityState.working.rawValue })
 
         PanelLivenessDeriver.onShellActivityChanged(
-            surfaceId: reported, workspaceId: ws, state: .commandRunning, workspace: workspace
+            surfaceId: reported, workspaceId: ws, state: .commandRunning, mirror: { _ in }
         )
         PanelLivenessDeriver.onAgentLifecycleChanged(
             surfaceId: reported, workspaceId: ws, activity: .working, source: .reported

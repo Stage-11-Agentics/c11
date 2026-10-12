@@ -10009,16 +10009,17 @@ final class Workspace: Identifiable, ObservableObject {
         cancelAllPersistentFlashes()
 
         let panelEntries = Array(panels)
+        let closedPanelIds = Set(panelEntries.map { $0.key })
         for (panelId, panel) in panelEntries {
-            if markPanelsClosedForGood {
-                PanelLineage.shared.panelClosedForGood(panelId)
-            }
             panelSubscriptions.removeValue(forKey: panelId)
             PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
             panel.close()
             // C11-243: workspace teardown; these panels are gone.
             PanelSeenTracker.shared.forget(panelId: panelId)
+        }
+        if markPanelsClosedForGood {
+            PanelLineage.shared.panelsClosedForGood(closedPanelIds)
         }
 
         panels.removeAll(keepingCapacity: false)
@@ -13324,6 +13325,9 @@ extension Workspace: BonsplitDelegate {
         let shouldScheduleFocusReconcile = !isDetachingCloseTransaction
 
         if !closedPanelIds.isEmpty {
+            let lineageClosedPanelIds = isDetachingCloseTransaction
+                ? Set<UUID>()
+                : Set(closedPanelIds.filter { panels[$0] != nil })
             for panelId in closedPanelIds {
                 // Dismiss any pending pane interactions on this panel before
                 // tearing it down so withCheckedContinuation callers resume
@@ -13334,9 +13338,6 @@ extension Workspace: BonsplitDelegate {
                 // before the panel disappears. Same invariant as the
                 // single-panel close path above.
                 cancelPersistentFlash(panelId: panelId)
-                if !isDetachingCloseTransaction, panels[panelId] != nil {
-                    PanelLineage.shared.panelClosedForGood(panelId)
-                }
                 panels[panelId]?.close()
                 panels.removeValue(forKey: panelId)
                 // C11-243: pane closed for good; a detaching transaction keeps ids.
@@ -13367,6 +13368,10 @@ extension Workspace: BonsplitDelegate {
                 PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
             }
+            PanelLineage.shared.panelsClosedForGood(
+                lineageClosedPanelIds,
+                isDetaching: isDetachingCloseTransaction
+            )
 
             let closedSet = Set(closedPanelIds)
             bonsplitTabIdToTabId = bonsplitTabIdToTabId.filter { !closedSet.contains($0.value) }

@@ -397,8 +397,9 @@ typedef enum {
 
 // Bounded active-screen prompt-region capture. Callers provide storage for at
 // most these limits; native traversal stops at the same limits and marks a
-// clipped result incomplete. Text is UTF-8, cell entries retain SGR-2 faint,
-// and rows preserve hard/soft-wrap boundaries. No scrollback or colors.
+// clipped result incomplete. Text is UTF-8, cell entries retain SGR-2 faint
+// and SGR-3 italic, and rows preserve hard/soft-wrap boundaries. No scrollback
+// or colors.
 #define GHOSTTY_PROMPT_REGION_MAX_ROWS 16
 #define GHOSTTY_PROMPT_REGION_MAX_CELLS 4096
 #define GHOSTTY_PROMPT_REGION_MAX_TEXT_BYTES 16384
@@ -422,6 +423,7 @@ typedef struct {
   uint32_t text_offset;
   uint32_t text_len;
   bool faint;
+  bool italic;
 } ghostty_prompt_region_cell_s;
 
 typedef enum {

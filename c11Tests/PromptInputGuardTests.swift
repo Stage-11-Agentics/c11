@@ -1241,7 +1241,8 @@ extension PromptInputClassifierTests {
 /// cursor, 6 below) with each cell's faint and italic bits.
 final class GrokPromptSuggestionTests: XCTestCase {
     func testCapturedGrokSuggestionIsASuggestion() {
-        for capture in [GrokCaptures.suggestion, GrokCaptures.suggestionAfterClear] {
+        for capture in [GrokCaptures.suggestion, GrokCaptures.suggestionAfterClear,
+                        GrokCaptures.narrowTruncatedSuggestion] {
             let region = capture.region()
             XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok"),
                            .init(state: .suggestion, draftLength: nil))
@@ -1319,6 +1320,41 @@ final class GrokPromptSuggestionTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
     }
 
+    /// Grok predicts the line a seat sees most: the doorbell line itself.
+    /// Whole or cut short with Grok's italic ellipsis, it is a suggestion, so
+    /// it is neither a draft nor a stranded invitation.
+    func testDoorbellLineAsGroksSuggestionIsASuggestion() {
+        let whole = GrokCapture.suggestionRow(MailboxDoorbell.text)
+        let cut = GrokCapture.suggestionRow(String(MailboxDoorbell.text.prefix(33)) + "…")
+        for capture in [whole, cut] {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .suggestion)
+            XCTAssertNil(PromptInputClassifier.composerText(region, harness: "grok"))
+            XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: .suggestion)), .ring)
+            XCTAssertEqual(PromptInputClassifier.classify(capture.region(dropItalic: true), harness: "grok").state, .draft)
+        }
+    }
+
+    /// An upright space on the cursor cell, then italic text: the cursor is
+    /// not on the suggestion's first glyph.
+    func testUprightSpaceAtTheCursorBeforeItalicTextIsADraft() {
+        let capture = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+            (24, [S("  ╭" + String(repeating: "─", count: 50) + "╮  ")]),
+            (25, [S("  │ ❯  "), S("Reply with the one word CHARLIE and stop.", italic: true), S("    │  ")]),
+            (26, [S("  ╰──── Grok 4.7 (high) · always-approve ─╯  ")]),
+        ])
+        XCTAssertEqual(PromptInputClassifier.classify(capture.region(), harness: "grok").state, .draft)
+    }
+
+    /// Italic is Grok's signal only. Other readers see the Grok capture as
+    /// they did before: never a suggestion.
+    func testGrokSuggestionCaptureOnOtherPanelsIsNotASuggestion() {
+        for harness in ["claude-code", "codex", "opencode", "pi", "omp", nil] as [String?] {
+            XCTAssertNotEqual(PromptInputClassifier.classify(GrokCaptures.suggestion.region(), harness: harness).state,
+                              .suggestion, harness ?? "untyped")
+        }
+    }
+
     /// Italic is Grok's signal only. Claude's reader still needs faint.
     func testItalicOnAClaudeComposerIsADraft() {
         var cells: [PromptRegionCell] = []
@@ -1356,6 +1392,18 @@ private struct GrokCapture {
             self.faint = faint
             self.italic = italic
         }
+    }
+
+    /// Grok's composer holding only `text` as its italic suggestion.
+    static func suggestionRow(_ text: String) -> GrokCapture {
+        GrokCapture(cursorX: 6, cursorY: 25, rows: [
+            (24, [S("  ╭" + String(repeating: "─", count: 94) + "╮  ")]),
+            (25, [S("  │ ❯ "), S(text, italic: true),
+                  S(String(repeating: " ", count: max(1, 92 - text.count)) + "│  ")]),
+            (26, [S("  ╰" + String(repeating: "─", count: 59) + " Grok 4.7 (high) · always-approve ─╯  ")]),
+            (27, [S("")]),
+            (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:mode")]),
+        ])
     }
 
     /// One cell per scalar. Grok's composer, box and footer are narrow, so
@@ -1547,6 +1595,24 @@ private enum GrokCaptures {
         (27, [S("                                                                                                    ")]),
         (28, [S("  Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts                                                               ")]),
         (29, [S("                                                                                                    ")]),
+    ])
+
+    /// A 44-column pane: Grok truncates the suggestion on one row with an italic ellipsis.
+    static let narrowTruncatedSuggestion = GrokCapture(cursorX: 6, cursorY: 25, rows: [
+        (16, [S("                                           █")]),
+        (17, [S("                                           █")]),
+        (18, [S("                                           █")]),
+        (19, [S("                                           █")]),
+        (20, [S("                                           █")]),
+        (21, [S("                                           █")]),
+        (22, [S("                                           █")]),
+        (23, [S("                                            ")]),
+        (24, [S("  ╭──────────────────────────────────────╮  ")]),
+        (25, [S("  │ ❯ "), S("Reply with the one word CHARLIE a…", italic: true), S(" │  ")]),
+        (26, [S("  ╰─── Grok 4.7 (high) · always-approve ─╯  ")]),
+        (27, [S("                                            ")]),
+        (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:    ")]),
+        (29, [S("                                            ")]),
     ])
 
 }

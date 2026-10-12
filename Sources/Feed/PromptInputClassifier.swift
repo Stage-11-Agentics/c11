@@ -217,10 +217,14 @@ enum PromptInputClassifier {
     ///
     /// `italicSuggestion` is Grok's next-prompt ghost text: SGR 3 italic in a
     /// grey, never SGR 2, with the cursor parked on its first cell. Grok
-    /// draws typed text, pastes and completions upright. Italic reads as a
-    /// suggestion only when every visible character in the composer is
-    /// italic and the cursor sits at the composer's first cell; anything else
-    /// is typed text, so a draft is never typed into.
+    /// draws typed text, pastes, slash completions and mentions upright
+    /// (Grok 1.0.50, Grok 4.7). Italic reads as a suggestion only when every
+    /// visible character in the composer is italic, the first content cell is
+    /// an italic glyph, and the cursor sits on it; anything else is typed
+    /// text, so a draft is never typed into. The one shape these cells cannot
+    /// separate is an all-italic typed draft with the cursor moved home; the
+    /// rule rests on Grok never drawing typed text italic, and the captured
+    /// fixtures in `GrokPromptSuggestionTests` pin that.
     private static func prefixComposer(
         _ lines: [Line],
         cursorIndex: Int,
@@ -339,6 +343,8 @@ enum PromptInputClassifier {
             )
         }
 
+        // `prefix.endIndex` is a scalar index, and here also the cell column:
+        // every cell of Grok's `│ ❯ ` prefix is one narrow, single-scalar cell.
         if italicSuggestion,
            !hasUprightText,
            firstContentIsItalic,

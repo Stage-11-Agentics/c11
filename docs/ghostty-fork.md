@@ -292,7 +292,8 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
 ### 13) C11-406 italic cells in the prompt-region capture
 
 - Commits: `d05a1fa7b` (keep SGR-3 italic per cell), `066c8bf2f` (run the
-  prompt-region tests with the terminal suite)
+  prompt-region tests with the terminal suite), `805714c6f` (replay Grok's
+  recorded suggestion bytes in a test)
 - Files: `include/ghostty.h`, `src/terminal/prompt_region.zig`,
   `src/terminal/main.zig`
 - `ghostty_prompt_region_cell_s` gains `bool italic` after `faint`. Grok
@@ -302,4 +303,6 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
 - `src/terminal/main.zig` imports `prompt_region.zig` in its test block. The
   file was only imported from the embedded apprt, so its tests never ran.
 - On rebase, keep the field order (`text_offset`, `text_len`, `faint`,
-  `italic`) in step with the Swift importer in `TerminalController.swift`.
+  `italic`) the same in three places: the submodule's `include/ghostty.h`,
+  c11's repo-root `ghostty.h` (the copy the bridging header imports), and
+  the Swift importer in `TerminalController.swift`.

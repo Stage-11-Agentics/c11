@@ -78,6 +78,16 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertFalse(summary.hasMail)
     }
 
+    func testEmptyInboxHasNoMailAndReadMailStillCounts() throws {
+        // An inbox that exists but never received anything shows no cell.
+        XCTAssertFalse(MailboxPanelMail.summary(inbox: inbox).hasMail)
+        // Once mail has landed the cell stays, even after all of it is read.
+        try write([:], id: ulid(Date()), read: true)
+        let summary = MailboxPanelMail.summary(inbox: inbox)
+        XCTAssertEqual(summary.unread, 0)
+        XCTAssertTrue(summary.hasMail)
+    }
+
     func testFreshForThreeMinutesAfterNewestUnreadLands() {
         let landed = Date(timeIntervalSince1970: 1_000_000)
         let summary = MailboxPanelMail.Summary(unread: 1, received: 1, newestUnreadAt: landed, oldestUnreadAt: landed)

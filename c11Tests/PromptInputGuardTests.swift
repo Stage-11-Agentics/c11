@@ -886,3 +886,85 @@ private final class FeedAnswerRaceState: @unchecked Sendable {
         return .lowered
     }
 }
+
+extension PromptInputClassifierTests {
+    func testReviewProbeOpenCodeIdleComposerAdmitsDoorbell() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: "  ┃")]),
+            Row(y: 1, spans: [Span(text: "  ┃  "), Span(text: "Ask anything… \"Fix a TODO in the codebase\"", faint: true)]),
+            Row(y: 2, spans: [Span(text: "  ┃")]),
+            Row(y: 3, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
+            Row(y: 4, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
+        ]
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 1)).state
+        var input = MailboxDoorbell.Input()
+        input.prompt = state
+        XCTAssertEqual(MailboxDoorbell.decide(input), .ring, "OpenCode idle composer reads \(state)")
+    }
+
+    func testReviewProbeOpenCodeDraftStaysADraft() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: "  ┃")]),
+            Row(y: 1, spans: [Span(text: "  ┃  fix the todo")]),
+            Row(y: 2, spans: [Span(text: "  ┃")]),
+            Row(y: 3, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
+            Row(y: 4, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 60))]),
+        ]
+        let input = region(rows, cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(input).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(input), "fix the todo")
+        var decision = MailboxDoorbell.Input()
+        decision.prompt = .draft
+        XCTAssertEqual(MailboxDoorbell.decide(decision), .skip(reason: "draft"))
+    }
+
+    /// Live OpenCode 1.18.30. The placeholder is not faint in the prompt capture.
+    func testReviewProbeOpenCodePlaceholderWithoutFaintAdmitsDoorbell() {
+        let rows = [
+            Row(y: 0, spans: [Span(text: "            ┃")]),
+            Row(y: 1, spans: [Span(text: "            ┃  Ask anything… \"What is the tech stack of this project?\"")]),
+            Row(y: 2, spans: [Span(text: "            ┃")]),
+            Row(y: 3, spans: [Span(text: "            ┃  K3-256k · K3-256k Kimi For Coding · high")]),
+            Row(y: 4, spans: [Span(text: "            ╹" + String(repeating: "▀", count: 40))]),
+        ]
+        let input = region(rows, cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(input).state, .suggestion)
+        var decision = MailboxDoorbell.Input()
+        decision.prompt = PromptInputClassifier.classify(input).state
+        XCTAssertEqual(MailboxDoorbell.decide(decision), .ring)
+
+        let typed = region([
+            Row(y: 0, spans: [Span(text: "  ┃")]),
+            Row(y: 1, spans: [Span(text: "  ┃  Ask anything else")]),
+            Row(y: 2, spans: [Span(text: "  ┃")]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(typed).state, .draft)
+    }
+
+    func testReviewProbePiIdleComposerAdmitsDoorbell() {
+        let rule = String(repeating: "─", count: 69)
+        let rows = [
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: " ")]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ]
+        let state = PromptInputClassifier.classify(region(rows, cursorY: 1)).state
+        var input = MailboxDoorbell.Input()
+        input.prompt = state
+        XCTAssertEqual(MailboxDoorbell.decide(input), .ring, "Pi idle composer reads \(state)")
+    }
+
+    func testReviewProbePiDraftStaysADraft() {
+        let rule = String(repeating: "─", count: 69)
+        let rows = [
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: " fix the todo")]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ]
+        let input = region(rows, cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(input).state, .draft)
+        // The row's leading space is the cursor gutter. It is part of the
+        // captured line. The state is what holds the ring.
+        XCTAssertEqual(PromptInputClassifier.composerText(input), " fix the todo")
+    }
+}

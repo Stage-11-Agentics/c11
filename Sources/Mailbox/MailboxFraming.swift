@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// The `<c11-msg>` framed block an agent reads, shared by the app and the CLI
@@ -68,24 +69,33 @@ enum MailboxFraming {
     }
 
     /// Read at most `cap` bytes, plus one byte so a longer file is visible
-    /// as truncated. Does not read the rest of a large file.
+    /// as truncated. Does not read the rest of a large file. A FIFO, a
+    /// device, or anything else that is not a regular file is unavailable:
+    /// the open is non-blocking, and the type is checked on the descriptor
+    /// so `recv` and the Stop hook cannot stall on a pipe.
     static func readBodyRef(path: String, cap: Int) -> BodyRefRead {
-        guard path.hasPrefix("/") else {
-            return BodyRefRead(text: "", truncated: false, missing: true, notUTF8: false)
+        let unavailable = BodyRefRead(text: "", truncated: false, missing: true, notUTF8: false)
+        guard path.hasPrefix("/"), cap >= 0 else { return unavailable }
+        let fd = path.withCString { Darwin.open($0, O_RDONLY | O_NONBLOCK | O_CLOEXEC) }
+        guard fd >= 0 else { return unavailable }
+        defer { Darwin.close(fd) }
+        var info = stat()
+        guard Darwin.fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            return unavailable
         }
-        let handle: FileHandle
-        do {
-            handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
-        } catch {
-            return BodyRefRead(text: "", truncated: false, missing: true, notUTF8: false)
+        var buffer = [UInt8](repeating: 0, count: cap + 1)
+        var got = 0
+        while true {
+            let count = Darwin.read(fd, &buffer[got], cap + 1 - got)
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                return unavailable
+            }
+            got += count
+            if got >= cap + 1 { break }
         }
-        defer { try? handle.close() }
-        let data: Data
-        do {
-            data = try handle.read(upToCount: cap + 1) ?? Data()
-        } catch {
-            return BodyRefRead(text: "", truncated: false, missing: true, notUTF8: false)
-        }
+        let data = Data(buffer.prefix(got))
         let truncated = data.count > cap
         let end = utf8PrefixEnd(data, cap: cap)
         guard let text = String(data: data.prefix(end), encoding: .utf8) else {

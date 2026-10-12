@@ -474,7 +474,16 @@ extension TerminalController {
                     answer: answer,
                     expectedFlagEpoch: expectedEpoch
                 )
-                return result.applied[MetadataKey.flag] == true ? .lowered : .replaced
+                if result.applied[MetadataKey.flag] == true {
+                    AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: prepared.identity.panelID,
+                        preferredWorkspaceId: prepared.identity.workspaceID
+                    )?.workspace.recheckMailboxDoorbellAfterFlagLower(
+                        surfaceId: prepared.identity.panelID
+                    )
+                    return .lowered
+                }
+                return .replaced
             } catch {
                 return .unavailable
             }

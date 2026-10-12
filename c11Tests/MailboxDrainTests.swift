@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 
 #if canImport(c11_DEV)
@@ -342,6 +343,29 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertEqual(read.text, "a")
         XCTAssertTrue(read.truncated)
         XCTAssertFalse(read.text.contains("€"))
+    }
+
+    func testFifoBodyRefIsUnavailable() throws {
+        let path = "/tmp/c11-394-fifo-\(UUID().uuidString)"
+        XCTAssertEqual(mkfifo(path, 0o600), 0)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let read = MailboxFraming.readBodyRef(path: path, cap: 32)
+        XCTAssertTrue(read.missing)
+        XCTAssertEqual(read.text, "")
+    }
+
+    func testDirectoryBodyRefIsUnavailable() {
+        let read = MailboxFraming.readBodyRef(path: "/tmp", cap: 32)
+        XCTAssertTrue(read.missing)
+        XCTAssertEqual(read.text, "")
+    }
+
+    /// `/dev/zero` would fill the inline cap if the regular-file check were
+    /// gone. A device is unavailable, and the read does not consume it.
+    func testDeviceBodyRefIsUnavailable() {
+        let read = MailboxFraming.readBodyRef(path: "/dev/zero", cap: 8)
+        XCTAssertTrue(read.missing)
+        XCTAssertEqual(read.text, "")
     }
 
     func testPendingStaysUntilAClaim() throws {

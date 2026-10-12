@@ -151,6 +151,18 @@ enum PromptInputClassifier {
             )
         }
 
+        // OpenCode's composer is a `┃` row. Pi's (and omp's, the same shape)
+        // is the row between two rules. Both are read from the cursor row
+        // only, so a status line under the cursor is not typed text. A `❯`
+        // or `›` row keeps the prefix scan below.
+        if let openCode = openCodeComposer(lines[cursorIndex]) {
+            return openCode
+        }
+        if currentPromptPrefix(in: lines[cursorIndex]) == nil,
+           let pi = piComposer(lines, cursorIndex: cursorIndex) {
+            return pi
+        }
+
         guard let promptIndex = lines.indices.reversed().first(where: { index in
             lines[index].y <= region.cursorY && currentPromptPrefix(in: lines[index]) != nil
         }), promptIndex <= cursorIndex,
@@ -399,6 +411,100 @@ enum PromptInputClassifier {
         while end > 0, isWhitespace(scalars[end - 1].value) { end -= 1 }
         guard end > 0, scalars[end - 1].value.value == 0x2502 else { return scalars }
         return Array(scalars[..<(end - 1)])
+    }
+
+    /// OpenCode draws the composer as a heavy vertical bar (`┃`, U+2503).
+    /// The cursor row is the composer. Faint placeholder text is a suggestion.
+    /// Typed text on that row is a draft. Rows below it (the model line, the
+    /// `╹▀` footer) are not part of the composer.
+    private static func openCodeComposer(_ line: Line) -> Analysis? {
+        guard let content = contentAfterMarker(line, marker: 0x2503) else { return nil }
+        let row = composerRow(content)
+        // Live OpenCode 1.18.30 draws its placeholder in a normal-weight gray,
+        // so the prompt capture does not mark those cells faint. The idle row
+        // is exactly `Ask anything…` plus an optional quoted hint. Anything else
+        // on that row is text the operator typed.
+        guard row.classification.state == .draft,
+              let composer = row.composerText,
+              openCodePlaceholder(composer) else {
+            return row
+        }
+        return Analysis(
+            classification: PromptInputClassification(state: .suggestion, draftLength: nil),
+            composerText: ""
+        )
+    }
+
+    /// OpenCode's idle hint. The ellipsis is the one it draws (U+2026) or three dots.
+    private static func openCodePlaceholder(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "Ask anything"
+        guard trimmed.hasPrefix(prefix) else { return false }
+        let rest = trimmed.dropFirst(prefix.count)
+        let hint: Substring
+        if rest.first == "…" {
+            hint = rest.dropFirst()
+        } else if rest.hasPrefix("...") {
+            hint = rest.dropFirst(3)
+        } else {
+            return false
+        }
+        let body = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty { return true }
+        return body.first == "\"" && body.last == "\""
+    }
+
+    /// Pi's idle composer is an empty row between two horizontal rules, with
+    /// the cursor on that row. Typed text there is a draft. A row that already
+    /// has a `❯` or `›` prefix is not this shape.
+    private static func piComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
+        guard cursorIndex > 0, cursorIndex + 1 < lines.count else { return nil }
+        let above = lines[cursorIndex - 1]
+        let line = lines[cursorIndex]
+        let below = lines[cursorIndex + 1]
+        guard above.y + 1 == line.y, line.y + 1 == below.y else { return nil }
+        guard isRule(above), isRule(below), !isRule(line) else { return nil }
+        return composerRow(line.scalars)
+    }
+
+    /// Text after a leading marker and its gutter, or nil when the marker is
+    /// not the row's first glyph.
+    private static func contentAfterMarker(_ line: Line, marker: UInt32) -> [StyledScalar]? {
+        var index = 0
+        while index < line.scalars.count, line.scalars[index].value == " " { index += 1 }
+        guard index < line.scalars.count, line.scalars[index].value.value == marker else { return nil }
+        index += 1
+        while index < line.scalars.count, line.scalars[index].value == " " { index += 1 }
+        return Array(line.scalars.dropFirst(index))
+    }
+
+    private static func composerRow(_ scalars: [StyledScalar]) -> Analysis {
+        var typed: [Unicode.Scalar] = []
+        var hasTypedText = false
+        var hasFaintSuggestion = false
+        for item in scalars {
+            guard !item.faint else {
+                if !isWhitespace(item.value) { hasFaintSuggestion = true }
+                continue
+            }
+            typed.append(item.value)
+            if !isWhitespace(item.value) { hasTypedText = true }
+        }
+        while let last = typed.last, isWhitespace(last) { typed.removeLast() }
+        guard hasTypedText else {
+            return Analysis(
+                classification: PromptInputClassification(
+                    state: hasFaintSuggestion ? .suggestion : .empty,
+                    draftLength: nil
+                ),
+                composerText: ""
+            )
+        }
+        let trimmed = trimWhitespace(typed)
+        return Analysis(
+            classification: PromptInputClassification(state: .draft, draftLength: trimmed.count),
+            composerText: String(String.UnicodeScalarView(typed))
+        )
     }
 
     /// Grok closes its composer with `╰── Grok 4.7 … ─╯`. That footer is the

@@ -13,7 +13,9 @@ enum MailboxDoorbell {
     /// Ring attempts older than this no longer count toward `rateCap`.
     /// An attempt exactly this old has expired.
     static let rateWindow: TimeInterval = 600
-    static let rateCap = 3
+    /// Runaway guard. Once-per-idle already stops a second ring in one turn,
+    /// so this only catches a panel that keeps submitting the line.
+    static let rateCap = 20
     /// Typed into the agent. Not chrome, so it is not localized.
     static let text = "You have mail: run c11 mailbox recv --ack when you want to receive it."
 
@@ -44,6 +46,9 @@ enum MailboxDoorbell {
         var recentAttempts: Int = 0
         var focused: Bool = false
         var operatorKeyAge: TimeInterval? = nil
+        /// The panel's text box holds unsent text. That is a draft: the next
+        /// submit would splice the doorbell line onto it.
+        var textBoxUnsent: Bool = false
         var prompt: PromptInputState? = .empty
         var epoch: String = ""
         var now: Date = Date(timeIntervalSince1970: 0)
@@ -120,10 +125,6 @@ enum MailboxDoorbell {
         }
     }
 
-    static func epoch(sinceMs: Int64, phase: String, turnOutcome: String?) -> String {
-        "\(sinceMs)|\(phase)|\(turnOutcome ?? "")"
-    }
-
     /// One idle period is one agent prompt edge. The gate's turn clock, not
     /// the journal phase: a harness that never reports `blocked` still moves
     /// this when its turn does.
@@ -140,6 +141,7 @@ enum MailboxDoorbell {
         if input.flagged { return .skip(reason: "flagged") }
         if input.rungThisEpoch { return .skip(reason: "once_per_idle") }
         if input.recentAttempts >= rateCap { return .skip(reason: "rate_capped") }
+        if input.textBoxUnsent { return .skip(reason: "draft") }
         if input.focused, let age = input.operatorKeyAge, age < quietWindow {
             let remaining = age >= 0 ? (quietWindow - age) : quietWindow
             return .deferRing(after: remaining)
@@ -174,17 +176,221 @@ enum MailboxDoorbell {
         return false
     }
 
-    /// Mail still queued at an idle edge. A keep (already rung this period,
-    /// capped, opted out, a draft) is not a ring. The queue stays either way,
-    /// so unread mail can ring on the next idle period.
-    static func arrivalAfterIdleFlush(
-        delivered: Bool,
-        stillPending: Bool,
-        input: Input
-    ) -> Arrival? {
-        guard !delivered, stillPending else { return nil }
-        let effect = arrival(for: decide(input))
-        if case .keep = effect { return nil }
-        return effect
+}
+
+/// The ring sequence Workspace runs, with the AppKit effects left outside.
+/// A test breaks one of these functions and a named probe goes red.
+enum MailboxDoorbellSequence {
+    /// When to run the ring decision again. `.none` means the next idle edge
+    /// is the only later look, or that nothing is waiting.
+    enum Rearm: Equatable {
+        case none
+        case after(TimeInterval)
+        case at(Date)
+    }
+
+    struct Plan: Equatable {
+        var arrival: MailboxDoorbell.Arrival
+        var rearm: Rearm
+    }
+
+    /// Captures of a busy renderer before the read is given up.
+    static let busyAttempts = 3
+    /// Gap between those captures.
+    static let busyRetryGap: TimeInterval = 0.075
+    /// Later look after a busy read, a stranded line, or an open prompt
+    /// whose input transaction is still active.
+    static let shortRecheck: TimeInterval = 0.5
+
+    static func shouldRetryBusy(tryIndex: Int) -> Bool {
+        tryIndex >= 0 && tryIndex + 1 < busyAttempts
+    }
+
+    /// `rate_capped` looks again when the oldest attempt leaves the window.
+    /// A busy read that has used its captures looks again after `shortRecheck`.
+    /// A composer that still holds the doorbell line looks again too, and is
+    /// not retyped by this plan. Any other keep waits for a later edge.
+    static func plan(
+        decision: MailboxDoorbell.Decision,
+        attempts: [Date],
+        now: Date,
+        busyExhausted: Bool,
+        strandedDoorbell: Bool
+    ) -> Plan {
+        let arrival = MailboxDoorbell.arrival(for: decision)
+        let rearm: Rearm
+        switch decision {
+        case .deferRing(let after):
+            rearm = .after(after)
+        case .skip(let reason) where reason == "rate_capped":
+            let live = attempts.filter { now.timeIntervalSince($0) < MailboxDoorbell.rateWindow }
+            if let oldest = live.min() {
+                rearm = .at(oldest.addingTimeInterval(MailboxDoorbell.rateWindow))
+            } else {
+                rearm = .after(0)
+            }
+        case .skip(let reason) where reason == "unavailable" && busyExhausted:
+            rearm = .after(shortRecheck)
+        case .skip(let reason) where reason == "draft" && strandedDoorbell:
+            rearm = .after(shortRecheck)
+        default:
+            rearm = .none
+        }
+        return Plan(arrival: arrival, rearm: rearm)
+    }
+
+    /// A keep does not take the queue. Unread mail stays until a later ring
+    /// or a shell prompt drops it.
+    static func idsRemainingAfterKeep(queued: [String]) -> [String] {
+        queued
+    }
+
+    /// Ids from the pre-hop snapshot that are no longer in the inbox root.
+    /// An id absent from the snapshot arrived during the hop and stays.
+    static func droppedIds(snapshot: [String], stillPending: Set<String>) -> [String] {
+        snapshot.filter { !stillPending.contains($0) }
+    }
+
+    /// The prompt the decision saw. A draft stays a draft.
+    static func promptForDecision(captured: PromptInputState?) -> PromptInputState? {
+        captured
+    }
+
+    enum Start: Equatable {
+        case type
+        case fail(String)
+    }
+
+    /// Whether typing may start. A refusal has not used the idle period.
+    static func start(
+        hasSurface: Bool,
+        inputTransactionActive: Bool,
+        feedAnswerBegan: Bool
+    ) -> Start {
+        guard hasSurface, !inputTransactionActive, feedAnswerBegan else {
+            return .fail("unavailable")
+        }
+        return .type
+    }
+
+    /// `.type` records the attempt. `.fail` clears the reservation and does
+    /// not record one.
+    static func apply(start: Start, ledger: inout MailboxDoorbell.Ledger, now: Date, epoch: String) {
+        switch start {
+        case .type:
+            ledger.beginAttempt(at: now, epoch: epoch)
+        case .fail:
+            ledger.endAttempt()
+        }
+    }
+
+    /// Nil means submit. The composer compare lives here, against the doorbell
+    /// line. A changed composer, a lost row, or a terminal the agent no longer
+    /// owns refuses.
+    static func preReturn(
+        rowIsCurrent: Bool,
+        operatorInputUnchanged: Bool,
+        agentOwnsTerminal: Bool,
+        captured: Bool,
+        prompt: PromptInputState?,
+        composer: String?
+    ) -> FeedAnswerSubmitOutcome? {
+        if let outcome = FeedAnswerPreReturnCheck.outcome(
+            targetIsCurrent: true,
+            rowIsCurrent: rowIsCurrent,
+            operatorInputUnchanged: operatorInputUnchanged,
+            composer: nil
+        ) {
+            return outcome
+        }
+        guard captured else { return .pastedNotSubmitted }
+        let compared = FeedAnswerComposerCheck.compare(
+            state: prompt ?? .unavailable,
+            composer: composer,
+            expected: MailboxDoorbell.text
+        )
+        if let outcome = FeedAnswerPreReturnCheck.outcome(
+            targetIsCurrent: true,
+            rowIsCurrent: true,
+            operatorInputUnchanged: true,
+            composer: compared
+        ) {
+            return outcome
+        }
+        guard agentOwnsTerminal else { return .targetLost }
+        return nil
+    }
+
+    /// After a paste that did not submit. The caller logs and does not type
+    /// again over a line that is still sitting there.
+    static func rearmAfterPasteFailure(
+        outcome: FeedAnswerSubmitOutcome,
+        state: PromptInputState?,
+        composer: String?
+    ) -> Rearm {
+        switch outcome {
+        case .targetLost, .submitted:
+            return .none
+        case .pastedNotSubmitted, .submitUnconfirmed:
+            if let state {
+                switch state {
+                case .draft:
+                    guard let composer else { return .none }
+                    let compared = FeedAnswerComposerCheck.compare(
+                        state: .draft,
+                        composer: composer,
+                        expected: MailboxDoorbell.text
+                    )
+                    // `.matches` is the invitation, wrapped or not. `.notVisible`
+                    // is a prefix of it still sitting in the composer. An edit
+                    // is `.changed` and is not polled.
+                    return compared == .changed ? .none : .after(shortRecheck)
+                case .empty, .suggestion:
+                    return .after(shortRecheck)
+                case .dialog, .unknown, .unavailable:
+                    return .none
+                }
+            }
+            return .after(shortRecheck)
+        }
+    }
+
+    /// Hold only a flag this panel raised for itself. A dispatch flag or an
+    /// operator-designated flag (any other caller, or none) still rings.
+    static func holdsForFlag(isFlagged: Bool, callerPanelId: UUID?, surfaceId: UUID) -> Bool {
+        isFlagged && callerPanelId == surfaceId
+    }
+
+    /// Lowering a flag runs the ring decision again while mail is unread.
+    static func rearmAfterFlagLower(unreadQueued: Bool) -> Rearm {
+        unreadQueued ? .after(0) : .none
+    }
+
+    /// The quiet window uses the newer of a terminal key and text-box input.
+    /// Nil when the operator has not touched the panel.
+    static func operatorKeyAge(keyAt: Date?, inputAt: Date?, now: Date) -> TimeInterval? {
+        let newest = [keyAt, inputAt].compactMap { $0 }.max()
+        return newest.map { now.timeIntervalSince($0) }
+    }
+
+    /// Unsent text-box text. Whitespace does not count: a submit of it would
+    /// not splice a message onto the doorbell line.
+    static func textBoxHoldsUnsent(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// What the ring types. The queued blocks stay in the inbox. They are
+    /// never the typed text.
+    static func typedText(queuedBlocks: [String]) -> String {
+        if queuedBlocks.contains(where: { $0.contains("<c11-msg") }) {
+            return MailboxDoorbell.text
+        }
+        return MailboxDoorbell.text
+    }
+
+    /// An agent prompt edge rings. A shell prompt does not.
+    static func shouldRingOnPromptEdge(_ trigger: MailboxStdinBuffer.FlushTrigger) -> Bool {
+        if case .agentPrompt = trigger { return true }
+        return false
     }
 }

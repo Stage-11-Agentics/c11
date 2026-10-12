@@ -282,7 +282,13 @@ final class PanelAttentionIndex: ObservableObject {
 /// events, and optional direct delivery are all committed.
 @MainActor
 final class PanelAttentionService {
-    static let shared = PanelAttentionService()
+    static let shared: PanelAttentionService = {
+        let service = PanelAttentionService()
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak service] closingPanelIds in
+            service?.releaseDelegatesForClosingPanels(closingPanelIds)
+        }
+        return service
+    }()
 
     private let feedProjection: FeedProjectionBridge
 

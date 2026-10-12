@@ -123,18 +123,24 @@ def main():
                 print("PASS: inline/file raw prompt bytes preserved (%d B)" % size)
 
             for option in ("--delegated", "--suppressed"):
-                payload = accepted(option, "delegate fixture", expected_prompt="delegate fixture")
+                payload = accepted(
+                    option,
+                    "--prompt",
+                    "delegate fixture",
+                    expected_prompt="delegate fixture",
+                )
                 params = launches[-1]["params"]
                 assert params["delegated"] is True, params
                 assert params["suppressed"] is True, params
                 assert params.get("caller_panel_id", params.get("caller_surface_id")) == TAB, params
-                assert payload["panel_id"] == TAB, payload
+                assert payload["panel_ref"] == "panel:1", payload
             print("PASS: --delegated and --suppressed stamp the caller-owned delegate state")
 
             no_caller_environment = dict(environment)
             no_caller_environment.pop("C11_PANEL_ID", None)
             accepted(
                 "--delegated",
+                "--prompt",
                 "delegate without caller",
                 expected_prompt="delegate without caller",
                 environment_override=no_caller_environment,
